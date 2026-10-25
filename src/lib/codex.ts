@@ -690,8 +690,12 @@ function update(change: (c: Codex) => Codex) {
   if (!opened) return;
   const prev = opened.was ?? emptyCodex();
   const next = change(prev);
-  if (next !== prev) write(next);
+  if (next !== prev && write(next)) saved?.();
 }
+
+let saved: (() => void) | null = null;
+/** Told each time the stored codex is written to (main.ts: a newcomer's first save is counted, count.ts countSaved). */
+export const onSaved = (f: () => void) => void (saved = f);
 
 /** Adds an encounter to the stored codex. */
 export function recordEncounter(e: Encounter) {

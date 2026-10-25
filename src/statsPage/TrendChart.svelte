@@ -4,11 +4,22 @@
   // The newest point (today, or this week) isn't over, so its last stretch is
   // drawn faint. Pointing (or the arrow keys) reads a day's two figures.
   // `marks`: days ringed on the line (the busiest, insights.ts spikesOf).
+  // `back`: how many days before a day its counterpart before is, where
+  // only some of the period's days are drawn (all of them: their number).
+  // A dashed line across is this period's average a day (or week), over the
+  // whole ones, its figure at its end: what a usual day is, so a day's
+  // swing reads against it.
+  // A day of the period before with nothing to set against (null: Today's
+  // unique hadn't begun) has no grey line, rather than one flat at nothing;
+  // nor does a period before that wasn't counted in full (COMPARE), its
+  // legend and its row in the note left out.
   // Its labels, and the room around the plot for them, follow the page's
   // type (rootFont), so a big screen's chart reads like the rest of it.
-  import { axis, compact, fmt, labelled, longDay, shortDay } from './chart';
+  import { getContext } from 'svelte';
+  import { average, axis, compact, fmt, labelled, longDay, shortDay } from './chart';
   import { Crosshair } from './crosshair.svelte';
   import { grouped } from './model';
+  import { COMPARE } from './read';
   import { rootFont } from './rootFont.svelte';
   import { addDays } from './zone';
 
@@ -21,10 +32,24 @@
     names,
     height = 360,
     marks = [],
-  }: { days: string[]; now: number[]; before: number[]; weekly: boolean; what: string; names: { now: string; before: string }; height?: number; marks?: string[] } = $props();
+    back,
+  }: { days: string[]; now: number[]; before: (number | null)[]; weekly: boolean; what: string; names: { now: string; before: string }; height?: number; marks?: string[]; back?: number } = $props();
 
+  const compare = getContext<(() => boolean) | undefined>(COMPARE) ?? (() => true);
   const cur = $derived(grouped(days, now, weekly ? 7 : 1));
-  const was = $derived(grouped(days, before, weekly ? 7 : 1).values);
+  /** The period before's, a week null where any of its days is. */
+  const was = $derived.by((): (number | null)[] => {
+    if (!compare()) return cur.values.map(() => null);
+    const sums = grouped(days, before.map((v) => v ?? 0), weekly ? 7 : 1).values;
+    const gaps = grouped(days, before.map((v) => (v === null ? 1 : 0)), weekly ? 7 : 1).values;
+    return sums.map((v, i) => (gaps[i] ? null : v));
+  });
+  const none = $derived(was.every((v) => v === null));
+  /** This period's average a point, over the whole ones (the last, still going, left out unless it's all there is). */
+  const mean = $derived.by(() => {
+    const whole = n > 1 ? cur.values.slice(0, -1) : cur.values;
+    return whole.length ? whole.reduce((a, b) => a + b, 0) / whole.length : null;
+  });
   const n = $derived(cur.values.length);
 
   let width = $state(0);
@@ -33,13 +58,15 @@
   const PAD = $derived({ top: Math.max(16, fs), right: 12, bottom: Math.round(fs * 2.3), left: Math.round(fs * 3.5) });
   const plotW = $derived(Math.max(0, width - PAD.left - PAD.right));
   const plotH = $derived(height - PAD.top - PAD.bottom);
-  const ax = $derived(axis(Math.max(0, ...cur.values, ...was), 4));
+  const ax = $derived(axis(Math.max(0, ...cur.values, ...was.map((v) => v ?? 0)), 4));
   const x = (i: number) => PAD.left + (n > 1 ? (plotW * i) / (n - 1) : plotW / 2);
   const y = (v: number) => PAD.top + plotH - (plotH * v) / ax.top;
-  const path = (vs: number[]) => vs.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join('');
+  /** A line through the points, broken where one is null. */
+  const path = (vs: (number | null)[]) => vs.map((v, i) => (v === null ? '' : `${i && vs[i - 1] !== null ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`)).join('');
   /** Up to the last whole point, and the last stretch (to the point still filling) on its own. */
-  const settled = (vs: number[]) => path(vs.slice(0, Math.max(1, n - 1)));
-  const lastStretch = (vs: number[]) => (n > 1 ? `M${x(n - 2).toFixed(1)} ${y(vs[n - 2] ?? 0).toFixed(1)}L${x(n - 1).toFixed(1)} ${y(vs[n - 1] ?? 0).toFixed(1)}` : '');
+  const settled = (vs: (number | null)[]) => path(vs.slice(0, Math.max(1, n - 1)));
+  const lastStretch = (vs: (number | null)[]) =>
+    n > 1 && vs[n - 2] != null && vs[n - 1] != null ? `M${x(n - 2).toFixed(1)} ${y(vs[n - 2]!).toFixed(1)}L${x(n - 1).toFixed(1)} ${y(vs[n - 1]!).toFixed(1)}` : '';
   const wash = $derived(n ? `${path(cur.values)}L${x(n - 1).toFixed(1)} ${y(0)}L${x(0).toFixed(1)} ${y(0)}Z` : '');
   const ticks = $derived(labelled(n, plotW, fs * 6.4));
   const hair = new Crosshair(
@@ -54,7 +81,7 @@
 
 <div class="legend" aria-hidden="true">
   <span><i class="key now"></i>{names.now}</span>
-  <span><i class="key before"></i>{names.before}</span>
+  {#if compare()}<span><i class="key before"></i>{names.before}{none ? ': nothing to compare' : ''}</span>{/if}
   <span class="hint">{what} a {unit}; the last {unit} isn't over yet</span>
 </div>
 <div class="chart" bind:clientWidth={width} style:height="{height}px">
@@ -68,7 +95,7 @@
       style:font-size="{fs}px"
       role="img"
       tabindex="0"
-      aria-label="{what} a {unit}, {names.now.toLowerCase()} against {names.before.toLowerCase()}. Arrow keys step through."
+      aria-label="{what} a {unit}, {names.now.toLowerCase()}{compare() ? ` against ${names.before.toLowerCase()}` : ''}. Arrow keys step through."
       onpointermove={hair.move}
       onpointerdown={hair.down}
       onpointerleave={hair.leave}
@@ -87,12 +114,16 @@
       <path class="wash" d={wash} />
       <path class="now" d={settled(cur.values)} />
       <path class="now so-far" d={lastStretch(cur.values)} />
+      {#if mean !== null && mean > 0}
+        <line class="mean" x1={PAD.left} x2={PAD.left + plotW} y1={y(mean)} y2={y(mean)} />
+        <text class="mean-label" x={PAD.left + plotW} y={y(mean) - fs * 0.45} text-anchor="end">average {average(mean)} a {unit}</text>
+      {/if}
       {#each marked as i (i)}
         <circle class="mark" cx={x(i)} cy={y(cur.values[i] ?? 0)} r="9" />
       {/each}
       {#if hair.at !== null}
         <line class="cross" x1={x(hair.at)} x2={x(hair.at)} y1={PAD.top} y2={PAD.top + plotH} />
-        <circle class="dot-before" cx={x(hair.at)} cy={y(was[hair.at] ?? 0)} r="5" />
+        {#if was[hair.at] != null}<circle class="dot-before" cx={x(hair.at)} cy={y(was[hair.at]!)} r="5" />{/if}
         <circle class="dot" cx={x(hair.at)} cy={y(cur.values[hair.at] ?? 0)} r="6" />
       {/if}
     </svg>
@@ -100,7 +131,7 @@
       <div class="tip" style:left="{tipLeft}px" role="status">
         <div class="when">{longDay(cur.days[hair.at], weekly)}{hair.at === n - 1 ? ', so far' : ''}</div>
         <div class="row"><i class="key now"></i><b>{fmt(cur.values[hair.at] ?? 0)}</b><span>{what.toLowerCase()}</span></div>
-        <div class="row was"><i class="key before"></i><b>{fmt(was[hair.at] ?? 0)}</b><span>{longDay(addDays(cur.days[hair.at], -days.length), weekly)}</span></div>
+        {#if compare()}<div class="row was"><i class="key before"></i><b>{was[hair.at] == null ? '–' : fmt(was[hair.at]!)}</b><span>{longDay(addDays(cur.days[hair.at], -(back ?? days.length)), weekly)}</span></div>{/if}
       </div>
     {/if}
   {/if}
@@ -175,6 +206,20 @@
   .wash {
     fill: var(--a-now);
     opacity: 0.08;
+  }
+  .mean {
+    stroke: var(--a-ink);
+    stroke-width: 1.5;
+    stroke-dasharray: 6 6;
+    opacity: 0.55;
+  }
+  .mean-label {
+    font-family: var(--font-data);
+    fill: var(--a-ink);
+    font-weight: 600;
+    paint-order: stroke;
+    stroke: var(--a-surface);
+    stroke-width: 4px;
   }
   .so-far {
     opacity: 0.45;

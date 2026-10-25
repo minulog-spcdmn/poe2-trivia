@@ -13,6 +13,7 @@
   import { fitChart } from './fitChart.svelte';
   import { asked, dailyAverage, dailyDays, hardestAndEasiest } from './model';
   import type { Period, Read } from './read';
+  import How from './How.svelte';
   import Section from './Section.svelte';
 
   let { read, period, weekly }: { read: Read; period: Period; weekly: boolean } = $props();
@@ -27,10 +28,12 @@
   let innerWidth = $state(1400);
   let innerHeight = $state(900);
   /** A big monitor, or one on its side, fits the view on one screen: three of each, and the chart gives up what runs past it. */
-  const big = $derived(innerWidth >= 1900 || (innerHeight > innerWidth && innerWidth >= 900));
+  const big = $derived(innerWidth >= 1900 || (innerHeight > innerWidth && innerWidth >= 900 && innerHeight >= 1500));
   const chart = fitChart({ on: () => big, base: () => (big ? 236 : 340), least: 160 });
   const ranked = $derived(hardestAndEasiest(days, 3, big ? 3 : 5));
   const now = $derived(dailyAverage(L));
+  /** The whole days the average is over (the last, still going, left out), to weigh its change. */
+  const wholeDays = $derived(L.days.slice(0, -1).filter(asked).length);
   const before = $derived(dailyAverage(read.before));
   const total = $derived(L.daily.right + L.daily.wrong);
   const named = $derived(total ? Math.round((100 * L.daily.right) / total) : null);
@@ -42,26 +45,27 @@
 
   onMount(() => withDailyItems((f) => (itemOf = f)));
   let all = $state(false);
-  const newestFirst = $derived([...answered].reverse());
+  /** Every day it asked, a day nobody answered too: that's the habit's gap. */
+  const newestFirst = $derived([...days].reverse());
 </script>
 
 <svelte:window bind:innerWidth bind:innerHeight />
 
 <div class="stack">
   <p class="what">
-    Everyone gets the same item each day and can answer it once. So the <b>players a day</b> are the people who came back for it, which shows whether playing it is becoming a habit; the share who <b>named the item</b> shows how hard that day's item was.
+    One item a day, the same for everyone, answered once. <b>Players a day</b> shows whether it's becoming a habit; the share who <b>named the item</b>, how hard it was.
   </p>
 
   <div class="figures">
     <div class="figure">
       <span class="name">Players a day</span>
       <b>{now === null ? '–' : average(now)}</b>
-      <Delta now={now} before={before} digits={1} period={period.before} />
+      <Delta now={now} before={before} digits={1} of={now !== null && before !== null ? { now: now * wholeDays, before: before * wholeDays } : undefined} period={period.before} />
     </div>
     <div class="figure">
       <span class="name">Named the item</span>
       <b>{named === null ? '–' : `${named}%`}</b>
-      <Delta now={named} before={namedBefore} rate worse="neither" period={period.before} />
+      <Delta now={named} before={namedBefore} rate worse="neither" of={{ now: total, before: read.before.daily.right + read.before.daily.wrong }} period={period.before} />
     </div>
     <div class="figure">
       <span class="name">Busiest day</span>
@@ -70,7 +74,7 @@
     </div>
   </div>
 
-  <Section title="Players a day" says="Each column is a day's players: those who named the item at its foot, those who missed it above.">
+  <Section title="Players a day" says="Named it in gold, missed it in grey.">
     <DayColumns
       days={L.days.slice(from)}
       gold={L.daily.rightPerDay.slice(from)}
@@ -83,23 +87,29 @@
     />
   </Section>
 
-  {#if ranked.hardest.length}
+  {#if ranked.hardest.length || ranked.easiest.length}
     <div class="two">
-      <Section title="Hardest items" says="The fewest named these; days with at least 3 players, today left out.">
-        <DailyTable days={ranked.hardest} {itemOf} label="The hardest items" />
+      <Section title="Hardest items" says="Far fewer named these than usual.">
+        {#if ranked.hardest.length}
+          <DailyTable days={ranked.hardest} {itemOf} label="The hardest items" />
+        {:else}
+          <p class="soft">None far harder than usual yet.</p>
+        {/if}
       </Section>
-      <Section title="Easiest items" says="The most named these.">
+      <Section title="Easiest items" says="Far more named these than usual.">
         {#if ranked.easiest.length}
           <DailyTable days={ranked.easiest} {itemOf} label="The easiest items" />
         {:else}
-          <p class="soft">Not enough days yet.</p>
+          <p class="soft">None far easier than usual yet.</p>
         {/if}
       </Section>
     </div>
+  {:else if answered.length > 1}
+    <p class="soft">No item stands out as hard or easy yet: with this few players a day, chance alone moves the share named as much.</p>
   {/if}
 
   <Section title="Every day" says="Newest first.">
-    {#if newestFirst.length}
+    {#if answered.length}
       <DailyTable days={all ? newestFirst : newestFirst.slice(0, 14)} {itemOf} label="Today's unique, every day" today={read.to} />
       {#if newestFirst.length > 14}
         <button type="button" class="more" onclick={() => (all = !all)}>{all ? 'Show fewer' : `Show all ${newestFirst.length} days`}</button>
@@ -109,7 +119,14 @@
     {/if}
   </Section>
 
-  <p class="foot">These are the game's days: each runs from midnight to midnight UTC, when the item changes.</p>
+  <div class="foot">
+  <How
+    items={[
+      "The game's days run from midnight to midnight UTC, when the item changes.",
+      'Hardest and easiest: days with at least 3 players, today left out, whose share named is further from the usual than chance would take it with as many players; ranked with each share weighed by how many played, so a day of 3 says less than a day of 30.',
+    ]}
+  />
+  </div>
 </div>
 
 <style>
@@ -187,7 +204,7 @@
     }
   }
   /* A monitor on its side: the two side by side, so the view is one screen. */
-  @media (orientation: portrait) and (min-width: 900px) {
+  @media (orientation: portrait) and (min-width: 900px) and (min-height: 1500px) {
     .two {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }

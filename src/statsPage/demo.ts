@@ -10,11 +10,11 @@
 
 import type { Named } from './api.ts';
 import { keptChanges } from './changes.ts';
-import { sameSites, spikesOf } from './insights.ts';
+import { sameSites, spikesOf, stepsOf } from './insights.ts';
 import { DAILY_FROM, RETURNS, countsOf, daysBetween, isoWeek, modesOf, type PathCount } from './model.ts';
 import type { Read } from './read.ts';
 import { GROUPS, type Group, type Slices } from './slices.ts';
-import { addDays, dayIn, midnight } from './zone.ts';
+import { addDays, dayIn, hoursIn, midnight } from './zone.ts';
 
 /** The zone the made-up account cuts its days in. */
 const ZONE = 'Europe/Berlin';
@@ -119,6 +119,8 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
       const firstPlayed = ofThem(firstIn, 0.78, rnd);
       add('new/lobby', h, firstIn);
       add('new/played', h, firstPlayed);
+      // Their save's first item: a game's, or Today's unique's alone.
+      add('new/saved', h, firstPlayed + ofThem(fresh - firstIn, 0.2, rnd));
       add('new/finished', h, ofThem(firstPlayed, 0.74, rnd));
       // How far they got.
       const lobby = ofThem(came, 0.56, rnd);
@@ -261,10 +263,12 @@ export function demoRead(days: number, at = new Date()): Read {
   const hoursSoFar = Math.floor((at.getTime() - midnight(ZONE, today).getTime()) / 3_600_000) + 1;
   const nowPaths = pathsOf(daysBetween(from, today), hoursSoFar);
   const visitors = nowPaths.find((p) => p.path === '/')?.count ?? 0;
-  const now = countsOf(nowPaths, daysBetween(from, today), ZONE);
-  const before = countsOf(pathsOf(daysBetween(fromBefore, toBefore), hoursSoFar), daysBetween(fromBefore, toBefore), ZONE);
+  // (Its hour so far made up whole, as the rest; a usual day is had to the minute, as on the live page.)
+  const until = hoursIn(ZONE, today, at);
+  const now = countsOf(nowPaths, daysBetween(from, today), ZONE, until);
+  const before = countsOf(pathsOf(daysBetween(fromBefore, toBefore), hoursSoFar), daysBetween(fromBefore, toBefore), ZONE, until);
   return {
-    v: 6,
+    v: 10,
     span: days,
     from,
     to: today,
@@ -290,6 +294,9 @@ export function demoRead(days: number, at = new Date()): Read {
     spikeRefs: Object.fromEntries(spikesOf(now.days, now.visitors.perDay).map((sp) => [sp.day, sameSites(dayRefs(sp.day, sp.value))])),
     at: at.getTime(),
     complete: true,
+    // (Made up as though counted from long before the longest period.)
+    compare: true,
+    began: null,
   };
 }
 
@@ -305,7 +312,7 @@ const TILTS: Record<string, Partial<Record<Group | 'success', number>>> = {
   Germany: { delve: 1.7, race: 0.8, daily: 1.25, back: 1.35, new: 0.8 },
   'United Kingdom': { turns: 1.3 },
   Poland: { delve: 1.4, join: 1.3 },
-  Brazil: { turns: 1.5, daily: 0.6, success: 0.8, failed: 2, played: 0.75, back: 0.6, new: 1.2 },
+  Brazil: { turns: 1.5, daily: 0.6, success: 0.8, failed: 3, played: 0.75, back: 0.6, new: 1.2 },
   France: { race: 0.6, daily: 1.4 },
   Russia: { race: 1.4, success: 0.85, failed: 1.6 },
   'Korea, Republic of': { race: 1.7, daily: 1.5, played: 1.3 },
@@ -323,10 +330,12 @@ export function demoSlices(read: Read): Slices {
   const sum = (vs: number[]) => vs.reduce((a, b) => a + b, 0);
   const total: Record<Group, number> = {
     visit: c.visitors.total,
+    loads: stepsOf(c).visitors,
+    asked: stepsOf(c).askedVisitors,
     new: sum(c.visits.new),
     back: RETURNS.reduce((n, r) => n + sum(c.visits[r]), 0),
     app: sum(c.visits.app),
-    played: sum(c.reach.played),
+    played: stepsOf(c).played,
     turns: played.get('turns') ?? 0,
     race: played.get('race') ?? 0,
     delve: played.get('delve') ?? 0,
@@ -352,5 +361,27 @@ export function demoSlices(read: Read): Slices {
     out.joined = (out.join ?? []).map((x) => ({ name: x.name, count: Math.round(x.count * Math.min(1, success * (TILTS[x.name]?.success ?? 1))) })).filter((x) => x.count > 0);
     return out;
   };
-  return { v: 3, span: read.span, from: read.from, at: read.at, locations: spread(read.countries), systems: spread(read.systems) };
+  /** Each ten depths' runs spread like Delve's games, the made-up Germans (and Linux) going deeper. */
+  const depths = (list: Named[]) => {
+    const all = list.reduce((n, x) => n + x.count, 0) || 1;
+    const deep = new Set(['Germany', 'Linux']);
+    return Object.fromEntries(
+      c.delve.ranges
+        .filter((r) => r.count > 0)
+        .map((r) => {
+          const weight = list.map((x) => (x.count / all) * (TILTS[x.name]?.delve ?? 1) * (deep.has(x.name) ? 1 + r.from / 25 : 1));
+          const sum = weight.reduce((a, b) => a + b, 0) || 1;
+          return [r.from, list.map((x, i) => ({ name: x.name, count: Math.round((r.count * weight[i]) / sum) })).filter((x) => x.count > 0)];
+        }),
+    );
+  };
+  return {
+    v: 4,
+    span: read.span,
+    from: read.from,
+    at: read.at,
+    locations: spread(read.countries),
+    systems: spread(read.systems),
+    depths: { locations: depths(read.countries), systems: depths(read.systems) },
+  };
 }

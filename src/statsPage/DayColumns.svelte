@@ -1,10 +1,11 @@
 <script lang="ts">
   // Columns a day (or a week), each split into two stacked parts: the one
   // looked at in gold at the foot, the other in grey above it, so the
-  // column's height is the whole. Pointing (or the arrow keys) reads a
+  // column's height is the whole, a dashed line across at the average of the
+  // whole columns (the last, still going, left out). Pointing (or the arrow keys) reads a
   // column's figures, with `note` saying more about its day. Its labels
   // follow the page's type, as TrendChart's do.
-  import { axis, compact, fmt, labelled, longDay, shortDay } from './chart';
+  import { average, axis, compact, fmt, labelled, longDay, shortDay } from './chart';
   import { Crosshair } from './crosshair.svelte';
   import { grouped } from './model';
   import { rootFont } from './rootFont.svelte';
@@ -33,6 +34,10 @@
   const r = $derived(grouped(days, grey, weekly ? 7 : 1).values);
   const n = $derived(g.values.length);
   const total = (i: number) => (g.values[i] ?? 0) + (r[i] ?? 0);
+  const mean = $derived.by(() => {
+    const k = n > 1 ? n - 1 : n;
+    return k ? Array.from({ length: k }, (_, i) => total(i)).reduce((a, b) => a + b, 0) / k : null;
+  });
 
   let width = $state(0);
   // Room on the right for the last date, centred under its column.
@@ -86,6 +91,10 @@
           <rect class="grey" x={x(i)} y={y0 - h(v) - h(r[i] ?? 0)} width={barW} height={h(r[i] ?? 0)} />
         </g>
       {/each}
+      {#if mean !== null && mean > 0}
+        <line class="mean" x1={PAD.left} x2={PAD.left + plotW} y1={y0 - h(mean)} y2={y0 - h(mean)} />
+        <text class="mean-label" x={PAD.left + plotW} y={y0 - h(mean) - fs * 0.45} text-anchor="end">average {average(mean)} a {weekly ? 'week' : 'day'}</text>
+      {/if}
       {#each ticks as i (i)}
         <text class="tick" x={x(i) + barW / 2} y={height - fs * 0.4} text-anchor="middle">{shortDay(g.days[i])}</text>
       {/each}
@@ -102,6 +111,20 @@
 </div>
 
 <style>
+  .mean {
+    stroke: var(--a-ink);
+    stroke-width: 1.5;
+    stroke-dasharray: 6 6;
+    opacity: 0.55;
+  }
+  .mean-label {
+    font-family: var(--font-data);
+    fill: var(--a-ink);
+    font-weight: 600;
+    paint-order: stroke;
+    stroke: var(--a-surface);
+    stroke-width: 4px;
+  }
   .legend {
     display: flex;
     flex-wrap: wrap;

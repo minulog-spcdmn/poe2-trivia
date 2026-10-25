@@ -28,6 +28,19 @@ export function dayIn(zone: string, at: Date): string {
   return `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`;
 }
 
+/**
+ * The hours `today` (in `zone`) has had by `at`, a part of the one it's in
+ * too: by the clock there, as GoatCounter's 24 hours of a day are, so on
+ * the day the clocks change it's the hour on the clock, not the time gone
+ * since midnight. 0 before the day, 24 after it.
+ */
+export function hoursIn(zone: string, today: string, at: Date): number {
+  const day = dayIn(zone, at);
+  if (day !== today) return day < today ? 0 : 24;
+  const p = parts(zone, at);
+  return p.h + p.min / 60 + (at.getUTCSeconds() + at.getUTCMilliseconds() / 1000) / 3600;
+}
+
 /** `day` moved by `n` days. */
 export function addDays(day: string, n: number): string {
   const d = new Date(`${day}T12:00:00Z`);

@@ -113,9 +113,12 @@ joins, failures (`error/script` among them) and `sync/paired`. Visits count
 once a person in eight hours, and so do the steps (`countReach`, each once a
 page load): `reach/page` on every counted load, what the others are set
 against; `reach/lobby`, `reach/played`, `reach/finished` from each seated
-device (not one watching); `reach/games-2|5` and `reach/time-2m|10m|30m`
-(active time) within one page load; `reach/codex`, `reach/achievements`;
-and `new/lobby|played|finished` for a load whose visit had no save. With a
+device (not one watching), a game started without a lobby entering it too;
+`reach/games-2|5` and `reach/time-2m|10m|30m` (active time) within one page
+load; `reach/codex`, `reach/achievements`;
+and `new/lobby|played|finished` for a load whose visit had no save, with
+`new/saved` as that save gets its first item (a game's or Today's unique's),
+what a cohort is set against. With a
 visit, read from the codex with its paired devices' copies when the page is idle
 (so it speaks for the player, not the device):
 `visit/new` or `visit/back-1d|7d|30d|later` (nothing within eight hours of
@@ -125,11 +128,15 @@ campaign. Counts go out one at a time, 0.6 s apart after a random wait:
 GoatCounter turns away more than four a second from one address.
 
 **Reading them:** `stats.html` (Analytics, `src/statsPage`), with the
-owner's read-only GoatCounter API key, which stays in that browser. Its
+owner's read-only GoatCounter API key, which stays in that browser until
+"Forget the key on this browser" at the foot of the page. Its
 overview answers "how is it going?" and keeps to what's worth a glance,
-with room around it: four figures for the period, today's visitors,
-games and answers against the same time a period ago (each with what the
-last update added), how busy each day was, what happened, when they
+with room around it: four figures for the period (visits and games a day
+on average, over the whole days), today's visits, games and answers
+against a usual day by the same hour (the last 28 whole days' average up
+to then, `model.ts` usualByNow, so a game that grows isn't busier than
+usual every day; each with what the last update added), how busy
+each day was against its average line, what happened, when they
 come, where they are and what they play; the rest is in the views
 behind it. Joining only shows there when its failures run well above the
 usual rate, today's or the period's (`insights.ts` troubleOf), as a line
@@ -141,32 +148,57 @@ by itself; leaving full screen leaves it. On a monitor on its side
 sized from it. On a big monitor (1440p, 4K) every view fits one screen, a chart giving up what runs past it or
 taking what's left (`fitChart.svelte.ts`), its labels sized with the
 type; "What happened" reads out the days far busier
-than usual and the site behind each, and the sites and countries that
-brought far more or fewer than the period before (`insights.ts`, only
-what's beyond chance). Each update keeps what it brought in
+than usual (the median of the days within two weeks of it) and the site behind each, and the sites and countries that
+brought far more or fewer than the period before, beyond how they all
+moved (`insights.ts`, only what's beyond chance). A change against the
+period before is coloured only when chance couldn't have made it
+(`Delta.svelte`: a count by itself, a share by how many it's of, and
+never while fewer than three people apart, `insights.ts` rateBeyondChance).
+The days before counting began (the first day anything was counted,
+`model.ts` firstCounted) weren't quiet, they weren't counted: a period
+starts at the first whole day counted instead (`model.ts` countedSpan;
+that first day began partway through), the longest period offered named
+"Since <day>" while counting hasn't gone on that long, and nothing is
+compared with a period before that wasn't counted whole (`read.ts`
+COMPARE: no changes, no grey line). When they come is by weekday and hour
+once there are four weeks to average each over, before that every day's
+hours together, the busiest hour named only beyond chance;
+Today's unique's hardest and easiest items are only those named far
+less or more than usual, beyond what chance does with so few players.
+Each view keeps how it's counted folded away below it (`How.svelte`).
+Each update keeps what it brought in
 (`changes.ts`): the visitors, games and answers added, and the countries
 and systems the new visitors came from and on, lit on the overview.
 Visitors (`#visitors`) also has how far a visit gets (a game entered,
 started, finished, two and five in one page load) and a first visit's
 own steps, how long it stays and what else it opens, who comes back to a
-save and how long after, by the week they first played too, the installed
-app's share, and the tagged links (`?ref=`) beside the referrers; each
+save and how long after, by the week they first played too (for every
+100 whose save began that week, `new/saved`, once a week has been counted
+from its Monday; a week none came back from a row of noughts), the installed app's share, and the
+tagged links (`?ref=`) beside the referrers (a site's subdomains as one); each
 share is of page loads (`reach/page`) from the day those were first
 counted, against the period before only where that was a share of page
 loads too (`insights.ts`). Games once counted online and
 hot-seat apart (`play/race-online`) read as their mode (`model.ts`
 currentName). `#groups` (Groups) opens on what stands out between groups,
-each a sentence, and sets the visitors from a country, or on a system or
-a kind of device, against everyone: who played a game at all (guests
-too), the games they start, Today's unique, joins and failures. A mode
-can be picked with them (`#groups/place/Germany/mode/delve`), or alone,
-each showing where it's played most for its visitors, a bar a country
-(`slices.ts`); a country and a device never together, as GoatCounter
+each a sentence and only beyond what chance makes of groups so small
+(`slices.ts` apartFrom), and sets the visits from a country, or on a system or
+a kind of device, against everyone in a table, each row saying what it
+counts: who played a game at all (guests too), the games they start,
+Today's unique, joins and failures, and their games by mode. A mode
+alone shows its own figures (games, played to the end, players a game)
+and where it's played most for its visits, a bar a country; picked with
+a group (`#groups/place/Germany/mode/delve`), the group's games of it
+against everyone's. Delve, either way, shows how deep its runs go: where
+half end, the deepest, and the share that got each ten depths deep, a
+group's against everyone's (`slices.ts` depthsIn, `DelveDepths.svelte`);
+a country and a device never together, as GoatCounter
 counts the two apart. Every country, system and mode name across the
 views opens its group. GoatCounter keeps no visit with its
 events, but breaks any set of paths down by country and by system, so
 each thing people do is read once for each, only while that view is
-open, and kept half an hour. On the dev server and the beta,
+open, and kept half an hour; Delve's depths, two calls for each ten
+depths, only once a group is picked with Delve. On the dev server and the beta,
 `stats.html?demo` fills every view with made-up numbers
 (`src/statsPage/demo.ts`), no key needed, to look at the layout with.
 

@@ -3,13 +3,15 @@
   // Delve's runs get. A game is counted once, on the device that runs it
   // (the host's), games once counted online and hot-seat apart as one
   // (model.ts currentName).
-  import { fmt } from './chart';
+  import { average, fmt, shortDay } from './chart';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
-  import { MODES, MODE_NAMES, descentOf, finishedShare, modesOf, percent, seatsOf, sizeName, sizesOf } from './model';
+  import { MODES, MODE_NAMES, finishedShare, modesOf, percent, seatsOf, sizeName, sizesOf, dayAverages } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import { hashOf } from './slices';
+  import DelveDepths from './DelveDepths.svelte';
+  import How from './How.svelte';
   import TrendChart from './TrendChart.svelte';
 
   let { read, period, weekly }: { read: Read; period: Period; weekly: boolean } = $props();
@@ -20,11 +22,14 @@
   const topMode = $derived(Math.max(1, ...modes.map((m) => m.started)));
   /** Games with players at the host's own screen, every mode. */
   const screen = $derived(modes.reduce((n, m) => n + m.screen, 0));
+  /** Games a day over the whole days (today's left out), against the period before's. */
+  const perDay = $derived(dayAverages(L.games.perDay, read.before.games.perDay));
   const sizes = $derived(sizesOf(L.games.rows));
   const sized = $derived(sizes.reduce((n, s) => n + s.total, 0));
   const topSize = $derived(Math.max(1, ...sizes.map((s) => s.total)));
   const ranges = $derived(sizes.some((s) => s.from !== s.to));
-  const descent = $derived(descentOf(L.delve.ranges));
+  /** Delve's runs started: those left mid-run (the tab closed) never say how deep they got, so the depths are of the runs that ended. */
+  const delveStarted = $derived(modes.find((m) => m.mode === 'delve')?.started ?? 0);
   /** Players a game, one decimal, of the games whose size is known. */
   const perGame = (rows: typeof L.games.rows) => {
     const { seats, games } = seatsOf(rows);
@@ -34,23 +39,24 @@
   let innerWidth = $state(1400);
   let innerHeight = $state(900);
   /** A big monitor, or one on its side, has the view on one screen: the chart gives up what runs past it. */
-  const chart = fitChart({ on: () => innerWidth >= 1900 || (innerHeight > innerWidth && innerWidth >= 900), base: () => 340, least: 180 });
+  const chart = fitChart({ on: () => innerWidth >= 1900 || (innerHeight > innerWidth && innerWidth >= 900 && innerHeight >= 1500), base: () => 340, least: 180 });
 </script>
 
 <svelte:window bind:innerWidth bind:innerHeight />
 
 <div class="stack">
-  <Section title="Games a day" says="Games started, every mode.">
+  <Section title="Games a day" says="Games started, every mode; {fmt(L.games.started)} in all.">
     {#snippet aside()}
       <div class="total">
-        <b>{fmt(L.games.started)}</b>
-        <Delta now={L.games.started} before={read.before.games.started} period={period.before} />
+        <b>{perDay.now === null ? '–' : average(perDay.now)}</b>
+        <span class="soft">a day on average</span>
+        <Delta now={perDay.now} before={perDay.before} digits={1} of={perDay.of} period={period.before} />
       </div>
     {/snippet}
     <TrendChart days={L.days} now={L.games.perDay} before={read.before.games.perDay} {weekly} what="Games" names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={chart.height} />
   </Section>
 
-  <Section title="Modes" says="Played to the end: the game reached its results, or a Delve run its last life. At one screen: with players seated at the host's own screen, hot-seat games before that was counted.">
+  <Section title="Modes" says="Games started by mode.">
     <div class="scroll-x">
       <table class="table" aria-label="Games by mode">
         <thead>
@@ -60,26 +66,26 @@
             <th scope="col" class="n opt">Share</th>
             <th scope="col" class="n">To the end</th>
             <th scope="col" class="n opt">Players a game</th>
-            <th scope="col" class="n opt">At one screen</th>
+            <th scope="col" class="n opt">Shared a screen</th>
             <th scope="col" class="bar"><span class="sr">Against the most played</span></th>
           </tr>
         </thead>
         <tbody>
           {#each modes as m (m.mode)}
             <tr class:none={!m.started}>
-              <th scope="row"><a class="pick" href={hashOf({ mode: m.mode })} title="Where it's played most">{MODE_NAMES[m.mode]}</a><span class="on-phone">{percent(m.started, L.games.started)} of games, {perGame(L.games.rows.filter((r) => r.mode === m.mode))} players each{#if m.screen}; {fmt(m.screen)} at one screen{/if}</span></th>
+              <th scope="row"><a class="pick" href={hashOf({ mode: m.mode })} title="Where it's played most">{MODE_NAMES[m.mode]}</a><span class="on-phone">{percent(m.started, L.games.started)} of games, {perGame(L.games.rows.filter((r) => r.mode === m.mode))} players each{#if m.screen}; {fmt(m.screen)} shared a screen{/if}</span></th>
               <td class="n strong">{fmt(m.started)}</td>
               <td class="n opt">{percent(m.started, L.games.started)}</td>
               <td class="n">{finishedShare(m.finished, m.started)}</td>
               <td class="n opt">{perGame(L.games.rows.filter((r) => r.mode === m.mode))}</td>
-              <td class="n opt" class:soft={!m.screen}>{m.screen ? fmt(m.screen) : '–'}</td>
+              <td class="n opt" class:soft={!m.screen}>{fmt(m.screen)}</td>
               <td class="bar"><span class="meter"><i style:width="{(100 * m.started) / topMode}%"></i></span></td>
             </tr>
           {/each}
         </tbody>
         <tfoot>
           <tr>
-            <th scope="row">All<span class="on-phone">{perGame(L.games.rows)} players each{#if screen}; {fmt(screen)} at one screen{/if}</span></th>
+            <th scope="row">All<span class="on-phone">{perGame(L.games.rows)} players each{#if screen}; {fmt(screen)} shared a screen{/if}</span></th>
             <td class="n">{fmt(L.games.started)}</td>
             <td class="n opt">{L.games.started ? '100%' : '–'}</td>
             <td class="n">{finishedShare(L.games.finished, L.games.started)}</td>
@@ -93,7 +99,7 @@
   </Section>
 
   <div class="two">
-    <Section title="How many play" says="Games by the players in them: seats taken, or in Delve those who set out.">
+    <Section title="How many play" says="Games by how many played them.">
       {#if sized}
         <div class="scroll-x">
           <table class="table" aria-label="Games by how many played">
@@ -109,7 +115,7 @@
               {#each sizes as s (sizeName(s))}
                 <tr>
                   <th scope="row">{sizeName(s)}{#if s.from !== s.to}<sup>*</sup>{/if}</th>
-                  {#each MODES as m (m)}<td class="n" class:soft={!s.modes[m]}>{s.modes[m] ? fmt(s.modes[m]) : '–'}</td>{/each}
+                  {#each MODES as m (m)}<td class="n" class:soft={!s.modes[m]}>{fmt(s.modes[m] ?? 0)}</td>{/each}
                   <td class="n strong">{fmt(s.total)}</td>
                   <td class="bar"><span class="meter"><i style:width="{(100 * s.total) / topSize}%"></i></span></td>
                 </tr>
@@ -123,35 +129,24 @@
       {/if}
     </Section>
 
-    <Section title="How deep Delve goes" says="Runs by the depth they ended at, and how many got at least that deep.">
-      {#if descent.length}
-        <div class="scroll-x">
-          <table class="table" aria-label="Delve runs by depth">
-            <thead>
-              <tr>
-                <th scope="col">Depth</th>
-                <th scope="col" class="n">Ended there</th>
-                <th scope="col" class="n">Got this deep</th>
-                <th scope="col" class="bar"><span class="sr">Share of runs that got this deep</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each descent as d (d.from)}
-                <tr>
-                  <th scope="row">{d.from}–{d.from + 9}</th>
-                  <td class="n" class:soft={!d.ended}>{fmt(d.ended)}</td>
-                  <td class="n strong">{percent(d.reached, L.delve.total)}</td>
-                  <td class="bar"><span class="meter"><i style:width="{(100 * d.reached) / Math.max(1, L.delve.total)}%"></i></span></td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      {:else}
-        <p class="soft">No Delve run ended in these days.</p>
-      {/if}
+    <Section
+      title="How deep Delve goes"
+      says="Runs by the depth they ended at{delveStarted > L.delve.total ? `; ${fmt(delveStarted)} were started` : ''}."
+    >
+      <DelveDepths ranges={L.delve.ranges} />
     </Section>
   </div>
+
+  <How
+    items={[
+      "A game counts once, on the device that runs it (the host's).",
+      'To the end: the game reached its results, or a Delve run its last life.',
+      "Shared a screen: games with a player seated at the host's own screen (before that was counted, the hot-seat games).",
+      'Players a game: seats taken, or in Delve those who set out.',
+      'A Delve run left mid-run (the tab closed) never says how deep it got, so the depths are of the runs that ended.',
+      L.delve.leftOut.length > 0 && `The depths leave out ${L.delve.leftOut.map(shortDay).join(', ')}, when an early build counted some depths twice.`,
+    ]}
+  />
 </div>
 
 <style>
@@ -199,20 +194,13 @@
   .soft {
     color: var(--a-muted);
   }
-  .sr {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-  }
   @media (max-width: 1100px) {
     .two {
       grid-template-columns: minmax(0, 1fr);
     }
   }
   /* A monitor on its side: the two side by side, so the view is one screen. */
-  @media (orientation: portrait) and (min-width: 900px) {
+  @media (orientation: portrait) and (min-width: 900px) and (min-height: 1500px) {
     .two {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }

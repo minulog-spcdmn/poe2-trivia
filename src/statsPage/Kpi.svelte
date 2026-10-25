@@ -1,7 +1,8 @@
 <script lang="ts">
-  // A headline figure on the overview: what it is, the number, what it means
-  // in a line, its days in a small line (`spark`), and its change against
-  // the period before. The whole tile opens the view that tells more.
+  // A headline figure on the overview: what it is, the number with its
+  // change against the period before right under it, what it means in a
+  // line, and its days in a small line (`spark`) at the foot. The whole tile
+  // opens the view that tells more.
   import type { Snippet } from 'svelte';
 
   let { label, value, means, href, change, spark }: { label: string; value: string; means: string; href: string; change?: Snippet; spark?: Snippet } = $props();
@@ -10,9 +11,9 @@
 <a class="kpi" {href}>
   <span class="name">{label}<span class="more" aria-hidden="true">›</span></span>
   <span class="value">{value}</span>
+  {#if change}<span class="change">{@render change()}</span>{/if}
   <span class="means">{means}</span>
   {#if spark}<span class="spark">{@render spark()}</span>{/if}
-  {#if change}<span class="change">{@render change()}</span>{/if}
 </a>
 
 <style>
@@ -62,12 +63,12 @@
     font-size: 1.05rem;
     color: var(--a-muted);
   }
+  /* At the foot, so the sparks of a row line up whatever the lines above them. */
   .spark {
-    margin-top: 0.5rem;
-  }
-  .change {
     margin-top: auto;
     padding-top: 0.6rem;
+  }
+  .change {
     font-size: 1.125rem;
   }
   @media (max-width: 600px) {

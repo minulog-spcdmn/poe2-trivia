@@ -17,7 +17,7 @@
   // itself while the page is in view, as long as the hour's requests stay
   // well under GoatCounter's 500 (api.ts requestsLastHour). The numbers on
   // show stay as they are while newer ones are read.
-  import { onMount, tick, untrack } from 'svelte';
+  import { onMount, setContext, tick, untrack } from 'svelte';
   import { readStored, removeStoredStarting, writeStored } from '../lib/storage';
   import { ApiError, Cancelled, DASHBOARD, HOUR_LIMIT, accountZone, forgetKey, pathCounts, pathsBy, requestsLastHour, saveKey, savedKey, visitorsBy, type Named, type Span } from './api';
   import { sameSites, spikesOf } from './insights';
@@ -29,13 +29,13 @@
   import GroupsView from './GroupsView.svelte';
   import JoiningView from './JoiningView.svelte';
   import KeyGate from './KeyGate.svelte';
-  import { countsOf, daysBetween } from './model';
+  import { countedSpan, countsOf, daysBetween, firstCounted } from './model';
   import Overview from './Overview.svelte';
-  import { PERIODS, VIEWS, type Read, type View } from './read';
+  import { COMPARE, PERIODS, VIEWS, counted, type Read, type View } from './read';
   import Seg from './Seg.svelte';
-  import { hashOf, selOf, sliceCalls, type Sel, type Slices } from './slices';
+  import { depthCalls, hashOf, selOf, sliceCalls, type Sel, type Slices } from './slices';
   import VisitorsView from './VisitorsView.svelte';
-  import { addDays, dayIn, midnight } from './zone';
+  import { addDays, dayIn, hoursIn, midnight } from './zone';
   import { CHANNEL } from '../lib/channel';
   import { demoSlices, demoUpdate } from './demo';
 
@@ -57,7 +57,8 @@
   const stored = Number(readStored('analytics.days'));
   const firstSpan = PERIODS.some((p) => p.value === stored) ? stored : 30;
   let span = $state<number>(firstSpan);
-  const period = $derived(PERIODS.find((p) => p.value === span) ?? PERIODS[1]);
+  /** The day counting began, once a read has started there (counted): the periods it hasn't reached yet are one choice. Kept, for the periods read inside it. */
+  let began = $state<string | null>(demo ? null : readStored('analytics.began'));
 
   const viewOf = (hash: string): View => VIEWS.find((v) => v.value !== 'overview' && (`#${v.value}` === hash || hash.startsWith(`#${v.value}/`)))?.value ?? 'overview';
   let view = $state<View>(viewOf(location.hash));
@@ -125,7 +126,7 @@
     if (had) return had;
     try {
       const r = JSON.parse(readStored(`analytics.read.${days}`, 'session') ?? 'null') as Read | null;
-      if (r?.v !== 6 || r.span !== days) return null;
+      if (r?.v !== 10 || r.span !== days) return null;
       cache.set(days, r);
       return r;
     } catch {
@@ -201,19 +202,27 @@
       const fromBefore = addDays(from, -days);
       const toBefore = addDays(today, -days);
       const now: Span = { start: midnight(tz, from), end: at };
-      const before: Span = { start: midnight(tz, fromBefore), end: new Date(midnight(tz, toBefore).getTime() + (at.getTime() - midnight(tz, today).getTime())) };
-      const [n, b, systems, countries, refs, campaigns, countriesBefore, refsBefore] = await Promise.all([
-        step(pathCounts(k, now, signal)),
-        step(pathCounts(k, before, signal)),
-        step(visitorsBy(k, now, 'systems', signal)),
-        step(visitorsBy(k, now, 'locations', signal)),
-        step(visitorsBy(k, now, 'toprefs', signal)),
-        step(visitorsBy(k, now, 'campaigns', signal)),
-        step(visitorsBy(k, before, 'locations', signal)),
-        step(visitorsBy(k, before, 'toprefs', signal)),
+      // (By the clock: on a day the clocks change, the time gone since midnight is an hour off it.)
+      const before: Span = { start: midnight(tz, fromBefore), end: new Date(midnight(tz, toBefore).getTime() + hoursIn(tz, today, at) * 3_600_000) };
+      const [n, b] = await Promise.all([step(pathCounts(k, now, signal)), step(pathCounts(k, before, signal))]);
+      if (ask !== asked) return;
+      // The hours today has had (a part of the one it's in too), which the period before's last day is cut at too.
+      const until = hoursIn(tz, today, at);
+      // The period starts where whole days were counted (model.ts countedSpan), the one before the same many days back; who the visitors were is read from there too.
+      const first = firstCounted([...b.paths, ...n.paths]);
+      const { start, compare } = countedSpan(first, from, fromBefore, today);
+      const shown: Span = { start: midnight(tz, start), end: at };
+      const shownBefore: Span = { ...before, start: midnight(tz, addDays(start, -days)) };
+      const [systems, countries, refs, campaigns, countriesBefore, refsBefore] = await Promise.all([
+        step(visitorsBy(k, shown, 'systems', signal)),
+        step(visitorsBy(k, shown, 'locations', signal)),
+        step(visitorsBy(k, shown, 'toprefs', signal)),
+        step(visitorsBy(k, shown, 'campaigns', signal)),
+        step(visitorsBy(k, shownBefore, 'locations', signal)),
+        step(visitorsBy(k, shownBefore, 'toprefs', signal)),
       ]);
       if (ask !== asked) return;
-      const counts = countsOf(n.paths, daysBetween(from, today), tz);
+      const counts = countsOf(n.paths, daysBetween(start, today), tz, until);
       // The sites behind the busiest days: a day gone by is read once and kept (it never changes), today each time.
       const spikeRefs: Record<string, Named[]> = {};
       const keptRefs = dayRefsOf(readStored(DAY_REFS_KEY), tz);
@@ -235,15 +244,15 @@
       if (added) writeStored(DAY_REFS_KEY, dayRefsToKeep(keptRefs, tz, addDays(today, -Math.max(...PERIODS.map((p) => p.value)))));
       if (ask !== asked) return;
       const r: Read = {
-        v: 6,
+        v: 10,
         span: days,
-        from,
+        from: start,
         to: today,
-        fromBefore,
+        fromBefore: addDays(start, -days),
         toBefore,
         zone: tz,
         now: counts,
-        before: countsOf(b.paths, daysBetween(fromBefore, toBefore), tz),
+        before: countsOf(b.paths, daysBetween(addDays(start, -days), toBefore), tz, until),
         systems,
         countries,
         // Each site once: a tagged link's visit comes with its referrer as it was (insights.ts sameSites).
@@ -254,8 +263,11 @@
         spikeRefs: Object.fromEntries(Object.entries(spikeRefs).map(([day, list]) => [day, sameSites(list)])),
         at: at.getTime(),
         complete: n.complete && b.complete,
+        compare,
+        began: first,
       };
       r.changes = keptChanges(had, r);
+      if (counted(r) && r.from !== began) writeStored('analytics.began', (began = r.from));
       keep(r);
       fails = { n: 0, at: 0, busy: false };
       if (days === span) read = r;
@@ -287,7 +299,7 @@
   const keptSlices = (r: Read): Slices | null => {
     try {
       const s = JSON.parse(readStored(slicesKey(r.span), 'session') ?? 'null') as Slices | null;
-      return s?.v === 3 && s.span === r.span && s.from === r.from ? s : null;
+      return s?.v === 4 && s.span === r.span && s.from === r.from ? s : null;
     } catch {
       return null;
     }
@@ -305,17 +317,19 @@
     // Not by itself while the hour's requests run low; the Read again button still reads.
     if (held && !force) return;
     slicer?.abort();
+    stopDepths();
     const ctrl = (slicer = new AbortController());
     const calls = sliceCalls(r.now);
     let done = 0;
     slicing = 0.02;
     slicesFailed = '';
     try {
-      const out: Slices = { v: 3, span: r.span, from: r.from, at: Date.now(), locations: {}, systems: {} };
-      const within: Span = { start: midnight(r.zone, r.from), end: new Date() };
+      const out: Slices = { v: 4, span: r.span, from: r.from, at: Date.now(), locations: {}, systems: {} };
+      const end = new Date(out.at);
       await Promise.all(
         calls.map((c) =>
-          pathsBy(key, within, c.dim, c.paths, ctrl.signal).then((list) => {
+          // Each from its own first day (slices.ts groupFrom), so a share and what it's of cover the same days.
+          pathsBy(key, { start: midnight(r.zone, c.from), end }, c.dim, c.paths, ctrl.signal).then((list) => {
             out[c.dim][c.group] = list;
             // (Not once it's been called off: what's read for another period has its own.)
             if (slicer === ctrl) slicing = ++done / calls.length;
@@ -339,6 +353,62 @@
     if (view !== 'groups' || board || !read || !key) return;
     const r = read;
     untrack(() => void loadSlices(r));
+  });
+
+  // ---- how deep a group's Delve runs go: two calls for each ten depths, so read only once a group is picked with Delve, to the groups' own time ----
+  let depthsReading = $state(false);
+  let depthsFailed = $state('');
+  let depther: AbortController | null = null;
+  /** The groups' read (its `at`) whose depths are being read, so each is read once. */
+  let depthsFor = 0;
+  /** Calls off a depths read, and forgets how the last went: another period's, or another key's, are its own. */
+  function stopDepths() {
+    depther?.abort();
+    depther = null;
+    depthsReading = false;
+    depthsFailed = '';
+    depthsFor = 0;
+  }
+  /** `force`: even while the hour's requests run low (the button). */
+  async function loadDepths(r: Read, s: Slices, force = false) {
+    if (depthsFor === s.at || (held && !force)) return;
+    depthsFor = s.at;
+    depther?.abort();
+    const ctrl = (depther = new AbortController());
+    depthsReading = true;
+    depthsFailed = '';
+    try {
+      // (Depths with no run to read are none, not unread.)
+      const depths: NonNullable<Slices['depths']> = { locations: {}, systems: {} };
+      const end = new Date(s.at);
+      await Promise.all(
+        depthCalls(r.now).map((c) =>
+          pathsBy(key, { start: midnight(r.zone, c.start), end }, c.dim, c.paths, ctrl.signal).then((list) => {
+            depths[c.dim]![c.from] = list;
+          }),
+        ),
+      );
+      const withDepths: Slices = { ...$state.snapshot(s), depths };
+      if (keptSlices(r)?.at === s.at) writeStored(slicesKey(r.span), JSON.stringify(withDepths), 'session');
+      if (slices?.at === s.at) slices = withDepths;
+    } catch (err) {
+      ctrl.abort();
+      if (depthsFor === s.at) depthsFor = 0;
+      if (!(err instanceof Cancelled) && depther === ctrl) depthsFailed = err instanceof Error ? err.message : 'Something went wrong.';
+    } finally {
+      if (depther === ctrl) {
+        depther = null;
+        depthsReading = false;
+      }
+      countRequests();
+    }
+  }
+  $effect(() => {
+    // (Not while the groups are being read again: the depths go with the new ones.)
+    if (view !== 'groups' || board || !read || !key || !slices || slices.depths || slicing > 0 || !sel?.who || sel.mode !== 'delve') return;
+    const r = read;
+    const s = slices;
+    untrack(() => void loadDepths(r, s));
   });
 
   /** The hour's requests, counted once for the footer and for whether updating by itself holds off. */
@@ -377,10 +447,12 @@
   function pick(days: number) {
     span = days;
     writeStored('analytics.days', String(days));
-    read = cached(days);
+    // The period before stays on show, faded, till the new one's read: the page doesn't fall back to its skeleton.
+    read = cached(days) ?? read;
     slicer?.abort();
     slicer = null;
     slicing = 0;
+    stopDepths();
     void load(days);
   }
   function useKey(k: string) {
@@ -398,6 +470,7 @@
     slicer?.abort();
     slicer = null;
     slicing = 0;
+    stopDepths();
     slices = null;
     cache.clear();
     zone = null;
@@ -412,7 +485,28 @@
     const m = Math.floor((clock - t) / 60_000);
     return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ago`;
   };
-  const weekly = $derived(!!read && read.span > 90);
+  const chosen = $derived(PERIODS.find((p) => p.value === (read?.span ?? span)) ?? PERIODS[1]);
+  /** The shortest period that holds every day counted so far, where counting began inside the longest: it and those longer are one choice, "Since Oct 16". */
+  const cover = $derived.by(() => {
+    if (!began || !read) return null;
+    const n = daysBetween(began, read.to).length;
+    return n > PERIODS[PERIODS.length - 1].value ? null : (PERIODS.find((p) => p.value >= n) ?? null);
+  });
+  const periodOptions = $derived(
+    PERIODS.filter((p) => !cover || p.value <= cover.value).map((p) => ({ value: p.value, name: p === cover ? `Since ${shortDay(began!)}` : p.name })),
+  );
+  /** Whether what's on show is another period's, kept while the picked one is read. */
+  const stale = $derived(!!read && read.span !== span);
+  /** The period, said as the days it covers: from where counting began, where that was inside it. */
+  const period = $derived.by(() => {
+    if (!read || !counted(read)) return chosen;
+    const n = read.now.days.length;
+    return { ...chosen, now: n === 1 ? 'The first day counted' : `The ${n} days counted`, before: n === 1 ? 'the day before' : `the ${n} days before` };
+  });
+  // By the week only where there are more days than a chart can draw one by one.
+  const weekly = $derived(!!read && read.now.days.length > 90);
+  // Nothing is compared with a period before that wasn't counted in full (read.ts COMPARE).
+  setContext(COMPARE, () => read?.compare ?? true);
 
   // ---- full screen: kept awake, the pointer out of the way ----
   let full = $state(!!document.fullscreenElement);
@@ -498,32 +592,30 @@
         <a class="icon-btn" href={DASHBOARD} target="_blank" rel="noreferrer" title="GoatCounter's dashboard" aria-label="GoatCounter's dashboard">
           <svg viewBox="0 0 24 24"><path d="M14 4h6v6" /><path d="M20 4l-9 9" /><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
         </a>
-{#if !demo}
-        <button type="button" class="icon-btn" onclick={forget} title="Forget the key on this browser" aria-label="Forget the key on this browser">
-          <svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4" /><path d="M11 12l9-9" /><path d="M17 6l3 3" /><path d="M15 8l2 2" /></svg>
-        </button>
-        {/if}
       </div>
     {/if}
   </div>
   {#if key}
     <nav class="row choices">
       {#if !board}<Seg label="View" options={VIEWS} value={view} onpick={go} />{/if}
-      {#if read}<span class="range">{#if demo}<b class="made-up-tag" title="Nothing here was read from GoatCounter">Made-up numbers</b>{/if}{shortDay(read.from)} to {shortDay(read.to)}, against {shortDay(read.fromBefore)} to {shortDay(read.toBefore)}</span>{/if}
-      <Seg label="Period" options={PERIODS.map((p) => ({ value: p.value, name: p.name }))} value={span} onpick={pick} />
+      {#if read}<span class="range">{#if demo}<b class="made-up-tag" title="Nothing here was read from GoatCounter">Made-up numbers</b>{/if}{shortDay(read.from)} to {shortDay(read.to)}{#if read.compare}, against {shortDay(read.fromBefore)} to {shortDay(read.toBefore)}{/if}</span>{/if}
+      <Seg label="Period" options={periodOptions} value={cover && span > cover.value ? cover.value : span} onpick={pick} />
     </nav>
   {/if}
   <div class="progress" class:on={loading} aria-hidden="true"><i style:width="{Math.max(6, progress * 100)}%"></i></div>
 </header>
 
-<main class="analytics" class:idle>
+<main class="analytics" class:idle class:stale aria-busy={stale}>
   {#if !key}
     <KeyGate onkey={useKey} {refused} />
   {:else}
     {#if read}
       <p class="dates">
-        <b>{period.now}</b>, {shortDay(read.from)} to {shortDay(read.to)}, against {period.before} ({shortDay(read.fromBefore)} to {shortDay(read.toBefore)})
+        <b>{period.now}</b>, {shortDay(read.from)} to {shortDay(read.to)}{#if read.compare}, against {period.before} ({shortDay(read.fromBefore)} to {shortDay(read.toBefore)}){:else if counted(read)}{read.began ? `; counting began partway through ${shortDay(read.began)}, so there's nothing before to compare with yet` : ': nothing before to compare with yet'}{:else}; {period.before} weren't counted in full, so nothing is compared with them{/if}<span class="phone-fresh">; {loading ? 'updating…' : `updated ${ago(read.at)}`}{held && !loading ? ', paused for now' : ''}</span>
       </p>
+    {:else if loading}
+      <!-- (Its line's room kept, so the view doesn't move down as it arrives.) -->
+      <p class="dates" aria-hidden="true">&nbsp;</p>
     {/if}
     {#if demo}
       <p class="note made-up" role="status">Made-up numbers, to look at the page with: nothing here was read from GoatCounter.</p>
@@ -536,9 +628,14 @@
     {/if}
 
     {#if !read && loading}
-      <div class="waiting" aria-busy="true" aria-label="Reading">
-        <div class="ghost kpis">{#each [0, 1, 2, 3] as i (i)}<i></i>{/each}</div>
-        <div class="ghost chart"></div>
+      <!-- The view's outline, in the overview's grid where it's that, so nothing jumps as it arrives. -->
+      <div class="waiting" class:ov={board || view === 'overview'} aria-busy="true" aria-label="Reading">
+        {#if board || view === 'overview'}
+          <div class="kpis">{#each [0, 1, 2, 3] as i (i)}<i></i>{/each}</div>
+          <i class="today"></i>
+        {/if}
+        <i class="chart"></i>
+        {#if !board && view !== 'overview'}<i class="table"></i>{/if}
       </div>
     {:else if read}
       {#if board || view === 'overview'}
@@ -550,13 +647,26 @@
       {:else if view === 'daily'}
         <DailyView {read} {period} {weekly} />
       {:else if view === 'groups'}
-        <GroupsView {read} {period} {slices} {sel} reading={slicing} failed={slicesFailed} onagain={() => read && void loadSlices(read, true)} />
+        <GroupsView
+          {read}
+          {period}
+          {slices}
+          {sel}
+          reading={slicing}
+          failed={slicesFailed}
+          onagain={() => read && void loadSlices(read, true)}
+          {depthsReading}
+          {depthsFailed}
+          ondepths={() => read && slices && void loadDepths(read, slices, true)}
+        />
       {:else}
         <JoiningView {read} {period} />
       {/if}
       {#if !board}<footer class="foot">
-        <p>Visitors are people on the start page, each counted once a visit (8 hours). Ad blockers hide some of them, so totals run low while shares hold.</p>
+        <p>Visits are to the start page, a person counted once in 8 hours, so someone who comes back every day counts every day. Ad blockers hide some of them, so totals run low, and shares between devices or countries can lean where blocking is commoner. A change chance alone could have made is shown uncoloured.</p>
         <p>This browser asked GoatCounter {used} times in the last hour, of the {HOUR_LIMIT} it allows; updating by itself pauses at {HOUR_LIMIT - KEEP_SPARE}.</p>
+        <!-- Out of the way of the bar's buttons, and asked first: the key would have to be fetched from GoatCounter again. -->
+        {#if !demo}<p><button type="button" class="again forget" onclick={() => confirm('Forget the GoatCounter key on this browser? It will be asked for again.') && forget()}>Forget the key on this browser</button></p>{/if}
       </footer>{/if}
     {/if}
   {/if}
@@ -645,7 +755,7 @@
   }
   .fresh em {
     font-style: normal;
-    color: var(--unique-hi);
+    color: var(--a-down);
   }
   .icon-btn {
     flex: none;
@@ -720,6 +830,11 @@
     margin: 0 auto;
     padding: 1.6rem 2.5rem 4rem;
   }
+  /* Another period's numbers, kept while the picked one is read: faded, so they never pass for its own. */
+  main.stale > :global(*) {
+    opacity: 0.45;
+    transition: opacity 0.2s;
+  }
   .dates {
     margin: 0 0 1.4rem;
     font-size: 1.125rem;
@@ -752,6 +867,14 @@
     text-decoration: underline;
     cursor: pointer;
   }
+  .again.forget {
+    margin-left: 0;
+    color: var(--a-muted);
+  }
+  /* How fresh the numbers are, on a phone, where the bar has no room for it. */
+  .phone-fresh {
+    display: none;
+  }
   .foot {
     margin-top: 2.5rem;
     font-size: 1rem;
@@ -768,7 +891,7 @@
   @media (min-width: 1900px) {
     /* As wide as the screen allows, and no taller than it: the overview is about 88rem high, so its type follows the screen's height too. */
     :global(html) {
-      font-size: clamp(13px, min(0.625vw, 1.1vh), 26px);
+      font-size: clamp(16px, min(0.625vw, 1.1vh), 26px);
     }
     /* The dates go up into the bar, beside the period. */
     .range {
@@ -809,7 +932,7 @@
   }
 
   /* ---- a monitor on its side (taller than wide, wider than a phone): the type sized from the screen, so the overview is one screen ---- */
-  @media (orientation: portrait) and (min-width: 900px) {
+  @media (orientation: portrait) and (min-width: 900px) and (min-height: 1500px) {
     :global(html) {
       font-size: clamp(11px, min(1.3vw, 0.74vh), 30px);
     }
@@ -856,24 +979,44 @@
     cursor: none;
   }
 
-  /* ---- first read: the overview's outline, waiting ---- */
-  .ghost i,
-  .ghost.chart {
+  /* ---- first read: the view's outline, waiting (Overview.svelte's grid at each width) ---- */
+  .waiting {
+    display: grid;
+    gap: 1.25rem;
+  }
+  .waiting i {
     display: block;
-    height: 220px;
+    min-height: 320px;
     background: var(--a-surface);
     border: 1px solid var(--line);
     border-radius: 4px;
     animation: wait 1.6s ease-in-out infinite;
   }
-  .ghost.kpis {
+  .waiting .chart {
+    min-height: 450px;
+  }
+  .waiting.ov .chart {
+    grid-area: chart;
+  }
+  .waiting .table {
+    min-height: 320px;
+  }
+  .waiting.ov {
+    --gap: 1.75rem;
+    grid-template-columns: minmax(0, 2.3fr) minmax(0, 1fr);
+    grid-template-areas:
+      'kpis kpis'
+      'chart today';
+    gap: var(--gap);
+  }
+  .waiting .kpis {
+    grid-area: kpis;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 1.25rem;
-    margin-bottom: 1.25rem;
+    gap: var(--gap);
   }
-  .ghost.chart {
-    height: 480px;
+  .waiting .today {
+    grid-area: today;
   }
   @keyframes wait {
     50% {
@@ -882,9 +1025,66 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .spin svg,
-    .ghost i,
-    .ghost.chart {
+    .waiting i {
       animation: none;
+    }
+  }
+  /* (Each height near the real one's at that width: the demo's, measured.) */
+  @media (min-width: 1900px) {
+    .waiting .kpis i {
+      min-height: 266px;
+    }
+    .waiting .chart {
+      min-height: 340px;
+    }
+  }
+  @media (max-width: 1200px) {
+    .waiting.ov {
+      --gap: 1.25rem;
+    }
+    .waiting .kpis {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 1100px) {
+    .waiting.ov {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas:
+        'today'
+        'kpis'
+        'chart';
+    }
+    .waiting .today {
+      min-height: 290px;
+    }
+    .waiting .kpis i {
+      min-height: 244px;
+    }
+  }
+  @media (max-width: 600px) {
+    .waiting.ov {
+      --gap: 1rem;
+    }
+    .waiting .today {
+      min-height: 460px;
+    }
+    .waiting .kpis i {
+      min-height: 290px;
+    }
+    .waiting .chart {
+      min-height: 560px;
+    }
+  }
+  @media (orientation: portrait) and (min-width: 900px) and (min-height: 1500px) {
+    .waiting.ov {
+      --gap: 1.4rem;
+      grid-template-areas:
+        'today'
+        'kpis'
+        'chart';
+    }
+    .waiting .kpis {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
   }
 
@@ -895,9 +1095,6 @@
     }
     main {
       padding: 1.2rem 16px 3rem;
-    }
-    .ghost.kpis {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
   /* A phone: the bar scrolls away with the page, so it doesn't take a third of the screen. */
@@ -915,6 +1112,9 @@
     .brand span,
     .fresh {
       display: none;
+    }
+    .phone-fresh {
+      display: inline;
     }
     .icon-btn {
       width: 38px;

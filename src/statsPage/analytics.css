@@ -9,6 +9,8 @@
  *   green   better than before
  *   red     worse than before, or a problem
  *   ink     everything else, in two strengths
+ *
+ * Item names keep the game's own colour for them, as in its tooltips.
  */
 :root {
   --a-ink: #efe6d6;
@@ -142,6 +144,15 @@
   .analytics .table .opt {
     display: none;
   }
+}
+/* Read out, not shown: a column's name where its figures say it already. */
+.analytics .sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 /* What a phone shows under a row's name in place of its hidden columns (.opt). */
 .analytics .table .on-phone {
