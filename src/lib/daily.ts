@@ -7,7 +7,7 @@
 import { Engine, allArt, answerDrawn, createGame, DEFAULT_SETTINGS, type Item, type Knobs, type Question } from './game.ts';
 import { DAILY_LAUNCH } from './dailyLaunch.ts';
 import { seededRandom } from './patches.ts';
-import { readStored, storeKey, writeStored } from './storage.ts';
+import { readStored, removeStored, storeKey, writeStored } from './storage.ts';
 import dailyArt from '../data/dailyArt.json' with { type: 'json' };
 
 const DAY_MS = 86_400_000;
@@ -300,7 +300,9 @@ export function fromClockAhead(log: DailyLog | null, today: number): DailyLog | 
   }
   const back = last - (today - 1);
   for (const [day, mark] of moved) marks.set(day - back, stands(marks.get(day - back), mark));
-  return logOf(marks);
+  // (Days still to come before a day with none in between: moved the same way in turn.)
+  const mended = logOf(marks);
+  return fromClockAhead(mended, today) ?? mended;
 }
 
 const KEY = 'daily';
@@ -364,18 +366,45 @@ export const ownDaysRaw = () => readStored(DAYS);
 /** Keeps the days `after` when they differ from `before`; whether anything changed. */
 const keep = (before: DailyLog | null, after: DailyLog | null) => JSON.stringify(before) !== JSON.stringify(after) && saveLog(after);
 
-/** Keeps the days as loadLog makes them, with an older build's record taken in (from before, or another tab's since); whether anything changed. */
-export const settleDays = () => saveLog(loadLog());
+/**
+ * Keeps the days as loadLog makes them, and lets go of an older build's
+ * record once they hold it (this device's from before, or another tab's
+ * since): taken in again on every load, a record from a day still to come
+ * would undo fromClockAhead. An older build takes a missing record for none.
+ * Whether anything changed.
+ */
+export function settleDays(): boolean {
+  const log = loadLog();
+  const changed = saveLog(log);
+  // (Only once the days are kept: else the record is all there is.)
+  if (readStored(KEY) === null || readStored(DAYS) !== JSON.stringify(log)) return changed;
+  return removeStored(KEY) || changed;
+}
 
-/** Takes in another of the player's devices' days, but none reaching more than a day ahead of this device's clock, which can't be yet. Whether it changed anything. */
+/**
+ * The days but any more than a day after `today`, which can't be yet (a
+ * clock running ahead: the device that answered them moves them back once it
+ * has the server's time, fromClockAhead), and with them the run of an older
+ * build's record whose own day was among them (counted on the same clock).
+ */
+function upTo(log: DailyLog | null, today: number): DailyLog | null {
+  if (!log || lastOf(log) <= today + 1) return log;
+  const marks = marksOf(log);
+  for (const day of [...marks.keys()]) if (day > today + 1) marks.delete(day);
+  const kept = logOf(marks);
+  if (kept) for (let day = lastOf(kept); marks.get(day) === RIGHT; day--) marks.delete(day);
+  return logOf(marks);
+}
+
+/** Takes in another of the player's devices' days (up to a day after `today`, by the server's clock where it has said). Whether it changed anything. */
 export function absorbDays(raw: string, today = utcDay(Date.now())): boolean {
-  const theirs = parseLog(raw);
-  if (!theirs || lastOf(theirs) > today + 1) return false;
+  const theirs = upTo(parseLog(raw), today);
+  if (!theirs) return false;
   const mine = loadLog();
   return keep(mine, mergeLogs(mine, theirs));
 }
 
-/** Takes in an older build's record from another of the player's devices, as the days it stands for (daysOf), but none from more than a day ahead. Whether it changed anything. */
+/** Takes in an older build's record from another of the player's devices, as the days it stands for (daysOf), but not one from more than a day ahead. Whether it changed anything. */
 export function absorbDaily(raw: string, today = utcDay(Date.now())): boolean {
   const theirs = parseDaily(raw);
   if (!theirs || theirs.day > today + 1) return false;

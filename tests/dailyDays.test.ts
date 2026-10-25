@@ -4,7 +4,7 @@
 
 import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DAILY_KEY, DAYS_KEY, GRACE_DAYS, absorbDaily, absorbDays, answerDaily, answerLog, daysOf, graceOn, loadDaily, loadLog, mergeLogs, ownDaysRaw, parseDaily, parseLog, replay, saveLog, settleDays, streakOn, type DailyLog, type DailyRecord } from '../src/lib/daily.ts';
+import { DAILY_KEY, DAYS_KEY, GRACE_DAYS, absorbDaily, absorbDays, answerDaily, answerLog, daysOf, graceOn, loadDaily, loadLog, fromClockAhead, mergeLogs, ownDaysRaw, parseLog, replay, saveLog, settleDays, streakOn, type DailyLog, type DailyRecord } from '../src/lib/daily.ts';
 import { memoryStorage, seeded } from './helpers.ts';
 
 const store = new Map<string, string>();
@@ -140,11 +140,43 @@ test("before the days were kept, the record stands for its run: it comes out the
   assert.deepEqual(loadDaily(), { day: D, picked: 2, ok: true, streak: 30, ended: 0, grace: 0 });
   assert.ok(settleDays());
   assert.deepEqual(parseLog(ownDaysRaw()), daysOf({ day: D, picked: 2, ok: true, streak: 30, ended: 0, grace: 0 }));
+  // Kept in the days, the record goes (an older build takes a missing one for none), and is never written again:
+  // an older build reading it would count the grace's days as days in a row.
+  assert.equal(store.get(DAILY_KEY), undefined);
   assert.ok(!settleDays(), 'kept once');
-  // The record is never written here: an older build reading it would count the grace's days as days in a row.
   saveLog(answerLog(loadLog(), D + 2, 1, true));
-  assert.equal(parseDaily(store.get(DAILY_KEY) ?? null)?.day, D);
+  assert.equal(store.get(DAILY_KEY), undefined);
   assert.deepEqual(loadDaily(), { day: D + 2, picked: 1, ok: true, streak: 31, ended: 0, grace: GRACE_DAYS - 1 });
+});
+
+test('the record stays until the days could be kept (storage full)', () => {
+  const real = (globalThis as { localStorage?: unknown }).localStorage;
+  (globalThis as { localStorage?: unknown }).localStorage = memoryStorage(store, (key) => key !== DAYS_KEY);
+  try {
+    store.set(DAILY_KEY, JSON.stringify({ day: D, picked: 2, ok: true, streak: 30, ended: 0 }));
+    assert.ok(!settleDays());
+    assert.ok(store.has(DAILY_KEY));
+    assert.equal(loadDaily()?.streak, 30);
+  } finally {
+    (globalThis as { localStorage?: unknown }).localStorage = real;
+  }
+});
+
+test("this device's own record from a clock that ran ahead, once mended, stays mended", () => {
+  store.set(DAILY_KEY, JSON.stringify({ day: D + 1, picked: 2, ok: true, streak: 30, ended: 0 }));
+  settleDays();
+  saveLog(fromClockAhead(loadLog(), D));
+  settleDays();
+  assert.deepEqual(loadDaily(), { day: D - 1, picked: 2, ok: true, streak: 30, ended: 0, grace: 0 });
+  assert.equal(replay(answerLog(loadLog(), D, 0, true))?.streak, 31);
+});
+
+test('days still to come apart from each other are all moved back at once', () => {
+  // Right on D - 3, then on a clock running ahead D + 1 and D + 3 (none on D + 2).
+  const log = answerLog(answerLog(answerLog(null, D - 3, 0, true), D + 1, 1, true), D + 3, 2, true);
+  const mended = fromClockAhead(log, D)!;
+  assert.ok(mended.from + mended.days.length - 1 < D);
+  assert.equal(fromClockAhead(mended, D), null);
 });
 
 test('an older build in another tab answering is taken as its days, its run worked out here (with the grace)', () => {
@@ -161,6 +193,12 @@ test("another device's days are taken in; an older build's record as its run's d
   assert.equal(loadDaily()?.streak, 5);
   assert.ok(!absorbDays(JSON.stringify(answerLog(null, D, 1, true)), D), 'the same again changes nothing');
   assert.ok(!absorbDays(JSON.stringify(answerLog(null, D + 2, 1, true)), D), 'not yet');
+  // Days still to come in them don't keep out the rest: they go, and an older build's run whose day was among them.
+  store.clear();
+  const ahead = mergeLogs(rightDays(D - 3, D - 2), daysOf({ day: D + 4, picked: 1, ok: true, streak: 5, ended: 0, grace: 0 }));
+  assert.ok(absorbDays(JSON.stringify(ahead), D));
+  assert.deepEqual(loadLog(), rightDays(D - 3, D - 2));
+  saveLog(rightDays(D - 4, D));
   assert.ok(!absorbDays('{"from":1,"days":"x"}', D));
   // An older build's record, its run of 7 reaching D + 1: the days of it not known here count too.
   assert.ok(absorbDaily(JSON.stringify({ day: D + 1, picked: 0, ok: true, streak: 7, ended: 0 }), D + 1));

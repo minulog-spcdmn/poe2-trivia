@@ -103,13 +103,18 @@
 
   // The days answered, and the record they come to (lib/daily.ts: the run, its grace, today's answer).
   let log = $state.raw(loadLog());
+  /** The days as stored, an older build's record (another tab's) kept with them first (lib/daily settleDays). */
+  const stored = () => {
+    settleDays();
+    return loadLog();
+  };
   const rec = $derived(replay(log));
   // Days answered on another of the player's devices (lib/sync) or in another tab, or by an older build
   // in one (its record, kept with the days: settleDays), stand here too.
   onMount(() => {
     const reload = () => {
-      settleDays();
-      log = loadLog() ?? log;
+      log = stored() ?? log;
+      mendClockAhead();
     };
     reload();
     return onStoredElsewhere({ [DAILY_KEY]: reload, [DAYS_KEY]: reload });
@@ -166,7 +171,7 @@
    */
   function mendClockAhead() {
     if (!clock.trusted()) return;
-    const mended = fromClockAhead(loadLog(), utcDay(now));
+    const mended = fromClockAhead(stored(), utcDay(now));
     if (!mended) return;
     log = mended;
     saveLog(mended);
@@ -205,12 +210,12 @@
     // (another tab may have answered a day since); this tab's copy only
     // stands in when there is nothing stored (storage blocked).
     if (!practice) {
-      const stored = loadLog();
-      if (answeredOn(replay(stored), today)) {
-        log = stored;
+      const kept = stored();
+      if (answeredOn(replay(kept), today)) {
+        log = kept;
         return;
       }
-      if (stored) log = stored;
+      if (kept) log = kept;
     }
     const good = i === rightIdx;
     // A record from a later day (this device's clock was put back) takes no
@@ -219,7 +224,7 @@
     const next = practice ? null : answerLog(log, today, i, good);
     // (Only while the server hasn't said: once it has, such a record is mended, mendClockAhead.)
     if (next && next === log) {
-      toasts.show("This device’s clock is behind the day you last answered on. Set it right to play today’s unique.", 'info', { title: 'Clock behind' });
+      toasts.show("Your answers reach a day still to come: a clock is off, this device’s or a paired one’s. Today’s unique opens once this device has the right time.", 'info', { title: 'Clock off' });
       return;
     }
     // (The codex's time by the same clock as the day.)

@@ -9,7 +9,8 @@
 
 import { absorbAchievements, absorbWins, ownAchievementsRaw, ownWinsRaw } from '../achievements.ts';
 import { ownCodexRaw, ownPracticeRaw } from '../codex.ts';
-import { absorbDaily, absorbDays, ownDaysRaw } from '../daily.ts';
+import { absorbDaily, absorbDays, ownDaysRaw, utcDay } from '../daily.ts';
+import { clock } from '../clock.ts';
 import { ownRecordsRaw } from '../delveRecord.ts';
 import { absorbSigils, ownSigilsRaw } from '../sigils.ts';
 import { readStored, writeStored } from '../storage.ts';
@@ -38,8 +39,9 @@ const TAKEN: Record<string, { own: () => string | null; take: (raw: string) => b
   wins: { own: ownWinsRaw, take: absorbWins, name: 'achievements.wins' },
   sigils: { own: ownSigilsRaw, take: absorbSigils, name: 'sigils' },
   // Today's unique: the days answered, which make the run (lib/daily.ts); and an older build's record, taken in as its days, never sent.
-  dailyDays: { own: ownDaysRaw, take: (raw) => absorbDays(raw), name: 'daily.days' },
-  daily: { own: () => null, take: (raw) => absorbDaily(raw), name: 'daily' },
+  // (Days to come judged by the server's clock where it has said, as the daily is.)
+  dailyDays: { own: ownDaysRaw, take: (raw) => absorbDays(raw, utcDay(clock.now())), name: 'daily.days' },
+  daily: { own: () => null, take: (raw) => absorbDaily(raw, utcDay(clock.now())), name: 'daily' },
   name: { own: () => chosenNow('name'), take: (raw) => takeChosen('name', raw), name: NAME_STORED },
   colour: { own: () => chosenNow('colour'), take: (raw) => takeChosen('colour', raw), name: COLOUR_NAME },
 };

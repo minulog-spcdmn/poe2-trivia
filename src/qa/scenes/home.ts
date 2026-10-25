@@ -35,7 +35,7 @@ function today(days: number, how: string): NonNullable<Built['daily']> {
   if (how === 'waiting') return { days: run(days), daysAgo: 1 };
   if (how === 'forgiven') return { days: run(days), daysAgo: 2 };
   // A day skipped while the grace is still being earned back (one forgiven four days before): the run is gone, and nothing says so until it starts over.
-  if (how === 'lapsed') return { days: days > 4 ? '0'.repeat(days - 3) + '.000' : run(days), daysAgo: 2 };
+  if (how === 'lapsed') return { days: '0'.repeat(Math.max(1, days - 3)) + '.000', daysAgo: 2 };
   return { days: run(days, '2'), daysAgo: 0 };
 }
 
