@@ -242,6 +242,9 @@ function paintsBackground(cs: CSSStyleDeclaration) {
 
 // ---------- turned elements ----------
 
+/** Whether an element's map onto the screen (linearOf) only moves and scales it: no rotation, no 3D turn. */
+const flatLin = (lin: Lin | null) => !!lin && Math.abs(lin[1]) + Math.abs(lin[2]) <= 1e-3 * lin[0] && Math.abs(lin[3] - lin[0]) <= 1e-3 * lin[0];
+
 /** Zero-size probes in the corners of an element's padding box (see screenToLocal). */
 const probes = new WeakMap<HTMLElement, HTMLElement[]>();
 function probesOf(node: HTMLElement): HTMLElement[] {
@@ -389,6 +392,18 @@ export function measureShadows(
   const withFill = nodes.filter((n) => shadowed.get(n)?.fill);
   const fillNodes = new Set<Element>(withFill);
   for (const n of shadowed.keys()) if (!n.isConnected || shadowed.get(n)?.off) release(n);
+  // The turned elements' probes (see screenToLocal) go in before anything
+  // below is read: put in as each is measured, every one would have the page
+  // laid out again for the next read (as a screen first shows, a turned box
+  // or several in it: a layout each). All read first, then all written; only
+  // into those the loop would measure turned (something to draw, a size).
+  const turned = nodes.filter((n) => {
+    if (flatLin(linearOf(n, linears))) return false;
+    const cs = getComputedStyle(n);
+    const draws = !!shadowed.get(n)?.fill || !!readShadow(cs, 2) || !!readShadow(cs, 1);
+    return draws && cs.position !== 'static' && n.offsetWidth > 0 && n.offsetHeight > 0;
+  });
+  for (const n of turned) probesOf(n);
 
   // Every element measured, in document order: what it would draw. (What
   // goes back to CSS is released after, with nothing written meanwhile.)
@@ -414,8 +429,7 @@ export function measureShadows(
     // a scale. Any rotation or 3D turn, even a slight one (as a card tilting
     // toward the pointer), needs the full map, or its shadows wouldn't follow
     // the turned shape.
-    const lin = ok ? linearOf(node, linears) : null;
-    const flat = !!lin && Math.abs(lin[1]) + Math.abs(lin[2]) <= 1e-3 * lin[0] && Math.abs(lin[3] - lin[0]) <= 1e-3 * lin[0];
+    const flat = ok && flatLin(linearOf(node, linears));
     let toLocal = [1 / scale, 0, -rect.left / scale, 0, 1 / scale, -rect.top / scale, 0, 0, 1];
     if (ok && !flat) {
       const turned = screenToLocal(node, cs, w, h);
