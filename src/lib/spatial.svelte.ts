@@ -22,6 +22,7 @@ import { hoverDuck, roomPlan, screenX, travel, type HoverMemory } from './spatia
 import { whenIdle } from './idle';
 import { BLAST_IN_DELAY_MS } from './blastTiming';
 import { ROOMS, roomSeed, roomSteps } from './acoustics';
+import type { RoomAnswer, RoomJob } from './roomWorker';
 
 /**
  * How a sound is placed. pan: equal-power panning (by level). haas: by time
@@ -519,40 +520,89 @@ function tuneVein(r: Rooms) {
   const on = spatial.rooms && !spatial.today;
   if (on && depthNow >= VEIN_NEAR && !v.conv && !v.working) {
     v.working = true;
-    const steps = roomSteps(r.ac, ROOMS.vein, r.like, roomSeed('vein'));
-    const next = () => {
-      const s = steps.next();
-      if (!s.done) return whenIdle(next, { fallback: 300 });
+    workOut(r, 'vein', (buf) => {
       v.working = false;
       v.conv = new ConvolverNode(r.ac, { disableNormalization: true });
-      v.conv.buffer = s.value;
+      v.conv.buffer = buf;
       v.gain = gainNode(r.ac, 0);
       // At the send's level into the rooms (lib/sound.ts: the bus's send is at half).
       v.send.connect(gainNode(r.ac, 0.5)).connect(v.conv).connect(v.gain).connect(mixOf(r.ac));
       tuneVein(r);
-    };
-    whenIdle(next, { fallback: 300 });
+    });
   }
   const own = on && !!v.conv;
   v.gate.gain.setTargetAtTime(own ? 0 : 1, t, 0.05);
   v.gain?.gain.setTargetAtTime(own ? 1 : 0, t, 0.05);
 }
 
-/** Works a place's room out a little at a time while the page is idle (lib/acoustics.ts roomSteps), then keeps it (bringing it in), if its place still sounds or comes next. */
+let roomJobs: Worker | null | undefined;
+let lastRoomJob = 0;
+/** What each room sent to the worker does with its channels (none: it's worked out here instead). */
+const roomAnswers = new Map<number, (channels?: Float32Array<ArrayBuffer>[]) => void>();
+
+/** The worker the rooms are worked out in; null where there's none. */
+function roomWorker(): Worker | null {
+  if (roomJobs !== undefined) return roomJobs;
+  roomJobs = null;
+  if (typeof Worker === 'undefined') return null;
+  try {
+    const w = new Worker(new URL('./roomWorker.ts', import.meta.url), { type: 'module' });
+    w.onmessage = ({ data }: MessageEvent<RoomAnswer>) => {
+      roomAnswers.get(data.id)?.(data.channels);
+      roomAnswers.delete(data.id);
+    };
+    // (Failed to load, say: what it was working out is worked out here, as everything is from now on.)
+    w.onerror = () => {
+      w.terminate();
+      roomJobs = null;
+      for (const done of roomAnswers.values()) done();
+      roomAnswers.clear();
+    };
+    roomJobs = w;
+  } catch {
+    roomJobs = null;
+  }
+  return roomJobs;
+}
+
+/**
+ * Works a place's room out (lib/acoustics.ts), then hands it to `done`: in a
+ * worker (lib/roomWorker.ts), or where there's none, here a little at a time
+ * while the page is idle (roomSteps).
+ */
+function workOut(r: Rooms, place: string, done: (buf: AudioBuffer) => void) {
+  const here = () => {
+    const steps = roomSteps(r.ac, ROOMS[place], r.like, roomSeed(place));
+    const next = () => {
+      const s = steps.next();
+      if (!s.done) return whenIdle(next, { fallback: 300 });
+      done(s.value);
+    };
+    whenIdle(next, { fallback: 300 });
+  };
+  const w = roomWorker();
+  if (!w) return here();
+  const id = ++lastRoomJob;
+  roomAnswers.set(id, (channels) => {
+    if (!channels?.length) return here();
+    const buf = r.ac.createBuffer(channels.length, channels[0]!.length, r.ac.sampleRate);
+    channels.forEach((c, i) => buf.copyToChannel(c, i));
+    done(buf);
+  });
+  w.postMessage({ id, place, sampleRate: r.ac.sampleRate, like: r.like } satisfies RoomJob);
+}
+
+/** Works a place's room out (workOut), then keeps it (bringing it in), if its place still sounds or comes next. */
 function work(place: string) {
   const r = rooms;
   if (!r || roomBufs.has(place) || working.has(place)) return;
   working.add(place);
-  const steps = roomSteps(r.ac, ROOMS[place], r.like, roomSeed(place));
-  const next = () => {
-    const s = steps.next();
-    if (!s.done) return whenIdle(next, { fallback: 300 });
+  workOut(r, place, (buf) => {
     working.delete(place);
     if (!plan().kept.has(place)) return;
-    roomBufs.set(place, s.value);
+    roomBufs.set(place, buf);
     tuneRooms();
-  };
-  whenIdle(next, { fallback: 300 });
+  });
 }
 
 const placer: Placer = {
