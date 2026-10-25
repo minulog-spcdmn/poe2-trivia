@@ -301,6 +301,13 @@ function gameDayOf(right: PathCount | undefined, wrong: PathCount | undefined, d
   return r === null || w === null ? null : { day, right: r, wrong: w };
 }
 
+/** The first day anything was counted on (YYYY-MM-DD), or null: the days before it weren't quiet, they weren't counted. */
+export function firstCounted(paths: PathCount[]): string | null {
+  let first: string | null = null;
+  for (const p of paths) for (const [d, n] of Object.entries(p.days)) if (n > 0 && (first === null || d < first)) first = d;
+  return first;
+}
+
 /** Every day from `from` to `to` (YYYY-MM-DD, both included). */
 export function daysBetween(from: string, to: string): string[] {
   const out: string[] = [];
@@ -481,6 +488,18 @@ export function weekAverage(grid: number[][], days: string[], until: number | nu
   return grid.map((row, wd) => row.map((n, h) => (many[wd][h] ? n / many[wd][h] : null)));
 }
 
+/**
+ * A weekHours grid as one usual day: each hour's average over every one of
+ * `days` that had it (the last only before `until`, weekHours), the weekdays
+ * together. Null for an hour none had yet.
+ */
+export function dayAverageHours(grid: number[][], days: string[], until: number | null = null): (number | null)[] {
+  return Array.from({ length: 24 }, (_, h) => {
+    const many = days.filter((_, i) => i < days.length - 1 || until === null || h < until).length;
+    return many ? grid.reduce((n, row) => n + row[h], 0) / many : null;
+  });
+}
+
 /** The busiest hour of a grid: its weekday (Monday 0), hour and figure, or null with nothing in it. */
 export function busiest(grid: (number | null)[][]): { day: number; hour: number; value: number } | null {
   let best: { day: number; hour: number; value: number } | null = null;
@@ -655,22 +674,27 @@ const SURE_AFTER = 5;
 /**
  * The hardest and easiest days' items, `top` of each: days with at least
  * `min` answers (none, if no day has so many), today left out as it's still
- * going. Ranked by the share who named them drawn toward the days' usual
- * share by SURE_AFTER answers, so a day few played can't top the list on
- * its own luck. More answers first between equals; a day is in only one of
- * the two.
+ * going, and only those named by far fewer (or more) than the days' usual
+ * share would have, beyond what chance does with so few players (two
+ * standard deviations of as many answers at the usual share): with three
+ * players a day, every day's share is chance's. Ranked by the share who
+ * named them drawn toward the usual share by SURE_AFTER answers, so a day
+ * few played can't top the list on its own luck. More answers first
+ * between equals.
  */
 export function hardestAndEasiest(days: DailyDay[], min = 3, top = 5): { hardest: DailyDay[]; easiest: DailyDay[] } {
   const pool = days.slice(0, -1).filter((d) => d.answers >= Math.max(1, min));
   const answers = pool.reduce((n, d) => n + d.answers, 0);
   const usual = answers ? pool.reduce((n, d) => n + d.right, 0) / answers : 0;
   const weighed = (d: DailyDay) => (d.right + SURE_AFTER * usual) / (d.answers + SURE_AFTER);
-  const rank = (dir: 1 | -1) => [...pool].sort((a, b) => dir * (weighed(a) - weighed(b)) || b.answers - a.answers || a.day.localeCompare(b.day));
-  const hardest = rank(1).slice(0, Math.min(top, Math.ceil(pool.length / 2)));
-  const easiest = rank(-1)
-    .filter((d) => !hardest.includes(d))
-    .slice(0, top);
-  return { hardest, easiest };
+  /** How far under (below 0) or over the usual share's count the day's named were, in standard deviations. */
+  const off = (d: DailyDay) => {
+    const spread = Math.sqrt(d.answers * usual * (1 - usual));
+    const by = d.right - d.answers * usual;
+    return spread ? by / spread : by ? Math.sign(by) * Infinity : 0;
+  };
+  const rank = (dir: 1 | -1) => pool.filter((d) => dir * off(d) <= -2).sort((a, b) => dir * (weighed(a) - weighed(b)) || b.answers - a.answers || a.day.localeCompare(b.day));
+  return { hardest: rank(1).slice(0, top), easiest: rank(-1).slice(0, top) };
 }
 
 /** The first day Today's unique asked (YYYY-MM-DD). */

@@ -7,7 +7,7 @@ import { appShare, backShare, beforeShare, beyondChanceOf, comersOf, failureRate
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
 import { countsIn, depthCalls, depthsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
-import { currentName, isoWeek, underNamesNow, weekMonday, busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, dayAverages, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, usualByNow, usualByNowUtc, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
+import { currentName, isoWeek, underNamesNow, weekMonday, busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, dayAverageHours, dayAverages, firstCounted, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, usualByNow, usualByNowUtc, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
 const path = (p: string, perDay: number[], event = true): PathCount => ({
@@ -299,13 +299,11 @@ test("Today's unique by day: the hardest and easiest items, today left out", () 
   );
   const { hardest, easiest } = hardestAndEasiest(d, 3, 2);
   // The 10th has a single answer, under the 3 the rest have: not ranked. Nor today (the 16th).
-  assert.deepEqual(
-    hardest.map((x) => x.day),
-    ['2026-10-14', '2026-10-12'],
-  );
+  // Against the usual 47%, 9 of 10 is beyond chance; 2 of 10 (1.7 standard deviations under) and 0 of 4 aren't.
+  assert.deepEqual(hardest, []);
   assert.deepEqual(
     easiest.map((x) => x.day),
-    ['2026-10-11', '2026-10-13'],
+    ['2026-10-11'],
   );
 });
 
@@ -405,6 +403,23 @@ test("an hour's average is over how many of the days fell on its weekday", () =>
   assert.deepEqual([sofar[0][8], sofar[0][10], sofar[1][10]], [0, 6, 6]);
   // A week's today, later than now: no day has had it.
   assert.equal(weekAverage(grid, ['2026-10-12'], 9)[0][10], null);
+});
+
+test("a usual day's hours average every day together, the last only up to now", () => {
+  const grid = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
+  grid[0][10] = 6;
+  grid[1][10] = 3;
+  // A Monday, a Tuesday and today (a Monday) at 09:00: 10:00 is over the two days that had it.
+  const day = dayAverageHours(grid, ['2026-10-05', '2026-10-06', '2026-10-12'], 9);
+  assert.deepEqual([day[8], day[10]], [0, 4.5]);
+  assert.equal(dayAverageHours(grid, ['2026-10-12'], 9)[10], null);
+});
+
+test('counting began on the first day anything was counted', () => {
+  const p = (days: Record<string, number>): PathCount => ({ path: '/', event: false, count: 0, days });
+  assert.equal(firstCounted([p({ '2026-10-14': 0, '2026-10-15': 0, '2026-10-16': 3 }), p({ '2026-10-17': 1 })]), '2026-10-16');
+  assert.equal(firstCounted([p({ '2026-10-14': 0 })]), null);
+  assert.equal(firstCounted([]), null);
 });
 
 test("the week's hours take the last day only up to the hour it's reached", () => {

@@ -11,8 +11,11 @@
   // by themselves; a rate by `of`, how many each period's percent is of; an
   // average by `of` too, the counts behind it (the period before's brought
   // to as many days). Without `of`, a rate or an average is taken as sure.
+  // Nothing at all where the period before wasn't counted in full (COMPARE).
+  import { getContext } from 'svelte';
   import { fmt } from './chart';
   import { beyondChanceOf, rateBeyondChance } from './insights';
+  import { COMPARE } from './read';
 
   let {
     now,
@@ -23,6 +26,8 @@
     digits = 0,
     of,
   }: { now: number | null; before: number | null; rate?: boolean; worse?: 'up' | 'down' | 'neither'; period: string; digits?: number; of?: { now: number; before: number } } = $props();
+
+  const compare = getContext<(() => boolean) | undefined>(COMPARE) ?? (() => true);
 
   // The figure before, as precise as the figure itself is shown (chart.ts average: one decimal under 10, whole above).
   // A rate with `digits` keeps them (a failure rate of 1.6%).
@@ -44,7 +49,7 @@
   const tone = $derived(step === null || step === 0 || worse === 'neither' || !sure ? 'flat' : (step > 0) === (worse === 'down') ? 'up' : 'down');
 </script>
 
-{#if now !== null && before !== null && (now > 0 || before > 0)}
+{#if compare() && now !== null && before !== null && (now > 0 || before > 0)}
   <span class="delta">
     {#if step !== null}
       <b class={tone} title={sure ? undefined : 'Within what chance alone moves a count this size'}><span aria-hidden="true">{step > 0 ? '▲' : step < 0 ? '▼' : '='}</span> {step > 0 ? '+' : step < 0 ? '−' : ''}{Math.abs(step)}{rate ? (Math.abs(step) === 1 ? ' pt' : ' pts') : '%'}</b>

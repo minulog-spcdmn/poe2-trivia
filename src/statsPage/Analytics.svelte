@@ -17,7 +17,7 @@
   // itself while the page is in view, as long as the hour's requests stay
   // well under GoatCounter's 500 (api.ts requestsLastHour). The numbers on
   // show stay as they are while newer ones are read.
-  import { onMount, tick, untrack } from 'svelte';
+  import { onMount, setContext, tick, untrack } from 'svelte';
   import { readStored, removeStoredStarting, writeStored } from '../lib/storage';
   import { ApiError, Cancelled, DASHBOARD, HOUR_LIMIT, accountZone, forgetKey, pathCounts, pathsBy, requestsLastHour, saveKey, savedKey, visitorsBy, type Named, type Span } from './api';
   import { sameSites, spikesOf } from './insights';
@@ -29,9 +29,9 @@
   import GroupsView from './GroupsView.svelte';
   import JoiningView from './JoiningView.svelte';
   import KeyGate from './KeyGate.svelte';
-  import { countsOf, daysBetween } from './model';
+  import { countsOf, daysBetween, firstCounted } from './model';
   import Overview from './Overview.svelte';
-  import { PERIODS, VIEWS, type Read, type View } from './read';
+  import { COMPARE, PERIODS, VIEWS, counted, type Read, type View } from './read';
   import Seg from './Seg.svelte';
   import { depthCalls, hashOf, selOf, sliceCalls, type Sel, type Slices } from './slices';
   import VisitorsView from './VisitorsView.svelte';
@@ -57,7 +57,7 @@
   const stored = Number(readStored('analytics.days'));
   const firstSpan = PERIODS.some((p) => p.value === stored) ? stored : 30;
   let span = $state<number>(firstSpan);
-  const period = $derived(PERIODS.find((p) => p.value === span) ?? PERIODS[1]);
+  const chosen = $derived(PERIODS.find((p) => p.value === span) ?? PERIODS[1]);
 
   const viewOf = (hash: string): View => VIEWS.find((v) => v.value !== 'overview' && (`#${v.value}` === hash || hash.startsWith(`#${v.value}/`)))?.value ?? 'overview';
   let view = $state<View>(viewOf(location.hash));
@@ -125,7 +125,7 @@
     if (had) return had;
     try {
       const r = JSON.parse(readStored(`analytics.read.${days}`, 'session') ?? 'null') as Read | null;
-      if (r?.v !== 8 || r.span !== days) return null;
+      if (r?.v !== 9 || r.span !== days) return null;
       cache.set(days, r);
       return r;
     } catch {
@@ -215,7 +215,13 @@
       if (ask !== asked) return;
       // The hours today has had (a part of the one it's in too), which the period before's last day is cut at too.
       const until = hoursIn(tz, today, at);
-      const counts = countsOf(n.paths, daysBetween(from, today), tz, until);
+      // The days before counting began were never counted, so they aren't
+      // zeros: the period starts on the first counted day, the one before
+      // the same many days back, and the two compare only where the period
+      // before was counted from its first day.
+      const began = firstCounted([...b.paths, ...n.paths]);
+      const start = began && began > from ? began : from;
+      const counts = countsOf(n.paths, daysBetween(start, today), tz, until);
       // The sites behind the busiest days: a day gone by is read once and kept (it never changes), today each time.
       const spikeRefs: Record<string, Named[]> = {};
       const keptRefs = dayRefsOf(readStored(DAY_REFS_KEY), tz);
@@ -237,15 +243,15 @@
       if (added) writeStored(DAY_REFS_KEY, dayRefsToKeep(keptRefs, tz, addDays(today, -Math.max(...PERIODS.map((p) => p.value)))));
       if (ask !== asked) return;
       const r: Read = {
-        v: 8,
+        v: 9,
         span: days,
-        from,
+        from: start,
         to: today,
-        fromBefore,
+        fromBefore: addDays(start, -days),
         toBefore,
         zone: tz,
         now: counts,
-        before: countsOf(b.paths, daysBetween(fromBefore, toBefore), tz, until),
+        before: countsOf(b.paths, daysBetween(addDays(start, -days), toBefore), tz, until),
         systems,
         countries,
         // Each site once: a tagged link's visit comes with its referrer as it was (insights.ts sameSites).
@@ -256,6 +262,7 @@
         spikeRefs: Object.fromEntries(Object.entries(spikeRefs).map(([day, list]) => [day, sameSites(list)])),
         at: at.getTime(),
         complete: n.complete && b.complete,
+        compare: began !== null && began <= fromBefore,
       };
       r.changes = keptChanges(had, r);
       keep(r);
@@ -462,7 +469,16 @@
     const m = Math.floor((clock - t) / 60_000);
     return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ago`;
   };
-  const weekly = $derived(!!read && read.span > 90);
+  /** The period, said as the days it covers: from where counting began, where that was inside it. */
+  const period = $derived.by(() => {
+    if (!read || !counted(read)) return chosen;
+    const n = read.now.days.length;
+    return { ...chosen, now: n === 1 ? 'The day counting began' : `The ${n} days since counting began`, before: n === 1 ? 'the day before' : `the ${n} days before` };
+  });
+  // By the week only where there are more days than a chart can draw one by one.
+  const weekly = $derived(!!read && read.now.days.length > 90);
+  // Nothing is compared with a period before that wasn't counted in full (read.ts COMPARE).
+  setContext(COMPARE, () => read?.compare ?? true);
 
   // ---- full screen: kept awake, the pointer out of the way ----
   let full = $state(!!document.fullscreenElement);
@@ -559,7 +575,7 @@
   {#if key}
     <nav class="row choices">
       {#if !board}<Seg label="View" options={VIEWS} value={view} onpick={go} />{/if}
-      {#if read}<span class="range">{#if demo}<b class="made-up-tag" title="Nothing here was read from GoatCounter">Made-up numbers</b>{/if}{shortDay(read.from)} to {shortDay(read.to)}, against {shortDay(read.fromBefore)} to {shortDay(read.toBefore)}</span>{/if}
+      {#if read}<span class="range">{#if demo}<b class="made-up-tag" title="Nothing here was read from GoatCounter">Made-up numbers</b>{/if}{shortDay(read.from)} to {shortDay(read.to)}{#if read.compare}, against {shortDay(read.fromBefore)} to {shortDay(read.toBefore)}{/if}</span>{/if}
       <Seg label="Period" options={PERIODS.map((p) => ({ value: p.value, name: p.name }))} value={span} onpick={pick} />
     </nav>
   {/if}
@@ -572,7 +588,7 @@
   {:else}
     {#if read}
       <p class="dates">
-        <b>{period.now}</b>, {shortDay(read.from)} to {shortDay(read.to)}, against {period.before} ({shortDay(read.fromBefore)} to {shortDay(read.toBefore)})
+        <b>{period.now}</b>, {shortDay(read.from)} to {shortDay(read.to)}{#if read.compare}, against {period.before} ({shortDay(read.fromBefore)} to {shortDay(read.toBefore)}){:else if counted(read)}: nothing before to compare with yet{:else}; {period.before} weren't counted in full, so nothing is compared with them{/if}
       </p>
     {/if}
     {#if demo}

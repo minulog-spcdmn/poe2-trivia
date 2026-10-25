@@ -45,7 +45,8 @@
 
   onMount(() => withDailyItems((f) => (itemOf = f)));
   let all = $state(false);
-  const newestFirst = $derived([...answered].reverse());
+  /** Every day it asked, a day nobody answered too: that's the habit's gap. */
+  const newestFirst = $derived([...days].reverse());
 </script>
 
 <svelte:window bind:innerWidth bind:innerHeight />
@@ -86,23 +87,29 @@
     />
   </Section>
 
-  {#if ranked.hardest.length}
+  {#if ranked.hardest.length || ranked.easiest.length}
     <div class="two">
-      <Section title="Hardest items" says="The fewest named these.">
-        <DailyTable days={ranked.hardest} {itemOf} label="The hardest items" />
+      <Section title="Hardest items" says="Far fewer named these than usual.">
+        {#if ranked.hardest.length}
+          <DailyTable days={ranked.hardest} {itemOf} label="The hardest items" />
+        {:else}
+          <p class="soft">None far harder than usual yet.</p>
+        {/if}
       </Section>
-      <Section title="Easiest items" says="The most named these.">
+      <Section title="Easiest items" says="Far more named these than usual.">
         {#if ranked.easiest.length}
           <DailyTable days={ranked.easiest} {itemOf} label="The easiest items" />
         {:else}
-          <p class="soft">Not enough days yet.</p>
+          <p class="soft">None far easier than usual yet.</p>
         {/if}
       </Section>
     </div>
+  {:else if answered.length > 1}
+    <p class="soft">No item stands out as hard or easy yet: with this few players a day, chance alone moves the share named as much.</p>
   {/if}
 
   <Section title="Every day" says="Newest first.">
-    {#if newestFirst.length}
+    {#if answered.length}
       <DailyTable days={all ? newestFirst : newestFirst.slice(0, 14)} {itemOf} label="Today's unique, every day" today={read.to} />
       {#if newestFirst.length > 14}
         <button type="button" class="more" onclick={() => (all = !all)}>{all ? 'Show fewer' : `Show all ${newestFirst.length} days`}</button>
@@ -116,7 +123,7 @@
   <How
     items={[
       "The game's days run from midnight to midnight UTC, when the item changes.",
-      'Hardest and easiest: days with at least 3 players, today left out, each share weighed by how many played, so a day of 3 says less than a day of 30.',
+      'Hardest and easiest: days with at least 3 players, today left out, whose share named is further from the usual than chance would take it with as many players; ranked with each share weighed by how many played, so a day of 3 says less than a day of 30.',
     ]}
   />
   </div>

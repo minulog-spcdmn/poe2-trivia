@@ -117,7 +117,7 @@
         <p class="soft">Nobody opened the codex or the achievements in these days.</p>
       {/if}
       {#if L.sync.paired || B.sync.paired}
-        <p class="line"><b>{fmt(L.sync.paired)}</b> devices paired to sync. <Delta now={L.sync.paired} before={B.sync.paired} period={period.before} /></p>
+        <p class="line"><b>{fmt(L.sync.paired)}</b> {L.sync.paired === 1 ? 'device' : 'devices'} paired to sync. <Delta now={L.sync.paired} before={B.sync.paired} period={period.before} /></p>
       {/if}
     </Section>
   </div>

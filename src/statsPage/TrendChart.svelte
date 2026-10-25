@@ -10,12 +10,16 @@
   // whole ones, its figure at its end: what a usual day is, so a day's
   // swing reads against it.
   // A day of the period before with nothing to set against (null: Today's
-  // unique hadn't begun) has no grey line, rather than one flat at nothing.
+  // unique hadn't begun) has no grey line, rather than one flat at nothing;
+  // nor does a period before that wasn't counted in full (COMPARE), its
+  // legend and its row in the note left out.
   // Its labels, and the room around the plot for them, follow the page's
   // type (rootFont), so a big screen's chart reads like the rest of it.
+  import { getContext } from 'svelte';
   import { average, axis, compact, fmt, labelled, longDay, shortDay } from './chart';
   import { Crosshair } from './crosshair.svelte';
   import { grouped } from './model';
+  import { COMPARE } from './read';
   import { rootFont } from './rootFont.svelte';
   import { addDays } from './zone';
 
@@ -31,9 +35,11 @@
     back,
   }: { days: string[]; now: number[]; before: (number | null)[]; weekly: boolean; what: string; names: { now: string; before: string }; height?: number; marks?: string[]; back?: number } = $props();
 
+  const compare = getContext<(() => boolean) | undefined>(COMPARE) ?? (() => true);
   const cur = $derived(grouped(days, now, weekly ? 7 : 1));
   /** The period before's, a week null where any of its days is. */
   const was = $derived.by((): (number | null)[] => {
+    if (!compare()) return cur.values.map(() => null);
     const sums = grouped(days, before.map((v) => v ?? 0), weekly ? 7 : 1).values;
     const gaps = grouped(days, before.map((v) => (v === null ? 1 : 0)), weekly ? 7 : 1).values;
     return sums.map((v, i) => (gaps[i] ? null : v));
@@ -75,7 +81,7 @@
 
 <div class="legend" aria-hidden="true">
   <span><i class="key now"></i>{names.now}</span>
-  <span><i class="key before"></i>{names.before}{none ? ': nothing to compare' : ''}</span>
+  {#if compare()}<span><i class="key before"></i>{names.before}{none ? ': nothing to compare' : ''}</span>{/if}
   <span class="hint">{what} a {unit}; the last {unit} isn't over yet</span>
 </div>
 <div class="chart" bind:clientWidth={width} style:height="{height}px">
@@ -89,7 +95,7 @@
       style:font-size="{fs}px"
       role="img"
       tabindex="0"
-      aria-label="{what} a {unit}, {names.now.toLowerCase()} against {names.before.toLowerCase()}. Arrow keys step through."
+      aria-label="{what} a {unit}, {names.now.toLowerCase()}{compare() ? ` against ${names.before.toLowerCase()}` : ''}. Arrow keys step through."
       onpointermove={hair.move}
       onpointerdown={hair.down}
       onpointerleave={hair.leave}
@@ -125,7 +131,7 @@
       <div class="tip" style:left="{tipLeft}px" role="status">
         <div class="when">{longDay(cur.days[hair.at], weekly)}{hair.at === n - 1 ? ', so far' : ''}</div>
         <div class="row"><i class="key now"></i><b>{fmt(cur.values[hair.at] ?? 0)}</b><span>{what.toLowerCase()}</span></div>
-        <div class="row was"><i class="key before"></i><b>{was[hair.at] == null ? '–' : fmt(was[hair.at]!)}</b><span>{longDay(addDays(cur.days[hair.at], -(back ?? days.length)), weekly)}</span></div>
+        {#if compare()}<div class="row was"><i class="key before"></i><b>{was[hair.at] == null ? '–' : fmt(was[hair.at]!)}</b><span>{longDay(addDays(cur.days[hair.at], -(back ?? days.length)), weekly)}</span></div>{/if}
       </div>
     {/if}
   {/if}

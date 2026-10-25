@@ -15,7 +15,7 @@
   import { fitChart } from './fitChart.svelte';
   import { backShare, comersOf, spikesOf, troubleOf } from './insights';
   import Kpi from './Kpi.svelte';
-  import { DAILY_FROM, MODE_NAMES, answersPerDay, asked, dailyAverage, dayAverages, deviceOf, finishedShare, modesOf, percent, weekAverage, type Counts } from './model';
+  import { DAILY_FROM, MODE_NAMES, answersPerDay, asked, dailyAverage, dayAverageHours, dayAverages, deviceOf, finishedShare, modesOf, percent, weekAverage, type Counts } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import Seg from './Seg.svelte';
@@ -68,6 +68,9 @@
   ] as const;
   let weekOf = $state<(typeof WEEK)[number]['value']>('visitors');
   const week = $derived(L.week[weekOf]);
+  /** By weekday once there are four weeks to average each over; before, one or two of a weekday are only those days' chance, so every day is taken together. */
+  const byDay = $derived(L.days.length >= 28);
+  const hours = $derived(week && (byDay ? weekAverage(week, L.days, L.week.until) : [dayAverageHours(week, L.days, L.week.until)]));
 
   let innerHeight = $state(900);
   let innerWidth = $state(1400);
@@ -140,12 +143,12 @@
     </Kpi>
     <Kpi label="Daily players" value={dailyNow === null ? '–' : average(dailyNow)} means="answered Today's unique a day, on average" href="#daily">
       {#snippet spark()}<Spark days={L.days.filter(asked)} values={answersPerDay(L).filter((_, i) => asked(L.days[i]))} {weekly} label="Players of Today's unique a day" />{/snippet}
-      {#snippet change()}{#if dailyNow !== null && dailyBefore === null}<span class="soft">Nothing to compare: it began {shortDay(DAILY_FROM)}</span>{:else}<Delta now={dailyNow} before={dailyBefore} digits={1} of={dailyNow !== null && dailyBefore !== null ? { now: dailyNow * dailyDays, before: dailyBefore * dailyDays } : undefined} period={before} />{/if}{/snippet}
+      {#snippet change()}{#if read.compare && dailyNow !== null && dailyBefore === null}<span class="soft">Nothing to compare: it began {shortDay(DAILY_FROM)}</span>{:else}<Delta now={dailyNow} before={dailyBefore} digits={1} of={dailyNow !== null && dailyBefore !== null ? { now: dailyNow * dailyDays, before: dailyBefore * dailyDays } : undefined} period={before} />{/if}{/snippet}
     </Kpi>
     <Steps {read} period={{ ...period, before }} />
   </div>
   <div class="chart">
-    <Section title="How busy it was" says={oneScreen ? '' : weekly ? 'Each week against the same week of the period before.' : 'Each day against the same day of the period before.'}>
+    <Section title="How busy it was" says={oneScreen ? '' : !read.compare ? `Each ${weekly ? 'week' : 'day'}, the dashed line its average.` : weekly ? 'Each week against the same week of the period before.' : 'Each day against the same day of the period before.'}>
       {#snippet aside()}<Seg label="Drawn" options={METRICS} value={metric} onpick={(v) => (metric = v)} />{/snippet}
       <div class="fill" bind:this={fillEl} bind:clientHeight={fillH} style:min-height="{chart.height + legendH}px">
         <TrendChart days={drawn.days} now={drawn.now} before={drawn.before} back={L.days.length} {weekly} what={METRICS.find((m) => m.value === metric)?.name ?? ''} names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={drawnH} marks={spikes} />
@@ -165,8 +168,8 @@
     {#if big}{@render happened()}{/if}
     <Section title="When they come">
       {#snippet aside()}<Seg label="Counted" options={WEEK} value={weekOf} onpick={(v) => (weekOf = v)} />{/snippet}
-      {#if week}
-        <WeekHours grid={weekAverage(week, L.days, L.week.until)} what={weekOf === 'visitors' ? 'Visits' : 'Games'} zone={read.zone} once={L.days.length <= 7} />
+      {#if hours}
+        <WeekHours grid={hours} {byDay} what={weekOf === 'visitors' ? 'Visits' : 'Games'} zone={read.zone} once={byDay ? L.days.length <= 7 : L.days.length <= 1} />
       {:else}
         <p class="soft">GoatCounter gave no hours for these days.</p>
       {/if}

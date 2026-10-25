@@ -15,12 +15,16 @@
   // Shares of visitors, a row each, in the order given (a journey's steps,
   // the minutes a visit stayed): how many, the share, a bar as long as it
   // with a line where the period before stood, and the change in points. A
-  // share that wasn't counted says "–".
+  // share that wasn't counted says "–". Neither line nor change where the
+  // period before wasn't counted in full (COMPARE).
+  import { getContext } from 'svelte';
   import { fmt } from './chart';
   import Delta from './Delta.svelte';
+  import { COMPARE } from './read';
 
   let { rows, head, label }: { rows: ShareRow[]; head: string; label: string } = $props();
 
+  const compare = getContext<(() => boolean) | undefined>(COMPARE) ?? (() => true);
   const pct = (v: number | null) => (v === null ? '–' : `${Math.round(v)}%`);
 </script>
 
@@ -31,8 +35,8 @@
         <th scope="col">{head}</th>
         <th scope="col" class="n opt">Visits</th>
         <th scope="col" class="n">Share</th>
-        <th scope="col" class="bar"><span class="sr">The share, the line where it stood before</span></th>
-        <th scope="col">Change</th>
+        <th scope="col" class="bar"><span class="sr">The share{compare() ? ', the line where it stood before' : ''}</span></th>
+        {#if compare()}<th scope="col">Change</th>{/if}
       </tr>
     </thead>
     <tbody>
@@ -44,10 +48,10 @@
           <td class="bar">
             <span class="meter held">
               <i style:width="{r.share ?? 0}%"></i>
-              {#if r.before !== null}<b class="was" style:left="{r.before}%"></b>{/if}
+              {#if compare() && r.before !== null}<b class="was" style:left="{r.before}%"></b>{/if}
             </span>
           </td>
-          <td class="change"><Delta now={r.share} before={r.before} rate of={r.of} period="" /></td>
+          {#if compare()}<td class="change"><Delta now={r.share} before={r.before} rate of={r.of} period="" /></td>{/if}
         </tr>
       {/each}
     </tbody>

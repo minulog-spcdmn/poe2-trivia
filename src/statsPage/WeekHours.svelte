@@ -7,16 +7,20 @@
   // an average. A line below reads the busiest hour, or the one pointed at;
   // it sits over its longest wording, kept hidden, so pointing never changes
   // its height and moves what's below.
+  // Without `byDay`, the grid is a single row: every day's hours together,
+  // where there are too few weeks to tell the weekdays apart.
   import { average } from './chart';
   import { busiest } from './model';
 
-  let { grid, what, zone, once = false }: { grid: (number | null)[][]; what: string; zone: string; once?: boolean } = $props();
+  let { grid, what, zone, once = false, byDay = true }: { grid: (number | null)[][]; what: string; zone: string; once?: boolean; byDay?: boolean } = $props();
 
   const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const top = $derived(busiest(grid));
   let at = $state<{ day: number; hour: number } | null>(null);
   const shown = $derived<{ day: number; hour: number; value: number | null } | null>(at ? { ...at, value: grid[at.day][at.hour] } : top);
   const hour = (h: number) => `${String(h).padStart(2, '0')}:00`;
+  /** An hour of the grid in words: "Wednesdays, 04:00 to 05:00", or the hours alone where the days are together. */
+  const when = (d: number, h: number) => `${byDay ? `${DAYS[d]}s, ` : ''}${hour(h)} to ${hour((h + 1) % 24)}`;
   /** Brightness of a cell: its share of the busiest. */
   const level = (v: number | null) => (top && v ? Math.round((100 * v) / top.value) : 0);
   const per = $derived(once ? 'in that hour' : 'an hour on average');
@@ -34,13 +38,13 @@
   <div
     class="grid"
     role="img"
-    aria-label="{what} by weekday and hour, on average.{top ? ` Busiest on ${DAYS[top.day]}s at ${hour(top.hour)}.` : ''}"
+    aria-label="{what} by {byDay ? 'weekday and hour' : 'hour of the day'}, on average.{top ? ` Busiest ${byDay ? `on ${DAYS[top.day]}s ` : ''}at ${hour(top.hour)}.` : ''}"
     onpointerover={point}
     onpointerdown={point}
     onpointerleave={() => (at = null)}
   >
     {#each grid as row, d (d)}
-      <span class="day" aria-hidden="true">{DAYS[d].slice(0, 3)}</span>
+      <span class="day" aria-hidden="true">{byDay ? DAYS[d].slice(0, 3) : 'Day'}</span>
       {#each row as v, h (h)}
         <i data-d={d} data-h={h} class:on={at?.day === d && at.hour === h} class:yet={v === null} style:--l="{level(v)}%"></i>
       {/each}
@@ -53,20 +57,20 @@
   <p class="read">
     <span aria-live="polite">
       {#if shown && shown.value === null}
-        <b>{DAYS[shown.day]}s, {hour(shown.hour)} to {hour((shown.hour + 1) % 24)}</b>: not yet in these days.
+        <b>{when(shown.day, shown.hour)}</b>: not yet in these days.
       {:else if shown && shown.value !== null && shown.value > 0}
-        <b>{DAYS[shown.day]}s, {hour(shown.hour)} to {hour((shown.hour + 1) % 24)}</b>: {average(shown.value)} {what.toLowerCase()} {per}{at ? '' : ', the busiest'}.
+        <b>{when(shown.day, shown.hour)}</b>: {average(shown.value)} {what.toLowerCase()} {per}{at ? '' : ', the busiest'}.
       {:else if shown}
-        <b>{DAYS[shown.day]}s, {hour(shown.hour)} to {hour((shown.hour + 1) % 24)}</b>: none.
+        <b>{when(shown.day, shown.hour)}</b>: none.
       {:else}
         Nothing counted in these days.
       {/if}
     </span>
     {#if top}
-      <span class="sizer" aria-hidden="true"><b>Wednesdays, 00:00 to 00:00</b>: {widest} {what.toLowerCase()} {per}, the busiest.</span>
+      <span class="sizer" aria-hidden="true"><b>{byDay ? 'Wednesdays, ' : ''}00:00 to 00:00</b>: {widest} {what.toLowerCase()} {per}, the busiest.</span>
     {/if}
   </p>
-  <p class="zone">Hours in {zone.replace(/_/g, ' ')} time, where GoatCounter counts them.</p>
+  <p class="zone">{byDay ? '' : 'Every day together, till there are four weeks to tell weekdays apart. '}Hours in {zone.replace(/_/g, ' ')} time, where GoatCounter counts them.</p>
 </div>
 
 <style>

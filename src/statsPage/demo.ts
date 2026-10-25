@@ -266,7 +266,7 @@ export function demoRead(days: number, at = new Date()): Read {
   const now = countsOf(nowPaths, daysBetween(from, today), ZONE, until);
   const before = countsOf(pathsOf(daysBetween(fromBefore, toBefore), hoursSoFar), daysBetween(fromBefore, toBefore), ZONE, until);
   return {
-    v: 8,
+    v: 9,
     span: days,
     from,
     to: today,
@@ -292,6 +292,8 @@ export function demoRead(days: number, at = new Date()): Read {
     spikeRefs: Object.fromEntries(spikesOf(now.days, now.visitors.perDay).map((sp) => [sp.day, sameSites(dayRefs(sp.day, sp.value))])),
     at: at.getTime(),
     complete: true,
+    // (Made up as though counted from long before the longest period.)
+    compare: true,
   };
 }
 

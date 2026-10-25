@@ -3,11 +3,13 @@
 import type { Named } from './api';
 import type { Changes } from './changes';
 import type { Counts } from './model';
+import { addDays } from './zone';
 
 /** A period read: its days and the same many before, with what the start page's visitors came on and from. */
 export interface Read {
   /** The shape this was kept in: a read kept by an older build is read again. */
-  v: 8;
+  v: 9;
+  /** The period's length; `from` is later where counting began inside it (counted). */
   span: number;
   from: string;
   to: string;
@@ -29,9 +31,22 @@ export interface Read {
   spikeRefs: Record<string, Named[]>;
   at: number;
   complete: boolean;
+  /** Whether the period before was counted from its first day: if not, nothing is compared with it (COMPARE). */
+  compare: boolean;
   /** What came in since the read before it (changes.ts keptChanges). */
   changes?: Changes | null;
 }
+
+/** Whether counting began inside the period, so it starts there and not `span` days back. */
+export const counted = (r: Read) => r.from !== addDays(r.to, -(r.span - 1));
+
+/**
+ * The context key for whether the read compares with the period before: a
+ * function, so it follows the read. Without one, the changes (Delta), the
+ * period before's line (TrendChart) and where a share stood (Shares) aren't
+ * shown.
+ */
+export const COMPARE = Symbol('compare');
 
 export interface Period {
   value: number;

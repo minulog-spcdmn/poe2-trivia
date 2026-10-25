@@ -148,6 +148,14 @@ brought far more or fewer than the period before, beyond how they all
 moved (`insights.ts`, only what's beyond chance). A change against the
 period before is coloured only when chance couldn't have made it
 (`Delta.svelte`: a count by itself, a share by how many it's of).
+The days before counting began (the first day anything was counted,
+`model.ts` firstCounted) weren't quiet, they weren't counted: a period
+starts there instead, and nothing is compared with a period before
+that wasn't counted from its first day (`read.ts` COMPARE: no changes,
+no grey line). When they come is by weekday and hour once there are four
+weeks to average each over, before that every day's hours together;
+Today's unique's hardest and easiest items are only those named far
+less or more than usual, beyond what chance does with so few players.
 Each view keeps how it's counted folded away below it (`How.svelte`).
 Each update keeps what it brought in
 (`changes.ts`): the visitors, games and answers added, and the countries

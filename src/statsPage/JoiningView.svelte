@@ -84,7 +84,7 @@
       {/snippet}
       <Bars bars={failures} top={10} tone="down" empty="Nothing went wrong." />
       {#if scripts || scriptsBefore}
-        <p class="line"><b class:bad={scripts > 0}>{fmt(scripts)}</b> errors in the game's own scripts, once a page load at most. <Delta now={scripts} before={scriptsBefore} worse="up" period={period.before} /></p>
+        <p class="line"><b class:bad={scripts > 0}>{fmt(scripts)}</b> {scripts === 1 ? 'error' : 'errors'} in the game's own scripts, once a page load at most. <Delta now={scripts} before={scriptsBefore} worse="up" period={period.before} /></p>
       {/if}
     </Section>
   </div>
