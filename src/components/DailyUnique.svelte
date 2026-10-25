@@ -20,7 +20,7 @@
   import { answerDrawn, isFake, questionTopic, type Item, type Question } from '../lib/game';
   import { clock } from '../lib/clock';
   import { countEvent } from '../lib/count';
-  import { DAILY_KEY, DAYS_KEY, answerLog, answeredOn, askOne, fromClockAhead, dailyEngine, dailyGame, dailyQuestion, aTopic, graceOn, loadLog, nextIn, replay, saveLog, settleDays, streakOn, untilNextMinute, utcDay } from '../lib/daily';
+  import { DAILY_KEY, DAYS_KEY, answerLog, answeredOn, askOne, dailyEngine, dailyGame, dailyQuestion, aTopic, graceOn, loadLog, mergeLogs, nextIn, replay, saveLog, settleDays, streakOn, untilNextMinute, upTo, utcDay } from '../lib/daily';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import { toasts } from '../lib/toasts.svelte';
@@ -49,7 +49,7 @@
     let t: ReturnType<typeof setTimeout> | undefined;
     const tick = () => {
       now = clock.now();
-      mendClockAhead();
+      dropFarAhead();
       // (Again from each tick, so a clock the server has just set right keeps to its minutes.)
       clearTimeout(t);
       if (alive) t = setTimeout(refresh, untilNextMinute(now) + 50);
@@ -103,18 +103,23 @@
 
   // The days answered, and the record they come to (lib/daily.ts: the run, its grace, today's answer).
   let log = $state.raw(loadLog());
-  /** The days as stored, an older build's record (another tab's) kept with them first (lib/daily settleDays). */
+  /**
+   * The days as stored, an older build's record (another tab's) kept with
+   * them first (lib/daily settleDays), and this tab's own: an answer that
+   * couldn't be stored (storage full) still stands here.
+   */
   const stored = () => {
     settleDays();
-    return loadLog();
+    return mergeLogs(loadLog(), log);
   };
-  const rec = $derived(replay(log));
+  // (Days still to come wait for theirs, lib/daily replay.)
+  const rec = $derived(replay(log, today));
   // Days answered on another of the player's devices (lib/sync) or in another tab, or by an older build
   // in one (its record, kept with the days: settleDays), stand here too.
   onMount(() => {
     const reload = () => {
-      log = stored() ?? log;
-      mendClockAhead();
+      log = stored();
+      dropFarAhead();
     };
     reload();
     return onStoredElsewhere({ [DAILY_KEY]: reload, [DAYS_KEY]: reload });
@@ -128,9 +133,10 @@
   let practicePicked = $state<number | null>(null);
 
   const q = $derived(practice ?? daily);
-  const picked = $derived(practice ? practicePicked : (todays?.picked ?? null));
-  const answered = $derived(picked !== null);
   const rightIdx = $derived(q.options.indexOf(q.itemId));
+  // (Today's answered right by an older build's run, lib/daily daysOf: the option it picked isn't known, only that it was the right one.)
+  const picked = $derived(practice ? practicePicked : todays ? (todays.picked < 0 ? rightIdx : todays.picked) : null);
+  const answered = $derived(picked !== null);
   const right = $derived(answered && picked === rightIdx);
   const item = $derived(engine.byId.get(q.itemId));
   /** The item as the question draws it (Grand Spectrum's Emerald…): its art and base. */
@@ -165,16 +171,17 @@
   /** How long an answer waits at most for the server to say the time. */
   const CLOCK_WAIT_MS = 1500;
   /**
-   * Once the server has said what day it is, an answer to a day still to
-   * come was given on a clock running ahead: it stands as yesterday's, so
-   * today's can be answered (lib/daily fromClockAhead).
+   * Once the server has said what day it is, answers more than a day ahead
+   * of it go: a clock ran ahead (a day ahead may be a device already past
+   * midnight, and waits for its day, lib/daily replay). By the server's time
+   * now, not the page's, which a tab in the background moves on seldom.
    */
-  function mendClockAhead() {
+  function dropFarAhead() {
     if (!clock.trusted()) return;
-    const mended = fromClockAhead(stored(), utcDay(now));
-    if (!mended) return;
-    log = mended;
-    saveLog(mended);
+    const kept = upTo(log, utcDay(clock.now()));
+    if (kept === log) return;
+    log = kept;
+    saveLog(kept);
   }
 
   /** An answer to today's held until the server has said what day it is (or not for long): the option picked, the last one tapped. */
@@ -188,10 +195,13 @@
     /** The day whose question was there to pick from. */
     const shown = today;
     // Answered as the page comes up: the day is the server's, once it has
-    // said (a device with a wrong clock may be showing another day's).
-    if (!practice && !clock.known()) {
+    // said (a device with a wrong clock may be showing another day's). And
+    // the device's clock set since the server said (lib/clock refresh): it is
+    // asked again first.
+    const asking = practice ? undefined : clock.known() ? clock.refresh() : clock.ready(CLOCK_WAIT_MS);
+    if (asking) {
       held = i;
-      await clock.ready(CLOCK_WAIT_MS);
+      await Promise.race([asking, new Promise((done) => setTimeout(done, CLOCK_WAIT_MS))]);
       i = held ?? i;
       held = null;
       if (!alive || answered || disabled || practice) return;
@@ -201,28 +211,23 @@
     // instead, and the tap says so.
     if (!practice && (utcDay(clock.now()) !== shown || today !== shown)) {
       now = clock.now();
-      mendClockAhead();
+      dropFarAhead();
       toasts.show("That question was another day’s. Here is today’s.", 'info', { title: "Today’s unique" });
       return;
     }
     // Another tab may have answered today's meanwhile: that answer stands.
-    // And what's stored is the run to go on from, not what this tab loaded
-    // (another tab may have answered a day since); this tab's copy only
-    // stands in when there is nothing stored (storage blocked).
+    // And what's stored is the run to go on from, not only what this tab
+    // loaded (another tab may have answered a day since).
     if (!practice) {
-      const kept = stored();
-      if (answeredOn(replay(kept), today)) {
-        log = kept;
-        return;
-      }
-      if (kept) log = kept;
+      log = stored();
+      if (answeredOn(replay(log, today), today)) return;
     }
     const good = i === rightIdx;
-    // A record from a later day (this device's clock was put back) takes no
-    // answer today: nothing is recorded, so nothing plays as if it were, and
-    // the tap says why.
-    const next = practice ? null : answerLog(log, today, i, good);
-    // (Only while the server hasn't said: once it has, such a record is mended, mendClockAhead.)
+    // Days from a later day, while the server hasn't said what day it is
+    // (this device's clock may have been put back), take no answer today:
+    // nothing is recorded, so nothing plays as if it were, and the tap says
+    // why. Once it has, they wait for their day (lib/daily answerLog).
+    const next = practice ? null : answerLog(log, today, i, good, clock.trusted());
     if (next && next === log) {
       toasts.show("Your answers reach a day still to come: a clock is off, this device’s or a paired one’s. Today’s unique opens once this device has the right time.", 'info', { title: 'Clock off' });
       return;

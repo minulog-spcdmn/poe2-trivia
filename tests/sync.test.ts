@@ -25,7 +25,7 @@ import { combineCodex, emptyCodex, loadCodex, loadPractice, parseCodex, recordEn
 import { DELVE_RECORD_KEY, addRun, bestOf, combineRecords, emptyRecords, loadRecords, recordRun, serializeRecords, tallyOf, type DelveRun } from '../src/lib/delveRecord.ts';
 import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, WINS_KEY, absorbAchievements, absorbWins, loadAchievements, loadWins, serializeStore, serializeWins } from '../src/lib/achievements.ts';
 import { SIGILS_KEY, absorbSigils, loadSigils, serializeSigils } from '../src/lib/sigils.ts';
-import { DAILY_KEY, absorbDaily, loadDaily } from '../src/lib/daily.ts';
+import { DAILY_KEY, absorbDaily, loadDaily, utcDay } from '../src/lib/daily.ts';
 import { DELVE_RULESET } from '../src/lib/delve.ts';
 import { readStored, storeKey, writeStored } from '../src/lib/storage.ts';
 import { chosenNow, stampChoices, takeChosen } from '../src/lib/sync/chosen.ts';
@@ -372,6 +372,15 @@ test("today's unique: another device's days are sent and taken in, an older buil
   store.set(DAILY_KEY, JSON.stringify({ day: today, picked: 1, ok: false, streak: 0, ended: 4 }));
   assert.ok(!absorbDaily(JSON.stringify({ day: today, picked: 2, ok: true, streak: 5, ended: 0 }), today));
   assert.equal(loadDaily()?.ok, false);
+  // Through sync, by this device's day (the server's where it has said): days more than a day ahead aren't taken in,
+  // and an older build's record is taken in as days.
+  store.clear();
+  const now = utcDay(Date.now());
+  assert.deepEqual(takeIn({ dailyDays: takenNowOf(now + 2) }), []);
+  assert.deepEqual(takeIn({ dailyDays: takenNowOf(now + 1) }), ['daily.days']);
+  assert.deepEqual(takeIn({ daily: JSON.stringify({ day: now, picked: 1, ok: true, streak: 3, ended: 0 }) }), ['daily']);
+  assert.equal(loadDaily()?.streak, 4);
+  assert.equal(store.get(DAILY_KEY), undefined, 'kept as days, never as a record');
 });
 
 /** Days as another device would send them: today's answered right. */
