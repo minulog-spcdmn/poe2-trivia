@@ -59,7 +59,8 @@ const timing = (el: SVGElement): [number, number, Kind] => {
   if (el === seal) return [seconds(el, '--d'), 0.55, 'stamp'];
   if (el.classList.contains('mark')) return [seconds(el, '--d'), 0.35, 'fade'];
   if (el.classList.contains('carve')) return [seconds(seal, '--d') + 0.3, 0.6, 'fade'];
-  const at = seconds(el.style.getPropertyValue('--d') ? el : seal, '--d');
+  const own = el.style.getPropertyValue('--d');
+  const at = own ? parseFloat(own) : seconds(seal, '--d');
   if (el.classList.contains('ink')) return [at, 0.6, 'fade'];
   return [at, seconds(el, '--t') || 1, el.classList.contains('piece') ? 'piece' : 'whole'];
 };

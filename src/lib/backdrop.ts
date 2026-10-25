@@ -2473,9 +2473,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   // backdrop isn't there behind it: see Background.svelte). Built already
   // (a warm shader cache), or with no asking whether they are (no
   // KHR_parallel_shader_compile), now. Else in the frame the page is first
-  // painted in, its first call (and the backdrop's first frame after it, as
-  // though drawn now): asking before then how the link went would wait for
-  // the driver, on a cold cache for the best part of the slowest shader's
+  // painted in, its first call (the frames going on from there as they do
+  // from one drawn now): asking before then how the link went would wait
+  // for the driver, on a cold cache for the best part of the slowest shader's
   // compile (85 and 65 ms for two of them in a trace on an RTX 5070, the
   // page's and the GPU process's main threads both held), while the rest of
   // the page goes on being set up meanwhile; asked then, it waits only for
@@ -2499,8 +2499,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
       try {
         if (!takeFirst()) return lost();
         firstFrame();
-        cancelAnimationFrame(raf);
-        frame(now);
+        // (Drawn: the frames go on from now, the next one stepping from here.)
+        lastStep = now;
       } catch (e) {
         console.warn(e);
         lost();

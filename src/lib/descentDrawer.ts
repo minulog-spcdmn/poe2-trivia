@@ -43,12 +43,18 @@ function descentWorker(): Worker | null {
     waiting.delete(data.id);
     job?.done(data.plate ?? onPage(job.args));
   };
-  // A worker that won't start (or dies): what it had, and all that comes after, is drawn on the page.
-  worker.onerror = () => {
-    worker = null;
+  /** What the worker had, drawn on the page (an answer coming after all finds no job, and is dropped). */
+  const onPageAll = () => {
     for (const job of waiting.values()) job.done(onPage(job.args));
     waiting.clear();
   };
+  // A worker that won't start (or dies): what it had, and all that comes after, is drawn on the page.
+  worker.onerror = () => {
+    worker = null;
+    onPageAll();
+  };
+  // An answer that couldn't be read says nothing of which job it was: all waiting are drawn on the page.
+  worker.onmessageerror = onPageAll;
   return worker;
 }
 
