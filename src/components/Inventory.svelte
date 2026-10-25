@@ -167,7 +167,9 @@
     z-index: 5;
     top: calc(100% + 9px);
     left: 50%;
-    translate: -50% 0;
+    /* (Through var(), as the build keeps it beside a transform: tests/minifiedTransforms.) */
+    --tip-shift: -50% 0;
+    translate: var(--tip-shift);
     width: max-content;
     max-width: 16rem;
     padding: 0.45em 0.7em 0.5em;
@@ -220,7 +222,7 @@
     inset: auto;
     margin: 0;
     overflow: visible;
-    translate: none;
+    --tip-shift: none;
     opacity: 0;
     transform: translateY(-4px);
     transition:
