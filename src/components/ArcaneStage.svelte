@@ -1,5 +1,6 @@
 <script module lang="ts">
-  import { untrack, type Snippet } from 'svelte';
+  import { flushSync, untrack, type Snippet } from 'svelte';
+  import { drawIn, type Pen } from '../lib/drawIn';
   import { HOLLOW_CLEAR, type Plate, type StageLayer } from '../lib/engraver';
   import { WHOLE, placed, type Box } from '../lib/plateBox';
   import { switchedOff } from '../lib/switchedOff';
@@ -46,13 +47,12 @@
     )}")`;
 
   // Each layer's lines go on the page a moment before they start to draw,
-  // not all on the frame that shows the question; `late` says how long after
-  // the circle they came, which their delays leave out, so the summoning
-  // plays as if they had been there all along. Once drawn, a layer takes its
-  // still copy. Both are timed on the summoning's own clock (its settle
-  // animation's), not from when this ran: a slow first frame starts the CSS
-  // animations late, and a layer swapped on the page's clock would jump to
-  // drawn before its lines had finished.
+  // not all on the frame that shows the question, and the pen (lib/drawIn)
+  // draws them in as if they had been there all along. Once drawn, a layer
+  // takes its still copy. All of it is timed on the summoning's own clock
+  // (its settle animation's), not from when this ran: a slow first frame
+  // starts the CSS animations late, and the lines drawn on the page's clock
+  // would run ahead of the circle settling in.
   /** The outermost layers in order, those side by side under the same mask together. */
   const groups = untrack(() => layers)
     .filter((l) => !l.within)
@@ -69,7 +69,7 @@
     return Math.max(0, Math.min(l.lines.start, l.glow.start) - AHEAD);
   };
   // (A circle's layers are fixed: it is drawn once, as it mounts.)
-  let late = $state<Record<string, number>>(Object.fromEntries(untrack(() => layers).filter((l) => !due(l)).map((l) => [l.name, 0])));
+  let shown = $state<Record<string, true>>(Object.fromEntries(untrack(() => layers).filter((l) => !due(l)).map((l) => [l.name, true])));
   let drawn = $state<Record<string, true>>({});
   let summon = $state<HTMLDivElement>();
   /** Every circle left out (?off=circles, the beta and the dev server only: lib/switchedOff.ts). */
@@ -78,12 +78,21 @@
     if (off) return;
     let timers: ReturnType<typeof setTimeout>[] = [];
     let stopped = false;
+    let pen: Pen | undefined;
+    /** Hands a layer's SVGs, on the page, to the pen. */
+    const draw = (name: string) => summon?.querySelectorAll<SVGSVGElement>(`svg[data-layer="${name}"]`).forEach((svg) => pen?.add(svg));
     /** Times each layer from `start` (performance.now()'s clock), when the summoning began. */
     const time = (start: number) => {
       if (stopped) return;
+      pen = drawIn(start);
       const at = (s: number, fn: () => void) => timers.push(setTimeout(fn, Math.max(0, s * 1000 - (performance.now() - start))));
       for (const l of layers) {
-        if (due(l)) at(due(l), () => (late[l.name] = (performance.now() - start) / 1000));
+        if (!due(l)) draw(l.name);
+        else
+          at(due(l), () => {
+            flushSync(() => (shown[l.name] = true));
+            draw(l.name);
+          });
         at(Math.max(l.lines.end, l.glow.end) + 0.15, () => (drawn[l.name] = true));
       }
     };
@@ -104,12 +113,12 @@
     return () => {
       stopped = true;
       cancelAnimationFrame(frame);
+      pen?.stop();
       timers.forEach(clearTimeout);
       timers = [];
     };
   });
-  const plate = (p: Plate, name: string) => (drawn[name] ? p.still : late[name] === undefined ? '' : p.drawing);
-  const lateOf = (name: string) => `${(late[name] ?? 0).toFixed(3)}s`;
+  const plate = (p: Plate, name: string) => (drawn[name] ? p.still : shown[name] ? p.drawing : '');
 </script>
 
 {#if !off}
@@ -150,8 +159,8 @@
         style:transform-origin={at.origin}
         style:color={l.tint && `color-mix(in srgb, ${l.tint} 70%, currentColor)`}
       >
-        <svg class="glow" viewBox={at.viewBox} style:--late={lateOf(l.name)}>{@html plate(l.glow, l.name)}</svg>
-        <svg viewBox={at.viewBox} style:--late={lateOf(l.name)}>{@html plate(l.lines, l.name)}</svg>
+        <svg class="glow" viewBox={at.viewBox} data-layer={l.name}>{@html plate(l.glow, l.name)}</svg>
+        <svg viewBox={at.viewBox} data-layer={l.name}>{@html plate(l.lines, l.name)}</svg>
         {#each layers.filter((c) => c.within === l.name) as child (child.name)}
           {@render layer(child, box)}
         {/each}
@@ -229,7 +238,6 @@
        frame for most of a second, right as a reveal's effects began, which
        made them stutter. The reveal's flare covers the change. */
     transition: opacity 0.8s;
-    --draw-ease: cubic-bezier(0.55, 0, 0.25, 1);
   }
   .arcane.good {
     opacity: 0.3;
@@ -359,9 +367,6 @@
     fill-rule: evenodd;
     stroke: none;
   }
-  .arcane :global(.draw.ink) {
-    animation: carve 0.6s calc(var(--d, 0s) - var(--late, 0s)) var(--ease-out) backwards;
-  }
 
   /* The glow: the same strokes, wide and faint, on their own layer so it
      can breathe without repainting. It swells up as the circle is drawn. */
@@ -387,30 +392,25 @@
     stroke-width: 1.4;
   }
 
-  /* (The pieces' keyframes give only where they start, so once done each is
-     as its own style has it, held or not: not held, a finished piece drops
-     out of the page's list of animations, which it sorts whenever asked.) */
-  .arcane :global(.draw) {
+  /* The pen (lib/drawIn) draws it all in: each line hidden till it reaches
+     it, its dash run out, then solid; the script written mark by mark, a
+     seal's signs set down once its rings are drawn and shapes cut solid,
+     each fading in; seals pressed in like a stamp, from larger. */
+  .arcane :global(.draw:not(.ink)) {
     stroke-dasharray: 100;
-    animation: draw var(--t, 1s) calc(var(--d, 0s) - var(--late, 0s)) var(--draw-ease) backwards;
+    stroke-dashoffset: 100;
+    visibility: hidden;
   }
-  /* A piece of a longer stroke keeps the pen's pace (see stroke()). */
-  .arcane :global(.piece) {
-    animation-timing-function: linear;
+  .arcane :global(.mark),
+  .arcane :global(.carve),
+  .arcane :global(.draw.ink) {
+    opacity: 0;
   }
-  /* Signs are set down once their lines are drawn. */
-  .arcane :global(.carve) {
-    animation: carve 0.6s calc(var(--d, 0s) + 0.3s - var(--late, 0s)) var(--ease-out) backwards;
-  }
-  /* The script is written mark by mark. */
-  .arcane :global(.mark) {
-    animation: carve 0.35s calc(var(--d) - var(--late, 0s)) var(--ease-out) backwards;
-  }
-  /* Seals are pressed in like a stamp. */
   .arcane :global(.seal) {
     transform-box: fill-box;
     transform-origin: center;
-    animation: stamp 0.55s calc(var(--d) - var(--late, 0s)) var(--ease-out) backwards;
+    opacity: 0;
+    transform: scale(1.6);
   }
 
   /* The point at the centre: set last, it beats now and then, swells at a
@@ -463,22 +463,6 @@
     animation: wave 1.3s var(--ease-out) both;
   }
 
-  @keyframes draw {
-    from {
-      stroke-dashoffset: 100;
-    }
-  }
-  @keyframes carve {
-    from {
-      opacity: 0;
-    }
-  }
-  @keyframes stamp {
-    from {
-      opacity: 0;
-      transform: scale(1.6);
-    }
-  }
   @keyframes settle {
     from {
       transform: scale(1.06);

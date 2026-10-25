@@ -27,6 +27,7 @@ export const circle: PieceBench = {
     'src/lib/plates/blackSun.ts',
     'src/lib/circlePlaces.ts',
     'src/lib/engraver.ts',
+    'src/lib/drawIn.ts',
   ],
   controls: [
     {

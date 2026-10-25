@@ -4,21 +4,19 @@
 // takes their place once drawn.
 //
 // A circle is made of hundreds of lines, most of them pieces of a broken
-// line, each drawn in by its own animation. Built as markup once per page
-// load (not as hundreds of components each time a circle mounts) and put on
-// the page a layer at a time, just before each draws, no frame carries much
-// of it. Once a layer is drawn, its pieces give way to a still copy: the
-// same lines merged into one path per weight, with nothing animated
-// (finished animations keep holding their last frame and are styled again
-// with every change of the circle's colour), so a reveal recolours a few
-// dozen paths, not the whole drawing.
+// line, each drawn in by the pen (lib/drawIn.ts) from the timing written on
+// it here. Built as markup once per page load (not as hundreds of components
+// each time a circle mounts) and put on the page a layer at a time, just
+// before each draws, no frame carries much of it. Once a layer is drawn, its
+// pieces give way to a still copy: the same lines merged into one path per
+// weight, so a reveal recolours a few dozen paths, not the whole drawing.
 
 import { f, pt, rad, ring, ringParts, type Part, type Pt, type Wear } from './arcane.ts';
 import { boxOf, union, type Box } from './plateBox.ts';
 
 const sec = (v: number) => `${v.toFixed(3)}s`;
-/** How large a seal is as its stamp starts (ArcaneStage's stamp), and the widest stroke it's drawn with (the glow's). */
-const STAMP = 1.6;
+/** How large a seal is as its stamp starts (the pen's, lib/drawIn), and the widest stroke it's drawn with (the glow's). */
+export const STAMP = 1.6;
 const STAMP_STROKE = 2.2;
 
 /**
