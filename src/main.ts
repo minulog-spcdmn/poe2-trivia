@@ -1,4 +1,6 @@
 // First: the game's script errors are counted from here on (lib/countErrors.ts).
+// (The built-ins an older browser lacks are filled in before this runs, by an
+// inline script, vite.config.ts polyfillsFirst.)
 import './lib/countErrors';
 import { mount } from 'svelte';
 import './app.css';
