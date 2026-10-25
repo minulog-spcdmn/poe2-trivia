@@ -1,8 +1,8 @@
 // Today's unique: one question a day, the same for every exile. No server:
 // the day (UTC) seeds the engine, so every browser on the same item data
-// deals the same item and the same four names in the same order. The
-// answer and the run of days answered right stay in this browser, and the
-// player's own devices paired to sync (lib/sync: absorbDaily).
+// deals the same item and the same four names in the same order. The days
+// answered, and the run of them answered right, stay in this browser and the
+// player's own devices paired to sync (lib/sync: absorbDays, absorbDaily).
 
 import { Engine, allArt, answerDrawn, createGame, DEFAULT_SETTINGS, type Item, type Knobs, type Question } from './game.ts';
 import { DAILY_LAUNCH } from './dailyLaunch.ts';
@@ -158,16 +158,6 @@ export function streakOn(rec: DailyRecord | null, today: number): number {
   return rec.day === today || rec.day === today - 1 || graceOn(rec, today) ? rec.streak : 0;
 }
 
-/**
- * A record from a day still to come, once the server has said what day it
- * is: made while this device's clock ran ahead (or before the server had
- * said). Taken as answered yesterday, so today's can be answered and its run
- * goes on. Null when the record is no such one.
- */
-export function fromClockAhead(rec: DailyRecord | null, today: number): DailyRecord | null {
-  return rec && rec.day > today ? { ...rec, day: today - 1 } : null;
-}
-
 /** Today's answer, once given. */
 export const answeredOn = (rec: DailyRecord | null, today: number) => (rec && rec.day === today ? rec : null);
 
@@ -181,50 +171,214 @@ export function answerDaily(rec: DailyRecord | null, today: number, picked: numb
   return { day: today, picked, ok, streak: run + 1, ended: 0, grace };
 }
 
+
+// ---- the days answered, the same on all the player's devices --------------
+//
+// A device keeps more than its last record: every day it knows answered, its
+// own or another of the player's devices' (lib/sync), and works the run and
+// its grace out from them by the rules above (replay). Sync passes on what a
+// device holds only while two are on the site at once, and a player may
+// answer on the phone one day and the computer the next: with the last
+// record alone, each device took the other's days for forgotten ones and the
+// run broke on both. The days merge instead (a day answered on any device
+// stands, a miss over a right answer), which comes out the same in any
+// order, from any number of devices, however often the same days come again.
+//
+// The record as it was kept before (under its old name, and as older builds
+// still send it) is never written here: an older build reading a run the
+// grace kept going would carry it on as days in a row that weren't. So a
+// record is only ever an older build's, its run days answered right one
+// after another, and it is taken in as those days (daysOf).
+
+/**
+ * The days answered: from day `from`, a character a day, '.' none, '0' to
+ * '3' right with that option picked, '4' to '7' wrong with option n - 4, '8'
+ * right with the option not known (a day of an older build's run). Always in
+ * one shape (no '.' at either end), so the same days are the same string.
+ */
+export interface DailyLog {
+  from: number;
+  days: string;
+}
+
+const NONE = '.';
+/** Right, the option picked not known. */
+const RIGHT = '8';
+const markOf = (picked: number, ok: boolean) => String(ok ? picked : picked + 4);
+const isMiss = (mark: string) => mark >= '4' && mark <= '7';
+
+/** How a day's answer ranks against another's for the same day: a miss over a right answer (the day isn't two guesses), a known pick over an unknown one, then the lower. */
+const rank = (mark: string) => (isMiss(mark) ? 0 : mark === RIGHT ? 2 : 1);
+
+/** Of two answers to one day (given on two devices), the one that stands. */
+function stands(a: string | undefined, b: string): string {
+  if (a === undefined || a === NONE) return b;
+  if (b === NONE || a === b) return a;
+  return rank(a) !== rank(b) ? (rank(a) < rank(b) ? a : b) : a < b ? a : b;
+}
+
+/** The days a log holds, by day. */
+function marksOf(log: DailyLog | null): Map<number, string> {
+  const marks = new Map<number, string>();
+  if (log) for (let i = 0; i < log.days.length; i++) if (log.days[i] !== NONE) marks.set(log.from + i, log.days[i]);
+  return marks;
+}
+
+/** A log of these days in its one shape; null for none. */
+function logOf(marks: Map<number, string>): DailyLog | null {
+  let from = Infinity;
+  let to = -Infinity;
+  for (const day of marks.keys()) [from, to] = [Math.min(from, day), Math.max(to, day)];
+  if (from > to) return null;
+  let days = '';
+  for (let day = from; day <= to; day++) days += marks.get(day) ?? NONE;
+  return { from, days };
+}
+
+/** The last day a log holds. */
+const lastOf = (log: DailyLog) => log.from + log.days.length - 1;
+
+/** Two logs as one: every day either holds, the answer that stands where both do. */
+export function mergeLogs(a: DailyLog | null, b: DailyLog | null): DailyLog | null {
+  const marks = marksOf(a);
+  for (const [day, mark] of marksOf(b)) marks.set(day, stands(marks.get(day), mark));
+  return logOf(marks);
+}
+
+/**
+ * An older build's record as the days it stands for: its day's answer, and
+ * before it the run it counts (right answers on the days before, one after
+ * another, as its rules counted them: no grace), or for a miss the run it
+ * ended.
+ */
+export function daysOf(rec: DailyRecord): DailyLog {
+  const marks = new Map<number, string>();
+  const run = rec.ok ? rec.streak - 1 : rec.ended;
+  for (let day = Math.max(0, rec.day - run); day < rec.day; day++) marks.set(day, RIGHT);
+  marks.set(rec.day, markOf(rec.picked, rec.ok));
+  return logOf(marks)!;
+}
+
+/** What the days come to: the record of the last day answered, its run and grace, as answering each in turn made it. */
+export function replay(log: DailyLog | null): DailyRecord | null {
+  if (!log) return null;
+  let rec: DailyRecord | null = null;
+  for (let i = 0; i < log.days.length; i++) {
+    const mark = log.days[i];
+    if (mark !== NONE) rec = answerDaily(rec, log.from + i, mark === RIGHT ? 0 : Number(mark) % 4, !isMiss(mark));
+  }
+  return rec;
+}
+
+/** The days after answering today's question (the same log if today's, or a later day's, was answered already). */
+export function answerLog(log: DailyLog | null, today: number, picked: number, ok: boolean): DailyLog {
+  if (log && lastOf(log) >= today) return log;
+  const marks = marksOf(log);
+  marks.set(today, markOf(picked, ok));
+  return logOf(marks)!;
+}
+
+/**
+ * Days still to come, once the server has said what day it is: answered
+ * while this device's clock ran ahead (or before the server had said), or
+ * taken in from a device whose clock did. They are moved back to end
+ * yesterday, so today's can be answered and the run goes on, and with them
+ * the run of an older build's record that ends among them (its days were
+ * counted on the same clock). Where a day they land on has an answer
+ * already, the one that stands of the two, as from two devices. Null when
+ * there are none.
+ */
+export function fromClockAhead(log: DailyLog | null, today: number): DailyLog | null {
+  if (!log) return null;
+  const last = lastOf(log);
+  if (last <= today) return null;
+  const marks = marksOf(log);
+  const moved: [number, string][] = [];
+  for (let day = last; marks.has(day) && (day > today || marks.get(day) === RIGHT); day--) {
+    moved.push([day, marks.get(day)!]);
+    marks.delete(day);
+  }
+  const back = last - (today - 1);
+  for (const [day, mark] of moved) marks.set(day - back, stands(marks.get(day - back), mark));
+  return logOf(marks);
+}
+
 const KEY = 'daily';
-/** The whole key, as storage events name it. */
+const DAYS = 'daily.days';
+/** The whole keys, as storage events name them. */
 export const DAILY_KEY = storeKey(KEY);
+export const DAYS_KEY = storeKey(DAYS);
 const isInt = (v: unknown, min = 0): v is number => typeof v === 'number' && Number.isInteger(v) && v >= min;
 
-/** A stored record, or null when it's missing or malformed. */
+/** A record (an older build's, as it stores and sends it), or null when it's missing or malformed. */
 export function parseDaily(raw: string | null): DailyRecord | null {
   if (!raw) return null;
   try {
-    const r = JSON.parse(raw) as Record<string, unknown>;
-    // (A record from before the grace has none: it's there.)
-    const grace = r.grace ?? 0;
-    if (!isInt(r.day) || !isInt(r.picked) || r.picked > 3 || typeof r.ok !== 'boolean' || !isInt(r.streak) || !isInt(r.ended) || !isInt(grace)) return null;
-    // (Held to GRACE_DAYS, so making it shorter never costs a stored run.)
-    return { day: r.day, picked: r.picked, ok: r.ok, streak: r.streak, ended: r.ended, grace: Math.min(grace, GRACE_DAYS - 1) };
+    const r = JSON.parse(raw) as Record<string, unknown> | null;
+    if (typeof r !== 'object' || r === null) return null;
+    if (!isInt(r.day) || !isInt(r.picked) || r.picked > 3 || typeof r.ok !== 'boolean' || !isInt(r.streak) || !isInt(r.ended)) return null;
+    return { day: r.day, picked: r.picked, ok: r.ok, streak: r.streak, ended: r.ended, grace: 0 };
   } catch {
     return null;
   }
 }
 
-export const loadDaily = () => parseDaily(readStored(KEY));
-export const saveDaily = (rec: DailyRecord) => void writeStored(KEY, JSON.stringify(rec));
+/** The most days a log holds (a century of them), well within what sync takes (lib/sync/shared.ts MAX_TAKEN). */
+const MAX_DAYS = 40_000;
 
-/** This device's record as stored, for sync to pass on (lib/sync/shared.ts); null for none. */
-export const ownDailyRaw = () => readStored(KEY);
+/** Stored or sent days, in their one shape, or null when they're missing or malformed. */
+export function parseLog(raw: string | null): DailyLog | null {
+  if (!raw) return null;
+  try {
+    const r = JSON.parse(raw) as Record<string, unknown> | null;
+    if (typeof r !== 'object' || r === null || !isInt(r.from) || typeof r.days !== 'string' || r.days.length > MAX_DAYS || !/^[.0-8]*$/.test(r.days)) return null;
+    return logOf(marksOf({ from: r.from, days: r.days }));
+  } catch {
+    return null;
+  }
+}
 
 /**
- * Takes in another of the player's devices' record when it answered a later
- * day: the player's answer, wherever it was given. The same day, only one
- * further into a run with the same verdict (each device had its own run
- * going), never a right answer over a wrong one: answered on two devices,
- * the day isn't two guesses. The same run, the one with its grace spent
- * longer ago, still earning it back (an older build writes records without
- * it). Not one from more than a day ahead of this device's clock, which
- * can't be yet. Whether it changed anything.
+ * This device's days: as kept, and the record under the old name as the days
+ * it stands for (the run from before the days were kept, and anything an
+ * older build in another tab has answered since).
  */
+export function loadLog(): DailyLog | null {
+  const rec = parseDaily(readStored(KEY));
+  return mergeLogs(parseLog(readStored(DAYS)), rec && daysOf(rec));
+}
+
+/** Keeps the days; whether that changed what was kept. */
+export function saveLog(log: DailyLog | null): boolean {
+  if (!log) return false;
+  const raw = JSON.stringify(log);
+  return readStored(DAYS) !== raw && writeStored(DAYS, raw);
+}
+
+/** The record this device's days come to. */
+export const loadDaily = () => replay(loadLog());
+
+/** This device's days as stored, for sync to pass on (lib/sync/shared.ts); null for none. */
+export const ownDaysRaw = () => readStored(DAYS);
+
+/** Keeps the days `after` when they differ from `before`; whether anything changed. */
+const keep = (before: DailyLog | null, after: DailyLog | null) => JSON.stringify(before) !== JSON.stringify(after) && saveLog(after);
+
+/** Keeps the days as loadLog makes them, with an older build's record taken in (from before, or another tab's since); whether anything changed. */
+export const settleDays = () => saveLog(loadLog());
+
+/** Takes in another of the player's devices' days, but none reaching more than a day ahead of this device's clock, which can't be yet. Whether it changed anything. */
+export function absorbDays(raw: string, today = utcDay(Date.now())): boolean {
+  const theirs = parseLog(raw);
+  if (!theirs || lastOf(theirs) > today + 1) return false;
+  const mine = loadLog();
+  return keep(mine, mergeLogs(mine, theirs));
+}
+
+/** Takes in an older build's record from another of the player's devices, as the days it stands for (daysOf), but none from more than a day ahead. Whether it changed anything. */
 export function absorbDaily(raw: string, today = utcDay(Date.now())): boolean {
   const theirs = parseDaily(raw);
   if (!theirs || theirs.day > today + 1) return false;
-  const mine = loadDaily();
-  if (mine && mine.day > theirs.day) return false;
-  if (mine && mine.day === theirs.day) {
-    if (mine.ok !== theirs.ok) return false;
-    if (mine.streak > theirs.streak || (mine.streak === theirs.streak && mine.grace >= theirs.grace)) return false;
-  }
-  return writeStored(KEY, JSON.stringify(theirs));
+  const mine = loadLog();
+  return keep(mine, mergeLogs(mine, daysOf(theirs)));
 }

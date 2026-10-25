@@ -20,7 +20,7 @@
   import { answerDrawn, isFake, questionTopic, type Item, type Question } from '../lib/game';
   import { clock } from '../lib/clock';
   import { countEvent } from '../lib/count';
-  import { DAILY_KEY, answerDaily, answeredOn, askOne, fromClockAhead, dailyEngine, dailyGame, dailyQuestion, aTopic, graceOn, loadDaily, nextIn, saveDaily, streakOn, untilNextMinute, utcDay } from '../lib/daily';
+  import { DAILY_KEY, DAYS_KEY, answerLog, answeredOn, askOne, fromClockAhead, dailyEngine, dailyGame, dailyQuestion, aTopic, graceOn, loadLog, nextIn, replay, saveLog, settleDays, streakOn, untilNextMinute, utcDay } from '../lib/daily';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import { toasts } from '../lib/toasts.svelte';
@@ -101,9 +101,19 @@
   });
   const daily = $derived(dailyQuestion(itemData as Item[], fakeNames, today));
 
-  let rec = $state(loadDaily());
-  // Today's answered on another of the player's devices (lib/sync) or in another tab: it stands here too.
-  onMount(() => onStoredElsewhere({ [DAILY_KEY]: () => (rec = loadDaily() ?? rec) }));
+  // The days answered, and the record they come to (lib/daily.ts: the run, its grace, today's answer).
+  let log = $state.raw(loadLog());
+  const rec = $derived(replay(log));
+  // Days answered on another of the player's devices (lib/sync) or in another tab, or by an older build
+  // in one (its record, kept with the days: settleDays), stand here too.
+  onMount(() => {
+    const reload = () => {
+      settleDays();
+      log = loadLog() ?? log;
+    };
+    reload();
+    return onStoredElsewhere({ [DAILY_KEY]: reload, [DAYS_KEY]: reload });
+  });
   const todays = $derived(answeredOn(rec, today));
 
   // Practice: questions at random, asked as the daily is (twins may meet), kept apart from it.
@@ -150,16 +160,16 @@
   /** How long an answer waits at most for the server to say the time. */
   const CLOCK_WAIT_MS = 1500;
   /**
-   * Once the server has said what day it is, a record from a day still to
-   * come was made on a clock running ahead: it stands as yesterday's, so
+   * Once the server has said what day it is, an answer to a day still to
+   * come was given on a clock running ahead: it stands as yesterday's, so
    * today's can be answered (lib/daily fromClockAhead).
    */
   function mendClockAhead() {
     if (!clock.trusted()) return;
-    const mended = fromClockAhead(loadDaily(), utcDay(now));
+    const mended = fromClockAhead(loadLog(), utcDay(now));
     if (!mended) return;
-    rec = mended;
-    saveDaily(mended);
+    log = mended;
+    saveLog(mended);
   }
 
   /** An answer to today's held until the server has said what day it is (or not for long): the option picked, the last one tapped. */
@@ -195,20 +205,20 @@
     // (another tab may have answered a day since); this tab's copy only
     // stands in when there is nothing stored (storage blocked).
     if (!practice) {
-      const stored = loadDaily();
-      if (answeredOn(stored, today)) {
-        rec = stored;
+      const stored = loadLog();
+      if (answeredOn(replay(stored), today)) {
+        log = stored;
         return;
       }
-      if (stored) rec = stored;
+      if (stored) log = stored;
     }
     const good = i === rightIdx;
     // A record from a later day (this device's clock was put back) takes no
     // answer today: nothing is recorded, so nothing plays as if it were, and
     // the tap says why.
-    const next = practice ? null : answerDaily(rec, today, i, good);
+    const next = practice ? null : answerLog(log, today, i, good);
     // (Only while the server hasn't said: once it has, such a record is mended, mendClockAhead.)
-    if (next && next === rec) {
+    if (next && next === log) {
       toasts.show("This device’s clock is behind the day you last answered on. Set it right to play today’s unique.", 'info', { title: 'Clock behind' });
       return;
     }
@@ -220,8 +230,8 @@
     if (!next) practicePicked = i;
     else {
       const before = streakOn(rec, today);
-      rec = next;
-      saveDaily(rec);
+      log = next;
+      saveLog(log);
       countEvent(good ? 'daily/right' : 'daily/wrong');
       justMissed = !good && before > 0;
       // Yesterday's fire catches as the badge comes in, and grows into today's a moment later.

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { Engine, TWINS, allArt, answerDrawn, isFake, type Question } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, GRACE_DAYS, TOO_THIN, dailyEngine, graceOn, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, hoursLeft, minutesLeft, nextIn, parseDaily, streakOn, untilNextMinute, utcDay, type DailyRecord } from '../src/lib/daily.ts';
+import { DAILY_LAUNCH, GRACE_DAYS, TOO_THIN, dailyEngine, graceOn, aTopic, answerDaily, answerLog, askOne, daysOf, fromClockAhead, dailyGame, answeredOn, dailyQuestion, hoursLeft, minutesLeft, nextIn, parseDaily, parseLog, replay, streakOn, untilNextMinute, utcDay, type DailyRecord } from '../src/lib/daily.ts';
 import { fakes, items, seeded } from './helpers.ts';
 
 const HOUR = 3_600_000;
@@ -172,31 +172,50 @@ test("today's question is answered once: a second answer (another tab, a reload)
   assert.equal(answeredOn(rec, 6), null);
 });
 
-test('stored records are checked before use', () => {
-  const rec = answerDaily(null, 5, 1, true);
-  assert.deepEqual(parseDaily(JSON.stringify(rec)), rec);
+test("an older build's stored record is checked before use, and stands for the days of its run", () => {
+  const older = { day: 5, picked: 1, ok: true, streak: 1, ended: 0 };
+  assert.deepEqual(parseDaily(JSON.stringify(older)), { ...older, grace: 0 });
   assert.equal(parseDaily(null), null);
   assert.equal(parseDaily('{'), null);
-  assert.equal(parseDaily(JSON.stringify({ ...rec, picked: 7 })), null);
-  assert.equal(parseDaily(JSON.stringify({ ...rec, streak: -1 })), null);
-  assert.equal(parseDaily(JSON.stringify({ ...rec, ok: 'yes' })), null);
-  assert.equal(parseDaily(JSON.stringify({ ...rec, grace: -1 })), null);
-  assert.equal(parseDaily(JSON.stringify({ ...rec, grace: GRACE_DAYS + 5 }))?.grace, GRACE_DAYS - 1, 'held to GRACE_DAYS, the run kept');
-  // A record from before the grace has it there.
-  const { grace: _, ...older } = rec;
-  assert.deepEqual(parseDaily(JSON.stringify(older)), { ...rec, grace: 0 });
+  assert.equal(parseDaily('null'), null);
+  assert.equal(parseDaily(JSON.stringify({ ...older, picked: 7 })), null);
+  assert.equal(parseDaily(JSON.stringify({ ...older, streak: -1 })), null);
+  assert.equal(parseDaily(JSON.stringify({ ...older, ok: 'yes' })), null);
+  // A run of 3 to day 12: right on 10 and 11 (the option not known), and 12 as picked.
+  assert.deepEqual(daysOf({ ...older, day: 12, streak: 3, grace: 0 }), { from: 10, days: '881' });
+  // A miss that ended a run of 2.
+  assert.deepEqual(daysOf({ day: 12, picked: 3, ok: false, streak: 0, ended: 2, grace: 0 }), { from: 10, days: '887' });
+  // Its run comes out as it counted it.
+  const rec: DailyRecord = { day: 400, picked: 2, ok: true, streak: 30, ended: 0, grace: 0 };
+  assert.deepEqual(replay(daysOf(rec)), rec);
 });
 
-test("a record from a day still to come (a clock that ran ahead) stands as yesterday's once the server has said the day", () => {
+test('stored days are checked before use, and kept in one shape', () => {
+  assert.deepEqual(parseLog(JSON.stringify({ from: 10, days: '..01.5..' })), { from: 12, days: '01.5' });
+  assert.equal(parseLog(JSON.stringify({ from: 10, days: '....' })), null);
+  assert.equal(parseLog(JSON.stringify({ from: 10, days: '019' })), null);
+  assert.equal(parseLog(JSON.stringify({ from: -1, days: '0' })), null);
+  assert.equal(parseLog(JSON.stringify({ from: 10 })), null);
+  assert.equal(parseLog('[1]'), null);
+  assert.equal(parseLog(null), null);
+});
+
+test("an answer to a day still to come (a clock that ran ahead) stands as yesterday's once the server has said the day", () => {
+  // An older build's record from a clock a day ahead: its run of 4 ends yesterday instead, as it did.
   const ahead: DailyRecord = { day: 101, picked: 2, ok: true, streak: 4, ended: 0, grace: 0 };
-  const mended = fromClockAhead(ahead, 100)!;
-  assert.deepEqual(mended, { ...ahead, day: 99 });
+  assert.deepEqual(replay(fromClockAhead(daysOf(ahead), 100)), { ...ahead, day: 99 });
+  // Answered on days 97 and 98, then on 101 by a clock a day ahead: it counts as 99's.
+  const log = answerLog(answerLog(answerLog(null, 97, 0, true), 98, 1, true), 101, 2, true);
+  const mended = fromClockAhead(log, 100)!;
+  assert.deepEqual(replay(mended), { day: 99, picked: 2, ok: true, streak: 3, ended: 0, grace: 0 });
   // Today's can be answered, and its run goes on.
-  assert.equal(answeredOn(mended, 100), null);
-  assert.equal(streakOn(mended, 100), 4);
-  assert.equal(answerDaily(mended, 100, 0, true).streak, 5);
-  // Nothing to mend in a record from today or before.
-  assert.equal(fromClockAhead({ ...ahead, day: 100 }, 100), null);
+  assert.equal(answeredOn(replay(mended), 100), null);
+  assert.equal(replay(answerLog(mended, 100, 0, true))?.streak, 4);
+  // Yesterday answered already: the one that stands of the two, as from two devices (a miss over a right answer).
+  const both = fromClockAhead(answerLog(answerLog(null, 99, 0, true), 101, 3, false), 100)!;
+  assert.deepEqual(replay(both), { day: 99, picked: 3, ok: false, streak: 0, ended: 0, grace: 0 });
+  // Nothing to mend in days up to today.
+  assert.equal(fromClockAhead(answerLog(null, 100, 0, true), 100), null);
   assert.equal(fromClockAhead(null, 100), null);
 });
 

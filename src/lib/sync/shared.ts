@@ -9,7 +9,7 @@
 
 import { absorbAchievements, absorbWins, ownAchievementsRaw, ownWinsRaw } from '../achievements.ts';
 import { ownCodexRaw, ownPracticeRaw } from '../codex.ts';
-import { absorbDaily, ownDailyRaw } from '../daily.ts';
+import { absorbDaily, absorbDays, ownDaysRaw } from '../daily.ts';
 import { ownRecordsRaw } from '../delveRecord.ts';
 import { absorbSigils, ownSigilsRaw } from '../sigils.ts';
 import { readStored, writeStored } from '../storage.ts';
@@ -37,7 +37,9 @@ const TAKEN: Record<string, { own: () => string | null; take: (raw: string) => b
   achievements: { own: ownAchievementsRaw, take: absorbAchievements, name: 'achievements' },
   wins: { own: ownWinsRaw, take: absorbWins, name: 'achievements.wins' },
   sigils: { own: ownSigilsRaw, take: absorbSigils, name: 'sigils' },
-  daily: { own: ownDailyRaw, take: (raw) => absorbDaily(raw), name: 'daily' },
+  // Today's unique: the days answered, which make the run (lib/daily.ts); and an older build's record, taken in as its days, never sent.
+  dailyDays: { own: ownDaysRaw, take: (raw) => absorbDays(raw), name: 'daily.days' },
+  daily: { own: () => null, take: (raw) => absorbDaily(raw), name: 'daily' },
   name: { own: () => chosenNow('name'), take: (raw) => takeChosen('name', raw), name: NAME_STORED },
   colour: { own: () => chosenNow('colour'), take: (raw) => takeChosen('colour', raw), name: COLOUR_NAME },
 };

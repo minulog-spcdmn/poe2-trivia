@@ -24,14 +24,19 @@ function rooms(n: number): RoomInfo[] {
   return Array.from({ length: n }, (_, i) => first[i] ?? room(i + 1, { players: 1 + (i % 12), phase: i % 4 ? 'lobby' : 'locked' }));
 }
 
-/** Today's unique as this device last had it: a streak of `days`, today answered right, not yet (after yesterday, or after a forgotten day the grace forgives), or missed (ending the streak). */
+/**
+ * Today's unique as this device last had it (its days, lib/daily.ts DailyLog): a streak of `days`, today
+ * answered right, not yet (after yesterday, or after a forgotten day the grace forgives), or missed (ending the
+ * streak). With no streak, a miss.
+ */
 function today(days: number, how: string): NonNullable<Built['daily']> {
-  if (how === 'missed') return { daysAgo: 0, picked: 3, ok: false, streak: 0, ended: days, grace: 0 };
-  if (how === 'waiting') return { daysAgo: 1, picked: 1, ok: days > 0, streak: days, ended: 0, grace: 0 };
-  if (how === 'forgiven') return { daysAgo: 2, picked: 1, ok: days > 0, streak: days, ended: 0, grace: 0 };
-  // A day skipped while the grace is still being earned back: the run is gone, and nothing says so until it starts over.
-  if (how === 'lapsed') return { daysAgo: 2, picked: 1, ok: days > 0, streak: days, ended: 0, grace: 3 };
-  return { daysAgo: 0, picked: 2, ok: days > 0, streak: days, ended: 0, grace: 0 };
+  const run = (n: number, last = '1') => (n > 0 ? '0'.repeat(n - 1) + last : '5');
+  if (how === 'missed') return { days: '0'.repeat(days) + '7', daysAgo: 0 };
+  if (how === 'waiting') return { days: run(days), daysAgo: 1 };
+  if (how === 'forgiven') return { days: run(days), daysAgo: 2 };
+  // A day skipped while the grace is still being earned back (one forgiven four days before): the run is gone, and nothing says so until it starts over.
+  if (how === 'lapsed') return { days: days > 4 ? '0'.repeat(days - 3) + '.000' : run(days), daysAgo: 2 };
+  return { days: run(days, '2'), daysAgo: 0 };
 }
 
 /** A returning player's past: items met, Delve runs, open rooms, Today's unique on a streak. */

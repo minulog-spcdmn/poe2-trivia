@@ -350,23 +350,32 @@ test('sigils are taken in: every one unlocked, and the one put on last is worn',
   assert.ok(!absorbSigils(serializeSigils({ unlocked: ['witch'], worn: null, wornAt: 150 })), 'taken off earlier: still worn');
 });
 
-test("today's unique is taken in from a device that answered later; never from the future", () => {
+test("today's unique: another device's days are sent and taken in, an older build's record as its run's days; never from the future", () => {
   const today = 20_000;
   store.set(DAILY_KEY, JSON.stringify({ day: today - 1, picked: 0, ok: true, streak: 4, ended: 0 }));
-  assert.ok(!absorbDaily(JSON.stringify({ day: today - 2, picked: 1, ok: true, streak: 3, ended: 0 }), today));
+  // The days this device's run holds already.
+  assert.ok(!absorbDaily(JSON.stringify({ day: today - 1, picked: 0, ok: true, streak: 4, ended: 0 }), today));
+  // An earlier day's record says only which option was picked that day: the run stays.
+  assert.ok(absorbDaily(JSON.stringify({ day: today - 2, picked: 1, ok: true, streak: 3, ended: 0 }), today));
+  assert.equal(loadDaily()?.streak, 4);
   assert.ok(absorbDaily(JSON.stringify({ day: today, picked: 2, ok: true, streak: 5, ended: 0 }), today));
   assert.equal(loadDaily()?.day, today);
+  assert.equal(loadDaily()?.streak, 5);
   assert.ok(!absorbDaily(JSON.stringify({ day: today + 5, picked: 2, ok: true, streak: 9, ended: 0 }), today));
+  // The days go out, the record never does; what comes in as days is taken in.
+  assert.deepEqual(Object.keys(takenNow()), ['dailyDays']);
+  store.clear();
+  assert.deepEqual(takeIn({ dailyDays: takenNowOf(today) }), ['daily.days']);
+  assert.equal(loadDaily()?.streak, 1);
   // The same day answered on two devices: never a right answer over a wrong one.
+  store.clear();
   store.set(DAILY_KEY, JSON.stringify({ day: today, picked: 1, ok: false, streak: 0, ended: 4 }));
   assert.ok(!absorbDaily(JSON.stringify({ day: today, picked: 2, ok: true, streak: 5, ended: 0 }), today));
-  store.set(DAILY_KEY, JSON.stringify({ day: today, picked: 2, ok: true, streak: 1, ended: 0 }));
-  assert.ok(absorbDaily(JSON.stringify({ day: today, picked: 2, ok: true, streak: 6, ended: 0 }), today), 'the longer run, the same verdict');
-  // The same run, its grace for a skipped day spent on one device and not on the other (an older build keeps no grace): spent wins.
-  assert.ok(absorbDaily(JSON.stringify({ day: today, picked: 2, ok: true, streak: 6, ended: 0, grace: 4 }), today));
-  assert.equal(loadDaily()?.grace, 4);
-  assert.ok(!absorbDaily(JSON.stringify({ day: today, picked: 2, ok: true, streak: 6, ended: 0 }), today));
+  assert.equal(loadDaily()?.ok, false);
 });
+
+/** Days as another device would send them: today's answered right. */
+const takenNowOf = (today: number) => JSON.stringify({ from: today, days: '0' });
 
 test('what is sent to be taken in is what is stored; what comes in is checked', () => {
   store.set(ACHIEVEMENTS_KEY, serializeStore({ earned: { [ACHIEVEMENTS[0].id]: 1 } }));
