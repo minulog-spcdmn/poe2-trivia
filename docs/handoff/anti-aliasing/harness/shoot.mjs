@@ -32,6 +32,7 @@ const VARIANTS = {
   gamma: { css: '.summon .layer > svg:not(.glow){filter:url(#aag)}', defs: true },
   ss: { css: '', inject: 'ss.js' },
   ref: { css: '.summon .layer{will-change:auto!important}', k: 4 },
+  repaint: { css: '.summon .layer{will-change:auto!important}', repaint: true },
 };
 
 const browser = await chromium.launch({ channel: 'chromium', args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist'] });
@@ -63,10 +64,30 @@ try {
       await page.waitForSelector('.summon', { timeout: 60000 });
       // Let the summoning finish and the circle settle (its turning keeps on).
       await page.waitForTimeout(7000);
+      if (variant.repaint) await page.evaluate(() => { window.__repaint = true; });
       if (variant.inject) console.log('ss layers', await page.evaluate(`(${fs.readFileSync(new URL('./' + variant.inject, import.meta.url), 'utf8')})(${dpr})`));
       const box = await page.evaluate(() => {
         const r = document.querySelector('.summon').getBoundingClientRect();
         for (const a of document.getAnimations()) a.pause();
+        if (window.__repaint) {
+          // Nothing left on the compositor: each animation's value set inline, the turns by script each frame.
+          window.__turns = [];
+          for (const a of document.getAnimations()) {
+            const el = a.effect?.target;
+            if (!el) continue;
+            if (/(^|-)turn$/.test(a.animationName ?? '')) {
+              const t = a.effect.getComputedTiming();
+              window.__turns.push({ el, dur: Number(t.duration), rev: t.direction === 'reverse', t0: Number(a.currentTime ?? 0) });
+              a.cancel();
+              continue;
+            }
+            const props = new Set(a.effect.getKeyframes().flatMap((f) => Object.keys(f)).filter((p) => !['offset', 'easing', 'composite', 'computedOffset'].includes(p)));
+            const cs = getComputedStyle(el);
+            const vals = [...props].map((p) => [p, cs[p]]);
+            a.cancel();
+            for (const [p, v] of vals) el.style[p] = v;
+          }
+        }
         return { x: r.x, y: r.y, width: r.width, height: r.height };
       });
       const dir = path.join(outDir, `${circle}-${s}-${v}`);
@@ -74,6 +95,11 @@ try {
       fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify({ size: s, variant: v, dpr, box }));
       for (let k = 0; k < FRAMES; k++) {
         await page.evaluate((k) => {
+          for (const t of window.__turns ?? []) {
+            const ms = t.t0 + (k * 1000) / 60;
+            const f = (ms / t.dur) % 1;
+            t.el.style.rotate = `${(360 * (t.rev ? 1 - f : f)).toFixed(4)}deg`;
+          }
           for (const a of document.getAnimations()) {
             if (!/(^|-)turn$/.test(a.animationName ?? '')) continue;
             a.__t0 ??= Number(a.currentTime ?? 0);
@@ -83,7 +109,7 @@ try {
         }, k);
         await page.screenshot({ path: path.join(dir, `${String(k).padStart(3, '0')}.png`), clip: box, scale: 'device', animations: 'allow' });
       }
-      console.log('done', s, v, dpr, JSON.stringify(box), await page.evaluate(() => document.getAnimations().filter((a) => /(^|-)turn$/.test(a.animationName ?? '')).length));
+      console.log('done', s, v, dpr, JSON.stringify(box), 'turns by script', await page.evaluate(() => (window.__turns ?? []).length), 'anims left', await page.evaluate(() => document.getAnimations().length), await page.evaluate(() => document.getAnimations().filter((a) => /(^|-)turn$/.test(a.animationName ?? '')).length));
       await ctx.close();
     }
   };

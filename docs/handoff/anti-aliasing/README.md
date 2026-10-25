@@ -12,12 +12,12 @@ and doesn't repeat them.
 
 ## Where it stands
 
-- **Nothing is changed in the game.** No branch carries any of it.
-- **The cards were never looked at.** The owner named them first; they are
-  the place to start.
+- **The cards: fixed where it can be** (a second session, the same day,
+  `lib/fineMask`; see “What is known about the cards”).
 - **The circles:** the cause is measured (below); every cheap fix tried falls
-  short, and the one fix likely to reach real quality (drawing the turning on
-  the GPU) is untried.
+  short, a real repaint every frame is worse, and the one fix left (drawing
+  the turning on the GPU) would land on the ideal by construction; it's
+  untried and large.
 
 ## The mistakes, and the rule each one breaks
 
@@ -93,9 +93,16 @@ Laptop (dpr 2) and 4K at 150% gave the same pattern in an earlier pass. (The
   once-drawn picture every frame as it turns. The “repaint every frame”
   variant (`will-change: auto`) measured the same as now, but with the
   animations paused from script the layers probably stayed composited, so
-  that test likely didn't repaint at all. A version that really repaints each
-  frame (rotation set per frame on the SVG, not a compositor animation) is
-  the open test.
+  that test likely didn't repaint at all.
+- **A real repaint every frame is worse** (second session; `repaint` in
+  `harness/shoot.mjs`: every animation cancelled, its value set inline, the
+  turns set from script each frame, nothing left on the compositor): 0.094
+  at 1080p against 0.045 now and 0.029 ideal. Each line is drawn crisp, but
+  the hatching's lines, closer than a pixel, alias against each other and
+  the moiré crawls; the compositor's resample was hiding it.
+- **A 2 s clip of now beside the ideal** at 1080p was made for the owner to
+  judge whether the GPU route is worth building (shown pixel for pixel; the
+  frames come from `harness/shoot.mjs … fhd now,ref 120`).
 - **The gamma correction** (`feComponentTransfer`, alpha gamma 0.69 for a
   circle at the stage's 0.22 strength over the dark backdrop) matches the
   ideal's brightness and keeps the look, but the owner saw no difference.
@@ -105,31 +112,42 @@ Laptop (dpr 2) and 4K at 150% gave the same pattern in an earlier pass. (The
   dialogs), not the effects overlay (above dialogs). Prove it in the harness
   before building it.
 
-## What is known about the cards (unverified; never looked at)
+## What is known about the cards
 
-From reading the code only:
+Looked at and measured (`harness/cards.mjs`, `harness/flick.py`) on the card
+bench's stage at 1080p, dpr 1, against the same cards drawn at 4x and
+averaged down.
 
-- Hover tilt: `perspective(900px) rotateX/rotateY … scale(1.04)` on `.frame`
-  (`src/components/ChooseCategory.svelte`, around line 1430), no
-  `will-change`.
-- The deal's flip: `perspective(1200px) … rotateY/X … scale()` from a Svelte
-  transition (around line 582).
-- The engraving's lines are 0.3 to 0.8 CSS px (`CardEngraving.svelte`, around
-  192 to 218), times `--card-z` (0.8 to 1.36) and the stage zoom.
-- The emblem is a CSS mask (around 1138) that scales 1.1 and turns −3° on
-  hover (around 1448), under a parent with a `drop-shadow` filter (around
-  1131).
-- A canvas inside the card would be tilted with it and resampled the same
-  way, so a per-card WebGL canvas is no fix.
-
-Start by watching a card tilt and flip, zoomed, at a dpr 1 size, and find
-which part goes jagged (the edge, the lines, the emblem, the text) before
-deciding anything. `cards.html` is the card bench.
+- **The jaggy part was the emblem.** Its clean mask (`lib/iconFit`, baked at
+  424 to 848 px) is drawn at 120 to 200 device px on a dpr 1 screen, and
+  Chrome shrinks a CSS mask that far with no proper filtering: hard
+  stair-steps on the outline, at rest too, which crawl as the card tilts or
+  the emblem turns on hover. Fixed by `lib/fineMask`: each mask area-averaged
+  to a little over its drawn size, in quarter-octave steps. The outline is
+  then smooth (a shade softer than the ideal: the browser still places the
+  copy between pixels; a copy at exactly the drawn size was no crisper).
+- **Item art masked as it comes is fine** (the codex's glyphs, game over's):
+  its edges are soft, it shrinks smoothly; the fix was tried there and
+  taken out again.
+- **The rest of the card is near the ideal at rest.** Text, engraving and
+  border match the 4x render.
+- **What's left in the tilt is the compositor's resample** of the whole card
+  (a 3D transform is always composited, rasterised flat and resampled each
+  frame): tilt flicker 0.0045 to 0.0049 as it was, about 0.0042 with the
+  emblem fixed, 0.0025 ideal; at dpr 2 it's 0.0043 against 0.0038. No CSS
+  reaches it: `will-change: transform` and the hover without its 1.04 scale
+  measured the same. A per-card canvas would be resampled the same way.
+- **The hover's start and the deal's flip move too fast to shimmer**: the
+  hover's start measured the same as the ideal; the flip is over in half a
+  second.
 
 ## The harness
 
 `harness/shoot.mjs` steps a circle on the QA desk's circle bench frame by
-frame and saves each frame at device pixels; `harness/measure.py` measures
+frame and saves each frame at device pixels (`repaint`: turned from script,
+nothing composited); `harness/cards.mjs` does the same for a card on the
+card bench's stage (at rest, tilting, the hover's start), measured by
+`harness/flick.py`; `harness/measure.py` measures
 the flicker against the `ref` run; `harness/ss.js` is the supersampled
 variant's injection. Run the dev server, then from the repo root:
 
