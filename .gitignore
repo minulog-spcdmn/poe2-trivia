@@ -29,6 +29,9 @@ dist-ssr
 # The room bot's build and browser profile (scripts/room-bot.mjs)
 .bot/
 
+# The iPhone scripts' builds and runs (scripts/iphone, docs/iphone.md)
+.phone/
+
 # Python environment and model for scripts/upscale-art.py
 .venv-art/
 

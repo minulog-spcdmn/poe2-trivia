@@ -25,7 +25,7 @@ function files(): string[] {
   return listed.filter((f) => f && !f.endsWith('/') && text.has(extname(f)) && existsSync(join(root, f)));
 }
 
-const SKIP = new Set(['node_modules', 'dist', '.git', '.bot', '.claude', '.venv-art', '.preview', '__pycache__']);
+const SKIP = new Set(['node_modules', 'dist', '.git', '.bot', '.phone', '.claude', '.venv-art', '.preview', '__pycache__']);
 
 function* walk(dir: string): Generator<string> {
   for (const e of readdirSync(dir, { withFileTypes: true })) {

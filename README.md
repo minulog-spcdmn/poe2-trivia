@@ -103,8 +103,9 @@ plays in a channel of its own (`src/lib/channel.ts`), so a tab on localhost
 never meets the live game, and keeps its own storage.
 
 More in [docs/development.md](docs/development.md) (sound, visual effects,
-item data, the beta's build) and [docs/dev-tools.md](docs/dev-tools.md) (the
-test and tuning pages).
+item data, the beta's build), [docs/dev-tools.md](docs/dev-tools.md) (the
+test and tuning pages) and [docs/iphone.md](docs/iphone.md) (testing on the
+owner's iPhone, driven from the PC).
 
 ### Refreshing item data
 

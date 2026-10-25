@@ -226,3 +226,10 @@ its last reach steered onto its own pick (`src/bot/motion.ts`, `hand.ts`).
 A bot does nothing while a new zone's cards are on their way: its pointer
 is off the page, and it looks the cards over from the deal.
 More players' recordings make for more kinds of hands.
+
+## The iPhone
+
+`scripts/iphone/` drives the owner's iPhone from the PC over USB: a build
+served to it on the home network, the codex or a game played in its Chrome,
+its frames, layers and profile measured, screenshots. `docs/iphone.md` has
+the setup, the scripts and what they found.
