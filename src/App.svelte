@@ -1,6 +1,7 @@
 <script lang="ts">
   import { accentAt, dealtDeeper, milestoneAt, plunge, setDescent, type Dealt } from './lib/descent';
   import { zoneAt } from './lib/zoneSigils';
+  import { pageScroll } from './lib/pageScroll';
   import { isGroupRun, shownDepth } from './lib/delve';
   import { dealing, followDeal, shownRound } from './lib/dealing.svelte';
   import { arrival, beginArrival, endArrival } from './lib/zoneArrival.svelte';
@@ -408,10 +409,12 @@
   });
 
   // Each screen starts at the top (a guest who scrolled down to the join
-  // form shouldn't land halfway down the lobby).
+  // form shouldn't land halfway down the lobby). Asked only when it's not
+  // there already: scrolling has the browser lay the new screen out on the
+  // spot, as it mounts (lib/pageScroll.ts).
   $effect(() => {
     void screen;
-    window.scrollTo({ top: 0 });
+    if (pageScroll()[1]) window.scrollTo({ top: 0 });
   });
 
   /** The player's mute and settings keys (lib/keys.ts), anywhere but in a field. */

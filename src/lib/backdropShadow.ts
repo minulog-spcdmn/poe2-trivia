@@ -108,12 +108,37 @@ export function releaseAll() {
 // ---------- when fills must go back to CSS ----------
 
 let lastScroll = -Infinity;
+/**
+ * Elements an animation or transition may run on: those one has started on,
+ * as its event says (CSS) or as it's made (element.animate, which Svelte's
+ * transitions use too), and those running one when the backdrop first
+ * measures. Only these are asked what moves them (movedAmong).
+ */
+const stirred = new WeakSet<Element>();
+/** An element's own animations that move it, as last asked: until another starts on it. */
+const ownMoves = new WeakMap<Element, Animation[]>();
+function stir(el: Element) {
+  stirred.add(el);
+  ownMoves.delete(el);
+}
 if (typeof window !== 'undefined') {
   const mark = () => (lastScroll = performance.now());
   addEventListener('scroll', mark, { passive: true, capture: true });
   addEventListener('wheel', mark, { passive: true });
   addEventListener('touchmove', mark, { passive: true });
+  const started = (e: AnimationEvent | TransitionEvent) => {
+    if (e.target instanceof Element && !e.pseudoElement) stir(e.target);
+  };
+  addEventListener('animationstart', started, { passive: true, capture: true });
+  addEventListener('transitionrun', started, { passive: true, capture: true });
+  const animate = Element.prototype.animate;
+  if (animate)
+    Element.prototype.animate = function (this: Element, ...args: Parameters<Element['animate']>) {
+      stir(this);
+      return animate.apply(this, args);
+    };
 }
+let seeded = false;
 
 const MOVING = /transform|translate|scale|rotate/;
 
@@ -146,34 +171,46 @@ function keyframesMove(effect: KeyframeEffect): boolean {
 
 /**
  * Which of `nodes` and their ancestors a running animation or transition
- * moves now, each asked once. Found as the frame is measured, not kept until
- * one starts: a hover's transition shows up here in the frame that first
- * styles it, but its transitionrun (or animationstart) event only fires a
- * frame later. Asked of these elements alone, not of the whole document: a
- * long page (the codex) runs far more animations than the few elements with
- * fills have, and going through them all every frame stalled it. And all
- * asked at once, with nothing written in between: an ask between the
- * measuring's writes (data-bs-fill) brought the styles up to date again
- * each time, which in a reveal, with its many animations, took tens of ms.
- * `asked` and `moved` carry over between calls in one frame, so each
- * element is asked once however many fills share it. One marked
- * `data-bs-follow` moves so little, mostly while nearly see-through (a
- * screen coming in or going: App.svelte), that the backdrop follows it:
+ * moves now, each asked once. Only a stirred element is asked, and its
+ * animations are got once, then kept until another starts on it: asking
+ * every frame cost milliseconds, since Chrome's getAnimations() gathers and
+ * sorts every animation on the page for each element that has any (a
+ * question's rune circle runs some six hundred). A CSS transition or
+ * animation shows up here a frame after it's styled, with its event; it
+ * hasn't moved yet in that frame. Asked of these elements alone, not of the
+ * whole document: a long page (the codex) runs far more animations than the
+ * few elements with fills have, and going through them all every frame
+ * stalled it. And all asked at once, with nothing written in between: an
+ * ask between the measuring's writes (data-bs-fill) brought the styles up
+ * to date again each time, which in a reveal, with its many animations,
+ * took tens of ms. `asked` and `moved` carry over between calls in one
+ * frame, so each element is asked once however many fills share it. One
+ * marked `data-bs-follow` moves so little, mostly while nearly see-through
+ * (a screen coming in or going: App.svelte), that the backdrop follows it:
  * its own motion keeps the fills in it.
  */
 function movedAmong(nodes: Iterable<Element>, asked = new Set<Element>(), moved = new Set<Element>()): Set<Element> {
+  if (!seeded) {
+    seeded = true;
+    for (const anim of document.getAnimations()) {
+      const target = (anim.effect as KeyframeEffect | null)?.target;
+      if (target) stir(target);
+    }
+  }
   for (const node of nodes)
     for (let el: Element | null = node; el && !asked.has(el); el = el.parentElement) {
       asked.add(el);
-      if (el.hasAttribute('data-bs-follow')) continue;
-      for (const anim of el.getAnimations()) {
-        if (anim.playState !== 'running') continue;
-        const effect = anim.effect as KeyframeEffect | null;
-        if (effect?.target === el && !effect.pseudoElement && moves(anim, effect)) {
-          moved.add(el);
-          break;
-        }
-      }
+      if (!stirred.has(el) || el.hasAttribute('data-bs-follow')) continue;
+      let own = ownMoves.get(el);
+      if (!own)
+        ownMoves.set(
+          el,
+          (own = el.getAnimations().filter((anim) => {
+            const effect = anim.effect as KeyframeEffect | null;
+            return effect?.target === el && !effect.pseudoElement && moves(anim, effect);
+          })),
+        );
+      if (own.some((anim) => anim.playState === 'running')) moved.add(el);
     }
   return moved;
 }
@@ -204,6 +241,9 @@ function paintsBackground(cs: CSSStyleDeclaration) {
 }
 
 // ---------- turned elements ----------
+
+/** Whether an element's map onto the screen (linearOf) only moves and scales it: no rotation, no 3D turn. */
+const flatLin = (lin: Lin | null) => !!lin && Math.abs(lin[1]) + Math.abs(lin[2]) <= 1e-3 * lin[0] && Math.abs(lin[3] - lin[0]) <= 1e-3 * lin[0];
 
 /** Zero-size probes in the corners of an element's padding box (see screenToLocal). */
 const probes = new WeakMap<HTMLElement, HTMLElement[]>();
@@ -352,6 +392,18 @@ export function measureShadows(
   const withFill = nodes.filter((n) => shadowed.get(n)?.fill);
   const fillNodes = new Set<Element>(withFill);
   for (const n of shadowed.keys()) if (!n.isConnected || shadowed.get(n)?.off) release(n);
+  // The turned elements' probes (see screenToLocal) go in before anything
+  // below is read: put in as each is measured, every one would have the page
+  // laid out again for the next read (as a screen first shows, a turned box
+  // or several in it: a layout each). All read first, then all written; only
+  // into those the loop would measure turned (something to draw, a size).
+  const turned = nodes.filter((n) => {
+    if (flatLin(linearOf(n, linears))) return false;
+    const cs = getComputedStyle(n);
+    const draws = !!shadowed.get(n)?.fill || !!readShadow(cs, 2) || !!readShadow(cs, 1);
+    return draws && cs.position !== 'static' && n.offsetWidth > 0 && n.offsetHeight > 0;
+  });
+  for (const n of turned) probesOf(n);
 
   // Every element measured, in document order: what it would draw. (What
   // goes back to CSS is released after, with nothing written meanwhile.)
@@ -377,8 +429,7 @@ export function measureShadows(
     // a scale. Any rotation or 3D turn, even a slight one (as a card tilting
     // toward the pointer), needs the full map, or its shadows wouldn't follow
     // the turned shape.
-    const lin = ok ? linearOf(node, linears) : null;
-    const flat = !!lin && Math.abs(lin[1]) + Math.abs(lin[2]) <= 1e-3 * lin[0] && Math.abs(lin[3] - lin[0]) <= 1e-3 * lin[0];
+    const flat = ok && flatLin(linearOf(node, linears));
     let toLocal = [1 / scale, 0, -rect.left / scale, 0, 1 / scale, -rect.top / scale, 0, 0, 1];
     if (ok && !flat) {
       const turned = screenToLocal(node, cs, w, h);

@@ -1,4 +1,6 @@
 // First: the game's script errors are counted from here on (lib/countErrors.ts).
+// (The built-ins an older browser lacks are filled in before this runs, by an
+// inline script, vite.config.ts polyfillsFirst.)
 import './lib/countErrors';
 import { mount } from 'svelte';
 import './app.css';
@@ -16,7 +18,8 @@ import { installCursor } from './lib/ownCursor';
 import { installAutoscroll } from './lib/autoscroll';
 import { fpsMeterOn, switchedOff } from './lib/switchedOff';
 import { installFpsMeter } from './lib/fpsMeter';
-import { countPage, countTime, countVisit, onCountToggle, takeCampaign, type Toggled } from './lib/count';
+import { countPage, countSaved, countTime, countVisit, onCountToggle, takeCampaign, type Toggled } from './lib/count';
+import { onSaved } from './lib/codex';
 import { whenIdle } from './lib/idle';
 import { lastPlayed } from './lib/lastPlayed';
 import { toasts } from './lib/toasts.svelte';
@@ -37,6 +40,7 @@ if (fpsMeterOn()) installFpsMeter();
 countVisit(lastPlayed, takeCampaign(), (f) => whenIdle(f, { timeout: 3_000 }));
 countPage();
 countTime();
+onSaved(countSaved);
 const TOGGLED: Record<Toggled, string> = {
   skipped: 'Visits from this browser are no longer counted. Open poe2.quest/#toggle-goatcounter again to count them.',
   counted: 'Visits from this browser are counted again.',

@@ -267,7 +267,22 @@ const inPoly = (p: Pt, poly: Pt[]) => {
   }
   return inside;
 };
-const inHole = (p: Pt, h: Hole) => ('c' in h ? dist(p, h.c) < h.r : 'box' in h ? p[0] > h.box[0] && p[0] < h.box[2] && p[1] > h.box[1] && p[1] < h.box[3] : inPoly(p, h.poly));
+/**
+ * Whether `p` is in any of the holes. A circle's distance is only taken for
+ * points within its radius on both axes: the distance is never less than
+ * either, so the answer is the same, without a square root for every point
+ * of every line against every seal.
+ */
+const inHoles = (p: Pt, holes: Hole[]) => {
+  for (const h of holes) {
+    if ('c' in h) {
+      const dx = h.c[0] - p[0];
+      const dy = h.c[1] - p[1];
+      if (dx < h.r && dx > -h.r && dy < h.r && dy > -h.r && Math.hypot(dx, dy) < h.r) return true;
+    } else if ('box' in h ? p[0] > h.box[0] && p[0] < h.box[2] && p[1] > h.box[1] && p[1] < h.box[3] : inPoly(p, h.poly)) return true;
+  }
+  return false;
+};
 const grow = (b: Box, d: number): Box => [b[0] - d, b[1] - d, b[2] + d, b[3] + d];
 /** The pen's pace: fast at first, slowing at the end (the circle's stroke()). */
 const ease = (u: number) => 1 - Math.sqrt(1 - Math.min(1, Math.max(0, u)));
@@ -294,6 +309,12 @@ const wearOf = (seed: number): Wear => {
  * so the small rings stay round.
  */
 function pen(pts: Pt[], kind: Kind, delay: number, t: number, { holes = [], wear = null, o }: { holes?: Hole[]; wear?: Wear; o?: number } = {}): Stroke[] {
+  const l = sample(pts, holes);
+  return pieces(l, kind, delay, t, wear ? wear(l.len) : [], o);
+}
+/** A line through `pts` as the pen goes over it: a point every 0.3 px or less, how far along each is, and which fall in a hole. */
+type Sampled = { ds: Pt[]; run: number[]; len: number; holed: boolean[] };
+function sample(pts: Pt[], holes: Hole[]): Sampled {
   const ds: Pt[] = [pts[0]];
   for (let i = 1; i < pts.length; i++) {
     const n = Math.max(1, Math.ceil(dist(pts[i - 1], pts[i]) / 0.3));
@@ -302,8 +323,18 @@ function pen(pts: Pt[], kind: Kind, delay: number, t: number, { holes = [], wear
   const run = [0];
   for (let i = 1; i < ds.length; i++) run.push(run[i - 1] + dist(ds[i - 1], ds[i]));
   const len = run.at(-1)! || 1;
-  const cuts = wear ? wear(len) : [];
-  const gone = ds.map((p, i) => holes.some((h) => inHole(p, h)) || cuts.some(([a, b]) => run[i] / len > a && run[i] / len < b));
+  const holed = holes.length ? ds.map((p) => inHoles(p, holes)) : ds.map(() => false);
+  return { ds, run, len, holed };
+}
+/** The pieces of a sampled line that are left, broken at its holes and at `cuts` (fractions of it), as pen() gives them. */
+function pieces({ ds, run, len, holed }: Sampled, kind: Kind, delay: number, t: number, cuts: [number, number][], o?: number): Stroke[] {
+  const gone = cuts.length
+    ? holed.map((h, i) => {
+        if (h) return true;
+        for (const [a, b] of cuts) if (run[i] / len > a && run[i] / len < b) return true;
+        return false;
+      })
+    : holed;
   const out: Stroke[] = [];
   for (let i = 0; i < ds.length; i++) {
     if (gone[i]) continue;
@@ -852,10 +883,12 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
               cost: 30 + dx,
             });
         }
+        // What the line itself runs into is the same wherever its depth sits on it.
+        let crossed = 0;
+        for (const s of segs) for (const bl of blocks) if (!(bl.kind === m.kind && bl.icon) && segBox(s, bl.box, 1.2)) crossed++;
+        for (const s of segs) for (const d of discs) if (segPt(s, d.c) < d.r) crossed++;
         for (const mk of marks) {
-          let bad = 0;
-          for (const s of segs) for (const bl of blocks) if (!(bl.kind === m.kind && bl.icon) && segBox(s, bl.box, 1.2)) bad++;
-          for (const s of segs) for (const d of discs) if (segPt(s, d.c) < d.r) bad++;
+          let bad = crossed;
           for (const bl of blocks) if (boxBox(mk.box, bl.box, 1.5)) bad++;
           for (const d of discs) if (boxDisc(mk.box, d.c, d.r)) bad++;
           if (mk.box[0] < Math.max(edgeX(mk.box[1]), edgeX(mk.box[3])) + 0.5) bad++;
@@ -895,26 +928,37 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       const ms = allFinds.filter((m) => Es[m.kind]);
       const per = ms.map((m) => optsFor(m, Es[m.kind]!, blocks));
       if (per.some((p) => p.length === 0)) continue;
-      // Every pairing of the options, kept clear of each other.
-      const choose = (i: number, chosen: Opt[]): void => {
+      // How many ways each option of one find runs into each of another's (worked out once a pair, not again for every choice of the rest).
+      const clashes = per.map((pa, a) =>
+        per.map((pb, b) =>
+          b <= a
+            ? []
+            : pa.map((A) =>
+                pb.map((B) => {
+                  let n = 0;
+                  if (A.segs.some((s) => B.segs.some((t) => segSeg(s, t) < 2.2))) n++;
+                  if (boxBox(A.box, B.box, 1.5)) n++;
+                  if (A.segs.some((s) => segBox(s, B.box, 1.2)) || B.segs.some((s) => segBox(s, A.box, 1.2))) n++;
+                  if (A.segs.some((s) => segPt(s, B.W) < 2.2) || B.segs.some((s) => segPt(s, A.W) < 2.2)) n++;
+                  return n;
+                }),
+              ),
+        ),
+      );
+      // Every pairing of the options, kept clear of each other (each clash a thousand, added one by one as ever).
+      const choose = (i: number, chosen: Opt[], at: number[]): void => {
         if (i < per.length) {
-          for (const o of per[i]) choose(i + 1, [...chosen, o]);
+          per[i].forEach((o, k) => choose(i + 1, [...chosen, o], [...at, k]));
           return;
         }
         let cost = base;
         for (let a = 0; a < chosen.length; a++) {
           cost += chosen[a].cost;
-          for (let b = a + 1; b < chosen.length; b++) {
-            const [A, B] = [chosen[a], chosen[b]];
-            if (A.segs.some((s) => B.segs.some((t) => segSeg(s, t) < 2.2))) cost += 1000;
-            if (boxBox(A.box, B.box, 1.5)) cost += 1000;
-            if (A.segs.some((s) => segBox(s, B.box, 1.2)) || B.segs.some((s) => segBox(s, A.box, 1.2))) cost += 1000;
-            if (A.segs.some((s) => segPt(s, B.W) < 2.2) || B.segs.some((s) => segPt(s, A.W) < 2.2)) cost += 1000;
-          }
+          for (let b = a + 1; b < chosen.length; b++) for (let n = clashes[a][b][at[a]][at[b]]; n > 0; n--) cost += 1000;
         }
         if (!won || cost < won.cost) won = { cost, opts: chosen, tops: lay.tops };
       };
-      choose(0, []);
+      choose(0, [], []);
       if (won && (won as Choice).cost < 20 && lay.cost === 0) break;
     }
     const c = won as Choice | null;
@@ -994,24 +1038,41 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
     }
   }
 
-  /** Every line, worn (for the lines) or whole (for the glow under them). */
-  const build = (worn: boolean) => {
-    const wear = (seed: number) => (worn ? wearOf(seed) : null);
+  /**
+   * Every line, worn (for the lines) and whole (for the glow under the lit
+   * ones), in one pass: a line is sampled once for both, and its whole copy
+   * is its worn one when it has no wear.
+   */
+  type Both = [worn: Stroke[], whole: Stroke[]];
+  /** pen(), worn and whole: `wear` its nicks (and the uncharted stretch's dashes), `whole` what the unworn copy keeps of them. */
+  const pen2 = (pts: Pt[], kind: Kind, delay: number, t: number, { holes = [], wear = null, whole = null, o }: { holes?: Hole[]; wear?: Wear; whole?: Wear; o?: number } = {}): Both => {
+    const l = sample(pts, holes);
+    const worn = pieces(l, kind, delay, t, wear ? wear(l.len) : [], o);
+    return [worn, wear || whole ? pieces(l, kind, delay, t, whole ? whole(l.len) : [], o) : worn];
+  };
+  /** Lines one after another. */
+  const join = (...xs: Both[]): Both => [xs.flatMap((x) => x[0]), xs.flatMap((x) => x[1])];
+  const same = (s: Stroke[]): Both => [s, s];
+  const build = () => {
     const parts: Omit<Part, 'glow'>[] = [];
-    const add = (tone: Part['tone'], strokes: Stroke[], lit = true, color?: string) => parts.push({ tone, strokes, lit, color });
+    const wholes: Stroke[][] = [];
+    const add = (tone: Part['tone'], [strokes, whole]: Both, lit = true, color?: string) => {
+      parts.push({ tone, strokes, lit, color });
+      wholes.push(whole);
+    };
     const common: Hole[] = [...numHoles, ...markHoles, keyHole];
 
     // The surface, level out from the mouth to the column's edge on the left, a short way on the right; a hairline under it on the left.
     const [ml, mr] = [side(TOP, -1), side(TOP, 1)];
-    const surface = [
-      ...pen([ml, [1, surfaceY]], 'main', 0.18, 0.5, {
+    const surface = join(
+      pen2([ml, [1, surfaceY]], 'main', 0.18, 0.5, {
         holes: common,
-        wear: wear(3),
+        wear: wearOf(3),
       }),
-      ...pen([mr, [mr[0] + ROCK + 2.5, surfaceY]], 'main', 0.18, 0.2, {
+      pen2([mr, [mr[0] + ROCK + 2.5, surfaceY]], 'main', 0.18, 0.2, {
         holes: common,
       }),
-      ...pen(
+      pen2(
         [
           [ml[0] - LW - 1.2, surfaceY + 2.4],
           [3, surfaceY + 2.4],
@@ -1021,14 +1082,13 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
         0.45,
         { holes: common },
       ),
-    ];
+    );
     // The mouth: its far rim, behind Sol, and its near one (the first terrace's front).
     const back = Array.from({ length: 41 }, (_, i) => {
       const phi = Math.PI + (Math.PI * i) / 40;
       return [AX + halfTop * Math.cos(phi), surfaceY + TILT * halfTop * Math.sin(phi)] as Pt;
     });
-    surface.push(...pen(back.slice(0, 21).reverse(), 'thin', 0.12, 0.3, { holes: [solHole] }), ...pen(back.slice(20), 'thin', 0.12, 0.3, { holes: [solHole] }));
-    add('gold', surface);
+    add('gold', join(surface, pen2(back.slice(0, 21).reverse(), 'thin', 0.12, 0.3, { holes: [solHole] }), pen2(back.slice(20), 'thin', 0.12, 0.3, { holes: [solHole] })));
 
     // The pit's sides and the walls' outer edges beside them, inked down from the mouth to the tenth zone's floor (the left wall's
     // outer line broken beside the zones not reached), then on into the dark in shorter and shorter dashes, each fainter than the
@@ -1039,7 +1099,7 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       [AX + s * (p0[0] - AX + out + dir[0] * (y0 - p0[1])), y0],
       [AX + s * (p0[0] - AX + out + dir[0] * (y1 - p0[1])), y1],
     ];
-    const sides: Stroke[] = [];
+    const sides: Both[] = [];
     const deep: Stroke[] = [];
     const stationHoles: Hole[] = stations.map((s) => ({ c: s.c, r: 1.9 }));
     /** The uncharted stretch of a line from the mouth down, as cuts: short dashes from `from` (a fraction of the line) on. */
@@ -1053,16 +1113,18 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
     for (const s of [-1, 1]) {
       const out = s < 0 ? LW : ROCK;
       sides.push(
-        ...pen(run(s, 0, p0[1], p1[1]), 'main', INK, INK_T, {
+        pen2(run(s, 0, p0[1], p1[1]), 'main', INK, INK_T, {
           holes: common,
-          wear: wear(s > 0 ? 11 : 13),
+          wear: wearOf(s > 0 ? 11 : 13),
         }),
       );
-      const outerWear = wear(s > 0 ? 19 : 23);
+      const outerWear = wearOf(s > 0 ? 19 : 23);
+      const unch = s < 0 && unchY !== null ? (unchY - p0[1]) / (p1[1] - p0[1]) : null;
       sides.push(
-        ...pen(run(s, out, p0[1], p1[1]), 'thin', INK + 0.05, INK_T, {
+        pen2(run(s, out, p0[1], p1[1]), 'thin', INK + 0.05, INK_T, {
           holes: [...common, ...stationHoles],
-          wear: s < 0 && unchY !== null ? broken((unchY - p0[1]) / (p1[1] - p0[1]), outerWear) : outerWear,
+          wear: unch !== null ? broken(unch, outerWear) : outerWear,
+          whole: unch !== null ? broken(unch, null) : null,
         }),
       );
       for (const [o, kind] of [
@@ -1082,7 +1144,7 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
           ),
         );
     }
-    add('gold', sides);
+    add('gold', join(...sides));
 
     // The terraces' fronts, each opening out from its middle as the pen passes, lit as far as you have been, and the seams across
     // the walls at their ends.
@@ -1093,12 +1155,12 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       const at0 = k ? sweep(yy) : 0.2;
       const opts = { holes: [...common, ...sealHoles, endHole] };
       const kind = k % 10 ? 'thin' : 'main';
-      const strokes = [...pen(fr.slice(0, 21).reverse(), kind, at0, 0.28, { ...opts, wear: k ? null : wear(7) }), ...pen(fr.slice(20), kind, at0, 0.28, { ...opts, wear: k ? null : wear(8) })];
+      const strokes = [pen2(fr.slice(0, 21).reverse(), kind, at0, 0.28, { ...opts, wear: k ? null : wearOf(7) }), pen2(fr.slice(20), kind, at0, 0.28, { ...opts, wear: k ? null : wearOf(8) })];
       for (const s of [-1, 1]) {
         const p = side(yy, s);
         if (k > 0)
           strokes.push(
-            ...pen([p, [p[0] + s * (s < 0 ? LW : ROCK), p[1]]], 'hair', sweep(yy), 0.08, {
+            pen2([p, [p[0] + s * (s < 0 ? LW : ROCK), p[1]]], 'hair', sweep(yy), 0.08, {
               holes: [...common, ...stationHoles],
             }),
           );
@@ -1111,12 +1173,12 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
           return [AX + a * Math.cos(phi), yy - b + b * Math.sin(phi)] as Pt;
         });
         strokes.push(
-          ...pen(back, 'hair', sweep(yy - 2 * b), 0.3, {
+          pen2(back, 'hair', sweep(yy - 2 * b), 0.3, {
             holes: [...common, ...sealHoles],
           }),
         );
       }
-      add(lit ? 'gold' : 'dull', strokes, lit);
+      add(lit ? 'gold' : 'dull', join(...strokes), lit);
     }
 
     // The endless stretch: the strata below the tenth zone, closing up and fading in the pit, round the last seal.
@@ -1131,20 +1193,20 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
       );
     }
     // No ring round the last seal: the ouroboros stands on its own at the foot of the pit.
-    add(past ? 'gold' : 'dull', deep, past);
+    add(past ? 'gold' : 'dull', same(deep), past);
 
     // The seals: a worn double ring, struck in the zone's colour once reached, a dull impression until then.
     for (let k = 0; k < 10; k++) {
       const c = sealC(k);
       const known = k < reached;
       const d = sweep(c[1] - R);
-      const rings = [
-        ...pen(arcPts(c, R), 'thin', d, 0.35, {
-          wear: wear(40 + k),
+      const rings = join(
+        pen2(arcPts(c, R), 'thin', d, 0.35, {
+          wear: wearOf(40 + k),
           holes: numHoles,
         }),
-        ...pen(arcPts(c, R - 1.2), 'hair', d + 0.05, 0.35, { holes: numHoles }),
-      ];
+        pen2(arcPts(c, R - 1.2), 'hair', d + 0.05, 0.35, { holes: numHoles }),
+      );
       if (known) add('zone', rings, true, ZONES[k].color);
       else add('dull', rings, false);
     }
@@ -1152,15 +1214,14 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
     // The finds' lines, in gold: out of the wall level, slanting out to the stub, and level to the heading's item.
     for (const o of fit.opts) {
       const holes: Hole[] = [{ box: grow(o.box, 1.6) }, ...numHoles, solHole];
-      add('lead', pen(o.path, 'hair', lineAt(o), LINE_T, { holes }), false);
+      add('lead', same(pen(o.path, 'hair', lineAt(o), LINE_T, { holes })), false);
     }
-    return { parts };
+    return { parts, wholes };
   };
-  const worn = build(true);
-  const whole = build(false);
-  const parts: Part[] = worn.parts.map((p, i) => {
+  const { parts: worn, wholes } = build();
+  const parts: Part[] = worn.map((p, i) => {
     const glow = new Map<Kind, string>();
-    if (p.lit) for (const s of whole.parts[i].strokes) if (s.o === undefined || s.o > 0.5) glow.set(s.kind, (glow.get(s.kind) ?? '') + s.d);
+    if (p.lit) for (const s of wholes[i]) if (s.o === undefined || s.o > 0.5) glow.set(s.kind, (glow.get(s.kind) ?? '') + s.d);
     return { ...p, glow: [...glow].map(([kind, d]) => ({ kind, d })) };
   });
 

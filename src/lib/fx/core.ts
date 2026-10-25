@@ -25,6 +25,7 @@ import { zoomOf } from '../stage';
 import { readStored, writeStored } from '../storage';
 import { whenIdle } from '../idle';
 import { scrollFollow } from '../scrollFollow';
+import { pageScroll } from '../pageScroll';
 import { switchedOff, type Switch } from '../switchedOff';
 import { frameEvent, timed } from '../fpsMeter';
 import { GpuBudget, type Layer, type Saved } from './gpuBudget';
@@ -799,10 +800,6 @@ function show(on: boolean) {
  */
 let setInPage = false;
 let placedAt = '';
-/** How far the page is scrolled (0 with no window, as in the tests). */
-function pageScroll() {
-  return typeof scrollY === 'number' ? [scrollX, scrollY] : [0, 0];
-}
 function placeCanvas() {
   if (!canvas) return;
   const [x, y] = pageScroll();

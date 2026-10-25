@@ -11,6 +11,8 @@ import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { backdropsErrors, formatBackdrops, type Backdrops } from './src/lib/backdropData.ts';
 import { PROFILE_NAMES } from './src/lib/emberProfiles.ts';
 import { glslMinify } from './glslMinify.ts';
+import { keyframesFirst } from './keyframesFirst.ts';
+import { polyfillsFirst, polyfillsScript } from './polyfillsFirst.ts';
 import { peerjsProbe } from './peerjsProbe.ts';
 import { qaServer } from './qaServer.ts';
 
@@ -25,9 +27,10 @@ function csp(env: Record<string, string>): Plugin {
   const secure = (env.VITE_PEER_SECURE ?? 'true') === 'true';
   const port = env.VITE_PEER_HOST && env.VITE_PEER_PORT ? `:${env.VITE_PEER_PORT}` : '';
   const signalling = `${secure ? 'https' : 'http'}://${peerHost}${port} ${secure ? 'wss' : 'ws'}://${peerHost}${port}`;
-  const policy = [
+  const policy = (inline: string) => [
     "default-src 'self'",
-    "script-src 'self'",
+    // And the one inline script, the built-ins an older browser lacks (polyfillsFirst), by its hash.
+    `script-src 'self' 'sha256-${createHash('sha256').update(inline).digest('base64')}'`,
     // Svelte sets inline style attributes (animations, positions).
     "style-src 'self' 'unsafe-inline'",
     // The counts (lib/count.ts) go out as a beacon, or an image where a beacon can't.
@@ -41,8 +44,8 @@ function csp(env: Record<string, string>): Plugin {
   return {
     name: 'csp',
     apply: 'build',
-    transformIndexHtml: (html) =>
-      html.replace('<meta charset="UTF-8" />', `<meta charset="UTF-8" />\n    <meta http-equiv="Content-Security-Policy" content="${policy}" />`),
+    transformIndexHtml: async (html) =>
+      html.replace('<meta charset="UTF-8" />', `<meta charset="UTF-8" />\n    <meta http-equiv="Content-Security-Policy" content="${policy(await polyfillsScript())}" />`),
   };
 }
 
@@ -331,7 +334,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), glslMinify(), peerjsProbe(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), backdropSave(), devHub(env), qaServer(process.cwd())],
+    plugins: [svelte(), glslMinify(), peerjsProbe(), polyfillsFirst(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), keyframesFirst(), backdropSave(), devHub(env), qaServer(process.cwd())],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
     // Module workers, so one (the plates', lib/plateWorker.ts) can load only what it's asked for.
     worker: { format: 'es' },

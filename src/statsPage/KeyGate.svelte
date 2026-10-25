@@ -29,7 +29,7 @@
     <input bind:this={field} bind:value={key} type="password" autocomplete="off" spellcheck="false" placeholder="Paste the key" />
   </label>
   <button class="btn primary" type="submit" disabled={!key.trim()}>Open</button>
-  <p class="small">Read-only: with it nobody can change or delete anything. To take it away, delete the key in GoatCounter or press "Forget key" here.</p>
+  <p class="small">Read-only: with it nobody can change or delete anything. To take it away, delete the key in GoatCounter or press "Forget the key on this browser" at the foot of the page.</p>
 </form>
 
 <style>

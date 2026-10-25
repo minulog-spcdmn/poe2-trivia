@@ -240,8 +240,11 @@ export function setCursorColor(c: string = GOLD) {
   // The app sets it on mount, before the first paint, to what it already is.
   if (c === color) return;
   color = c;
-  // Before the rest of the looks are first set (installCursor), only the soon ones: the rest follow then.
-  apply(!whole);
+  // Only the soon ones at once, the rest once the page is idle: a new colour
+  // comes as a lobby opens, and drawing every look there (three resolutions
+  // each) held its first frame up some 25 ms.
+  apply(true);
+  whenIdle(() => apply(), { timeout: 1000 });
   whenIdle(predraw, { timeout: 3000 });
 }
 

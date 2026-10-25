@@ -24,21 +24,27 @@ const median = (vs: number[]) => {
 export interface Spike {
   day: string;
   value: number;
-  /** The period's median day. */
+  /** The median day around it (SPIKE_REACH). */
   usual: number;
 }
 
+/** How far either side of a day its usual one is found: a game that grows, or a launch, then moves its usual along with it. */
+export const SPIKE_REACH = 14;
+
 /**
- * The days far busier than usual (at least 1.6 times the median day, and
- * beyond chance), busiest against usual first, at most `top`. The last day
- * isn't over, so it's never the usual one, but it can be a spike already.
+ * The days far busier than usual (at least 1.6 times the median of the
+ * other whole days within SPIKE_REACH of it, and beyond chance), busiest
+ * against usual first, at most `top`. The last day isn't over, so it's
+ * never part of a usual one, but it can be a spike already.
  */
 export function spikesOf(days: string[], values: number[], top = 3): Spike[] {
-  const usual = median(values.slice(0, -1));
-  if (usual <= 0) return [];
+  const whole = values.length - 1;
   return days
-    .map((day, i) => ({ day, value: values[i] ?? 0, usual }))
-    .filter((s) => s.value >= usual * 1.6 && beyondChance(s.value - usual, usual))
+    .map((day, i) => {
+      const around = values.filter((_, k) => k !== i && k < whole && Math.abs(k - i) <= SPIKE_REACH);
+      return { day, value: values[i] ?? 0, usual: median(around) };
+    })
+    .filter((s) => s.usual > 0 && s.value >= s.usual * 1.6 && beyondChance(s.value - s.usual, s.usual))
     .sort((a, b) => b.value - a.value)
     .slice(0, top);
 }
@@ -77,15 +83,31 @@ export interface Mover {
   before: number;
 }
 
-/** The biggest rise and the biggest fall in a list against the period before, each only where it's beyond chance (by how much it moved). */
+/** How many a name brought before for its change to count in how they all moved (moversOf): a handful swings too much. */
+const MOVER_BASE = 5;
+
+/**
+ * The biggest rise and the biggest fall in a list against the period
+ * before, each against what it would have brought had it moved as most of
+ * them did (the middle one's change, of those with enough before to say;
+ * typed in moves by itself), and only where it's beyond chance. When every
+ * site brings twice as many, none of them is news; when one brings three
+ * times as many, the middle isn't dragged along, so it's that one, and not
+ * the rest falling behind it.
+ */
 export function moversOf(now: Named[], before: Named[]): { up: Mover | null; down: Mover | null } {
   const was = new Map(before.map((r) => [r.name, r.count]));
   const is = new Map(now.map((r) => [r.name, r.count]));
   const names = [...new Set([...is.keys(), ...was.keys()])].filter((n) => !typedIn(n));
-  const moves = names.map((name) => ({ name, now: is.get(name) ?? 0, before: was.get(name) ?? 0 })).filter((m) => beyondChance(m.now - m.before, m.before));
-  const up = moves.filter((m) => m.now > m.before * 1.3).sort((a, b) => b.now - b.before - (a.now - a.before))[0] ?? null;
-  const down = moves.filter((m) => m.now < m.before * 0.7).sort((a, b) => a.now - a.before - (b.now - b.before))[0] ?? null;
-  return { up, down };
+  const changes = names.filter((name) => (was.get(name) ?? 0) >= MOVER_BASE).map((name) => (is.get(name) ?? 0) / was.get(name)!);
+  const scale = changes.length ? median(changes) : 1;
+  const moves = names
+    .map((name) => ({ name, now: is.get(name) ?? 0, before: was.get(name) ?? 0, expected: (was.get(name) ?? 0) * scale }))
+    .filter((m) => beyondChance(m.now - m.expected, m.expected));
+  const strip = ({ name, now, before }: Mover): Mover => ({ name, now, before });
+  const up = moves.filter((m) => m.now > m.expected * 1.3).sort((a, b) => b.now - b.expected - (a.now - a.expected))[0];
+  const down = moves.filter((m) => m.now < m.expected * 0.7).sort((a, b) => a.now - a.expected - (b.now - b.expected))[0];
+  return { up: up ? strip(up) : null, down: down ? strip(down) : null };
 }
 
 /** How far a visit gets: of the visitors, those who played a game, finished one, and answered Today's unique. */
@@ -158,6 +180,8 @@ export function reachedOf(c: Counts, steps: readonly Reach[]): Reached {
   if (first < 0) return { from: null, visitors: 0, paged: false, counts: {} };
   const out: Reached = { from: c.days[first], visitors: sumFrom(paged >= 0 ? c.reach.page : c.visitors.perDay, first), paged: paged >= 0, counts: {} };
   for (const s of paged >= 0 ? steps : old) out.counts[s] = sumFrom(c.reach[s], first);
+  // Every game started was entered: before entering was counted (late October 2026) only starting was, so entering is never fewer.
+  if (out.counts.lobby !== undefined && out.counts.played !== undefined) out.counts.lobby = Math.max(out.counts.lobby, out.counts.played);
   return out;
 }
 
@@ -206,6 +230,8 @@ export interface FirstSteps {
 export function firstStepsOf(c: Counts): FirstSteps {
   const first = firstDay(c.days, (i) => (c.visits.new[i] ?? 0) > 0);
   const counts = Object.fromEntries(FIRSTS.map((s) => [s, first < 0 ? 0 : sumFrom(c.firsts[s], first)])) as Record<First, number>;
+  // (Entered, as reachedOf: never fewer than started.)
+  counts.lobby = Math.max(counts.lobby, counts.played);
   return { from: first < 0 ? null : c.days[first], visits: first < 0 ? 0 : sumFrom(c.visits.new, first), counts };
 }
 
@@ -274,17 +300,27 @@ export function recentCohorts(cohorts: Cohort[], to: string, weeks = 8, rows = 8
   return cohorts.filter((c) => since(c) >= 0 && since(c) < weeks).slice(-rows);
 }
 
+/** A site by its own name, its subdomains with it ("out.reddit.com" is reddit.com): the last two labels, three where those are a country's (co.uk). A name that's no host ("Slack Chat") stays. */
+function siteRoot(name: string): string {
+  if (/[\s/]/.test(name)) return name;
+  const l = name.split('.');
+  if (l.length <= 2) return name;
+  return l.slice(l[l.length - 1].length === 2 && l[l.length - 2].length <= 3 ? -3 : -2).join('.');
+}
+
 /**
  * A list of referrers with each site once: a visit by a tagged link comes
  * without GoatCounter's cleaning of its referrer, so one site can be listed
- * twice ("https://www.reddit.com" and "www.reddit.com"). Each is named as
+ * twice ("https://www.reddit.com" and "www.reddit.com"), and a site's
+ * subdomains are the site (siteRoot). Each is named as
  * people say it (chart.ts siteName), most first; none ('' or "(unknown)")
  * stays as it is.
  */
 export function sameSites(list: Named[]): Named[] {
   const out = new Map<string, number>();
   for (const r of list) {
-    const name = typedIn(r.name) ? r.name : siteName(r.name);
+    // (An app's, "android-app://com.reddit.frontpage", is no host to fold.)
+    const name = typedIn(r.name) ? r.name : /^(?![a-z-]+:\/\/)|^https?:\/\//.test(r.name) ? siteRoot(siteName(r.name)) : siteName(r.name);
     out.set(name, (out.get(name) ?? 0) + r.count);
   }
   return [...out].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
@@ -302,12 +338,40 @@ export interface Trouble {
   today: { failed: number; expected: number } | null;
 }
 
+// (Not the scripts' errors, which have nothing to do with joining.)
+const failed = (c: Counts) => c.failures.reduce((n, f) => n + (f.script ? 0 : f.count), 0);
+const tries = (c: Counts) => c.joins.reduce((n, j) => n + j.tried, 0);
+/** What a failure could happen on: a game started (a room opened, or played at one screen) or a try to join. */
+export const chances = (c: Counts) => c.games.started + tries(c);
+
+/** Joining's failures for each 100 games and tries to join, the rate troubleOf weighs; null with neither. */
+export const failureRate = (c: Counts): number | null => (chances(c) ? (100 * failed(c)) / chances(c) : null);
+
+/**
+ * Whether a change is more than chance would make: `now` against `before`,
+ * counts of about that size (a count's chance swing being about its square
+ * root). For a rate's change, its counts are what it rests on.
+ */
+export const beyondChanceOf = (now: number, before: number) => beyondChance(now - before, Math.max(before, 0));
+
+/**
+ * Whether two percents differ by more than chance would make, each of `n`
+ * and `nBefore` (twice the spread of their difference; a share near 0 or
+ * 100 is taken a little in from the edge), and by at least 3 of the
+ * smaller side's: 3 of 3 against 0 of 3 is a handful, never sure.
+ */
+export function rateBeyondChance(pct: number, n: number, pctBefore: number, nBefore: number): boolean {
+  if (n <= 0 || nBefore <= 0) return false;
+  if ((Math.abs(pct - pctBefore) * Math.min(n, nBefore)) / 100 < 3) return false;
+  // (A rate of more than one each, as failures can run to, spreads at least as a share at the edge would.)
+  const edge = (v: number) => Math.min(100, Math.max(0, v));
+  const p = (edge(pct) * n + 100) / (n + 2) / 100;
+  const q = (edge(pctBefore) * nBefore + 100) / (nBefore + 2) / 100;
+  const spread = 100 * Math.sqrt((p * (1 - p)) / n + (q * (1 - q)) / nBefore);
+  return Math.abs(pct - pctBefore) >= 2 * spread;
+}
+
 export function troubleOf(now: Counts, before: Counts): Trouble | null {
-  // (Not the scripts' errors, which have nothing to do with joining.)
-  const failed = (c: Counts) => c.failures.reduce((n, f) => n + (f.script ? 0 : f.count), 0);
-  const tries = (c: Counts) => c.joins.reduce((n, j) => n + j.tried, 0);
-  /** What a failure could happen on: a game started (a room opened, or played at one screen) or a try to join. */
-  const chances = (c: Counts) => c.games.started + tries(c);
   /** Failures well above `expected`, or null. */
   const worse = (f: number, expected: number) => (f > expected && beyondChance(f - expected, expected) ? { failed: f, expected } : null);
 
