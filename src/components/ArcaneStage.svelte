@@ -368,7 +368,7 @@
     will-change: contents;
   }
   .arcane :global(.draw.ink) {
-    animation: carve 0.6s calc(var(--d, 0s) - var(--late, 0s)) var(--ease-out) both;
+    animation: carve 0.6s calc(var(--d, 0s) - var(--late, 0s)) var(--ease-out) backwards;
   }
 
   /* The glow: the same strokes, wide and faint, on their own layer so it
@@ -401,9 +401,12 @@
     stroke-width: 1.4;
   }
 
+  /* (The pieces' keyframes give only where they start, so once done each is
+     as its own style has it, held or not: not held, a finished piece drops
+     out of the page's list of animations, which it sorts whenever asked.) */
   .arcane :global(.draw) {
     stroke-dasharray: 100;
-    animation: draw var(--t, 1s) calc(var(--d, 0s) - var(--late, 0s)) var(--draw-ease) both;
+    animation: draw var(--t, 1s) calc(var(--d, 0s) - var(--late, 0s)) var(--draw-ease) backwards;
   }
   /* A piece of a longer stroke keeps the pen's pace (see stroke()). */
   .arcane :global(.piece) {
@@ -411,17 +414,17 @@
   }
   /* Signs are set down once their lines are drawn. */
   .arcane :global(.carve) {
-    animation: carve 0.6s calc(var(--d, 0s) + 0.3s - var(--late, 0s)) var(--ease-out) both;
+    animation: carve 0.6s calc(var(--d, 0s) + 0.3s - var(--late, 0s)) var(--ease-out) backwards;
   }
   /* The script is written mark by mark. */
   .arcane :global(.mark) {
-    animation: carve 0.35s calc(var(--d) - var(--late, 0s)) var(--ease-out) both;
+    animation: carve 0.35s calc(var(--d) - var(--late, 0s)) var(--ease-out) backwards;
   }
   /* Seals are pressed in like a stamp. */
   .arcane :global(.seal) {
     transform-box: fill-box;
     transform-origin: center;
-    animation: stamp 0.55s calc(var(--d) - var(--late, 0s)) var(--ease-out) both;
+    animation: stamp 0.55s calc(var(--d) - var(--late, 0s)) var(--ease-out) backwards;
   }
 
   /* The point at the centre: set last, it beats now and then, swells at a
