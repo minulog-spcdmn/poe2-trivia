@@ -4,7 +4,8 @@
   import { star8 } from '../lib/arcane';
   import * as art from '../lib/ouroborosArt';
   import { FINDS_FROM, FINDS_IN_ORDER, shownDepth, type FindKind } from '../lib/delve';
-  import { descentPlate, f, KEY_R, ZONES, type Box, type CalloutShape, type Layout, type Target } from '../lib/descentPlate';
+  import { f, KEY_R, ZONES, type Box, type CalloutShape, type Layout, type Plate, type Target } from '../lib/descentPlate';
+  import { drawDescent } from '../lib/descentDrawer';
   import { FIND_TEXT } from '../lib/difficultyText';
   import { unzoomRect, zoomOf } from '../lib/stage';
   import ItemGlyph from './ItemGlyph.svelte';
@@ -89,7 +90,24 @@
    * reads doesn't depend on the plate (the callouts stand outside it).
    */
   let measured = $state(false);
-  const plate = $derived(measured && w > 0 && h > 0 ? descentPlate(w, h, deepest, metFinds, { caption: cap, beside, callouts: shapes, nameW, legendW }, last) : null);
+  /**
+   * The plate, drawn in a worker (lib/descentDrawer): drawing it took a fifth
+   * of the lobby's first frame. It comes a few frames later, while the
+   * settings panel it stands in still waits to fly in. Until a new one comes
+   * (the page measured again), the last one stays.
+   */
+  let plate = $state.raw<Plate | null>(null);
+  $effect(() => {
+    if (!(measured && w > 0 && h > 0)) return;
+    const layout = $state.snapshot({ caption: cap, beside, callouts: shapes, nameW, legendW });
+    let wanted = true;
+    void drawDescent([w, h, deepest, $state.snapshot(metFinds), layout, last]).then((p) => {
+      if (wanted) plate = p;
+    });
+    return () => {
+      wanted = false;
+    };
+  });
   $effect(() => {
     if (plate) natural = plate.natural;
   });
