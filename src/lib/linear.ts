@@ -2,7 +2,7 @@
 // shadows and fills (lib/backdropShadow.ts, lib/backdropDropShadow.ts): they
 // can only follow an element whose box stays flat on screen.
 
-import { layoutZoomOf } from './stage.ts';
+import { zoomOf } from './stage.ts';
 
 export type Lin = [number, number, number, number]; // a b c d: x' = a x + c y, y' = b x + d y
 
@@ -66,8 +66,7 @@ export function linearOf(node: HTMLElement, cache: Map<Element, Lin | null>): Li
     if (!own) return null;
     m = mul(own, m);
   }
-  // CSS zoom over it (the app's stage zoom, lib/stage.ts) scales it too,
-  // all of it: a sharp card's is taken back by its scale, read above.
-  const z = layoutZoomOf(node);
+  // CSS zoom over it (the app's stage zoom, lib/stage.ts) scales it too.
+  const z = zoomOf(node);
   return z === 1 ? m : [m[0] * z, m[1] * z, m[2] * z, m[3] * z];
 }
