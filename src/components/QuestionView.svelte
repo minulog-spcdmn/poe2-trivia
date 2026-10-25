@@ -3059,12 +3059,12 @@
       padding: 0.3rem max(2.9rem, min(5.2rem, calc(var(--plate-scale, 0) * 3.45rem)));
     }
     .art {
-      height: clamp(180px, 32svh, 230px);
+      height: clamp(180px, 0.32 * var(--view-h), 230px);
     }
     /* With dynamite at hand its bar is docked at the foot: the art gives it
        its room, so the last answer is in view above it. */
     .stage.armed .art {
-      height: clamp(120px, 32svh - 90px, 200px);
+      height: clamp(120px, 0.32 * var(--view-h) - 90px, 200px);
     }
     .stage {
       gap: 0.75rem;
@@ -3099,10 +3099,10 @@
     /* Six pictures, two to a row: the rows take the height there is above
        the result bar, so the art is as large as the phone allows. */
     .tiles.many.six .tile {
-      height: clamp(140px, (100svh - 330px) / 3, 190px);
+      height: clamp(140px, (var(--view-h) - 330px) / 3, 190px);
     }
     .tiles.many.six.armed .tile {
-      height: clamp(140px, (100svh - 392px) / 3, 190px);
+      height: clamp(140px, (var(--view-h) - 392px) / 3, 190px);
     }
     /* Only a line of text now and then (the reveal's bar is docked). */
     .footer {
@@ -3116,11 +3116,11 @@
     /* The art gives way first on a short screen: at 375 × 667 the eighth
        answer still ends above the bottom edge, under the depth's plaque. */
     .stage.snug .art {
-      height: clamp(140px, 30svh - 60px, 230px);
+      height: clamp(140px, 0.3 * var(--view-h) - 60px, 230px);
     }
     /* With dynamite at hand its bar is docked at the foot: the art gives it its room. */
     .stage.snug.armed .art {
-      height: clamp(96px, 30svh - 122px, 230px);
+      height: clamp(96px, 0.3 * var(--view-h) - 122px, 230px);
     }
     .options.snug {
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -3157,12 +3157,12 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .tiles.many.snug .tile {
-      height: clamp(96px, (100svh - 330px) / 4, 150px);
+      height: clamp(96px, (var(--view-h) - 330px) / 4, 150px);
       padding: 0.5rem 0.25rem;
     }
     /* With dynamite at hand its bar is docked at the foot: the rows leave it its room. */
     .tiles.many.snug.armed .tile {
-      height: clamp(96px, (100svh - 392px) / 4, 150px);
+      height: clamp(96px, (var(--view-h) - 392px) / 4, 150px);
     }
     .tiles.snug .tile .key {
       top: 4px;
@@ -3177,10 +3177,10 @@
        and the gaps give a little each (the rows still 44px, a fair tap); the
        pictures two to a row in five rows. */
     .stage.snug.ten .art {
-      height: clamp(120px, 30svh - 80px, 230px);
+      height: clamp(120px, 0.3 * var(--view-h) - 80px, 230px);
     }
     .stage.snug.ten.armed .art {
-      height: clamp(84px, 30svh - 142px, 230px);
+      height: clamp(84px, 0.3 * var(--view-h) - 142px, 230px);
     }
     .options.snug.ten {
       gap: 0.3rem;
@@ -3197,11 +3197,11 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .tiles.many.snug.ten .tile {
-      height: clamp(84px, (100svh - 330px) / 5, 130px);
+      height: clamp(84px, (var(--view-h) - 330px) / 5, 130px);
       padding: 0.4rem 0.2rem;
     }
     .tiles.many.snug.ten.armed .tile {
-      height: clamp(84px, (100svh - 392px) / 5, 130px);
+      height: clamp(84px, (var(--view-h) - 392px) / 5, 130px);
     }
   }
 
@@ -3235,7 +3235,7 @@
      980 tall): the rows share what there is, so the page ends with the window. */
   @media (min-width: 761px) and (min-height: 821px) {
     .tiles.many {
-      --tile-h: clamp(150px, (100dvh / var(--stage-zoom, 1) - 537px) / var(--rows, 2), 200px);
+      --tile-h: clamp(150px, (var(--app-h) / var(--stage-zoom, 1) - 537px) / var(--rows, 2), 200px);
     }
   }
 
@@ -3289,7 +3289,7 @@
     }
     /* The pictures: their rows share the height there is. */
     .tiles.many {
-      --tile-h: clamp(110px, (100dvh / var(--stage-zoom, 1) - 432px) / var(--rows, 2), 200px);
+      --tile-h: clamp(110px, (var(--app-h) / var(--stage-zoom, 1) - 432px) / var(--rows, 2), 200px);
     }
     .footer {
       margin-top: 0.75rem;
@@ -3324,7 +3324,7 @@
     .question {
       /* The height the art and answers share: the window's, less what stands above and below them
          (the header, the scoreboard in its row; the banner, the task line, the row under them, the home indicator's strip). */
-      --room: max(100px, 100dvh / var(--stage-zoom, 1) - var(--header-h, 47px) - 118px - env(safe-area-inset-bottom, 0px));
+      --room: max(100px, var(--app-h) / var(--stage-zoom, 1) - var(--header-h, 47px) - 118px - env(safe-area-inset-bottom, 0px));
     }
     .task {
       margin-bottom: 0.4rem;

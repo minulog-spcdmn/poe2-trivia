@@ -120,7 +120,7 @@
     flex-direction: column;
     width: min(660px, 100%);
     /* The window's height in the page's zoomed px (lib/stage.ts). */
-    max-height: calc(100dvh / var(--stage-zoom, 1) - 2rem);
+    max-height: calc(var(--app-h) / var(--stage-zoom, 1) - 2rem);
     padding: 1.4rem 1.4rem 1.2rem;
     outline: none;
   }

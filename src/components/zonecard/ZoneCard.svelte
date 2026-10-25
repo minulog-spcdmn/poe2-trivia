@@ -420,7 +420,7 @@
   /* (The window's size in the card's zoomed px, lib/stage.ts.) */
   .plate {
     position: absolute;
-    inset: calc(var(--bar) + env(safe-area-inset-top) + 12px) 0 calc(var(--bar) + env(safe-area-inset-bottom) + 6vh / var(--stage-zoom, 1));
+    inset: calc(var(--bar) + env(safe-area-inset-top) + 12px) 0 calc(var(--bar) + env(safe-area-inset-bottom) + 0.06 * var(--view-h) / var(--stage-zoom, 1));
     margin: 0 auto;
     width: min(46rem, 100vw / var(--stage-zoom, 1) - 32px);
     display: flex;

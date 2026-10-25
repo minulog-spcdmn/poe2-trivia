@@ -1114,7 +1114,7 @@
        what the header and the legal links under it leave of the window (App.svelte measures both: --header-h, --legal-h;
        their usual heights until it has), and never goes nearer the header than its own padding (Lobby.svelte, desktop).
        So going back to the lobby never moves the panel. */
-    padding: max(clamp(10px, 2.4vh, 40px), (100dvh / var(--stage-zoom, 1) - var(--header-h, 64.6px) - var(--legal-h, 44.1px) - 724px) / 2)
+    padding: max(clamp(10px, 0.024 * var(--view-h), 40px), (var(--app-h) / var(--stage-zoom, 1) - var(--header-h, 64.6px) - var(--legal-h, 44.1px) - 724px) / 2)
       max(20px, (min(100%, 1440px) - 1200px) / 2) 0;
   }
   .side {

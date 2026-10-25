@@ -862,7 +862,7 @@
      waits for the art and answers to stand side by side.) */
   @media (min-width: 641px) and (max-height: 820px) {
     .game {
-      padding-top: clamp(4px, 1vh, 16px);
+      padding-top: clamp(4px, 0.01 * var(--view-h), 16px);
     }
   }
 

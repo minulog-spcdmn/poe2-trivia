@@ -718,16 +718,22 @@
     return { duration: 400, easing: cubicOut, css: (_t: number, u: number) => `translate: ${u * dx}px ${u * dy}px` };
   }
 
-  // Stuck (phones only, either way up): the strip sticks 1px above the top of the screen, so
+  // Stuck (phones upright): the strip sticks 1px above the top of the screen, so
   // once it has, it no longer fits in the view. Its background then covers
   // what the backdrop draws under the entries, so CSS paints their shadows.
+  // A camera shake moves it a few px (fx/core.ts, 7 at most), so stuck is
+  // anywhere above STUCK_PX: a shake never has it stuck and loose by turns,
+  // its box flickering. (On its side the strip rides in the header's row, at
+  // the very top, where it would be stuck at rest: it doesn't stick there.)
+  const STUCK_PX = 12;
   let strip = $state<HTMLElement>();
   let stuck = $state(false);
   $effect(() => {
     stuck = false;
-    if (!handheld.current || !strip) return;
-    const io = new IntersectionObserver(([e]) => (stuck = e.intersectionRatio < 1 && e.boundingClientRect.top < 0), {
+    if (!handheld.current || flat.current || !strip) return;
+    const io = new IntersectionObserver(([e]) => (stuck = e.intersectionRatio < 1 && e.boundingClientRect.top < STUCK_PX), {
       threshold: 1,
+      rootMargin: `-${STUCK_PX}px 0px 0px 0px`,
     });
     io.observe(strip);
     return () => io.disconnect();
@@ -746,7 +752,7 @@
   onpointerdown={(e) => !(e.target as Element).closest?.('.kick.armed') && kicker.disarm()}
 />
 
-<!-- On phones the row sticks to the top of the screen; once it has, it takes a
+<!-- On phones upright the row sticks to the top of the screen; once it has, it takes a
      background of its own over the content scrolling under it. -->
 <!-- data-cursor: where other players' pointers are placed (PeerCursors): the strip, each player's row in it. -->
 <div class="strip" data-cursor="board" class:stuck use:overPage={stuck} bind:this={strip}>
@@ -1405,13 +1411,14 @@
 
   /* (And on a phone on its side, lib/layout.ts `flat`, where the screen is too short for the full entries.) */
   @media (max-width: 640px), (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
-    /* Pinned to the top of the screen while playing (lib/layout.ts): one slim
-       row of avatars and scores, with the name and progress of whoever's turn
-       it is, and the timer at the end. Sticky rather than fixed, so it shakes
-       with the page and the effects aimed at a score land where it is. */
+    /* One slim row of avatars and scores, with the name and progress of
+       whoever's turn it is, and the timer at the end. Upright it's pinned to
+       the top of the screen while playing (lib/layout.ts), sticky rather than
+       fixed, so it shakes with the page and the effects aimed at a score land
+       where it is; on its side it rides in the header's row (below). */
     .strip {
       position: sticky;
-      /* 1px above the top, so it knows when it's stuck (see sticking). */
+      /* 1px above the top, so it knows when it's stuck (see stuck). */
       top: -1px;
       z-index: 10;
       display: flex;
@@ -1602,7 +1609,10 @@
      round and the buttons at its right end (--header-right), so the game
      gets the height of a row of its own. */
   @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
+    /* Not sticky: in the header's row, it goes where the header goes (see stuck). */
     .strip {
+      position: relative;
+      top: 0;
       height: var(--header-h, 47px);
       margin: calc(-1 * var(--header-h, 47px)) calc(var(--header-right, 0px) + 0.9rem - max(1rem, env(safe-area-inset-right))) 0
         calc(-1 * max(1rem, env(safe-area-inset-left)));
