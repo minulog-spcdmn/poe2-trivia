@@ -150,8 +150,8 @@
         style:transform-origin={at.origin}
         style:color={l.tint && `color-mix(in srgb, ${l.tint} 70%, currentColor)`}
       >
-        <div class="glowing"><svg class="glow" viewBox={at.viewBox} style:--late={lateOf(l.name)}><g class="engraved">{@html plate(l.glow, l.name)}</g></svg></div>
-        <svg viewBox={at.viewBox} style:--late={lateOf(l.name)}><g class="engraved">{@html plate(l.lines, l.name)}</g></svg>
+        <div class="glowing"><svg class="glow" viewBox={at.viewBox} style:--late={lateOf(l.name)}>{@html plate(l.glow, l.name)}</svg></div>
+        <svg viewBox={at.viewBox} style:--late={lateOf(l.name)}>{@html plate(l.lines, l.name)}</svg>
         {#each layers.filter((c) => c.within === l.name) as child (child.name)}
           {@render layer(child, box)}
         {/each}
@@ -359,13 +359,6 @@
     fill: currentColor;
     fill-rule: evenodd;
     stroke: none;
-  }
-  /* Each sign or mark fading in would otherwise be a layer of its own for as
-     long as its fade is due (hundreds of them as a circle is summoned, all
-     sorted and sent on every frame); held in the layer it's drawn on, it's
-     painted there as the strokes drawing round it are. */
-  .engraved {
-    will-change: contents;
   }
   .arcane :global(.draw.ink) {
     animation: carve 0.6s calc(var(--d, 0s) - var(--late, 0s)) var(--ease-out) backwards;
