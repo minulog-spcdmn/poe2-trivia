@@ -82,7 +82,14 @@
 
   /** The finds you have met, with the depth each first turns up at. */
   const metFinds = $derived(FINDS_IN_ORDER.filter((x) => met.includes(x.kind)).map((x) => ({ kind: x.kind, from: x.from })));
-  const plate = $derived(w > 0 && h > 0 ? descentPlate(w, h, deepest, metFinds, { caption: cap, beside, callouts: shapes, nameW, legendW }, last) : null);
+  /**
+   * Whether the page has been measured (measure(), as the plate mounts,
+   * before anything is painted). Until then there is no plate: one drawn
+   * from guesses would be drawn again at once, never seen. What measure()
+   * reads doesn't depend on the plate (the callouts stand outside it).
+   */
+  let measured = $state(false);
+  const plate = $derived(measured && w > 0 && h > 0 ? descentPlate(w, h, deepest, metFinds, { caption: cap, beside, callouts: shapes, nameW, legendW }, last) : null);
   $effect(() => {
     if (plate) natural = plate.natural;
   });
@@ -164,6 +171,7 @@
     if (!same(nextShapes, shapes)) shapes = nextShapes;
     if (!same(nw, nameW)) nameW = nw;
     if (!same(lw, legendW)) legendW = lw;
+    measured = true;
   }
 
   let frame = 0;
