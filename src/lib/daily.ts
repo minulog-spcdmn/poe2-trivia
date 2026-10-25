@@ -133,16 +133,29 @@ export interface DailyRecord {
   /** Which of the four was picked that day, and whether it was right. */
   picked: number;
   ok: boolean;
-  /** Days answered right in a row, up to and including `day` (0 after a miss). */
+  /** Days answered right in a row, up to and including `day` (0 after a miss); a forgiven day (GRACE_DAYS) goes uncounted. */
   streak: number;
   /** The run a miss on `day` ended (0 if none). */
   ended: number;
+  /** Right answers still to give before a forgotten day is forgiven again (0: it would be). */
+  grace: number;
 }
 
-/** The run still going on `today`: answered right today or yesterday. */
+/**
+ * A run survives one forgotten day; two in a row end it. Once a forgotten
+ * day is forgiven, this many right answers (the one that day's grace let
+ * the player give among them) earn the grace back. A wrong answer ends the
+ * run all the same: the grace is for a day away, never for not knowing.
+ */
+export const GRACE_DAYS = 7;
+
+/** Whether the run goes on today only by the grace: yesterday went unanswered, the day before was answered right, and the grace is there. */
+export const graceOn = (rec: DailyRecord | null, today: number) => !!rec && rec.ok && rec.day === today - 2 && rec.grace === 0;
+
+/** The run still going on `today`: answered right today or yesterday, or the day before with the grace for yesterday. */
 export function streakOn(rec: DailyRecord | null, today: number): number {
   if (!rec || !rec.ok) return 0;
-  return rec.day === today || rec.day === today - 1 ? rec.streak : 0;
+  return rec.day === today || rec.day === today - 1 || graceOn(rec, today) ? rec.streak : 0;
 }
 
 /**
@@ -162,7 +175,10 @@ export const answeredOn = (rec: DailyRecord | null, today: number) => (rec && re
 export function answerDaily(rec: DailyRecord | null, today: number, picked: number, ok: boolean): DailyRecord {
   if (rec && rec.day >= today) return rec;
   const run = streakOn(rec, today);
-  return ok ? { day: today, picked, ok, streak: run + 1, ended: 0 } : { day: today, picked, ok, streak: 0, ended: run };
+  if (!ok) return { day: today, picked, ok, streak: 0, ended: run, grace: 0 };
+  // Forgiven today, the grace comes back after GRACE_DAYS right answers, today's the first; a new run starts with it.
+  const grace = graceOn(rec, today) ? GRACE_DAYS - 1 : run > 0 ? Math.max(0, rec!.grace - 1) : 0;
+  return { day: today, picked, ok, streak: run + 1, ended: 0, grace };
 }
 
 const KEY = 'daily';
@@ -175,8 +191,10 @@ export function parseDaily(raw: string | null): DailyRecord | null {
   if (!raw) return null;
   try {
     const r = JSON.parse(raw) as Record<string, unknown>;
-    if (!isInt(r.day) || !isInt(r.picked) || r.picked > 3 || typeof r.ok !== 'boolean' || !isInt(r.streak) || !isInt(r.ended)) return null;
-    return { day: r.day, picked: r.picked, ok: r.ok, streak: r.streak, ended: r.ended };
+    // (A record from before the grace has none: it's there.)
+    const grace = r.grace ?? 0;
+    if (!isInt(r.day) || !isInt(r.picked) || r.picked > 3 || typeof r.ok !== 'boolean' || !isInt(r.streak) || !isInt(r.ended) || !isInt(grace) || grace >= GRACE_DAYS) return null;
+    return { day: r.day, picked: r.picked, ok: r.ok, streak: r.streak, ended: r.ended, grace };
   } catch {
     return null;
   }

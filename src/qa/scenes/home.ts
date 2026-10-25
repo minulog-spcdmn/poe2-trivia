@@ -24,11 +24,12 @@ function rooms(n: number): RoomInfo[] {
   return Array.from({ length: n }, (_, i) => first[i] ?? room(i + 1, { players: 1 + (i % 12), phase: i % 4 ? 'lobby' : 'locked' }));
 }
 
-/** Today's unique as this device last had it: a streak of `days`, today answered right, not yet, or missed (ending the streak). */
+/** Today's unique as this device last had it: a streak of `days`, today answered right, not yet (after yesterday, or after a forgotten day the grace forgives), or missed (ending the streak). */
 function today(days: number, how: string): NonNullable<Built['daily']> {
-  if (how === 'missed') return { daysAgo: 0, picked: 3, ok: false, streak: 0, ended: days };
-  if (how === 'waiting') return { daysAgo: 1, picked: 1, ok: days > 0, streak: days, ended: 0 };
-  return { daysAgo: 0, picked: 2, ok: days > 0, streak: days, ended: 0 };
+  if (how === 'missed') return { daysAgo: 0, picked: 3, ok: false, streak: 0, ended: days, grace: 0 };
+  if (how === 'waiting') return { daysAgo: 1, picked: 1, ok: days > 0, streak: days, ended: 0, grace: 0 };
+  if (how === 'forgiven') return { daysAgo: 2, picked: 1, ok: days > 0, streak: days, ended: 0, grace: 0 };
+  return { daysAgo: 0, picked: 2, ok: days > 0, streak: days, ended: 0, grace: 0 };
 }
 
 /** A returning player's past: items met, Delve runs, open rooms, Today's unique on a streak. */
@@ -56,6 +57,7 @@ const BACK: Control[] = [
     options: [
       { value: 'right', label: 'Answered right' },
       { value: 'waiting', label: 'Not answered yet' },
+      { value: 'forgiven', label: 'Not yet, a day missed' },
       { value: 'missed', label: 'Missed' },
     ],
   },
@@ -97,6 +99,7 @@ export function homeScenes(): Scene[] {
         { label: 'Back again, no rooms open', values: { rooms: 0 } },
         { label: 'The most rooms the list shows (60)', values: { rooms: 60 } },
         { label: "Today's unique, not answered yet, a streak of 7 waiting", values: { today: 'waiting' }, group: "Today's unique" },
+        { label: "Today's unique after a forgotten day, a streak of 7 kept by the grace", values: { today: 'forgiven' }, group: "Today's unique" },
         { label: "Today's unique answered, a streak of a year", values: { days: 365 }, group: "Today's unique" },
         { label: "Today's unique missed, a streak of 30 ended", values: { today: 'missed', days: 30 }, group: "Today's unique" },
       ],

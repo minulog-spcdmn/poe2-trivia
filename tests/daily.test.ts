@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { Engine, TWINS, allArt, answerDrawn, isFake, type Question } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, TOO_THIN, dailyEngine, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, hoursLeft, minutesLeft, nextIn, parseDaily, streakOn, untilNextMinute, utcDay, type DailyRecord } from '../src/lib/daily.ts';
+import { DAILY_LAUNCH, GRACE_DAYS, TOO_THIN, dailyEngine, graceOn, aTopic, answerDaily, askOne, fromClockAhead, dailyGame, answeredOn, dailyQuestion, hoursLeft, minutesLeft, nextIn, parseDaily, streakOn, untilNextMinute, utcDay, type DailyRecord } from '../src/lib/daily.ts';
 import { fakes, items, seeded } from './helpers.ts';
 
 const HOUR = 3_600_000;
@@ -114,7 +114,7 @@ test('the pictures too thin for the start page are real items\' pictures, and ne
   for (let i = 0; i < 1500; i++) assert.ok(!TOO_THIN.has(shown(askOne(engine, game, rng))), `practice question ${i}`);
 });
 
-test('a right answer starts or carries on a streak; a day skipped starts it over', () => {
+test('a right answer starts or carries on a streak; two days skipped start it over', () => {
   const d = 1000;
   let rec = answerDaily(null, d, 2, true);
   assert.equal(rec.streak, 1);
@@ -123,15 +123,44 @@ test('a right answer starts or carries on a streak; a day skipped starts it over
   assert.equal(rec.streak, 3);
   assert.equal(streakOn(rec, d + 2), 3, 'today');
   assert.equal(streakOn(rec, d + 3), 3, 'still alive the next day, until answered');
-  assert.equal(streakOn(rec, d + 4), 0, 'a day missed ends it');
-  assert.equal(answerDaily(rec, d + 4, 0, true).streak, 1);
+  assert.equal(streakOn(rec, d + 4), 3, 'a day forgotten is forgiven');
+  assert.equal(streakOn(rec, d + 5), 0, 'two in a row end it');
+  assert.equal(answerDaily(rec, d + 5, 0, true).streak, 1);
+});
+
+test('a forgotten day is forgiven once, then again after seven right answers', () => {
+  const d = 2000;
+  let rec = answerDaily(answerDaily(null, d, 0, true), d + 1, 0, true);
+  assert.ok(!graceOn(rec, d + 2), 'not needed the next day');
+  assert.ok(graceOn(rec, d + 3));
+  // Yesterday forgotten: today's answer carries the run on, the forgiven day uncounted.
+  rec = answerDaily(rec, d + 3, 0, true);
+  assert.equal(rec.streak, 3);
+  assert.equal(rec.grace, GRACE_DAYS - 1, "today's is the first of the seven");
+  // Another day forgotten before the grace is back ends the run.
+  assert.ok(!graceOn(rec, d + 5));
+  assert.equal(streakOn(rec, d + 5), 0);
+  // Six more right in a row and it's back.
+  for (let day = d + 4; day < d + 3 + GRACE_DAYS; day++) rec = answerDaily(rec, day, 0, true);
+  assert.equal(rec.grace, 0);
+  assert.equal(streakOn(rec, rec.day + 2), rec.streak);
+});
+
+test("the grace is for a day away, not for a wrong answer, and a new run starts with it", () => {
+  let rec = answerDaily(null, 10, 0, true);
+  assert.equal(answerDaily(rec, 12, 3, false).ended, 1, 'a miss on the forgiven day ends the run');
+  rec = answerDaily(rec, 12, 0, true);
+  rec = answerDaily(rec, 13, 3, false);
+  assert.equal(rec.grace, 0);
+  rec = answerDaily(rec, 14, 0, true);
+  assert.ok(graceOn(rec, 16));
 });
 
 test('a miss ends the streak and remembers how long it was', () => {
   let rec: DailyRecord = answerDaily(null, 10, 0, true);
   rec = answerDaily(rec, 11, 0, true);
   rec = answerDaily(rec, 12, 3, false);
-  assert.deepEqual(rec, { day: 12, picked: 3, ok: false, streak: 0, ended: 2 });
+  assert.deepEqual(rec, { day: 12, picked: 3, ok: false, streak: 0, ended: 2, grace: 0 });
   assert.equal(streakOn(rec, 12), 0);
   assert.equal(answerDaily(rec, 13, 1, true).streak, 1);
 });
@@ -151,10 +180,14 @@ test('stored records are checked before use', () => {
   assert.equal(parseDaily(JSON.stringify({ ...rec, picked: 7 })), null);
   assert.equal(parseDaily(JSON.stringify({ ...rec, streak: -1 })), null);
   assert.equal(parseDaily(JSON.stringify({ ...rec, ok: 'yes' })), null);
+  assert.equal(parseDaily(JSON.stringify({ ...rec, grace: GRACE_DAYS })), null);
+  // A record from before the grace has it there.
+  const { grace: _, ...older } = rec;
+  assert.deepEqual(parseDaily(JSON.stringify(older)), { ...rec, grace: 0 });
 });
 
 test("a record from a day still to come (a clock that ran ahead) stands as yesterday's once the server has said the day", () => {
-  const ahead: DailyRecord = { day: 101, picked: 2, ok: true, streak: 4, ended: 0 };
+  const ahead: DailyRecord = { day: 101, picked: 2, ok: true, streak: 4, ended: 0, grace: 0 };
   const mended = fromClockAhead(ahead, 100)!;
   assert.deepEqual(mended, { ...ahead, day: 99 });
   // Today's can be answered, and its run goes on.
