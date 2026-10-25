@@ -339,13 +339,8 @@
     margin: auto;
     padding: 1.5rem 1.6rem 1.6rem;
     text-align: center;
-    --stage: min(330px, 46vh);
-  }
-  @supports (height: 1svh) {
-    /* (A phone's bars up: the small viewport, not the large.) */
-    .sync {
-      --stage: min(330px, 46svh);
-    }
+    /* (A phone's bars up: the height that shows then, app.css's --view-h.) */
+    --stage: min(330px, 0.46 * var(--view-h));
   }
   /* (Focused as it opens, so keys reach it; the frame needs no ring.) */
   .sync:focus {
@@ -365,7 +360,7 @@
       column-gap: 1.2rem;
       width: min(640px, 100%);
       padding: 1rem 1.2rem;
-      --stage: min(300px, calc(100vh - 5rem));
+      --stage: min(300px, var(--view-h) - 5rem);
     }
     /* (Its own width here: a share of an auto column would be nothing.) */
     .sync .stage {

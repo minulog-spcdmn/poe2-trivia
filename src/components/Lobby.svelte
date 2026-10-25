@@ -1607,7 +1607,7 @@
       display: flex;
       flex-direction: column;
       justify-content: center;
-      padding: clamp(10px, 2.4vh, 40px) max(32px, 50% - 600px);
+      padding: clamp(10px, 0.024 * var(--view-h), 40px) max(32px, 50% - 600px);
     }
     /* As tall as the window allows, up to the height Delve needs (the tallest
        game): the party list scrolls inside it when it runs longer, the game

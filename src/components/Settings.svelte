@@ -920,7 +920,7 @@
       display: flex;
       flex-direction: column;
       justify-content: center;
-      padding: clamp(10px, 2.4vh, 40px) max(32px, 50% - 600px);
+      padding: clamp(10px, 0.024 * var(--view-h), 40px) max(32px, 50% - 600px);
     }
     .cols:not(.one, .over) {
       grid-template-columns: 440px 600px;

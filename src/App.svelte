@@ -794,7 +794,7 @@
     zoom: var(--stage-zoom, 1);
     position: relative;
     z-index: 1;
-    min-height: calc(100dvh / var(--stage-zoom, 1));
+    min-height: calc(var(--app-h) / var(--stage-zoom, 1));
     display: flex;
     flex-direction: column;
     /* Room at the end for a bar fixed to the bottom of the screen (lib/layout.ts). */

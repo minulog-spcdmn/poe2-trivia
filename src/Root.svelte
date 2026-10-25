@@ -51,7 +51,7 @@
 
 <style>
   .stuck {
-    min-height: 100dvh;
+    min-height: var(--app-h);
     display: grid;
     place-content: center;
     gap: 1rem;

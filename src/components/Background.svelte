@@ -328,7 +328,7 @@
       opacity: 0.5;
     }
     100% {
-      transform: translate(var(--drift), -105vh) scale(0.3);
+      transform: translate(var(--drift), calc(-1.05 * var(--screen-h))) scale(0.3);
       opacity: 0;
     }
   }
