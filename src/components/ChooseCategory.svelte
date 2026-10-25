@@ -1760,14 +1760,16 @@
     }
     .sharp .frame {
       zoom: 2;
-      /* (Through var(), as the build keeps it beside a transform: without,
-         the live cards came out twice their size. tests/minifiedTransforms.) */
-      --sharp-scale: 0.5;
-      scale: var(--sharp-scale);
       width: 200%;
       margin: -75px -50%;
       transform: perspective(900px) rotateX(0.01deg) rotateY(0deg) translateY(0) scale(1);
       --face-filter: var(--sharp-wide);
+    }
+    /* The shrink, in a rule of its own: beside the transform, the build's
+       minifier drops it and the live cards come out twice their size
+       (tests/minifiedTransforms). */
+    .sharp .turn > .frame {
+      scale: 0.5;
     }
     /* (Its soft shadow drawn by the backdrop, not round it: the filter needs no room for it.) */
     .sharp .frame:global([data-bs-on]) {
