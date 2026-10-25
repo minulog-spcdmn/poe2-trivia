@@ -77,15 +77,31 @@ export interface Mover {
   before: number;
 }
 
-/** The biggest rise and the biggest fall in a list against the period before, each only where it's beyond chance (by how much it moved). */
+/** How many a name brought before for its change to count in how they all moved (moversOf): a handful swings too much. */
+const MOVER_BASE = 5;
+
+/**
+ * The biggest rise and the biggest fall in a list against the period
+ * before, each against what it would have brought had it moved as most of
+ * them did (the middle one's change, of those with enough before to say;
+ * typed in moves by itself), and only where it's beyond chance. When every
+ * site brings twice as many, none of them is news; when one brings three
+ * times as many, the middle isn't dragged along, so it's that one, and not
+ * the rest falling behind it.
+ */
 export function moversOf(now: Named[], before: Named[]): { up: Mover | null; down: Mover | null } {
   const was = new Map(before.map((r) => [r.name, r.count]));
   const is = new Map(now.map((r) => [r.name, r.count]));
   const names = [...new Set([...is.keys(), ...was.keys()])].filter((n) => !typedIn(n));
-  const moves = names.map((name) => ({ name, now: is.get(name) ?? 0, before: was.get(name) ?? 0 })).filter((m) => beyondChance(m.now - m.before, m.before));
-  const up = moves.filter((m) => m.now > m.before * 1.3).sort((a, b) => b.now - b.before - (a.now - a.before))[0] ?? null;
-  const down = moves.filter((m) => m.now < m.before * 0.7).sort((a, b) => a.now - a.before - (b.now - b.before))[0] ?? null;
-  return { up, down };
+  const changes = names.filter((name) => (was.get(name) ?? 0) >= MOVER_BASE).map((name) => (is.get(name) ?? 0) / was.get(name)!);
+  const scale = changes.length ? median(changes) : 1;
+  const moves = names
+    .map((name) => ({ name, now: is.get(name) ?? 0, before: was.get(name) ?? 0, expected: (was.get(name) ?? 0) * scale }))
+    .filter((m) => beyondChance(m.now - m.expected, m.expected));
+  const strip = ({ name, now, before }: Mover): Mover => ({ name, now, before });
+  const up = moves.filter((m) => m.now > m.expected * 1.3).sort((a, b) => b.now - b.expected - (a.now - a.expected))[0];
+  const down = moves.filter((m) => m.now < m.expected * 0.7).sort((a, b) => a.now - a.expected - (b.now - b.expected))[0];
+  return { up: up ? strip(up) : null, down: down ? strip(down) : null };
 }
 
 /** How far a visit gets: of the visitors, those who played a game, finished one, and answered Today's unique. */
@@ -302,12 +318,38 @@ export interface Trouble {
   today: { failed: number; expected: number } | null;
 }
 
+// (Not the scripts' errors, which have nothing to do with joining.)
+const failed = (c: Counts) => c.failures.reduce((n, f) => n + (f.script ? 0 : f.count), 0);
+const tries = (c: Counts) => c.joins.reduce((n, j) => n + j.tried, 0);
+/** What a failure could happen on: a game started (a room opened, or played at one screen) or a try to join. */
+export const chances = (c: Counts) => c.games.started + tries(c);
+
+/** Joining's failures for each 100 games and tries to join, the rate troubleOf weighs; null with neither. */
+export const failureRate = (c: Counts): number | null => (chances(c) ? (100 * failed(c)) / chances(c) : null);
+
+/**
+ * Whether a change is more than chance would make: `now` against `before`,
+ * counts of about that size (a count's chance swing being about its square
+ * root). For a rate's change, its counts are what it rests on.
+ */
+export const beyondChanceOf = (now: number, before: number) => beyondChance(now - before, Math.max(before, 0));
+
+/**
+ * Whether two percents differ by more than chance would make, each of `n`
+ * and `nBefore` (twice the spread of their difference; a share near 0 or
+ * 100 is taken a little in from the edge, so a handful never counts as sure).
+ */
+export function rateBeyondChance(pct: number, n: number, pctBefore: number, nBefore: number): boolean {
+  if (n <= 0 || nBefore <= 0) return false;
+  // (A rate of more than one each, as failures can run to, spreads at least as a share at the edge would.)
+  const edge = (v: number) => Math.min(100, Math.max(0, v));
+  const p = (edge(pct) * n + 100) / (n + 2) / 100;
+  const q = (edge(pctBefore) * nBefore + 100) / (nBefore + 2) / 100;
+  const spread = 100 * Math.sqrt((p * (1 - p)) / n + (q * (1 - q)) / nBefore);
+  return Math.abs(pct - pctBefore) >= 2 * spread;
+}
+
 export function troubleOf(now: Counts, before: Counts): Trouble | null {
-  // (Not the scripts' errors, which have nothing to do with joining.)
-  const failed = (c: Counts) => c.failures.reduce((n, f) => n + (f.script ? 0 : f.count), 0);
-  const tries = (c: Counts) => c.joins.reduce((n, j) => n + j.tried, 0);
-  /** What a failure could happen on: a game started (a room opened, or played at one screen) or a try to join. */
-  const chances = (c: Counts) => c.games.started + tries(c);
   /** Failures well above `expected`, or null. */
   const worse = (f: number, expected: number) => (f > expected && beyondChance(f - expected, expected) ? { failed: f, expected } : null);
 

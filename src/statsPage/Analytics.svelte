@@ -33,9 +33,9 @@
   import Overview from './Overview.svelte';
   import { PERIODS, VIEWS, type Read, type View } from './read';
   import Seg from './Seg.svelte';
-  import { hashOf, selOf, sliceCalls, type Sel, type Slices } from './slices';
+  import { depthCalls, hashOf, selOf, sliceCalls, type Sel, type Slices } from './slices';
   import VisitorsView from './VisitorsView.svelte';
-  import { addDays, dayIn, midnight } from './zone';
+  import { addDays, dayIn, hoursIn, midnight } from './zone';
   import { CHANNEL } from '../lib/channel';
   import { demoSlices, demoUpdate } from './demo';
 
@@ -125,7 +125,7 @@
     if (had) return had;
     try {
       const r = JSON.parse(readStored(`analytics.read.${days}`, 'session') ?? 'null') as Read | null;
-      if (r?.v !== 6 || r.span !== days) return null;
+      if (r?.v !== 8 || r.span !== days) return null;
       cache.set(days, r);
       return r;
     } catch {
@@ -213,7 +213,9 @@
         step(visitorsBy(k, before, 'toprefs', signal)),
       ]);
       if (ask !== asked) return;
-      const counts = countsOf(n.paths, daysBetween(from, today), tz);
+      // The hours today has had (a part of the one it's in too), which the period before's last day is cut at too.
+      const until = hoursIn(tz, today, at);
+      const counts = countsOf(n.paths, daysBetween(from, today), tz, until);
       // The sites behind the busiest days: a day gone by is read once and kept (it never changes), today each time.
       const spikeRefs: Record<string, Named[]> = {};
       const keptRefs = dayRefsOf(readStored(DAY_REFS_KEY), tz);
@@ -235,7 +237,7 @@
       if (added) writeStored(DAY_REFS_KEY, dayRefsToKeep(keptRefs, tz, addDays(today, -Math.max(...PERIODS.map((p) => p.value)))));
       if (ask !== asked) return;
       const r: Read = {
-        v: 6,
+        v: 8,
         span: days,
         from,
         to: today,
@@ -243,7 +245,7 @@
         toBefore,
         zone: tz,
         now: counts,
-        before: countsOf(b.paths, daysBetween(fromBefore, toBefore), tz),
+        before: countsOf(b.paths, daysBetween(fromBefore, toBefore), tz, until),
         systems,
         countries,
         // Each site once: a tagged link's visit comes with its referrer as it was (insights.ts sameSites).
@@ -287,7 +289,7 @@
   const keptSlices = (r: Read): Slices | null => {
     try {
       const s = JSON.parse(readStored(slicesKey(r.span), 'session') ?? 'null') as Slices | null;
-      return s?.v === 3 && s.span === r.span && s.from === r.from ? s : null;
+      return s?.v === 4 && s.span === r.span && s.from === r.from ? s : null;
     } catch {
       return null;
     }
@@ -305,17 +307,19 @@
     // Not by itself while the hour's requests run low; the Read again button still reads.
     if (held && !force) return;
     slicer?.abort();
+    depther?.abort();
     const ctrl = (slicer = new AbortController());
     const calls = sliceCalls(r.now);
     let done = 0;
     slicing = 0.02;
     slicesFailed = '';
     try {
-      const out: Slices = { v: 3, span: r.span, from: r.from, at: Date.now(), locations: {}, systems: {} };
-      const within: Span = { start: midnight(r.zone, r.from), end: new Date() };
+      const out: Slices = { v: 4, span: r.span, from: r.from, at: Date.now(), locations: {}, systems: {} };
+      const end = new Date(out.at);
       await Promise.all(
         calls.map((c) =>
-          pathsBy(key, within, c.dim, c.paths, ctrl.signal).then((list) => {
+          // Each from its own first day (slices.ts groupFrom), so a share and what it's of cover the same days.
+          pathsBy(key, { start: midnight(r.zone, c.from), end }, c.dim, c.paths, ctrl.signal).then((list) => {
             out[c.dim][c.group] = list;
             // (Not once it's been called off: what's read for another period has its own.)
             if (slicer === ctrl) slicing = ++done / calls.length;
@@ -339,6 +343,52 @@
     if (view !== 'groups' || board || !read || !key) return;
     const r = read;
     untrack(() => void loadSlices(r));
+  });
+
+  // ---- how deep a group's Delve runs go: two calls for each ten depths, so read only once a group is picked with Delve, to the groups' own time ----
+  let depthsReading = $state(false);
+  let depthsFailed = $state('');
+  let depther: AbortController | null = null;
+  /** The groups' read (its `at`) whose depths are being read, so each is read once. */
+  let depthsFor = 0;
+  async function loadDepths(r: Read, s: Slices) {
+    if (depthsFor === s.at) return;
+    depthsFor = s.at;
+    depther?.abort();
+    const ctrl = (depther = new AbortController());
+    depthsReading = true;
+    depthsFailed = '';
+    try {
+      // (Depths with no run to read are none, not unread.)
+      const depths: NonNullable<Slices['depths']> = { locations: {}, systems: {} };
+      const end = new Date(s.at);
+      await Promise.all(
+        depthCalls(r.now).map((c) =>
+          pathsBy(key, { start: midnight(r.zone, c.start), end }, c.dim, c.paths, ctrl.signal).then((list) => {
+            depths[c.dim]![c.from] = list;
+          }),
+        ),
+      );
+      const withDepths: Slices = { ...$state.snapshot(s), depths };
+      if (keptSlices(r)?.at === s.at) writeStored(slicesKey(r.span), JSON.stringify(withDepths), 'session');
+      if (slices?.at === s.at) slices = withDepths;
+    } catch (err) {
+      ctrl.abort();
+      if (depthsFor === s.at) depthsFor = 0;
+      if (!(err instanceof Cancelled) && depther === ctrl) depthsFailed = err instanceof Error ? err.message : 'Something went wrong.';
+    } finally {
+      if (depther === ctrl) {
+        depther = null;
+        depthsReading = false;
+      }
+      countRequests();
+    }
+  }
+  $effect(() => {
+    if (view !== 'groups' || board || !read || !key || !slices || slices.depths || !sel?.who || sel.mode !== 'delve') return;
+    const r = read;
+    const s = slices;
+    untrack(() => void loadDepths(r, s));
   });
 
   /** The hour's requests, counted once for the footer and for whether updating by itself holds off. */
@@ -550,12 +600,23 @@
       {:else if view === 'daily'}
         <DailyView {read} {period} {weekly} />
       {:else if view === 'groups'}
-        <GroupsView {read} {period} {slices} {sel} reading={slicing} failed={slicesFailed} onagain={() => read && void loadSlices(read, true)} />
+        <GroupsView
+          {read}
+          {period}
+          {slices}
+          {sel}
+          reading={slicing}
+          failed={slicesFailed}
+          onagain={() => read && void loadSlices(read, true)}
+          {depthsReading}
+          {depthsFailed}
+          ondepths={() => read && slices && void loadDepths(read, slices)}
+        />
       {:else}
         <JoiningView {read} {period} />
       {/if}
       {#if !board}<footer class="foot">
-        <p>Visitors are people on the start page, each counted once a visit (8 hours). Ad blockers hide some of them, so totals run low while shares hold.</p>
+        <p>Visits are to the start page, a person counted once in 8 hours, so someone who comes back every day counts every day. Ad blockers hide some of them, so totals run low while shares hold. A change chance alone could have made is shown uncoloured.</p>
         <p>This browser asked GoatCounter {used} times in the last hour, of the {HOUR_LIMIT} it allows; updating by itself pauses at {HOUR_LIMIT - KEEP_SPARE}.</p>
       </footer>{/if}
     {/if}

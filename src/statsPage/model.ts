@@ -179,8 +179,21 @@ export interface Counts {
   cohorts: Cohort[];
   /** Devices paired for sync. */
   sync: { paired: number };
-  /** Visits and games started by weekday (Monday first) and hour in the account's zone (weekHours), null where GoatCounter gave no hours. */
-  week: { visitors: number[][] | null; games: number[][] | null };
+  /** Visits and games started by weekday (Monday first) and hour in the account's zone (weekHours), null where GoatCounter gave no hours; `until`: the last day's hours taken, those before it (null: all of them). */
+  week: { visitors: number[][] | null; games: number[][] | null; until: number | null };
+  /**
+   * What a usual day of the period had by the time the last one has reached
+   * (usualByNow): visits, games started, and Today's unique's answers by its
+   * own UTC day and hour. Null without the hours, or the time.
+   */
+  usual: { visitors: number | null; games: number | null; answers: number | null };
+  /**
+   * Today's unique on the game's day it is now (the UTC day at that time),
+   * named and missed so far (gameDayOf): in a zone behind UTC, the evening
+   * is already the next game day, which `daily`'s days don't hold. Null
+   * without the hours, or the time.
+   */
+  gameDay: { day: string; right: number; wrong: number } | null;
 }
 
 /** Monday 0 to Sunday 6, of a day (YYYY-MM-DD). */
@@ -188,21 +201,104 @@ export const weekday = (day: string) => (new Date(`${day}T12:00:00Z`).getUTCDay(
 
 /**
  * Paths' counts by weekday and hour: 7 rows (Monday first) of 24 hours, as
- * GoatCounter counted them in the account's zone, only `days` taken. Null
- * when a path with counts came without its hours. (On a day the clocks
- * change, the hours after the change sit an hour off.)
+ * GoatCounter counted them in the account's zone, only `days` taken, and of
+ * the last of them only the hours before `until` (the hour it is now: the
+ * rest hasn't happened, or is still going). Null when a path with counts
+ * came without its hours. (On a day the clocks change, the hours after the
+ * change sit an hour off.)
  */
-export function weekHours(paths: PathCount[], days: string[]): number[][] | null {
+export function weekHours(paths: PathCount[], days: string[], until: number | null = null): number[][] | null {
   const grid = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
   const wanted = new Set(days);
+  const last = days[days.length - 1];
   for (const p of paths) {
     if (!p.hours) {
       if (p.count > 0) return null;
       continue;
     }
-    for (const [day, hours] of Object.entries(p.hours)) if (wanted.has(day)) hours.forEach((n, h) => (grid[weekday(day)][h] += n));
+    for (const [day, hours] of Object.entries(p.hours)) if (wanted.has(day)) hours.forEach((n, h) => (day !== last || until === null || h < until) && (grid[weekday(day)][h] += n));
   }
   return grid;
+}
+
+/** How much of an hour that began `start` hours in has passed by `until` hours in: its share of what the hour brought. */
+const hadOf = (start: number, until: number) => Math.min(1, Math.max(0, until - start));
+
+/**
+ * What `paths` had on a usual day of `days` by `until` hours in (the time
+ * it is now, so a part of an hour: of the hour it's in, as much as has
+ * passed): the average, over every day but the last (still going). Null
+ * when a path with counts came without its hours, or with no whole day to
+ * average. A day from today against one day a period ago swings with every
+ * few visits; against the period's usual day it says whether today is busy.
+ */
+export function usualByNow(paths: PathCount[], days: string[], until: number | null): number | null {
+  const whole = days.slice(0, -1);
+  if (until === null || !whole.length) return null;
+  let sum = 0;
+  for (const p of paths) {
+    if (!p.hours) {
+      if (p.count > 0) return null;
+      continue;
+    }
+    for (const d of whole) (p.hours[d] ?? []).forEach((n, h) => (sum += n * hadOf(h, until)));
+  }
+  return sum / whole.length;
+}
+
+/** The time the last of `days` has reached `until` hours in, in `zone`. */
+const timeOf = (zone: string, days: string[], until: number) => midnight(zone, days[days.length - 1]).getTime() + until * 3_600_000;
+const utcDayOf = (t: number) => new Date(t).toISOString().slice(0, 10);
+/** Hours since its UTC midnight, of a time. */
+const utcHoursOf = (t: number) => (t - Date.parse(`${utcDayOf(t)}T00:00:00Z`)) / 3_600_000;
+
+/**
+ * usualByNow on UTC days, as Today's unique is counted (utcPerDay): what a
+ * whole UTC day of `days` from `from` on had by the UTC time it is now (the
+ * last day's `until` hours in, in `zone`). Only a UTC day read from its
+ * start: in a zone behind UTC, the first began before the read did.
+ */
+export function usualByNowUtc(p: PathCount | undefined, days: string[], zone: string, until: number | null, from = ''): number | null {
+  if (until === null || !days.length) return null;
+  const now = timeOf(zone, days, until);
+  const today = utcDayOf(now);
+  const read = midnight(zone, days[0]).getTime();
+  const whole = new Set(days.filter((d) => d < today && d >= from && Date.parse(`${d}T00:00:00Z`) >= read));
+  if (!whole.size) return null;
+  if (!p) return 0;
+  if (!p.hours) return p.count > 0 ? null : 0;
+  const by = utcHoursOf(now);
+  let sum = 0;
+  for (const [day, hours] of Object.entries(p.hours)) {
+    const start = midnight(zone, day).getTime();
+    hours.forEach((n, h) => {
+      const at = start + h * 3_600_000;
+      if (n && whole.has(utcDayOf(at))) sum += n * hadOf(utcHoursOf(at), by);
+    });
+  }
+  return sum / whole.size;
+}
+
+/** Today's unique's answers on the game's (UTC) day at the last day's `until` hours in, in `zone`, so far; null where a path came without its hours. */
+function gameDayOf(right: PathCount | undefined, wrong: PathCount | undefined, days: string[], zone: string, until: number): Counts['gameDay'] {
+  const now = timeOf(zone, days, until);
+  const day = utcDayOf(now);
+  const soFar = (p: PathCount | undefined) => {
+    if (!p) return 0;
+    if (!p.hours) return p.count > 0 ? null : 0;
+    let n = 0;
+    for (const [d, hours] of Object.entries(p.hours)) {
+      const start = midnight(zone, d).getTime();
+      hours.forEach((v, h) => {
+        const at = start + h * 3_600_000;
+        if (at < now && utcDayOf(at) === day) n += v;
+      });
+    }
+    return n;
+  };
+  const r = soFar(right);
+  const w = soFar(wrong);
+  return r === null || w === null ? null : { day, right: r, wrong: w };
 }
 
 /** Every day from `from` to `to` (YYYY-MM-DD, both included). */
@@ -238,9 +334,16 @@ export function utcPerDay(p: PathCount | undefined, days: string[], zone?: strin
   return days.map((d) => out.get(d)!);
 }
 
-/** `zone`: the account's time zone, which GoatCounter cuts its days in; Today's unique is counted by UTC days with it (utcPerDay). */
-export function countsOf(counted: PathCount[], days: string[], zone?: string): Counts {
+/**
+ * `zone`: the account's time zone, which GoatCounter cuts its days in; Today's
+ * unique is counted by UTC days with it (utcPerDay). `until`: the hours the
+ * last day has reached there (it's still going; a part of the one it's in
+ * too), so the week's hours take only the whole ones before it (weekHours),
+ * and a usual day is had to then (usualByNow).
+ */
+export function countsOf(counted: PathCount[], days: string[], zone?: string, until: number | null = null): Counts {
   const paths = underNamesNow(counted);
+  const hour = until === null ? null : Math.floor(until);
   const byPath = new Map(paths.map((p) => [p.path, p]));
   const count = (path: string) => byPath.get(path)?.count ?? 0;
   const perDay = (match: (path: string) => boolean) => {
@@ -318,9 +421,21 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string): C
     cohorts: cohortsOf(paths, days, perDay((p) => p === 'new/played'), perDay((p) => p === 'visit/new')),
     sync: { paired: count('sync/paired') },
     week: {
-      visitors: weekHours(paths.filter((p) => p.path === '/'), days),
-      games: weekHours(paths.filter((p) => played.has(p.path)), days),
+      visitors: weekHours(paths.filter((p) => p.path === '/'), days, hour),
+      games: weekHours(paths.filter((p) => played.has(p.path)), days, hour),
+      until: hour,
     },
+    usual: (() => {
+      const answers = (p: PathCount | undefined) => (zone ? usualByNowUtc(p, days, zone, until, DAILY_FROM) : null);
+      const right = answers(byPath.get('daily/right'));
+      const wrong = answers(byPath.get('daily/wrong'));
+      return {
+        visitors: usualByNow(paths.filter((p) => p.path === '/'), days, until),
+        games: usualByNow(paths.filter((p) => played.has(p.path)), days, until),
+        answers: right === null || wrong === null ? null : right + wrong,
+      };
+    })(),
+    gameDay: zone && until !== null ? gameDayOf(byPath.get('daily/right'), byPath.get('daily/wrong'), days, zone, until) : null,
   };
 }
 
@@ -353,19 +468,23 @@ function cohortsOf(paths: PathCount[], days: string[], started: number[], fresh:
 }
 
 /**
- * A weekHours grid as an hour's average on that weekday: each weekday's row
- * over how many of `days` fell on it (a month has four or five of each).
+ * A weekHours grid as an hour's average on that weekday: each hour over how
+ * many of `days` had it on that weekday (a month has four or five of each),
+ * the last day only for its hours before `until` (weekHours). Null for an
+ * hour no day has had yet (a week's today, later than now).
  */
-export function weekAverage(grid: number[][], days: string[]): number[][] {
-  const many = Array<number>(7).fill(0);
-  for (const d of days) many[weekday(d)]++;
-  return grid.map((row, wd) => row.map((n) => (many[wd] ? n / many[wd] : 0)));
+export function weekAverage(grid: number[][], days: string[], until: number | null = null): (number | null)[][] {
+  const many = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
+  days.forEach((d, i) => {
+    for (let h = 0; h < 24; h++) if (i < days.length - 1 || until === null || h < until) many[weekday(d)][h]++;
+  });
+  return grid.map((row, wd) => row.map((n, h) => (many[wd][h] ? n / many[wd][h] : null)));
 }
 
 /** The busiest hour of a grid: its weekday (Monday 0), hour and figure, or null with nothing in it. */
-export function busiest(grid: number[][]): { day: number; hour: number; value: number } | null {
+export function busiest(grid: (number | null)[][]): { day: number; hour: number; value: number } | null {
   let best: { day: number; hour: number; value: number } | null = null;
-  grid.forEach((row, day) => row.forEach((value, hour) => value > (best?.value ?? 0) && (best = { day, hour, value })));
+  grid.forEach((row, day) => row.forEach((value, hour) => value !== null && value > (best?.value ?? 0) && (best = { day, hour, value })));
   return best;
 }
 
@@ -429,11 +548,17 @@ export function descentOf(ranges: { from: number; count: number }[]): { from: nu
   });
 }
 
-/** Days grouped `size` at a time, the last group ending on the last day (so the newest is whole): each group's first day and sum. */
+/**
+ * Days grouped `size` at a time, the last group ending on the last day (so
+ * the newest is whole): each group's first day and sum. A short first group
+ * (a series begun inside the period, as Today's unique's) is left out where
+ * there are whole ones: three days' sum among weeks would read as a slump.
+ */
 export function grouped(days: string[], values: number[], size: number): { days: string[]; values: number[] } {
   if (size <= 1) return { days, values };
   const out = { days: [] as string[], values: [] as number[] };
   for (let end = days.length; end > 0; end -= size) {
+    if (end < size && out.days.length) break;
     const start = Math.max(0, end - size);
     out.days.unshift(days[start]);
     out.values.unshift(values.slice(start, end).reduce((n, v) => n + v, 0));
@@ -498,6 +623,20 @@ export interface DailyDay {
   named: number | null;
 }
 
+/** A figure a day on average over the whole days, the last (still going) left out; null with none whole. */
+export const wholeDayAverage = (vs: number[]): number | null => (vs.length > 1 ? vs.slice(0, -1).reduce((n, v) => n + v, 0) / (vs.length - 1) : null);
+
+/**
+ * A figure a day on average, now and in the period before (wholeDayAverage),
+ * and the counts behind the two, over as many whole days, to weigh their
+ * change (Delta's `of`).
+ */
+export function dayAverages(now: number[], before: number[]): { now: number | null; before: number | null; of?: { now: number; before: number } } {
+  const a = { now: wholeDayAverage(now), before: wholeDayAverage(before) };
+  const whole = now.length - 1;
+  return a.now !== null && a.before !== null ? { ...a, of: { now: a.now * whole, before: a.before * whole } } : a;
+}
+
 /** Today's unique's answers each day, named or missed. */
 export const answersPerDay = (c: Counts): number[] => c.daily.rightPerDay.map((r, i) => r + (c.daily.wrongPerDay[i] ?? 0));
 
@@ -510,16 +649,23 @@ export function dailyDays(c: Counts): DailyDay[] {
   });
 }
 
+/** How many answers a day's share is drawn toward the usual one by (hardestAndEasiest): 3 players of 3 naming it says less than 30 of 30. */
+const SURE_AFTER = 5;
+
 /**
- * The hardest and easiest days' items, by the share who named them, `top` of
- * each: days with at least `min` answers (all days answered, if none has so
- * many), today left out as it's still going. More answers first between
- * equal shares; a day is in only one of the two.
+ * The hardest and easiest days' items, `top` of each: days with at least
+ * `min` answers (none, if no day has so many), today left out as it's still
+ * going. Ranked by the share who named them drawn toward the days' usual
+ * share by SURE_AFTER answers, so a day few played can't top the list on
+ * its own luck. More answers first between equals; a day is in only one of
+ * the two.
  */
 export function hardestAndEasiest(days: DailyDay[], min = 3, top = 5): { hardest: DailyDay[]; easiest: DailyDay[] } {
-  const over = days.slice(0, -1).filter((d) => d.answers > 0);
-  const pool = over.some((d) => d.answers >= min) ? over.filter((d) => d.answers >= min) : over;
-  const rank = (dir: 1 | -1) => [...pool].sort((a, b) => dir * ((a.named ?? 0) - (b.named ?? 0)) || b.answers - a.answers || a.day.localeCompare(b.day));
+  const pool = days.slice(0, -1).filter((d) => d.answers >= Math.max(1, min));
+  const answers = pool.reduce((n, d) => n + d.answers, 0);
+  const usual = answers ? pool.reduce((n, d) => n + d.right, 0) / answers : 0;
+  const weighed = (d: DailyDay) => (d.right + SURE_AFTER * usual) / (d.answers + SURE_AFTER);
+  const rank = (dir: 1 | -1) => [...pool].sort((a, b) => dir * (weighed(a) - weighed(b)) || b.answers - a.answers || a.day.localeCompare(b.day));
   const hardest = rank(1).slice(0, Math.min(top, Math.ceil(pool.length / 2)));
   const easiest = rank(-1)
     .filter((d) => !hardest.includes(d))

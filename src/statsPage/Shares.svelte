@@ -6,6 +6,8 @@
     /** Their share as a percent, and the period before's; null where it wasn't counted. */
     share: number | null;
     before: number | null;
+    /** How many each period's share is of, to weigh its change (Delta). */
+    of?: { now: number; before: number };
   }
 </script>
 
@@ -27,7 +29,7 @@
     <thead>
       <tr>
         <th scope="col">{head}</th>
-        <th scope="col" class="n opt">Visitors</th>
+        <th scope="col" class="n opt">Visits</th>
         <th scope="col" class="n">Share</th>
         <th scope="col" class="bar"><span class="sr">The share, the line where it stood before</span></th>
         <th scope="col">Change</th>
@@ -45,7 +47,7 @@
               {#if r.before !== null}<b class="was" style:left="{r.before}%"></b>{/if}
             </span>
           </td>
-          <td class="change"><Delta now={r.share} before={r.before} rate period="" /></td>
+          <td class="change"><Delta now={r.share} before={r.before} rate of={r.of} period="" /></td>
         </tr>
       {/each}
     </tbody>
@@ -74,30 +76,30 @@
     /* Edged dark, so it shows over a bar that reaches past it too. */
     box-shadow: 0 0 0 1px rgba(10, 8, 6, 0.7);
   }
+  /* The change on one line: its arrow, its points and where it stood. */
   .change {
     font-size: 1rem;
+    white-space: nowrap;
+  }
+  .change :global(.delta) {
+    flex-wrap: nowrap;
   }
   /* Kept to the width it's given, a half of the page among them: there the bar goes and the change says where it stood in words. */
   .shares {
     container-type: inline-size;
   }
-  /* A long step ("5 games or more in one page load") takes two lines rather than the table more width. */
+  /* A long step ("5 games or more in one page load") takes two lines rather than the table more width, but no more than two where there's a bar to give up its room first. */
   .shares .table tbody th[scope='row'] {
     white-space: normal;
+  }
+  @container (min-width: 36rem) {
+    .shares .table tbody th[scope='row'] {
+      min-width: 12rem;
+    }
   }
   @container (max-width: 36rem) {
     .bar {
       display: none;
     }
-    .change {
-      white-space: nowrap;
-    }
-  }
-  .sr {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
   }
 </style>

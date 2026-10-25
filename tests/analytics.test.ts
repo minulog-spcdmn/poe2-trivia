@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { addDays, dayIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, labelled } from '../src/statsPage/chart.ts';
 import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
-import { appShare, backShare, beforeShare, comersOf, firstStepsOf, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
+import { appShare, backShare, beforeShare, beyondChanceOf, comersOf, failureRate, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
-import { countsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
-import { currentName, isoWeek, underNamesNow, weekMonday, busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, type PathCount } from '../src/statsPage/model.ts';
+import { countsIn, depthCalls, depthsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
+import { currentName, isoWeek, underNamesNow, weekMonday, busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, dayAverages, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, usualByNow, usualByNowUtc, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
 const path = (p: string, perDay: number[], event = true): PathCount => ({
@@ -183,10 +183,13 @@ test('the descent: how many got each ten depths deep, and ended there', () => {
   );
 });
 
-test('weeks are summed back from the last day, so the newest week is whole', () => {
+test('weeks are summed back from the last day, so the newest week is whole, and a short first one left out', () => {
   const days = daysBetween('2026-10-01', '2026-10-10');
   const g = grouped(days, [1, 1, 1, 1, 1, 1, 1, 1, 1, 1], 7);
-  assert.deepEqual(g, { days: ['2026-10-01', '2026-10-04'], values: [3, 7] });
+  // The 1st to the 3rd, three days among weeks, would read as a slump.
+  assert.deepEqual(g, { days: ['2026-10-04'], values: [7] });
+  // A series shorter than a week is that short week alone.
+  assert.deepEqual(grouped(days.slice(0, 3), [1, 2, 3], 7), { days: ['2026-10-01'], values: [6] });
   assert.deepEqual(grouped(days.slice(0, 2), [4, 5], 1), { days: days.slice(0, 2), values: [4, 5] });
 });
 
@@ -306,6 +309,26 @@ test("Today's unique by day: the hardest and easiest items, today left out", () 
   );
 });
 
+test("Today's unique's hardest item is weighed by how many answered, and a day too few answered is never ranked", () => {
+  const days = daysBetween('2026-10-10', '2026-10-13');
+  const daily = (right: number[], wrong: number[]) =>
+    dailyDays(
+      countsOf(
+        [
+          { path: 'daily/right', event: true, count: 0, days: Object.fromEntries(days.map((d, i) => [d, right[i]])) },
+          { path: 'daily/wrong', event: true, count: 0, days: Object.fromEntries(days.map((d, i) => [d, wrong[i]])) },
+        ],
+        days,
+      ),
+    );
+  // None of 3 named on the 10th, 2 of 20 on the 11th: 3 answers say less than 20, so the 11th is the hardest.
+  const { hardest, easiest } = hardestAndEasiest(daily([0, 2, 18, 0], [3, 18, 2, 0]), 3, 1);
+  assert.deepEqual(hardest.map((x) => x.day), ['2026-10-11']);
+  assert.deepEqual(easiest.map((x) => x.day), ['2026-10-12']);
+  // Every day under the 3 answers it takes: none ranked, rather than days that say nothing.
+  assert.deepEqual(hardestAndEasiest(daily([1, 0, 2, 0], [1, 2, 0, 0]), 3), { hardest: [], easiest: [] });
+});
+
 test('daily players on average count only the days it asked', () => {
   const l = countsOf([path('daily/right', [0, 4, 1]), path('daily/wrong', [0, 2, 0])], DAYS);
   // The 16th is still going: left out.
@@ -374,9 +397,23 @@ test("an hour's average is over how many of the days fell on its weekday", () =>
   const grid = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
   grid[0][10] = 6;
   grid[1][10] = 6;
-  // Two Mondays and one Tuesday.
+  // Two Mondays and one Tuesday; no Wednesday had, so none of its hours.
   const avg = weekAverage(grid, ['2026-10-05', '2026-10-06', '2026-10-12']);
-  assert.deepEqual([avg[0][10], avg[1][10], avg[2][10]], [3, 6, 0]);
+  assert.deepEqual([avg[0][10], avg[1][10], avg[2][10]], [3, 6, null]);
+  // The last day still going, at 09:00: its hours from then on aren't had yet, so a Monday's 10:00 is over the one Monday before.
+  const sofar = weekAverage(grid, ['2026-10-05', '2026-10-06', '2026-10-12'], 9);
+  assert.deepEqual([sofar[0][8], sofar[0][10], sofar[1][10]], [0, 6, 6]);
+  // A week's today, later than now: no day has had it.
+  assert.equal(weekAverage(grid, ['2026-10-12'], 9)[0][10], null);
+});
+
+test("the week's hours take the last day only up to the hour it's reached", () => {
+  const hours = (at: Record<number, number>) => Array.from({ length: 24 }, (_, h) => at[h] ?? 0);
+  const visits: PathCount = { path: '/', event: false, count: 5, days: { '2026-10-15': 2, '2026-10-16': 3 }, hours: { '2026-10-15': hours({ 20: 2 }), '2026-10-16': hours({ 8: 1, 9: 2 }) } };
+  // At 09:something on the 16th: its 08:00 is whole, its 09:00 still going.
+  const grid = weekHours([visits], DAYS, 9)!;
+  assert.deepEqual([grid[3][20], grid[4][8], grid[4][9]], [2, 1, 0]);
+  assert.equal(countsOf([visits], DAYS, undefined, 9).week.until, 9);
 });
 
 test("seats add every game's players, an older range by its middle", () => {
@@ -462,6 +499,16 @@ test('who brought far more or fewer than before, only beyond chance', () => {
   assert.deepEqual(m.up, { name: 'Brazil', now: 117, before: 35 });
   assert.deepEqual(m.down, { name: 'Poland', now: 0, before: 80 });
   assert.deepEqual(moversOf([{ name: 'France', count: 9 }], [{ name: 'France', count: 4 }]), { up: null, down: null });
+  // Every site bringing twice as many is no news; one bringing far more than that is.
+  const doubled = [{ name: 'reddit', count: 200 }, { name: 'google', count: 100 }, { name: 'discord', count: 100 }];
+  assert.deepEqual(moversOf(doubled, [{ name: 'reddit', count: 100 }, { name: 'google', count: 50 }, { name: 'discord', count: 50 }]), { up: null, down: null });
+  assert.equal(moversOf(doubled, [{ name: 'reddit', count: 100 }, { name: 'google', count: 50 }, { name: 'discord', count: 10 }]).up?.name, 'discord');
+  // One big site trebling doesn't drag the rest along: it's the news, not the others falling behind it.
+  const surge = moversOf(
+    [{ name: 'reddit', count: 300 }, { name: 'google', count: 20 }, { name: 'youtube', count: 20 }],
+    [{ name: 'reddit', count: 100 }, { name: 'google', count: 20 }, { name: 'youtube', count: 20 }],
+  );
+  assert.deepEqual(surge, { up: { name: 'reddit', now: 300, before: 100 }, down: null });
 });
 
 test('the made-up numbers read the same for a day in any period, and add up', () => {
@@ -504,17 +551,32 @@ test('each thing people do is read by the paths counted for it, and only those',
   assert.deepEqual(g.join, ['join/code']);
   assert.deepEqual(g.joined, ['joined/code']);
   assert.deepEqual(g.failed, ['error/join-no-answer']);
+  // What those who played are a share of: visits here, as page loads weren't counted; and the visits of the days Today's unique asked.
+  assert.deepEqual([g.loads, g.asked], [['/'], ['/']]);
   // Two calls (country, system) for each group with paths: no call for Take turns.
-  assert.equal(sliceCalls(c).length, 16);
+  assert.equal(sliceCalls(c).length, 20);
+  assert.ok(sliceCalls(c).every((x) => x.from === DAYS[0]));
+});
+
+test("the groups' shares cover the overview's days: page loads from the day they were counted, Today's unique from its first", () => {
+  const days = daysBetween('2026-10-07', '2026-10-12');
+  const at = (p: string, vs: number[], event = true): PathCount => ({ path: p, event, count: vs.reduce((a, b) => a + b, 0), days: Object.fromEntries(days.map((d, i) => [d, vs[i] ?? 0])) });
+  const c = countsOf([at('/', [5, 5, 5, 5, 5, 5], false), at('reach/page', [0, 0, 0, 6, 6, 6]), at('reach/played', [0, 0, 0, 3, 3, 3]), at('daily/right', [0, 0, 2, 2, 2, 2])], days);
+  assert.deepEqual(groupPaths(c).loads, ['reach/page']);
+  const from = Object.fromEntries(sliceCalls(c).map((x) => [x.group, x.from]));
+  // Page loads were first counted on the 10th; Today's unique first asked on the 9th.
+  assert.deepEqual([from.played, from.loads, from.asked, from.visit, from.daily], ['2026-10-10', '2026-10-10', '2026-10-09', '2026-10-07', '2026-10-07']);
 });
 
 const SLICES: Slices = {
-  v: 3,
+  v: 4,
   span: 7,
   from: '2026-10-10',
   at: 0,
   locations: {
     visit: [{ name: 'Germany', count: 40 }, { name: 'France', count: 50 }, { name: '', count: 10 }],
+    loads: [{ name: 'Germany', count: 40 }, { name: 'France', count: 50 }, { name: '', count: 10 }],
+    asked: [{ name: 'Germany', count: 40 }, { name: 'France', count: 50 }, { name: '', count: 10 }],
     played: [{ name: 'Germany', count: 30 }, { name: 'France', count: 20 }],
     delve: [{ name: 'Germany', count: 20 }, { name: 'France', count: 5 }],
     race: [{ name: 'France', count: 15 }],
@@ -916,4 +978,106 @@ test('a site listed twice, its referrer once cleaned and once not, is one', () =
   // The made-up referrers have one too.
   const refs = demoRead(30, new Date('2026-10-18T15:30:00Z')).refs;
   assert.equal(refs.filter((r) => r.name === 'reddit.com').length, 1);
+});
+
+test('a change is called sure only beyond what chance would make: counts by themselves, percents by what they are of', () => {
+  assert.equal(beyondChanceOf(30, 10), true);
+  assert.equal(beyondChanceOf(12, 10), false);
+  // 50% against 40%: of 10 each, chance; of 2,000 each, not.
+  assert.equal(rateBeyondChance(50, 10, 40, 10), false);
+  assert.equal(rateBeyondChance(50, 2000, 40, 2000), true);
+  // One against one, all against none: still chance. Of nothing, never sure.
+  assert.equal(rateBeyondChance(100, 1, 0, 1), false);
+  assert.equal(rateBeyondChance(50, 0, 40, 10), false);
+});
+
+test("a usual day by now: the whole days' counts up to the hour it is, on average", () => {
+  const hours = (at: Record<number, number>) => Array.from({ length: 24 }, (_, h) => at[h] ?? 0);
+  const visits: PathCount = {
+    path: '/',
+    event: false,
+    count: 18,
+    days: { '2026-10-14': 7, '2026-10-15': 4, '2026-10-16': 7 },
+    hours: { '2026-10-14': hours({ 3: 2, 10: 5 }), '2026-10-15': hours({ 8: 4 }), '2026-10-16': hours({ 3: 7 }) },
+  };
+  // At 09:00 on the 16th: the 14th had 2 by then and the 15th 4; the 16th itself is what's set against them.
+  assert.equal(usualByNow([visits], DAYS, 9), 3);
+  // At 08:30, half of the hour it's in: the 15th's 4 at 08:00 count as 2.
+  assert.equal(usualByNow([visits], DAYS, 8.5), 2);
+  assert.equal(usualByNow([visits], DAYS, null), null);
+  // A path counted without its hours can't be cut at an hour.
+  assert.equal(usualByNow([visits, path('play/race', [1, 1, 1])], DAYS, 9), null);
+});
+
+test("a usual day by now in UTC days, as Today's unique counts them", () => {
+  const hours = (at: Record<number, number>) => Array.from({ length: 24 }, (_, h) => at[h] ?? 0);
+  // Berlin is two hours ahead: its 01:00 on the 14th is the 13th's 23:00 in UTC, its 03:00 the 14th's 01:00.
+  const right: PathCount = {
+    path: 'daily/right',
+    event: true,
+    count: 22,
+    days: {},
+    hours: { '2026-10-14': hours({ 1: 7, 3: 2, 10: 5 }), '2026-10-15': hours({ 8: 4 }), '2026-10-16': hours({ 3: 9 }) },
+  };
+  // 09:00 in Berlin on the 16th is 07:00 UTC: by then the 14th (UTC) had 2 and the 15th 4.
+  assert.equal(usualByNowUtc(right, DAYS, 'Europe/Berlin', 9), 3);
+  // Only the days from the one it began.
+  assert.equal(usualByNowUtc(right, DAYS, 'Europe/Berlin', 9, '2026-10-15'), 4);
+  assert.equal(usualByNowUtc(undefined, DAYS, 'Europe/Berlin', 9), 0);
+});
+
+test('a day on average over the whole days, the last one still going left out', () => {
+  assert.equal(wholeDayAverage([4, 6, 100]), 5);
+  assert.equal(wholeDayAverage([3]), null);
+});
+
+test('failures for every 100 games and tries to join', () => {
+  const c = countsOf([path('play/race-online', [40, 40, 20]), path('error/join-no-answer', [1, 1, 2])], DAYS);
+  assert.equal(failureRate(c), 4);
+  assert.equal(failureRate(countsOf([], DAYS)), null);
+});
+
+test("a group's Delve runs by depth, and the calls that read them", () => {
+  const s: Slices = { ...SLICES, depths: { locations: { 0: [{ name: 'Germany', count: 5 }, { name: 'France', count: 3 }], 20: [{ name: 'Germany', count: 1 }] } } };
+  // From 0 to the deepest anyone got, a depth nobody ended in as none.
+  assert.deepEqual(depthsIn(s, { kind: 'place', name: 'Germany' }), [
+    { from: 0, count: 5 },
+    { from: 10, count: 0 },
+    { from: 20, count: 1 },
+  ]);
+  assert.deepEqual(depthsIn(s, null)?.map((r) => r.count), [8, 0, 1]);
+  // Systems' depths weren't read.
+  assert.equal(depthsIn(s, { kind: 'system', name: 'Windows' }), null);
+  assert.equal(depthsIn(SLICES, null), null);
+  const c = { days: ['2026-10-10', '2026-10-11'], delve: { ranges: [{ from: 0, count: 3 }, { from: 10, count: 0 }, { from: 20, count: 1 }] } } as unknown as Counts;
+  // Each ten depths some run ended in, by country and by system, from the period's first day.
+  assert.deepEqual(
+    depthCalls(c).map((x) => `${x.dim} ${x.paths.join()} ${x.start}`),
+    ['locations delve/depth-0-9 2026-10-10', 'systems delve/depth-0-9 2026-10-10', 'locations delve/depth-20-29 2026-10-10', 'systems delve/depth-20-29 2026-10-10'],
+  );
+});
+
+test("a usual day in UTC days counts only those read from their start, and the game's day is the UTC day it is now", () => {
+  const hours = (at: Record<number, number>) => Array.from({ length: 24 }, (_, h) => at[h] ?? 0);
+  // New York is four hours behind: the read starts at 04:00 UTC on the 14th, so that UTC day isn't whole.
+  const right: PathCount = { path: 'daily/right', event: true, count: 21, days: {}, hours: { '2026-10-14': hours({ 0: 9, 21: 2 }), '2026-10-15': hours({ 5: 3, 12: 7 }) } };
+  // 09:00 in New York on the 16th is 13:00 UTC: the 15th (UTC) had its 01:00 and 09:00 answers by then, 2 and 3.
+  assert.equal(usualByNowUtc(right, DAYS, 'America/New_York', 9), 5);
+  // At 22:00 there on the 16th it's 02:00 UTC on the 17th: the game's day is the 17th, its answers those since UTC midnight.
+  const daily = (path: string, at: Record<number, number>): PathCount => ({ path, event: true, count: 0, days: { '2026-10-16': 0 }, hours: { '2026-10-16': hours(at) } });
+  const late = countsOf([daily('daily/right', { 19: 4, 21: 3 }), daily('daily/wrong', { 21: 1 })], DAYS, 'America/New_York', 22);
+  assert.deepEqual(late.gameDay, { day: '2026-10-17', right: 3, wrong: 1 });
+  // Berlin at 01:30 on the 16th is 23:30 UTC on the 15th: yesterday's item, still being answered.
+  assert.equal(countsOf([daily('daily/right', { 0: 2 })], DAYS, 'Europe/Berlin', 1.5).gameDay?.day, '2026-10-15');
+  // Without the hours, nothing to sort by the game's days.
+  assert.equal(countsOf([path('daily/right', [1, 1, 1])], DAYS, 'Europe/Berlin', 9).gameDay, null);
+});
+
+test('a percent past 100, as failures for every 100 games can run, is still weighed', () => {
+  assert.equal(rateBeyondChance(300, 10, 5, 100), true);
+});
+
+test('a day on average now and before, with the counts behind both over as many days', () => {
+  assert.deepEqual(dayAverages([4, 6, 100], [2, 2, 9]), { now: 5, before: 2, of: { now: 10, before: 4 } });
+  assert.deepEqual(dayAverages([3], [1]), { now: null, before: null });
 });

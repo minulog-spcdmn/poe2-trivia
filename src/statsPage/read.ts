@@ -7,7 +7,7 @@ import type { Counts } from './model';
 /** A period read: its days and the same many before, with what the start page's visitors came on and from. */
 export interface Read {
   /** The shape this was kept in: a read kept by an older build is read again. */
-  v: 6;
+  v: 8;
   span: number;
   from: string;
   to: string;

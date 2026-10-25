@@ -2,7 +2,8 @@
   // What happened: what the numbers bear out by themselves, a line each
   // (insights.ts). The days far busier than usual and the site behind each;
   // the site and the country that brought far more, or far fewer, than the
-  // period before. Nothing said that chance could have done.
+  // period before, beyond how all of them moved together (insights.ts
+  // moversOf). Nothing said that chance could have done.
   import { fmt, longDay, siteName } from './chart';
   import { moversOf, spikeSource, spikesOf } from './insights';
   import type { Period, Read } from './read';
@@ -20,13 +21,13 @@
 </script>
 
 {#if none}
-  <p class="quiet">Nothing out of the ordinary: no day far busier than usual, and no site or country bringing far more or fewer than {period.before}.</p>
+  <p class="quiet">Nothing out of the ordinary: no day far busier than usual, and no site or country bringing far more or fewer than {period.before}, beyond how they all moved.</p>
 {:else}
   <ul class="happened">
     {#each spikes as s (s.day)}
       <li class="rise">
         <span class="when">{longDay(s.day)}{s.day === read.to ? ', so far' : ''}</span>
-        <span><b>{fmt(s.value)} visitors</b>, {times(s.value / s.usual)} a usual day{#if s.from}; <b>{Math.round(s.from.share)}%</b> came from <b>{siteName(s.from.name)}</b>{/if}.</span>
+        <span><b>{fmt(s.value)} visits</b>, {times(s.value / s.usual)} a usual day{#if s.from}; <b>{Math.round(s.from.share)}%</b> came from <b>{siteName(s.from.name)}</b>{/if}.</span>
       </li>
     {/each}
     {#if refs.up}

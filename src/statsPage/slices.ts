@@ -8,12 +8,22 @@
 // together. Pure, so the tests can feed it.
 
 import type { Named } from './api.ts';
-import { MODES, MODE_NAMES, RETURNS, deviceOf, type Counts, type Mode } from './model.ts';
+import { reachedOf } from './insights.ts';
+import { DAILY_FROM, MODES, MODE_NAMES, RETURNS, deviceOf, type Counts, type Mode } from './model.ts';
 
-/** What people do, each a set of the paths count.ts sends. */
-export type Group = 'visit' | 'new' | 'back' | 'app' | 'played' | Mode | 'daily' | 'join' | 'joined' | 'failed';
+/**
+ * What people do, each a set of the paths count.ts sends; `loads` and
+ * `asked`, what two of them are shares of, read over the same days as the
+ * overview's (insights.ts stepsOf), so a group's figure and everyone's there
+ * agree: those who played a game, of the page loads since the steps were
+ * counted (visits before); those who answered Today's unique, of the visits
+ * on the days it asked.
+ */
+export type Group = 'visit' | 'loads' | 'asked' | 'new' | 'back' | 'app' | 'played' | Mode | 'daily' | 'join' | 'joined' | 'failed';
 export const GROUPS: readonly { group: Group; name: string }[] = [
   { group: 'visit', name: 'Opened the game' },
+  { group: 'loads', name: 'Loaded the game, since its steps were counted' },
+  { group: 'asked', name: "Opened the game on a day Today's unique asked" },
   { group: 'new', name: 'New to the game' },
   { group: 'back', name: 'Came back' },
   { group: 'app', name: 'Opened the installed app' },
@@ -28,11 +38,27 @@ export const GROUPS: readonly { group: Group; name: string }[] = [
 ];
 export const groupName = (g: Group) => GROUPS.find((x) => x.group === g)?.name ?? g;
 
+/** The steps the overview reads (insights.ts stepsOf), and so the groups' share who played. */
+const playedSteps = (c: Counts) => reachedOf(c, ['played', 'finished']);
+/** The first day Today's unique asked in the period. */
+const askedFrom = (c: Counts) => c.days.find((d) => d >= DAILY_FROM) ?? null;
+
+/** The day a group is read from, where it's not the period's first: those who played and what they're a share of, from the day the steps were counted; the visits Today's unique is a share of, from the day it began. */
+export function groupFrom(c: Counts, group: Group): string | null {
+  if (group === 'played' || group === 'loads') return playedSteps(c).from;
+  if (group === 'asked') return askedFrom(c);
+  return null;
+}
+
 /** Each group's paths that were counted in the period (asking for one never counted would be turned down). */
 export function groupPaths(c: Counts): Record<Group, string[]> {
   const out = Object.fromEntries(GROUPS.map((g) => [g.group, [] as string[]])) as Record<Group, string[]>;
   const any = (vs: number[]) => vs.some((n) => n > 0);
   if (c.visitors.total) out.visit.push('/');
+  const steps = playedSteps(c);
+  if (steps.from && steps.visitors) out.loads.push(steps.paged ? 'reach/page' : '/');
+  const asked = askedFrom(c);
+  if (asked && c.visitors.perDay.some((n, i) => n > 0 && c.days[i] >= asked)) out.asked.push('/');
   // New or back, and the installed app: sent with a visit, once a visitor like it.
   if (any(c.visits.new)) out.new.push('visit/new');
   for (const r of RETURNS) if (any(c.visits[r])) out.back.push(`visit/${r}`);
@@ -57,14 +83,16 @@ export type Dim = 'locations' | 'systems';
 
 /** A period's groups, each broken down by country and by system. */
 export interface Slices {
-  /** 3: with those new and back, and in the installed app. */
-  v: 3;
+  /** 4: with what those who played and answered are shares of, over the overview's days. */
+  v: 4;
   span: number;
   /** The period's first day: slices of another (read the day before) are read again. */
   from: string;
   at: number;
   locations: Partial<Record<Group, Named[]>>;
   systems: Partial<Record<Group, Named[]>>;
+  /** Delve's runs by the ten depths they ended in ("delve/depth-20-29"), each broken down the same two ways, keyed by the range's first depth: how deep a group's runs go. Two calls for each ten depths, so read only once a group is picked with Delve, to the same time as the rest (`at`). */
+  depths?: Partial<Record<Dim, Record<number, Named[]>>>;
 }
 
 /** Those in a country, or on a system or a kind of device. */
@@ -128,15 +156,37 @@ const sum = (list: Named[] | undefined, take: (n: Named) => boolean = () => true
  */
 export function countsIn(s: Slices, who: Who | null, by: Dim = 'locations'): Record<Group, number> {
   const dim: Dim = who ? dimOf(who.kind) : by;
-  const take = (n: Named) => !who || (who.kind === 'device' ? deviceOf(n.name) === who.name : unknown(n.name) === who.name);
   const from = s[dim];
-  return Object.fromEntries(GROUPS.map((g) => [g.group, sum(from[g.group], take)])) as Record<Group, number>;
+  return Object.fromEntries(GROUPS.map((g) => [g.group, sum(from[g.group], among(who))])) as Record<Group, number>;
+}
+
+/** Whether a row of GoatCounter's lists is among those `who` picks out (all, with none). */
+const among = (who: Who | null) => (n: Named) => !who || (who.kind === 'device' ? deviceOf(n.name) === who.name : unknown(n.name) === who.name);
+
+/**
+ * A group's Delve runs by the ten depths they ended in, from 0 to the
+ * deepest anyone reached (model.ts Counts.delve's shape); everyone's with
+ * none. Null where the depths weren't read.
+ */
+export function depthsIn(s: Slices, who: Who | null, by: Dim = 'locations'): { from: number; count: number }[] | null {
+  const list = s.depths?.[who ? dimOf(who.kind) : by];
+  if (!list) return null;
+  const froms = Object.keys(list).map(Number);
+  if (!froms.length) return [];
+  return Array.from({ length: Math.max(...froms) / 10 + 1 }, (_, i) => ({ from: i * 10, count: sum(list[i * 10], among(who)) }));
+}
+
+/** The depth calls a slice read makes: each ten depths a Delve run ended in during the period, by country and by system. */
+export function depthCalls(c: Counts): { from: number; dim: Dim; paths: string[]; start: string }[] {
+  return c.delve.ranges
+    .filter((r) => r.count > 0)
+    .flatMap((r) => (['locations', 'systems'] as const).map((dim) => ({ from: r.from, dim, paths: [`delve/depth-${r.from}-${r.from + 9}`], start: c.days[0] })));
 }
 
 /** How a group of players plays: their visits, and the rest set against them. */
 export interface Profile {
   visitors: number;
-  /** Of their visitors, the share who played a game, as a guest or not (at most 100); null where it wasn't counted. */
+  /** Of their page loads since the steps were counted (visits before), the share who played a game, as a guest or not (at most 100), as the overview reads it; null where it wasn't counted. */
   played: number | null;
   /** Games started on their devices: a game counts where it's run (the host's, or one screen's), so a guest's adds none. */
   games: number;
@@ -144,7 +194,7 @@ export interface Profile {
   perVisitor: number | null;
   /** Each mode's share of their games, as a whole percent. */
   modes: { mode: Mode; count: number; share: number }[];
-  /** Of their visitors, the share who answered Today's unique (at most 100). */
+  /** Of their visits on the days Today's unique asked, the share who answered it (at most 100). */
   daily: number | null;
   /** Of their tries to join, the share let in. */
   joins: number | null;
@@ -165,11 +215,11 @@ export function profileOf(n: Record<Group, number>, played = true): Profile {
   const told = n.new + n.back;
   return {
     visitors: n.visit,
-    played: played && n.visit ? Math.min(100, (100 * n.played) / n.visit) : null,
+    played: played && n.loads ? Math.min(100, (100 * n.played) / n.loads) : null,
     games,
     perVisitor: n.visit ? games / n.visit : null,
     modes: MODES.map((mode) => ({ mode, count: n[mode], share: games ? Math.round((100 * n[mode]) / games) : 0 })),
-    daily: n.visit ? Math.min(100, (100 * n.daily) / n.visit) : null,
+    daily: n.asked ? Math.min(100, (100 * n.daily) / n.asked) : null,
     // Joins let in can run past those tried by a hair, where a try counted one day lets in the next.
     joins: n.join ? Math.min(100, (100 * n.joined) / n.join) : null,
     tried: n.join,
@@ -252,10 +302,12 @@ export function phoneShare(s: Slices, mode: Mode | null): number {
   return all ? (100 * phone) / all : 0;
 }
 
-/** The paths a slice read asks about, that the API takes as one call each: a group and a way to break it down. */
-export function sliceCalls(c: Counts): { group: Group; dim: Dim; paths: string[] }[] {
+/** The paths a slice read asks about, that the API takes as one call each: a group and a way to break it down, from `from` (the period's first day, unless groupFrom says another). */
+export function sliceCalls(c: Counts): { group: Group; dim: Dim; paths: string[]; from: string }[] {
   const paths = groupPaths(c);
-  return GROUPS.flatMap(({ group }) => (paths[group].length ? (['locations', 'systems'] as const).map((dim) => ({ group, dim, paths: paths[group] })) : []));
+  return GROUPS.flatMap(({ group }) =>
+    paths[group].length ? (['locations', 'systems'] as const).map((dim) => ({ group, dim, paths: paths[group], from: groupFrom(c, group) ?? c.days[0] })) : [],
+  );
 }
 
 /** The groups looked at for what stands out: the biggest countries, both kinds of device, the biggest systems. */

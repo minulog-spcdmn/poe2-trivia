@@ -33,7 +33,13 @@
 <div class="steps">
   <span class="name">From visit to game</span>
   <b class="value">{now.from ? pct(played) : '–'}</b>
-  <span class="means">{now.from ? `of visitors played a game${late ? `, since ${shortDay(late)}` : ''}` : 'played a game: counted from the next release'}</span>
+  <span class="change">
+    {#if now.from}
+      <!-- Only against a period whose share is of the same (page loads, or visits before those were counted). -->
+      <Delta now={played} before={was.from && was.paged === now.paged ? share(was.played, was.visitors) : null} rate of={{ now: now.visitors, before: was.visitors }} period={period.before} />
+    {/if}
+  </span>
+  <span class="means">{now.from ? `of visits led to a game${late ? `, since ${shortDay(late)}` : ''}` : 'played a game: counted from the next release'}</span>
   {#each rows as r (r.name)}
     <div class="row">
       <span class="step">{r.name}</span>
@@ -41,12 +47,6 @@
       <b>{pct(r.share)}</b>
     </div>
   {/each}
-  <span class="change">
-    {#if now.from}
-      <!-- Only against a period whose share is of the same (page loads, or visits before those were counted). -->
-      <Delta now={played} before={was.from && was.paged === now.paged ? share(was.played, was.visitors) : null} rate period={period.before} />
-    {/if}
-  </span>
 </div>
 
 <style>
@@ -108,8 +108,10 @@
     color: var(--a-ink);
   }
   .change {
-    margin-top: auto;
-    padding-top: 0.6rem;
+    font-size: 1.125rem;
+  }
+  .means {
+    margin-bottom: 0.4rem;
   }
   /* A narrow card (five in a row, a monitor on its side): each step's name a line above its bar, not wrapped beside it. */
   @container (max-width: 22rem) {

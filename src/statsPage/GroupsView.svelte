@@ -4,15 +4,20 @@
   // country or a device can be picked, a mode, or one of each; never a
   // country and a device together, as GoatCounter counts the two apart.
   // Nothing picked: what stands out (slices.ts standouts), each a sentence
-  // with its two figures drawn. Something picked: its few figures (who
-  // played, their games, who came back, the installed app), each against
-  // everyone; a mode, where it's played most for its visitors, a
-  // bar each. GoatCounter breaks a whole period down, not its days.
+  // with its two figures drawn. A group picked: a table of its figures
+  // beside everyone's, each row saying what it counts, and how its games
+  // split by mode. A mode picked: its own figures (games, played to the end,
+  // players a game; Delve, how deep its runs go), and where it's played most
+  // for its visitors; with a group, the group's against everyone's (Delve's
+  // depths too, slices.ts depthsIn). GoatCounter breaks a whole period
+  // down, not its days.
   import { fmt } from './chart';
+  import DelveDepths from './DelveDepths.svelte';
+  import How from './How.svelte';
   import { toldFromStart } from './insights';
-  import { MODES, MODE_NAMES, deviceOf, modesOf, type Mode } from './model';
+  import { MODES, MODE_NAMES, deviceOf, finishedShare, modesOf, seatsOf, type Mode } from './model';
   import type { Period, Read } from './read';
-  import { countsIn, dimOf, hashOf, knowsPlayed, phoneShare, profileIn, segments, standouts, type Sel, type SegmentRow, type Slices, type Standout, type Who } from './slices';
+  import { countsIn, depthsIn, dimOf, hashOf, knowsPlayed, phoneShare, profileIn, segments, standouts, type Sel, type SegmentRow, type Slices, type Standout, type Who } from './slices';
 
   let {
     read,
@@ -21,8 +26,23 @@
     sel,
     reading,
     failed,
+    depthsReading,
+    depthsFailed,
+    ondepths,
     onagain,
-  }: { read: Read; period: Period; slices: Slices | null; sel: Sel | null; reading: number; failed: string; onagain: () => void } = $props();
+  }: {
+    read: Read;
+    period: Period;
+    slices: Slices | null;
+    sel: Sel | null;
+    reading: number;
+    failed: string;
+    onagain: () => void;
+    /** Delve's depths for the groups, read only once a group is picked with Delve (Analytics loadDepths). */
+    depthsReading: boolean;
+    depthsFailed: string;
+    ondepths: () => void;
+  } = $props();
 
   /** Fewer visitors than this, and a group's figures swing on a handful. */
   const FEW = 30;
@@ -70,12 +90,12 @@
     if (f.what === 'played')
       return { big: times(r), line: r > 1 ? `Visitors ${w} play a game ${times(r)} as often` : `Fewer of the visitors ${w} play a game`, mine: `${pct(f.mine)} played one`, all: pct(f.all) };
     if (f.what === 'games')
-      return { big: times(r), line: r > 1 ? `Visitors ${w} start ${times(r)} as many games each` : `Visitors ${w} start fewer games each`, mine: `${rate(f.mine)} games for 100 visitors`, all: rate(f.all) };
+      return { big: times(r), line: r > 1 ? `Visitors ${w} start ${times(r)} as many games each` : `Visitors ${w} start fewer games each`, mine: `${rate(f.mine)} games for every 100 visits`, all: rate(f.all) };
     if (f.what === 'daily')
       return { big: times(r), line: r > 1 ? `Visitors ${w} answer Today's unique ${times(r)} as often` : `Visitors ${w} answer Today's unique less often`, mine: `${pct(f.mine)} answered it`, all: pct(f.all) };
     if (f.what === 'back')
       return { big: times(r), line: r > 1 ? `Visitors ${w} come back ${times(r)} as often` : `Fewer of the visitors ${w} come back`, mine: `${pct(f.mine)} came back`, all: pct(f.all) };
-    if (f.what === 'failures') return { big: times(r), line: `Visitors ${w} meet failures ${times(r)} as often`, mine: `${rate(f.mine)} for 100 visitors`, all: rate(f.all) };
+    if (f.what === 'failures') return { big: times(r), line: `Visitors ${w} meet failures ${times(r)} as often`, mine: `${rate(f.mine)} for every 100 visits`, all: rate(f.all) };
     return { big: pct(f.mine), line: `Tries to join a room ${w} work ${f.mine < f.all ? 'less' : 'more'} often`, mine: `${pct(f.mine)} of tries worked`, all: pct(f.all) };
   }
 
@@ -101,7 +121,6 @@
   const modeChip = (m: Mode) => to(who, mode === m ? null : m);
 
   // ---- a mode on its own: as the rest of the page counts it (the groups' own read can come out a little apart) ----
-  const modeGames = $derived(mode ? (modesOf(read.now.games.rows).find((m) => m.mode === mode)?.started ?? 0) : 0);
   // ---- where a mode is played most: each country's games of it for 100 visitors, against everyone's ----
   /** Countries (systems, where a device or system is picked) big enough to tell, most for their visitors first; the picked one even where it isn't among them. */
   const keen = $derived.by(() => {
@@ -124,7 +143,101 @@
   const lit = (w: Who) => isWho(w) || (who?.kind === 'device' && deviceOf(w.name) === who.name);
 
   const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  /** A row of a table setting a group beside everyone: what it counts, the two figures, and how they differ in words (none for a group too small to tell). */
+  interface Row {
+    name: string;
+    unit: string;
+    href?: string;
+    mine: string;
+    all: string;
+    says: string;
+    tone: Tone;
+  }
+  const row = (name: string, unit: string, mine: number | null, all: number | null, show: (v: number) => string, a: { says: string; tone: Tone }, few: boolean, href?: string): Row => ({
+    name,
+    unit,
+    href,
+    mine: mine === null ? '–' : show(mine),
+    all: all === null ? '–' : show(all),
+    says: few ? '' : a.says,
+    tone: few ? 'flat' : a.tone,
+  });
+
+  /** A group's figures beside everyone's. */
+  const groupRows = $derived.by((): Row[] => {
+    if (!picked || !everyone) return [];
+    const few = picked.visitors < FEW;
+    const g = per100(picked.games, picked.visitors);
+    const gAll = per100(everyone.games, everyone.visitors);
+    return [
+      { name: 'Visits', unit: 'in the period', mine: fmt(picked.visitors), all: fmt(everyone.visitors), says: `${pct(share(picked.visitors, everyone.visitors))} of everyone`, tone: 'flat' },
+      ...(picked.played !== null && everyone.played !== null ? [row('Played a game', 'share of visits', picked.played, everyone.played, pct, against(picked.played, everyone.played, true), few)] : []),
+      row('Games started', 'for every 100 visits', g, gAll, rate, against(g, gAll), few),
+      row("Answered Today's unique", 'share of visits, on days it asked', picked.daily, everyone.daily, pct, against(picked.daily, everyone.daily), few),
+      ...(picked.back !== null && everyone.back !== null ? [row('Came back to a save', 'share of visits new or back', picked.back, everyone.back, pct, against(picked.back, everyone.back, true), few)] : []),
+      ...(picked.app !== null && everyone.app !== null && appKnown ? [row('Opened the installed app', 'share of visits', picked.app, everyone.app, pct, plain(against(picked.app, everyone.app, true)), few)] : []),
+      row('Joins that worked', `share of ${fmt(picked.tried)} tries`, picked.joins, everyone.joins, pct, against(picked.joins, everyone.joins, true), few || picked.tried < 20),
+      row('Failures met', 'for every 100 visits', picked.failures, everyone.failures, rate, against(picked.failures, everyone.failures, false, true), few),
+    ];
+  });
+  /** A group's games by mode, beside everyone's: a mode a bigger or smaller part is neither better nor worse. */
+  const groupModes = $derived.by((): Row[] => {
+    if (!picked || !everyone) return [];
+    const few = picked.games < 20;
+    return picked.modes.map((m, i) => row(MODE_NAMES[m.mode], 'share of their games', m.share, everyone.modes[i].share, pct, plain(against(m.share, everyone.modes[i].share, true)), few, to(who, m.mode)));
+  });
+
+  /** A mode's own figures, as the Games view counts them. */
+  const modeFacts = $derived.by(() => {
+    if (!mode) return null;
+    const sum = modesOf(read.now.games.rows).find((m) => m.mode === mode)!;
+    const { seats, games } = seatsOf(read.now.games.rows.filter((r) => r.mode === mode));
+    return { ...sum, perGame: games ? seats / games : null };
+  });
+  /** A group's games of the picked mode beside everyone's (in the group's own list's counts). */
+  const pairRows = $derived.by((): Row[] => {
+    if (!who || !mode || !mine || !all || !picked || !everyone) return [];
+    const few = mine.visit < FEW;
+    const g = per100(mine[mode], mine.visit);
+    const gAll = per100(all[mode], all.visit);
+    const part = share(mine[mode], picked.games);
+    const partAll = share(all[mode], everyone.games);
+    return [
+      { name: `${MODE_NAMES[mode]} games`, unit: 'started in the period', mine: fmt(mine[mode]), all: fmt(all[mode]), says: `${pct(share(mine[mode], all[mode]))} of everyone's`, tone: 'flat' },
+      row('Games started', 'for every 100 visits', g, gAll, rate, against(g, gAll), few),
+      row('Part of their games', 'share of all they started', part, partAll, pct, plain(against(part, partAll, true)), picked.games < 20),
+    ];
+  });
+  /** Delve's depths for the picked group and for everyone in its list; null where they weren't read. */
+  const groupDepths = $derived(slices && who && mode === 'delve' ? depthsIn(slices, who) : null);
+  const allDepths = $derived(slices && who && mode === 'delve' ? depthsIn(slices, null, dimOf(who.kind)) : null);
 </script>
+
+{#snippet compare(rows: Row[], whom: string, label: string)}
+  <div class="scroll-x">
+    <table class="table compare" aria-label={label}>
+      <thead>
+        <tr>
+          <th scope="col"><span class="sr">What</span></th>
+          <th scope="col" class="n">{whom}</th>
+          <th scope="col" class="n">Everyone</th>
+          <th scope="col">Against everyone</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each rows as r (r.name)}
+          <tr>
+            <th scope="row">{#if r.href}<a class="pick" href={r.href}>{r.name}</a>{:else}{r.name}{/if}<span class="unit">{r.unit}</span></th>
+            <td class="n strong">{r.mine}</td>
+            <td class="n soft">{r.all}</td>
+            <td class="says {r.tone}">{r.says}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+{/snippet}
 
 {#snippet pair(mine: number, all: number, max: number, tone: Tone, label: string, allLabel: string)}
   <div class="pair">
@@ -135,19 +248,10 @@
   </div>
 {/snippet}
 
-{#snippet tile(title: string, value: string, a: { says: string; tone: Tone }, mine: number, all: number, max: number, mineLabel: string, allLabel: string)}
-  <div class="tile">
-    <h3>{title}</h3>
-    <b class="value {a.tone}">{value}</b>
-    <span class="says {a.tone}">{a.says}</span>
-    {#if max > 0}{@render pair(mine, all, max, a.tone, mineLabel, allLabel)}{/if}
-  </div>
-{/snippet}
-
 {#snippet keenList(m: Mode)}
   {#if keen.length}
     <div class="tile wide">
-      <h3>Where {MODE_NAMES[m]} is played most, for its visitors</h3>
+      <h3>Where {MODE_NAMES[m]} is played most: games for every 100 visits</h3>
       <ol class="from">
         {#each keen as r (r.who.name)}
           {@const lean = keenAll ? r.rate / keenAll : 1}
@@ -159,7 +263,7 @@
           </li>
         {/each}
       </ol>
-      <p class="hint">{MODE_NAMES[m]} games for 100 visitors; the line is everyone's, {rate(keenAll)}. Only those with {FEW} visitors or more{#if keen.some((r) => r.few)}, and the one picked{/if}.</p>
+      <p class="hint">The line is everyone's, {rate(keenAll)}. Only those with {FEW} visits or more{#if keen.some((r) => r.few)}, and the one picked{/if}.</p>
     </div>
   {/if}
 {/snippet}
@@ -186,7 +290,6 @@
     <a class="chip" class:on={!mode} aria-current={!mode ? 'true' : undefined} href={to(who, null)}>All games</a>
     {#each MODES as m (m)}<a class="chip" class:on={mode === m} aria-current={mode === m ? 'true' : undefined} href={modeChip(m)}>{MODE_NAMES[m]}</a>{/each}
   </div>
-  <p class="apart-note">A country and a device can't be picked together: GoatCounter counts them apart.</p>
 </nav>
 
 {#if !slices}
@@ -201,65 +304,60 @@
 {:else}
   {#if who && mode && mine && all && picked && everyone}
     {@const M = MODE_NAMES[mode]}
-    {@const mineShare = share(mine[mode], picked.games)}
-    {@const allShare = share(all[mode], everyone.games)}
     <header class="head">
       <h2>{M} {from(who)}</h2>
-      <p>{fmt(mine[mode])} games started {from(who)} in {period.now.toLowerCase()}, by {fmt(mine.visit)} visitors{#if mine.visit < FEW}; so few that a handful more or less changes a lot{/if}. {pct(mineShare)} of their games are {M}, against {pct(allShare)} of everyone's.</p>
+      {#if mine.visit < FEW}<p>So few visits ({fmt(mine.visit)}) that a handful more or less changes a lot.</p>{/if}
     </header>
+    {@render compare(pairRows, whoName(who), `${M} ${from(who)} against everyone`)}
+    {#if mode === 'delve'}
+      <section class="tile wide">
+        <h3>How deep their runs go</h3>
+        {#if groupDepths}
+          <DelveDepths ranges={groupDepths} against={allDepths} whom={whoName(who)} />
+        {:else if depthsReading}
+          <p class="soft" aria-busy="true">Reading how deep they went…</p>
+        {:else if depthsFailed}
+          <p class="note" role="alert">{depthsFailed} <button type="button" class="again" onclick={ondepths}>Try again</button></p>
+        {:else}
+          <!-- (Read by itself once picked; this, where that read was called off by the groups being read again.) -->
+          <button type="button" class="again alone" onclick={ondepths}>Read how deep they went</button>
+        {/if}
+      </section>
+    {/if}
     {@render keenList(mode)}
   {:else if who && picked && everyone}
-    {@const mineGames = per100(picked.games, picked.visitors)}
-    {@const allGames = per100(everyone.games, everyone.visitors)}
-    {@const top = [...picked.modes].sort((a, b) => b.count - a.count)[0]}
     <header class="head">
       <h2>{whoName(who)}</h2>
-      <p>{fmt(picked.visitors)} visitors in {period.now.toLowerCase()}, {pct(share(picked.visitors, everyone.visitors))} of everyone{#if picked.visitors < FEW}; so few that a handful more or less changes a lot{/if}.</p>
+      {#if picked.visitors < FEW}<p>So few visits ({fmt(picked.visitors)}) that a handful more or less changes a lot.</p>{/if}
     </header>
-    <div class="tiles">
-      {#if picked.played !== null && everyone.played !== null}
-        {@render tile('Played a game', pct(picked.played), against(picked.played, everyone.played, true), picked.played, everyone.played, 100, 'of visitors, hosts and guests', `everyone: ${pct(everyone.played)}`)}
-      {/if}
-      {@render tile('Games started', rate(mineGames), against(mineGames, allGames), mineGames, allGames, Math.max(mineGames, allGames), 'for every 100 visitors', `everyone: ${rate(allGames)}`)}
-      {@render tile("Today's unique", picked.daily === null ? '–' : pct(picked.daily), against(picked.daily, everyone.daily), picked.daily ?? 0, everyone.daily ?? 0, 100, 'of visitors answered it', `everyone: ${pct(everyone.daily ?? 0)}`)}
-      {#if picked.back !== null && everyone.back !== null}
-        {@render tile('Came back', pct(picked.back), against(picked.back, everyone.back, true), picked.back, everyone.back, 100, 'came back to their save', `everyone: ${pct(everyone.back)}`)}
-      {/if}
-      {#if picked.app !== null && everyone.app !== null && appKnown}
-        {@render tile('Installed app', pct(picked.app), plain(against(picked.app, everyone.app, true)), picked.app, everyone.app, 100, 'opened it from a home screen', `everyone: ${pct(everyone.app)}`)}
-      {/if}
-      {@render tile('Joins that work', picked.joins === null ? '–' : pct(picked.joins), against(picked.joins, everyone.joins, true), picked.joins ?? 0, everyone.joins ?? 0, 100, `of ${fmt(picked.tried)} tries`, `everyone: ${pct(everyone.joins ?? 0)}`)}
-      {@render tile('Failures', rate(picked.failures ?? 0), against(picked.failures, everyone.failures, false, true), picked.failures ?? 0, everyone.failures ?? 0, Math.max(picked.failures ?? 0, everyone.failures ?? 0), 'for every 100 visitors', `everyone: ${rate(everyone.failures ?? 0)}`)}
-    </div>
-    <div class="tile wide">
+    {@render compare(groupRows, whoName(who), `${whoName(who)} against everyone`)}
+    <section class="tile wide">
       <h3>Their games by mode</h3>
-      <p class="most">Mostly <b>{top?.count ? MODE_NAMES[top.mode] : '–'}</b>{#if top?.count}, {top.share}% of the games started {from(who)}{/if}</p>
-      <div class="modes">
-        {#each picked.modes as m, i (m.mode)}
-          {@const a = everyone.modes[i]}
-          {@const r = a.share ? m.share / a.share : 1}
-          <div class="mode">
-            <span class="name"><a class="pick" href={to(who, m.mode)}>{MODE_NAMES[m.mode]}</a>{#if Math.abs(r - 1) >= 0.15}<em>{times(r)} as big a part as everyone's</em>{/if}</span>
-            {@render pair(m.share, a.share, 100, 'flat', `${m.share}%`, `everyone: ${a.share}%`)}
-          </div>
-        {/each}
-      </div>
-    </div>
-  {:else if mode}
+      {@render compare(groupModes, whoName(who), `${whoName(who)}'s games by mode`)}
+    </section>
+  {:else if mode && modeFacts}
     {@const M = MODE_NAMES[mode]}
     {@const phones = phoneShare(slices, mode)}
     {@const phonesAll = phoneShare(slices, null)}
     <header class="head">
       <h2>{M}</h2>
-      <p>{fmt(modeGames)} games started in {period.now.toLowerCase()}, {rate(keenAll)} for every 100 visitors.</p>
     </header>
-    {#if !modeGames}
+    {#if !modeFacts.started}
       <p class="soft">Nobody played it in these days.</p>
     {:else}
-      <div class="tiles">
-        {@render tile('Part of all games', pct(share(modeGames, read.now.games.started)), { says: `of the ${fmt(read.now.games.started)} games started`, tone: 'flat' }, 0, 0, 0, '', '')}
-        {@render tile('Started on a phone or tablet', pct(phones), plain(against(phones, phonesAll, true, false, 'all games')), phones, phonesAll, 100, `of ${M} games`, `all games: ${pct(phonesAll)}`)}
-      </div>
+      <dl class="facts">
+        <div><dt>Games started</dt><dd><b>{fmt(modeFacts.started)}</b><span>{pct(share(modeFacts.started, read.now.games.started))} of all games</span></dd></div>
+        <div><dt>Played to the end</dt><dd><b>{finishedShare(modeFacts.finished, modeFacts.started)}</b><span>of those started</span></dd></div>
+        <div><dt>Players a game</dt><dd><b>{modeFacts.perGame === null ? '–' : modeFacts.perGame.toFixed(1)}</b><span>on average</span></dd></div>
+        <div><dt>On a phone or tablet</dt><dd><b>{pct(phones)}</b><span>all games: {pct(phonesAll)}</span></dd></div>
+        <div><dt>For every 100 visits</dt><dd><b>{rate(keenAll)}</b><span>{M} games started</span></dd></div>
+      </dl>
+      {#if mode === 'delve'}
+        <section class="tile wide">
+          <h3>How deep the runs go</h3>
+          <DelveDepths ranges={read.now.delve.ranges} />
+        </section>
+      {/if}
       {@render keenList(mode)}
     {/if}
   {:else}
@@ -283,15 +381,76 @@
     </section>
   {/if}
 
-  <p class="aside">
-    How it's counted: a game counts on the device that runs it (the host's), so visitors who mostly join others' rooms start few games of their own{#if played}; "Played a game" counts guests too{/if}.{#if everyone && everyone.back !== null} "Came back" is of the visits that found a save on their device or none, since the game began telling them apart; Safari on iPhone and iPad clears a save after about a week away, so iOS shows fewer coming back.{/if}
-  </p>
+  <How
+    items={[
+      "A game counts on the device that runs it (the host's), so visitors who mostly join others' rooms start few games of their own.",
+      played && '"Played a game" counts guests too.',
+      `"Played a game" and "Today's unique" cover the same days as the overview's, so everyone's figures match it.`,
+      everyone && everyone.back !== null && '"Came back" is of the visits that found a save or none. Safari on iPhone and iPad clears a save after about a week away, so iOS shows fewer coming back.',
+      "A country and a device can't be picked together: GoatCounter counts them apart.",
+    ]}
+  />
 {/if}
 {#if slices && failed}
   <p class="note" role="alert">{failed} <button type="button" class="again" onclick={onagain}>Try again</button></p>
 {/if}
 
 <style>
+  /* A group beside everyone: what a row counts in a smaller line under its name. */
+  .compare {
+    margin-bottom: 1.5rem;
+  }
+  .compare th[scope='row'] {
+    white-space: normal;
+  }
+  .unit {
+    display: block;
+    font-size: 0.95rem;
+    font-weight: 400;
+    color: var(--a-muted);
+  }
+  .compare .strong {
+    font-size: 1.25rem;
+    font-weight: 650;
+    color: var(--a-ink);
+  }
+  .compare .soft {
+    color: var(--a-muted);
+  }
+  .compare td.says {
+    width: 40%;
+    font-weight: 600;
+  }
+  /* A mode's own figures, side by side. */
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25rem 3rem;
+    margin: 0 0 1.5rem;
+  }
+  .facts div {
+    display: grid;
+    gap: 0.1rem;
+  }
+  .facts dt {
+    color: var(--a-muted);
+  }
+  .facts dd {
+    display: grid;
+    margin: 0;
+  }
+  .facts b {
+    font-size: 2rem;
+    font-weight: 650;
+    line-height: 1.1;
+    color: var(--a-ink);
+  }
+  .facts span {
+    color: var(--a-muted);
+  }
+  .tile.wide {
+    margin-bottom: 1.5rem;
+  }
   /* ---- the picker: a row for each kind of pick, the picked lit ---- */
   .picker {
     display: grid;
@@ -334,11 +493,6 @@
   .chip.apart {
     color: var(--a-muted);
     border-style: dashed;
-  }
-  .apart-note {
-    margin: 0;
-    font-size: 0.95rem;
-    color: var(--a-muted);
   }
 
   /* ---- headings ---- */
@@ -414,9 +568,6 @@
   .value.flat {
     color: var(--a-now);
   }
-  .value .pick {
-    color: inherit;
-  }
   .value.up,
   .says.up {
     color: var(--a-up);
@@ -433,43 +584,8 @@
   }
 
   /* ---- a group's figures, each against everyone: as many to a row as fit ---- */
-  .tiles {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
-    gap: 1.1rem;
-  }
   .tile.wide {
     margin-top: 1.1rem;
-  }
-  .most {
-    margin: 0.2rem 0 0.4rem;
-    font-size: 1.2rem;
-    color: var(--a-text);
-  }
-  .most b {
-    font-weight: 650;
-    color: var(--a-now);
-  }
-  .modes {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 1rem 2rem;
-  }
-  .mode {
-    display: grid;
-    gap: 0.15rem;
-  }
-  .mode .name {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.6rem;
-  }
-  .mode em {
-    font-size: 0.95rem;
-    font-style: normal;
-    font-weight: 600;
-    color: var(--a-now);
   }
 
   /* Two bars: the group's (gold, or green and red where better or worse) over everyone's (grey), each with its figure. */
@@ -479,9 +595,6 @@
     align-items: center;
     gap: 0.3rem 0.8rem;
     margin-top: 0.6rem;
-  }
-  .mode .pair {
-    margin-top: 0;
   }
   /* A narrow tile: each bar the tile's width, its figure under it. */
   @container (max-width: 19rem) {
@@ -580,15 +693,10 @@
     color: var(--a-now);
   }
 
-  .hint,
-  .aside {
+  .hint {
     margin: 0.8rem 0 0;
     font-size: 0.95rem;
     color: var(--a-muted);
-  }
-  .aside {
-    margin-top: 1.6rem;
-    max-width: 75rem;
   }
 
   .reading {
@@ -621,10 +729,8 @@
     border: 0;
     cursor: pointer;
   }
-  @media (max-width: 900px) {
-    .modes {
-      grid-template-columns: minmax(0, 1fr);
-    }
+  .again.alone {
+    margin-left: 0;
   }
   @media (max-width: 600px) {
     .what {

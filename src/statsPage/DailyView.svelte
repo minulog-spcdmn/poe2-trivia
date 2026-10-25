@@ -13,6 +13,7 @@
   import { fitChart } from './fitChart.svelte';
   import { asked, dailyAverage, dailyDays, hardestAndEasiest } from './model';
   import type { Period, Read } from './read';
+  import How from './How.svelte';
   import Section from './Section.svelte';
 
   let { read, period, weekly }: { read: Read; period: Period; weekly: boolean } = $props();
@@ -31,6 +32,8 @@
   const chart = fitChart({ on: () => big, base: () => (big ? 236 : 340), least: 160 });
   const ranked = $derived(hardestAndEasiest(days, 3, big ? 3 : 5));
   const now = $derived(dailyAverage(L));
+  /** The whole days the average is over (the last, still going, left out), to weigh its change. */
+  const wholeDays = $derived(L.days.slice(0, -1).filter(asked).length);
   const before = $derived(dailyAverage(read.before));
   const total = $derived(L.daily.right + L.daily.wrong);
   const named = $derived(total ? Math.round((100 * L.daily.right) / total) : null);
@@ -49,19 +52,19 @@
 
 <div class="stack">
   <p class="what">
-    Everyone gets the same item each day and can answer it once. So the <b>players a day</b> are the people who came back for it, which shows whether playing it is becoming a habit; the share who <b>named the item</b> shows how hard that day's item was.
+    One item a day, the same for everyone, answered once. <b>Players a day</b> shows whether it's becoming a habit; the share who <b>named the item</b>, how hard it was.
   </p>
 
   <div class="figures">
     <div class="figure">
       <span class="name">Players a day</span>
       <b>{now === null ? '–' : average(now)}</b>
-      <Delta now={now} before={before} digits={1} period={period.before} />
+      <Delta now={now} before={before} digits={1} of={now !== null && before !== null ? { now: now * wholeDays, before: before * wholeDays } : undefined} period={period.before} />
     </div>
     <div class="figure">
       <span class="name">Named the item</span>
       <b>{named === null ? '–' : `${named}%`}</b>
-      <Delta now={named} before={namedBefore} rate worse="neither" period={period.before} />
+      <Delta now={named} before={namedBefore} rate worse="neither" of={{ now: total, before: read.before.daily.right + read.before.daily.wrong }} period={period.before} />
     </div>
     <div class="figure">
       <span class="name">Busiest day</span>
@@ -70,7 +73,7 @@
     </div>
   </div>
 
-  <Section title="Players a day" says="Each column is a day's players: those who named the item at its foot, those who missed it above.">
+  <Section title="Players a day" says="Named it in gold, missed it in grey.">
     <DayColumns
       days={L.days.slice(from)}
       gold={L.daily.rightPerDay.slice(from)}
@@ -85,7 +88,7 @@
 
   {#if ranked.hardest.length}
     <div class="two">
-      <Section title="Hardest items" says="The fewest named these; days with at least 3 players, today left out.">
+      <Section title="Hardest items" says="The fewest named these.">
         <DailyTable days={ranked.hardest} {itemOf} label="The hardest items" />
       </Section>
       <Section title="Easiest items" says="The most named these.">
@@ -109,7 +112,14 @@
     {/if}
   </Section>
 
-  <p class="foot">These are the game's days: each runs from midnight to midnight UTC, when the item changes.</p>
+  <div class="foot">
+  <How
+    items={[
+      "The game's days run from midnight to midnight UTC, when the item changes.",
+      'Hardest and easiest: days with at least 3 players, today left out, each share weighed by how many played, so a day of 3 says less than a day of 30.',
+    ]}
+  />
+  </div>
 </div>
 
 <style>

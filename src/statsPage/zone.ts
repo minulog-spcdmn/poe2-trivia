@@ -28,6 +28,11 @@ export function dayIn(zone: string, at: Date): string {
   return `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`;
 }
 
+/** The hours `today` (in `zone`) has had by `at`, counted from the day's midnight as GoatCounter's hours are; a part of the one it's in too. */
+export function hoursIn(zone: string, today: string, at: Date): number {
+  return Math.max(0, Math.min(24, (at.getTime() - midnight(zone, today).getTime()) / 3_600_000));
+}
+
 /** `day` moved by `n` days. */
 export function addDays(day: string, n: number): string {
   const d = new Date(`${day}T12:00:00Z`);

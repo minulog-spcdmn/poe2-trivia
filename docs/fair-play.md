@@ -127,9 +127,11 @@ GoatCounter turns away more than four a second from one address.
 **Reading them:** `stats.html` (Analytics, `src/statsPage`), with the
 owner's read-only GoatCounter API key, which stays in that browser. Its
 overview answers "how is it going?" and keeps to what's worth a glance,
-with room around it: four figures for the period, today's visitors,
-games and answers against the same time a period ago (each with what the
-last update added), how busy each day was, what happened, when they
+with room around it: four figures for the period (visits and games a day
+on average, over the whole days), today's visits, games and answers
+against a usual day by the same hour (the whole days' average up to then,
+`model.ts` usualByNow; each with what the last update added), how busy
+each day was against its average line, what happened, when they
 come, where they are and what they play; the rest is in the views
 behind it. Joining only shows there when its failures run well above the
 usual rate, today's or the period's (`insights.ts` troubleOf), as a line
@@ -142,8 +144,12 @@ sized from it. On a big monitor (1440p, 4K) every view fits one screen, a chart 
 taking what's left (`fitChart.svelte.ts`), its labels sized with the
 type; "What happened" reads out the days far busier
 than usual and the site behind each, and the sites and countries that
-brought far more or fewer than the period before (`insights.ts`, only
-what's beyond chance). Each update keeps what it brought in
+brought far more or fewer than the period before, beyond how they all
+moved (`insights.ts`, only what's beyond chance). A change against the
+period before is coloured only when chance couldn't have made it
+(`Delta.svelte`: a count by itself, a share by how many it's of).
+Each view keeps how it's counted folded away below it (`How.svelte`).
+Each update keeps what it brought in
 (`changes.ts`): the visitors, games and answers added, and the countries
 and systems the new visitors came from and on, lit on the overview.
 Visitors (`#visitors`) also has how far a visit gets (a game entered,
@@ -156,17 +162,23 @@ counted, against the period before only where that was a share of page
 loads too (`insights.ts`). Games once counted online and
 hot-seat apart (`play/race-online`) read as their mode (`model.ts`
 currentName). `#groups` (Groups) opens on what stands out between groups,
-each a sentence, and sets the visitors from a country, or on a system or
-a kind of device, against everyone: who played a game at all (guests
-too), the games they start, Today's unique, joins and failures. A mode
-can be picked with them (`#groups/place/Germany/mode/delve`), or alone,
-each showing where it's played most for its visitors, a bar a country
-(`slices.ts`); a country and a device never together, as GoatCounter
+each a sentence, and sets the visits from a country, or on a system or
+a kind of device, against everyone in a table, each row saying what it
+counts: who played a game at all (guests too), the games they start,
+Today's unique, joins and failures, and their games by mode. A mode
+alone shows its own figures (games, played to the end, players a game)
+and where it's played most for its visits, a bar a country; picked with
+a group (`#groups/place/Germany/mode/delve`), the group's games of it
+against everyone's. Delve, either way, shows how deep its runs go: where
+half end, the deepest, and the share that got each ten depths deep, a
+group's against everyone's (`slices.ts` depthsIn, `DelveDepths.svelte`);
+a country and a device never together, as GoatCounter
 counts the two apart. Every country, system and mode name across the
 views opens its group. GoatCounter keeps no visit with its
 events, but breaks any set of paths down by country and by system, so
 each thing people do is read once for each, only while that view is
-open, and kept half an hour. On the dev server and the beta,
+open, and kept half an hour; Delve's depths, two calls for each ten
+depths, only once a group is picked with Delve. On the dev server and the beta,
 `stats.html?demo` fills every view with made-up numbers
 (`src/statsPage/demo.ts`), no key needed, to look at the layout with.
 

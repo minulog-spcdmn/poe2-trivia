@@ -8,15 +8,16 @@
   // period before, a line on its bar.
   import Bars from './Bars.svelte';
   import { freshOf } from './changes';
-  import { fmt, shortDay, siteName } from './chart';
+  import { average, fmt, shortDay, siteName } from './chart';
   import Delta from './Delta.svelte';
   import Cohorts from './Cohorts.svelte';
   import { FIRST_JOURNEY, JOURNEY, OPENED, STAY, appShare, beforeShare, backShare, comersOf, firstStepsOf, journeyOf, reachedOf, recentCohorts, reachedShare, shareOf, type FirstSteps, type Reached } from './insights';
-  import { RETURNS, RETURN_NAMES, deviceOf, percent, type Reach } from './model';
+  import { RETURNS, RETURN_NAMES, dayAverages, deviceOf, percent, type Reach } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import Shares, { type ShareRow } from './Shares.svelte';
   import { deviceLink, placeLink, systemLink } from './slices';
+  import How from './How.svelte';
   import TrendChart from './TrendChart.svelte';
 
   let { read, period, weekly }: { read: Read; period: Period; weekly: boolean } = $props();
@@ -26,6 +27,8 @@
   const countries = $derived(read.countries.map((c) => ({ label: c.name || 'Unknown', count: c.count })));
   const refs = $derived(read.refs.map((r) => ({ label: !r.name || r.name === '(unknown)' ? 'Typed in, or unknown' : siteName(r.name), count: r.count })));
   const campaigns = $derived((read.campaigns ?? []).map((c) => ({ label: c.name || 'Unknown', count: c.count })));
+  /** Visits a day over the whole days (today's left out), against the period before's. */
+  const perDay = $derived(dayAverages(L.visitors.perDay, B.visitors.perDay));
   const systems = $derived(read.systems.map((s) => ({ label: s.name || 'Unknown', count: s.count })));
   const devices = $derived.by(() => {
     const by = { computer: 0, phone: 0, other: 0 };
@@ -38,7 +41,7 @@
 
   /** Each step's share, against the period before's where that was a share of the same (beforeShare). */
   const rowsOf = (steps: readonly { step: Reach; name: string }[], now: Reached, was: Reached): ShareRow[] =>
-    steps.map((s) => ({ name: s.name, count: now.counts[s.step] ?? null, share: reachedShare(now, s.step), before: beforeShare(now, was, s.step) }));
+    steps.map((s) => ({ name: s.name, count: now.counts[s.step] ?? null, share: reachedShare(now, s.step), before: beforeShare(now, was, s.step), of: { now: now.visitors, before: was.visitors } }));
   /** " Counted since Oct 17." where a step was first counted inside the period. */
   const since = (r: { from: string | null }) => (r.from && r.from > read.from ? ` Counted since ${shortDay(r.from)}.` : '');
 
@@ -49,7 +52,7 @@
   const firstRows = $derived.by((): ShareRow[] => {
     const was = firstStepsOf(B);
     const of = (f: FirstSteps, step: (typeof FIRST_JOURNEY)[number]['step']) => (f.from ? shareOf(f.counts[step], f.visits) : null);
-    return FIRST_JOURNEY.map((s) => ({ name: s.name, count: firsts.from ? firsts.counts[s.step] : null, share: of(firsts, s.step), before: of(was, s.step) }));
+    return FIRST_JOURNEY.map((s) => ({ name: s.name, count: firsts.from ? firsts.counts[s.step] : null, share: of(firsts, s.step), before: of(was, s.step), of: { now: firsts.visits, before: was.visits } }));
   });
   const stay = $derived(reachedOf(L, STAY.map((s) => s.step)));
   const stayRows = $derived(rowsOf(STAY, stay, reachedOf(B, STAY.map((s) => s.step))));
@@ -69,45 +72,47 @@
       count: comers.from ? n(comers) : null,
       share: comers.from ? shareOf(n(comers), told(comers)) : null,
       before: comersWas.from ? shareOf(n(comersWas), told(comersWas)) : null,
+      of: { now: told(comers), before: told(comersWas) },
     });
     return [row('No save, here or paired', (w) => w.fresh), ...RETURNS.map((r) => row(RETURN_NAMES[r], (w) => w.back[r]))];
   });
 </script>
 
 <div class="stack">
-  <Section title="Visitors a day" says="People who opened the start page, each counted once a visit." area="chart">
+  <Section title="Visits a day" says="Visits to the start page each day; {fmt(L.visitors.total)} in all." area="chart">
     {#snippet aside()}
       <div class="total">
-        <b>{fmt(L.visitors.total)}</b>
-        <Delta now={L.visitors.total} before={B.visitors.total} period={period.before} />
+        <b>{perDay.now === null ? '–' : average(perDay.now)}</b>
+        <span class="soft">a day on average</span>
+        <Delta now={perDay.now} before={perDay.before} digits={1} of={perDay.of} period={period.before} />
       </div>
     {/snippet}
-    <TrendChart days={L.days} now={L.visitors.perDay} before={B.visitors.perDay} {weekly} what="Visitors" names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={340} />
+    <TrendChart days={L.days} now={L.visitors.perDay} before={B.visitors.perDay} {weekly} what="Visits" names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={340} />
   </Section>
 
   <div class="two">
-    <Section title="How far a visit gets" says="Of those who loaded the game (reloads too, as the steps count them), the share who got each step along: players in a seat, hosts and guests alike. Each change is against {period.before}.{since(journey)}" area="journey">
+    <Section title="How far a visit gets" says="The share of visits that got each step along.{since(journey)}" area="journey">
       {#if journey.from}
-        <Shares rows={journeyRows} head="Step" label="Visitors by how far they got" />
+        <Shares rows={journeyRows} head="Step" label="Visits by how far they got" />
       {:else}
         <p class="soft">Not counted in these days.</p>
       {/if}
       {#if firsts.from}
         <h3>A first visit</h3>
-        <p class="hint">Of the visits that found no save, on the device or synced to it from a paired one: mostly first visits, some a private window or a save the browser cleared.{since(firsts)}</p>
+        <p class="hint">Visits that found no save: mostly first visits.{since(firsts)}</p>
         <Shares rows={firstRows} head="Step" label="First visits by how far they got" />
       {/if}
     </Section>
 
-    <Section title="How long they stay" says="The share who had the game on screen that long in one page load.{since(stay)}" area="stay">
+    <Section title="How long they stay" says="The share of visits with the game on screen this long.{since(stay)}" area="stay">
       {#if stay.from}
-        <Shares rows={stayRows} head="On screen" label="Visitors by how long they stayed" />
+        <Shares rows={stayRows} head="On screen" label="Visits by how long they stayed" />
       {:else}
         <p class="soft">Not counted in these days.</p>
       {/if}
       <h3>What else they open</h3>
       {#if opened.from}
-        <Shares rows={openedRows} head="Opened" label="Visitors who opened the codex or the achievements" />
+        <Shares rows={openedRows} head="Opened" label="Visits that opened the codex or the achievements" />
       {:else}
         <p class="soft">Nobody opened the codex or the achievements in these days.</p>
       {/if}
@@ -118,29 +123,28 @@
   </div>
 
   <div class="two">
-    <Section title="Where they are" says="By country, as GoatCounter places them." area="where">
+    <Section title="Where they are" says="Visits by country." area="where">
       <Bars bars={countries} top={10} empty="No visitors in these days." link={placeLink} fresh={freshOf(read.changes, read.at, 'countries')} />
     </Section>
-    <Section title="How they found the game" says="The site they came from; a link in a chat app or a bookmark shows as typed in." area="found">
+    <Section title="How they found the game" says="Visits by the site they came from." area="found">
       <Bars bars={refs} top={10} empty="No visitors in these days." />
       {#if campaigns.length}
         <h3>Tagged links</h3>
-        <p class="hint">Visitors who came by a link tagged poe2.quest/?ref=…, by its tag.</p>
+        <p class="hint">Visits by the tag of their link (poe2.quest/?ref=…).</p>
         <Bars bars={campaigns} top={6} />
       {/if}
     </Section>
   </div>
 
   <div class="two">
-    <Section title="Who comes back" says="Whether a visit found a save (its device's, with what paired devices synced to it), and how long since the player last played on any of them. A visit within 8 hours of the last play says neither, so these are shares of the visits that did.{since(comers)}" area="back">
+    <Section title="Who comes back" says="New, or back to a save, and how long since they last played.{since(comers)}" area="back">
       {#if comers.from}
         <div class="total left">
           <b>{percent(comers.returned, comers.fresh + comers.returned)}</b>
           <span class="soft">came back to their save</span>
-          <Delta now={back} before={backShare(comersWas)} rate period={period.before} />
+          <Delta now={back} before={backShare(comersWas)} rate of={{ now: comers.fresh + comers.returned, before: comersWas.fresh + comersWas.returned }} period={period.before} />
         </div>
         <Shares rows={comerRows} head="Who" label="Visits with no save, and back to one" />
-        <p class="hint after">Safari on iPhone and iPad clears a save after about a week away, so those coming back to it after that show as no save: iOS can't show returns after a week.</p>
       {:else}
         <p class="soft">Not counted in these days.</p>
       {/if}
@@ -159,7 +163,7 @@
           {#if devices.other}<div><dt><i class="other"></i>Other</dt><dd><b>{percent(devices.other, devices.all)}</b> {fmt(devices.other)}</dd></div>{/if}
         </dl>
         {#if app !== null}
-          <p class="line app"><b>{Math.round(app)}%</b> opened it as the installed app, from a home screen; the rest in a browser. <Delta now={app} before={appShare(comersWas)} rate period={period.before} /></p>
+          <p class="line app"><b>{Math.round(app)}%</b> opened it as the installed app, from a home screen; the rest in a browser. <Delta now={app} before={appShare(comersWas)} rate of={{ now: comers.visitors, before: comersWas.visitors }} period={period.before} /></p>
         {/if}
         <h3>By system</h3>
         <Bars bars={systems} top={8} link={systemLink} fresh={freshOf(read.changes, read.at, 'systems')} />
@@ -171,10 +175,21 @@
 
   {#if cohorts.length}
     <!-- The whole width: a column for each of eight weeks. -->
-    <Section title="By the week they first played" says="Their visits in each week after, for each 100 who first played that week (a visit counts once in 8 hours, so a keen player counts more than once a week); a week begun before the period, its visits alone. Weeks are counted in UTC, so a few hours at each week's edge can fall in the next." area="cohorts">
+    <Section title="By the week they first played" says="Visits each week after, for every 100 who first played that week." area="cohorts">
       <Cohorts cohorts={cohorts} />
     </Section>
   {/if}
+
+  <How
+    items={[
+      'A visit counts a person once in 8 hours, so someone who comes back every day counts every day.',
+      'Steps count every player in a seat, hosts and guests alike; a reload counts as a load.',
+      'New or back: a visit within 8 hours of the last play is neither, so those shares are of the visits that are one or the other. A save counts with what paired devices synced to it.',
+      "Safari on iPhone and iPad clears a save after about a week away, so iOS can't show anyone coming back after a week.",
+      'A link in a chat app or a bookmark has no site, so it shows as typed in.',
+      cohorts.length > 0 && 'By the week they first played: not a percent, as a keen player visits several times a week. A week begun before the period has its visits alone, in grey italics. Weeks are cut in UTC.',
+    ]}
+  />
 </div>
 
 <style>
@@ -282,9 +297,6 @@
     margin: -0.3rem 0 0.4rem;
     font-size: 0.95rem;
     color: var(--a-muted);
-  }
-  .hint.after {
-    margin: 0.8rem 0 0;
   }
   .soft {
     color: var(--a-muted);

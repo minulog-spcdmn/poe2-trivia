@@ -6,6 +6,7 @@
   import Bars from './Bars.svelte';
   import { fmt } from './chart';
   import Delta from './Delta.svelte';
+  import { chances, failureRate } from './insights';
   import { VIA_NAMES, percent } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
@@ -20,13 +21,16 @@
   const failedOf = (c: typeof L, script: boolean) => c.failures.reduce((n, f) => n + (f.script === script ? f.count : 0), 0);
   const failed = $derived(failedOf(L, false));
   const failedBefore = $derived(failedOf(B, false));
+  /** Failures for each 100 games and tries to join, as the overview's warning weighs them: more games bring more failures, and that's no news. */
+  const rate = $derived(failureRate(L));
+  const rateBefore = $derived(failureRate(B));
   const scripts = $derived(failedOf(L, true));
   const scriptsBefore = $derived(failedOf(B, true));
 </script>
 
 <div class="stack">
   <div class="two">
-    <Section title="Joining a room" says="Tries to join someone's room, by where they started, and how many got in.">
+    <Section title="Joining a room" says="Tries to join a room, by where they started.">
       {#if tried}
         <div class="scroll-x">
           <table class="table" aria-label="Joins by where they started">
@@ -45,7 +49,7 @@
                   <th scope="row">{VIA_NAMES[j.via]}</th>
                   <td class="n">{fmt(j.tried)}</td>
                   <td class="n">{fmt(j.joined)}</td>
-                  <td class="n strong">{percent(j.joined, j.tried)}</td>
+                  <td class="n strong">{percent(Math.min(j.joined, j.tried), j.tried)}</td>
                   <td class="bar"><span class="meter"><i style:width="{j.tried ? Math.min(100, (100 * j.joined) / j.tried) : 0}%"></i></span></td>
                 </tr>
               {/each}
@@ -55,7 +59,7 @@
                 <th scope="row">All</th>
                 <td class="n">{fmt(tried)}</td>
                 <td class="n">{fmt(joined)}</td>
-                <td class="n">{percent(joined, tried)}</td>
+                <td class="n">{percent(Math.min(joined, tried), tried)}</td>
                 <td></td>
               </tr>
             </tfoot>
@@ -66,11 +70,16 @@
       {/if}
     </Section>
 
-    <Section title="What went wrong" says="Every failure joining a room or opening one, by its cause; below, the errors in the game's own scripts.">
+    <Section title="What went wrong" says="Failures joining or opening a room, by cause.">
       {#snippet aside()}
         <div class="total">
           <b class:bad={failed > 0}>{fmt(failed)}</b>
-          <Delta now={failed} before={failedBefore} worse="up" period={period.before} />
+          {#if rate !== null}
+            <span class="per">failures; {rate < 10 ? rate.toFixed(1) : Math.round(rate)}% of games and tries to join</span>
+            <Delta now={rate} before={rateBefore} rate digits={1} worse="up" of={{ now: chances(L), before: chances(B) }} period={period.before} />
+          {:else}
+            <Delta now={failed} before={failedBefore} worse="up" period={period.before} />
+          {/if}
         </div>
       {/snippet}
       <Bars bars={failures} top={10} tone="down" empty="Nothing went wrong." />
@@ -80,7 +89,7 @@
     </Section>
   </div>
 
-  <Section title="Links opened" says="Players who arrived by a link someone shared.">
+  <Section title="Links opened" says="Links someone shared, each time one was opened.">
     <dl class="links">
       <div><dt>Invite links to a room</dt><dd><b>{fmt(L.links.invite)}</b><Delta now={L.links.invite} before={B.links.invite} period={period.before} /></dd></div>
       <div><dt>Delve challenge links</dt><dd><b>{fmt(L.links.delve)}</b><Delta now={L.links.delve} before={B.links.delve} period={period.before} /></dd></div>
@@ -108,6 +117,10 @@
     font-weight: 650;
     line-height: 1;
     color: var(--a-ink);
+  }
+  .per {
+    color: var(--a-muted);
+    text-align: end;
   }
   .total b.bad,
   .line b.bad {
@@ -158,13 +171,6 @@
   }
   .soft {
     color: var(--a-muted);
-  }
-  .sr {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
   }
   @media (max-width: 1100px) {
     .two {

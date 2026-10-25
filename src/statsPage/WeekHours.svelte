@@ -1,21 +1,25 @@
 <script lang="ts">
   // When they come: a week as seven rows of 24 hours, each hour as bright
   // as its average against the busiest (model.ts weekAverage), so the
-  // evenings and the weekend show at a glance. A line below reads the
-  // busiest hour, or the one pointed at; it sits over its longest wording,
-  // kept hidden, so pointing never changes its height and moves what's below.
+  // evenings and the weekend show at a glance. An hour no day has had yet (a
+  // week's today, later than now) is left out, not drawn as an empty one.
+  // `once`: each weekday had a single day, so a figure is that day's, not
+  // an average. A line below reads the busiest hour, or the one pointed at;
+  // it sits over its longest wording, kept hidden, so pointing never changes
+  // its height and moves what's below.
   import { average } from './chart';
   import { busiest } from './model';
 
-  let { grid, what, zone }: { grid: number[][]; what: string; zone: string } = $props();
+  let { grid, what, zone, once = false }: { grid: (number | null)[][]; what: string; zone: string; once?: boolean } = $props();
 
   const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
   const top = $derived(busiest(grid));
   let at = $state<{ day: number; hour: number } | null>(null);
-  const shown = $derived(at ? { ...at, value: grid[at.day][at.hour] } : top);
+  const shown = $derived<{ day: number; hour: number; value: number | null } | null>(at ? { ...at, value: grid[at.day][at.hour] } : top);
   const hour = (h: number) => `${String(h).padStart(2, '0')}:00`;
-  /** Brightness of a cell: its share of the busiest, with a floor so an empty hour still shows as a cell. */
-  const level = (v: number) => (top ? Math.round((100 * v) / top.value) : 0);
+  /** Brightness of a cell: its share of the busiest. */
+  const level = (v: number | null) => (top && v ? Math.round((100 * v) / top.value) : 0);
+  const per = $derived(once ? 'in that hour' : 'an hour on average');
   /** The widest a figure in the line gets: the busiest hour's, or one with a decimal. */
   const widest = $derived([top ? average(top.value) : '', '0.0'].reduce((a, b) => (b.length > a.length ? b : a)));
 
@@ -38,7 +42,7 @@
     {#each grid as row, d (d)}
       <span class="day" aria-hidden="true">{DAYS[d].slice(0, 3)}</span>
       {#each row as v, h (h)}
-        <i data-d={d} data-h={h} class:on={at?.day === d && at.hour === h} style:--l="{level(v)}%"></i>
+        <i data-d={d} data-h={h} class:on={at?.day === d && at.hour === h} class:yet={v === null} style:--l="{level(v)}%"></i>
       {/each}
     {/each}
     <span></span>
@@ -48,8 +52,10 @@
   </div>
   <p class="read">
     <span aria-live="polite">
-      {#if shown && shown.value > 0}
-        <b>{DAYS[shown.day]}s, {hour(shown.hour)} to {hour((shown.hour + 1) % 24)}</b>: {average(shown.value)} {what.toLowerCase()} an hour on average{at ? '' : ', the busiest'}.
+      {#if shown && shown.value === null}
+        <b>{DAYS[shown.day]}s, {hour(shown.hour)} to {hour((shown.hour + 1) % 24)}</b>: not yet in these days.
+      {:else if shown && shown.value !== null && shown.value > 0}
+        <b>{DAYS[shown.day]}s, {hour(shown.hour)} to {hour((shown.hour + 1) % 24)}</b>: {average(shown.value)} {what.toLowerCase()} {per}{at ? '' : ', the busiest'}.
       {:else if shown}
         <b>{DAYS[shown.day]}s, {hour(shown.hour)} to {hour((shown.hour + 1) % 24)}</b>: none.
       {:else}
@@ -57,7 +63,7 @@
       {/if}
     </span>
     {#if top}
-      <span class="sizer" aria-hidden="true"><b>Wednesdays, 00:00 to 00:00</b>: {widest} {what.toLowerCase()} an hour on average, the busiest.</span>
+      <span class="sizer" aria-hidden="true"><b>Wednesdays, 00:00 to 00:00</b>: {widest} {what.toLowerCase()} {per}, the busiest.</span>
     {/if}
   </p>
   <p class="zone">Hours in {zone.replace(/_/g, ' ')} time, where GoatCounter counts them.</p>
@@ -77,6 +83,11 @@
     border-radius: 2px;
     background: color-mix(in srgb, var(--a-now) var(--l), var(--a-track));
     cursor: default;
+  }
+  /* An hour not yet had: its place kept, an outline where the cell would be. */
+  .grid i.yet {
+    background: none;
+    box-shadow: inset 0 0 0 1px var(--a-rule);
   }
   .grid i.on {
     outline: 2px solid var(--a-ink);
