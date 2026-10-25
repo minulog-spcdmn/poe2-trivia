@@ -121,8 +121,11 @@
       if (wide() > room) node.style.whiteSpace = '';
     };
     run();
-    // Again once the display font is in, and whenever the plate's width changes (a phone turned).
-    void document.fonts?.ready.then(run);
+    // Again once the display font is in, and whenever the plate's width changes (a phone turned). Only while it is on: off,
+    // run() measures nothing, and asking for the fonts' readiness lays the whole page out there and then (Chrome), in the
+    // middle of a reveal coming in (12 ms in a trace).
+    const fonts = () => void document.fonts?.ready.then(run);
+    if (on) fonts();
     const ro = new ResizeObserver(run);
     const head = node.closest('.head');
     // And when the name changes: once its new words are in (before the next paint).
@@ -138,9 +141,11 @@
     watch();
     return {
       update: (now: boolean) => {
+        const was = on;
         on = now;
         watch();
         run();
+        if (on && !was) fonts();
       },
       destroy: () => {
         ro.disconnect();
