@@ -22,6 +22,11 @@
 // filter inline, frame by frame as the dialog fades: not as variables on
 // <html>, whose every change restyles the whole page (on a long one, the
 // codex with its every tile, a stall each frame of the fade).
+//
+// While a dialog is all the way in, <html> has `data-dialog-up`, for what the
+// page leaves out behind it, dimmed to a third and blurred, where it wouldn't
+// show (the codex's tile shadows, Codex.svelte). It comes as the fade-in ends
+// and goes as the fade-out starts, so nothing changes in plain sight.
 
 import { cornerOnScreen } from './corner';
 import { opacityOf } from './opacity';
@@ -109,6 +114,13 @@ export function behindFilter(mark: string, v: number): string {
 
 /** The layers filtered last, so they're let go of as the dialog goes (or when one leaves the page meanwhile). */
 let filtered = new Set<HTMLElement | SVGElement>();
+/**
+ * The filter each was given, as written: the browser reads a filter back in
+ * its own words (brightness(0.35) blur(3px) for brightness(0.350) blur(3.00px)),
+ * so asked of el.style it never matched, and every frame of an open dialog
+ * set it again.
+ */
+const wrote = new WeakMap<HTMLElement | SVGElement, string>();
 
 /** Each marked layer's filter, for the page dimmed `v` of the way: written only where it changes. */
 function filterLayers(v: number) {
@@ -117,10 +129,25 @@ function filterLayers(v: number) {
     for (const el of document.querySelectorAll<HTMLElement | SVGElement>('[data-behind-dialog]')) {
       now.add(el);
       const f = behindFilter(el.dataset.behindDialog ?? '', v);
-      if (el.style.filter !== f) el.style.filter = f;
+      if (wrote.get(el) !== f) {
+        el.style.filter = f;
+        wrote.set(el, f);
+      }
     }
-  for (const el of filtered) if (!now.has(el)) el.style.removeProperty('filter');
+  for (const el of filtered)
+    if (!now.has(el)) {
+      el.style.removeProperty('filter');
+      wrote.delete(el);
+    }
   filtered = now;
+}
+
+let up = false;
+/** <html>'s data-dialog-up, for the page dimmed `v` of the way: only on a dialog all the way in. */
+function markUp(v: number) {
+  if (v >= 1 === up) return;
+  up = v >= 1;
+  document.documentElement.toggleAttribute('data-dialog-up', up);
 }
 
 let raf = 0;
@@ -136,6 +163,7 @@ function changed() {
       applied = v;
       filterLayers(v);
     }
+    markUp(v);
     if (backdrops.length || applied > 0) raf = requestAnimationFrame(step);
   };
   raf = requestAnimationFrame(step);

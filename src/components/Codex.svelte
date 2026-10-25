@@ -1433,7 +1433,14 @@
     font-size: 0.88rem;
     background: rgba(0, 0, 0, 0.25);
   }
+  /* Each grid on a compositing layer of its own, its tiles drawn into it. A
+     tile's art (its drop shadow) and its meter are layers of their own, and
+     after anything the browser can't bound moving above them (the
+     medallion's rings turning), Safari on a phone put every one on the
+     compositor: a thousand layers for a full codex, gone through on every
+     scroll step, and the grid scrolled at 47fps on an iPhone (59 with this). */
   .grid {
+    will-change: opacity;
     list-style: none;
     margin: 0 0 0.6rem;
     padding: 0;
@@ -1477,6 +1484,13 @@
     max-height: 72px;
     object-fit: contain;
     filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.7));
+  }
+  /* Behind an item window, dimmed to a third and blurred (lib/behindDialog.ts),
+     without their shadows: Safari on a phone drew every shadow on screen again
+     on each frame the window drew in above them, and the window opened at
+     36fps on an iPhone (58 without). */
+  :global(:root[data-dialog-up]) button.tile .art img {
+    filter: none;
   }
   .name {
     font-size: 0.82rem;
