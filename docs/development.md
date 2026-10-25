@@ -175,6 +175,10 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   embers, a calm streak's fire) every frame at the display's refresh, down
   to 30fps only where the GPU can't keep up; find what really holds the
   frame up.
+- **Frame hitches on iOS** are measured on the owner's iPhone, driven from
+  the PC (`docs/iphone.md`, with what it found: layers composited after an
+  animation WebKit can't bound, filters redrawn under a dialog, work that
+  belongs in a worker).
 - **The creator** (zoe_arcana, a name only an unlocked device can take; a
   deterrent, not proof) is marked out. Gold motes circle her avatar on a
   tilted orbit, passing behind it on the far side, in a ruby glow with
