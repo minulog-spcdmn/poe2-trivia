@@ -327,8 +327,11 @@ export function loopHeard(file: string, now = performance.now()): number | null 
 /**
  * The bus, made if it isn't yet. Making it needs no gesture: made before one,
  * its context waits, suspended, until audio() wakes it. (Making the context is
- * the slow part, some 25 ms: see installUiSounds.) What it plays is loaded
- * only once it may play (prime): a touch that only scrolled loads nothing.
+ * the slow part, 25 to 65 ms: the browser holds the page while it asks the
+ * system for the speakers' rate, starting its audio process first if it
+ * isn't running, so it's made in an idle moment: see buildSoon.) What it
+ * plays is loaded only once it may play (prime): a touch that only scrolled
+ * loads nothing.
  */
 function build(): Bus {
   if (!bus) {
@@ -381,6 +384,35 @@ function build(): Bus {
     if (inTunnel()) shapeHall(bus, 0.001);
   }
   return bus;
+}
+
+/** Whether the bus is to be made in the next idle moment (buildSoon), and whether the ambience is to start with it. */
+let building = false;
+let ambienceToo = false;
+
+/**
+ * Makes the bus in the next idle moment rather than in the handler that
+ * wants it (making it holds the page up: see build), then, if sound may
+ * play, wakes and primes it, and with `ambience` starts the ambience.
+ */
+function buildSoon(ambience: boolean) {
+  ambienceToo ||= ambience;
+  if (building) return;
+  building = true;
+  whenIdle(
+    () => {
+      building = false;
+      const start = ambienceToo;
+      ambienceToo = false;
+      if (muted) return;
+      build();
+      if (allowed()) {
+        audio();
+        if (start) updateAmbience();
+      }
+    },
+    { timeout: 200 },
+  );
 }
 
 /** Whether the bus has been primed: sound may play, and its sounds are loading (see prime). */
@@ -776,9 +808,17 @@ export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number; from?: So
     if (now - (lastPlayed.get(name) ?? -Infinity) < gap) return undefined;
     lastPlayed.set(name, now);
   }
+  const m = MOMENTS[name];
+  if (!bus) {
+    // No bus yet, so nothing of it has loaded (load needs the bus) and
+    // nothing could play: it's made in a moment (buildSoon), not here, where
+    // it would hold up the hover or press that wants it.
+    if (typeof AudioContext === 'undefined' || !allowed()) return undefined;
+    buildSoon(false);
+    return void sounded({ name, at: performance.now() + Math.max(0, opts.inMs ?? 0), gainDb: (Math.random() * 2 - 1) * m.varyGain + (trims[name] ?? 0) });
+  }
   const b = audio();
   if (!b) return undefined;
-  const m = MOMENTS[name];
   // One random nudge for the whole moment, so its layers stay together.
   const pitch = 1 + (Math.random() * 2 - 1) * m.varyPitch;
   const gainDb = (Math.random() * 2 - 1) * m.varyGain + (trims[name] ?? 0);
@@ -1311,26 +1351,13 @@ export function installUiSounds() {
   // doesn't count as a user gesture yet (pointerup and touchend do), so listen
   // for all of them rather than only the first.
   // The first press doesn't make the context in its own handler, though: that
-  // takes some 25 ms, which the press would show late by. It's made in the
-  // idle moment after, while the button or finger is still down (a quick
-  // tap's pointerup makes it there and then if that moment hasn't come).
-  let building = false;
+  // takes 25 to 65 ms (see build), which the press would show late by. It's
+  // made in the idle moment after, while the button or finger is still down
+  // (a quick tap's pointerup makes it there and then if that moment hasn't come).
   const warm = (e: Event) => {
     if (muted) return;
     if (!bus && e.type === 'pointerdown') {
-      if (typeof AudioContext === 'undefined' || building) return;
-      building = true;
-      whenIdle(
-        () => {
-          if (muted) return;
-          build();
-          if (allowed()) {
-            audio();
-            updateAmbience();
-          }
-        },
-        { timeout: 200 },
-      );
+      if (typeof AudioContext !== 'undefined') buildSoon(true);
       return;
     }
     audio();

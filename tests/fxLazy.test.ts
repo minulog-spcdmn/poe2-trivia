@@ -675,6 +675,18 @@ test("started at once (the backdrop's first programs), every program starts befo
   assert.deepEqual(log, ['link 1', 'link 2', 'status 1', 'status 2']);
 });
 
+test('started at once, whether they are built is asked without reading them; without the extension it can’t be, and says so', () => {
+  const { gl, log, state } = fakeGl(true);
+  const p = startPrograms(gl, two);
+  assert.equal(p.done(), false);
+  state.done = true;
+  assert.equal(p.done(), true);
+  assert.ok(!log.some((l) => l.startsWith('status')), 'nothing read');
+  assert.equal(p.read()?.length, 2);
+  const without = fakeGl(false);
+  assert.equal(startPrograms(without.gl, two).done(), true);
+});
+
 test('started at once, a failure gives null, with its logs, and deletes them all; cancelled, they are deleted too', () => {
   const { gl, log, state } = fakeGl(true);
   state.fails.add(1);

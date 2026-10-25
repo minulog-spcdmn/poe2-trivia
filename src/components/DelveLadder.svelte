@@ -4,7 +4,8 @@
   import { star8 } from '../lib/arcane';
   import * as art from '../lib/ouroborosArt';
   import { FINDS_FROM, FINDS_IN_ORDER, shownDepth, type FindKind } from '../lib/delve';
-  import { descentPlate, f, KEY_R, ZONES, type Box, type CalloutShape, type Layout, type Target } from '../lib/descentPlate';
+  import { f, KEY_R, ZONES, type Box, type CalloutShape, type Layout, type Plate, type Target } from '../lib/descentPlate';
+  import { drawDescent } from '../lib/descentDrawer';
   import { FIND_TEXT } from '../lib/difficultyText';
   import { unzoomRect, zoomOf } from '../lib/stage';
   import ItemGlyph from './ItemGlyph.svelte';
@@ -82,7 +83,31 @@
 
   /** The finds you have met, with the depth each first turns up at. */
   const metFinds = $derived(FINDS_IN_ORDER.filter((x) => met.includes(x.kind)).map((x) => ({ kind: x.kind, from: x.from })));
-  const plate = $derived(w > 0 && h > 0 ? descentPlate(w, h, deepest, metFinds, { caption: cap, beside, callouts: shapes, nameW, legendW }, last) : null);
+  /**
+   * Whether the page has been measured (measure(), as the plate mounts,
+   * before anything is painted). Until then there is no plate: one drawn
+   * from guesses would be drawn again at once, never seen. What measure()
+   * reads doesn't depend on the plate (the callouts stand outside it).
+   */
+  let measured = $state(false);
+  /**
+   * The plate, drawn in a worker (lib/descentDrawer): drawing it took a fifth
+   * of the lobby's first frame. It comes a few frames later, while the
+   * settings panel it stands in still waits to fly in. Until a new one comes
+   * (the page measured again), the last one stays.
+   */
+  let plate = $state.raw<Plate | null>(null);
+  $effect(() => {
+    if (!(measured && w > 0 && h > 0)) return;
+    const layout = $state.snapshot({ caption: cap, beside, callouts: shapes, nameW, legendW });
+    let wanted = true;
+    void drawDescent([w, h, deepest, $state.snapshot(metFinds), layout, last]).then((p) => {
+      if (wanted) plate = p;
+    });
+    return () => {
+      wanted = false;
+    };
+  });
   $effect(() => {
     if (plate) natural = plate.natural;
   });
@@ -164,6 +189,7 @@
     if (!same(nextShapes, shapes)) shapes = nextShapes;
     if (!same(nw, nameW)) nameW = nw;
     if (!same(lw, legendW)) legendW = lw;
+    measured = true;
   }
 
   let frame = 0;

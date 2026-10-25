@@ -18,6 +18,7 @@
   //   the dark.
 
   import { LUNA, LUNA_HATCH, SOL_RAYS } from '../lib/alchemy';
+  import { whenIdle } from '../lib/idle';
 
   type Pt = [number, number];
   type Hole = { c: Pt; r: number };
@@ -219,6 +220,11 @@
       `<svg xmlns='http://www.w3.org/2000/svg' width='${BAY}' height='${ROW}' viewBox='0 0 ${BAY} ${ROW}'><path d='${d}' fill='none' stroke='#c47a44' stroke-width='0.55'/></svg>`,
     )}")`);
   };
+  /**
+   * The weave worked out in an idle moment ahead of the first plate (a game's first question), not in the click that brings
+   * it (6 ms in a trace). The same tile either way; returns the cancel.
+   */
+  export const warmWeave = () => whenIdle(() => void weave(), { timeout: 2000 });
 </script>
 
 <script lang="ts">

@@ -275,10 +275,11 @@
   role="timer"
   aria-label={`${secs} seconds left`}
 >
-  <svg viewBox="0 0 64 64">
-    <circle class="track" cx="32" cy="32" r={R} />
-    <circle class="fill" cx="32" cy="32" r={R} stroke-dasharray={C} stroke-dashoffset={C * (1 - frac)} />
-  </svg>
+  <svg viewBox="0 0 64 64"><circle class="track" cx="32" cy="32" r={R} /></svg>
+  <!-- (The ring on a layer of its own, so its redraws repaint it alone, not the track and the number with it.) -->
+  <div class="ring">
+    <svg viewBox="0 0 64 64"><circle class="fill" cx="32" cy="32" r={R} stroke-dasharray={C} stroke-dashoffset={C * (1 - frac)} /></svg>
+  </div>
   <span>{secs}</span>
 </div>
 
@@ -296,6 +297,11 @@
     rotate: -90deg;
     /* Let the ring's drop-shadow glow extend past the 64px viewBox. */
     overflow: visible;
+  }
+  .ring {
+    position: absolute;
+    inset: 0;
+    will-change: opacity;
   }
   circle {
     fill: none;

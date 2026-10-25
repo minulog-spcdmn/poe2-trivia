@@ -1561,14 +1561,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     };
   }
 
-  // The lean programs, read: the first frame waits for them (see begin).
-  const firstProgs = first!.read();
-  if (!firstProgs) {
-    console.warn('The backdrop goes to the CSS one.');
-    return letGo(gl);
-  }
-  let lean: Variant = variant(firstProgs[0], split ? firstProgs[1] : null, firstUi);
-  let ui = firstUi === 'drops' ? uiVariant(firstProgs[2]) : null;
+  // The lean programs, read once the rest is set up: the first frame waits
+  // for them (see begin, and takeFirst below).
+  let lean!: Variant;
+  let ui: ReturnType<typeof uiVariant> | null = null;
   // Programs that take over from those drawing now, built in the
   // background: each set is built, then warmed (see warmUp), then takes
   // over in the next frame drawn (see draw), the programs it replaces let
@@ -1830,6 +1826,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   /** The backdrop's own clock (ms): it stops while calm(). */
   let clock = 0;
   let raf = 0;
+  /** The first frame's call, while it waits for the lean programs (see takeFirst). */
+  let firstRaf = 0;
   let last = -Infinity;
   let lastStep = performance.now();
 
@@ -1843,6 +1841,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   let vein = 0;
   /** Draws a frame, timed on the GPU where it can be. */
   function draw() {
+    // (Not before the lean programs are read: see takeFirst.)
+    if (!lean) return;
     if (timer) timer.time(canvas.width * canvas.height, drawUntimed);
     else drawUntimed();
   }
@@ -2394,6 +2394,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     if (counted) onWebgl--;
     counted = false;
     offVein();
+    cancelAnimationFrame(firstRaf);
+    first!.cancel();
     cancelAnimationFrame(raf);
     // (Delve's build first: it would otherwise go ahead below, and finish.)
     delveWaiters.delete(buildDelve);
@@ -2432,34 +2434,79 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
   canvas.addEventListener('webglcontextlost', lost);
   reduceMotion.addEventListener('change', onMotionChange);
   const offFx = onFxChange(onMotionChange);
-  // Delve's programs, as soon as Delve is on its way (now, if it already is).
-  delveWaiters.add(buildDelve);
-  if (delveWanted) buildDelve();
 
-  // Paint the first frame now, before the page is first painted (the CSS
-  // backdrop isn't there behind it: see Background.svelte). Should that
-  // throw, everything set up so far is taken down again before the caller
-  // hears of it and turns to the CSS backdrop.
-  // (What a past visit found the GPU to cost may set the quality first.)
-  setBackdropPixels(pixelsAt, !!timer?.available);
-  try {
+  /** Reads the lean programs (see begin): false if one failed. */
+  function takeFirst() {
+    const progs = first!.read();
+    if (!progs) {
+      console.warn('The backdrop goes to the CSS one.');
+      return false;
+    }
+    lean = variant(progs[0], split ? progs[1] : null, firstUi);
+    ui = firstUi === 'drops' ? uiVariant(progs[2]) : null;
+    return true;
+  }
+  /** The first frame, and the frames from then on, once the lean programs are read. */
+  function firstFrame() {
+    // Delve's programs, as soon as Delve is on its way (now, if it already is).
+    // (Only now: which of the UI's parts they draw follows the lean ones.)
+    delveWaiters.add(buildDelve);
+    if (delveWanted) buildDelve();
+    // (What a past visit found the GPU to cost may set the quality first.)
+    setBackdropPixels(pixelsAt, !!timer?.available);
     canvas.width = Math.max(1, Math.round(canvasW * devicePixelRatio * scale()));
     canvas.height = Math.max(1, Math.round(canvasH * devicePixelRatio * scale()));
     embers.step(0, canvasW, canvasH);
     measureView();
     measure(uiNow());
     draw();
-  } catch (e) {
-    stop();
-    throw e;
+    // Only now, with frames to come, does anything wait on them.
+    setGpuCatchUp(holdFor);
+    offScale = onFxScale(fit);
+    raf = requestAnimationFrame(frame);
+    if (lean.ui === 'drops') whenPageIdle(leanNext, replaceLean, 3000);
+    onWebgl++;
+    counted = true;
   }
-  // Only now, with frames to come, does anything wait on them.
-  setGpuCatchUp(holdFor);
-  offScale = onFxScale(fit);
-  raf = requestAnimationFrame(frame);
-  if (lean.ui === 'drops') whenPageIdle(leanNext, replaceLean, 3000);
-  onWebgl++;
-  counted = true;
+
+  // Paint the first frame before the page is first painted (the CSS
+  // backdrop isn't there behind it: see Background.svelte). Built already
+  // (a warm shader cache), or with no asking whether they are (no
+  // KHR_parallel_shader_compile), now. Else in the frame the page is first
+  // painted in, its first call (the frames going on from there as they do
+  // from one drawn now): asking before then how the link went would wait
+  // for the driver, on a cold cache for the best part of the slowest shader's
+  // compile (85 and 65 ms for two of them in a trace on an RTX 5070, the
+  // page's and the GPU process's main threads both held), while the rest of
+  // the page goes on being set up meanwhile; asked then, it waits only for
+  // what's left. Should anything here fail or throw, everything set up so
+  // far is taken down again before the caller hears of it and turns to the
+  // CSS backdrop: now, by the return or the throw; later, by onLost.
+  if (first!.done()) {
+    try {
+      if (!takeFirst()) {
+        stop();
+        return null;
+      }
+      firstFrame();
+    } catch (e) {
+      stop();
+      throw e;
+    }
+  } else {
+    firstRaf = requestAnimationFrame((now) => {
+      firstRaf = 0;
+      try {
+        if (!takeFirst()) return lost();
+        firstFrame();
+        // (Drawn: the frames go on from now, the next one stepping from here.)
+        lastStep = now;
+      } catch (e) {
+        console.warn(e);
+        lost();
+      }
+    });
+  }
 
   return stop;
 }
