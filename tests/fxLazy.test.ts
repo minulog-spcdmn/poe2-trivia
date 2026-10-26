@@ -150,11 +150,21 @@ const readSix = () => {
 /** The frame after the context, in which whether it can draw to floats is asked: the shaders start in the next. */
 const askFloat = () => frame();
 
-/** The overlay's canvas; counts the contexts asked of it (and, with `refuse`, gives none). */
+/**
+ * The overlay's canvas; counts the contexts asked of it (and, with `refuse`,
+ * gives none). `fire` sends it an event, as the browser would (a context
+ * lost or restored), and says whether it was asked to give the context back.
+ */
 function overlay(parallel = true, refuse = false) {
   const ctx = fakeGl(parallel);
+  const on = new Map<string, (e: Event) => void>();
   const c = {
     asked: 0,
+    fire(type: string) {
+      let back = false;
+      on.get(type)?.({ preventDefault: () => (back = true) } as unknown as Event);
+      return back;
+    },
     clientWidth: 800,
     clientHeight: 600,
     style: {} as Record<string, string>,
@@ -162,8 +172,8 @@ function overlay(parallel = true, refuse = false) {
       c.asked++;
       return refuse ? null : ctx.gl;
     },
-    addEventListener() {},
-    removeEventListener() {},
+    addEventListener: (type: string, f: (e: Event) => void) => on.set(type, f),
+    removeEventListener: (type: string) => on.delete(type),
   };
   return { canvas: c as unknown as HTMLCanvasElement, c, ctx };
 }
@@ -536,6 +546,50 @@ test('a context lost before its shaders are built turns effects off, and says so
   assert.ok(!fx.fxActive() && !fx.fxAvailable());
   assert.deepEqual(heard, [false]);
   assert.equal(fx.fxStats().shapes, 0);
+  off();
+  stop();
+});
+
+test('a context taken away (a GPU process that died) hides the canvas at once; effects are off until it is given back, and it shows again with an effect drawn', (ctx) => {
+  const o = overlay();
+  const stop = mounted(ctx, o.canvas);
+  // (Its context could be lost before its first frame too, its shaders still building.)
+  assert.equal(o.c.style.visibility, 'hidden', 'hidden before the renderer is made');
+  const heard: boolean[] = [];
+  const off = fx.onFxChange(() => heard.push(fx.fxActive()));
+  const s = glow();
+  askFloat();
+  frame();
+  o.ctx.state.done = true;
+  readSix();
+  frame();
+  assert.equal(o.c.style.visibility, 'visible', 'drawing');
+  heard.length = 0;
+  // A lost canvas left showing is composited white over the whole page.
+  assert.ok(o.c.fire('webglcontextlost'), 'asked to give it back');
+  assert.equal(o.c.style.visibility, 'hidden', 'hidden as it goes');
+  assert.ok(!fx.fxActive() && !fx.fxAvailable(), 'effects off meanwhile');
+  assert.deepEqual(heard, [false], 'and the page hears so');
+  assert.equal(fx.fxStats().shapes, 0);
+  assert.ok(!fx.isLive(glow()), 'nothing is kept for later meanwhile');
+  frame();
+  idle();
+  assert.equal(o.c.asked, 1, 'and nothing is made on the lost context');
+  assert.equal(o.c.style.visibility, 'hidden', 'still hidden, however long no restore comes');
+  // Given back: built again, and shown with its first effect drawn.
+  o.c.fire('webglcontextrestored');
+  const again = glow();
+  assert.ok(fx.isLive(again));
+  assert.equal(o.c.asked, 2, 'made again at once, an effect being wanted');
+  askFloat();
+  frame();
+  assert.equal(o.c.style.visibility, 'hidden', 'not while its shaders build');
+  readSix();
+  frame();
+  assert.ok(fx.fxActive());
+  assert.equal(o.c.style.visibility, 'visible', 'shown with it drawn');
+  s.stop(0);
+  again.stop(0);
   off();
   stop();
 });
