@@ -365,14 +365,28 @@
   // Its fonts and the tooltips' too (lib/fontsAhead.ts), from the first idle
   // moment, so they don't lay the codex out again as it opens; opened before
   // they're in, it waits for them a moment (at most a quarter of a second).
+  // A fetch that fails isn't kept: the next time the codex opens fetches it
+  // again (a dropped connection may be back), and until then the page says
+  // it couldn't be loaded (pageLost).
   let codexChunk: Promise<typeof import('./components/Codex.svelte')> | null = null;
-  const fetchCodexPage = () => (codexChunk ??= import('./components/Codex.svelte'));
+  const fetchCodexPage = () =>
+    (codexChunk ??= import('./components/Codex.svelte').catch((e) => {
+      codexChunk = null;
+      throw e;
+    }));
   let codexPage: Promise<typeof import('./components/Codex.svelte')> | null = null;
   const loadCodexPage = () =>
-    (codexPage ??= Promise.all([fetchCodexPage(), Promise.race([loadFonts(), new Promise((r) => setTimeout(r, 250))])]).then(([page]) => page));
+    (codexPage ??= Promise.all([fetchCodexPage(), Promise.race([loadFonts(), new Promise((r) => setTimeout(r, 250))])]).then(
+      ([page]) => page,
+      (e) => {
+        codexPage = null;
+        throw e;
+      },
+    ));
   onMount(loadFontsAhead);
   onMount(() => {
-    const t = setTimeout(fetchCodexPage, 2000);
+    // Only ahead of time: a failure here waits for the codex to be opened.
+    const t = setTimeout(() => void fetchCodexPage().catch(() => {}), 2000);
     return () => clearTimeout(t);
   });
 
@@ -660,11 +674,15 @@
           <!-- Loaded when first opened: most visits never do. -->
           {#await loadCodexPage() then { default: Codex }}
             <Codex />
+          {:catch}
+            {@render pageLost()}
           {/await}
         {:else if shown === 'settings'}
           <!-- Loaded when first opened, as the codex is. -->
           {#await import('./components/Settings.svelte') then { default: Settings }}
             <Settings />
+          {:catch}
+            {@render pageLost()}
           {/await}
         {:else if shown && GameOver}
           <GameOver />
@@ -685,13 +703,20 @@
 
 <!-- The game's screens still on their way (loadGamePages), or lost. -->
 {#snippet gamePagesWait()}
-  <div class="pages-wait">
-    {#if gamePagesLost}
-      <p>Part of the game couldn’t be loaded.</p>
-      <button class="btn primary" onclick={() => location.reload()}>Reload</button>
-    {:else}
+  {#if gamePagesLost}
+    {@render pageLost()}
+  {:else}
+    <div class="pages-wait">
       <span class="spinner" aria-label="Loading"></span>
-    {/if}
+    </div>
+  {/if}
+{/snippet}
+
+<!-- A page's chunk that didn't come (the game's screens, the codex, the settings): a reload brings it. -->
+{#snippet pageLost()}
+  <div class="pages-wait">
+    <p>Part of the game couldn’t be loaded.</p>
+    <button class="btn primary" onclick={() => location.reload()}>Reload</button>
   </div>
 {/snippet}
 
@@ -739,6 +764,8 @@
       </div>
       {#await import('./components/Settings.svelte') then { default: Settings }}
         <Settings over />
+      {:catch}
+        {@render pageLost()}
       {/await}
     </div>
   </div>
