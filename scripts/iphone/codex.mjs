@@ -1,6 +1,7 @@
 // The codex on the phone, as a thumb goes through it (docs/iphone.md): opened
 // from the start page, down to where the items start, scrolled through them
-// and back, then two items opened and closed. It prints each phase's frames
+// and back (by the browser, as a swipe is, then by the page's script), then
+// two items opened and closed. It prints each phase's frames
 // as the page got them, and the page process's CPU use over the run (its
 // share of one core, all threads/the main one: low while it stutters means
 // the time went outside the page, to the compositor).
@@ -51,8 +52,18 @@ log('grid at', await ev(`(() => { const t = document.querySelector('button.tile'
 await sleep(2000);
 await mark('gridStill');
 await sleep(2000);
-// Through the items and back, 30 px a frame.
+// Through the items and back as a thumb goes, scrolled by the browser itself
+// (as a swipe is, off the page's main thread): 3000 px down in five strokes
+// of 600 and back up the same.
 await mark('scroll');
+log('scrolled', await ev(`new Promise((done) => { const el = document.scrollingElement; const y0 = el.scrollTop; const strokes = [600, 600, 600, 600, 600, -600, -600, -600, -600, -600]; let k = 0, most = 0; const next = () => { most = Math.max(most, el.scrollTop - y0); if (k === strokes.length) return done(Math.round(most) + ' px down, back to ' + Math.round(el.scrollTop - y0)); window.scrollBy({ top: strokes[k++], behavior: 'smooth' }); setTimeout(next, 800); }; next(); })`));
+await sleep(800);
+// The same again with the page moving itself, 30 px a frame, as only the
+// middle-button autoscroll does (autoscroll.ts). Not what a thumb gets: a
+// scroll on the main thread makes WebKit repaint whatever crosses the edge of
+// a fixed layer that ends where the screen does, so this catches the
+// backdrop sized to the viewport again (installedApp.ts).
+await mark('scripted');
 await ev(`new Promise((done) => { let n = 0; const step = () => { document.scrollingElement.scrollTop += n < 100 ? 30 : -30; if (++n < 200) requestAnimationFrame(step); else done(); }; requestAnimationFrame(step); })`);
 await sleep(800);
 for (let k = 0; k < 2; k++) {

@@ -111,7 +111,7 @@ owner can use it.
 | `ask.mjs "<js>"` | Runs an expression in the phone's tab and prints its value. |
 | `goto.mjs <url>` | Sends the tab to an address, a build for the owner to try, say. |
 | `shot.mjs <out.png>` | A screenshot of the tab, at the phone's pixels. |
-| `codex.mjs <url> <label>` | The codex as a thumb goes through it: opened, down to the items, scrolled through them and back, two items opened and closed. Each phase's frames, and the page's CPU. |
+| `codex.mjs <url> <label>` | The codex as a thumb goes through it: opened, down to the items, scrolled through them and back (`scroll`, by the browser as a swipe is; then `scripted`, by the page 30 px a frame), two items opened and closed. Each phase's frames, and the page's CPU. |
 | `game.mjs <url> <label>` | A game (`MODE=delve`, `turns` or `race`; `ROUNDS=4`): New game, a mode, Begin, then cards, question, answer and reveal, each click timed in parts. Each phase's frames. |
 | `layers.mjs [--do "<js>"]` | The tab's compositing layers: what, how many, why. With `--do`, which painted while that ran. |
 | `profile.mjs <label.prof.json>` | What ran in each phase of a `game.mjs` run with `PROFILE=1`, by file and line in `src/`. |
@@ -209,6 +209,20 @@ with its numbers in the comments.
   then it hides nothing. Try such a thing with a CSS rule (`mask: none`
   through `ask.mjs`): taking the `mask` attribute off from script didn't
   take the cost away.
+- **Chrome's tab is a WKWebView, and says `navigator.standalone`.** So does
+  any app's view of a page. Taken for the home-screen app, Chrome's tab had
+  its screen's height measured (`src/lib/viewport.ts`), the backdrop ended
+  at the viewport's bottom edge, and a scroll the page drives itself (the
+  old `codex.mjs` scroll, `scrollTop +=` each frame) had WebKit repaint the
+  row of tiles across that edge, and the tiles' drop shadows with it, on
+  every frame: 49 fps against 60, all of it outside the page's main thread.
+  `installedApp()` asks for the manifest's display mode as well now, which
+  a tab doesn't have. A swipe is scrolled by the browser and never showed
+  it, so `codex.mjs` scrolls that way first (`scroll`) and keeps the
+  scripted scroll as a phase of its own (`scripted`) to catch it coming
+  back. A scroll the page drives is not what a thumb gets: measure with
+  `scrollBy({ behavior: 'smooth' })`. Even then the page's frames can't see
+  any the browser drops while it scrolls.
 
 Still open: Begin's worst frame, about 230 to 285 ms. About 70 ms of it is
 script mounting the game screen and about 140 ms its styles, layout and
