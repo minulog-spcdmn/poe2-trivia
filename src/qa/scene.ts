@@ -9,6 +9,7 @@ import type { DelveRun } from '../lib/delveRecord.ts';
 import type { RoomInfo } from '../lib/roomInfo.ts';
 import type { PlateName } from '../lib/plates/index.ts';
 import type { SizeKey } from './sizes.ts';
+import type { ToastKind, ToastOptions } from '../lib/toasts.svelte.ts';
 import type { Control, State, Values } from './bench.ts';
 
 /** Where in the game a scene is: the desk groups and orders them by it. */
@@ -43,6 +44,8 @@ export type Step =
   | { fail: 'kicked' | 'closed' | 'replaced' }
   /** The app crashes, once or twice in a row (Root.svelte's recovery). */
   | { crash: 1 | 2 }
+  /** A notice arrives (lib/toasts.svelte.ts), worded as the game words it; it stays up, its fuse held, until closed. */
+  | { toast: string; kind?: ToastKind; opts?: ToastOptions }
   /**
    * The room moves on to `state` (the scene's game played on: dynamite going
    * off, an answer given), its clock standing still at `at` (host clock, ms),
