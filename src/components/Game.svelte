@@ -947,8 +947,9 @@
       container: slot / inline-size;
     }
   }
-  /* A phone's browser on its side, the address bar up: the banner closer. */
-  @media (orientation: landscape) and (max-height: 350px) and (min-width: 561px) {
+  /* A phone's browser on its side, the address bar up: the banner closer
+     (from where the lines round ChooseCategory's cards close up, 357px). */
+  @media (orientation: landscape) and (max-height: 357px) and (min-width: 561px) {
     .banner {
       margin: 0.15rem 0 0.2rem;
     }

@@ -3525,6 +3525,31 @@
       grid-template-columns: minmax(0, 1.4fr) minmax(0, 3fr);
     }
   }
+  /* A phone's browser on its side under 336 tall, a fractional height such
+     as 335.2 too (Chrome on an Android phone, its bars up, leaves 285 to
+     310; the iPhone's 340 has room enough): the room under the task line is
+     too short for three rows of names in two lines each. So five or six
+     names take the art's width too, as seven do, and stay on one line; and
+     seven or eight take the ten's slimmer rows, four of them in the room. */
+  @media (orientation: landscape) and (height < 336px) and (min-width: 760px) {
+    .stage:has(> .options > :nth-child(5)) {
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 3fr);
+    }
+  }
+  @media (orientation: landscape) and (height < 336px) and (min-width: 561px) {
+    .options.compact .option {
+      padding-block: 0;
+      gap: 0.45rem;
+    }
+    .options.compact .option .key {
+      width: 20px;
+      height: 20px;
+      font-size: 0.64rem;
+    }
+    .options.compact .text {
+      line-height: 1.1;
+    }
+  }
   /* A phone upright (lib/layout.ts `upright`): the question fills the room
      Game.svelte leaves it under the banner, and no more. The answers keep a
      thumb's height and the row under them (the result and Next, in the flow:

@@ -5,7 +5,7 @@ import type { Item } from '../src/lib/game.ts';
 import { useItems } from '../src/qa/build/engine.ts';
 import { Table } from '../src/qa/build/play.ts';
 import { useCaptured } from '../src/qa/scenes/captured.ts';
-import { SIZES, WALK_SIZES, isSizeKey, PRESETS } from '../src/qa/sizes.ts';
+import { SIZES, WALK_SIZES, isSizeKey, sizeOf, PRESETS } from '../src/qa/sizes.ts';
 import { SCREENS, seatLabel, seatsIn, type Scene } from '../src/qa/scene.ts';
 import { sceneStateAt, valuesOf, type Values } from '../src/qa/bench.ts';
 import { TWEAK_KEYS, applyTweaks, buildScene } from '../src/qa/tweaks.ts';
@@ -189,6 +189,21 @@ test('the sizes are one list: unique keys, a 4K screen at each scaling, the desi
   // docs/design-rules.md: 1440 x 900, 1440 x 725 and 390 x 844.
   const quick = PRESETS.quick.map((k) => SIZES.find((s) => s.key === k)!).map((s) => `${s.w}x${s.h}`);
   assert.deepEqual(quick.sort(), ['1440x725', '1440x900', '390x844']);
+});
+
+// CLAUDE.md: a game never scrolls on a phone either way up, in its browser
+// with its bars up. On its side that is two heights apart: an iPhone's 340
+// and an Android phone's in Chrome, 285 to 310, where the category cards
+// first scrolled unseen, and then the team's vote only at the low end of
+// it. The walk takes the iPhone and both ends of the Android phones' band,
+// so every sweep checks them, and an Android phone in fullscreen (Chrome's
+// bars away, 401 to 418 tall), where the team's cards scrolled.
+test('the walk takes a phone on its side in its browser at an iPhone’s height and at both ends of an Android phone’s', () => {
+  const side = WALK_SIZES.map((k) => sizeOf(k)).filter((s) => s.touch && s.w > s.h && s.h <= 500);
+  assert.ok(side.some((s) => s.h === 340), 'no iPhone on its side, its bars up');
+  assert.ok(side.some((s) => s.h > 290 && s.h <= 310), 'no Android phone on its side, its bars up');
+  assert.ok(side.some((s) => s.h <= 290), 'no Android phone on its side at the low end of their heights');
+  assert.ok(side.some((s) => s.h > 400 && s.h < 419), 'no Android phone on its side in fullscreen');
 });
 
 test("a frame answers media queries as its device would, and leaves width to the frame", () => {

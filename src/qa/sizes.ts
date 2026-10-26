@@ -26,6 +26,13 @@ export const SIZES = [
   { key: 'phone', label: 'Small phone', w: 375, h: 812, dpr: 3, touch: true, walk: true },
   { key: 'phone390Browser', label: 'Phone, in its browser', w: 390, h: 664, dpr: 3, touch: true },
   { key: 'phone390', label: 'Phone', w: 390, h: 844, dpr: 3, touch: true },
+  // An Android phone on its side in Chrome, its bars up: Android's status bar, Chrome's toolbar and the gesture bar
+  // leave 304 of a Pixel 7's 411 (most Android phones are 290 to 310 tall there), and 285 at its larger display size,
+  // the low end of them, walked too: the team's vote scrolled there alone.
+  { key: 'landscapeAndroidShort', label: 'Android phone on its side, short', w: 824, h: 285, dpr: 2.75, touch: true, walk: true },
+  { key: 'landscapeAndroid', label: 'Android phone on its side', w: 863, h: 304, dpr: 2.625, touch: true, walk: true },
+  // The same phone in fullscreen, Chrome's bars away: all of its 412, where the team's cards scrolled alone, walked so the sweep sees them.
+  { key: 'landscapeAndroidFull', label: 'Android phone on its side, full screen', w: 915, h: 412, dpr: 2.625, touch: true, walk: true },
   // On its side in a browser: the address bar stays up (a game never scrolls it away), so 340 of the screen's 390.
   { key: 'landscape', label: 'Phone on its side', w: 844, h: 340, dpr: 3, touch: true, walk: true },
   { key: 'landscapeFull', label: 'Phone on its side, full screen', w: 844, h: 390, dpr: 3, touch: true },
