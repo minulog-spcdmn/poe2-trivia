@@ -170,7 +170,12 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     const r = canvas.getBoundingClientRect();
     veilIgnites(onPage(x, y, r), r.width);
   };
-  /** Sparks fly off the front (BurnFrame's sparks). */
+  /**
+   * Sparks fly off the front (BurnFrame's sparks). (The worker's news of
+   * them comes between the page's frames, when it's laid out already: the
+   * canvas's place is read for nothing then, where in a frame it made the
+   * page lay itself out an extra time, frontier.ts.)
+   */
   const fly = (sparks: number[]) => {
     const r = canvas.getBoundingClientRect();
     for (let k = 0; k + 3 < sparks.length; k += 4) veilSpark(onPage(sparks[k], sparks[k + 1], r), { x: sparks[k + 2], y: sparks[k + 3] }, 1);
