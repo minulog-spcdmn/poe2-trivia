@@ -18,21 +18,18 @@ registerHooks({
 Object.assign(globalThis, { localStorage: memoryStorage(), sessionStorage: memoryStorage() });
 mock.timers.enable({ apis: ['setTimeout', 'Date'] });
 
-const { keepAwake } = await import('../src/lib/wakeLock.ts');
-const { session } = await import('../src/lib/session.svelte.ts');
-
 // ---- a page and its browser's wake locks ------------------------------------
 
 class Page extends EventTarget {
   visibilityState: 'visible' | 'hidden' = 'visible';
-  /** How many pointerdown listeners are waiting. */
+  /** How many pointerup listeners are waiting. */
   taps = 0;
   addEventListener(type: string, f: EventListenerOrEventListenerObject | null, o?: AddEventListenerOptions | boolean) {
-    if (type === 'pointerdown') this.taps++;
+    if (type === 'pointerup') this.taps++;
     super.addEventListener(type, f, o);
   }
   removeEventListener(type: string, f: EventListenerOrEventListenerObject | null, o?: EventListenerOptions | boolean) {
-    if (type === 'pointerdown') this.taps = Math.max(0, this.taps - 1);
+    if (type === 'pointerup') this.taps = Math.max(0, this.taps - 1);
     super.removeEventListener(type, f, o);
   }
   show(visible: boolean) {
@@ -42,7 +39,7 @@ class Page extends EventTarget {
   tap() {
     // A once listener is gone after it ran.
     if (this.taps) this.taps--;
-    this.dispatchEvent(new Event('pointerdown'));
+    this.dispatchEvent(new Event('pointerup'));
   }
 }
 
@@ -76,6 +73,16 @@ class Locks {
     return this.given.filter((l) => !l.released).length;
   }
 }
+
+// A window and a page to load the session in, which it listens to for the
+// page's return (nudge); the tests after give each their own page.
+const window = new EventTarget();
+const loadedOn = Object.assign(new Page(), { referrer: '' });
+Object.assign(globalThis, { window, location: new URL('https://poe2.quest/') });
+Object.defineProperty(globalThis, 'document', { value: loadedOn, configurable: true, writable: true });
+const { keepAwake } = await import('../src/lib/wakeLock.ts');
+const { session } = await import('../src/lib/session.svelte.ts');
+const { default: FakePeer } = await import('./fakePeerjs.ts');
 
 let page: Page;
 let locks: Locks;
@@ -160,7 +167,16 @@ test('without wake locks (an older browser, plain http) nothing is asked and not
 // ---- the session -----------------------------------------------------------
 
 /** What the session keeps to itself, as these tests set it. */
-type Inside = { peer: unknown; retries: number; retry: ReturnType<typeof setTimeout> | null; attempts: unknown[]; hereOnly: boolean; nudgedAt: number };
+type Inside = {
+  peer: unknown;
+  retries: number;
+  retry: ReturnType<typeof setTimeout> | null;
+  attempts: unknown[];
+  hereOnly: boolean;
+  nudgedAt: number;
+  connectToHost(): void;
+  startClientPeer(): void;
+};
 const inside = session as unknown as Inside;
 
 /** A signalling peer: whether it reached the server, and what it was asked. */
@@ -168,6 +184,7 @@ function peerOf(disconnected = false) {
   const p = { destroyed: false, disconnected, open: !disconnected, connects: 0, reconnects: 0 };
   return Object.assign(p, {
     connect: () => void p.connects++,
+    // As PeerJS: no longer disconnected, but not open till the server answers.
     reconnect: () => {
       p.reconnects++;
       p.disconnected = false;
@@ -288,6 +305,64 @@ test('a signalling link that dropped while away reconnects at once, for a host a
   const guest = inRoom('client', 'lost', peerOf(true));
   session.nudge();
   assert.equal(guest.reconnects, 1);
+  // An offer sent while signalling is still reconnecting would be dropped unsent.
+  assert.equal(guest.connects, 0, 'nothing sent before the server answers');
+  assert.equal(inside.attempts.length, 0, 'no dead attempt holding a slot');
+  assert.notEqual(inside.retry, null, 'the retries go on');
+  // The server answers: its 'open' tries the host.
+  guest.open = true;
+  inside.connectToHost();
   assert.equal(guest.connects, 1);
+  session.leave();
+});
+
+test('the page coming back nudges a guest cut off from the host: back online, restored, or shown', () => {
+  const back = (name: string, come: () => void) => {
+    inRoom('client', 'lost');
+    inside.retries = 7;
+    come();
+    assert.equal(inside.retries, 0, name);
+    session.leave();
+  };
+  back('online', () => window.dispatchEvent(new Event('online')));
+  back('pageshow', () => window.dispatchEvent(new Event('pageshow')));
+  // The page the session was loaded on is the one it listens to.
+  Object.defineProperty(globalThis, 'document', { value: loadedOn, configurable: true, writable: true });
+  back('shown', () => loadedOn.show(true));
+  inRoom('client', 'lost');
+  inside.retries = 7;
+  loadedOn.show(false);
+  assert.equal(inside.retries, 7, 'hidden: not nudged');
+  session.leave();
+});
+
+test('a signalling link the page brought back first is not reconnected again by its own wait', async () => {
+  // A guest's own peer, as the session makes it, cut off from the host.
+  inRoom('client', 'connecting');
+  inside.startClientPeer();
+  await settle();
+  const peer = inside.peer as InstanceType<typeof FakePeer>;
+  assert.ok(peer instanceof FakePeer);
+  let reconnects = 0;
+  // As PeerJS, which throws if asked to reconnect a peer that isn't disconnected.
+  peer.reconnect = () => {
+    if (!peer.disconnected) throw new Error('not disconnected');
+    reconnects++;
+    peer.disconnected = false;
+  };
+  session.status = 'lost';
+  // Signalling drops while the page is away; it comes back before the wait is up.
+  peer.disconnected = true;
+  peer.open = false;
+  peer.emit('disconnected');
+  session.nudge();
+  assert.equal(reconnects, 1);
+  mock.timers.tick(1500);
+  assert.equal(reconnects, 1, 'not reconnected twice');
+  // Dropped and left alone: its wait reconnects it.
+  peer.disconnected = true;
+  peer.emit('disconnected');
+  mock.timers.tick(1500);
+  assert.equal(reconnects, 2);
   session.leave();
 });

@@ -2039,9 +2039,11 @@ class Session {
    * offer or candidate that went missing.
    */
   private connectToHost() {
-    // Without the signalling server there is no connecting (PeerJS returns
-    // nothing); its reconnect fires 'open', which tries again.
-    if (!this.peer || this.peer.destroyed || this.peer.disconnected) return;
+    // Without the signalling server there is no connecting: PeerJS returns
+    // nothing while disconnected, and while it's reconnecting (no longer
+    // disconnected, not open yet) it drops the offer unsent, leaving a dead
+    // attempt that would hold a slot and its age. Its 'open' tries again.
+    if (!this.peer || this.peer.destroyed || !this.peer.open) return;
     if (this.status === 'connecting') {
       // An open link waits for the room's answer; a fresh one would only replace it.
       if (this.hostConn?.open) return;

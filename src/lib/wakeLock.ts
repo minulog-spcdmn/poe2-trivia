@@ -46,7 +46,9 @@ export function keepAwake(): () => void {
   const armTap = () => {
     if (gone || tapArmed) return;
     tapArmed = true;
-    document.addEventListener('pointerdown', tapped, { once: true, capture: true, passive: true });
+    // A touch counts as a tap (a user gesture) only as the finger lifts, not as it
+    // lands; a mouse's press already did by then, so its release still carries it.
+    document.addEventListener('pointerup', tapped, { once: true, capture: true, passive: true });
   };
   const shown = () => void wake();
   document.addEventListener('visibilitychange', shown);
@@ -55,7 +57,7 @@ export function keepAwake(): () => void {
     if (gone) return;
     gone = true;
     document.removeEventListener('visibilitychange', shown);
-    if (tapArmed) document.removeEventListener('pointerdown', tapped, { capture: true });
+    if (tapArmed) document.removeEventListener('pointerup', tapped, { capture: true });
     tapArmed = false;
     const held = lock;
     lock = null;
