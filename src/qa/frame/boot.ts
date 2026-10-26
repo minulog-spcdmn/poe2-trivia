@@ -119,8 +119,8 @@ export async function boot(asked: URLSearchParams) {
   // Its name ('' a first visit), and Today's unique as it last answered.
   if (built.name !== '') storage.writeStored('name', built.name ?? 'Kalguur');
   if (built.daily) {
-    const { daysAgo, ...rec } = built.daily;
-    storage.writeStored('daily', JSON.stringify({ ...rec, day: daily.utcDay(Date.now()) - daysAgo }));
+    const { days, daysAgo } = built.daily;
+    storage.writeKey(daily.DAYS_KEY, JSON.stringify({ from: daily.utcDay(Date.now()) - daysAgo - days.length + 1, days }));
   }
   // The sound as it's set, and what else it keeps (its keys).
   if (built.sound?.muted !== undefined) sound.setMuted(built.sound.muted);

@@ -6,7 +6,6 @@
 import type { Action, GameState } from '../lib/game.ts';
 import type { Answer } from '../lib/codex.ts';
 import type { DelveRun } from '../lib/delveRecord.ts';
-import type { DailyRecord } from '../lib/daily.ts';
 import type { RoomInfo } from '../lib/roomInfo.ts';
 import type { PlateName } from '../lib/plates/index.ts';
 import type { SizeKey } from './sizes.ts';
@@ -79,8 +78,8 @@ export interface Built {
   met?: string[] | number;
   /** The name this device plays under ('': a first visit, never asked). Missing: Kalguur. */
   name?: string;
-  /** Today's unique as this device has it: its record, last answered `daysAgo` days before today (the frame's real today). */
-  daily?: Omit<DailyRecord, 'day'> & { daysAgo: number };
+  /** Today's unique as this device has it: the days answered (lib/daily.ts DailyLog's characters), the last `daysAgo` days before today (the frame's real today). */
+  daily?: { days: string; daysAgo: number };
   /** Host: the room never went online (the session's hereOnly), so it is on this device only. */
   hereOnly?: boolean;
   /** The session's status ('connecting': joining a room). */

@@ -47,6 +47,8 @@ export interface Clock {
   known(): boolean;
   /** Whether the server has answered: the day is its day. */
   trusted(): boolean;
+  /** Whether the server's time holds now: it has answered, and the device's clock hasn't jumped since (else it is asked again first, refresh). */
+  sure(): boolean;
   /** Settles once the first ask has, or after `ms` at most. */
   ready(ms: number): Promise<void>;
 }
@@ -105,6 +107,7 @@ export function makeClock(
     },
     known: () => known,
     trusted: () => !!answered,
+    sure: () => !!answered && !jumped(),
     ready: (ms) => Promise.race([first ?? sync(), new Promise<void>((done) => setTimeout(done, ms))]),
   };
 }

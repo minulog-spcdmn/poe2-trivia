@@ -9,7 +9,8 @@
 
 import { absorbAchievements, absorbWins, ownAchievementsRaw, ownWinsRaw } from '../achievements.ts';
 import { ownCodexRaw, ownPracticeRaw } from '../codex.ts';
-import { absorbDaily, ownDailyRaw } from '../daily.ts';
+import { absorbDaily, absorbDays, ownDaysRaw, utcDay } from '../daily.ts';
+import { clock } from '../clock.ts';
 import { ownRecordsRaw } from '../delveRecord.ts';
 import { absorbSigils, ownSigilsRaw } from '../sigils.ts';
 import { readStored, writeStored } from '../storage.ts';
@@ -32,12 +33,19 @@ export const OWN_NAMES: Record<CopyKind, string[]> = {
   practice: ['practice'],
 };
 
+/** Today, for Today's unique's days from another device: the server's, or while it doesn't hold (lib/clock sure) the later of it and the device's. */
+const dayNow = () => utcDay(clock.sure() ? clock.now() : Math.max(clock.now(), Date.now()));
+
 /** What is taken in, by what it is sent as: how to read this device's, how to take in another's, and the name it is stored under. */
 const TAKEN: Record<string, { own: () => string | null; take: (raw: string) => boolean; name: string }> = {
   achievements: { own: ownAchievementsRaw, take: absorbAchievements, name: 'achievements' },
   wins: { own: ownWinsRaw, take: absorbWins, name: 'achievements.wins' },
   sigils: { own: ownSigilsRaw, take: absorbSigils, name: 'sigils' },
-  daily: { own: ownDailyRaw, take: (raw) => absorbDaily(raw), name: 'daily' },
+  // Today's unique: the days answered, which make the run (lib/daily.ts); and an older build's record, taken in as its days, never sent.
+  // (Days to come judged by the server's clock where it has said, as the daily is: farthest on by it or the device's
+  // own, whose clock may have been set since the server said, so no real day is taken for one to come.)
+  dailyDays: { own: ownDaysRaw, take: (raw) => absorbDays(raw, dayNow()), name: 'daily.days' },
+  daily: { own: () => null, take: (raw) => absorbDaily(raw, dayNow()), name: 'daily' },
   name: { own: () => chosenNow('name'), take: (raw) => takeChosen('name', raw), name: NAME_STORED },
   colour: { own: () => chosenNow('colour'), take: (raw) => takeChosen('colour', raw), name: COLOUR_NAME },
 };
