@@ -204,6 +204,12 @@ with its numbers in the comments.
   runs in `burnWorker.ts` now, drawn on each patch's canvas handed over to
   it (`transferControlToOffscreen`). A canvas handed over can't be taken
   back, so a patch goes there only once the worker has said it's there.
+  It also shows only what its worker keeps: in Chromium, once the
+  `OffscreenCanvas` is collected or its worker terminated, the canvas goes
+  blank the next time the tab's frames are thrown away (other tabs
+  visited, Chrome sent to the background) and stays so. The worker keeps
+  every canvas till the page lets it go, and a worker given no more burns
+  is terminated only once none of its canvases is on the page.
 - **Safari has no `requestIdleCallback`.** `whenIdle` (`src/lib/idle.ts`)
   waits 300 ms there instead, and each step still runs as one task: a step
   over a frame's time drops a frame on the phone however idle the page

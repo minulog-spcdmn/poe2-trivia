@@ -12,10 +12,12 @@
 // draws it on the patch's canvas handed over to it, the page doing no more
 // than fly its sparks; on the page itself where there's no worker, or none
 // that can draw there (no OffscreenCanvas), and until one has said it's there.
+// A canvas handed over shows only what its worker keeps (burnWorker.ts), so
+// a worker is let go only once none of the canvases it drew is on the page.
 
 import { Burn, type BurnSetup } from './burn';
 import { fxDensity, veilIgnites, veilSpark } from './fx/moments';
-import { PING_MS } from './prepPool';
+import { HIDDEN_CHECK_MS, onShownAgain, PING_MS, PREP_STALL_MS } from './prepPool';
 import { zoomOf } from './stage';
 import type { BurnJob, BurnNews } from './burnWorker';
 import type { PatchImage } from './veilCut';
@@ -66,79 +68,123 @@ export interface BurnParams {
   quick?: boolean;
 }
 
-let worker: Worker | null | undefined;
-/** The worker has said it's there: since it started, or since the page last came back into view. */
-let here = false;
-let lastBurn = 0;
-/** What the page does with the worker's news of each of its burns. */
-const there = new Map<number, { caught: (at: [number, number]) => void; sparks: (s: number[]) => void; done: () => void }>();
+/** What the page does with a worker's news of a burn going on there, and if the worker is given no more before it's done. */
+interface Burning {
+  caught: (at: [number, number]) => void;
+  sparks: (s: number[]) => void;
+  done: () => void;
+  lost: () => void;
+}
 
-/**
- * The worker the burns are drawn in, started on first use; null where
- * there's none, or none can draw on a canvas handed over to it.
- */
-function burnWorker(): Worker | null {
-  if (worker !== undefined) return worker;
-  worker = null;
+/** A worker the burns are drawn in. */
+interface Burner {
+  worker: Worker;
+  /** It has said it's there: since it started, or since it was last asked. */
+  here: boolean;
+  /** Its burns going on, by id. */
+  burns: Map<number, Burning>;
+  /** Every canvas handed to it, burning or burnt in, that the page hasn't let go of. */
+  held: Set<number>;
+  /** The wait for its answer, asked whether it's still there. */
+  asked?: ReturnType<typeof setTimeout>;
+}
+
+/** The worker new burns go to; null where there's none, or none can draw on a canvas handed over to it. */
+let current: Burner | null | undefined;
+let lastBurn = 0;
+
+/** The worker new burns go to, started on first use. */
+function burner(): Burner | null {
+  if (current !== undefined) return current;
+  current = null;
   if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') return null;
   if (typeof HTMLCanvasElement === 'undefined' || !('transferControlToOffscreen' in HTMLCanvasElement.prototype)) return null;
   try {
-    const w = new Worker(new URL('./burnWorker.ts', import.meta.url), { type: 'module' });
-    w.onmessage = ({ data }: MessageEvent<BurnNews>) => hear(data);
-    // (Failed to load, say: the burns are drawn here from now on.)
-    w.onerror = () => lose(w, null);
-    worker = w;
+    const worker = new Worker(new URL('./burnWorker.ts', import.meta.url), { type: 'module' });
+    const b: Burner = { worker, here: false, burns: new Map(), held: new Set() };
+    worker.onmessage = ({ data }: MessageEvent<BurnNews>) => hear(b, data);
+    // (Failed to load, say, or broke: the burns are drawn here from now on.)
+    worker.onerror = () => retire(b, null);
+    current = b;
     watch();
   } catch {
-    worker = null;
+    current = null;
   }
-  return worker;
+  return current;
 }
 
 /** Starts the worker ahead of the first patch (a veiled picture on its way), so that one burns there too. */
-export const warmBurns = () => void burnWorker();
+export const warmBurns = () => void burner();
 
-/** The worker, once it has said it's there: a canvas handed to one that never runs would stay blank. */
-const ready = () => (here ? burnWorker() : null);
+/** The worker new burns go to, once it has said it's there: a canvas handed to one that never runs would stay blank. */
+const ready = () => (current?.here ? current : null);
 
-function hear(news: BurnNews) {
-  if (news.t === 'here') here = true;
-  else if (news.t === 'caught') there.get(news.id)?.caught(news.at);
+function hear(b: Burner, news: BurnNews) {
+  if (news.t === 'here') {
+    b.here = true;
+    clearTimeout(b.asked);
+  } else if (news.t === 'caught') b.burns.get(news.id)?.caught(news.at);
   else {
-    for (const [id, s] of news.sparks) there.get(id)?.sparks(s);
-    for (const id of news.done) there.get(id)?.done();
+    for (const [id, s] of news.sparks) b.burns.get(id)?.sparks(s);
+    for (const id of news.done) b.burns.get(id)?.done();
   }
 }
 
-/** `w` is let go, its burns counted done (their canvases stay as it left them), and `next` takes its place. */
-function lose(w: Worker, next: null | undefined) {
-  if (w !== worker) return;
-  w.terminate();
-  worker = next;
-  here = false;
-  for (const b of [...there.values()]) b.done();
+/**
+ * `b` is given no more burns, `next` taking its place. Those it hasn't
+ * finished are lost, drawn whole on the page instead; it is let go once the
+ * page has let go of every canvas it drew. (Terminated, it would take them
+ * all with it in Chromium, burnt in or not, though it may only be slow.)
+ */
+function retire(b: Burner, next: null | undefined) {
+  if (b !== current) return;
+  current = next;
+  clearTimeout(b.asked);
+  const lost = [...b.burns.values()];
+  b.burns.clear();
+  for (const l of lost) l.lost();
+  release(b);
+}
+
+/** The page lets go of canvas `id`, handed to `b`: it's gone from the page. */
+function letGo(b: Burner, id: number) {
+  b.burns.delete(id);
+  if (!b.held.delete(id)) return;
+  b.worker.postMessage({ t: 'stop', id } satisfies BurnJob);
+  release(b);
+}
+
+/** A worker given no more burns is let go once nothing it drew is on the page. */
+function release(b: Burner) {
+  if (b === current || b.held.size) return;
+  b.worker.onmessage = b.worker.onerror = null;
+  b.worker.terminate();
 }
 
 /**
- * A phone that keeps a page in the background may stop its workers without
- * a word (prepPool.ts). Back in view, the worker is asked whether it's still
- * there, the burns drawn here until it answers; one that doesn't within
- * PING_MS is replaced.
+ * A phone that keeps a page in the background a long while may stop its
+ * workers without a word (prepPool.ts). Back after HIDDEN_CHECK_MS, the
+ * worker is asked whether it's still there, the burns drawn here until it
+ * answers. One that doesn't within PING_MS (PREP_STALL_MS with burns in
+ * hand, as it answers only between their frames) is given no more, and a
+ * fresh one takes its place.
  */
 let watching = false;
 function watch() {
   if (watching || typeof document === 'undefined') return;
   watching = true;
-  document.addEventListener('visibilitychange', () => {
-    const w = worker;
-    if (document.hidden || !w) return;
-    here = false;
-    w.postMessage({ t: 'ping' } satisfies BurnJob);
-    setTimeout(() => {
-      if (here || w !== worker) return;
-      lose(w, undefined);
-      burnWorker();
-    }, PING_MS);
+  onShownAgain(document, (hiddenMs) => {
+    const b = current;
+    if (hiddenMs < HIDDEN_CHECK_MS || !b?.here) return;
+    b.here = false;
+    b.worker.postMessage({ t: 'ping' } satisfies BurnJob);
+    b.asked = setTimeout(
+      () => {
+        retire(b, undefined);
+        burner();
+      },
+      b.burns.size ? PREP_STALL_MS : PING_MS,
+    );
   });
 }
 
@@ -154,14 +200,24 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
   let stopped = false;
   let counted = false;
   let raf = 0;
-  /** Tells the worker the burn is done with, while it's burning there. */
+  /** Lets the worker go of the canvas handed to it, burning there or burnt in. */
   let leave: (() => void) | null = null;
+  /** The patch's picture laid over its canvas, the burn there lost (cover). */
+  let over: HTMLCanvasElement | null = null;
+  /** The burn is over: done, or its canvas gone. */
   const stop = () => {
     if (stopped) return;
     stopped = true;
     cancelAnimationFrame(raf);
-    leave?.();
     if (counted) burning--;
+  };
+  /** The canvas is gone: what the patch holds besides goes with it. */
+  const destroy = () => {
+    stop();
+    leave?.();
+    leave = null;
+    over?.remove();
+    over = null;
   };
 
   /** Where a spot on the canvas (its px) is on the page. */
@@ -181,14 +237,35 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     for (let k = 0; k + 3 < sparks.length; k += 4) veilSpark(onPage(sparks[k], sparks[k + 1], r), { x: sparks[k + 2], y: sparks[k + 3] }, 1);
   };
 
-  /** Draws the picture on the canvas here. */
-  const draw = (img: PatchImage) => {
-    canvas.width = W;
-    canvas.height = H;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+  /** Draws the picture on the canvas here (or on `on`, one laid over it). */
+  const draw = (img: PatchImage, on = canvas) => {
+    on.width = W;
+    on.height = H;
+    const ctx = on.getContext('2d', { willReadFrequently: true })!;
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, 0, 0, W, H);
     return ctx;
+  };
+
+  /**
+   * The burn in the worker is lost (retire): the canvas handed over keeps
+   * what the worker last drew there, stopped part way with its mist, or
+   * nothing if it never got that far, and the page can't draw on it. The
+   * patch's picture goes whole on a clone of it laid over it, placed and
+   * styled the same, as a burn on the page would end. (The clone keeps
+   * data-shape, so the effects' light keeps to the picture as it's shown,
+   * fx/effects.ts assemble.)
+   */
+  const cover = (img: PatchImage) => {
+    const c = canvas.cloneNode(false) as HTMLCanvasElement;
+    try {
+      draw(img, c);
+    } catch {
+      // (A question already over has let its pictures go: the patch is on its way out.)
+      return;
+    }
+    canvas.after(c);
+    over = c;
   };
 
   /** Burns on the page, on its frames. */
@@ -212,17 +289,18 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
   };
 
   /** Burns in the worker, on the canvas handed over to it. */
-  const burnThere = async (w: Worker, img: ImageBitmap, setup: BurnSetup) => {
-    // A copy goes: the question keeps its own till it's over (media.svelte.ts).
+  const burnThere = async (b: Burner, img: ImageBitmap, setup: BurnSetup) => {
+    // A copy goes: the question keeps its own till it's over (media.svelte.ts),
+    // and with it the patch's picture, should the burn there be lost.
     let picture: ImageBitmap;
     try {
       picture = await createImageBitmap(img);
     } catch {
       return stop();
     }
-    if (stopped || w !== worker) {
+    if (stopped || ready() !== b) {
       picture.close();
-      // (The worker was let go meanwhile: it burns here.)
+      // (The worker was given no more meanwhile, or asked whether it's still there: it burns here.)
       if (!stopped) burnHere(img, setup);
       return;
     }
@@ -230,20 +308,22 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     canvas.height = H;
     const offscreen = canvas.transferControlToOffscreen();
     const id = ++lastBurn;
-    there.set(id, {
+    b.held.add(id);
+    b.burns.set(id, {
       caught: ignite,
-      sparks: (s) => (canvas.isConnected ? fly(s) : stop()),
+      sparks: (s) => (canvas.isConnected ? fly(s) : destroy()),
+      // (Burnt in, the canvas is still the worker's to keep, till it's gone: destroy.)
       done: () => {
-        there.delete(id);
-        leave = null;
+        b.burns.delete(id);
         stop();
       },
+      lost: () => {
+        stop();
+        cover(img);
+      },
     });
-    leave = () => {
-      there.delete(id);
-      w.postMessage({ t: 'stop', id } satisfies BurnJob);
-    };
-    w.postMessage({ t: 'burn', id, canvas: offscreen, picture, setup } satisfies BurnJob, [offscreen, picture]);
+    leave = () => letGo(b, id);
+    b.worker.postMessage({ t: 'burn', id, canvas: offscreen, picture, setup } satisfies BurnJob, [offscreen, picture]);
   };
 
   const begin = (img: PatchImage) => {
@@ -275,11 +355,11 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
       density: fxDensity(),
     };
     // (A picture cut on the page is a canvas: there's no worker for burns either, then.)
-    const w = ready();
-    if (w && typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap) void burnThere(w, img, setup);
+    const b = ready();
+    if (b && typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap) void burnThere(b, img, setup);
     else burnHere(img, setup);
   };
   params.picture().then(begin, () => {});
 
-  return { destroy: stop };
+  return { destroy };
 }
