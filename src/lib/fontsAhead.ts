@@ -18,9 +18,10 @@
 // ms), so one face at a time would lay the page out four times over.
 //
 // The lobby draws with one of them, though: its room code and the players'
-// avatars are set in Cinzel Black. So on the way into a room the faces come
-// at once, at the tap, and download while the room connects (App.svelte),
-// rather than as the code's letters drop in, swapped mid-fall.
+// avatars are set in Cinzel Black. So on the way into a room that one comes
+// at once, at the tap, and downloads while the room connects (App.svelte),
+// rather than as the code's letters drop in, swapped mid-fall; the other
+// three still wait for the page to settle.
 
 import { whenSettled } from './settled';
 import { savingData } from './saveData';
@@ -53,15 +54,20 @@ export function loadFonts(): Promise<void> {
   return (loading = all);
 }
 
+let lobbyFace = false;
+
 /**
- * On the way into a room: the faces at once, the lobby's among them. With
- * Save-Data on, the lobby's own face only (Cinzel Black), which it would
- * load as it showed anyway; the others are still left to the screens that
- * use them.
+ * On the way into a room: the lobby's own face (Cinzel Black), once, unless
+ * the four are on their way already. Only that one: the other three are for
+ * the item windows and the codex, and at the tap they would share the link
+ * with what the room waits for (the lobby, PeerJS), and their decoding would
+ * land on the swap into the lobby. They are left to the settled queue
+ * (loadFontsAhead), which takes all four in one moment, this one costing
+ * nothing again.
  */
 export function loadRoomFonts() {
-  if (!savingData()) return void loadFonts();
-  if (!loading && typeof document !== 'undefined' && document.fonts) void load([LATER[0]]);
+  if (lobbyFace || loading || typeof document === 'undefined' || !document.fonts) return;
+  lobbyFace = load([LATER[0]]) !== false;
 }
 
 /** Loads the faces other screens use ahead, all in one settled moment (a face the page already has costs nothing); not with Save-Data on. Returns what takes it back if it hasn't run. */
