@@ -590,13 +590,15 @@
     };
     node.addEventListener('animationend', kindled);
     node.addEventListener('animationcancel', kindled);
-    // Face down until it turns halfway (see .down below).
-    const card = node.parentElement;
+    // Face down until it turns halfway (see .down below). The class goes on
+    // the card itself, which the CSS reads it from, not on the sides around
+    // the turn.
+    const card = node.closest('.card');
     card?.classList.add('down');
-    setTimeout(() => card?.classList.remove('down'), (flipAt(i) + FLIP / 2) * 1000);
     const start = dealAt(i);
     const turn = flipAt(i) - start;
     const total = turn + FLIP;
+    let down = true;
     const rot = (i - (n - 1) / 2) * 7;
     const axis = narrow.matches ? 'X' : 'Y';
     return {
@@ -610,6 +612,15 @@
         const lift = Math.sin(Math.PI * f);
         const y = (1 - d) * 90 - lift * TURN.lift;
         return `transform:perspective(${TURN.perspective}px) translateY(${y.toFixed(2)}px) rotate(${((1 - d) * rot).toFixed(2)}deg) rotate${axis}(${(180 * (1 - f)).toFixed(2)}deg) scale(${(1 + TURN.swell * lift).toFixed(4)})`;
+      },
+      // The sides swap on the turn's own clock, as it stands on edge. A timer
+      // counted from here ran ahead of it: the turn starts only after the
+      // mount's long frame, and the face came up while it still faced away.
+      tick: (t: number) => {
+        if (down && t * total >= turn + FLIP / 2) {
+          down = false;
+          card?.classList.remove('down');
+        }
       },
     };
   }
