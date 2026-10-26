@@ -7,6 +7,8 @@
   import { FINALE_MS, materialize, type BurnParams } from '../lib/materialize';
   import { frontier } from '../lib/frontier';
   import { visibleBoxOf } from '../lib/veilCutter';
+  import { castAhead } from '../lib/artShadow';
+  import { fitOf } from '../lib/castShadow';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import Avatar from './Avatar.svelte';
@@ -508,21 +510,52 @@
     const done = () => live && (fullLoaded = true);
     const img = new Image();
     img.src = itemImage(d.art);
+    let drop = () => {};
+    // Its shadow made meanwhile, for the box its ArtImage will draw it in
+    // (the frame's, at ArtImage's scale of 1.8, as veilFit has it), which
+    // takes this one: the full art can then fade in as the veil flares and
+    // fades, not a shadow's making later (lib/artShadow.ts, castAhead).
+    const shadow = () => {
+      const frame = artEl?.querySelector('.frame');
+      if (!frame) return null;
+      // (Its size as ArtImage reads its slot's, which fills it: from a ResizeObserver.)
+      return new Promise<DOMRectReadOnly>((seen) => {
+        const ro = new ResizeObserver(([e]) => {
+          ro.disconnect();
+          seen(e!.contentRect);
+        });
+        ro.observe(frame);
+      }).then((r) => {
+        if (!live) return null;
+        const fit = fitOf(r.width, r.height, d.w, d.h, 1.8);
+        const made = castAhead(img, fit.w, fit.h);
+        drop = made.drop;
+        return made.cast;
+      });
+    };
     // Measured in art pixels, as the host measures the veiled copy, in the
     // veil's worker (on the page it held an iPhone's reveal a frame), once
-    // the page has the art, so the worker reads it from the cache.
+    // the page has the art, so the worker reads it from the cache. The veil
+    // moves into place by it at once; the handover waits for the shadow too.
     img
       .decode()
-      .then(() => (live ? visibleBoxOf(img, d.w, d.h) : null))
+      .then(() => {
+        if (!live) return null;
+        const box = visibleBoxOf(img, d.w, d.h).then((b) => {
+          if (live && b) fullBox = b;
+          return b;
+        });
+        return Promise.all([box, shadow()]).then(([b]) => b);
+      })
       .then((box) => {
         if (!live || !box) return;
-        fullBox = box;
         done();
       }, done);
     const timer = setTimeout(done, 3000);
     return () => {
       live = false;
       clearTimeout(timer);
+      drop();
     };
   });
 
@@ -964,6 +997,12 @@
   {/if}
 {/snippet}
 
+<!-- The tooltip's edge in the verdict's colour, its border and glow, one for each, faded in over the plain one (see .verdict-rim). -->
+{#snippet rims()}
+  <span class="verdict-rim good" aria-hidden="true"></span>
+  <span class="verdict-rim bad" aria-hidden="true"></span>
+{/snippet}
+
 {#snippet mirrorLine()}
   <span class="mirrored" in:fade={{ duration: 300, delay: 250 }}>Mirrored</span>
 {/snippet}
@@ -1257,6 +1296,7 @@
   {#if q.mode === 'art'}
     <!-- Name given, pick the matching art. -->
     <div class="tooltip wide" data-cursor="item" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
+      {@render rims()}
       <div class="head" data-cursor="plate" style:--plate-scale={plateScale}>
         <NamePlate fit bind:scale={plateScale} />
         <div class="head-text">
@@ -1368,6 +1408,7 @@
   {:else}
     <div class="stage" class:snug class:crowded={count > 6} class:ten={count === 10} class:long class:armed={blastSlot}>
       <div class="tooltip" data-cursor="item" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
+        {@render rims()}
         <div class="head" data-cursor="plate" style:--plate-scale={plateScale}>
           <!-- The gems stay dark until the item is identified. -->
           <NamePlate fit bind:scale={plateScale} lit={!!(reveal && item)} />
@@ -1506,6 +1547,11 @@
      to the question only changes its words. */
   .task {
     position: relative;
+    /* Over the soft shadows of the tooltip under it, which reach up into
+       it, as it was before the tooltip was positioned (for its rims). (The
+       banner above it is at 1 as well, and the cards fading out over the
+       question at 2: Game.svelte.) */
+    z-index: 1;
     margin: 0 0 1.6rem;
     text-align: center;
   }
@@ -1557,6 +1603,8 @@
 
   /* PoE-style item tooltip */
   .tooltip {
+    /* (For its rims, below.) */
+    position: relative;
     display: flex;
     flex-direction: column;
     border: 1px solid #5a3a1c;
@@ -1564,25 +1612,83 @@
     --bs-fill-a: rgba(5, 4, 3, 0.92);
     --bs-fill-b: rgba(5, 4, 3, 0.92);
     background: var(--bs-fill-paint, linear-gradient(var(--bs-fill-a), var(--bs-fill-b)));
-    /* --bs1 carries the right/wrong glow, --bs2 the drop shadow. */
+    /* --bs1 carries the right/wrong glow, --bs2 the drop shadow. The backdrop
+       draws both from these as they ease; where CSS paints them, the glow is
+       the rims'. */
     --bs1-color: transparent;
     --bs1: 0px 50px;
     --bs2: 20px 60px;
     --bs2-color: rgba(0, 0, 0, 0.7);
     box-shadow:
       0 0 0 1px #000,
-      var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent), 0 var(--bs2, 0 0) var(--bs2-color, transparent));
-    transition:
-      --bs1-color 0.6s,
-      border-color 0.6s;
+      var(--bs-soft-paint, 0 var(--bs2, 0 0) var(--bs2-color, transparent));
+  }
+  /* (Eased only for the backdrop, which reads it each frame.) */
+  .tooltip:global([data-bs-on]) {
+    transition: --bs1-color 0.6s;
   }
   .tooltip.good {
-    border-color: #4f7a45;
     --bs1-color: rgba(150, 190, 110, 0.12);
   }
   .tooltip.bad {
-    border-color: #7a3a2c;
     --bs1-color: rgba(200, 90, 60, 0.09);
+  }
+  /* The verdict on the tooltip's edge: its border, and where CSS paints it
+     the glow round it, in the verdict's colour, faded in over the plain
+     border. Eased as colours on the tooltip itself, they had all of it
+     painted again on every frame for 0.6 s, its big soft shadows and what's
+     in it too: on an iPhone the screen under the tooltip repainted on each
+     frame after a find-the-art answer, and taking the easing out took most
+     of the slow frames with it. A rim fades on a layer of its own, so
+     nothing is painted while it does; and fading a colour in over another
+     comes to the same as easing one to the other (both opaque for the
+     border; from nothing for the glow, as --bs1-color eases from
+     transparent). Its box is the tooltip's padding box, and its border
+     an outline round that: a browser rounds a border's width and an
+     outline's alike to whole device pixels (down, never under one), and
+     never an inset, so where a CSS px is no whole number of them (a
+     Windows scale of 125%, page zoom, a stage zoom of 1.33, an Android
+     phone at 2.625) a border on a box 1px outside the tooltip's fell a
+     device pixel outside the tooltip's border on some of its edges, the
+     plain brown one left showing inside it. The outline lies on the
+     tooltip's border pixels on every edge. The black ring and the glow
+     (the soft shadow --bs1 makes) reach from the padding box as far as the
+     tooltip's ring and glow do from its border box, the ring drawn over
+     the glow as before and the outline over the ring where they meet. The
+     rims come first in the tooltip, so everything in it is drawn over
+     them. */
+  .verdict-rim {
+    position: absolute;
+    inset: 0;
+    outline: 1px solid;
+    outline-offset: 0;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      opacity 0.6s,
+      visibility 0.6s;
+  }
+  .verdict-rim.good {
+    outline-color: #4f7a45;
+    box-shadow:
+      0 0 0 2px #000,
+      0 0 50px 1px rgba(150, 190, 110, 0.12);
+  }
+  .verdict-rim.bad {
+    outline-color: #7a3a2c;
+    box-shadow:
+      0 0 0 2px #000,
+      0 0 50px 1px rgba(200, 90, 60, 0.09);
+  }
+  .tooltip.good > .verdict-rim.good,
+  .tooltip.bad > .verdict-rim.bad {
+    opacity: 1;
+    visibility: visible;
+  }
+  /* (Where the backdrop draws the glow, the rim is the border alone.) */
+  .tooltip:global([data-bs-on]) > .verdict-rim {
+    box-shadow: none;
   }
   .head {
     position: relative;

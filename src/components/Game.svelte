@@ -36,6 +36,7 @@
   import { backGuard } from '../lib/backGuard';
   import ItemWindow from './ItemWindow.svelte';
   import { warmGame } from './gameCircles.svelte';
+  import { warmCasts } from '../lib/artShadow';
   import { backdropDropShadow } from '../lib/backdropDropShadow';
 
   const s = $derived(session.state!);
@@ -54,6 +55,8 @@
   });
   // The name plate's weave, ready before the first question shows one.
   onMount(warmWeave);
+  // The worker that makes the pictures' shadows, loaded and warm before the first question with art waits for it.
+  onMount(warmCasts);
 
 
   const race = $derived(s.settings.mode === 'race');
@@ -596,7 +599,9 @@
   .cards-slot:global(.leaving) {
     height: 0;
     min-height: 0;
-    z-index: 1;
+    /* Over the question, its task line too, and over the banner: both are
+       at 1, over the soft shadows of the question's tooltip (see .head). */
+    z-index: 2;
     pointer-events: none;
   }
   /* The question and, as it cross-fades with reduced motion, the one dynamite
@@ -608,9 +613,14 @@
     grid-area: 1 / 1;
     min-width: 0;
   }
-  /* The banner, holding its margins, and the kicker over it. */
+  /* The banner, holding its margins, and the kicker over it. It stays over
+     the soft shadows of the question's tooltip where CSS paints them (on a
+     phone), which reach up to it: the tooltip is positioned, for its
+     verdict's rims (QuestionView), and comes later, so it would paint them
+     over the banner. */
   .head {
     position: relative;
+    z-index: 1;
     display: flow-root;
   }
   .sr {
