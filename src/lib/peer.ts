@@ -2,7 +2,7 @@ import type { PeerOptions } from 'peerjs';
 import type * as PeerJsModule from 'peerjs';
 import { CHANNEL, LOCAL, roomPrefix } from './channel';
 import { QA_ROOM } from './storage';
-import { whenIdle } from './idle';
+import { whenSettled } from './settled';
 import { QA_PEER_PATH, QA_PEER_PORT } from '../qa/live/signal';
 
 // Bump when the protocol or item data changes so old tabs can't join new rooms.
@@ -34,9 +34,10 @@ let peerJs: PeerJs | null = null;
 let loading: Promise<PeerJs> | null = null;
 
 /**
- * PeerJS, loaded the first time a peer is made (or in idle time after the
- * start page shows, preloadPeerJs): the start page doesn't wait for it. A
- * load that fails (offline) is tried again on the next call.
+ * PeerJS, loaded the first time a peer is made (or once the start page has
+ * settled, after the lobby's screens: preloadPeerJs, queued by App.svelte):
+ * the start page doesn't wait for it. A load that fails (offline) is tried
+ * again on the next call.
  */
 export function loadPeerJs(): Promise<PeerJs> {
   return (loading ??= import('peerjs').then(
@@ -51,7 +52,7 @@ export function loadPeerJs(): Promise<PeerJs> {
 /** PeerJS when it is loaded already, so a peer can be made right away. */
 export const peerJsNow = (): PeerJs | null => peerJs;
 
-/** Loads PeerJS once the page is idle, so hosting or joining doesn't wait for it. */
-export function preloadPeerJs() {
-  whenIdle(() => void loadPeerJs().catch(() => {}), { timeout: 3000, fallback: 1000 });
+/** Loads PeerJS once the page has settled (lib/settled.ts: not over the start page's entrance), so hosting or joining doesn't wait for it; returns what takes that back if it hasn't run. */
+export function preloadPeerJs(): () => void {
+  return whenSettled(() => loadPeerJs().catch(() => {}));
 }
