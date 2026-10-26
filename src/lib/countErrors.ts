@@ -1,8 +1,9 @@
 // Imported first by main.ts, so the game's script errors are counted
-// (count.ts countScriptErrors) from before main.ts's own code runs. The
-// modules main.ts imports run before it all the same (a module's imports run
-// before its own code): the errors of theirs are kept until this runs by
-// the inline script at the top of the page (lib/errorsFirst.ts).
+// (count.ts countScriptErrors) from before the rest of its start runs. A
+// module's imports run before its own code, so the chunks main.ts imports
+// (the session, the effects, the sounds) would run before this too: it and
+// what it imports are a chunk of their own, which runs first (vite.config.ts,
+// the errors chunk group and errorsFirst, which checks it).
 
 import { countScriptErrors } from './count.ts';
 

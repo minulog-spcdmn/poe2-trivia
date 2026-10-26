@@ -127,6 +127,58 @@ function preloadFonts(): Plugin {
   };
 }
 
+/** The module that counts the game's script errors (count.ts countScriptErrors), as the first thing the game runs. */
+const COUNT_ERRORS = /src[\\/]lib[\\/]countErrors\.ts$/;
+
+/**
+ * The game's script errors are counted from before anything else of its
+ * start runs. A module's imports run before its own code, depth first, so
+ * the chunks the game's entry imports (the session, the effects, the sounds)
+ * all run before main.ts's first line: a throw at the top of one of them
+ * leaves the page blank, and went uncounted while lib/countErrors.ts ran
+ * after them. Its chunk group (below) puts it, and what it imports, in a
+ * chunk the bundler runs first; this fails the build if any module it
+ * doesn't import comes to run before it, however the chunks fall.
+ */
+function errorsFirst(): Plugin {
+  return {
+    name: 'errors-first',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      const chunks = new Map<string, { fileName: string; name: string; isEntry: boolean; imports: string[]; moduleIds: string[] }>();
+      for (const file of Object.values(bundle)) if (file.type === 'chunk') chunks.set(file.fileName, file);
+      const entry = [...chunks.values()].find((c) => c.isEntry && c.name === 'main');
+      if (!entry) throw new Error('errors-first: no main entry chunk to check.');
+      const id = [...chunks.values()].flatMap((c) => c.moduleIds).find((m) => COUNT_ERRORS.test(m));
+      if (!id) throw new Error("errors-first: lib/countErrors.ts isn't in the build, so the game's script errors go uncounted.");
+      // What it imports, all the way down: what may run before it.
+      const needs = new Set<string>();
+      const need = (m: string) => {
+        for (const i of this.getModuleInfo(m)?.importedIds ?? []) {
+          if (needs.has(i)) continue;
+          needs.add(i);
+          need(i);
+        }
+      };
+      need(id);
+      // The modules in the order they run: each chunk's imports, in order, before its own modules, which run in theirs.
+      const seen = new Set<string>();
+      const order: string[] = [];
+      const visit = (name: string) => {
+        if (seen.has(name)) return;
+        seen.add(name);
+        const chunk = chunks.get(name);
+        for (const i of chunk?.imports ?? []) visit(i);
+        order.push(...(chunk?.moduleIds ?? []));
+      };
+      visit(entry.fileName);
+      if (!order.includes(id)) throw new Error('errors-first: the game no longer imports lib/countErrors.ts statically, so its script errors go uncounted.');
+      const before = order.slice(0, order.indexOf(id)).filter((m) => !needs.has(m));
+      if (before.length) throw new Error(`errors-first: ${before.length} modules run before lib/countErrors.ts, so their errors go uncounted, among them ${before.slice(0, 5).map((m) => m.replace(/^.*?(?=(src|node_modules)\/)/, '')).join(', ')}.`);
+    },
+  };
+}
+
 /**
  * Fontin's license (app.css) asks for its notice beside the @font-face that
  * embeds it. The CSS minifier drops every comment, even a /*! one, so the
@@ -334,7 +386,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), glslMinify(), peerjsProbe(), polyfillsFirst(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), keyframesFirst(), backdropSave(), devHub(env), qaServer(process.cwd())],
+    plugins: [svelte(), glslMinify(), peerjsProbe(), polyfillsFirst(), csp(env), errorsFirst(), betaPages(env), preloadFonts(), fontinNotice(), keyframesFirst(), backdropSave(), devHub(env), qaServer(process.cwd())],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
     // Module workers, so one (the plates', lib/plateWorker.ts) can load only what it's asked for.
     worker: { format: 'es' },
@@ -358,6 +410,11 @@ export default defineConfig(({ command, mode }) => {
           // The room bot (src/bot), only in the build scripts/room-bot.mjs makes for itself.
           ...(env.VITE_BOT === '1' ? { bot: 'bot.html' } : {}),
         },
+        // The module counting the game's script errors (lib/countErrors.ts)
+        // and what it imports, in a chunk of their own: the bundler runs it
+        // before the other chunks the game's entry imports (errorsFirst
+        // checks it does).
+        output: { codeSplitting: { groups: [{ name: 'errors', test: COUNT_ERRORS, priority: 100 }] } },
       },
     },
   };
