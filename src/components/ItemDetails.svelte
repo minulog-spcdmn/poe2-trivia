@@ -29,9 +29,10 @@
     );
   /** The fetch made ahead, if one was: its text, or nothing should it have failed (fetched again when wanted). */
   let ahead: Promise<string | null> | undefined;
-  if (typeof window !== 'undefined' && !savingData())
-    whenIdle(() => void (ahead ??= fetchText(true).catch(() => null)), { timeout: 4000, fallback: 1500 });
   let stats: Promise<Stats> | undefined;
+  // (Not once an item was opened first: that tap fetched them already.)
+  if (typeof window !== 'undefined' && !savingData())
+    whenIdle(() => void (stats || (ahead ??= fetchText(true).catch(() => null))), { timeout: 4000, fallback: 1500 });
   /** The tooltips once they're here: a tooltip drawn after that is drawn whole at once, never a moment of "…" first. */
   let loaded: Stats | null = null;
   /** Whether the tooltips are here already. */
