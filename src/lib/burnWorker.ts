@@ -10,15 +10,16 @@
 // 133) a canvas drawn from a worker showed nothing or a white block for as
 // long as the patch was there, while the same pixels put on the page showed.
 //
-// Only one frame is with the page at a time. The burns go on at the
-// display's rate whatever the page does, so while the page hasn't put the
-// last (it runs slower than the display: a busy reveal, Low Power Mode), the
-// worker only gathers what changed, and sends it all as one once the page
-// has: the page puts each box once a frame of its own at most, as it did
-// when it burnt them itself, never a pile of frames that were never shown.
-// Each burn's pixels go back and forth in the one buffer, the size of its
-// canvas, of which only the box sent is filled: nothing is made anew for a
-// frame.
+// Only one frame is with the page at a time, and the page answers it once
+// it's on the screen (its next frame). The burns go on at the display's rate
+// whatever the page does, so while the page hasn't put the last (its frames
+// come slower than the display's, or its main thread is busy: a reveal, Low
+// Power Mode), the worker only gathers what changed, and sends it all as one
+// once the page has: the page puts each box once a frame of its own at most,
+// as it did when it burnt them itself, never a pile of frames that were
+// never shown. Each burn's pixels go back and forth in the one buffer, the
+// size of its canvas, of which only the box sent is filled: nothing is made
+// anew for a frame.
 
 import { Burn, type BurnSetup } from './burn';
 
@@ -47,7 +48,7 @@ export type BurnNews =
    * and where each caught if at a point, with nothing there yet to spread in
    * from; the box each of the others changed; their sparks (BurnFrame's), by
    * burn; and those done (one done before it began has nothing to show: its
-   * picture goes as it is). The page answers 'put'.
+   * picture goes as it is). The page answers 'put', on its next frame.
    */
   | { t: 'frame'; begun: [number, Pixels, [number, number] | null][]; boxes: BurnBox[]; sparks: [number, number[]][]; done: number[] };
 

@@ -136,9 +136,16 @@ function hear(b: Burner, news: BurnNews) {
     for (const [id, s] of news.sparks) b.burns.get(id)?.sparks(s);
     for (const id of news.done) b.burns.get(id)?.done();
   } finally {
-    // Put: the next frame can come, in the same pixels. (Whatever happened
+    // Put: the next frame can come, in the same pixels, once this one is on
+    // the screen (the page's next frame), so the page puts at most one a
+    // frame of its own whatever its rate: one whose main thread is idle and
+    // its frames slow heard several between two of them, each put over the
+    // last unseen. With none of its burns left here there's nothing to keep
+    // pace with, and the next to begin comes at once. (Whatever happened
     // here: unanswered, the worker would send no more.)
-    b.worker.postMessage({ t: 'put', back } satisfies BurnJob, back.map(([, px]) => px.buffer));
+    const put = () => b.worker.postMessage({ t: 'put', back } satisfies BurnJob, back.map(([, px]) => px.buffer));
+    if (b.burns.size) requestAnimationFrame(put);
+    else put();
   }
 }
 

@@ -3,13 +3,14 @@
 // process), whose boxes the page puts on the patch's canvas as they come, it
 // draws every frame's pixels and flies every spark exactly as the page drew
 // them before the worker took the burns over (materialize.ts at f620318b,
-// hashed: BEFORE). A page slower than the worker has one frame at a time,
-// all that changed since the last in it, and ends on the same picture with
-// the same sparks flown. A burn whose canvas goes stops in the worker too. Until
-// the worker has said it's there, and while it doesn't answer back from a
-// long while in the background, the page burns them; one that doesn't answer
-// is given no more and let go, those it hadn't finished drawn whole on their
-// canvases.
+// hashed: BEFORE). A page slower than the worker, its frames slow or its
+// main thread busy, has one frame at a time, a box put for each of its own
+// at most with all that changed since the last in it, and ends on the same
+// picture with the same sparks flown. A burn whose canvas goes stops in the
+// worker too. Until the worker has said it's there, and while it doesn't
+// answer back from a long while in the background, the page burns them; one
+// that doesn't answer is given no more and let go, those it hadn't finished
+// drawn whole on their canvases.
 import { fakeModule } from './asVite.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -247,8 +248,12 @@ class FakeWorker {
   constructor() {
     made.push(this);
     void import('../src/lib/burnWorker.ts').then(() => {
-      // (Only the first loads it: the module says it's there once.)
-      if (made.length > 1) scope.onmessage!({ data: { t: 'ping' } });
+      // (Only the first loads it: the module says it's there once. A fresh
+      // one has no frame with the page, as the last may have had, unput.)
+      if (made.length > 1) {
+        scope.onmessage!({ data: { t: 'put', back: [] } });
+        scope.onmessage!({ data: { t: 'ping' } });
+      }
     });
   }
   postMessage(data: { t: string }) {
@@ -275,7 +280,9 @@ scope.postMessage = (news) => {
   if ((news as { t: string }).t === 'frame') w.most = Math.max(w.most, ++w.out);
   queueMicrotask(() => w.onmessage?.({ data: news }));
 };
-scope.requestAnimationFrame = g.requestAnimationFrame;
+/** The worker's display frames, apart from the page's while those come slower (burnFor). */
+let ticks: ((now: number) => void)[] | null = null;
+scope.requestAnimationFrame = (step: (now: number) => void) => (ticks ?? frames).push(step);
 const listeners: (() => void)[] = [];
 const doc = { hidden: false, addEventListener: (_: string, f: () => void) => listeners.push(f) };
 /** Burns sent to a worker, all told. */
@@ -324,43 +331,62 @@ test('in the worker, its boxes put on the page, it burns in the same, frame by f
 });
 
 /**
- * A patch spreading in from a seam, burnt in the worker, the page answering
- * its frames at once or (`slow`) on every fourth of the display's: what its
- * canvas ended on, what it set off, how many boxes it put, and the most
- * frames it had at once.
+ * A patch spreading in from a seam, burnt in the worker at 60 frames a
+ * second, the page's own frames coming on every `pageEvery` of them (its
+ * main thread idle, its frames slow) and its answers held back till every
+ * `answerEvery` (its main thread busy): what its canvas ended on, what it
+ * set off, the boxes it put and the frames it had, and the most frames it
+ * had at once from the worker.
  */
-async function burnFor(slow: boolean) {
+async function burnFor(pageEvery: number, answerEvery: number) {
   const w = made[0];
-  w.late = slow ? [] : null;
+  w.late = answerEvery > 1 ? [] : null;
+  ticks = pageEvery > 1 ? [] : null;
   w.most = 0;
   now = 1000;
   seed = 12345;
   fired.length = 0;
   const puts = page.puts;
+  let pageFrames = 0;
   const { canvas, destroy } = await show();
-  for (let n = 1; frames.length || w.late?.length; n++) {
-    const due = frames;
-    frames = [];
+  for (let n = 1; frames.length || ticks?.length || w.late?.length; n++) {
     now += 16.67;
-    for (const step of due) step(now);
-    await settle();
-    if (n % 4 === 0 || !frames.length) w.answer();
+    if (ticks) {
+      const due = ticks;
+      ticks = [];
+      for (const step of due) step(now);
+      await settle();
+    }
+    if (n % pageEvery === 0 || !ticks?.length) {
+      const due = frames;
+      frames = [];
+      pageFrames += due.length ? 1 : 0;
+      for (const step of due) step(now);
+      await settle();
+    }
+    if (n % answerEvery === 0 || !(ticks ?? frames).length) w.answer();
     await settle();
   }
-  w.late = null;
+  w.late = ticks = null;
   const ended = canvas.getContext().pixels().slice();
   destroy();
-  return { ended, fired: fired.splice(0), puts: page.puts - puts, most: w.most };
+  return { ended, fired: fired.splice(0), puts: page.puts - puts, pageFrames, most: w.most };
 }
 
-test('a page slower than the worker has a frame at a time, all that changed in it: it ends on the same picture, every spark flown', async () => {
-  const prompt = await burnFor(false);
-  const slow = await burnFor(true);
-  assert.equal(slow.most, 1, 'one frame at a time');
-  assert.ok(slow.puts < prompt.puts / 3, `fewer boxes put (${slow.puts} against ${prompt.puts})`);
+test('a page slower than the worker puts a frame of it at most for each of its own, all that changed in it: it ends on the same picture, every spark flown', async () => {
+  const prompt = await burnFor(1, 1);
   assert.ok(prompt.ended.some((v) => v > 0));
-  assert.deepEqual(slow.ended, prompt.ended, 'the same picture at the end');
-  assert.deepEqual(slow.fired, prompt.fired, 'the same sparks');
+  for (const [pageEvery, answerEvery] of [
+    [3, 1],
+    [1, 4],
+  ]) {
+    const slow = await burnFor(pageEvery, answerEvery);
+    assert.equal(slow.most, 1, 'one frame at a time');
+    assert.ok(slow.puts <= slow.pageFrames + 1, `a box put a frame (${slow.puts} in ${slow.pageFrames})`);
+    assert.ok(slow.puts < prompt.puts / 2, `fewer boxes put (${slow.puts} against ${prompt.puts})`);
+    assert.deepEqual(slow.ended, prompt.ended, 'the same picture at the end');
+    assert.deepEqual(slow.fired, prompt.fired, 'the same sparks');
+  }
 });
 
 test('a burn whose canvas goes stops in the worker too', async () => {

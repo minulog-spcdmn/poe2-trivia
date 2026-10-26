@@ -203,11 +203,13 @@ with its numbers in the comments.
   50 to 54 fps with frames of 60 to 120 ms. Their arithmetic (`burn.ts`)
   runs in `burnWorker.ts` now, which sends the box of each patch that
   changed, its pixels as they now are; the page puts them on the patch's
-  canvas, a copy. Only one frame is with the page at a time: the burns tick
-  at the display's rate whatever the page does, so while the page hasn't
-  put the last, the worker gathers what changed and sends it as one once
-  it has. Otherwise a page slower than the display (a busy reveal, Low
-  Power Mode) puts a pile of frames back to back that are never shown.
+  canvas, a copy. Only one frame is with the page at a time, answered on
+  the page's next frame: the burns tick at the display's rate whatever the
+  page does, so while the page hasn't put the last, the worker gathers what
+  changed and sends it as one once it has. Otherwise a page slower than the
+  display (a busy reveal, Low Power Mode) puts frames back to back that are
+  never shown: on the Android emulator, whose page drew about a third of
+  the display's frames, 46% of those it heard in a race.
   Each patch's pixels go back and forth in one buffer. The worker doesn't
   draw on the canvases itself (`transferControlToOffscreen`): on Chrome on
   Android (an emulator's, Chrome 133) a canvas drawn from a worker showed
