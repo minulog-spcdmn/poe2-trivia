@@ -147,6 +147,9 @@ html {
      (a card's nameplate wrapped a long category to three lines). */
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  /* No grey box over a tapped button or card on iOS and Android: the game
+     draws its own pressed states. */
+  -webkit-tap-highlight-color: transparent;
   scrollbar-gutter: stable;
   scrollbar-color: #4a3a22 #0a0908;
 }
@@ -250,12 +253,22 @@ body {
      (user-select: text or all where it is set). */
   -webkit-user-select: none;
   user-select: none;
+  /* Nor does holding a finger on an item picture or a control bring up iOS's
+     image menu (Save, Copy, Share) over the game. */
+  -webkit-touch-callout: none;
 }
 input,
 textarea,
 [contenteditable] {
   -webkit-user-select: text;
   user-select: text;
+}
+/* Text a player types or may copy, and links, keep the system's callout. */
+input,
+textarea,
+[contenteditable],
+a[href] {
+  -webkit-touch-callout: default;
 }
 
 #app {
