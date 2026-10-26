@@ -156,11 +156,14 @@ html {
 /* The game, held to the screen (lib/viewport.ts): no rubber band past the
    top or bottom or pull to refresh, and no pinch or double-tap zoom. (Only
    up and down: sideways, a desktop trackpad's swipe goes back and forward.)
-   The body is held as well as html: its overflow-x makes it a scroller of
-   its own, and Android Chrome then reads the pull from the body alone, so
-   with html held by itself a swipe down mid-turn still reloaded the game.
-   It holds every screen of the game's page, the start page and the codex
-   too, as it always meant to (lib/viewport.ts holds the page once, for all). */
+   The body is held as well as html: html's overflow is visible, so the page
+   scrolls by the body's overflow-x, and Chrome takes the page's
+   overscroll-behavior from the body too, never html. (The body is no
+   scroller itself, and overflow-x: clip would hand it up just the same;
+   html's own counts once html sets an overflow.) Held on html alone, a
+   swipe down mid-turn on Android still reloaded the game. It holds every
+   screen of the game's page, the start page and the codex too, as it always
+   meant to (lib/viewport.ts holds the page once, for all). */
 html.held {
   touch-action: pan-x pan-y;
 }
