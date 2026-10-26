@@ -15,12 +15,14 @@ export const GONE = '[inert], [data-leaving]';
 
 /** What an element's own `inert` would do for it as it goes out, done as outWithoutInert does it. */
 function goOut(node: HTMLElement) {
+  // As inert would: the focus can't stay on what can no longer be used (the
+  // card just picked). Let go first: Chrome won't hide from screen readers
+  // what holds the focus, and warns of it.
+  const focused = document.activeElement;
+  if (focused instanceof HTMLElement && node.contains(focused)) focused.blur();
   node.dataset.leaving = '';
   node.style.pointerEvents = 'none';
   node.setAttribute('aria-hidden', 'true');
-  // (As inert would: the focus can't stay on what can no longer be used.)
-  const focused = document.activeElement;
-  if (focused instanceof HTMLElement && focused !== node && node.contains(focused)) focused.blur();
 }
 
 /** Back, its outro turned round by an intro (a key changed back). */

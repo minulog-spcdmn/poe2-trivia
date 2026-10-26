@@ -39,6 +39,12 @@ test("an outro's inert marks the element as leaving, and none of it inert", () =
   const button = new FakeElement();
   stage.children.push(button);
   g.document!.activeElement = button;
+  // (Chrome won't hide what holds the focus: it must be let go of first.)
+  let hiddenAsBlurred: string | null = null;
+  button.blur = () => {
+    button.blurred++;
+    hiddenAsBlurred = stage.getAttribute('aria-hidden');
+  };
   const action = outWithoutInert(stage as unknown as HTMLElement);
   stage.inert = true;
   assert.equal(stage.inertSet, 0, 'the attribute never set');
@@ -48,6 +54,7 @@ test("an outro's inert marks the element as leaving, and none of it inert", () =
   assert.equal(stage.style.pointerEvents, 'none');
   assert.equal(stage.getAttribute('aria-hidden'), 'true');
   assert.equal(button.blurred, 1, 'the focus let go, as inert would');
+  assert.equal(hiddenAsBlurred, null, 'before it is hidden from screen readers');
   // An intro turning it round: back as it was.
   stage.inert = false;
   assert.equal(stage.inert, false);
@@ -57,6 +64,15 @@ test("an outro's inert marks the element as leaving, and none of it inert", () =
   action.destroy();
   stage.inert = true;
   assert.equal(stage.inertSet, 1, 'its own inert again once the action is gone');
+});
+
+test('the focus on the element itself goes too, as inert would take it', () => {
+  const slot = new FakeElement();
+  g.document!.activeElement = slot;
+  outWithoutInert(slot as unknown as HTMLElement);
+  slot.inert = true;
+  assert.equal(slot.blurred, 1);
+  g.document!.activeElement = null;
 });
 
 test('what it had of its own comes back with it', () => {
