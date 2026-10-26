@@ -140,7 +140,14 @@ export function gameScenes(): Scene[] {
   const crowdAsked = { controls: [players(3, 5), ...ANSWERS] };
   return [
     scene('turns-choosing', 'Take turns', 'Picking a category', turnsSeats, turns, many),
-    scene('turns-question', 'Take turns', 'A question, its clock running', turnsSeats, (v) => turns(v).pick(), manyAsked),
+    // The longest names too, the most three rows of them have to fit (a phone's browser on its side, its bars up), so the sweep sees them.
+    scene('turns-question', 'Take turns', 'A question, its clock running', turnsSeats, (v) => turns(v).pick(), {
+      ...manyAsked,
+      states: [
+        { label: 'A question, its clock running', values: {} },
+        { label: 'Six of the longest names', values: { asked: 'longest' } },
+      ],
+    }),
     scene(
       'turns-right',
       'Take turns',
@@ -150,7 +157,14 @@ export function gameScenes(): Scene[] {
         const t = turns(v).pick();
         return t.answer(t.turn, true);
       },
-      manyAsked,
+      {
+        ...manyAsked,
+        states: [
+          { label: 'Answered right', values: {} },
+          { label: 'Six of the longest names', values: { asked: 'longest' } },
+          { label: 'Eight of the longest names', values: { answers: '8', asked: 'longest' } },
+        ],
+      },
     ),
     scene(
       'turns-wrong',

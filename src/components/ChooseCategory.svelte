@@ -2339,8 +2339,9 @@
      scaled to the height left under the banner, step by step (zoom takes no
      length), one size for every turn at a height (a find, the team's vote
      or a duel never shrinks them) and never so small that their names stop
-     reading (0.66: the name at about 11px, Apple's least; a screen shorter
-     than a phone's browser leaves on its side scrolls a little). The step
+     reading (0.66: the name at about 11px, Apple's least; on a screen too
+     short for them even so, an Android phone's browser, the lines over and
+     under them stand beside them instead, further down). The step
      is --z; --card-z follows it. In Delve the cards stay centred, as at
      every depth, what the finds give beside them where there's room (under
      them where not) and the vote's state under them. (.coop too, to
@@ -2523,7 +2524,10 @@
       --z: 0.7;
     }
   }
-  @media (orientation: landscape) and (max-height: 350px) and (min-width: 561px) {
+  /* (At 0.7 the stack needs 357px, the cards' 210 and 147 round them: the
+     step down comes there, or a screen 351 to 356 tall scrolls. Game.svelte's
+     banner closes up at the same height.) */
+  @media (orientation: landscape) and (max-height: 357px) and (min-width: 561px) {
     .choose,
     .choose.coop,
     .choose.delve {
@@ -2536,6 +2540,101 @@
     }
     .choose.delve {
       gap: 0.2rem;
+    }
+  }
+  /* A phone's browser on its side shorter than the iPhone's 340 (Chrome on
+     an Android phone, its bars up, leaves 285 to 310): the stack of prompt,
+     cards and lock rule needs 333px under the header and the banner, and the
+     cards are as small as their names allow (0.66, above). So the prompt
+     and the lock rule stand beside the cards instead, in the room a row of
+     them leaves left and right (about 180px each side of three): the
+     prompt (a dig's line, its lamp at its end, by the cards) on the left,
+     the lock rule on the right, each at the cards' middle. A find's note
+     keeps its card's side, as at every height (`beside`, above): on the
+     left under the prompt, the two meeting at the cards' middle, on the
+     right with what stays unused under it; the lock rule makes way for a
+     note on the right, as it does on every phone for the notes. Narrower
+     (the slot under 780 across) the stack stays, and the lock rule makes
+     way. */
+  @media (orientation: landscape) and (max-height: 335px) and (min-width: 561px) {
+    .choose:not(.duel) > .note,
+    .choose.beside .find-notes ~ .note {
+      display: none;
+    }
+    @container slot (min-width: 780px) {
+      .choose:not(.duel) {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        grid-template-areas: none;
+        column-gap: 2.6rem;
+        align-items: center;
+      }
+      .choose:not(.duel) > .cards {
+        grid-column: 2;
+        grid-row: 1 / span 2;
+      }
+      .choose:not(.duel) > .prompt,
+      .choose:not(.duel) > .line {
+        grid-column: 1;
+        grid-row: 1 / span 2;
+        justify-self: end;
+        text-align: right;
+      }
+      /* The lamp at the line's end, by the cards, level with its words. */
+      .choose:not(.duel) > .line .prompt {
+        padding-inline: 0 44px;
+        text-align: right;
+      }
+      .choose:not(.duel) > .line .clock {
+        translate: 0 -50%;
+      }
+      .choose:not(.duel) > .note,
+      .choose.beside:not(:has(.find-note[data-side='right'])) .find-notes ~ .note {
+        display: block;
+        grid-column: 3;
+        grid-row: 1 / span 2;
+        justify-self: start;
+        max-width: 15rem;
+        margin: 0;
+        text-align: left;
+      }
+      .choose.beside:has(.find-note[data-side='left']) > .prompt,
+      .choose.beside:has(.find-note[data-side='left']) > .line {
+        grid-row: 1;
+        align-self: end;
+      }
+      .choose.beside .find-note[data-side='left'] {
+        grid-column: 1;
+        grid-row: 2;
+        align-self: start;
+        margin-top: 0.5rem;
+      }
+      .choose.beside .find-note[data-side='right'] {
+        grid-column: 3;
+        grid-row: 1 / span 2;
+      }
+      .choose.beside:has(.find-notes > .note.muted) .find-note[data-side='right'] {
+        grid-row: 1;
+        align-self: end;
+      }
+      .choose.beside .find-notes .note.muted {
+        grid-column: 3;
+        grid-row: 2;
+        align-self: start;
+        justify-self: start;
+        max-width: 15rem;
+        margin-top: 0.5rem;
+        text-align: left;
+      }
+      /* What stays under the cards at every depth: the team's vote, and a third find's notes. */
+      .choose:not(.duel) > .vote-status,
+      .choose:not(.duel):not(.beside) > .find-notes {
+        grid-column: 1 / -1;
+        grid-row: 3;
+      }
+      .choose:not(.duel):not(.beside) > .find-notes {
+        justify-self: center;
+      }
     }
   }
   /* A phone upright (lib/layout.ts `upright`): the game fits the screen
