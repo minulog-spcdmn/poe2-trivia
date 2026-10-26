@@ -283,7 +283,11 @@ export function flareStrike({ timer, pill, icon }: FlareStrike) {
   layer.setAttribute('aria-hidden', 'true');
   // It dims behind an open dialog like the page's other overlays (lib/portal.ts).
   layer.dataset.behindDialog = 'dim';
-  Object.assign(layer.style, { position: 'fixed', inset: '0', zIndex: '90', pointerEvents: 'none', overflow: 'hidden', contain: 'strict' });
+  // Under the toasts (90, Toasts.svelte), which cover it as they cover the
+  // page's light: at 90 too, and added to the page after them, it drew over
+  // them. On a phone they stand on the player's entry and the clock, so its
+  // streak and sparks ran across a toast.
+  Object.assign(layer.style, { position: 'fixed', inset: '0', zIndex: '89', pointerEvents: 'none', overflow: 'hidden', contain: 'strict' });
   document.body.append(layer);
 
   const src: Point | null = from ? { x: from.left + from.width / 2, y: from.top + from.height / 2 } : null;

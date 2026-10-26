@@ -1085,13 +1085,35 @@ function dialogNow(): DialogLight {
   const windowed = hides.length > 0;
   // (Ancestors the toasts share are read once.)
   const own = new Map<Element, number>();
+  // (The header's bottom, read once and only on a phone, as a toast rests under it.)
+  let under: number | null | undefined;
   for (const el of fronts) {
     if (hides.length >= MAX_HIDES) break;
-    const r = el.getBoundingClientRect();
-    if (!(r.width > 0 && r.height > 0)) continue;
+    const b = el.getBoundingClientRect();
+    if (!(b.width > 0 && b.height > 0)) continue;
     // As it (or what it's in) fades in and out, it hides as much as it shows.
     const o = opacityOf(el, own);
-    if (o > 0) hides.push({ box: r, radius: cornerOnScreen(cornerOf(el), r.width, r.height, zoomOf(el)), amount: o });
+    if (!(o > 0)) continue;
+    // Its outer ring (a toast's dark line round its border) is as opaque as
+    // its box, so the light hides behind that too: without it, a streak's fire
+    // under a toast still burns along the toast's edge.
+    const z = zoomOf(el);
+    const edge = edgeOf(el);
+    const ring = edge.ring * z;
+    const corner = cornerOnScreen(edge.radius, b.width, b.height, z);
+    const round = corner > 0 ? corner + ring : 0;
+    const r = ring > 0 ? new DOMRect(b.x - ring, b.y - ring, b.width + 2 * ring, b.height + 2 * ring) : b;
+    hides.push({ box: r, radius: round, amount: o });
+    // On a phone the toasts stand across the top, a few px under the header
+    // (Toasts.svelte), over the player's pill and its streak's fire. The gap
+    // above the first hides the light too, so the fire passes behind the
+    // toast rather than burning in a thin line along its top. (Down past its
+    // corners' curve, so the gap meets its box with no notch at either end.)
+    if (!narrow?.matches || hides.length >= MAX_HIDES) continue;
+    if (under === undefined) under = headerBottom();
+    if (under !== null && r.top > under && r.top - under <= UNDER_HEADER) {
+      hides.push({ box: new DOMRect(r.left, under, r.width, r.top - under + round), radius: 0, amount: o });
+    }
   }
   // (A window, with a dialog's backdrop up but no box of it yet, dims nothing either.)
   return { amount: windowed ? 0 : amount, box: null, radius: 0, hides };
@@ -1100,13 +1122,45 @@ function dialogNow(): DialogLight {
 /** What stands over the page (overPage). */
 const fronts = new Set<Element>();
 
-/** Each one's corner radius as its style gives it, read again when the window's size changes (a phone turned, a breakpoint crossed). */
-const corners = new WeakMap<Element, { at: string; radius: string }>();
-function cornerOf(el: Element): string {
+/**
+ * Each one's corner radius and outer ring as its style gives them, read again
+ * when the window's size changes (a phone turned, a breakpoint crossed). Its
+ * ring is the widest of its shadows that is all spread, with no offset or
+ * blur (`0 0 0 1px`), in its own px.
+ */
+const edges = new WeakMap<Element, { at: string; radius: string; ring: number }>();
+function edgeOf(el: Element): { radius: string; ring: number } {
   const at = `${innerWidth}x${innerHeight}`;
-  let c = corners.get(el);
-  if (c?.at !== at) corners.set(el, (c = { at, radius: getComputedStyle(el).borderTopLeftRadius }));
-  return c.radius;
+  let c = edges.get(el);
+  if (c?.at !== at) {
+    const style = getComputedStyle(el);
+    edges.set(el, (c = { at, radius: style.borderTopLeftRadius, ring: ringOf(style.boxShadow) }));
+  }
+  return c;
+}
+
+/** The outer ring a computed box-shadow draws (see edgeOf), in px. */
+function ringOf(shadow: string): number {
+  let ring = 0;
+  // (Its colours are read without their commas: `rgba(0, 0, 0, 0.65) 0px 0px 0px 1px, …`.)
+  for (const one of shadow.replace(/[a-z-]+\([^)]*\)/gi, '').split(',')) {
+    if (/\binset\b/.test(one)) continue;
+    const [x, y, blur, spread] = (one.match(/-?[\d.]+px/g) ?? []).map(parseFloat);
+    if (x === 0 && y === 0 && !blur && spread > ring) ring = spread;
+  }
+  return ring;
+}
+
+/** Phones (lib/layout.ts `phone`), where the toasts stand across the top, under the header (Toasts.svelte). */
+const narrow = typeof matchMedia === 'function' ? matchMedia('(max-width: 640px)') : null;
+
+/** How far under the header a phone's toast may rest and still hide the light in the gap above it (Toasts.svelte keeps 6px). */
+const UNDER_HEADER = 10;
+
+/** The bottom of the app's header on screen (App.svelte), or null with none showing. */
+function headerBottom(): number | null {
+  const r = document.querySelector('header[data-cursor="header"]')?.getBoundingClientRect();
+  return r && r.height > 0 ? r.bottom : null;
 }
 
 /** Whether `a` is an element of something that stands over the page (overPage). */

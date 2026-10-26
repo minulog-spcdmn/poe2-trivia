@@ -6,6 +6,8 @@
 
 import { MAX_PLAYERS, PRESETS, TALL_ART_GROUPS, type Knobs, type Settings } from '../../lib/game.ts';
 import { WAY_OUT } from '../../lib/delve.ts';
+import { ACHIEVEMENTS } from '../../lib/achievements.ts';
+import { DELVE_FLAMES } from '../../lib/fx/streaks.ts';
 import type { Control, Values } from '../bench.ts';
 import { longestNamed, longestWord } from '../build/engine.ts';
 import { pid } from '../build/people.ts';
@@ -273,6 +275,20 @@ export function gameScenes(): Scene[] {
     scene('delve-deep', 'Delve alone', 'Deep down', [ALONE], (v) => delveAlone().playTo((s) => s.round >= Number(v.depth ?? 30) && s.phase === 'choosing'), {
       controls: [{ kind: 'range', key: 'depth', label: 'Depth', min: 2, max: 120, default: 30 }],
     }),
+    // An achievement's notice over a streak's fire. On a phone the notices
+    // stand across the top, on the player's entry, and the fire passes behind
+    // the notice: none of it burns along its edge or in the gap above it.
+    {
+      ...scene('delve-notice', 'Delve alone', 'On a streak, an achievement’s notice over the fire', [ALONE], delveAlone),
+      controls: [{ kind: 'range', key: 'streak', label: 'In a row', min: 3, max: 120, default: 80 }],
+      states: DELVE_FLAMES.map((f) => ({ label: `${f.name[0].toUpperCase()}${f.name.slice(1)} fire (${f.from} in a row)`, values: { streak: f.from } })),
+      build: (v = {}) => {
+        const t = delveAlone().playTo((s) => (s.players[0].streak ?? 0) >= Number(v.streak ?? 80) && s.phase === 'choosing');
+        const earned = ACHIEVEMENTS.find((a) => a.id === 'saving-grace')!;
+        const toast = { message: earned.title, title: 'Achievement earned', seal: { sign: earned.sign, tier: earned.tier } };
+        return { state: t.s, act: t.room, at: t.clock.now, steps: [{ wait: 800 }, { toast }] } satisfies Built;
+      },
+    },
     // The game's own arrival: the run moves on into the zone while the screen
     // watches, so the card plays over the header and the scoreboard, its bars
     // over them (the zone card bench plays it alone).

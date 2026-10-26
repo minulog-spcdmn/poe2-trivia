@@ -38,6 +38,7 @@ import { showAura } from './aura';
 import { light, pulseMood, setMood } from '../lights';
 import { CALM, embers as backdropEmbers } from '../backdropEmbers';
 import { burnsBlue } from './streaks';
+import { zoomOf } from '../stage';
 import type { FindKind } from '../delve';
 import { WARD_BREAK } from '../inventoryArt';
 
@@ -1462,11 +1463,41 @@ export function connecting(at: Element, radius = 46): Handle {
   return portal(at, { radius });
 }
 
-/** A small celebratory twinkle (link copied, setting changed). */
+/**
+ * A small celebratory twinkle (link copied, setting changed). On something
+ * still flying in (a toast, as it arrives) it plays where that comes to rest.
+ */
 export function twinkle(at: Anchor, color: Vec3 = C.goldPale) {
-  if (!fxActive()) return;
-  glints(at, { count: 5, size: [4, 8], color, delay: [0, 0.3] });
-  sparks(at, { count: 10, area: 'edge', speed: [60, 200], gravity: 100, life: [0.3, 0.6] });
+  if (!fxActive() || detached(at)) return;
+  const box = at instanceof Element ? restingBox(at) : at;
+  glints(box, { count: 5, size: [4, 8], color, delay: [0, 0.3] });
+  sparks(box, { count: 10, area: 'edge', speed: [60, 200], gravity: 100, life: [0.3, 0.6] });
+}
+
+/**
+ * Where `el` will stand once the animation flying it in (Svelte's in:fly, run
+ * as its own) has ended: its box on screen less how far that has yet to move
+ * it. Its sparks are thrown from that box once and stay where they're thrown,
+ * so measured as it starts to come in (24px off on a phone, 56px on a wide
+ * screen) they'd spring up where it isn't.
+ */
+function restingBox(el: Element): Anchor {
+  for (const anim of el.getAnimations()) {
+    const effect = anim.effect as KeyframeEffect | null;
+    const end = anim.playState === 'running' ? effect?.getKeyframes().at(-1)?.transform : undefined;
+    if (typeof end !== 'string') continue;
+    try {
+      const nowAt = new DOMMatrix(getComputedStyle(el).transform);
+      const restAt = new DOMMatrix(end);
+      const z = zoomOf(el);
+      const r = el.getBoundingClientRect();
+      return new DOMRect(r.x + (restAt.e - nowAt.e) * z, r.y + (restAt.f - nowAt.f) * z, r.width, r.height);
+    } catch {
+      // (A transform DOMMatrix can't read, in % say: its box as it is now.)
+      return el;
+    }
+  }
+  return el;
 }
 
 /** A rejected input: red sparks and a jolt. */

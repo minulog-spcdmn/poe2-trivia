@@ -200,6 +200,9 @@ export async function boot(asked: URLSearchParams) {
         session.hostNow = () => now;
       }
       session.state = seat.mode === 'client' ? game.publicView(step.then) : step.then;
+    } else if ('toast' in step) {
+      const { message, ...opts } = step.toast;
+      toasts.show(message, 'info', opts);
     } else if ('crash' in step) {
       // One crash, and (twice) another once the boundary has put the app back.
       crash.left = 1;

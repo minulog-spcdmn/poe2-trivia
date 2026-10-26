@@ -284,7 +284,9 @@ export function blastAway({ node, side, mine }: BlastAway) {
   layer.setAttribute('aria-hidden', 'true');
   // It dims behind an open dialog like the page's other overlays (lib/portal.ts).
   layer.dataset.behindDialog = 'dim';
-  Object.assign(layer.style, { position: 'fixed', inset: '0', zIndex: '90', pointerEvents: 'none', overflow: 'hidden', contain: 'strict' });
+  // Under the toasts (90, Toasts.svelte), as the question it blows apart is:
+  // at 90 too, and added to the page after them, it drew over them.
+  Object.assign(layer.style, { position: 'fixed', inset: '0', zIndex: '89', pointerEvents: 'none', overflow: 'hidden', contain: 'strict' });
   if (Z !== 1) layer.style.zoom = String(Z);
   document.body.append(layer);
   const anim = (el: Element, frames: Keyframe[], o: KeyframeAnimationOptions) => el.animate(frames, { fill: 'both', ...o });
