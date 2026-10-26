@@ -88,16 +88,32 @@ test("a rim's glow is the one --bs1 makes, in the verdict's colour, under the to
   const [oy, blur] = one(qv.css, '.tooltip', '--bs1').split(/\s+/);
   const ring = shadows(one(qv.css, '.tooltip', 'box-shadow'))[0];
   assert.equal(ring, '0 0 0 1px #000');
+  const border = one(qv.css, '.tooltip', 'border').match(/^(\d+)px solid /);
+  assert.ok(border, '.tooltip has a solid border in px');
+  // The rim's box is the tooltip's padding box (inside its border), so its
+  // ring and glow spread the border's width further to reach as far as the
+  // tooltip's do from its border box.
+  const width = Number(border[1]);
   for (const tone of ['good', 'bad']) {
     const color = one(qv.css, `.tooltip.${tone}`, '--bs1-color');
     // (Listed first, the ring is drawn over the glow, as on the tooltip.)
-    assert.deepEqual(shadows(one(qv.css, `.verdict-rim.${tone}`, 'box-shadow')), [ring, `0 ${oy!.replace(/^0px$/, '0')} ${blur} ${color}`], `.verdict-rim.${tone}'s glow is 0 var(--bs1) var(--bs1-color) as .tooltip.${tone} has them`);
-    assert.match(one(qv.css, `.verdict-rim.${tone}`, 'border-color'), /^#[0-9a-f]{6}$/i, 'an opaque border, faded in over the plain one');
+    assert.deepEqual(
+      shadows(one(qv.css, `.verdict-rim.${tone}`, 'box-shadow')),
+      [`0 0 0 ${width + 1}px #000`, `0 ${oy!.replace(/^0px$/, '0')} ${blur} ${width}px ${color}`],
+      `.verdict-rim.${tone}'s ring is the tooltip's and its glow 0 var(--bs1) var(--bs1-color) as .tooltip.${tone} has them, both from the tooltip's border box`,
+    );
+    assert.match(one(qv.css, `.verdict-rim.${tone}`, 'outline-color'), /^#[0-9a-f]{6}$/i, 'an opaque border, faded in over the plain one');
+    for (const prop of ['border', 'border-color']) assert.equal(declsOf(qv.css, `.verdict-rim.${tone}`, prop).length, 0, `.verdict-rim.${tone} sets ${prop}: its border is an outline`);
   }
-  // The rim's box is the tooltip's border box.
-  assert.match(one(qv.css, '.tooltip', 'border'), /^1px solid /);
-  assert.equal(one(qv.css, '.verdict-rim', 'inset'), '-1px');
-  assert.match(one(qv.css, '.verdict-rim', 'border'), /^1px solid$/);
+  // The verdict's border is an outline round the tooltip's padding box: a
+  // browser rounds an outline's width to device pixels as it does the
+  // tooltip's border, and never an inset, so the outline lies on the
+  // border's pixels whatever the zoom. A border on a box an inset of -1px
+  // out fell a device pixel outside it on some edges at fractional zooms.
+  assert.equal(one(qv.css, '.verdict-rim', 'inset'), '0');
+  assert.equal(one(qv.css, '.verdict-rim', 'outline'), `${width}px solid`);
+  assert.equal(one(qv.css, '.verdict-rim', 'outline-offset'), '0');
+  assert.equal(declsOf(qv.css, '.verdict-rim', 'border').length, 0, '.verdict-rim has no border of its own');
   assert.equal(one(qv.css, '.tooltip', 'position'), 'relative');
 });
 

@@ -20,9 +20,9 @@ const el = (name: string, [x, y, w, h]: number[], children: Fake[] = [], hidden 
 });
 (globalThis as { getComputedStyle?: unknown }).getComputedStyle = (e: Fake) => ({ visibility: e.hidden ? 'hidden' : 'visible', display: 'block' });
 
-/** A tooltip at `box`: its two rims (hidden, before the verdict), then its plate and its art. */
+/** A tooltip at `box` (its 1px border in it): its two rims on its padding box (hidden, before the verdict), then its plate and its art. */
 const tooltip = ([x, y, w, h]: number[]) =>
-  el('tooltip', [x, y, w, h], [el('verdict-rim good', [x - 1, y - 1, w + 2, h + 2], [], true), el('verdict-rim bad', [x - 1, y - 1, w + 2, h + 2], [], true), el('head', [x, y, w, 90]), el('art', [x, y + 90, w, h - 90])]);
+  el('tooltip', [x, y, w, h], [el('verdict-rim good', [x + 1, y + 1, w - 2, h - 2], [], true), el('verdict-rim bad', [x + 1, y + 1, w - 2, h - 2], [], true), el('head', [x, y, w, 90]), el('art', [x, y + 90, w, h - 90])]);
 
 /** What `measure` makes of `question`: each part and hollow element by name, and the biggest part's. */
 function blown(question: Fake) {

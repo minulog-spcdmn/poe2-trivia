@@ -1610,14 +1610,25 @@
      nothing is painted while it does; and fading a colour in over another
      comes to the same as easing one to the other (both opaque for the
      border; from nothing for the glow, as --bs1-color eases from
-     transparent). Its box is the tooltip's border box: the border lies on
-     the tooltip's, and the glow (the soft shadow --bs1 makes) under the
-     black ring, as before. The rims come first in the tooltip, so
-     everything in it is drawn over them. */
+     transparent). Its box is the tooltip's padding box, and its border
+     an outline round that: a browser rounds a border's width and an
+     outline's alike to whole device pixels (down, never under one), and
+     never an inset, so where a CSS px is no whole number of them (a
+     Windows scale of 125%, page zoom, a stage zoom of 1.33, an Android
+     phone at 2.625) a border on a box 1px outside the tooltip's fell a
+     device pixel outside the tooltip's border on some of its edges, the
+     plain brown one left showing inside it. The outline lies on the
+     tooltip's border pixels on every edge. The black ring and the glow
+     (the soft shadow --bs1 makes) reach from the padding box as far as the
+     tooltip's ring and glow do from its border box, the ring drawn over
+     the glow as before and the outline over the ring where they meet. The
+     rims come first in the tooltip, so everything in it is drawn over
+     them. */
   .verdict-rim {
     position: absolute;
-    inset: -1px;
-    border: 1px solid;
+    inset: 0;
+    outline: 1px solid;
+    outline-offset: 0;
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -1626,16 +1637,16 @@
       visibility 0.6s;
   }
   .verdict-rim.good {
-    border-color: #4f7a45;
+    outline-color: #4f7a45;
     box-shadow:
-      0 0 0 1px #000,
-      0 0 50px rgba(150, 190, 110, 0.12);
+      0 0 0 2px #000,
+      0 0 50px 1px rgba(150, 190, 110, 0.12);
   }
   .verdict-rim.bad {
-    border-color: #7a3a2c;
+    outline-color: #7a3a2c;
     box-shadow:
-      0 0 0 1px #000,
-      0 0 50px rgba(200, 90, 60, 0.09);
+      0 0 0 2px #000,
+      0 0 50px 1px rgba(200, 90, 60, 0.09);
   }
   .tooltip.good > .verdict-rim.good,
   .tooltip.bad > .verdict-rim.bad {
