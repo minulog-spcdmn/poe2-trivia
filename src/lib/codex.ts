@@ -48,6 +48,7 @@
 
 import { difficultyOf, isFake, type Blast, type Difficulty, type GameState, type QuestionMode } from './game.ts';
 import { ITEM_KINDS, VEIN_MAX_STRIKES, delveTier, isGroupRun, type FindKind, type ItemKind } from './delve.ts';
+import { beforeCodexRead } from './delveRecord.ts';
 import { clearAside, openStored } from './keepAside.ts';
 import { whenCalm } from './idle.ts';
 import { readStored, removeStored, storeKey, writeStored } from './storage.ts';
@@ -719,12 +720,16 @@ function recordWaiting() {
   waiting = [];
   update((c) => met.reduce((x, e) => record(x, e), c));
 }
+// The Delve records read the log raw (a run's wards, the finds met), not
+// through loadCodex: what waits is written first there too.
+beforeCodexRead(recordWaiting);
 
 /**
  * Adds an encounter to the stored codex once the page is calm (lib/idle.ts
  * whenCalm), and then does `then` (the achievements checked with it in the
  * codex); or as the codex is next read, should that come first (the end
- * screen after a quick Next: loadCodex), so it is never read without it.
+ * screen after a quick Next: loadCodex; a run recorded as it ends or is
+ * left: delveRecord.ts), so it is never read without it.
  */
 export function recordWhenCalm(e: Encounter, then?: () => void) {
   waiting.push(e);

@@ -207,7 +207,10 @@ with its numbers in the comments.
   answer waiting for calm is written as soon as the codex is read
   (`recordWhenCalm` in `src/lib/codex.ts`), so the end screen after a
   quick Next still has it, and earned achievements go under the game the
-  answer was given in, not the one under way when they are checked.
+  answer was given in, not the one under way when they are checked. That
+  holds for what reads the codex's log raw too: the Delve records count a
+  run's wards from it as the run ends or is left (`codexLog` in
+  `src/lib/delveRecord.ts`).
 - **A masked SVG costs its frames while what it masks changes.** Delve's
   ladder (`DelveLadder.svelte`) is masked round its stars; while its 260
   lines inked themselves in, the lobby came in at 24 to 35 fps, and at 60

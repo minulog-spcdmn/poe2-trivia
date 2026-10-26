@@ -180,6 +180,33 @@ function selfIn(s: GameState, me: string | null, hotSeat: boolean): string | nul
 export const CODEX_NAMES = ['codex2', 'codex'] as const;
 
 /**
+ * Writes the answers the codex holds back (lib/codex.ts recordWhenCalm: each
+ * waits for the page to be calm, up to seconds after it was given), so its
+ * log is never read here without them: a run is recorded as it ends or is
+ * left, its last answers still waiting after a quick Next (or quick taps one
+ * after another), and its wards are counted from the log. The codex hands
+ * it over as it loads; before then, nothing can be held back.
+ */
+let writeHeldBack = () => {};
+/** For lib/codex.ts, as it loads: how to write what it holds back, before its log is read here. */
+export const beforeCodexRead = (f: () => void) => void (writeHeldBack = f);
+
+/**
+ * The codex's log, read raw (empty for no codex, or one that can't be read),
+ * with what the codex holds back written to it first.
+ */
+function codexLog(): unknown[] {
+  try {
+    writeHeldBack();
+    const v: unknown = JSON.parse(readStored(CODEX_NAMES[0]) ?? readStored(CODEX_NAMES[1]) ?? 'null');
+    return isObj(v) && Array.isArray(v.log) ? v.log : [];
+  } catch {
+    /* no codex to read */
+    return [];
+  }
+}
+
+/**
  * The finds this player has met: each one they have been asked a question
  * from at least once, alone or together, as the codex's log has it. Read
  * raw, as wardsIn reads it (an answer logged before finds were kept, or
@@ -187,13 +214,7 @@ export const CODEX_NAMES = ['codex2', 'codex'] as const;
  */
 export function findsMet(): Set<FindKind> {
   const out = new Set<FindKind>();
-  try {
-    const v: unknown = JSON.parse(readStored(CODEX_NAMES[0]) ?? readStored(CODEX_NAMES[1]) ?? 'null');
-    const log = isObj(v) && Array.isArray(v.log) ? v.log : [];
-    for (const a of log) if (isObj(a) && typeof a.depth === 'number' && FINDS.some((f) => f.kind === a.find)) out.add(a.find as FindKind);
-  } catch {
-    /* no codex to read */
-  }
+  for (const a of codexLog()) if (isObj(a) && typeof a.depth === 'number' && FINDS.some((f) => f.kind === a.find)) out.add(a.find as FindKind);
   return out;
 }
 
@@ -208,16 +229,10 @@ function wardsIn(s: GameState, self: string): number {
   const r = s.phase === 'reveal' ? s.reveal : null;
   const now = r ? s.question?.askedAt : undefined;
   let n = 0;
-  try {
-    const v: unknown = JSON.parse(readStored(CODEX_NAMES[0]) ?? readStored(CODEX_NAMES[1]) ?? 'null');
-    const log = isObj(v) && Array.isArray(v.log) ? v.log : [];
-    for (const a of log) {
-      if (!isObj(a) || a.run !== id || a.depth === undefined || a.ok !== false || (now !== undefined && a.t === now)) continue;
-      if (a.who !== undefined && a.who !== self) continue;
-      n += a.wards === 1 || a.wards === 2 ? a.wards : a.wards === undefined && a.warded === true ? 1 : 0;
-    }
-  } catch {
-    /* no codex to read */
+  for (const a of codexLog()) {
+    if (!isObj(a) || a.run !== id || a.depth === undefined || a.ok !== false || (now !== undefined && a.t === now)) continue;
+    if (a.who !== undefined && a.who !== self) continue;
+    n += a.wards === 1 || a.wards === 2 ? a.wards : a.wards === undefined && a.warded === true ? 1 : 0;
   }
   if (r) n += isGroupRun(s) ? (r.hits?.find((h) => h.playerId === self)?.wards ?? 0) : r.correct ? 0 : (r.lost?.wards ?? (r.warded ? 1 : 0));
   return Math.min(n, 2 * MAX_DEPTH);
