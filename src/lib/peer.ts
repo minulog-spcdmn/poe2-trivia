@@ -34,9 +34,10 @@ let peerJs: PeerJs | null = null;
 let loading: Promise<PeerJs> | null = null;
 
 /**
- * PeerJS, loaded the first time a peer is made (or in idle time after the
- * start page shows, preloadPeerJs): the start page doesn't wait for it. A
- * load that fails (offline) is tried again on the next call.
+ * PeerJS, loaded the first time a peer is made (or once the start page has
+ * settled, after the lobby's screens: preloadPeerJs, queued by App.svelte):
+ * the start page doesn't wait for it. A load that fails (offline) is tried
+ * again on the next call.
  */
 export function loadPeerJs(): Promise<PeerJs> {
   return (loading ??= import('peerjs').then(

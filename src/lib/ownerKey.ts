@@ -14,9 +14,10 @@
 //
 // Ed25519 comes from @noble/ed25519 (it needs no more of Web Crypto than
 // SHA-512, which every browser the game runs in has, unlike Ed25519 itself),
-// loaded in idle time after the start page shows (preloadEd25519), or the
-// first time something is signed or checked before that: the start page
-// doesn't wait for it, and a tab left open across a deploy has it already.
+// loaded once the start page has settled, after the game's screens
+// (preloadEd25519, queued by App.svelte), or the first time something is
+// signed or checked before that: the start page doesn't wait for it, and a
+// tab left open across a deploy has it already.
 //
 // scripts/owner-key.mjs prints the public key for new words. Pick them
 // at random (four or more) and never commit them.
