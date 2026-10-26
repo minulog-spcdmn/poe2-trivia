@@ -3,7 +3,9 @@
 // whole page out again each time the font set changes, whatever changed in
 // it, so one face at a time would be four of those. Nothing is fetched ahead
 // with Save-Data on, the codex still has the faces at once when it's opened
-// before they're in, and no face is ever loaded twice.
+// before they're in, and no face is ever loaded twice. On the way into a
+// room they come at once (the lobby draws with Cinzel Black), with Save-Data
+// on only that one.
 import './asVite.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -61,4 +63,29 @@ test('the codex, opened after, loads none of them again; nor does another settle
   loadFontsAhead();
   await idle();
   assert.deepEqual(loads, ALL);
+});
+
+/** A fresh copy of the module, as a page that has loaded none of them yet. */
+const fresh = (name: string) => import(`../src/lib/fontsAhead.ts?${name}`) as Promise<typeof import('../src/lib/fontsAhead.ts')>;
+
+test('on the way into a room, the four at once, not waiting for a settled moment; the queue then loads none again', async () => {
+  const { loadRoomFonts, loadFontsAhead: ahead } = await fresh('room');
+  const from = loads.length;
+  loadRoomFonts();
+  assert.equal(idles.length, 0);
+  assert.deepEqual(loads.slice(from), ALL);
+  ahead();
+  await idle();
+  loadRoomFonts();
+  assert.deepEqual(loads.slice(from), ALL);
+});
+
+test('on the way into a room with Save-Data on, the lobby\'s face only', async () => {
+  const { loadRoomFonts } = await fresh('saving');
+  const from = loads.length;
+  connection.saveData = true;
+  loadRoomFonts();
+  connection.saveData = false;
+  assert.equal(idles.length, 0);
+  assert.deepEqual(loads.slice(from), [ALL[0]]);
 });

@@ -32,7 +32,7 @@
   import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
   import { closeSettings, openSettings, settingsRoute } from './lib/settingsRoute.svelte';
   import { whenSettled } from './lib/settled';
-  import { loadFonts, loadFontsAhead } from './lib/fontsAhead';
+  import { loadFonts, loadFontsAhead, loadRoomFonts } from './lib/fontsAhead';
   import { loadPeerJs, preloadPeerJs } from './lib/peer';
   import { preloadEd25519 } from './lib/ownerKey';
   import { shellHeightsRead } from './lib/shellHeights.svelte';
@@ -421,8 +421,8 @@
   // Ahead, one at a time once the page has settled (lib/settled.ts), in the
   // order they're likeliest wanted: what a new game or a join waits for (the
   // lobby, PeerJS), the game's screens, Ed25519 (for the owner's rooms,
-  // lib/ownerKey.ts), the faces the codex and the item windows use, the
-  // codex. (All of it from here: anything queued as the page starts, before
+  // lib/ownerKey.ts), the faces the lobby, the codex and the item windows
+  // use, the codex. (All of it from here: anything queued as the page starts, before
   // App has mounted, would go ahead of the lobby.)
   onMount(() => {
     const undo = [whenSettled(loadLobby), preloadPeerJs(), whenSettled(loadGamePages), preloadEd25519(), loadFontsAhead(), whenSettled(fetchCodexPage)];
@@ -432,9 +432,13 @@
   // the lobby first, and the game's screens only once it's in, and online
   // PeerJS too (the room is opened or joined through it). On a phone on a
   // busy Wi-Fi they'd share the link with what the lobby waits for. A game
-  // under way already (a reload, a resume) has them all at once.
+  // under way already (a reload, a resume) has them all at once. The faces
+  // come at once either way, the lobby's room code and avatars being set in
+  // one of them (lib/fontsAhead.ts); in the queue above, they cost nothing
+  // more.
   $effect(() => {
     if (!inRoom() && !session.mode) return;
+    untrack(loadRoomFonts);
     if (screen === 'game' || screen === 'over') {
       untrack(loadLobby);
       untrack(loadGamePages);

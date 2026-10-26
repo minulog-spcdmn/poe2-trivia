@@ -16,6 +16,11 @@
 // four still come in one go: the laying out is the font set changing, not
 // the faces in it (four faces no element used cost the iPhone the same 44
 // ms), so one face at a time would lay the page out four times over.
+//
+// The lobby draws with one of them, though: its room code and the players'
+// avatars are set in Cinzel Black. So on the way into a room the faces come
+// at once, at the tap, and download while the room connects (App.svelte),
+// rather than as the code's letters drop in, swapped mid-fall.
 
 import { whenSettled } from './settled';
 import { savingData } from './saveData';
@@ -30,15 +35,33 @@ const LATER = [
 
 let loading: Promise<void> | null = null;
 
+/** Loads these faces, resolving when they're in or have failed; false when no family was found. */
+function load(faces: readonly (typeof LATER)[number][]): Promise<void> | false {
+  const root = getComputedStyle(document.documentElement);
+  // Each one's first family only: the fallbacks after it would load faces of their own.
+  const fonts = faces.map(([face, family]) => [face, root.getPropertyValue(family).split(',')[0].trim()] as const).filter(([, first]) => first);
+  if (!fonts.length) return false;
+  return Promise.all(fonts.map(([face, first]) => document.fonts.load(`${face} 16px ${first}`).catch(() => {}))).then(() => {});
+}
+
 /** Loads the faces now (once), resolving when they're in or have failed. */
 export function loadFonts(): Promise<void> {
   if (loading || typeof document === 'undefined' || !document.fonts) return loading ?? Promise.resolve();
-  const root = getComputedStyle(document.documentElement);
-  // Each one's first family only: the fallbacks after it would load faces of their own.
-  const fonts = LATER.map(([face, family]) => [face, root.getPropertyValue(family).split(',')[0].trim()] as const).filter(([, first]) => first);
+  const all = load(LATER);
   // (None found: the stylesheet isn't in yet, so not this time.)
-  if (!fonts.length) return Promise.resolve();
-  return (loading = Promise.all(fonts.map(([face, first]) => document.fonts.load(`${face} 16px ${first}`).catch(() => {}))).then(() => {}));
+  if (!all) return Promise.resolve();
+  return (loading = all);
+}
+
+/**
+ * On the way into a room: the faces at once, the lobby's among them. With
+ * Save-Data on, the lobby's own face only (Cinzel Black), which it would
+ * load as it showed anyway; the others are still left to the screens that
+ * use them.
+ */
+export function loadRoomFonts() {
+  if (!savingData()) return void loadFonts();
+  if (!loading && typeof document !== 'undefined' && document.fonts) void load([LATER[0]]);
 }
 
 /** Loads the faces other screens use ahead, all in one settled moment (a face the page already has costs nothing); not with Save-Data on. Returns what takes it back if it hasn't run. */
