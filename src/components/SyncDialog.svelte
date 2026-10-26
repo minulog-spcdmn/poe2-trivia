@@ -267,6 +267,7 @@
             aria-label="Sync code"
             autocomplete="off"
             autocapitalize="characters"
+            autocorrect="off"
             spellcheck="false"
             enterkeyhint="done"
           />

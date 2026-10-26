@@ -117,6 +117,11 @@ export function nameProblem(name: string, others: string[]): string | null {
   const skel = nameSkeleton(name);
   if (RESERVED.has(skel) || RESERVED.has(name.toLowerCase().replace(/[^a-z]/g, '')))
     return `“${name}” is reserved. Pick another name.`;
+  // The same name, told plainly: at a convention two players often bring the
+  // same one, and "looks too much like" itself reads as a fault in the check.
+  const lower = name.toLowerCase();
+  const same = others.find((o) => o.toLowerCase() === lower);
+  if (same) return `Someone here is already called “${same}”. Pick another name.`;
   const clash = others.find((o) => nameSkeleton(o) === skel);
   if (clash) return `“${name}” looks too much like “${clash}”. Pick another name.`;
   return null;

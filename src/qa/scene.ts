@@ -39,12 +39,16 @@ export interface Seat {
 export type Step =
   /** Clicks the first element `selector` finds. */
   | { click: string }
+  /** Types `text` into the first field `fill` finds, as typing it would (its input event). */
+  | { fill: string; text: string }
   /** Waits (ms). */
   | { wait: number }
   /** The room turns this device out, as the host's word for it would (session.labFail). */
   | { fail: 'kicked' | 'closed' | 'replaced' }
   /** Joining the room gives up, as each way a join can fail says so (session.labJoinFail). */
   | { joinFail: 'missing' | 'blocked' | 'server' }
+  /** The room turns this device's join down with this message, as the host's error for it would (session.labRefuse), once the join is under way. */
+  | { refused: string }
   /** The app crashes, once or twice in a row (Root.svelte's recovery). */
   | { crash: 1 | 2 }
   /** A notice arrives (lib/toasts.svelte.ts), worded as the game words it (an achievement earned, say: lib/achievementToasts.ts); it stays up, its fuse held, until closed. */

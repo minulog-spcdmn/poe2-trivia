@@ -298,6 +298,7 @@
             aria-label="Your name"
             autocomplete="off"
             spellcheck="false"
+            autocorrect="off"
             enterkeyhint="done"
           />
           <button class="btn" type="submit" disabled={draft.trim() === name}>Save</button>

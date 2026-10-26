@@ -26,10 +26,17 @@ test('look-alike letters from any script count as the Latin letters they pass fo
   assert.equal(nameProblem('さくら', ['Bob']), null);
   assert.equal(nameProblem('هاني', ['هادي']), null);
   assert.equal(nameProblem('حامد', ['דוד']), null);
-  assert.match(nameProblem('هادي', ['هادي']) ?? '', /looks too much like/);
+  assert.match(nameProblem('هادي', ['هادي']) ?? '', /already called/);
   // Modifier letters draw as signs (a tatweel, an apostrophe), and some letters as a stroke: none make another name.
   for (const fake of ['zoeـarcana', 'zoe_arcanaʼ', 'zoe一arcana', 'zoeㅡarcana']) assert.ok(isHeldName(fake), fake);
   assert.match(nameProblem('Boـb', ['Bob']) ?? '', /looks too much like/);
+});
+
+test('a name already taken says so plainly, in any case; a look-alike still says it looks like one', () => {
+  assert.equal(nameProblem('Pixel', ['Pixel']), 'Someone here is already called “Pixel”. Pick another name.');
+  assert.equal(nameProblem('pixel', ['Alva', 'PIXEL']), 'Someone here is already called “PIXEL”. Pick another name.');
+  assert.equal(nameProblem('Pixe1', ['Pixel']), '“Pixe1” looks too much like “Pixel”. Pick another name.');
+  assert.equal(nameProblem('Pixel', ['Pixie']), null);
 });
 
 test('characters that draw nothing, or many letters wide, are taken out of a name', () => {

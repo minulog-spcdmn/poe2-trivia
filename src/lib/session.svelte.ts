@@ -41,6 +41,7 @@ import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HO
 import { LaneReceiver, LaneSender, openLane, parseFakeLink } from './artLane';
 import { honestRtt, measuredRtt, PING_SAMPLES } from './linkRtt';
 import { NAME_STORED, cleanName, isHeldName, nameSkeleton, nameUsable } from './names';
+import { JoinName } from './joinName';
 import { checkJoin, joinProof, newChallenge, ownerUnlocked, roomProof } from './ownerKey';
 import { prepareMedia, shown, warmMedia, type PreparedMedia } from './media.svelte';
 import { keyMsg, makeSealKey, newKid, sealAvailable, sealMsg, SealedStore, type SealedMsg, type SealKey } from './seal';
@@ -482,6 +483,8 @@ class Session {
   private autoNextFor = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private joinName = '';
+  /** A join's name from the start page, saved once the room takes it (lib/joinName.ts). */
+  private nameToKeep = new JoinName();
   private retry: ReturnType<typeof setTimeout> | null = null;
   /** Pending step of opening or joining a room (a retry, a give-up); cancelled on leave. */
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -735,7 +738,11 @@ class Session {
       this.status = 'connecting';
       this.loadPrivate(saved.priv);
       this.openRoom(saved.code, 0, underRuleset(renameCategories(saved.state)));
-    } else if (saved.mode === 'client') this.join(saved.code, saved.name, !!saved.watch);
+    } else if (saved.mode === 'client') {
+      // A first visit's join the page reloaded on before the room let it in (a refresh while it seemed stuck, or
+      // iOS dropping the tab) has no name saved yet: the room taking it now saves it, as it would have then.
+      this.join(saved.code, saved.name, !!saved.watch, undefined, !savedName());
+    }
   }
 
   // ---- hosting ----------------------------------------------------------
@@ -1849,14 +1856,26 @@ class Session {
   private joinVia: JoinVia | null = null;
   /** A join's failure, counted only when the join was (not a guest's reload getting back in). */
   private joinFailure = (failure: Failure): Failure | undefined => (this.joinVia ? failure : undefined);
+  /**
+   * Whether the last join was turned down by the room itself (its host
+   * answered at the door: a name, a full or locked room, an old version)
+   * rather than lost on the way to it. The start page marks the code only for
+   * the second: the code was right if the room answered (Home.svelte settle).
+   */
+  refusedAtDoor = false;
 
-  join(code: string, name: string, watch = false, via?: JoinVia) {
+  join(code: string, name: string, watch = false, via?: JoinVia, keepName = !!via) {
     // The host's room has its own settings: a shared link's Delve is moot.
     this.delveLink = false;
     this.reset();
     this.mode = 'client';
     this.status = 'connecting';
     this.joinName = name;
+    this.refusedAtDoor = false;
+    // One set off from the start page (with a `via`) saves its name if the room takes it, and not before:
+    // a name turned down there mustn't greet the next visit. A reload getting back in keeps its name only
+    // when none is saved yet (resume), and the bot's guests keep none.
+    this.nameToKeep.start(keepName ? name : null);
     this.watchOnly = watch;
     this.code = code.toUpperCase().trim();
     if (!CODE_PATTERN.test(this.code)) {
@@ -2188,6 +2207,8 @@ class Session {
             this.state = msg.state;
           }
           if (this.status === 'connecting' && this.joinVia) countEvent(`joined/${this.joinVia}`);
+          // In: the room has taken the name, so it's this browser's now.
+          if (this.status === 'connecting') this.nameToKeep.taken();
           this.joinVia = null;
           this.status = 'ready';
           if (this.state) this.noteWatch(this.state);
@@ -2198,9 +2219,10 @@ class Session {
             if (this.answered?.qid === msg.askedAt) this.answered = null;
             this.turnedDown = { askedAt: msg.askedAt };
           }
-          if (this.status === 'connecting')
+          if (this.status === 'connecting') {
+            this.refusedAtDoor = true;
             this.fail(versionRefusal(msg.message), "Couldn’t join", { failure: this.joinFailure(isVersionRefusal(msg) ? 'join-version-mismatch' : 'join-refused') });
-          else this.flash(msg.message, 'error');
+          } else this.flash(msg.message, 'error');
           break;
         case 'kicked':
         case 'closed':
@@ -2486,6 +2508,12 @@ class Session {
   /** The QA desk (src/qa): joining this room gives up, as each way a join can fail says so. */
   labJoinFail(why: JoinFailed) {
     this.joinFailed(why);
+  }
+
+  /** The QA desk (src/qa): the room turns this device's join down with `message`, as the host's error for it would (uncounted). */
+  labRefuse(message: string) {
+    this.refusedAtDoor = true;
+    this.fail(message, "Couldn’t join");
   }
 
   /** A join that never got in, told as what went wrong; `failure` counted (count.ts). */
@@ -3301,6 +3329,8 @@ class Session {
   private reset() {
     this.peerEpoch++;
     this.recordLeaving();
+    // A join never let in leaves the saved name as it was (turned down, given up, left).
+    this.nameToKeep.dropped();
     // A new attempt (or leaving) makes the last one's errors moot.
     toasts.clearErrors();
     this.beacon?.stop();
