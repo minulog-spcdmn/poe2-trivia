@@ -195,7 +195,15 @@ with its numbers in the comments.
   pixels is the same: finding where the item sits in the full art at the
   reveal (`getImageData`) cost every answer a frame of 50 to 68 ms, though
   only a veiled picture needs it. It's done for those alone now, in the
-  veil's worker (`visibleBoxOf` in `src/lib/veilCutter.ts`).
+  veil's worker (`visibleBoxOf` in `src/lib/veilCutter.ts`). The veil's
+  burns were the same (`src/lib/materialize.ts`): each patch's start (its
+  pixels read, a distance transform, noise for every pixel and a sort) and
+  every frame of its fizzle ran on the page, most of a race question's
+  time on the phone (486 of 851 samples in one), the question screens at
+  50 to 54 fps with frames of 60 to 120 ms. Their arithmetic (`burn.ts`)
+  runs in `burnWorker.ts` now, drawn on each patch's canvas handed over to
+  it (`transferControlToOffscreen`). A canvas handed over can't be taken
+  back, so a patch goes there only once the worker has said it's there.
 - **Safari has no `requestIdleCallback`.** `whenIdle` (`src/lib/idle.ts`)
   waits 300 ms there instead, and each step still runs as one task: a step
   over a frame's time drops a frame on the phone however idle the page

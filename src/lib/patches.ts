@@ -532,7 +532,7 @@ function longestFitting(ms: number, fits: (t: number) => boolean): number {
 }
 
 /**
- * A burning patch's front, as fractions of its sweep (materialize.ts): a mist
+ * A burning patch's front, as fractions of its sweep (burn.ts): a mist
  * runs RIM ahead of it, and behind it each grain glints for LINE and cools
  * for COOL more. The sweep runs from -RIM to 1 + LINE + COOL over the burn.
  */
@@ -543,7 +543,7 @@ export const BURN_COOL = 0.45;
 /**
  * The share of a patch's area in view `p` of the way through its burn: a
  * grain shows (as the art, glinting) once the front has reached it, and the
- * front crosses the patch from 6% to 68% of the burn (materialize.ts). The
+ * front crosses the patch from 6% to 68% of the burn (burn.ts). The
  * grains are taken as spread evenly along its way, so the area comes in
  * steadily between the two.
  */

@@ -4,7 +4,7 @@
   import { glare } from '../lib/glare';
   import { AUTO_NEXT_MS, answerDrawn, autoNextLeft, clockMs, clockRuns, drawnAs, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
-  import { FINALE_MS, materialize, type BurnParams } from '../lib/materialize';
+  import { FINALE_MS, materialize, warmBurns, type BurnParams } from '../lib/materialize';
   import { frontier } from '../lib/frontier';
   import { visibleBoxOf } from '../lib/veilCutter';
   import { itemImage } from '../lib/ui';
@@ -497,6 +497,11 @@
   let fullBox = $state<[number, number, number, number] | null>(null);
   // (Whether, not which: the veil sent again, to a guest reconnecting, is the same picture.)
   const veiled = $derived(!!media?.veil);
+  // A veiled picture is here: the worker its patches burn in starts now, so
+  // it's ready for the first of them (materialize.ts).
+  $effect(() => {
+    if (veiled || Object.keys(media?.tileVeils ?? {}).length) warmBurns();
+  });
   $effect(() => {
     const d = drawn;
     if (!reveal || !d || !veiled) {
