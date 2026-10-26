@@ -225,7 +225,11 @@ with its numbers in the comments.
   50 ms, and the first tap is mostly New game: it landed in the lobby's
   first frame. `wake` (`src/lib/sound.ts`) waits until the first frame
   after the tap's click has been drawn, on timers, which carry the tap's
-  gesture on for a second, as iOS asks of a context starting.
+  gesture on for a second, as iOS asks of a context starting. Every call
+  waits and resumes on timers of its own, though another is waiting: on
+  iOS 15 to 16.3 the first wake comes in the idle moment after a touch's
+  pointerdown, which is no gesture, and the touchend's and click's, which
+  are, come in while it waits (`tests/soundWake.test.ts`).
 - **A part of an SVG that animates repaints the whole SVG.** WebKit gives
   no part of an SVG a layer of its own: the name plate's seal bloom, a
   circle breathing in the plate's SVG, repainted all of the plate's lines

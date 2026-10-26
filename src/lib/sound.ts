@@ -277,10 +277,14 @@ function audio(): Bus | null {
   return b;
 }
 
-/** Whether the context is to be woken (see wake). */
-let waking = false;
+/** How many wakes wait for their frame (see wake). */
+let waking = 0;
+/** Whether a frame is asked for, for the wakes waiting (see watchFrames). */
+let watching = false;
+/** When (performance ms) the last frame the wakes watched for called back (see watchFrames). */
+let frameAt = -Infinity;
 /** How long a wake waits for the frame in hand at most (ms), on a page that draws none (out of sight). */
-const WAKE_WAIT = 250;
+export const WAKE_WAIT = 250;
 /** When (performance ms) the page last heard a press, a click or a key (installUiSounds). */
 let pressedAt = -Infinity;
 
@@ -294,21 +298,47 @@ let pressedAt = -Infinity;
  * wake holds up one of its own. It waits on timers, as they carry the tap's
  * gesture on (for a second), which iOS asks of a context starting; what
  * plays meanwhile is heard as it wakes.
+ *
+ * Each call waits on timers of its own and resumes the context from them,
+ * though another wake is waiting already, as that one may carry no gesture.
+ * On iOS 15 to 16.3 (no navigator.userActivation, so allowed() holds from
+ * the first touch) the first tap's context is made, and woken, in the idle
+ * moment after its pointerdown, which iOS doesn't count a gesture; its
+ * touchend and click come in while that wake waits, and were theirs dropped
+ * for it, the context's first start would be asked for without one, and
+ * refused. (Nor do only the latest call's timers resume it: that idle moment
+ * may come after a quick tap's pointerup, which wakes it in a gesture.)
+ * Asked again, resume() does no harm: refused, it does nothing, and on a
+ * context already on its way up it only waits with the first. And a wake
+ * waits for a frame begun after the last press, whenever that came: a press
+ * between that frame and the wake's next look brings a screen of its own.
  */
 function wake(ac: AudioContext) {
-  if (waking) return;
-  waking = true;
-  let drawn = typeof requestAnimationFrame === 'undefined';
-  const frame = (t: number) => (t > pressedAt ? (drawn = true) : requestAnimationFrame(frame));
-  if (!drawn) requestAnimationFrame(frame);
   const from = performance.now();
+  waking++;
+  watchFrames();
   // (A timer comes after the whole of a frame, its drawing too, never in the middle of one.)
   const go = () => {
+    const drawn = typeof requestAnimationFrame === 'undefined' || frameAt > Math.max(from, pressedAt);
     if (!drawn && performance.now() - from < WAKE_WAIT) return void setTimeout(go, 4);
-    waking = false;
+    waking--;
     if (ac.state !== 'running') void ac.resume().catch(() => {});
   };
   setTimeout(go, 0);
+}
+
+/** Notes when each frame begins (frameAt), for as long as a wake waits for one. */
+function watchFrames() {
+  if (watching || typeof requestAnimationFrame === 'undefined') return;
+  watching = true;
+  const frame = () => {
+    // When it's called back, not the frame's own stamp: a browser may stamp a
+    // frame with the vsync it began on, before a press that it draws.
+    frameAt = performance.now();
+    if (waking > 0) requestAnimationFrame(frame);
+    else watching = false;
+  };
+  requestAnimationFrame(frame);
 }
 
 /**
