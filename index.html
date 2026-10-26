@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" translate="no">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
@@ -7,6 +7,13 @@
     <link rel="manifest" href="./manifest.webmanifest" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#0a0908" />
+    <!-- Not for page translation. Most of what the game prints is item names, which must read as the game
+         spells them, and Chrome tells a page’s language by its words rather than by its lang attribute: it
+         took the Codex, nearly all names, for German and offered to translate it. A translated page would go
+         wrong besides: Chrome swaps the page’s text for its own, so the text the game updates (a turn, a timer,
+         the next question’s answers) is no longer the text shown. This meta is Chrome’s opt-out; the translate
+         attribute on html is the other translators’. -->
+    <meta name="google" content="notranslate" />
     <meta name="description" content="Name the unique. Path of Exile 2 item trivia with 501 uniques and lineage gems, alone or with up to eleven friends: take turns, race or delve, and name today’s unique." />
     <meta name="author" content="zoe_arcana" />
     <link rel="canonical" href="https://poe2.quest/" />
