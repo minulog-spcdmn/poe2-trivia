@@ -193,8 +193,9 @@ and 0 of 10,002 on 37.3.5. pool.mjs boots the second instance
 Measured on 26 October 2026, one instance at a time on a copy of the AVD,
 alternating versions: no speed difference (every interval took in zero; the
 PC's load moves fps by about 1 per point of host CPU, far more than the
-version), 9 of 9 and 8 of 8 boots, 30 of 30 Chrome restarts, 606 of 606
-DevTools screenshots on each, 10 minutes of a game scene on each. One 37.3.5
+version), 9 of 9 boots on 37.3.5 and 8 of 8 on 37.2.12, and on each 15
+of 15 Chrome restarts on one boot, 606 of 606 DevTools screenshots and 10
+minutes of a game scene. One 37.3.5
 boot's Chrome never answered DevTools, cause unknown. None of that says
 which one stays up for hours: 37.2.12 hung once in about 7 instance-hours
 (above, "A hang on the asg channel too"), and that hang didn't show the
