@@ -93,6 +93,7 @@ import type { PlayerClass } from './classSigils';
 import { helloRefusal, noPrivate, parseSaved, privateFrom, rememberSecret, soloHotSeat, takesState, tooFast, type HostPrivate, type Saved } from './sessionRules';
 import { sawLine, START_LINES } from './delveStart';
 import { seenLines } from './delveStartSeen';
+import { keepAwake } from './wakeLock';
 import { AWAY_AFTER_MS, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
 
 /** The room is told how its players stand at most this often (Session.updateStandingPaced). */
@@ -166,6 +167,8 @@ const FUSE_TAIL_MS = 600;
 const DETONATE_FUSE_MS = 1500;
 /** Client: pause before trying again after a failed attempt or a hiccup of the signalling server. */
 const RETRY_SOON_MS = 1500;
+/** A return to the page (nudge) counts once in this long: one is often seen by several events at once. */
+const NUDGE_EVERY_MS = 1000;
 const PING_EVERY_MS = 3000;
 /** Delve: how often a question's clock looks again for those the host's reload cut off (waitForArrival). */
 const RETURN_POLL_MS = 250;
@@ -483,6 +486,10 @@ class Session {
   /** Pending step of opening or joining a room (a retry, a give-up); cancelled on leave. */
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
   private retries = 0;
+  /** When the page's return last nudged the room's links (nudge), so one return seen by several events counts once. */
+  private nudgedAt = 0;
+  /** While this device is in a room online: lets the screen sleep again (wakeLock.ts, stayAwake). */
+  private awake: (() => void) | null = null;
   /** Client: when joining began. */
   private joinedAt = 0;
   /** Client: attempts to reach the host that haven't opened yet (and when they started), oldest first. */
@@ -740,6 +747,8 @@ class Session {
     this.joinName = name;
     this.loadPrivate(noPrivate(randomToken(12)));
     this.openRoom(randomCode(), 0);
+    // Asked from the tap that opened the room, which some browsers want for it.
+    this.stayAwake();
   }
 
   private loadPrivate(p: HostPrivate) {
@@ -809,8 +818,9 @@ class Session {
       this.watchOwnPresence();
     });
     peer.on('disconnected', () => {
-      // Lost the signalling server; existing peer links keep working.
-      if (!peer.destroyed) setTimeout(() => !peer.destroyed && peer.reconnect(), 1500);
+      // Lost the signalling server; existing peer links keep working. (Not
+      // again if the page coming back reconnected it meanwhile, nudge.)
+      if (!peer.destroyed) setTimeout(() => !peer.destroyed && peer.disconnected && peer.reconnect(), 1500);
     });
     peer.on('error', (err) => {
       if (this.peer !== peer) return;
@@ -1866,6 +1876,8 @@ class Session {
     this.joinedAt = Date.now();
     this.armConnectTimeout();
     this.startClientPeer();
+    // Asked from the tap that joined, which some browsers want for it.
+    this.stayAwake();
   }
 
   private saveGuest() {
@@ -1935,7 +1947,8 @@ class Session {
       }
     });
     peer.on('disconnected', () => {
-      if (!peer.destroyed) setTimeout(() => !peer.destroyed && peer.reconnect(), 1500);
+      // (Not again if the page coming back reconnected it meanwhile, nudge.)
+      if (!peer.destroyed) setTimeout(() => !peer.destroyed && peer.disconnected && peer.reconnect(), 1500);
     });
   }
 
@@ -2046,9 +2059,11 @@ class Session {
    * offer or candidate that went missing.
    */
   private connectToHost() {
-    // Without the signalling server there is no connecting (PeerJS returns
-    // nothing); its reconnect fires 'open', which tries again.
-    if (!this.peer || this.peer.destroyed || this.peer.disconnected) return;
+    // Without the signalling server there is no connecting: PeerJS returns
+    // nothing while disconnected, and while it's reconnecting (no longer
+    // disconnected, not open yet) it drops the offer unsent, leaving a dead
+    // attempt that would hold a slot and its age. Its 'open' tries again.
+    if (!this.peer || this.peer.destroyed || !this.peer.open) return;
     if (this.status === 'connecting') {
       // An open link waits for the room's answer; a fresh one would only replace it.
       if (this.hostConn?.open) return;
@@ -2261,12 +2276,55 @@ class Session {
     }, 3000);
   }
 
+  /**
+   * Guest: tries the host again with a fresh count (the Retry button, or a
+   * nudge). An attempt still opening keeps racing; a new one goes out now
+   * only if one is due, as the retries' own do.
+   */
   reconnect() {
     if (this.mode !== 'client') return;
+    if (this.retry) clearTimeout(this.retry);
+    this.retry = null;
     this.retries = 0;
     this.gaveUp = false;
-    this.connectToHost();
+    this.pruneAttempts();
+    if (this.attemptDue() <= 0) this.connectToHost();
     this.scheduleRetry();
+  }
+
+  /**
+   * The page came back (shown again, restored, or back online): a signalling
+   * link that dropped meanwhile reconnects now rather than after its wait,
+   * and a guest cut off from the host starts a fresh count of retries, so
+   * the room isn't given up on while the player is looking at it (the 20
+   * retries run out within a minute, which a network change can outlast).
+   * A link that's fine is left alone. A return often fires more than one of these events
+   * at once, so it counts once a second.
+   */
+  nudge() {
+    if (!this.mode || this.roomless || Date.now() - this.nudgedAt < NUDGE_EVERY_MS) return;
+    this.nudgedAt = Date.now();
+    const peer = this.peer;
+    if (peer && peer.disconnected && !peer.destroyed) peer.reconnect();
+    if (this.mode === 'client' && this.status === 'lost') this.reconnect();
+  }
+
+  /**
+   * Keeps the screen on while this device is in a room online, as host, guest
+   * or spectator, opening or joining one or getting back to its host: a phone
+   * that locks itself suspends the page and drops the room's links. Lets it
+   * sleep again once out of the room (left, removed, a room that closed) or
+   * playing on this device only (hot-seat, a room that couldn't go online),
+   * and once reconnecting is given up.
+   */
+  stayAwake() {
+    const online = this.mode === 'client' || (this.mode === 'host' && !this.roomless);
+    const wanted = online && (this.status === 'connecting' || this.status === 'ready' || (this.status === 'lost' && !this.gaveUp));
+    if (wanted && !this.awake) this.awake = keepAwake();
+    else if (!wanted && this.awake) {
+      this.awake();
+      this.awake = null;
+    }
   }
 
   // ---- actions ----------------------------------------------------------
@@ -3414,6 +3472,10 @@ function writeSaved(saved: Saved | null) {
 
 export const session = new Session();
 engine.setStartLines((ids) => session.startLinesSeen(ids));
+// The screen kept on in a room online, and let go of out of it, whatever moves the session there.
+$effect.root(() => {
+  $effect(() => session.stayAwake());
+});
 
 if (typeof window !== 'undefined') {
   // A run abandoned by closing the tab (or going elsewhere) is still recorded, and so is a game against others left losing.
@@ -3430,4 +3492,8 @@ if (typeof window !== 'undefined') {
   });
   // Art that wouldn't load (offline) is tried again once the browser is back online.
   window.addEventListener('online', () => session.artBack());
+  // Coming back (online again, a page restored, or shown again) gets the room's links going again at once.
+  window.addEventListener('online', () => session.nudge());
+  window.addEventListener('pageshow', () => session.nudge());
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && session.nudge());
 }

@@ -88,6 +88,8 @@ export default class Peer extends Emitter {
   readonly id: string;
   destroyed = false;
   disconnected = false;
+  /** Reached the signalling server (and not cut off since). */
+  open = false;
   readonly socket: Socket;
 
   constructor(id?: string | object) {
@@ -101,6 +103,7 @@ export default class Peer extends Emitter {
       if (net.down) return this.emit('error', { type: 'network', message: 'Lost connection to server.' });
       if (net.held.has(own) && net.held.get(own) !== this) return this.emit('error', { type: 'unavailable-id', message: `ID "${own}" is taken` });
       net.held.set(own, this);
+      this.open = true;
       this.emit('open', own);
     });
   }
@@ -127,6 +130,7 @@ export default class Peer extends Emitter {
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.open = false;
     if (net.held.get(this.id) === this) net.held.delete(this.id);
   }
 }
