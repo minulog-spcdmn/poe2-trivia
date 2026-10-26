@@ -61,7 +61,8 @@
       // Older browsers and some app views: the selection, copied the old way (copyCode below cleans it).
       copied = document.execCommand?.('copy') ?? false;
     }
-    show(e, copied ? 'Room code copied' : 'Press Ctrl+C to copy it');
+    // Copying by hand: a key on a keyboard, a long press on a touch screen.
+    show(e, copied ? 'Room code copied' : e.pointerType === 'mouse' ? 'Press Ctrl+C to copy it' : 'Couldn’t copy it; hold the code to copy');
     if (!copied) return;
     clearTimeout(litTimer);
     // Lit a moment as copied, then back to rest: the selection goes, and the glow with it.

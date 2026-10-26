@@ -1886,7 +1886,7 @@ class Session {
   private startClientPeer() {
     const Peer = this.peerClass(
       () => this.startClientPeer(),
-      () => this.fail(this.networkHint('peerjs-load'), 'No connection', { failure: this.joinFailure('join-no-connection') }),
+      () => this.fail(this.joinNetworkHint('peerjs-load'), 'No connection', { failure: this.joinFailure('join-no-connection') }),
     );
     if (!Peer) return;
     this.peer?.destroy();
@@ -1906,7 +1906,7 @@ class Session {
         this.pruneAttempts();
         this.planAttempt(RETRY_SOON_MS);
       }
-      else if (!NETWORK_ERRORS.has(err.type)) this.fail(this.networkHint(err.type), 'No connection', { failure: this.joinFailure('join-no-connection') });
+      else if (!NETWORK_ERRORS.has(err.type)) this.fail(this.joinNetworkHint(err.type), 'No connection', { failure: this.joinFailure('join-no-connection') });
       else {
         // The signalling server hiccuped. A peer that had reached it reconnects
         // on its own ('disconnected'); one that never did is destroyed right
@@ -1929,8 +1929,13 @@ class Session {
     const wait = Math.min(JOIN_GIVE_UP_MS, this.joinedAt + JOIN_GIVE_UP_CAP_MS - Date.now());
     this.connectTimer = setTimeout(() => {
       if (this.mode !== 'client' || this.status !== 'connecting') return;
-      if (this.peer?.open) this.fail(`Couldn’t reach room ${this.code}. Check the code, or try again.`, 'No answer', { failure: this.joinFailure('join-no-answer') });
-      else this.fail(this.networkHint('timeout'), 'No connection', { failure: this.joinFailure('join-no-connection') });
+      // On the server, but no way through to the room. Unless the server has
+      // said the room may be missing (roomUnavailable), the code was right and
+      // it's the connection between the two devices that never came up: some
+      // networks (venue Wi-Fi, some carriers) don't let it through.
+      if (this.peer?.open && this.unavailableUntil) this.fail(`Couldn’t reach room ${this.code}. Check the code with your host, or try again.`, 'No answer', { failure: this.joinFailure('join-no-answer') });
+      else if (this.peer?.open) this.fail(`The connection to room ${this.code} couldn’t be made. This network may block direct connections between devices; try mobile data or another Wi-Fi, or ask your host whether the room is still open.`, 'Couldn’t connect', { failure: this.joinFailure('join-no-answer') });
+      else this.fail(this.joinNetworkHint('timeout'), 'No connection', { failure: this.joinFailure('join-no-connection') });
     }, wait);
   }
 
@@ -3151,6 +3156,11 @@ class Session {
 
   private networkHint(type: string) {
     return `Couldn’t connect to the matchmaking server (${type}). Check your connection. Without one, a new game plays on this device.`;
+  }
+
+  /** The same for someone joining a room, who has no game of their own to fall back on. */
+  private joinNetworkHint(type: string) {
+    return `Couldn’t connect to the matchmaking server (${type}). Check your connection, or try mobile data or another Wi-Fi.`;
   }
 
   /**
