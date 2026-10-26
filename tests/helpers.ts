@@ -1,6 +1,6 @@
 // What the tests share: the item data, a seeded random source, a storage
-// stand-in, a game in its lobby and a room on a clock the test moves. (Not a test file
-// itself: npm test runs tests/*.test.ts.)
+// stand-in and the locks of a browser's tabs, a game in its lobby and a room on a
+// clock the test moves. (Not a test file itself: npm test runs tests/*.test.ts.)
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -41,6 +41,47 @@ export function memoryStorage(store = new Map<string, string>(), fits: (key: str
     key: (i: number) => [...store.keys()][i] ?? null,
     get length() {
       return store.size;
+    },
+  };
+}
+
+/**
+ * The Web Locks of one browser, shared by the pages a test plays in it:
+ * each page's own manager (`of`), and `kill`, which lets go of every lock a
+ * page holds, as a tab the browser kills does. Only `ifAvailable` requests,
+ * as lib/keptCopy.ts makes them.
+ */
+export function sharedLocks() {
+  /** Who holds each lock, by its name. */
+  const held = new Map<string, string>();
+  const releases = new Map<string, (() => void)[]>();
+  return {
+    held,
+    of(page: string): LockManager {
+      return {
+        request: (async (name: string, opts: LockOptions, cb: (lock: Lock | null) => unknown) => {
+          await Promise.resolve();
+          if (held.has(name) && opts.ifAvailable) return cb(null);
+          assert.ok(!held.has(name), 'only ifAvailable requests here');
+          held.set(name, page);
+          const done = cb({ name, mode: 'exclusive' } as Lock);
+          const free = () => {
+            if (held.get(name) === page) held.delete(name);
+          };
+          releases.set(page, [...(releases.get(page) ?? []), free]);
+          await done;
+          free();
+        }) as LockManager['request'],
+        query: async () => ({ held: [...held].map(([name, clientId]) => ({ name, clientId, mode: 'exclusive' as const })) }),
+      };
+    },
+    kill(page: string) {
+      for (const free of releases.get(page) ?? []) free();
+      releases.delete(page);
+    },
+    clear() {
+      held.clear();
+      releases.clear();
     },
   };
 }

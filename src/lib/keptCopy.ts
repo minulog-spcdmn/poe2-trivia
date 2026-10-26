@@ -12,7 +12,13 @@
 // page lives (a tab frozen in the background still holds it; one the browser
 // killed doesn't), and only a page that gets a slot's lock picks its game up,
 // so a game is never picked up twice, nor by a second tab while the first
-// still has it. Where there are no Web Locks (a page that isn't secure, a
+// still has it. Nor is a room picked up that a page still here is in as the
+// same one (a guest's seat, a host's room): a player who joined again from a
+// new tab plays on there, and the old tab coming back later never takes the
+// seat from it. And a room a page leaves (on purpose, removed, closed, or
+// for another game) is left for good: the older copies of it go too, so an
+// old tab coming back never takes the player into a room they left from a
+// newer one. Where there are no Web Locks (a page that isn't secure, a
 // browser from before them) nothing is kept: whether the game's tab is still
 // there can't be told, and a game played on in two tabs at once is worse
 // than one lost.
@@ -46,7 +52,12 @@ export const MAX_COPIES = 4;
 const SLOT = 'session.slot';
 /** In this tab's sessionStorage, from every page of the game's: that the tab has been here (restored, it hasn't). */
 const HERE = 'session.here';
-/** In localStorage, a slot's copy: `{ at, online, save }`, `save` the save as it is in sessionStorage. */
+/**
+ * In localStorage, a slot's copy: `{ v, at, room, save }`, `save` the save
+ * as it is in sessionStorage, `v` the name it goes under there (SAVE, named
+ * anew when its format changes) and `room` the online room it is in, as the
+ * one it is there (keepCopy), or null.
+ */
 const copyName = (slot: string) => `kept.${slot}`;
 /** Beside it, the host's last moment (session.svelte.ts ALIVE), which changes every ping: apart, so the game isn't written out again each time. */
 const aliveName = (slot: string) => `keptAlive.${slot}`;
@@ -57,7 +68,7 @@ const ALIVE_START = 'keptAlive.';
 interface Copy {
   slot: string;
   at: number;
-  online: boolean;
+  room: string | null;
   save: unknown;
   alive: string | null;
 }
@@ -69,33 +80,48 @@ export interface Taken {
 }
 
 /** Whether a copy saved or last left at `at` (or its host last here at `alive`) is still to be picked up at `now`. */
-function fresh(c: Pick<Copy, 'at' | 'online' | 'alive'>, now: number): boolean {
+function fresh(c: Pick<Copy, 'at' | 'room' | 'alive'>, now: number): boolean {
   const last = Math.max(c.at, Number(c.alive) || 0);
-  return now - last < (c.online ? KEEP_ONLINE_MS : KEEP_HERE_MS);
+  return now - last < (c.room ? KEEP_ONLINE_MS : KEEP_HERE_MS);
 }
 
-function readCopy(slot: string, raw: string): Copy | null {
+/**
+ * A slot's copy, or null: damaged, or kept under another name than `save`.
+ * The name changes with the save's format, and what a build takes of a save
+ * in an older one is the session's to decide (OLD_SAVE_KEY turns old hosted
+ * rooms away, their guests' tokens no longer matching): a copy in an older
+ * format is let go of, never resumed as if it were new.
+ */
+function readCopy(slot: string, raw: string, save: string): Copy | null {
+  const v = whereKept(raw);
+  if (v?.v !== save || typeof v.save !== 'object' || v.save === null) return null;
+  return { slot, at: v.at, room: v.room, save: v.save, alive: readStored(aliveName(slot)) };
+}
+
+/** A copy's own fields, whatever name it was kept under, or null when damaged: when and where it was, for any page to go by. */
+function whereKept(raw: string): { v: unknown; at: number; room: string | null; save: unknown } | null {
   try {
-    const v = JSON.parse(raw) as { at?: unknown; online?: unknown; save?: unknown };
-    if (typeof v.at !== 'number' || !Number.isFinite(v.at) || typeof v.save !== 'object' || v.save === null) return null;
-    return { slot, at: v.at, online: v.online === true, save: v.save, alive: readStored(aliveName(slot)) };
+    const v = JSON.parse(raw) as { v?: unknown; at?: unknown; room?: unknown; save?: unknown };
+    if (typeof v.at !== 'number' || !Number.isFinite(v.at)) return null;
+    return { v: v.v, at: v.at, room: typeof v.room === 'string' && v.room ? v.room : null, save: v.save };
   } catch {
     return null;
   }
 }
 
 /**
- * Every copy still to be picked up, newest first; the rest (damaged, too
- * old, past the newest few, or with no copy left beside a host's moment) let
- * go of. Whoever's they are: a page still playing one let go of writes it
- * again with its next save. `mine`: the slot about to be written, left out
- * and given room among the few.
+ * Every copy still to be picked up, newest first; the rest (damaged, kept
+ * under another name, too old, past the newest few, or with no copy left
+ * beside a host's moment) let go of. Whoever's they are: a page still
+ * playing one let go of writes it again with its next save, or as it's left.
+ * `mine`: the slot about to be written, left out and given room among the
+ * few.
  */
-function copies(now: number, mine?: string): Copy[] {
+function copies(save: string, now: number, mine?: string): Copy[] {
   const kept: Copy[] = [];
   for (const [slot, raw] of readStoredStarting(COPY_START)) {
     if (slot === mine) continue;
-    const c = readCopy(slot, raw);
+    const c = readCopy(slot, raw, save);
     if (c && fresh(c, now)) kept.push(c);
     else removeStored(copyName(slot));
   }
@@ -123,16 +149,17 @@ export function restoredHere(tabNew: boolean): boolean {
 
 /**
  * A page's keeping (one per page; a test makes one per tab it plays): with
- * `locks` (none: nothing is kept or picked up), and whether the browser
- * brought the page back without its tab's sessionStorage.
+ * `locks` (none: nothing is kept or picked up), whether the browser brought
+ * the page back without its tab's sessionStorage, and `save`, the name the
+ * save goes under in sessionStorage (session.svelte.ts SAVE).
  */
-export function keeper(locks: LockManager | undefined, restored: () => boolean) {
+export function keeper(locks: LockManager | undefined, restored: () => boolean, save: string) {
   /** The slot whose lock this page holds (from its first game on), or null. */
   let mine: string | null = null;
   /** While the slot is being got (what is wanted by then is written once it is). */
-  let claiming: Promise<void> | null = null;
+  let claiming = false;
   /** What the slot is to hold (null: nothing, the game left); `at`, when it was saved or the page last left. */
-  let wanted: { raw: string; online: boolean; at: number } | null = null;
+  let wanted: { raw: string; room: string | null; at: number } | null = null;
   let alive: string | null = null;
 
   /**
@@ -155,7 +182,7 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean) 
       return;
     }
     // The save is JSON already: set in as it is, not quoted again on every write.
-    writeStored(copyName(slot), `{"at":${wanted.at},"online":${wanted.online},"save":${wanted.raw}}`);
+    writeStored(copyName(slot), `{"v":${JSON.stringify(save)},"at":${wanted.at},"room":${JSON.stringify(wanted.room)},"save":${wanted.raw}}`);
     if (alive) writeStored(aliveName(slot), alive);
   }
 
@@ -165,32 +192,81 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean) 
    * tab's sessionStorage, and with it the slot), else a new one once there is
    * a game to keep. With nothing to keep and no slot, there's nothing to do.
    */
-  function claim() {
-    claiming ??= (async () => {
-      const had = readStored(SLOT, 'session');
-      if (had && (await hold(had))) mine = had;
-      else if (wanted) {
-        const slot = randomToken(12);
-        if (await hold(slot)) {
-          mine = slot;
-          writeStored(SLOT, slot, 'session');
-        }
+  async function claim() {
+    if (claiming || mine) return;
+    const had = readStored(SLOT, 'session');
+    if (!had && !wanted) return;
+    // Set before the first wait and cleared right after the last, with
+    // nothing between that and the write: whatever is wanted by then is
+    // written here, and whatever comes after claims (or writes) for itself.
+    claiming = true;
+    let got: string | null = null;
+    if (had && (await hold(had))) got = had;
+    else if (wanted) {
+      const slot = randomToken(12);
+      if (await hold(slot)) {
+        got = slot;
+        writeStored(SLOT, slot, 'session');
       }
-      claiming = null;
-      if (!mine) return;
-      // The slot about to be written: room is made for it first.
-      copies(Date.now(), mine);
-      put(mine);
-    })();
+    }
+    claiming = false;
+    if (!got) return;
+    mine = got;
+    // The slot about to be written: room is made for it first.
+    copies(save, Date.now(), mine);
+    put(mine);
+  }
+
+  /**
+   * The rooms pages still here are in, by the copies of the slots they hold;
+   * null when the browser can't say which those are. Read whatever their name
+   * or age: what is asked is only where they are.
+   */
+  async function roomsHeld(): Promise<Set<string> | null> {
+    const start = storeKey(COPY_START);
+    let held: LockInfo[];
+    try {
+      held = (await locks!.query()).held ?? [];
+    } catch {
+      return null;
+    }
+    const rooms = new Set<string>();
+    for (const { name } of held) {
+      const raw = name?.startsWith(start) ? readStored(copyName(name.slice(start.length))) : null;
+      const room = raw === null ? null : whereKept(raw)?.room;
+      if (room) rooms.add(room);
+    }
+    return rooms;
+  }
+
+  /**
+   * The page left `room` (the copy it had of it saved or last left at `at`):
+   * every older copy of it goes too, another tab's the browser killed, so
+   * that tab coming back never goes into the room again. (A newer one is a
+   * tab's that joined it after this page last had it, and took the seat
+   * over: still its own.)
+   */
+  function leftRoom(room: string, at: number) {
+    for (const [slot, raw] of readStoredStarting(COPY_START)) {
+      const c = slot === mine ? null : whereKept(raw);
+      if (c?.room !== room || c.at >= at) continue;
+      removeStored(copyName(slot));
+      removeStored(aliveName(slot));
+    }
   }
 
   return {
-    /** A save written (`raw`, its JSON): its copy is kept too. `online`: a room's, hosted or joined. */
-    keepCopy(raw: string, online: boolean) {
+    /**
+     * A save written (`raw`, its JSON): its copy is kept too. `room`: the
+     * online room it is in, hosted or joined, named as the one it is there:
+     * two pages under one name can't both play it. Null for a game on this
+     * device.
+     */
+    keepCopy(raw: string, room: string | null) {
       if (!locks) return;
-      wanted = { raw, online, at: Date.now() };
+      wanted = { raw, room, at: Date.now() };
       if (mine) put(mine);
-      else claim();
+      else void claim();
     },
 
     /**
@@ -215,42 +291,50 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean) 
     /** The save let go of (the game left, ended for good, or never to be picked up): so is its copy. */
     dropCopy() {
       if (!locks) return;
+      if (wanted?.room) leftRoom(wanted.room, wanted.at);
       wanted = null;
       alive = null;
       // (A page that hasn't kept anything yet may still be the tab whose last page
       // did: reloaded, and leaving before it saved again. Its slot is cleared too.)
       if (mine) put(mine);
-      else claim();
+      else void claim();
     },
 
     /**
      * A page the browser brought back without its tab's sessionStorage: the
-     * newest game no page holds any more, its slot taken over by this page,
-     * or null. `may` says, once the slot is got, whether the page still wants
-     * it (nothing else started meanwhile); if not, the slot is let go of as
-     * it was.
+     * newest game no page holds any more (nor plays on in: its room, as the
+     * same one, another page's), its slot taken over by this page, or null.
+     * `may` says, once the slot is got, whether the page still wants it
+     * (nothing else started meanwhile); if not, the slot is let go of as it
+     * was.
      */
     async takeCopy(may: () => boolean): Promise<Taken | null> {
       if (!locks || mine || claiming || !restored()) return null;
-      for (const c of copies(Date.now())) {
+      // Read before any copy is let go of below (an old one may be a page's still playing).
+      const live = await roomsHeld();
+      if (!live) return null;
+      for (const c of copies(save, Date.now())) {
         const release = await hold(c.slot);
         // Its page is still here (in another tab, maybe frozen in the background): its game stays there.
         if (!release) continue;
         // Read again under its lock (another page may have taken it and let go of it meanwhile).
         const raw = readStored(copyName(c.slot));
-        const got = raw === null ? null : readCopy(c.slot, raw);
+        const got = raw === null ? null : readCopy(c.slot, raw, save);
         // A game started here meanwhile: nothing is picked up over it.
         if (mine || claiming || !may()) {
           release();
           return null;
         }
-        if (!got || !fresh(got, Date.now())) {
-          release();
-          continue;
+        if (got && fresh(got, Date.now()) && !(got.room && live.has(got.room))) {
+          mine = c.slot;
+          writeStored(SLOT, c.slot, 'session');
+          return { save: JSON.stringify(got.save), alive: got.alive };
         }
-        mine = c.slot;
-        writeStored(SLOT, c.slot, 'session');
-        return { save: JSON.stringify(got.save), alive: got.alive };
+        // Gone, too old by now, or its room is another page's to play on in (the player
+        // joined it again from a new tab): not to be picked up by this page or any later.
+        removeStored(copyName(c.slot));
+        removeStored(aliveName(c.slot));
+        release();
       }
       return null;
     },
@@ -266,10 +350,18 @@ const KEEPS = !QA && !BOT && !LAB && typeof navigator !== 'undefined' && !!navig
 const tabNew = KEEPS && readStored(HERE, 'session') === null;
 if (KEEPS) writeStored(HERE, '1', 'session');
 
-const here = keeper(KEEPS ? navigator.locks : undefined, () => restoredHere(tabNew));
-export const { keepCopy, keepAlive, dropCopy, takeCopy } = here;
-if (KEEPS) {
-  // A phone's browser kills a tab only once it's out of sight.
-  document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && here.leaving());
-  addEventListener('pagehide', () => here.leaving());
+/**
+ * This page's keeping of the save that goes under `save` (session.svelte.ts
+ * SAVE, which hands its name in rather than this module reaching back for
+ * it). Called once, by the session.
+ */
+export function keeping(save: string) {
+  const here = keeper(KEEPS ? navigator.locks : undefined, () => restoredHere(tabNew), save);
+  // (No document where a test plays the page.)
+  if (KEEPS && typeof document !== 'undefined') {
+    // A phone's browser kills a tab only once it's out of sight.
+    document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && here.leaving());
+    addEventListener('pagehide', () => here.leaving());
+  }
+  return here;
 }

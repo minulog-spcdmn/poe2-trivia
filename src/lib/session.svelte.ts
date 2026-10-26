@@ -57,7 +57,7 @@ import { GameCounts, Steps, countEvent, countFailure, countStep, counting, markA
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
-import { dropCopy, keepAlive, keepCopy, takeCopy } from './keptCopy';
+import { keeping } from './keptCopy';
 import {
   DRAIN_POLL_MS,
   blastedAway,
@@ -713,7 +713,7 @@ class Session {
       writeSaved(saved);
       if (alive) {
         writeStored(ALIVE, alive, 'session');
-        keepAlive(alive);
+        kept.keepAlive(alive);
       }
       this.mode = 'host';
       this.status = 'connecting';
@@ -726,11 +726,11 @@ class Session {
    * Nothing saved in this tab: a tab the browser brought back after killing it
    * in the background (its sessionStorage comes back empty) picks up the copy
    * its game left in localStorage (lib/keptCopy.ts), as a reload would have.
-   * Only a game no other page still has, and not over anything started here
-   * meanwhile.
+   * Only a game no other page still has (nor a room another page is in as
+   * the same guest or host), and not over anything started here meanwhile.
    */
   private resumeKept() {
-    void takeCopy(() => !this.mode && !this.state && this.status === 'idle').then((took) => {
+    void kept.takeCopy(() => !this.mode && !this.state && this.status === 'idle').then((took) => {
       if (!took) return;
       writeStored(SAVE, took.save, 'session');
       if (took.alive) writeStored(ALIVE, took.alive, 'session');
@@ -3213,7 +3213,7 @@ class Session {
     if (this.mode !== 'host' || !this.state?.delve) return;
     const at = String(Date.now());
     writeStored(ALIVE, at, 'session');
-    keepAlive(at);
+    kept.keepAlive(at);
   }
 
   /**
@@ -3342,6 +3342,8 @@ class Session {
 export const SAVE = 'session.v4';
 /** Beside the save, in sessionStorage: when the host was last here (Session.noteAlive; the room bot keeps a copy too). */
 export const ALIVE = 'session.alive';
+/** The copy of the save kept in localStorage, under its name: a copy kept by a build that saved under another is never picked up. */
+const kept = keeping(SAVE);
 
 /** The host's last moment before its reload, as 'resumed' takes it (nothing when unknown). */
 function lastAlive(): { at?: number } {
@@ -3406,12 +3408,14 @@ function writeSaved(saved: Saved | null) {
   if (saved) {
     const raw = JSON.stringify(saved);
     writeStored(SAVE, raw, 'session');
-    // (A room that never went online, with no code, is kept as a game on this device is.)
-    keepCopy(raw, saved.mode !== 'local' && !!saved.code);
+    // Its room named with the part this page plays there: every tab of this browser joins a room
+    // as the same player, so two guests' tabs in one room hold one seat, as two hosts' would hold
+    // one room. (A room that never went online, with no code, is kept as a game on this device is.)
+    kept.keepCopy(raw, saved.mode !== 'local' && saved.code ? `${saved.mode} ${saved.code}` : null);
   } else {
     removeStored(SAVE, 'session');
     removeStored(ALIVE, 'session');
-    dropCopy();
+    kept.dropCopy();
   }
 }
 
