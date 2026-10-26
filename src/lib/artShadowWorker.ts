@@ -6,8 +6,34 @@ import { castBox, shadowOf } from './castShadow';
 
 /** A picture, to be drawn `w` x `h` (CSS px). */
 export type CastJob = { id: number; image: ImageBitmap; w: number; h: number };
-/** Its shadow as a PNG (castBox's size); nothing if it couldn't be made here, and `cant` if nothing can (no OffscreenCanvas). */
-export type CastAnswer = { id: number; png?: Blob; cant?: boolean };
+/**
+ * Its shadow as a PNG (castBox's size), and how long making it took here
+ * (`worked`, ms); nothing if it couldn't be made here, and `cant` if
+ * nothing can (no OffscreenCanvas).
+ */
+export type CastAnswer = { id: number; png?: Blob; worked?: number; cant?: boolean };
+
+/** The shadow of `image` drawn `w` x `h` (CSS px), as a PNG. */
+async function cast(image: CanvasImageSource, w: number, h: number): Promise<Blob> {
+  const { pad, cw, ch } = castBox(w, h);
+  const c = new OffscreenCanvas(cw, ch);
+  const g = c.getContext('2d', { willReadFrequently: true })!;
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(image, pad, pad, w, h);
+  const px = g.getImageData(0, 0, cw, ch);
+  shadowOf(px.data, cw, ch);
+  g.putImageData(px, 0, 0);
+  // (A PNG, which keeps every level of the blur, for the page to show in an <img>: lib/artShadow.ts says why not a canvas.)
+  return c.convertToBlob({ type: 'image/png' });
+}
+
+// Made ahead of need (artShadow.ts, warmCasts), it makes a shadow once as
+// it loads, of nothing, a find-the-art tile's size: the first blur, its
+// code not yet compiled, took ten times as long as the ones after it on a
+// PC (40 to 54 ms against 4 for a 120 x 90 tile, in Node; after this one,
+// 4 for the first too), and the first question's pictures waited for it.
+// Its part up to the PNG runs before any job is taken.
+if (typeof OffscreenCanvas !== 'undefined') cast(new OffscreenCanvas(1, 1), 110, 110).catch(() => {});
 
 self.onmessage = async ({ data: job }: MessageEvent<CastJob>) => {
   const answer: CastAnswer = { id: job.id };
@@ -16,17 +42,10 @@ self.onmessage = async ({ data: job }: MessageEvent<CastJob>) => {
     self.postMessage({ ...answer, cant: true } satisfies CastAnswer);
     return;
   }
+  const start = performance.now();
   try {
-    const { pad, cw, ch } = castBox(job.w, job.h);
-    const c = new OffscreenCanvas(cw, ch);
-    const g = c.getContext('2d', { willReadFrequently: true })!;
-    g.imageSmoothingQuality = 'high';
-    g.drawImage(job.image, pad, pad, job.w, job.h);
-    const px = g.getImageData(0, 0, cw, ch);
-    shadowOf(px.data, cw, ch);
-    g.putImageData(px, 0, 0);
-    // (A PNG, which keeps every level of the blur, for the page to show in an <img>: lib/artShadow.ts says why not a canvas.)
-    answer.png = await c.convertToBlob({ type: 'image/png' });
+    answer.png = await cast(job.image, job.w, job.h);
+    answer.worked = performance.now() - start;
   } catch {
     // (Answered with nothing, and the page does it.)
   }

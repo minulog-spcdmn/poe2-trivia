@@ -168,3 +168,22 @@ test('the task line and the banner stay over the tooltip, now positioned, and th
   assert.ok(Number(one(game.css, '.head', 'z-index')) >= 1, "Game's .head (the banner) needs a z-index: the tooltip comes later, and where CSS paints its soft shadows they reach up to the banner");
   assert.ok(Number(one(game.css, '.cards-slot:global(.leaving)', 'z-index')) > task, "the cards fade out over the question, its task line too: their z-index tops .task's");
 });
+
+// ---- the shadows' making, ahead of the pictures that wait for it ----
+
+test('the shadows’ worker is made as a game opens, and Delve’s full art has its shadow before the veil hands over', () => {
+  // A picture waits up to CAST_WAIT for its shadow before it shows
+  // (ArtImage): its worker made at the first, a game's first question with
+  // art waited for the worker's script and its cold first blurs; and the
+  // full art, made at the handover, came in a shadow's making after the
+  // veil began to fade.
+  const game = parse('src/components/Game.svelte');
+  assert.match(game.markup, /onMount\(warmCasts\)/, 'Game warms the worker as it mounts');
+  const full = qv.markup.match(/\{#if media\?\.veil && showFull && drawn\}\s*<ArtImage\b[^>]*>/);
+  assert.ok(full, 'QuestionView has its full art for a veiled picture');
+  assert.doesNotMatch(full[0], /\bscale=/, 'the full art at ArtImage’s own scale');
+  assert.match(art.markup, /\bscale = 1\.8,/, 'ArtImage’s scale, 1.8');
+  assert.match(qv.markup, /fitOf\(r\.width, r\.height, d\.w, d\.h, 1\.8\)/, 'its shadow made ahead for the box ArtImage draws it in, at that scale');
+  assert.match(qv.markup, /castAhead\(img, fit\.w, fit\.h\)/);
+  assert.match(qv.markup, /Promise\.all\(\[box, shadow\(\)\]\)/, 'the handover (fullLoaded) waits for the shadow as well as the box');
+});

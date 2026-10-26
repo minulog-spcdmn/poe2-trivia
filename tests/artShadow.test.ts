@@ -1,13 +1,15 @@
 // An item picture's shadow is made in a worker (lib/artShadow.ts), and on
 // the page where the worker can't. A worker let go of never answers again,
 // not even what it had already sent: every job it held must still be made,
-// or its picture keeps the CSS filter the shadow is there to replace. Run
-// here against stand-ins for the browser's Worker, canvas and <img>.
+// or its picture keeps the CSS filter the shadow is there to replace. The
+// worker is there before the first picture waits on it, and a shadow made
+// ahead of its picture is the one the picture gets. Run here against
+// stand-ins for the browser's Worker, canvas and <img>.
 import './asVite.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-type Answer = { id: number; cant?: boolean };
+type Answer = { id: number; png?: Blob; worked?: number; cant?: boolean };
 /** Workers made, each answering as `answer` says (after a turn, as a real one would), and silent once terminated, as a real one is. */
 const workers: FakeWorker[] = [];
 let answer: (w: FakeWorker, job: { id: number }) => void = () => {};
@@ -108,4 +110,58 @@ test('the shadow comes as an <img>, decoded, the size castBox gives it', async (
   assert.match(cast.image.src, /^blob:/);
   assert.deepEqual({ pad: cast.pad, cw: cast.cw, ch: cast.ch }, castBox(120, 90));
   assert.equal(await castFor(picture, 0, 90), null, 'none for a box with no size');
+});
+
+/** The worker makes every shadow, as the browser's does. */
+const fromWorker = (w: FakeWorker, job: { id: number }) => w.reply({ id: job.id, png: new Blob(['png'], { type: 'image/png' }), worked: 4 });
+
+test('warmCasts makes the worker before any shadow is asked for, and that one makes them', async () => {
+  const { castFor, warmCasts } = await shadows('warm');
+  workers.length = 0;
+  answer = fromWorker;
+  warmCasts();
+  assert.equal(workers.length, 1, 'made at once');
+  assert.equal(workers[0]!.jobs, 0);
+  assert.ok(await castFor(picture, 120, 90));
+  warmCasts();
+  assert.equal(workers.length, 1, 'and only once');
+  assert.equal(workers[0]!.jobs, 1);
+});
+
+test('a shadow made ahead is the one castFor gives its picture at that size, once', async () => {
+  const { castAhead, castFor } = await shadows('ahead');
+  workers.length = 0;
+  madeHere = 0;
+  answer = fromWorker;
+  const full = { src: 'https://poe2.quest/art/full.webp' } as HTMLImageElement;
+  // (ArtImage's own <img> of the same file: the same src, another element.)
+  const own = { src: full.src } as HTMLImageElement;
+  const made = castAhead(full, 240, 180);
+  const cast = await made.cast;
+  assert.ok(cast);
+  // (Within half a px, as ArtImage takes a shadow for its size.)
+  assert.equal(await castFor(own, 240.3, 179.8), cast, 'the one made ahead');
+  assert.equal(workers[0]!.jobs, 1, 'made once');
+  const again = await castFor(own, 240, 180);
+  assert.ok(again && again !== cast, 'taken, it is not given again: its <img> is in one place only');
+  assert.equal(workers[0]!.jobs, 2);
+
+  const other = castAhead(full, 240, 180);
+  const resized = await castFor(own, 300, 225);
+  assert.ok(resized && resized !== (await other.cast), 'at another size, a shadow of its own');
+  assert.equal(resized.w, 300);
+  other.drop();
+  assert.notEqual(await castFor(own, 240, 180), await other.cast, 'dropped, it is no one’s');
+  assert.equal(madeHere, 0);
+});
+
+test('each shadow is timed on the page’s timeline, with the worker’s own part', async () => {
+  const { castFor } = await shadows('timed');
+  answer = fromWorker;
+  const before = performance.getEntriesByName('art shadow').length;
+  await castFor(picture, 120, 90);
+  const entries = performance.getEntriesByName('art shadow') as PerformanceMeasure[];
+  assert.equal(entries.length, before + 1);
+  assert.deepEqual(entries.at(-1)!.detail, { w: 120, h: 90, where: 'worker', worked: 4 });
+  assert.ok(entries.at(-1)!.duration >= 0);
 });

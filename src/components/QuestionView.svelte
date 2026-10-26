@@ -7,6 +7,8 @@
   import { FINALE_MS, materialize, type BurnParams } from '../lib/materialize';
   import { frontier } from '../lib/frontier';
   import { visibleBoxOf } from '../lib/veilCutter';
+  import { castAhead } from '../lib/artShadow';
+  import { fitOf } from '../lib/castShadow';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import Avatar from './Avatar.svelte';
@@ -508,21 +510,52 @@
     const done = () => live && (fullLoaded = true);
     const img = new Image();
     img.src = itemImage(d.art);
+    let drop = () => {};
+    // Its shadow made meanwhile, for the box its ArtImage will draw it in
+    // (the frame's, at ArtImage's scale of 1.8, as veilFit has it), which
+    // takes this one: the full art can then fade in as the veil flares and
+    // fades, not a shadow's making later (lib/artShadow.ts, castAhead).
+    const shadow = () => {
+      const frame = artEl?.querySelector('.frame');
+      if (!frame) return null;
+      // (Its size as ArtImage reads its slot's, which fills it: from a ResizeObserver.)
+      return new Promise<DOMRectReadOnly>((seen) => {
+        const ro = new ResizeObserver(([e]) => {
+          ro.disconnect();
+          seen(e!.contentRect);
+        });
+        ro.observe(frame);
+      }).then((r) => {
+        if (!live) return null;
+        const fit = fitOf(r.width, r.height, d.w, d.h, 1.8);
+        const made = castAhead(img, fit.w, fit.h);
+        drop = made.drop;
+        return made.cast;
+      });
+    };
     // Measured in art pixels, as the host measures the veiled copy, in the
     // veil's worker (on the page it held an iPhone's reveal a frame), once
-    // the page has the art, so the worker reads it from the cache.
+    // the page has the art, so the worker reads it from the cache. The veil
+    // moves into place by it at once; the handover waits for the shadow too.
     img
       .decode()
-      .then(() => (live ? visibleBoxOf(img, d.w, d.h) : null))
+      .then(() => {
+        if (!live) return null;
+        const box = visibleBoxOf(img, d.w, d.h).then((b) => {
+          if (live && b) fullBox = b;
+          return b;
+        });
+        return Promise.all([box, shadow()]).then(([b]) => b);
+      })
       .then((box) => {
         if (!live || !box) return;
-        fullBox = box;
         done();
       }, done);
     const timer = setTimeout(done, 3000);
     return () => {
       live = false;
       clearTimeout(timer);
+      drop();
     };
   });
 

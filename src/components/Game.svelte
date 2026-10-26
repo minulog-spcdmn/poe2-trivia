@@ -35,6 +35,7 @@
   import { closeItemWindow, itemWindow } from '../lib/itemWindow.svelte';
   import ItemWindow from './ItemWindow.svelte';
   import { warmGame } from './gameCircles.svelte';
+  import { warmCasts } from '../lib/artShadow';
   import { backdropDropShadow } from '../lib/backdropDropShadow';
 
   const s = $derived(session.state!);
@@ -47,6 +48,8 @@
   onMount(() => closeItemWindow);
   // The name plate's weave, ready before the first question shows one.
   onMount(warmWeave);
+  // The worker that makes the pictures' shadows, loaded and warm before the first question with art waits for it.
+  onMount(warmCasts);
 
 
   const race = $derived(s.settings.mode === 'race');

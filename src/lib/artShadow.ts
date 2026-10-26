@@ -44,7 +44,7 @@ function stop(w: Worker) {
   answers.clear();
 }
 
-/** The worker the shadows are made in; null where there's none. */
+/** The worker the shadows are made in, made the first time it's wanted (warmCasts, ahead of need); null where there's none. */
 function castWorker(): Worker | null {
   if (worker !== undefined) return worker;
   worker = null;
@@ -63,6 +63,17 @@ function castWorker(): Worker | null {
   }
   return worker;
 }
+
+/**
+ * The worker made, and so loaded and warmed (lib/artShadowWorker.ts), ahead
+ * of the first picture that waits for its shadow: Game calls it as a game
+ * opens. Made at the first shadow, its script was fetched, over the network
+ * on a first visit, and its first blurs run cold while the pictures of the
+ * game's first question with art waited for them, up to CAST_WAIT
+ * (ArtImage), and the art is the clue: a player who came by an invite link
+ * had seen none before (Home's DailyUnique is the only other).
+ */
+export const warmCasts = () => void castWorker();
 
 /** The shadow made in `w`, from the picture's pixels; an empty answer if it couldn't. */
 async function castThere(w: Worker, img: HTMLImageElement, width: number, height: number): Promise<CastAnswer> {
@@ -118,20 +129,66 @@ async function shown(png: Blob): Promise<HTMLImageElement> {
   return image;
 }
 
+/** A shadow made ahead (castAhead), for the picture at `src` drawn `w` x `h`. */
+type Ahead = { w: number; h: number; cast: Promise<Cast | null> };
+/** Shadows made ahead of the ArtImage that shows them, by their pictures' src, each until it takes it. */
+const ahead = new Map<string, Ahead>();
+
+/**
+ * The shadow of `img` (loaded and decoded) for `w` x `h` (CSS px), set out
+ * to be made now, before the picture's ArtImage is on the page: its
+ * castFor, for the same picture at that size, gets this one (once: the
+ * shadow's <img> can be in one place only). QuestionView makes the full
+ * art's ahead of a Delve reveal, so that the veil hands over to it as it
+ * comes in, not a shadow's making later. `drop` lets it go if nothing took
+ * it (the question moved on).
+ */
+export function castAhead(img: HTMLImageElement, w: number, h: number): { cast: Promise<Cast | null>; drop: () => void } {
+  const kept: Ahead = { w, h, cast: castFor(img, w, h) };
+  const src = img.src;
+  ahead.set(src, kept);
+  return { cast: kept.cast, drop: () => void (ahead.get(src) === kept && ahead.delete(src)) };
+}
+
+/**
+ * How long each shadow took, from being asked for to shown (and of that,
+ * the worker's own work, `worked`), on the page's timeline as "art shadow":
+ * what a run on a phone reads back (performance.getEntriesByName) to see
+ * whether the last of a find-the-art reveal's six, one after another in
+ * the worker, come near CAST_WAIT (ArtImage).
+ */
+function timed(start: number, detail: { w: number; h: number; where: 'worker' | 'page'; worked?: number }) {
+  try {
+    performance.measure('art shadow', { start, detail });
+  } catch {
+    // (A browser without User Timing's options: nothing to see by, the same shadow.)
+  }
+}
+
 /** The shadow of `img` (loaded and decoded) drawn `w` x `h` (CSS px); null if it can't be made. */
 export async function castFor(img: HTMLImageElement, w: number, h: number): Promise<Cast | null> {
   if (!(w > 0 && h > 0) || typeof createImageBitmap === 'undefined') return null;
+  const kept = ahead.get(img.src);
+  if (kept && Math.abs(kept.w - w) < 0.5 && Math.abs(kept.h - h) < 0.5) {
+    ahead.delete(img.src);
+    return kept.cast;
+  }
+  const start = performance.now();
   try {
     let png: Blob | undefined;
+    let worked: number | undefined;
     const there = castWorker();
     if (there) {
       const answer = await castThere(there, img, w, h);
       // (A worker that can't draw at all isn't asked again, nor waited on for the jobs sent it since.)
       if (answer.cant) stop(there);
-      png = answer.png;
+      ({ png, worked } = answer);
     }
+    const where = png ? 'worker' : 'page';
     png ??= await castHere(img, w, h);
-    return { image: await shown(png), w, h, ...castBox(w, h) };
+    const cast: Cast = { image: await shown(png), w, h, ...castBox(w, h) };
+    timed(start, { w, h, where, worked });
+    return cast;
   } catch {
     return null;
   }
