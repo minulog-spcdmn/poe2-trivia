@@ -82,7 +82,7 @@ export async function boot(asked: URLSearchParams) {
   if (built.query || built.hash) history.replaceState(null, '', `${location.pathname}?${asked}${built.query ? `&${built.query}` : ''}${built.hash ?? ''}`);
 
   await import('../../app.css');
-  const [{ mount }, { default: Root }, codex, records, daily, rooms, sound, spatial, fxUi, cursor, autoscroll, { switchedOff }, { toasts }, game, media] = await Promise.all([
+  const [{ mount }, { default: Root }, codex, records, daily, rooms, sound, spatial, fxUi, cursor, autoscroll, noMenu, { switchedOff }, { toasts }, game, media] = await Promise.all([
     import('svelte'),
     import('../../Root.svelte'),
     import('../../lib/codex.ts'),
@@ -94,6 +94,7 @@ export async function boot(asked: URLSearchParams) {
     import('../../lib/fx/ui.ts'),
     import('../../lib/ownCursor.ts'),
     import('../../lib/autoscroll.ts'),
+    import('../../lib/noMenu.ts'),
     import('../../lib/switchedOff.ts'),
     import('../../lib/toasts.svelte.ts'),
     import('../../lib/game.ts'),
@@ -168,6 +169,7 @@ export async function boot(asked: URLSearchParams) {
   fxUi.installUiFx();
   if (!switchedOff('cursor')) cursor.installCursor();
   autoscroll.installAutoscroll();
+  noMenu.installNoMenu();
   const [{ default: Crash }, { crash }] = await Promise.all([import('./Crash.svelte'), import('./crashCue.svelte.ts')]);
   mount(Root, { target: document.getElementById('app')!, props: { qaInside: Crash } });
   // The pointers bench's seats: this one's pointer to the bench, or another's from it (./pointerRelay.ts).

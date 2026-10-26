@@ -1,18 +1,19 @@
 <script lang="ts">
   // A room code's letters, each in its own box, as the lobby shows them (and
   // the invite screen, the room it leads to). A click, a drag across it or a
-  // tap copies the whole code, and a small note by the pointer says so; the
-  // letters light up while selected or just copied, in place of the
-  // browser's highlight, and go back to rest after. A long press selects it
-  // and leaves the copy to the phone's own Copy (data-copy keeps it, main.ts).
-  // A copy by hand gives just the letters too, and the selection can't be
-  // dragged off as a picture. `hidden` shows dots (for streaming; a copy still gives the
-  // code), `sparks` makes each letter spark as it lands, `delay` holds back
-  // their drop (ms).
-  import { onDestroy } from 'svelte';
+  // tap copies the whole code, and a small note by the pointer (above a
+  // finger) says so; the letters light up while selected or just copied, in
+  // place of the browser's highlight, and go back to rest after. A long
+  // press selects it and leaves the copy to the phone's own Copy (data-copy
+  // keeps it, lib/noMenu.ts). A copy by hand gives just the letters too, and
+  // the selection can't be dragged off as a picture. `hidden` shows dots
+  // (for streaming; a copy still gives the code), `sparks` makes each letter
+  // spark as it lands, `delay` holds back their drop (ms).
+  import { flushSync, onDestroy } from 'svelte';
   import { fade } from 'svelte/transition';
   import { glyphLanded } from '../lib/fx/moments';
-  import { zoomOf } from '../lib/stage';
+  import { ownRect, zoomOf } from '../lib/stage';
+  import { noteSpot } from '../lib/pointerNote';
   import { backdropShadow } from '../lib/backdropShadow';
 
   let { code, hidden = false, sparks = false, delay = 0 }: { code: string; hidden?: boolean; sparks?: boolean; delay?: number } = $props();
@@ -32,17 +33,31 @@
   const NOTE_MS = 1300;
   /** The note by the pointer: where (in this page's own px, under the stage's zoom), and what it says. */
   let note = $state<{ x: number; y: number; text: string } | null>(null);
+  let noteEl = $state<HTMLElement>();
+  /**
+   * The note's size (its own px), measured as it shows, and whether a finger
+   * or a pen made it: it is kept on the screen by its size, and over a tap
+   * goes above it, out from under the hand (lib/pointerNote.ts).
+   */
+  let noteSize = { w: 0, h: 0 };
+  let noteByTouch = false;
   /** Lit as just copied, for LIT_MS: on a phone the tap's selection doesn't last (Chrome on Android collapses it at once), so it can't be what lights the code. */
   let lit = $state(false);
   let litTimer: ReturnType<typeof setTimeout> | undefined;
   let noteTimer: ReturnType<typeof setTimeout> | undefined;
   const place = (e: MouseEvent) => {
     if (!note) return;
+    // In the note's own px: the page (and the note with it) may be zoomed (lib/stage.ts), the window isn't.
     const z = zoomOf(glyphs ?? document.body);
-    note = { ...note, x: e.clientX / z, y: e.clientY / z };
+    note = { ...note, ...noteSpot({ x: e.clientX / z, y: e.clientY / z }, noteSize, { w: innerWidth / z, h: innerHeight / z }, noteByTouch) };
   };
   function show(e: MouseEvent, text: string) {
     note = { x: 0, y: 0, text };
+    noteByTouch = touched;
+    // Drawn at once, still before the frame is painted, to be measured; once, not on every move after.
+    flushSync();
+    const r = noteEl && ownRect(noteEl);
+    noteSize = { w: r?.width ?? 0, h: r?.height ?? 0 };
     place(e);
     clearTimeout(noteTimer);
     noteTimer = setTimeout(() => (note = null), NOTE_MS);
@@ -135,7 +150,7 @@
 </span>
 {#if note}
   <!-- By the pointer, as long as it shows. -->
-  <span class="note" role="status" style:left="{note.x}px" style:top="{note.y}px" in:fade={{ duration: 120 }} out:fade={{ duration: 250 }}>{note.text}</span>
+  <span class="note" role="status" bind:this={noteEl} style:left="{note.x}px" style:top="{note.y}px" in:fade={{ duration: 120 }} out:fade={{ duration: 250 }}>{note.text}</span>
 {/if}
 
 <style>
@@ -285,11 +300,11 @@
       transform: translateY(-18px) rotateX(70deg);
     }
   }
-  /* The note by the pointer: just below and right of it, never in its way. */
+  /* The note by the pointer, never in its way: below and right of a mouse,
+     above a tap, and on the screen (placed by lib/pointerNote.ts). */
   .note {
     position: fixed;
     z-index: 96;
-    translate: 14px 16px;
     padding: 0.3rem 0.65rem;
     pointer-events: none;
     white-space: nowrap;

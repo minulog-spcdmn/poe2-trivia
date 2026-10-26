@@ -787,7 +787,7 @@
 <style>
   /* The room code stays selectable (the rest of the game isn't): a
      double-click or a long press takes the whole code, to share it, and the
-     long press keeps the phone's own Copy (data-copy, main.ts). */
+     long press keeps the phone's own Copy (data-copy, lib/noMenu.ts). */
   .code {
     -webkit-user-select: all;
     user-select: all;
