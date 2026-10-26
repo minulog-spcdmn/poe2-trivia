@@ -215,9 +215,11 @@ with its numbers in the comments.
   three of them in the frames after Begin. It's worked out in a worker now
   (`src/lib/lightsAhead.ts`, `lightWorker.ts`) from the moment a Delve is
   on its way, as is the cave-in sound (`caveInWorker.ts`, 48 to 65 ms a
-  step). What only depends on constants isn't worked out on the page at
-  all: the name plate's weave (61 to 68 ms) is made as the app is built
-  (`src/lib/weave.ts`, `weaveTile.ts`).
+  step). The strata past the zones that the table reads come with it, so
+  the page never generates one (1 to 9 ms each on a PC, in the frame a
+  depth first showed it). What only depends on constants isn't worked out
+  on the page at all: the name plate's weave (61 to 68 ms) is made as the
+  app is built (`src/lib/weave.ts`, `weaveTile.ts`).
 - **Waking the audio context holds the page.** On a cold page
   `AudioContext.resume()` blocks while iOS starts the audio session, 40 to
   50 ms, and the first tap is mostly New game: it landed in the lobby's

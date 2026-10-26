@@ -1,6 +1,6 @@
 // Works Delve's light table out (lib/descent.ts, lightTables) away from the
 // page's main thread, the whole of it, handing it over a stretch at a time
-// as each is done (see lib/lightsAhead.ts).
+// as each is done, with the strata it read (see lib/lightsAhead.ts).
 
 import { lightTables, type LightTable } from './descent.ts';
 

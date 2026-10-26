@@ -36,7 +36,8 @@
 // backdrop reads.
 
 import { emberTurn, ENV, ENVIRONMENTS, HALL_FROM, hallTurn, toneGain, toneOf, TURN_AT, TURN_DEPTHS, turnAt, type Look, type RGB, type Tone } from './backdropData.ts';
-import { endgameAt, endgameName, onBackdrops, zones } from './backdrops.ts';
+import { adoptStratum, endgameAt, endgameName, onBackdrops, zones } from './backdrops.ts';
+import type { Generated } from './backdropGen.ts';
 import { whenIdle, type Deadline } from './idle.ts';
 import { ZONE_DESCENT_MS } from './delve.ts';
 
@@ -133,9 +134,13 @@ export function lookOf(k: number): Look {
   if (look) return look;
   look = { ...endgameAt(k).look };
   look.lightK = calibrateLight(look, k);
+  keepLook(k, look);
+  return look;
+}
+
+function keepLook(k: number, look: Look) {
   if (deep.size > 256) deep.clear();
   deep.set(k, look);
-  return look;
 }
 
 /** Stratum `k`'s name: a zone's, or past the last zone its archetype's next name (`endgameName`, none twice in a long while). */
@@ -936,28 +941,60 @@ function workLights(to: number, ms: number): boolean {
   return settled >= goal;
 }
 
-/** The light table as far as it is worked out (see extendLights), as a worker hands it to the page (lib/lightsAhead.ts). */
-export type LightTable = { end: number; settled: number; hall: Float64Array; rest: Float64Array; k: Float64Array; light: Float64Array; level: Float64Array };
+/** A stratum past the zones as the light table read it: its look (lookOf) and the backdrop generated for it (endgameAt). */
+export type MadeStratum = { stratum: number; look: Look; backdrop: Generated };
+/**
+ * The light table as far as it is worked out (see extendLights), as a
+ * worker hands it to the page (lib/lightsAhead.ts), with the strata it
+ * read that weren't handed on before (see lightTables).
+ */
+export type LightTable = {
+  end: number;
+  settled: number;
+  hall: Float64Array;
+  rest: Float64Array;
+  k: Float64Array;
+  light: Float64Array;
+  level: Float64Array;
+  strata: MadeStratum[];
+};
 
 /**
  * Works the whole light table out, a stretch at a time (extendLights, as
  * lightAt and workLights do), handing on the table as it stands after each:
  * for the worker that works it out away from the page (lib/lightWorker.ts).
+ * With each, the strata past the zones the stretch read and the one after
+ * them, which the embers' colours read too (strataPalette in
+ * lib/backdropEmbers.ts), those not handed on before: all the strata the
+ * scene shows at any depth the table has settled.
  */
 export function* lightTables(): Generator<LightTable> {
+  let handed = STRATA.length;
   while (settled < LIGHT_TABLE) {
     extendLights(settled + 1);
     const n = tableEnd + 1;
-    yield { end: tableEnd, settled, hall: tableHall.slice(0, n), rest: tableRest.slice(0, n), k: tableK.slice(0, n), light: tableLight.slice(0, n), level: tableLevel.slice(0, n) };
+    const strata: MadeStratum[] = [];
+    for (const last = strataAt(tableEnd).stratum + 1; handed <= last; handed++) strata.push({ stratum: handed, look: lookOf(handed), backdrop: endgameAt(handed) });
+    yield { end: tableEnd, settled, hall: tableHall.slice(0, n), rest: tableRest.slice(0, n), k: tableK.slice(0, n), light: tableLight.slice(0, n), level: tableLevel.slice(0, n), strata };
   }
 }
 
 /**
  * Takes the light table as worked out elsewhere (lightTables), where it is
  * further on than here. It is the same table, a stretch at a time from the
- * same depths, so what lightAt has already answered stays as it was.
+ * same depths, so what lightAt has already answered stays as it was. The
+ * strata that come with it are taken too, where the page hasn't made them
+ * itself, so none is generated here: the first time a depth read one, its
+ * backdrop (endgameAt in lib/backdrops.ts: up to TRIES seeds, and for every
+ * other stratum its neighbour's as well) and its light held that depth
+ * change's frame, 1 to 9 ms each on a PC, the first into the endgame the
+ * most.
  */
 export function adoptLights(t: LightTable) {
+  for (const s of t.strata) {
+    if (!deep.has(s.stratum)) keepLook(s.stratum, s.look);
+    adoptStratum(s.stratum, s.backdrop);
+  }
   if (t.settled <= settled) return;
   tableHall.set(t.hall);
   tableRest.set(t.rest);
@@ -974,7 +1011,8 @@ export function adoptLights(t: LightTable) {
  * whether it is under way. While it is, the page works out only what a
  * frame can't do without (lightAt), not what lies ahead: on an iPhone each
  * stretch held the page 52 to 56 ms, however few milliseconds an idle
- * moment had.
+ * moment had. Nor the looks of the strata ahead, which come with the table
+ * (see adoptLights).
  */
 let away: (() => boolean) | null = null;
 export const workLightsAway = (start: () => boolean) => void (away = start);
