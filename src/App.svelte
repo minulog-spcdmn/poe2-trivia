@@ -35,6 +35,7 @@
   import { closeSettings, openSettings, settingsRoute } from './lib/settingsRoute.svelte';
   import { whenIdle } from './lib/idle';
   import { countFailedImport } from './lib/count';
+  import { retried } from './lib/chunkRetry';
   import { loadFonts, loadFontsAhead } from './lib/fontsAhead';
   import { shellHeightsRead } from './lib/shellHeights.svelte';
   import { toasts } from './lib/toasts.svelte';
@@ -366,18 +367,13 @@
   // Its fonts and the tooltips' too (lib/fontsAhead.ts), from the first idle
   // moment, so they don't lay the codex out again as it opens; opened before
   // they're in, it waits for them a moment (at most a quarter of a second).
-  // A fetch that fails isn't kept: opening the codex again tries again (a
-  // dropped connection may be back; some browsers keep a failed module
-  // failed, see loadGamePages), and until then the page says it couldn't be
-  // loaded (pageLost). It's counted all the same (countFailedImport), as it
-  // would be uncaught: most often a page left open across a deploy.
-  let codexChunk: Promise<typeof import('./components/Codex.svelte')> | null = null;
-  const fetchCodexPage = () =>
-    (codexChunk ??= import('./components/Codex.svelte').catch((e) => {
-      codexChunk = null;
-      countFailedImport();
-      throw e;
-    }));
+  // A fetch that fails says the page couldn't be loaded (pageLost), and
+  // opening the codex again fetches it again (a dropped connection may be
+  // back): not by the same import, which the browser keeps failed, but under
+  // an address of its own (lib/chunkRetry.ts). Each failure is counted all
+  // the same (countFailedImport), as it would be uncaught: most often a page
+  // left open across a deploy, which no fetch brings back; the Reload does.
+  const fetchCodexPage = retried(() => import('./components/Codex.svelte'), countFailedImport);
   let codexPage: Promise<typeof import('./components/Codex.svelte')> | null = null;
   const loadCodexPage = () =>
     (codexPage ??= Promise.all([fetchCodexPage(), Promise.race([loadFonts(), new Promise((r) => setTimeout(r, 250))])]).then(
@@ -388,12 +384,8 @@
       },
     ));
   onMount(loadFontsAhead);
-  // The settings page, a chunk of its own too: a failure counted as the codex's is.
-  const loadSettingsPage = () =>
-    import('./components/Settings.svelte').catch((e) => {
-      countFailedImport();
-      throw e;
-    });
+  // The settings page, a chunk of its own too: fetched again and counted as the codex's is.
+  const loadSettingsPage = retried(() => import('./components/Settings.svelte'), countFailedImport);
   onMount(() => {
     // Only ahead of time: a failure here (counted in fetchCodexPage) waits for the codex to be opened.
     const t = setTimeout(() => void fetchCodexPage().catch(() => {}), 2000);
@@ -722,7 +714,8 @@
   {/if}
 {/snippet}
 
-<!-- A page's chunk that didn't come (the game's screens, the codex, the settings): a reload brings it. -->
+<!-- A page's chunk that didn't come (the game's screens, the codex, the settings): a reload brings it. (The codex and
+     the settings are fetched again as they're opened again, too: lib/chunkRetry.ts.) -->
 {#snippet pageLost()}
   <div class="pages-wait">
     <p>Part of the game couldn’t be loaded.</p>

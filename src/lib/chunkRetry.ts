@@ -1,0 +1,96 @@
+// A page's chunk (the codex's, the settings') that can be fetched again after
+// it failed, without a reload: a venue's Wi-Fi drops, the player opens the
+// page again once it's back, and it comes.
+//
+// The same import() again would fail again at once: the browser keeps a
+// module that failed to fetch in its module map, failed, for as long as the
+// document lives (WebKit and Chromium both, measured on an iPhone and on
+// Android), and the HTML spec has it so. So it's fetched again under an
+// address of its own: the chunk's own, with "?attempt=n" on it. The chunk's
+// imports are relative ("./storage-….js"), and resolve against that address
+// without its query: to the very modules the page has already, so nothing it
+// shares with the rest of the page (the session, the stores) comes twice.
+// Only the chunk itself is new, and it never ran under its first address.
+//
+// That holds only while its imports never failed themselves, as a failed one
+// stays failed under its own address, which the chunk can't be made to
+// change. So the build doesn't link these chunks' imports ahead of them
+// (lib/retriedPages.ts; Vite's preload would, all at once, and with the Wi-Fi
+// gone every one of them would fail with the chunk): they're fetched only
+// once the chunk itself has come, by the browser. One that fails then, the
+// Wi-Fi going in that moment, still needs a reload, which the page offers.
+
+/** `url` with the attempt it's fetched for: an address of its own, as the module map and the cache see it. */
+export function attemptUrl(url: string, attempt: number) {
+  const u = new URL(url);
+  u.searchParams.set('attempt', String(attempt));
+  return u.href;
+}
+
+/** The address in a failed import's message, where the browser names it (Chromium, Firefox; not WebKit). */
+export const failedUrl = (e: unknown) => /dynamically imported module: (\S+)/.exec((e as Error | null)?.message ?? '')?.[1] ?? '';
+
+/** `old`, a stylesheet that failed to load, linked again for `attempt` in its place (so in its order among the page's sheets). */
+function relink(old: HTMLLinkElement, attempt: number) {
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.crossOrigin = old.crossOrigin;
+  link.href = attemptUrl(old.href, attempt);
+  return new Promise<HTMLLinkElement>((resolve, reject) => {
+    link.addEventListener('load', () => {
+      old.remove();
+      resolve(link);
+    });
+    link.addEventListener('error', () => {
+      link.remove();
+      reject(new Error(`Unable to load CSS ${link.href}`));
+    });
+    old.after(link);
+  });
+}
+
+/**
+ * A page's chunk, loaded by `load` (its `import()`, which Vite's preload wraps
+ * in the build) the first time it's asked for, and kept once it has come.
+ * One that failed (`failed` hears each time) is fetched again the next time
+ * it's asked for, under an address of its own (above), its stylesheets that
+ * failed with it too.
+ *
+ * Its address is the one Vite's preload links ahead of it (lib/retriedPages.ts),
+ * as `load` adds it to the page; or, where nothing was linked (the dev
+ * server), the one the browser's error names. With neither, `load` is all
+ * there is to try again.
+ */
+export function retried<T>(load: () => Promise<T>, failed: (e: unknown) => void = () => {}): () => Promise<T> {
+  let loading: Promise<T> | null = null;
+  let tries = 0;
+  let url = '';
+  const sheets: HTMLLinkElement[] = [];
+  const first = () => {
+    // Vite's preload links the chunk and its stylesheets as it's called, before it waits for anything.
+    const before = new Set(document.head.querySelectorAll('link'));
+    const loaded = load();
+    const added = [...document.head.querySelectorAll('link')].filter((l) => !before.has(l));
+    // (Called again, it links nothing: Vite's preload remembers what it linked.)
+    url ||= added.find((l) => l.rel === 'modulepreload')?.href ?? '';
+    sheets.push(...added.filter((l) => l.rel === 'stylesheet'));
+    return loaded;
+  };
+  const again = async (attempt: number) => {
+    // Its styles first, as Vite's preload has them, so the page never shows
+    // without them; a sheet that came is kept, whether or not the rest do.
+    await Promise.all(
+      sheets.map(async (s, i) => {
+        if (!s.sheet) sheets[i] = await relink(s, attempt);
+      }),
+    );
+    return (await import(/* @vite-ignore */ attemptUrl(url, attempt))) as T;
+  };
+  return () =>
+    (loading ??= (tries++ === 0 || !url ? first() : again(tries - 1)).catch((e) => {
+      url ||= failedUrl(e);
+      loading = null;
+      failed(e);
+      throw e;
+    }));
+}
