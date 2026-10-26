@@ -1,5 +1,5 @@
 // Ranking many numbers fast: a veiled patch's pixels by when each burns in
-// (materialize.ts), tens of thousands at once as the patch arrives, where a
+// (burn.ts), tens of thousands at once as the patch arrives, where a
 // sort with a comparison function took tens of ms.
 
 const BITS = 11;
