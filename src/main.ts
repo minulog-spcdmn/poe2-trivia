@@ -49,12 +49,21 @@ const TOGGLED: Record<Toggled, string> = {
 onCountToggle((t) => toasts.show(TOGGLED[t], t === 'unsaved' ? 'error' : 'info', { title: 'Visit counts' }));
 // No browser menu on a right click: it brings the system's cursor, and the
 // game has no use for it. Text fields keep theirs, where it's how many paste,
-// links theirs (open in a new tab, copy the address), and the codes players
-// pass on (data-copy: the room code, the sync code) theirs, since on a phone
-// the same event is a long press, and preventing it takes away the Copy that
-// Android Chrome shows over the selection.
+// and links theirs (open in a new tab, copy the address). The codes players
+// pass on (data-copy: the room code, the sync code) keep theirs only when
+// held with a finger or a pen: there the same event is a long press, and
+// preventing it takes away the Copy that Android Chrome shows over the
+// selection. A mouse has no need of it on them (a click selects the whole
+// code, or copies the room code outright), so a right click there stays
+// without a menu, as everywhere else.
+/** What the last press was made with: Safari's contextmenu is a plain MouseEvent, with no pointer type to read. */
+let pressedWith = '';
+addEventListener('pointerdown', (e) => (pressedWith = e.pointerType), { capture: true, passive: true });
 addEventListener('contextmenu', (e) => {
-  if (!(e.target as Element | null)?.closest('input, textarea, [contenteditable], a[href], [data-copy]')) e.preventDefault();
+  const on = e.target as Element | null;
+  if (on?.closest('input, textarea, [contenteditable], a[href]')) return;
+  if (pressedWith !== 'mouse' && on?.closest('[data-copy]')) return;
+  e.preventDefault();
 });
 // No image lifts off the page as a ghost when pressed and moved: nothing in
 // the game is dropped anywhere. (A dragstart, not draggable="false" on each,

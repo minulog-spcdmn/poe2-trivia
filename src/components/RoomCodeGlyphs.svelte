@@ -49,18 +49,20 @@
   }
 
   /**
-   * A press on the code. A mouse or a pen copies once it lets go (wherever
-   * the pointer is by then), so a drag that starts on the code and ends off
-   * it counts: its selection is there by then. A finger copies on the tap's
-   * click instead, which still has the tap's user activation for the
-   * clipboard: Android Chrome only selects the code after its pointerup, and
-   * a long press there often ends in a pointercancel, with no pointerup at
-   * all (that one is left to the phone's own Copy over the selection).
+   * A press on the code. A mouse copies once it lets go (wherever the
+   * pointer is by then), so a drag that starts on the code and ends off it
+   * counts: its selection is there by then. A finger or a pen copies on the
+   * tap's click instead, which still has the tap's user activation for the
+   * clipboard: Android Chrome runs a stylus through the same gestures as a
+   * finger, and only selects the code after their pointerup, and a long
+   * press there often ends in a pointercancel, with no pointerup at all
+   * (that one is left to the phone's own Copy over the selection). A pen's
+   * drag that ends off the code leaves just its selection, for Ctrl+C.
    */
   let touched = false;
   function press(e: PointerEvent) {
     if (e.button !== 0) return;
-    touched = e.pointerType === 'touch';
+    touched = e.pointerType !== 'mouse';
     if (!touched) addEventListener('pointerup', release, { once: true });
   }
   function release(e: PointerEvent) {

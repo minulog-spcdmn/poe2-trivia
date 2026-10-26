@@ -505,6 +505,7 @@
     font-size: 1.1rem;
     letter-spacing: 0.12em;
     color: var(--gold-hi);
+    -webkit-user-select: all;
     user-select: all;
     -webkit-touch-callout: default;
   }
