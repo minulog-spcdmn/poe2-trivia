@@ -20,7 +20,9 @@
 // there, and the old tab coming back later never takes the seat from it. And
 // a room a page leaves (on purpose, removed, closed, or for another game) is
 // left for good: the older copies of it go too, so an old tab coming back
-// never takes the player into a room they left from a newer one. Where there
+// never takes the player into a room they left from a newer one. A game whose
+// page unloads (its tab closed, or the page left for another) is left too: a
+// killed tab gets no pagehide, a closed one does. Where there
 // are no Web Locks (a page that isn't secure, a browser from before them)
 // nothing is kept: whether the game's tab is still there can't be told, and
 // a game played on in two tabs at once is worse than one lost.
@@ -174,6 +176,8 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean, 
   /** What the slot is to hold (null: nothing, the game left); `at`, when it was saved or the page last left. */
   let wanted: { raw: string; room: string | null; at: number } | null = null;
   let alive: string | null = null;
+  /** Whether the page has gone for good (closing): nothing is kept after. */
+  let gone = false;
 
   /**
    * Takes `slot`'s lock if no page holds it; what lets it go again, or null.
@@ -298,7 +302,7 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean, 
      * device.
      */
     keepCopy(raw: string, room: string | null) {
-      if (!locks) return;
+      if (!locks || gone) return;
       wanted = { raw, room, at: Date.now() };
       if (mine) put(mine);
       else void claim();
@@ -314,6 +318,27 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean, 
       if (!mine || !wanted) return;
       wanted.at = Date.now();
       put(mine);
+    },
+
+    /**
+     * The page is going for good (its tab closed, or the page left for
+     * another, or reloaded): its copy goes, as the game is let go of. A tab
+     * the player closed is a game walked away from (the session counts it
+     * so), and its copy, stamped as it went and its lock gone with the page,
+     * would look just like a killed tab's to a page of the site brought back
+     * later in another tab. A killed tab gets no pagehide, so its copy stays;
+     * a reloaded page has its game from its tab's sessionStorage, and keeps
+     * a copy again as it resumes. Nothing is claimed, as the page is going.
+     */
+    closing() {
+      if (!locks) return;
+      if (wanted?.room) leftRoom(wanted.room, wanted.at);
+      wanted = null;
+      alive = null;
+      gone = true;
+      if (!mine) return;
+      removeStored(copyName(mine));
+      removeStored(aliveName(mine));
     },
 
     /** The host's last moment noted (session.svelte.ts noteAlive), beside the copy. */
@@ -400,7 +425,9 @@ export function keeping(save: string) {
   if (KEEPS && typeof document !== 'undefined') {
     // A phone's browser kills a tab only once it's out of sight.
     document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && here.leaving());
-    addEventListener('pagehide', () => here.leaving());
+    // A page put in the back/forward cache may come back; one that unloads never does. Except
+    // in an iPhone's home-screen app, whose one window swiped away is to come back as it was.
+    addEventListener('pagehide', (e) => (e.persisted || installedApp() ? here.leaving() : here.closing()));
   }
   return here;
 }

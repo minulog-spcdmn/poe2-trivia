@@ -38,11 +38,17 @@ function page({ back = false, from, store = new Map(from?.store) }: { back?: boo
   const name = `tab${++tabs}`;
   return { name, store, session: memoryStorage(store), k: keeper(locks.of(name), () => back, SAVE) };
 }
-/** The browser killed the tab: its page's locks go, its sessionStorage too (as Android Chrome's does). */
+/** The browser killed the tab: its page's locks go, its sessionStorage too (as Android Chrome's does). No pagehide. */
 const kill = (tab: Tab) => locks.kill(tab.name);
+/** The page went for good (its tab closed, a reload): a pagehide not for the back/forward cache, then its locks go. */
+function close(tab: Tab) {
+  current = tab;
+  tab.k.closing();
+  kill(tab);
+}
 /** The same tab reloaded: a new page, its sessionStorage kept. */
 function reload(tab: Tab) {
-  kill(tab);
+  close(tab);
   return page({ back: true, store: tab.store });
 }
 const settle = () => new Promise((r) => setImmediate(r));
@@ -138,6 +144,9 @@ test('a page brought back never takes over a game another page still has', async
   await on(a2, (k) => start(k, save(2)));
   assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null, 'the reloaded page holds the slot again');
   assert.equal(copiesLeft().length, 1, 'one copy for the tab, through its reloads');
+  // Its copy went as the old page did, and the game resumed kept one again.
+  kill(a2);
+  assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, save(2));
 });
 
 test('a duplicated tab keeps its game apart, never over the first one’s', async () => {
@@ -160,6 +169,42 @@ test('a game left is not picked up', async () => {
   kill(a);
   assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null);
   assert.deepEqual([...local.keys()], [], 'nothing left in localStorage');
+});
+
+test('a game whose tab the player closed is never picked up by another', async () => {
+  const a = page();
+  await on(a, (k) => start(k, save(1)));
+  await on(a, (k) => k.leaving());
+  close(a);
+  // A tab of the site without a game, killed in the background and restored later.
+  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null);
+  assert.deepEqual([...local.keys()], [], 'nothing left in localStorage');
+});
+
+test('a room whose tab the player closed is left for good, older tabs’ copies of it too', async () => {
+  const a = page();
+  await on(a, (k) => start(k, guest('ROOM')));
+  kill(a);
+  await later();
+  const b = page();
+  await on(b, (k) => start(k, guest('ROOM')));
+  await on(b, (k) => k.leaving());
+  close(b);
+  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null);
+  assert.deepEqual(copiesLeft(), []);
+});
+
+test('a page that closes keeps nothing after, whatever is saved as it goes', async () => {
+  const a = page();
+  await on(a, (k) => start(k, hosting('HOST')));
+  await on(a, (k) => {
+    k.closing();
+    keep(k, hosting('HOST'));
+    k.keepAlive(String(Date.now()));
+  });
+  kill(a);
+  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null);
+  assert.deepEqual([...local.keys()], []);
 });
 
 test('a reloaded page that leaves before saving again clears its tab’s copy', async () => {
