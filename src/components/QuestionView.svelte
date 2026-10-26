@@ -489,30 +489,34 @@
     const timer = setTimeout(() => (veilDone = true), wait);
     return () => clearTimeout(timer);
   });
-  // The full art loads as the reveal starts, so the veiled picture only hands
+  // The full art loads as the reveal starts, so a veiled picture only hands
   // over once it can show (or after a while, should it not load). Where the
   // item is in it (in art pixels, the item's own size) lets the veiled copy
-  // line up with it first.
+  // line up with it first. A picture shown whole needs neither.
   let fullLoaded = $state(false);
   let fullBox = $state<[number, number, number, number] | null>(null);
   $effect(() => {
-    if (!reveal || !drawn) {
+    const d = drawn;
+    if (!reveal || !d || !media?.veil) {
       fullLoaded = false;
       fullBox = null;
       return;
     }
     let live = true;
     const done = () => live && (fullLoaded = true);
-    const src = itemImage(drawn.art);
     const img = new Image();
-    img.src = src;
-    // Measured in art pixels, as the host measures the veiled copy (in the
-    // veil's worker: on the page it held an iPhone's reveal a frame).
-    Promise.all([img.decode(), visibleBoxOf(src, drawn.w, drawn.h)]).then(([, box]) => {
-      if (!live) return;
-      fullBox = box;
-      done();
-    }, done);
+    img.src = itemImage(d.art);
+    // Measured in art pixels, as the host measures the veiled copy, in the
+    // veil's worker (on the page it held an iPhone's reveal a frame), once
+    // the page has the art, so the worker reads it from the cache.
+    img
+      .decode()
+      .then(() => visibleBoxOf(img, d.w, d.h))
+      .then((box) => {
+        if (!live) return;
+        fullBox = box;
+        done();
+      }, done);
     const timer = setTimeout(done, 3000);
     return () => {
       live = false;

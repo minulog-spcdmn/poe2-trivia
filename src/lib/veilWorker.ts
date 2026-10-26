@@ -3,8 +3,7 @@
 // each patch's picture as it uncovers (many at once at the reveal), held the
 // page up just as its effects were playing.
 
-import { visibleBox } from './patches';
-import { placeOf, VeilCut, type OwnVeil, type PatchPlace, type VeilWire } from './veilCut';
+import { drawnBox, placeOf, VeilCut, type OwnVeil, type PatchPlace, type VeilWire } from './veilCut';
 
 export type VeilJob =
   /** A veiled picture to cut, from the wire or the host's own; answered with its patches' places. */
@@ -36,11 +35,11 @@ self.onmessage = async ({ data: job }: MessageEvent<VeilJob>) => {
     // (At the reveal, on the page, this held an iPhone a frame of 50 to 68 ms.)
     try {
       const img = await createImageBitmap(await (await fetch(job.url)).blob());
-      const g = new OffscreenCanvas(job.w, job.h).getContext('2d', { willReadFrequently: true })!;
-      g.imageSmoothingQuality = 'high';
-      g.drawImage(img, 0, 0, job.w, job.h);
-      img.close();
-      answer({ t: 'box', id: job.id, box: visibleBox(g.getImageData(0, 0, job.w, job.h).data, job.w, job.h) });
+      try {
+        answer({ t: 'box', id: job.id, box: drawnBox(img, new OffscreenCanvas(job.w, job.h)) });
+      } finally {
+        img.close();
+      }
     } catch (err) {
       answer({ t: 'box', id: job.id, error: String(err) });
     }

@@ -118,16 +118,24 @@
    * painted through its mask whenever any of it changes, and on an iPhone,
    * as the plate inked itself in, that held the lobby to 24 to 35 fps (60
    * unmasked). Once on, the mask stays: taken off again, an iPhone still
-   * paid for it.
+   * paid for it. The cutouts' delays count from the first plate: one drawn
+   * again keeps their animations running.
    */
   let starsCut = $state(false);
+  let firstPlateAt = 0;
   $effect(() => {
     const p = plate;
     if (!p || untrack(() => starsCut)) return;
+    firstPlateAt ||= performance.now();
     const still = document.documentElement.hasAttribute('data-still') || matchMedia('(prefers-reduced-motion: reduce)').matches;
     const due = still ? 0 : Math.min(...[p.star, p.last].map((s) => s?.delay ?? Infinity));
     if (due === Infinity) return;
-    const timer = setTimeout(() => (starsCut = true), 1000 * due);
+    const wait = firstPlateAt + 1000 * due - performance.now();
+    if (wait <= 0) {
+      starsCut = true;
+      return;
+    }
+    const timer = setTimeout(() => (starsCut = true), wait);
     return () => clearTimeout(timer);
   });
   $effect(() => {
@@ -1076,6 +1084,7 @@
       transform: translate(0, 0);
     }
   }
+  /* Until its carve starts, the plate and glow go unmasked (starsCut waits as long), so a carve made to start sooner must start starsCut sooner too. */
   .cutout {
     fill: #000;
     stroke: none;

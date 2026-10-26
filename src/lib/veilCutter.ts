@@ -3,8 +3,7 @@
 // and at the reveal; on the page itself where no worker can run, or where
 // one fails.
 
-import { visibleBox } from './patches';
-import { placeOf, VeilCut, type OwnVeil, type PatchImage, type PatchPlace, type VeilWire } from './veilCut';
+import { drawnBox, placeOf, VeilCut, type OwnVeil, type PatchImage, type PatchPlace, type VeilWire } from './veilCut';
 import type { VeilAnswer, VeilJob } from './veilWorker';
 
 /** A veiled picture being cut. */
@@ -97,27 +96,21 @@ class Cutting implements CutHandle {
 }
 
 /**
- * Where the visible pixels are in the picture at `url` drawn `w` × `h`
- * (visibleBox): worked out in the worker, or on the page where it can't be.
+ * Where the visible pixels are in `img` (decoded) drawn `w` × `h` (drawnBox):
+ * worked out in the worker, from the file as cached, or on the page where it
+ * can't be.
  */
-export async function visibleBoxOf(url: string, w: number, h: number): Promise<[number, number, number, number]> {
+export async function visibleBoxOf(img: HTMLImageElement, w: number, h: number): Promise<[number, number, number, number]> {
   const v = veilWorker();
   if (v) {
     const id = ++jobs;
     const box = await new Promise<[number, number, number, number] | null>((resolve) => {
       boxes.set(id, resolve);
-      v.postMessage({ t: 'box', id, url: new URL(url, location.href).href, w, h } satisfies VeilJob);
+      v.postMessage({ t: 'box', id, url: img.currentSrc || img.src, w, h } satisfies VeilJob);
     });
     if (box) return box;
   }
-  const img = new Image();
-  img.src = url;
-  await img.decode();
-  const c = canvasOnPage(w, h);
-  const g = c.getContext('2d', { willReadFrequently: true })!;
-  g.imageSmoothingQuality = 'high';
-  g.drawImage(img, 0, 0, w, h);
-  return visibleBox(g.getImageData(0, 0, w, h).data, w, h);
+  return drawnBox(img, canvasOnPage(w, h));
 }
 
 let worker: Worker | null | undefined;

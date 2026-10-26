@@ -193,8 +193,9 @@ with its numbers in the comments.
   after Next went from between 344 and 1,113 ms to between 53 and 81, and
   Begin's from between 690 and 946 ms to about 285. Reading an image's
   pixels is the same: finding where the item sits in the full art at the
-  reveal (`getImageData`) cost an answer a frame of 50 to 68 ms; it's read
-  in the veil's worker now (`visibleBoxOf` in `src/lib/veilCutter.ts`).
+  reveal (`getImageData`) cost every answer a frame of 50 to 68 ms, though
+  only a veiled picture needs it. It's done for those alone now, in the
+  veil's worker (`visibleBoxOf` in `src/lib/veilCutter.ts`).
 - **Safari has no `requestIdleCallback`.** `whenIdle` (`src/lib/idle.ts`)
   waits 300 ms there instead, and each step still runs as one task: a step
   over a frame's time drops a frame on the phone however idle the page
