@@ -8,7 +8,7 @@
   import DelveRules from './DelveRules.svelte';
   import ModeIcon from './ModeIcon.svelte';
   import { bestOf, findsMet, lastOf, loadRecords } from '../lib/delveRecord';
-  import { MAX_NAME, nameRefusal, nameTooShort } from '../lib/names';
+  import { MAX_NAME, nameRefusal } from '../lib/names';
   import { creatorShown } from '../lib/creator';
   import { refuseName } from '../lib/nameField';
   import { inviteUrl } from '../lib/site';
@@ -77,11 +77,14 @@
   function addLocal(e: Event) {
     e.preventDefault();
     const name = newName.trim();
-    if (!name) return;
-    // The start page's checks, the held name included; the game checks it against the other players.
+    // The start page's checks, the held name included; the game checks it
+    // against the other players. Turned down as the start page does it, with
+    // the reason (an empty field without a word): the Add button stays live
+    // for that, as a disabled one took the Enter key too, and a name one
+    // character short was ignored without a sign.
     const refusal = nameRefusal(name);
     if (refusal) {
-      refuseName((e.currentTarget as HTMLFormElement).querySelector('input'), refusal, (on) => (nameError = on));
+      refuseName((e.currentTarget as HTMLFormElement).querySelector('input'), name ? refusal : { reason: null }, (on) => (nameError = on));
       return;
     }
     // Keep the name to fix it up if it was turned down (hot-seat applies it right away).
@@ -308,7 +311,7 @@
 {#snippet adder(placeholder: string)}
   <form class="add" onsubmit={addLocal}>
     <input class="field" class:shake={nameError} bind:value={newName} maxlength={MAX_NAME} autocomplete="off" spellcheck="false" {placeholder} aria-label={placeholder} />
-    <button class="btn" type="submit" disabled={nameTooShort(newName)}>Add</button>
+    <button class="btn" type="submit">Add</button>
   </form>
 {/snippet}
 
