@@ -21,11 +21,16 @@
   // so the idle moment is never a long one. Read (JSON.parse, a few ms) the
   // first time an item's details are opened: most games never do. Not with
   // Save-Data on; then it's all fetched at that first opening, as it was.
-  const fetchText = () => fetch(statsUrl).then((r) => (r.ok ? r.text() : Promise.reject(new Error(`itemStats: ${r.status}`))));
+  // Ahead, at low priority, so it never holds up what the start page itself
+  // is loading; at a tap, at the default, since the player waits on it.
+  const fetchText = (low = false) =>
+    fetch(statsUrl, low ? { priority: 'low' } : {}).then((r) =>
+      r.ok ? r.text() : Promise.reject(new Error(`itemStats: ${r.status}`)),
+    );
   /** The fetch made ahead, if one was: its text, or nothing should it have failed (fetched again when wanted). */
   let ahead: Promise<string | null> | undefined;
   if (typeof window !== 'undefined' && !savingData())
-    whenIdle(() => void (ahead ??= fetchText().catch(() => null)), { timeout: 4000, fallback: 1500 });
+    whenIdle(() => void (ahead ??= fetchText(true).catch(() => null)), { timeout: 4000, fallback: 1500 });
   let stats: Promise<Stats> | undefined;
   /** The tooltips once they're here: a tooltip drawn after that is drawn whole at once, never a moment of "…" first. */
   let loaded: Stats | null = null;
@@ -41,7 +46,10 @@
    */
   export const loadStats = () =>
     (stats ??= Promise.all([(ahead ?? Promise.resolve(null)).then((text) => text ?? fetchText()), fonts()]).then(
-      ([text]) => (loaded = JSON.parse(text) as Stats),
+      ([text]) => {
+        ahead = undefined; // the text, once read, isn't kept beside what it was read into
+        return (loaded = JSON.parse(text) as Stats);
+      },
     ));
 
   /** A value's colour, by its letter: the game's white, its augmented blue, and each damage type's own. */
