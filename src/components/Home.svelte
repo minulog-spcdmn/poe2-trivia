@@ -1314,7 +1314,6 @@
     background: none;
     border: 0;
     cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
   }
   /* A hairline between the two, fading out at both ends as the footer's rule does. */
   .pair-pick + .pair-pick {

@@ -506,6 +506,7 @@
     letter-spacing: 0.12em;
     color: var(--gold-hi);
     user-select: all;
+    -webkit-touch-callout: default;
   }
   .how {
     margin: 0;

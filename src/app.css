@@ -147,15 +147,29 @@ html {
      (a card's nameplate wrapped a long category to three lines). */
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  /* No grey box over a tapped button or card on iOS and Android: the game
+     draws its own pressed states. */
+  -webkit-tap-highlight-color: transparent;
   scrollbar-gutter: stable;
   scrollbar-color: #4a3a22 #0a0908;
 }
 /* The game, held to the screen (lib/viewport.ts): no rubber band past the
    top or bottom or pull to refresh, and no pinch or double-tap zoom. (Only
-   up and down: sideways, a desktop trackpad's swipe goes back and forward.) */
+   up and down: sideways, a desktop trackpad's swipe goes back and forward.)
+   The body is held as well as html: html's overflow is visible, so the page
+   scrolls by the body's overflow-x, and Chrome takes the page's
+   overscroll-behavior from the body too, never html. (The body is no
+   scroller itself, and overflow-x: clip would hand it up just the same;
+   html's own counts once html sets an overflow.) Held on html alone, a
+   swipe down mid-turn on Android still reloaded the game. It holds every
+   screen of the game's page, the start page and the codex too, as it always
+   meant to (lib/viewport.ts holds the page once, for all). */
 html.held {
-  overscroll-behavior-y: none;
   touch-action: pan-x pan-y;
+}
+html.held,
+html.held body {
+  overscroll-behavior-y: none;
 }
 /* Fullscreen (lib/fullscreen.ts): nothing of the browser showing, the
    scrollbar and its reserved strip included. The page still scrolls. */
@@ -247,15 +261,27 @@ body {
   overflow-x: hidden;
   /* A game, not a document: taps and drags never select its text. What a
      player types stays selectable, and anything meant to be copied says so
-     (user-select: text or all where it is set). */
+     (user-select: text or all where it is set, which also sets
+     -webkit-touch-callout back to default, so the Copy bar shows). */
   -webkit-user-select: none;
   user-select: none;
+  /* Nor does holding a finger on an item picture or a control bring up iOS's
+     image menu (Save, Copy, Share) over the game. */
+  -webkit-touch-callout: none;
 }
 input,
 textarea,
 [contenteditable] {
   -webkit-user-select: text;
   user-select: text;
+}
+/* Text a player types, and links, keep the system's callout; so does any text
+   set to user-select: text or all (the room and sync codes, where it is set). */
+input,
+textarea,
+[contenteditable],
+a[href] {
+  -webkit-touch-callout: default;
 }
 
 #app {
