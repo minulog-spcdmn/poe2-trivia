@@ -196,7 +196,12 @@
   // the tiles' shadows go (the styles), but only in the sections near the
   // screen as it opened (a screen either way), whose shadows the browser
   // draws: every tile's taken off and put back restyled all five hundred, on
-  // an iPhone some 12 ms of the frame the window starts to close in.
+  // an iPhone some 12 ms of the frame the window starts to close in. WebKit
+  // restyles only the near sections' pictures now, so that 12 ms is the
+  // most this saves; Blink restyles every picture the rule names either way.
+  // The shadows' own cost stays: they come back as the fade-out starts and
+  // are drawn again under the page's fading filter on each frame of both
+  // fades (docs/iphone.md, "Still open").
   // (Nothing scrolls under a dialog.)
   /** The sections (by category) near the screen now, as an observer last told it: kept aside, not shown. */
   const near = new Set<string>();
@@ -215,18 +220,7 @@
     gridEls.forEach((g) => g && io.observe(g));
     return () => io.disconnect();
   });
-  /**
-   * The sections near the screen as the last dialog opened, whose tiles'
-   * shadows go behind it. Kept as it closes: the rule waits for
-   * data-dialog-up (lib/behindDialog.ts), which goes as the fade-out starts,
-   * a frame or two after the close, so the shadows come back then as ever.
-   * Let go of as it closed, they came back in the close's own frame, still
-   * under the page's full filter.
-   */
-  let shadeless = $state.raw<ReadonlySet<string>>(new Set());
-  $effect.pre(() => {
-    if (open || confirmReset) shadeless = new Set(near);
-  });
+  // (Which those are is taken as a dialog opens: shadeless, below open and confirmReset.)
   // A held grid's height is worked out from its names (lib/heldGrid.ts). The
   // first grid gives a tile's fixed parts, a line's height, the columns and
   // a name's width and font, each time it lays out at a new size (a
@@ -381,6 +375,21 @@
     wins = loadWins();
     confirmReset = false;
   }
+  /**
+   * The sections near the screen as the last dialog opened, whose tiles'
+   * shadows go behind it. Kept as it closes: the rule waits for
+   * data-dialog-up (lib/behindDialog.ts), which goes as the fade-out starts,
+   * a frame or two after the close, so the shadows come back then as ever.
+   * Let go of as it closed, they came back in the close's own frame, still
+   * under the page's full filter. (Down here, below what it reads: an
+   * $effect.pre runs as the codex is made, before the rest of this script,
+   * and one above `open` stopped the codex opening at all;
+   * tests/effectPreOrder.test.ts.)
+   */
+  let shadeless = $state.raw<ReadonlySet<string>>(new Set());
+  $effect.pre(() => {
+    if (open || confirmReset) shadeless = new Set(near);
+  });
 
   // ---- three pages: the collection, Delve (CodexDelve) and achievements (CodexAchievements) ----
 

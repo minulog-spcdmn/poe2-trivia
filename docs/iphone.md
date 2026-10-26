@@ -230,3 +230,21 @@ script mounting the game screen and about 140 ms its styles, layout and
 paint; a frame or two later `rumble()` (`src/lib/sound.ts`) makes its 6 s
 noise buffer in one go (about 75 ms), the cave-in sound's steps follow,
 and an item's details parse in about 60 ms.
+
+Still open too: the codex's item window, as it fades in and out. Each tile's
+`filter: drop-shadow` is drawn again under the page's fading filter
+(`behindDialog.ts`) on every frame of both fades: the opening's frames took
+33 to 50 ms, 16 to 30 with the shadows off, and the ten frames after a
+close 241 to 280 ms, 178 to 197 without. The close's first frame (59 to
+79 ms) was some 12 ms of restyling the document, as `data-dialog-up` went
+and every tile's shadow came back, and some 20 ms of drawing those shadows
+under the filter. Only the restyle is smaller, and only on WebKit: the
+shadows go and come back in the sections near the screen alone
+(`shadeless` in `Codex.svelte`), while Blink still restyles every picture.
+Taking the rest away means drawing the shadow without a filter: baked per
+item (`0 6px 10px`, black at 0.7) and drawn under the picture as an image
+of its own, reaching past the `.art` box as the shadow does, checked at
+the sizes the grid's tiles take. Most pictures are 72 px high at any
+width; the 23 wider than they are high (belts, and a relic) are as wide as
+the tile where 72 px high wouldn't fit in it, and so change size with the
+screen.
