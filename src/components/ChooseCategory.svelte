@@ -2481,9 +2481,10 @@
   }
   /* Together, after the vote's line, in the lock rule's place: the seals
      under the cards stay clear, and the two read as one block of small
-     print, as the vote and the rule do. (Under 336 tall the columns beside
-     the cards take both, further down.) */
-  @media (min-height: 336px) {
+     print, as the vote and the rule do. (Under 340 tall the columns beside
+     the cards take both, further down: ranges that meet, so a fractional
+     height, as Android's pixel ratios give, falls in one or the other.) */
+  @media (height >= 340px) {
     @container slot (min-width: 780px) {
       .choose.beside .find-notes:has(~ .vote-status) .note.muted {
         order: 1;
@@ -2598,9 +2599,11 @@
     }
   }
   /* A phone's browser on its side shorter than the iPhone's 340 (Chrome on
-     an Android phone, its bars up, leaves 285 to 310): the stack of prompt,
-     cards and lock rule needs 333px under the header and the banner, and the
-     cards are as small as their names allow (0.66, above). So the prompt
+     an Android phone, its bars up, leaves 285 to 310 on most, more at a
+     lower density): the stack of prompt, cards and lock rule needs 333px
+     under the header and the banner, the team's with its vote 340 (at its
+     least, 0.6, its lines closed up), and the cards are as small as their
+     names allow (0.66, above). So the prompt
      and the lock rule stand beside the cards instead, in the room a row of
      them leaves left and right (110 to 140px each side of three, from a
      phone 772 across, the slot 740, the columns a little closer under 780):
@@ -2619,7 +2622,7 @@
      2 and the next from the top of row 3; a third comes under them in row
      4. Rows 1 and 5 take what the cards leave, so the stacks stay whole
      (the space a card's height leaves never opens between their lines). */
-  @media (orientation: landscape) and (max-height: 335px) and (min-width: 561px) {
+  @media (orientation: landscape) and (height < 340px) and (min-width: 561px) {
     .choose:not(.duel) > .note,
     .choose.beside .find-notes ~ .note {
       display: none;
