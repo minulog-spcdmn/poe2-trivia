@@ -6,6 +6,7 @@ import type { RoomInfo } from '../../lib/roomInfo.ts';
 import { DELVE_RULESET } from '../../lib/delve.ts';
 import { PROTOCOL_VERSION } from '../../lib/protocol.ts';
 import type { DelveRun } from '../../lib/delveRecord.ts';
+import { nameProblem } from '../../lib/names.ts';
 import type { Control, Values } from '../bench.ts';
 import type { Built, Scene } from '../scene.ts';
 
@@ -95,6 +96,25 @@ function invite(v: Values = {}): Built {
   return v.first ? { state: null, name: '', met: [], query, invite: answer } : returning({}, { query, invite: answer });
 }
 
+/** A join the room turns down for its name: the same name as a player's there, or one that only looks like it. */
+const REFUSED: Control[] = [
+  {
+    kind: 'choice',
+    key: 'name',
+    label: 'The name',
+    default: 'same',
+    options: [
+      { value: 'same', label: 'The same as a player’s' },
+      { value: 'like', label: 'A look-alike' },
+    ],
+  },
+];
+function refused(v: Values = {}): Built {
+  // The room's own words for it, as nameProblem gives them to the host that turns the join down.
+  const why = nameProblem(v.name === 'like' ? 'Pixe1' : 'pixel', ['Doryani', 'Pixel'])!;
+  return returning({}, { query: 'room=KXR4QT', invite: room(4, { code: 'KXR4QT', players: 3 }), steps: [{ wait: 600 }, { refused: why }] });
+}
+
 const home = (key: string, label: string, s: Omit<Scene, 'key' | 'label' | 'screen' | 'group' | 'seats'>, group = 'Start page'): Scene => ({ key: `home/${key}`, screen: 'home', group, label, seats: [ME], ...s });
 
 export function homeScenes(): Scene[] {
@@ -129,6 +149,19 @@ export function homeScenes(): Scene[] {
           { label: "An invite to a room that doesn't answer", values: { room: 'silent' } },
         ],
         build: invite,
+      },
+      'Invites',
+    ),
+    home(
+      'refused',
+      'A join turned down for its name',
+      {
+        controls: REFUSED,
+        states: [
+          { label: 'Turned down: a player there has the same name', values: {} },
+          { label: 'Turned down: the name looks like a player’s there', values: { name: 'like' } },
+        ],
+        build: refused,
       },
       'Invites',
     ),

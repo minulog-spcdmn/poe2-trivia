@@ -300,7 +300,7 @@
 <!-- The field a player at this screen is added by (on one device, or at a room host's screen). -->
 {#snippet adder(placeholder: string)}
   <form class="add" onsubmit={addLocal}>
-    <input class="field" class:shake={nameError} bind:value={newName} maxlength={MAX_NAME} autocomplete="off" spellcheck="false" {placeholder} aria-label={placeholder} />
+    <input class="field" class:shake={nameError} bind:value={newName} maxlength={MAX_NAME} autocomplete="off" spellcheck="false" autocorrect="off" {placeholder} aria-label={placeholder} />
     <button class="btn" type="submit" disabled={nameTooShort(newName)}>Add</button>
   </form>
 {/snippet}

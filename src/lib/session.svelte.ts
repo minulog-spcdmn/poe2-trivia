@@ -2405,6 +2405,11 @@ class Session {
     this.turnedOut(why);
   }
 
+  /** The QA desk (src/qa): the room turns this device's join down with `message`, as the host's error for it would (uncounted). */
+  labRefuse(message: string) {
+    this.fail(message, "Couldn’t join");
+  }
+
   private turnedOut(why: keyof typeof TURNED_OUT) {
     const [message, title] = TURNED_OUT[why];
     this.fail(message, title);

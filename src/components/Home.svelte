@@ -581,7 +581,7 @@
     {:else}
       <form class="slot row" class:join={act} onsubmit={joinInvite} aria-labelledby={act ? 'invite-label' : undefined} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
         <!-- svelte-ignore a11y_autofocus -->
-        <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" enterkeyhint={act ? 'go' : undefined} autofocus />
+        <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" enterkeyhint={act ? 'go' : undefined} autofocus />
         <button class="btn primary" type="submit">Join</button>
       </form>
     {/if}
@@ -603,7 +603,9 @@
     <div class="greeting" in:fade|global={calm({ duration: 600, delay: 350 })}>
       {#if renaming}
         <form class="row" onsubmit={saveRename}>
-          <!-- No autofill on the name fields: its list is the browser's own and drops the game's cursor; the game remembers the name itself. -->
+          <!-- No autofill on the name fields: its list is the browser's own and drops the game's cursor; the game remembers the name itself.
+               No autocorrect either (tests/nameFields.test.ts): a gamer tag is seldom a word, and Gboard and iOS would make it one (Wolfsberg went in as Wolfsburg).
+               The first letter is still capitalised as the keyboard likes: that only sets the shift key, and a name typed lower case stays so. -->
           <input
             class="field name"
             bind:this={renameField}
@@ -613,6 +615,7 @@
             aria-label="Your name"
             autocomplete="off"
             spellcheck="false"
+            autocorrect="off"
             onkeydown={renameKeys}
           />
           <button class="btn" type="submit">Save</button>
@@ -676,7 +679,7 @@
           <div class="under">
             {#if open === 'create' && !connecting}
               <form class="slot row tall" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
-                <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" enterkeyhint="go" />
+                <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" enterkeyhint="go" />
                 <button class="btn" class:primary={!joinReady || open === 'create'} type="submit">Start</button>
               </form>
             {:else}
@@ -711,7 +714,7 @@
               <!-- The code, or on a first visit once it's whole, the name in its place: one field, where the last one was. -->
               <form class="slot row join" onsubmit={phoneJoin} aria-labelledby="join-label" in:fly={SWAP_IN} out:fade={SWAP_OUT}>
                 {#if asking}
-                  <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" enterkeyhint="go" />
+                  <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" enterkeyhint="go" />
                 {:else}
                   {@render codeInput(false)}
                 {/if}
@@ -754,13 +757,13 @@
                 <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
               {:else if isOpen && e === 'create'}
                 <form class="slot row" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
-                  <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" />
+                  <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" />
                   <button class="btn primary" type="submit">Start</button>
                 </form>
               {:else if isOpen && e === 'join'}
                 <form class="slot row" onsubmit={join} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
                   {#if !known}
-                    <input class="field name short" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" />
+                    <input class="field name short" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" />
                   {/if}
                   {@render codeInput(!known)}
                   <button class="btn primary" type="submit">Join</button>
