@@ -209,20 +209,24 @@ with its numbers in the comments.
   then it hides nothing. Try such a thing with a CSS rule (`mask: none`
   through `ask.mjs`): taking the `mask` attribute off from script didn't
   take the cost away.
-- **Chrome's tab is a WKWebView, and says `navigator.standalone`.** So does
-  any app's view of a page. Taken for the home-screen app, Chrome's tab had
-  its screen's height measured (`src/lib/viewport.ts`), the backdrop ended
-  at the viewport's bottom edge, and a scroll the page drives itself (the
-  old `codex.mjs` scroll, `scrollTop +=` each frame) had WebKit repaint the
-  row of tiles across that edge, and the tiles' drop shadows with it, on
-  every frame: 49 fps against 60, all of it outside the page's main thread.
-  `installedApp()` asks for the manifest's display mode as well now, which
-  a tab doesn't have. A swipe is scrolled by the browser and never showed
-  it, so `codex.mjs` scrolls that way first (`scroll`) and keeps the
-  scripted scroll as a phase of its own (`scripted`) to catch it coming
-  back. A scroll the page drives is not what a thumb gets: measure with
-  `scrollBy({ behavior: 'smooth' })`. Even then the page's frames can't see
-  any the browser drops while it scrolls.
+- **Chrome's tab is a WKWebView, and says `navigator.standalone`.** It
+  answers `(display-mode: fullscreen)` too, as the home-screen app does
+  from the manifest, and its user agent has no `CriOS`. Taken for the
+  home-screen app, Chrome's tab had its screen's height measured
+  (`src/lib/viewport.ts`), the backdrop ended at the viewport's bottom edge,
+  and a scroll the page drives itself (the old `codex.mjs` scroll,
+  `scrollTop +=` each frame) had WebKit repaint the row of tiles across that
+  edge, and the tiles' drop shadows with it, on every frame: 49 fps against
+  60, all of it outside the page's main thread. What only a tab has is
+  toolbars that slide: its `100lvh` is taller than its `100svh` (768 px
+  against 663), and `installedApp()` goes by that now. Check it with
+  `ask.mjs "document.documentElement.style.cssText"`: empty in Chrome's
+  tab, the three heights in the home-screen app. A swipe is scrolled by the
+  browser and never showed it, so `codex.mjs` scrolls that way first
+  (`scroll`) and keeps the scripted scroll as a phase of its own
+  (`scripted`) to catch it coming back. A scroll the page drives is not
+  what a thumb gets: measure with `scrollBy({ behavior: 'smooth' })`. Even
+  then the page's frames can't see any the browser drops while it scrolls.
 
 Still open: Begin's worst frame, about 230 to 285 ms. About 70 ms of it is
 script mounting the game screen and about 140 ms its styles, layout and

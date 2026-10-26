@@ -68,16 +68,18 @@ test("the privacy page's switch says where it stands, in both languages", async 
 
 test("only an iOS home-screen app opens the privacy page over the game", async () => {
   const { installedApp } = await import('../src/lib/installedApp.ts');
-  const app = (...modes: string[]) => (q: string) => modes.some((m) => q === `(display-mode: ${m})`);
-  // The home-screen app: iOS's standalone, and the manifest's display mode (fullscreen, or what iOS makes of it).
-  assert.equal(installedApp({ standalone: true } as unknown as Navigator, app('fullscreen')), true);
-  assert.equal(installedApp({ standalone: true } as unknown as Navigator, app('standalone')), true);
-  // Chrome's tab on an iPhone, or an app's view of a page: a WKWebView, standalone with a browser's display mode.
-  assert.equal(installedApp({ standalone: true } as unknown as Navigator, app('browser')), false);
-  assert.equal(installedApp({ standalone: false } as unknown as Navigator, app('browser')), false);
-  // Android's installed app has a display mode of its own but no standalone.
-  assert.equal(installedApp({} as Navigator, app('fullscreen')), false);
-  assert.equal(installedApp(undefined, app('fullscreen')), false);
+  const ios = { standalone: true } as unknown as Navigator;
+  const tab = () => true;
+  const still = () => false;
+  // The home-screen app: iOS's standalone, and no toolbars to slide (its large and small viewports are both the screen).
+  assert.equal(installedApp(ios, still), true);
+  // Chrome's tab on an iPhone: a WKWebView, standalone too, but its toolbars slide (100lvh 768 px, 100svh 663).
+  assert.equal(installedApp(ios, tab), false);
+  // Safari's tab, Android's installed app, a desktop: no standalone, and nothing is laid out to ask.
+  const asked = () => assert.fail('the viewport measured where navigator.standalone is not true');
+  assert.equal(installedApp({ standalone: false } as unknown as Navigator, asked), false);
+  assert.equal(installedApp({} as Navigator, asked), false);
+  assert.equal(installedApp(undefined, asked), false);
 });
 
 test('an opt-out kept where #toggle-goatcounter used to keep it still holds, and is cleared with the new one', () => {
