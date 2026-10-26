@@ -19,6 +19,14 @@
 // gone every one of them would fail with the chunk): they're fetched only
 // once the chunk itself has come, by the browser. One that fails then, the
 // Wi-Fi going in that moment, still needs a reload, which the page offers.
+// Other chunks' preloads aren't trimmed, though, and link some of the same
+// imports: the game screens' (fetched in the first idle moment, so nearly
+// always just ahead of the codex's own fetch in the background) link the
+// codex's ItemDetails and its circles, and the sync dialog's links the
+// circles too. An outage that failed those leaves the codex to the reload,
+// as it leaves the game. Trimming every other chunk's list of whatever a
+// retried page imports isn't worth it: that takes in the start page's circle
+// (ArcaneStage, the engraver), which would then come a round trip later.
 
 import type { RetriedPage } from './retriedPages.ts';
 

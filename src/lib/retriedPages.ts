@@ -13,6 +13,7 @@ const RETRIED = new RegExp(`^assets/(?:${RETRIED_PAGES.join('|')})-[\\w-]+\\.js$
  * in vite.config.ts; its CSS is linked all the same). For a retried page only
  * the chunk itself, which `retried` finds its address by, and none of its
  * imports: a link that fails leaves its module failed for good, and the
- * chunk with it (lib/chunkRetry.ts).
+ * chunk with it (lib/chunkRetry.ts, which says why other chunks' links of
+ * the same imports are left as they are).
  */
 export const preloadedWith = (file: string, deps: string[]) => (RETRIED.test(file) ? deps.filter((d) => d === file) : deps);
