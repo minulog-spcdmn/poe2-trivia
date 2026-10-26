@@ -126,7 +126,11 @@
 
   // ---- names ----
 
-  /** A name fit to play under (saved, and the greeting's from now on), or null after saying what's wrong with it. */
+  /**
+   * A name fit to play under, or null after saying what's wrong with it. Not
+   * saved yet: a join's is saved once the room takes it (lib/joinName.ts), as
+   * the room can still turn it down, and its field stays out until then.
+   */
   function checkName(raw: string, field: HTMLInputElement | undefined): string | null {
     const n = raw.trim();
     const refusal = nameRefusal(n);
@@ -135,6 +139,11 @@
       refuseName(field ?? null, n ? refusal : { reason: null }, () => {});
       return null;
     }
+    return n;
+  }
+  /** A name checked and kept at once (saved, and the greeting's from now on): one renamed, or a room's own host's. */
+  function keepName(n: string | null): string | null {
+    if (!n) return null;
     saveName(n);
     known = n;
     return n;
@@ -166,7 +175,7 @@
   }
   function saveRename(e?: Event) {
     e?.preventDefault();
-    if (checkName(draft, renameField)) renaming = false;
+    if (keepName(checkName(draft, renameField))) renaming = false;
   }
   function renameKeys(e: KeyboardEvent) {
     if (e.key === 'Escape') {
@@ -285,7 +294,7 @@
 
   function host(e?: Event) {
     e?.preventDefault();
-    const n = knownName() ?? checkName(nameInput, nameField);
+    const n = knownName() ?? keepName(checkName(nameInput, nameField));
     if (!n) return;
     busy = 'create';
     session.host(n);
@@ -293,6 +302,7 @@
 
   function join(e?: Event) {
     e?.preventDefault();
+    // A name typed here stays in its field, unsaved, until the room takes it: turned down, it's there to change.
     const n = knownName() ?? checkName(nameInput, nameField);
     if (!n) {
       // A saved name just let go: the row now asks for one.
@@ -487,6 +497,7 @@
   let inviteField = $state<HTMLInputElement>();
   function joinInvite(e?: Event) {
     e?.preventDefault();
+    // (Saved once the room takes it, as Join a room's.)
     const n = checkName(inviteName, inviteField);
     if (!n) return;
     startJoin(invite, n, 'join', inviteVia);

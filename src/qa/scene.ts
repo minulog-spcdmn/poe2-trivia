@@ -37,6 +37,8 @@ export interface Seat {
 export type Step =
   /** Clicks the first element `selector` finds. */
   | { click: string }
+  /** Types `text` into the first field `fill` finds, as typing it would (its input event). */
+  | { fill: string; text: string }
   /** Waits (ms). */
   | { wait: number }
   /** The room turns this device out, as the host's word for it would (session.labFail). */

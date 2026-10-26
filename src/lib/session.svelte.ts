@@ -41,6 +41,7 @@ import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HO
 import { LaneReceiver, LaneSender, openLane, parseFakeLink } from './artLane';
 import { honestRtt, measuredRtt, PING_SAMPLES } from './linkRtt';
 import { NAME_STORED, cleanName, isHeldName, nameSkeleton, nameUsable } from './names';
+import { JoinName } from './joinName';
 import { checkJoin, joinProof, newChallenge, ownerUnlocked, roomProof } from './ownerKey';
 import { prepareMedia, shown, warmMedia, type PreparedMedia } from './media.svelte';
 import { keyMsg, makeSealKey, newKid, sealAvailable, sealMsg, SealedStore, type SealedMsg, type SealKey } from './seal';
@@ -463,6 +464,8 @@ class Session {
   private autoNextFor = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private joinName = '';
+  /** A join's name from the start page, saved once the room takes it (lib/joinName.ts). */
+  private nameToKeep = new JoinName();
   private retry: ReturnType<typeof setTimeout> | null = null;
   /** Pending step of opening or joining a room (a retry, a give-up); cancelled on leave. */
   private connectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1831,6 +1834,9 @@ class Session {
     this.mode = 'client';
     this.status = 'connecting';
     this.joinName = name;
+    // One set off from the start page (with a `via`) saves its name if the room takes it, and not before:
+    // a name turned down there mustn't greet the next visit. A reload getting back in has its name saved.
+    this.nameToKeep.start(via ? name : null);
     this.watchOnly = watch;
     this.code = code.toUpperCase().trim();
     if (!CODE_PATTERN.test(this.code)) {
@@ -2153,6 +2159,8 @@ class Session {
             this.state = msg.state;
           }
           if (this.status === 'connecting' && this.joinVia) countEvent(`joined/${this.joinVia}`);
+          // In: the room has taken the name, so it's this browser's now.
+          if (this.status === 'connecting') this.nameToKeep.taken();
           this.joinVia = null;
           this.status = 'ready';
           if (this.state) this.noteWatch(this.state);
@@ -3216,6 +3224,8 @@ class Session {
   private reset() {
     this.peerEpoch++;
     this.recordLeaving();
+    // A join never let in leaves the saved name as it was (turned down, given up, left).
+    this.nameToKeep.dropped();
     // A new attempt (or leaving) makes the last one's errors moot.
     toasts.clearErrors();
     this.beacon?.stop();

@@ -98,8 +98,11 @@ function invite(v: Values = {}): Built {
 
 /**
  * A join the room turns down for its name: the same name as a player's there, or one that only looks like it.
- * The joiner comes by an invite with that name saved, so the start page goes straight into the join (Home.svelte)
- * and, turned down, leaves the code in Join a room's row with the room's own words for it.
+ * A returning joiner comes by an invite with that name saved, their own from before, so the start page goes
+ * straight into the join (Home.svelte) and, turned down, leaves the code in Join a room's row with the room's
+ * own words for it; the name stays theirs, to change at the greeting's quill. On a first visit the name is
+ * typed on the invite and joined with: turned down, it stays in its field to change, and isn't saved
+ * (lib/joinName.ts), so the page still says Welcome rather than Welcome back.
  */
 const REFUSED: Control[] = [
   {
@@ -112,12 +115,16 @@ const REFUSED: Control[] = [
       { value: 'like', label: 'A look-alike' },
     ],
   },
+  { kind: 'toggle', key: 'first', label: 'A first visit', default: false },
 ];
 function refused(v: Values = {}): Built {
-  // The name the page greets is the one turned down: the room's words for it, as nameProblem gives them to the host.
+  // The name turned down, with the room's words for it, as nameProblem gives them to the host.
   const joiner = v.name === 'like' ? 'Pixe1' : 'pixel';
   const why = nameProblem(joiner, ['Doryani', 'Pixel'])!;
-  return returning({}, { name: joiner, query: 'room=KXR4QT', invite: room(4, { code: 'KXR4QT', players: 3 }), steps: [{ refused: why }] });
+  const invite = room(4, { code: 'KXR4QT', players: 3 });
+  if (v.first)
+    return { state: null, name: '', met: [], query: 'room=KXR4QT', invite, steps: [{ fill: '.field.name', text: joiner }, { click: 'form.slot button[type="submit"]' }, { refused: why }] };
+  return returning({}, { name: joiner, query: 'room=KXR4QT', invite, steps: [{ refused: why }] });
 }
 
 const home = (key: string, label: string, s: Omit<Scene, 'key' | 'label' | 'screen' | 'group' | 'seats'>, group = 'Start page'): Scene => ({ key: `home/${key}`, screen: 'home', group, label, seats: [ME], ...s });
@@ -165,6 +172,7 @@ export function homeScenes(): Scene[] {
         states: [
           { label: 'Turned down: a player there has the same name', values: {} },
           { label: 'Turned down: the name looks like a player’s there', values: { name: 'like' } },
+          { label: 'Turned down on a first visit: the name typed stays in its field, unsaved', values: { first: true } },
         ],
         build: refused,
       },

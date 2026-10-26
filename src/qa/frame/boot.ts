@@ -191,6 +191,13 @@ export async function boot(asked: URLSearchParams) {
   for (const step of built.steps ?? []) {
     if ('wait' in step) await new Promise((r) => setTimeout(r, step.wait));
     else if ('fail' in step) session.labFail(step.fail);
+    else if ('fill' in step) {
+      const field = (await found(step.fill)) as HTMLInputElement | null;
+      if (field) {
+        field.value = step.text;
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
     else if ('refused' in step) {
       // While the join is under way, as the host's answer comes (an invite's starts itself as the page shows).
       // Looked for every turn of the event loop: once PeerJS is in, the frame's want of WebRTC (above) fails
