@@ -2526,14 +2526,20 @@
   }
   /* The team's vote and the lock rule under it: at 0.82 its stack needs
      419px, more than an Android phone on its side in fullscreen has (Chrome
-     with its bars away, 412 on a Pixel). Under 419 its lines close up
-     first, as under 357, and the cards come to 0.77, which needs 400, so
-     every height down to the next step fits (a range, so a height between
-     two whole pixels falls in one step or the other). */
+     with its bars away, 411.4 on a Pixel). Under 419 its lines close up
+     first, as under 357, which leaves 166 round the cards: at 0.81 they
+     need 409, and under that at 0.78 400, so every height down to the next
+     step fits. (Ranges, so a height between two whole pixels falls in one
+     step or the other.) */
   @media (orientation: landscape) and (400px < height < 419px) and (min-width: 561px) {
     .choose.coop {
       gap: 0.25rem;
-      --z: 0.77;
+      --z: 0.81;
+    }
+  }
+  @media (orientation: landscape) and (400px < height < 409px) and (min-width: 561px) {
+    .choose.coop {
+      --z: 0.78;
     }
   }
   @media (orientation: landscape) and (max-height: 400px) and (min-width: 561px) {
