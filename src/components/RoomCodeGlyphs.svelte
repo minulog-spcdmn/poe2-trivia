@@ -62,7 +62,7 @@
       copied = document.execCommand?.('copy') ?? false;
     }
     // Copying by hand: a key on a keyboard, a long press on a touch screen.
-    show(e, copied ? 'Room code copied' : e.pointerType === 'mouse' ? 'Press Ctrl+C to copy it' : 'Couldn’t copy it; hold the code to copy');
+    show(e, copied ? 'Room code copied' : e.pointerType === 'mouse' ? 'Press Ctrl+C to copy it' : 'Hold the code to copy it');
     if (!copied) return;
     clearTimeout(litTimer);
     // Lit a moment as copied, then back to rest: the selection goes, and the glow with it.

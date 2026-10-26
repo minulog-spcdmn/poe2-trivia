@@ -230,6 +230,22 @@ const TURNED_OUT = {
   closed: ['The host closed the room.', 'Room closed'],
   replaced: ['You joined this game from another tab or window, so it continues there.', 'Moved to another tab'],
 } as const satisfies Record<string, readonly [string, string]>;
+/**
+ * A join that timed out, by what it got to: on the server, which said the room
+ * may be missing; on the server, the code right but no way through to the room
+ * (some networks don't let it through); or never on the server at all.
+ */
+export type JoinFailed = 'missing' | 'blocked' | 'server';
+const JOIN_FAILED: Record<JoinFailed, (code: string) => [message: string, title: string]> = {
+  missing: (code: string) => [`Couldn’t reach room ${code}. Check the code with your host, or try again.`, 'No answer'],
+  blocked: (code: string) => [`Room ${code} was found, but the connection couldn’t be made. This network may block it; try mobile data or another Wi-Fi, or ask your host if the room is still open.`, 'Couldn’t connect'],
+  server: () => [joinNetworkHint('timeout'), 'No connection'],
+};
+
+/** A matchmaking server failure for someone joining a room, who has no game of their own to fall back on. */
+function joinNetworkHint(type: string) {
+  return `Couldn’t connect to the matchmaking server (${type}). Check your connection, or try mobile data or another Wi-Fi.`;
+}
 export const saveName = (name: string) => void writeStored(NAME_STORED, name);
 
 /**
@@ -1886,7 +1902,7 @@ class Session {
   private startClientPeer() {
     const Peer = this.peerClass(
       () => this.startClientPeer(),
-      () => this.fail(this.joinNetworkHint('peerjs-load'), 'No connection', { failure: this.joinFailure('join-no-connection') }),
+      () => this.fail(joinNetworkHint('peerjs-load'), 'No connection', { failure: this.joinFailure('join-no-connection') }),
     );
     if (!Peer) return;
     this.peer?.destroy();
@@ -1906,7 +1922,7 @@ class Session {
         this.pruneAttempts();
         this.planAttempt(RETRY_SOON_MS);
       }
-      else if (!NETWORK_ERRORS.has(err.type)) this.fail(this.joinNetworkHint(err.type), 'No connection', { failure: this.joinFailure('join-no-connection') });
+      else if (!NETWORK_ERRORS.has(err.type)) this.fail(joinNetworkHint(err.type), 'No connection', { failure: this.joinFailure('join-no-connection') });
       else {
         // The signalling server hiccuped. A peer that had reached it reconnects
         // on its own ('disconnected'); one that never did is destroyed right
@@ -1933,9 +1949,8 @@ class Session {
       // said the room may be missing (roomUnavailable), the code was right and
       // it's the connection between the two devices that never came up: some
       // networks (venue Wi-Fi, some carriers) don't let it through.
-      if (this.peer?.open && this.unavailableUntil) this.fail(`Couldn’t reach room ${this.code}. Check the code with your host, or try again.`, 'No answer', { failure: this.joinFailure('join-no-answer') });
-      else if (this.peer?.open) this.fail(`The connection to room ${this.code} couldn’t be made. This network may block direct connections between devices; try mobile data or another Wi-Fi, or ask your host whether the room is still open.`, 'Couldn’t connect', { failure: this.joinFailure('join-no-answer') });
-      else this.fail(this.joinNetworkHint('timeout'), 'No connection', { failure: this.joinFailure('join-no-connection') });
+      if (this.peer?.open) this.joinFailed(this.unavailableUntil ? 'missing' : 'blocked', 'join-no-answer');
+      else this.joinFailed('server', 'join-no-connection');
     }, wait);
   }
 
@@ -2408,6 +2423,17 @@ class Session {
   /** The QA desk (src/qa): this device is turned out of its room as the host's word for it would. */
   labFail(why: keyof typeof TURNED_OUT) {
     this.turnedOut(why);
+  }
+
+  /** The QA desk (src/qa): joining this room gives up, as each way a join can fail says so. */
+  labJoinFail(why: JoinFailed) {
+    this.joinFailed(why);
+  }
+
+  /** A join that never got in, told as what went wrong; `failure` counted (count.ts). */
+  private joinFailed(why: JoinFailed, failure?: 'join-no-answer' | 'join-no-connection') {
+    const [message, title] = JOIN_FAILED[why](this.code);
+    this.fail(message, title, { failure: failure && this.joinFailure(failure) });
   }
 
   private turnedOut(why: keyof typeof TURNED_OUT) {
@@ -3158,10 +3184,6 @@ class Session {
     return `Couldn’t connect to the matchmaking server (${type}). Check your connection. Without one, a new game plays on this device.`;
   }
 
-  /** The same for someone joining a room, who has no game of their own to fall back on. */
-  private joinNetworkHint(type: string) {
-    return `Couldn’t connect to the matchmaking server (${type}). Check your connection, or try mobile data or another Wi-Fi.`;
-  }
 
   /**
    * Gives up on the room with a notice that stays up. `reopening`: the room a
