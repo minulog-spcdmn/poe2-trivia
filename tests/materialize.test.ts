@@ -1,19 +1,16 @@
 // A veiled patch burning in (lib/materialize.ts), its arithmetic in burn.ts:
 // on the page, and in the worker (lib/burnWorker.ts, run here in this
-// process) on the canvas handed over to it, it draws every frame's pixels and
-// flies every spark exactly as the page drew them before the worker took the
-// burns over (materialize.ts at f620318b, hashed: BEFORE). A burn whose
-// canvas goes stops in the worker too, and a canvas burnt in stays the
-// worker's to keep till the page lets it go. Until the worker has said it's
-// there, and while it doesn't answer back from a long while in the
-// background, the page burns them; one that doesn't answer is given no more,
-// but is let go only once none of its canvases is on the page, those it
-// hadn't finished drawn whole over them.
+// process), whose boxes the page puts on the patch's canvas as they come, it
+// draws every frame's pixels and flies every spark exactly as the page drew
+// them before the worker took the burns over (materialize.ts at f620318b,
+// hashed: BEFORE). A burn whose canvas goes stops in the worker too. Until
+// the worker has said it's there, and while it doesn't answer back from a
+// long while in the background, the page burns them; one that doesn't answer
+// is given no more and let go, those it hadn't finished drawn whole on their
+// canvases.
 import { fakeModule } from './asVite.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import v8 from 'node:v8';
-import vm from 'node:vm';
 
 fakeModule('./fx/moments', new URL('./fakeVeilFx.ts', import.meta.url));
 fakeModule('./stage', new URL('./fakeVeilFx.ts', import.meta.url));
@@ -57,8 +54,27 @@ const mix = (v: number) => {
   hash = Math.imul(hash ^ ((v >>> 8) & 0xff), 16777619) >>> 0;
 };
 
+/** Pixels as a canvas gives and takes them. */
+class FakeImageData {
+  data: Uint8ClampedArray;
+  width: number;
+  height: number;
+  constructor(data: Uint8ClampedArray, width: number, height: number) {
+    this.data = data;
+    this.width = width;
+    this.height = height;
+  }
+}
+g.ImageData = FakeImageData;
+
+/** What a kind of canvas did: pictures drawn on it and boxes put. */
+interface Tally {
+  drawn: number;
+  puts: number;
+}
+
 /** A 2D context drawing any picture as the same item: a disc with a soft rim, coloured by place. */
-function fakeContext(where: { puts: number }) {
+function fakeContext(where: Tally) {
   let W = 0;
   let H = 0;
   let px = new Uint8ClampedArray(0);
@@ -72,6 +88,7 @@ function fakeContext(where: { puts: number }) {
     },
     drawImage(_img: unknown, _x: number, _y: number, w: number, h: number) {
       this.drawn++;
+      where.drawn++;
       for (let y = 0; y < h; y++)
         for (let x = 0; x < w; x++) {
           const o = (y * w + x) * 4;
@@ -82,63 +99,37 @@ function fakeContext(where: { puts: number }) {
           px[o + 3] = r < 0.2 ? 255 : r < 0.23 ? 120 : 0;
         }
     },
-    getImageData: () => ({ data: px.slice(), width: W, height: H }),
-    putImageData(img: { data: Uint8ClampedArray }, _x: number, _y: number, x0 = 0, y0 = 0, w = W, h = H) {
+    getImageData: () => new FakeImageData(px.slice(), W, H),
+    /** The box of `img` from (x0, y0), w × h (the whole of it by default), put at (dx, dy) on and after it: hashed as where it lands and what it brings. */
+    putImageData(img: FakeImageData, dx: number, dy: number, x0 = 0, y0 = 0, w = img.width, h = img.height) {
       where.puts++;
-      for (const v of [x0, y0, w, h]) mix(v);
-      for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) for (let c = 0; c < 4; c++) mix(img.data[(y * W + x) * 4 + c]);
+      for (const v of [dx + x0, dy + y0, w, h]) mix(v);
+      for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) for (let c = 0; c < 4; c++) mix(img.data[(y * img.width + x) * 4 + c]);
     },
   };
 }
 
-/** What each kind of canvas drew: the page's own, and those handed to the worker. */
-const page = { puts: 0 };
-const offscreen = { puts: 0, handed: 0 };
-/** The canvases laid over others (materialize's cover), while they're on the page. */
-const laid = new Set<FakeCanvas>();
+/** What each kind of canvas drew: the page's own, and those the worker reads the pictures' pixels on. */
+const page: Tally = { drawn: 0, puts: 0 };
+const offscreen: Tally = { drawn: 0, puts: 0 };
 
 /** What the tests read of a patch's canvas. */
 interface FakeCanvas {
   width: number;
   height: number;
-  /** Its inline style (a clone gets a copy, as cloneNode copies the attribute). */
-  style: { opacity?: string };
-  /** The OffscreenCanvas it handed over, watched for whether anything still holds it. */
-  handedOver: WeakRef<object> | null;
-  /** Its clones (cloneNode). */
-  clones: FakeCanvas[];
   getContext(): { drawn: number };
 }
 
-/** A patch's <canvas>, 100 CSS px wide on a 3x screen; handed over, it draws in its offscreen context. */
+/** A patch's <canvas>, 100 CSS px wide on a 3x screen. */
 function fakeCanvas(): FakeCanvas {
-  let ctx = fakeContext(page);
+  const ctx = fakeContext(page);
   let [w, h] = [0, 0];
-  const canvas = {
+  return {
     clientWidth: 100,
     isConnected: true,
-    style: {} as { opacity?: string },
-    handedOver: null as WeakRef<object> | null,
-    clones: [] as FakeCanvas[],
     getContext: () => ctx,
     getBoundingClientRect: () => ({ left: 10, top: 20, width: 100, height: 75 }),
     animate: () => void fired.push(['fade']),
-    transferControlToOffscreen() {
-      offscreen.handed++;
-      ctx = fakeContext(offscreen);
-      ctx.size(w, h);
-      const o = { getContext: () => ctx };
-      canvas.handedOver = new WeakRef(o);
-      return o;
-    },
-    cloneNode() {
-      const c = fakeCanvas();
-      c.style = { ...canvas.style };
-      canvas.clones.push(c);
-      return c;
-    },
-    after: (c: FakeCanvas) => void laid.add(c),
-    remove: () => void laid.delete(canvas),
     get width() {
       return w;
     },
@@ -153,8 +144,7 @@ function fakeCanvas(): FakeCanvas {
       h = v;
       ctx.size(w, h);
     },
-  };
-  return canvas;
+  } as FakeCanvas;
 }
 
 /** A picture as the veil's worker makes them. */
@@ -205,9 +195,6 @@ async function show(more: Partial<BurnParams> = {}) {
   return { canvas, destroy };
 }
 
-/** The patches still on the page, by the worker they were handed to (their destroy). */
-const onPage: (() => void)[] = [];
-
 /** The three burns, one after another, and the hash of all they drew and set off. */
 async function run() {
   hash = 0x811c9dc5;
@@ -215,8 +202,9 @@ async function run() {
   seed = 12345;
   fired.length = 0;
   for (const p of [{}, { before: [], burn: 1500 }, { quick: true }]) {
-    onPage.push((await show(p)).destroy);
+    const { destroy } = await show(p);
     await play();
+    destroy();
   }
   for (const f of fired) for (const v of f) if (typeof v === 'number') mix(Math.round(v * 1000));
   return hash.toString(16);
@@ -226,7 +214,6 @@ test('on the page, a patch burns in as it did before the worker', async () => {
   assert.equal(await run(), BEFORE);
   assert.ok(page.puts > 100);
   assert.ok(fired.some((f) => f[0] === 'spark') && fired.some((f) => f[0] === 'ignite'));
-  for (const destroy of onPage.splice(0)) destroy();
 });
 
 // ---- the worker ----------------------------------------------------------
@@ -240,7 +227,7 @@ class FakeWorker {
   /** Answers nothing (a phone stopped it in the background). */
   deaf = false;
   terminated = false;
-  /** What it was told (only what: a canvas handed over isn't kept here). */
+  /** What it was told (only what: a picture sent isn't kept here). */
   sent: { t: string }[] = [];
   constructor() {
     made.push(this);
@@ -264,16 +251,23 @@ scope.postMessage = (news) => {
 scope.requestAnimationFrame = g.requestAnimationFrame;
 const listeners: (() => void)[] = [];
 const doc = { hidden: false, addEventListener: (_: string, f: () => void) => listeners.push(f) };
+/** Burns sent to a worker, all told. */
+const sentBurns = () => made.reduce((n, w) => n + w.sent.filter((s) => s.t === 'burn').length, 0);
 
 function useWorkers() {
   g.self = scope;
   g.Worker = FakeWorker;
-  g.OffscreenCanvas = class {};
+  g.OffscreenCanvas = class {
+    ctx = fakeContext(offscreen);
+    constructor(w: number, h: number) {
+      this.ctx.size(w, h);
+    }
+    getContext() {
+      return this.ctx;
+    }
+  };
   g.ImageBitmap = FakeBitmap;
   g.createImageBitmap = (img: FakeBitmap) => Promise.resolve(new FakeBitmap(img.width, img.height));
-  g.HTMLCanvasElement = class {
-    transferControlToOffscreen() {}
-  };
   g.document = doc;
 }
 
@@ -286,87 +280,71 @@ function hideFor(ms: number) {
   for (const f of listeners) f();
 }
 
-v8.setFlagsFromString('--expose-gc');
-/** A full collection: V8's gc, which the flag puts in each new context. */
-const gc = vm.runInNewContext('gc') as () => void;
-/** Whether what `ref` watches is collected, once nothing else can hold it (a new task: a WeakRef keeps its object for the rest of the one it's read in). */
-async function collected(ref: WeakRef<object>) {
-  await new Promise((r) => setImmediate(r));
-  gc();
-  return ref.deref() === undefined;
-}
-
-test('in the worker, on the canvas handed over, it burns in the same, frame by frame and spark by spark', async () => {
+test('in the worker, its boxes put on the page, it burns in the same, frame by frame and spark by spark', async () => {
   useWorkers();
   warmBurns();
   await settle();
-  const before = page.puts;
+  const before = { ...page };
   assert.equal(await run(), BEFORE);
-  assert.equal(offscreen.handed, 3);
-  assert.equal(page.puts, before, 'the page drew nothing itself');
+  assert.equal(sentBurns(), 3);
+  assert.equal(offscreen.drawn, 3, 'each picture read in the worker');
+  assert.equal(offscreen.puts, 0);
+  assert.equal(page.drawn, before.drawn, 'the page drew no picture itself');
+  assert.ok(page.puts > before.puts + 100, 'it put the worker’s boxes');
 });
 
 test('a burn whose canvas goes stops in the worker too', async () => {
   const { destroy } = await show();
   await play(10);
-  const drawn = offscreen.puts;
-  assert.ok(drawn > 0);
+  const put = page.puts;
+  assert.ok(put > 0);
   destroy();
   await settle();
   assert.equal(made[0].sent.at(-1)!.t, 'stop');
   await play();
-  assert.equal(offscreen.puts, drawn);
+  assert.equal(page.puts, put);
 });
 
-test('burnt in, a canvas is still the worker’s to keep till the page lets it go', async () => {
-  const { canvas, destroy } = await show();
+test('burnt in, nothing more is said of it when its canvas goes', async () => {
+  const { destroy } = await show();
   await play();
-  assert.equal(made[0].sent.at(-1)!.t, 'burn', 'done, and nothing more said of it');
-  assert.equal(await collected(canvas.handedOver!), false, 'held while it’s on the page');
   destroy();
-  await settle();
-  assert.equal(made[0].sent.at(-1)!.t, 'stop');
-  assert.equal(await collected(canvas.handedOver!), true, 'let go with it');
+  assert.equal(made[0].sent.at(-1)!.t, 'burn');
 });
 
 test('back after a short while, the worker isn’t asked, and burns the next patch', async () => {
   hideFor(HIDDEN_CHECK_MS - 1000);
   assert.notEqual(made[0].sent.at(-1)!.t, 'ping');
-  const handed = offscreen.handed;
-  onPage.push((await show()).destroy);
-  assert.equal(offscreen.handed, handed + 1);
+  const sent = sentBurns();
+  const { destroy } = await show();
+  assert.equal(sentBurns(), sent + 1);
   await play();
+  destroy();
 });
 
-test('back after a long while, the page burns them till the worker answers; one that doesn’t is given no more, and let go once none of its canvases is on the page', async (t) => {
+test('back after a long while, the page burns them till the worker answers; one that doesn’t is given no more, and let go', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const first = made[0];
   first.deaf = true;
   hideFor(HIDDEN_CHECK_MS);
   assert.equal(first.sent.at(-1)!.t, 'ping');
-  const handed = offscreen.handed;
+  const sent = sentBurns();
   const meanwhile = await show();
-  assert.equal(offscreen.handed, handed, 'burnt on the page');
+  assert.equal(sentBurns(), sent, 'burnt on the page');
   await play();
   t.mock.timers.tick(PING_MS);
   assert.equal(made.length, 2, 'a fresh one');
-  assert.ok(!first.terminated, 'kept: four of the patches it burnt are on the page');
+  assert.ok(first.terminated);
   await settle();
   const next = await show();
-  assert.equal(offscreen.handed, handed + 1, 'the new worker burns it');
+  assert.equal(sentBurns(), sent + 1, 'the new worker burns it');
   assert.equal(made[1].sent.at(-1)!.t, 'burn');
   await play();
-  const last = onPage.pop()!;
-  for (const destroy of onPage.splice(0)) destroy();
-  assert.ok(!first.terminated);
-  last();
-  assert.equal(first.sent.at(-1)!.t, 'stop');
-  assert.ok(first.terminated, 'let go with the last of them');
   meanwhile.destroy();
-  onPage.push(next.destroy);
+  next.destroy();
 });
 
-test('with a burn in hand it has longer to answer; one lost is drawn whole over its canvas, till that goes', async (t) => {
+test('with a burn in hand it has longer to answer; one lost is drawn whole on its canvas', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const second = made[1];
   const { canvas, destroy } = await show();
@@ -376,25 +354,35 @@ test('with a burn in hand it has longer to answer; one lost is drawn whole over 
   assert.equal(second.sent.at(-1)!.t, 'ping');
   t.mock.timers.tick(PING_MS);
   assert.equal(made.length, 2, 'still waiting');
-  assert.equal(canvas.clones.length, 0);
+  assert.equal(canvas.getContext().drawn, 0);
   t.mock.timers.tick(PREP_STALL_MS - PING_MS);
   assert.equal(made.length, 3, 'given no more');
-  const [cover] = canvas.clones;
-  assert.ok(cover && laid.has(cover), 'laid over it');
-  assert.equal(cover.getContext().drawn, 1);
-  assert.deepEqual([cover.width, cover.height], [canvas.width, canvas.height]);
-  assert.equal(canvas.style.opacity, '0', 'what the worker left there hidden under it');
-  assert.notEqual(cover.style.opacity, '0', 'the cover shown');
-  assert.ok(!second.terminated);
-  destroy();
-  assert.ok(!laid.has(cover), 'gone with it');
-  assert.equal(second.sent.at(-1)!.t, 'stop');
-  assert.ok(!second.terminated, 'one more of its canvases is on the page');
-  onPage.pop()!();
   assert.ok(second.terminated);
+  assert.equal(canvas.getContext().drawn, 1, 'its picture drawn whole');
+  assert.deepEqual([canvas.width, canvas.height], [160, 120], 'at the burn’s own size');
+  const put = page.puts;
   await settle();
-  // (What the worker in this process still had in hand, burnt out.)
+  // (What the worker in this process still had in hand burns out, heard by no one.)
   await play();
+  assert.equal(page.puts, put, 'and nothing put over it');
+  destroy();
+});
+
+test('one the worker can’t begin is drawn whole on its canvas', async () => {
+  const third = made[2];
+  // (Its picture can't be read there.)
+  const OffscreenCanvas = g.OffscreenCanvas;
+  g.OffscreenCanvas = class {
+    getContext() {
+      return null;
+    }
+  };
+  const { canvas, destroy } = await show();
+  g.OffscreenCanvas = OffscreenCanvas;
+  assert.equal(third.sent.at(-1)!.t, 'burn');
+  assert.equal(canvas.getContext().drawn, 1);
+  assert.ok(!third.terminated, 'the worker kept: it may yet read the next');
+  destroy();
 });
 
 test('a worker that breaks is given no more: what it hadn’t finished is drawn whole, and the page burns from then on', async () => {
@@ -403,18 +391,13 @@ test('a worker that breaks is given no more: what it hadn’t finished is drawn 
   await play(5);
   assert.equal(third.sent.at(-1)!.t, 'burn');
   third.onerror!();
-  const [cover] = canvas.clones;
-  assert.ok(cover && laid.has(cover));
-  assert.equal(canvas.style.opacity, '0', 'the frozen frame hidden under it');
-  assert.notEqual(cover.style.opacity, '0');
-  assert.ok(!third.terminated, 'kept while its canvas is on the page');
-  const handed = offscreen.handed;
+  assert.ok(third.terminated);
+  assert.equal(canvas.getContext().drawn, 1);
+  const sent = sentBurns();
   const after = await show();
-  assert.equal(offscreen.handed, handed, 'burnt on the page');
+  assert.equal(sentBurns(), sent, 'burnt on the page');
   assert.equal(made.length, 3, 'and no other worker');
   await play();
   destroy();
-  assert.ok(!laid.has(cover));
-  assert.ok(third.terminated);
   after.destroy();
 });

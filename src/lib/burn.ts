@@ -1,7 +1,7 @@
 // The arithmetic of a veiled patch burning in (materialize.ts): where the
 // magic starts, when each pixel comes in, and each frame's pixels as the
-// front sweeps across. Shared by the worker that draws the burns away from
-// the page's main thread (burnWorker.ts) and the page itself, where no
+// front sweeps across. Shared by the worker that works out the burns away
+// from the page's main thread (burnWorker.ts) and the page itself, where no
 // worker can: on an iPhone each new patch and every frame of its fizzle held
 // the page there, the question screens of a race at 50 to 54 fps with frames
 // of 60 to 120 ms, and the reveal's last patches burning in at once gave
