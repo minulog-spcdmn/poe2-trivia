@@ -964,6 +964,12 @@
   {/if}
 {/snippet}
 
+<!-- The tooltip's edge in the verdict's colour, its border and glow, one for each, faded in over the plain one (see .rim). -->
+{#snippet rims()}
+  <span class="rim good" aria-hidden="true"></span>
+  <span class="rim bad" aria-hidden="true"></span>
+{/snippet}
+
 {#snippet mirrorLine()}
   <span class="mirrored" in:fade={{ duration: 300, delay: 250 }}>Mirrored</span>
 {/snippet}
@@ -1257,6 +1263,7 @@
   {#if q.mode === 'art'}
     <!-- Name given, pick the matching art. -->
     <div class="tooltip wide" data-cursor="item" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
+      {@render rims()}
       <div class="head" data-cursor="plate" style:--plate-scale={plateScale}>
         <NamePlate fit bind:scale={plateScale} />
         <div class="head-text">
@@ -1368,6 +1375,7 @@
   {:else}
     <div class="stage" class:snug class:crowded={count > 6} class:ten={count === 10} class:long class:armed={blastSlot}>
       <div class="tooltip" data-cursor="item" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
+        {@render rims()}
         <div class="head" data-cursor="plate" style:--plate-scale={plateScale}>
           <!-- The gems stay dark until the item is identified. -->
           <NamePlate fit bind:scale={plateScale} lit={!!(reveal && item)} />
@@ -1506,6 +1514,9 @@
      to the question only changes its words. */
   .task {
     position: relative;
+    /* Over the soft shadows of the tooltip under it, which reach up into
+       it, as it was before the tooltip was positioned (for its rims). */
+    z-index: 1;
     margin: 0 0 1.6rem;
     text-align: center;
   }
@@ -1557,6 +1568,8 @@
 
   /* PoE-style item tooltip */
   .tooltip {
+    /* (For its rims, below.) */
+    position: relative;
     display: flex;
     flex-direction: column;
     border: 1px solid #5a3a1c;
@@ -1564,25 +1577,72 @@
     --bs-fill-a: rgba(5, 4, 3, 0.92);
     --bs-fill-b: rgba(5, 4, 3, 0.92);
     background: var(--bs-fill-paint, linear-gradient(var(--bs-fill-a), var(--bs-fill-b)));
-    /* --bs1 carries the right/wrong glow, --bs2 the drop shadow. */
+    /* --bs1 carries the right/wrong glow, --bs2 the drop shadow. The backdrop
+       draws both from these as they ease; where CSS paints them, the glow is
+       the rims'. */
     --bs1-color: transparent;
     --bs1: 0px 50px;
     --bs2: 20px 60px;
     --bs2-color: rgba(0, 0, 0, 0.7);
     box-shadow:
       0 0 0 1px #000,
-      var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent), 0 var(--bs2, 0 0) var(--bs2-color, transparent));
-    transition:
-      --bs1-color 0.6s,
-      border-color 0.6s;
+      var(--bs-soft-paint, 0 var(--bs2, 0 0) var(--bs2-color, transparent));
+  }
+  /* (Eased only for the backdrop, which reads it each frame.) */
+  .tooltip:global([data-bs-on]) {
+    transition: --bs1-color 0.6s;
   }
   .tooltip.good {
-    border-color: #4f7a45;
     --bs1-color: rgba(150, 190, 110, 0.12);
   }
   .tooltip.bad {
-    border-color: #7a3a2c;
     --bs1-color: rgba(200, 90, 60, 0.09);
+  }
+  /* The verdict on the tooltip's edge: its border, and where CSS paints it
+     the glow round it, in the verdict's colour, faded in over the plain
+     border. Eased as colours on the tooltip itself, they had all of it
+     painted again on every frame for 0.6 s, its big soft shadows and what's
+     in it too: on an iPhone the screen under the tooltip repainted on each
+     frame after a find-the-art answer, and taking the easing out took most
+     of the slow frames with it. A rim fades on a layer of its own, so
+     nothing is painted while it does; and fading a colour in over another
+     comes to the same as easing one to the other (both opaque for the
+     border; from nothing for the glow, as --bs1-color eases from
+     transparent). Its box is the tooltip's border box: the border lies on
+     the tooltip's, and the glow (the soft shadow --bs1 makes) under the
+     black ring, as before. The rims come first in the tooltip, so
+     everything in it is drawn over them. */
+  .rim {
+    position: absolute;
+    inset: -1px;
+    border: 1px solid;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      opacity 0.6s,
+      visibility 0.6s;
+  }
+  .rim.good {
+    border-color: #4f7a45;
+    box-shadow:
+      0 0 0 1px #000,
+      0 0 50px rgba(150, 190, 110, 0.12);
+  }
+  .rim.bad {
+    border-color: #7a3a2c;
+    box-shadow:
+      0 0 0 1px #000,
+      0 0 50px rgba(200, 90, 60, 0.09);
+  }
+  .tooltip.good > .rim.good,
+  .tooltip.bad > .rim.bad {
+    opacity: 1;
+    visibility: visible;
+  }
+  /* (Where the backdrop draws the glow, the rim is the border alone.) */
+  .tooltip:global([data-bs-on]) > .rim {
+    box-shadow: none;
   }
   .head {
     position: relative;

@@ -71,14 +71,11 @@
   <span class="art-fit" class:ready={loaded} class:float class:round style:--w={box.w} style:--h={box.h} style:--s={scale}>
     {#if shown}
       {#key shown.src}
-        <img
-          src={shown.src}
-          {alt}
-          decoding="async"
-          class:unflip={shown.unflip}
-          in:fade={{ duration: 300 }}
-          out:fade={{ duration: 300 }}
-        />
+        <!-- The fade and the turn move the box round the picture, never the
+             picture itself, which carries the drop shadow (see .shot). -->
+        <span class="shot" class:unflip={shown.unflip} in:fade={{ duration: 300 }} out:fade={{ duration: 300 }}>
+          <img src={shown.src} {alt} decoding="async" />
+        </span>
       {/key}
     {/if}
   </span>
@@ -92,11 +89,27 @@
   .art-fit.ready {
     opacity: 1;
   }
-  .art-fit img {
+  /* The picture keeps its drop shadow still, in a box of its own, and the
+     box fades and turns. An element that fades or turns is composited
+     while it does, and WebKit on iOS gives a composited element's drop
+     shadow to Core Animation, which works the shadow out again on every
+     frame it draws; inside the box the picture and its shadow are painted
+     into the box's layer once. A find-the-art reveal swaps all six
+     pictures at once (twelve fades) and Next brings six in, and both ran
+     at about 12 fps for close to a second on an iPhone. It looks the same:
+     a fade or a turn applies to an element's filtered drawing, and the
+     box is the picture's size. */
+  .shot,
+  .shot > img {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .shot > img {
     filter: drop-shadow(0 12px 25px rgba(0, 0, 0, 0.8));
   }
   /* The picture going out stays where it was while the new one fades in over it. */
-  .art-fit img:not(:only-child) {
+  .shot:not(:only-child) {
     position: absolute;
     inset: 0;
   }
