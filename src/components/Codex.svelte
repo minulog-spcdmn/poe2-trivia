@@ -202,7 +202,10 @@
   // The shadows' own cost stays: they come back as the fade-out starts and
   // are drawn again under the page's fading filter on each frame of both
   // fades (docs/iphone.md, "Still open").
-  // (Nothing scrolls under a dialog.)
+  // The page still scrolls under a dialog (a wheel, a drag on its backdrop or
+  // a key chains to the document), so a section that comes near while one is
+  // up joins those, a screen before it shows, as every tile went before; none
+  // leaves until the dialog closes, so one view never mixes the two.
   /** The sections (by category) near the screen now, as an observer last told it: kept aside, not shown. */
   const near = new Set<string>();
   $effect(() => {
@@ -214,13 +217,16 @@
           if (e.isIntersecting) near.add(category);
           else near.delete(category);
         }
+        // (This runs after mount, so reading open here has no $effect.pre's ordering to mind.)
+        if ((open || confirmReset) && [...near].some((c) => !shadeless.has(c)))
+          shadeless = new Set([...shadeless, ...near]);
       },
       { rootMargin: '100% 0px' },
     );
     gridEls.forEach((g) => g && io.observe(g));
     return () => io.disconnect();
   });
-  // (Which those are is taken as a dialog opens: shadeless, below open and confirmReset.)
+  // (Which those are is taken as a dialog opens, and added to while it's up: shadeless, below open and confirmReset.)
   // A held grid's height is worked out from its names (lib/heldGrid.ts). The
   // first grid gives a tile's fixed parts, a line's height, the columns and
   // a name's width and font, each time it lays out at a new size (a
@@ -376,8 +382,9 @@
     confirmReset = false;
   }
   /**
-   * The sections near the screen as the last dialog opened, whose tiles'
-   * shadows go behind it. Kept as it closes: the rule waits for
+   * The sections near the screen as the last dialog opened, and those that
+   * came near while it was up, whose tiles' shadows go behind it. Kept as it
+   * closes: the rule waits for
    * data-dialog-up (lib/behindDialog.ts), which goes as the fade-out starts,
    * a frame or two after the close, so the shadows come back then as ever.
    * Let go of as it closed, they came back in the close's own frame, still
