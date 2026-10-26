@@ -29,7 +29,7 @@ import { bootSync } from './lib/sync/boot.svelte';
 
 // First: a pairing link's code leaves the address before anything reads it (lib/sync/boot.svelte.ts).
 bootSync();
-installUiSounds({ ahead: true });
+installUiSounds();
 installSpatial();
 installUiFx();
 watchFullscreen();

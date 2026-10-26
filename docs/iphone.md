@@ -111,7 +111,7 @@ owner can use it.
 | `ask.mjs "<js>"` | Runs an expression in the phone's tab and prints its value. |
 | `goto.mjs <url>` | Sends the tab to an address, a build for the owner to try, say. |
 | `shot.mjs <out.png>` | A screenshot of the tab, at the phone's pixels. |
-| `codex.mjs <url> <label>` | The codex as a thumb goes through it: opened, down to the items, scrolled through them and back, two items opened and closed. Each phase's frames, and the page's CPU. |
+| `codex.mjs <url> <label>` | The codex as a thumb goes through it: opened, down to the items, scrolled through them and back, two items opened and closed, each tap a finger's (`tap`). Each phase's frames, and the page's CPU. |
 | `game.mjs <url> <label>` | A game (`MODE=delve`, `turns` or `race`; `ROUNDS=4`): New game, a mode, Begin, then cards, question, answer and reveal, each click timed in parts. Each phase's frames. |
 | `layers.mjs [--do "<js>"]` | The tab's compositing layers: what, how many, why. With `--do`, which painted while that ran. |
 | `profile.mjs <label.prof.json>` | What ran in each phase of a `game.mjs` run with `PROFILE=1`, by file and line in `src/`. |
@@ -154,7 +154,9 @@ doesn't:
   `ask.mjs` (`filter: none` on the codex's tiles, say), one at a time,
   each against the build as it is.
 - `Runtime.evaluate` takes `emulateUserGesture: true`, so what wants a
-  tap (sound) works.
+  tap (sound) works. Where a press matters, tap with `tap()`
+  (`phone.mjs`), a finger's events, not `click()`: see "A script's
+  `click()` isn't a finger" below.
 
 ## What the iPhone taught us
 
@@ -200,14 +202,19 @@ with its numbers in the comments.
   waits 300 ms there instead, and each step still runs as one task: a step
   over a frame's time drops a frame on the phone however idle the page
   looked. Work that takes tens of ms a step there belongs in a worker.
-- **A visit's first press makes its sound.** Making the Web Audio bus and
-  waking it held the page about 50 ms, in a task just after the first tap,
-  in the middle of the screen that tap brought in (the codex, for many a
-  visit), and the hall's reverb took its steps over the second after. Only
-  waking a context needs the gesture: the bus is made once the page has
-  settled (`installUiSounds({ ahead: true })`, `src/lib/sound.ts`) and the
-  hall is worked out in a worker (`src/lib/hallWorker.ts`). A trace from
-  the phone still has to show what the press's `resume()` costs alone.
+- **A script's `click()` isn't a finger.** It sends none of a finger's
+  pointer events, so what a press starts took another path. A finger's
+  press makes the Web Audio bus while it's down (`src/lib/sound.ts`), and
+  its lift wakes it, both before the click; after a bare `click()`, the
+  click's own sound made it, about 50 ms in the middle of the screen that
+  tap brought in (the codex), a cost no player has. What the Codex entry
+  readies as a finger lands on it (`Home.svelte`) never ran either.
+  `codex.mjs` taps with `tap()` (`phone.mjs`) now: a finger's events, the
+  lift 80 ms after the landing, and only the lift a gesture (`game.mjs`
+  still clicks, to time each click in parts). What the trace did
+  show of the first tap's sound holds for a finger too: the hall's reverb
+  took its steps over the second after it, as that screen came in; it's
+  worked out in a worker now (`src/lib/hallWorker.ts`).
 - **A masked SVG costs its frames while what it masks changes.** Delve's
   ladder (`DelveLadder.svelte`) is masked round its stars; while its 260
   lines inked themselves in, the lobby came in at 24 to 35 fps, and at 60

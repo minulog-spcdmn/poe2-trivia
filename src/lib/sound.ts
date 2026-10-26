@@ -425,9 +425,11 @@ function prime(b: Bus) {
   primed = true;
   // The hall's impulse takes a moment to work out: not in the tap that
   // starts the sound (the first sounds just play dry), and away from the
-  // page (hallThere), as that tap's screen comes in.
+  // page (hallThere), as that tap's screen comes in. The reverb takes it in
+  // an idle moment (taking it in works it over again), or within half a
+  // second where the page never idles (a busy Delve on a slow phone).
   // (Should it fail, the context closed meanwhile, the sound stays dry.)
-  setTimeout(() => void hallThere(b.ac).then((buf) => idle(() => (b.reverb.buffer = buf)), () => {}), 300);
+  setTimeout(() => void hallThere(b.ac).then((buf) => whenIdle(() => (b.reverb.buffer = buf), { timeout: 500, fallback: 200 }), () => {}), 300);
   for (const file of MOMENT_FILES) if (!GENERATED[file]) void load(file).catch(() => {});
   // Already in a Delve: work out its sounds now (see depthAmbience).
   if (depth > 0) prepareDelve(b);
@@ -1338,10 +1340,9 @@ export function pointerSpeed(trail: readonly { x: number; y: number; t: number }
  * UI sounds for every control: a faint brush when the mouse moves onto one,
  * and a click when it's pressed. Controls that play their own sound (or none)
  * opt out of the click with `data-sfx="none"`. Also starts the ambience with
- * the first interaction. `ahead`: the bus is made in an idle moment once the
- * page has loaded (the game's page; not every frame of the QA desk).
+ * the first interaction.
  */
-export function installUiSounds({ ahead = false }: { ahead?: boolean } = {}) {
+export function installUiSounds() {
   let hovered: Element | null = null;
   // The pointer's last few moves (client px, ms), for how fast it came over a control.
   const trail: { x: number; y: number; t: number }[] = [];
@@ -1387,6 +1388,9 @@ export function installUiSounds({ ahead = false }: { ahead?: boolean } = {}) {
   // takes 25 to 65 ms (see build), which the press would show late by. It's
   // made in the idle moment after, while the button or finger is still down
   // (a quick tap's pointerup makes it there and then if that moment hasn't come).
+  // Either way it's made before the click, not in the screen the click brings
+  // in. (Nor any sooner, as the page loads: a context made before any gesture
+  // is one Chrome warns of, and may let run from then on, playing nothing.)
   const warm = (e: Event) => {
     if (muted) return;
     if (!bus && e.type === 'pointerdown') {
@@ -1400,16 +1404,4 @@ export function installUiSounds({ ahead = false }: { ahead?: boolean } = {}) {
     addEventListener(type, warm, { capture: true, passive: true });
   }
   document.addEventListener('visibilitychange', updateAmbience);
-  // Made before the first press, then, once the page has settled: making it
-  // needs no gesture (see build), and made after that press (buildSoon) it
-  // held the page some 50 ms on an iPhone, in the middle of the screen the
-  // press brought in (the codex's first frames, a tap on Codex being many a
-  // visit's first). The press then only has to wake it (audio()).
-  if (ahead)
-    whenIdle(
-      () => {
-        if (!muted && !bus && !document.hidden && typeof AudioContext !== 'undefined') build();
-      },
-      { timeout: 4000, fallback: 2500 },
-    );
 }

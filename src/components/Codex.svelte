@@ -192,11 +192,12 @@
     gridEls.forEach((g, i) => g && i < sections.length && !madeAt(i) && io.observe(g));
     return () => io.disconnect();
   });
-  // Behind an item window all the way in, the tiles' shadows go (the
-  // styles), but only in the sections near the screen as it opened (a screen
-  // either way), whose shadows the browser draws: every tile's taken off and
-  // put back restyled all five hundred, on an iPhone some 12 ms of the frame
-  // the window starts to close in. (Nothing scrolls under a window.)
+  // Behind a dialog all the way in (an item window, or the erase's confirm),
+  // the tiles' shadows go (the styles), but only in the sections near the
+  // screen as it opened (a screen either way), whose shadows the browser
+  // draws: every tile's taken off and put back restyled all five hundred, on
+  // an iPhone some 12 ms of the frame the window starts to close in.
+  // (Nothing scrolls under a dialog.)
   /** The sections (by category) near the screen now, as an observer last told it: kept aside, not shown. */
   const near = new Set<string>();
   $effect(() => {
@@ -214,10 +215,17 @@
     gridEls.forEach((g) => g && io.observe(g));
     return () => io.disconnect();
   });
-  /** The sections near the screen as the item window opened, whose tiles' shadows go behind it. */
+  /**
+   * The sections near the screen as the last dialog opened, whose tiles'
+   * shadows go behind it. Kept as it closes: the rule waits for
+   * data-dialog-up (lib/behindDialog.ts), which goes as the fade-out starts,
+   * a frame or two after the close, so the shadows come back then as ever.
+   * Let go of as it closed, they came back in the close's own frame, still
+   * under the page's full filter.
+   */
   let shadeless = $state.raw<ReadonlySet<string>>(new Set());
   $effect.pre(() => {
-    shadeless = open ? new Set(near) : new Set();
+    if (open || confirmReset) shadeless = new Set(near);
   });
   // A held grid's height is worked out from its names (lib/heldGrid.ts). The
   // first grid gives a tile's fixed parts, a line's height, the columns and
