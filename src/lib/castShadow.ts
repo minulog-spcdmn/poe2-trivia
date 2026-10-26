@@ -6,7 +6,7 @@
 // A texel to a CSS px, not a device pixel, and still the same to see: the
 // blur's standard deviation is 25 px, and a Gaussian that wide holds
 // nothing a pixel's sampling can lose; drawn up to the screen's pixels
-// (bilinear, as the browser draws a canvas bigger), it comes within three
+// (bilinear at the least, as a browser draws an image bigger), it comes within three
 // hundredths of an 8-bit level of the blur worked out at three device
 // pixels to the px (tests/castShadow.test.ts measures it). At those pixels
 // it is nine times the work and the memory, the cost this is here to take
@@ -77,7 +77,7 @@ export function blurAlpha(alpha: Float32Array, w: number, h: number, sigma: numb
  * the blur: castBox), in its place: black, as opaque as SHADOW.alpha times
  * the picture's alpha blurred. The picture is drawn over it, as a
  * drop-shadow() draws it over its shadow, and the shadow lies SHADOW.dy
- * lower (where the canvas is put: ArtImage).
+ * lower (where its <img> is put: ArtImage).
  */
 export function shadowOf(rgba: Uint8ClampedArray, w: number, h: number): Uint8ClampedArray {
   const alpha = new Float32Array(w * h);

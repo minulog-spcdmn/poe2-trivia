@@ -29,7 +29,7 @@ const one = (root: postcss.Root, selector: string, prop: string) => {
 /** Shadows in a box-shadow list (split at the commas between them, not those in colours). */
 const shadows = (value: string) => value.split(/,(?![^(]*\))/).map((s) => s.trim().replace(/\s+/g, ' '));
 
-// ---- the pictures: their shadows a bitmap, never a filter, fading and turning with them ----
+// ---- the pictures: their shadows a picture, never a filter, fading and turning with them ----
 
 const art = parse('src/components/ArtImage.svelte');
 
@@ -37,15 +37,15 @@ test("a picture's fades and turn are on its box, which holds the picture over it
   const img = art.markup.match(/<img\b[^>]*>/g);
   assert.equal(img?.length, 1, 'ArtImage draws one <img>');
   assert.doesNotMatch(img![0], /\b(in|out|transition|animate):|class:unflip/, 'the picture fades and turns with its shadow, on .shot');
-  const shot = art.markup.match(/<span class="shot"[^>]*>([\s\S]*?)<\/span>/);
+  const shot = art.markup.match(/<span class="shot"[^>]*>([\s\S]*?)<\/span>\s*\{\/key\}/);
   assert.ok(shot, 'ArtImage has its .shot');
   assert.match(shot[0], /in:fade/);
   assert.match(shot[0], /out:fade/);
   assert.match(shot[0], /class:unflip/);
   // (Both positioned, in that order: the picture is drawn over its shadow.)
   const inside = shot[1]!;
-  const cast = inside.indexOf('<canvas');
-  assert.ok(cast >= 0 && /class="cast"/.test(inside) && cast < inside.indexOf('<img'), "the shadow's canvas comes first in .shot, the picture after it");
+  const cast = inside.indexOf('<span');
+  assert.ok(cast >= 0 && /class="cast"/.test(inside) && cast < inside.indexOf('<img'), "the shadow's box comes first in .shot, the picture after it");
   assert.equal(one(art.css, '.shot > img', 'position'), 'relative');
   assert.equal(one(art.css, '.cast', 'position'), 'absolute');
 });
@@ -66,6 +66,21 @@ test('in ArtImage nothing has a filter but a picture whose shadow is not made, a
   });
   assert.equal(filters, 1, 'the CSS drop shadow is there, once, for a picture without its bitmap');
   assert.match(art.markup, /class:filtered=\{!shown\.cast\}/, 'only a picture without its bitmap takes the filter');
+});
+
+test('a picture’s shadow is painted with its box, not composited on its own', () => {
+  // Chromium gives a canvas that shows a bitmap a layer of its own, and the
+  // picture over it one too, and each fading box then gets drawn offscreen
+  // on every frame of its fade: the shadow is an <img> (lib/artShadow.ts).
+  const shadow = readFileSync('src/lib/artShadow.ts', 'utf8').replace(/\/\/.*$/gm, '');
+  assert.doesNotMatch(art.markup, /<canvas|bitmaprenderer/, 'no canvas in ArtImage');
+  assert.doesNotMatch(shadow, /bitmaprenderer|transferFromImageBitmap/);
+  assert.match(shadow, /new Image\(\)[\s\S]*await image\.decode\(\)/, 'its <img> decoded before it goes on the page');
+  // (The reveal's light finds the picture, not its shadow's <img>, which comes before it.)
+  const moments = readFileSync('src/lib/fx/moments.ts', 'utf8');
+  const looks = moments.match(/querySelector\('[^']*art-fit[^']*'\)/g) ?? [];
+  assert.equal(looks.length, 2, 'the tile’s picture and the art’s');
+  for (const s of looks) assert.match(s, /\.shot > img'/, `${s} takes the picture itself`);
 });
 
 test("the reveal's light takes a picture's turn from its box too, where ArtImage turns it", () => {

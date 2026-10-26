@@ -332,7 +332,7 @@ export function reveal(t: RevealTargets) {
   const streak = t.streak ?? 1;
   const hype = Math.min(3, 1 + (streak - 1) * 0.5);
   // A tile's item picture (swapped for the original at the reveal): the light shines from behind it.
-  const pic = () => t.answer?.querySelector('.pic .art-fit img') ?? null;
+  const pic = () => t.answer?.querySelector('.pic .art-fit .shot > img') ?? null;
 
   if (t.answer) {
     const a = t.answer;
@@ -362,7 +362,7 @@ export function reveal(t: RevealTargets) {
     // it. Veiled art is still burning in when they start, and only then
     // hands over to the full picture, so it's looked up as they go.
     const art = t.art;
-    const item = () => art.querySelector('.frame .art-fit img') ?? art.querySelector('.frame .veil');
+    const item = () => art.querySelector('.frame .art-fit .shot > img') ?? art.querySelector('.frame .veil');
     flare(t.art, { size: 40, streak: b.w * 0.9, life: 0.9, color: C.goldPale, intensity: 0.6, clear: item });
     rays(t.art, { radius: Math.max(b.w, b.h) * 0.7, life: 2.2 + 0.3 * hype, fadeIn: 0.5, intensity: 0.1 + 0.12 * hype, color: C.gold, count: 14, clear: item });
     embers(t.art, { count: Math.round(14 * hype), area: 'fill', colors: [C.gold, C.ember, C.rightPale], rise: [60, 190], life: [0.8, 1.8] });

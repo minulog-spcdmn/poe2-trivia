@@ -15,7 +15,7 @@
   // was shown during the question) and turns it round. `round` lets it reach past the space into a
   // circle around its centre (as big across as --round times the space's
   // width), so a wide item can be as big as the circle allows, not only as
-  // the box (app.css). Its drop shadow is a bitmap of its own under it, made
+  // the box (app.css). Its drop shadow is a picture of its own under it, made
   // for its size before it shows (lib/artShadow.ts), never a filter.
   let {
     src,
@@ -65,9 +65,15 @@
       if (!live) return;
       shown = { ...next, img, cast: ready ?? null };
       loaded = true;
+      // (Made for the slot as it was when it set out, which may have changed since.)
+      recast();
       if (ready === undefined) {
         const late = await cast;
-        if (late && shown?.img === img) shown = { ...shown, cast: late };
+        // (Not over one made since for a new size.)
+        if (late && shown?.img === img && !shown.cast) {
+          shown = { ...shown, cast: late };
+          recast();
+        }
       }
     };
     // One that won't decode (a fetch that failed, a picture let go of as the
@@ -105,43 +111,47 @@
   /** The box a picture `w` x `h` (art px) is drawn in here, CSS px, as app.css fits .art-fit. */
   const fitted = (r: Room, w: number, h: number) => fitOf(r.w, r.h, w, h, scale, round ? r.round : undefined);
 
+  type Size = { w: number; h: number };
+  const same = (a: Size, b: Size) => Math.abs(a.w - b.w) < 0.5 && Math.abs(a.h - b.h) < 0.5;
+  /** The box each picture's shadow was last set out to be made for, made, on its way or failed: not set out for again. */
+  const aimed = new WeakMap<HTMLImageElement, Size>();
+
   /** The shadow of `img`, w x h art px, for the box it will have here (once the slot is laid out). */
   async function castOf(img: HTMLImageElement, w: number, h: number) {
     await measured;
     const fit = fitted(room!, w, h);
+    aimed.set(img, fit);
     return castFor(img, fit.w, fit.h);
   }
 
-  let recasts = 0;
+  /**
+   * A shadow being made again: one at a time. A slot resized on every frame
+   * (a window dragged) would otherwise send the worker a copy of the picture
+   * on each, faster than it makes them, and the one for the size it ends at
+   * would come last.
+   */
+  let recasting = false;
   /** The shown picture's shadow made again, if it's drawn at another size now (a resize, a turned phone). */
   function recast() {
     const cur = shown;
-    if (!cur || !room) return;
+    if (recasting || !cur || !room) return;
     const fit = fitted(room, cur.w, cur.h);
-    if (cur.cast && Math.abs(cur.cast.w - fit.w) < 0.5 && Math.abs(cur.cast.h - fit.h) < 0.5) return;
-    const run = ++recasts;
+    const was = aimed.get(cur.img);
+    if ((cur.cast && same(cur.cast, fit)) || (was && same(was, fit))) return;
+    aimed.set(cur.img, fit);
+    recasting = true;
     castFor(cur.img, fit.w, fit.h).then((cast) => {
-      if (cast && run === recasts && shown?.img === cur.img) shown = { ...shown, cast };
+      recasting = false;
+      if (cast && shown?.img === cur.img) shown = { ...shown, cast };
+      // (The slot, or the picture, may have changed again meanwhile.)
+      recast();
     });
   }
 
-  /** Svelte action: puts the shadow's bitmap on its canvas (laid round the picture by its style). */
-  function lay(canvas: HTMLCanvasElement, cast: Cast) {
-    const put = (c: Cast) => {
-      [canvas.width, canvas.height] = [c.cw, c.ch];
-      const shows = canvas.getContext('bitmaprenderer');
-      if (shows) shows.transferFromImageBitmap(c.bitmap);
-      else {
-        canvas.getContext('2d')?.drawImage(c.bitmap, 0, 0);
-        c.bitmap.close();
-      }
-    };
-    put(cast);
-    return {
-      update(next: Cast) {
-        if (next !== cast) put((cast = next));
-      },
-    };
+  /** Svelte action: puts the shadow's picture in its box (laid round the picture by its style). */
+  function lay(box: HTMLElement, cast: Cast) {
+    box.replaceChildren(cast.image);
+    return { update: (next: Cast) => box.replaceChildren(next.image) };
   }
 </script>
 
@@ -155,7 +165,7 @@
           {#if shown.cast}
             {@const c = shown.cast}
             <!-- The picture `pad` in from its corner, the shadow SHADOW.dy lower; it stretches with the box till it's made for a new size. -->
-            <canvas
+            <span
               class="cast"
               aria-hidden="true"
               use:lay={c}
@@ -163,7 +173,7 @@
               style:top="{SHADOW.dy - c.pad}px"
               style:width="calc(100% + {c.cw - c.w}px)"
               style:height="calc(100% + {c.ch - c.h}px)"
-            ></canvas>
+            ></span>
           {/if}
           <img src={shown.src} {alt} decoding="async" class:filtered={!shown.cast} />
         </span>
@@ -183,7 +193,7 @@
   /* The picture and its shadow in a box of their own, which fades and
      turns: they fade and turn together, as a picture with a drop-shadow()
      does (a fade or a turn applies to an element's filtered drawing), and
-     the box is the picture's size. The shadow is a canvas under the
+     the box is the picture's size. The shadow is an <img> under the
      picture, its blur worked out once (lib/artShadow.ts), not a filter on
      it: a filter is drawn again whenever what holds it is painted or
      composited, and a find-the-art reveal, which swaps all six pictures at
@@ -202,6 +212,12 @@
     position: absolute;
     display: block;
     pointer-events: none;
+  }
+  /* (The shadow's <img>, made and decoded before it's put in: lib/artShadow.ts.) */
+  .cast > :global(img) {
+    display: block;
+    width: 100%;
+    height: 100%;
   }
   /* (One whose shadow couldn't be made, or isn't yet: CSS draws it, as SHADOW in lib/castShadow.ts says.) */
   .shot > img.filtered {

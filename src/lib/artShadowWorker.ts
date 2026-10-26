@@ -6,10 +6,10 @@ import { castBox, shadowOf } from './castShadow';
 
 /** A picture, to be drawn `w` x `h` (CSS px). */
 export type CastJob = { id: number; image: ImageBitmap; w: number; h: number };
-/** Its shadow (castBox's size); nothing if it couldn't be made here, and `cant` if nothing can (no OffscreenCanvas). */
-export type CastAnswer = { id: number; bitmap?: ImageBitmap; cant?: boolean };
+/** Its shadow as a PNG (castBox's size); nothing if it couldn't be made here, and `cant` if nothing can (no OffscreenCanvas). */
+export type CastAnswer = { id: number; png?: Blob; cant?: boolean };
 
-self.onmessage = ({ data: job }: MessageEvent<CastJob>) => {
+self.onmessage = async ({ data: job }: MessageEvent<CastJob>) => {
   const answer: CastAnswer = { id: job.id };
   if (typeof OffscreenCanvas === 'undefined') {
     job.image.close();
@@ -25,10 +25,11 @@ self.onmessage = ({ data: job }: MessageEvent<CastJob>) => {
     const px = g.getImageData(0, 0, cw, ch);
     shadowOf(px.data, cw, ch);
     g.putImageData(px, 0, 0);
-    answer.bitmap = c.transferToImageBitmap();
+    // (A PNG, which keeps every level of the blur, for the page to show in an <img>: lib/artShadow.ts says why not a canvas.)
+    answer.png = await c.convertToBlob({ type: 'image/png' });
   } catch {
     // (Answered with nothing, and the page does it.)
   }
   job.image.close();
-  self.postMessage(answer, { transfer: answer.bitmap ? [answer.bitmap] : [] });
+  self.postMessage(answer satisfies CastAnswer);
 };
