@@ -10,6 +10,7 @@ import type { DelveRun } from '../../lib/delveRecord.ts';
 import type { Control, Values } from '../bench.ts';
 import { id, pid } from '../build/people.ts';
 import { Table } from '../build/play.ts';
+import { NAME_TOO_SHORT } from '../../lib/names.ts';
 import type { Built, Scene, Seat } from '../scene.ts';
 
 const TWELVE = ['Kalguur', 'Doryani', 'Una of the Vaal', 'Hooded One', 'Rog', 'Zelina', 'Alva', 'Oswin', 'Dannig', 'Finn', 'Sekhema Asala', 'Renly'];
@@ -151,6 +152,15 @@ export function lobbyScenes(): Scene[] {
         { label: 'A full room', values: { here: 10 } },
       ],
       build: (v = {}) => atScreen(['Kalguur', 'Doryani'], v),
+    },
+    // A name turned down at the host's screen: the notice stays up, so on a phone a tap in the name field brings the keyboard up under it (it keeps under what shows of the header, or to the top of what shows).
+    {
+      key: 'lobby/name-refused',
+      screen: 'lobby',
+      group: 'Lobby',
+      label: 'A name turned down at the host’s screen: the notice',
+      seats: [host('Kalguur'), guest('Doryani')],
+      build: () => ({ ...atScreen(['Kalguur', 'Doryani'], {}), steps: [{ toast: NAME_TOO_SHORT, kind: 'error' }] }),
     },
     {
       key: 'lobby/here-only',

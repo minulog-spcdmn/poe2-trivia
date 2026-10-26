@@ -82,3 +82,20 @@ export function screenHeight(tallest: Map<number, number>, w: number, h: number,
   tallest.set(w, most);
   return most;
 }
+
+/**
+ * How far a phone's toast stack (components/Toasts.svelte) moves down to stay
+ * on screen while the iOS keyboard is up, when the visual viewport (what
+ * shows) has scrolled `offsetTop` down the layout viewport the stack is fixed
+ * to. Laid out, the stack sits under the header (`headerHeight`, its safe-area
+ * padding included; 0 on the start page) or `base` (10px, or the safe area's
+ * top when that is more) from the top. The header scrolls away with the page,
+ * so the stack keeps clear of what still shows of it, and once that is less
+ * than `base` it sits `base` below the top of what shows. (A negative reading,
+ * an overscroll, leaves it where it is.)
+ */
+export function stackShift(offsetTop: number, headerHeight: number, safeTop = 0): number {
+  const base = Math.max(10, safeTop);
+  const top = Math.max(headerHeight + 6, base);
+  return Math.max(0, offsetTop + base - top);
+}

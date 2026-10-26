@@ -12,6 +12,7 @@
   import PlayerName from './PlayerName.svelte';
   import AchievementSeal from './AchievementSeal.svelte';
   import { pinnedOut } from '../lib/stage';
+  import { stackShift } from '../lib/viewport';
 
   /** A notice going fades where it stood, under the stage's zoom too. */
   const fadeOut = pinnedOut(fade);
@@ -45,12 +46,17 @@
   // what the player sees is the visual viewport: shorter, and scrolled down
   // the page to keep the field in view. At the layout viewport's top a notice
   // about the name or code being typed would sit half or wholly above the
-  // screen, so on phones the stack follows the visual viewport's top down.
+  // screen, so on phones the stack follows the visual viewport's top down, as
+  // far as the header it keeps under no longer covers (lib/viewport.ts stackShift).
+  let stack = $state<HTMLElement>();
   let visualTop = $state(0);
   $effect(() => {
     const vv = window.visualViewport;
-    if (!narrow || !vv) return;
-    const follow = () => (visualTop = Math.max(0, vv.offsetTop));
+    const header = headerHeight;
+    if (!narrow || !vv || !stack) return;
+    // The safe area's top, as the stylesheet resolves it (scroll-margin-top below).
+    const safeTop = parseFloat(getComputedStyle(stack).scrollMarginTop) || 0;
+    const follow = () => (visualTop = stackShift(vv.offsetTop, header, safeTop));
     follow();
     vv.addEventListener('scroll', follow);
     vv.addEventListener('resize', follow);
@@ -81,6 +87,7 @@
 
 <!-- One polite live region announces every toast; the toasts carry no live roles of their own, so nothing is read twice. -->
 <div
+  bind:this={stack}
   class="toasts"
   data-behind-dialog
   class:narrow
@@ -183,6 +190,8 @@
     gap: 0.4rem;
     /* Down to the top of what shows while the keyboard is up (visualTop above). */
     translate: 0 var(--visual-top, 0px);
+    /* Not for scrolling: the safe area's top in px, for the script to read. */
+    scroll-margin-top: env(safe-area-inset-top);
   }
   /* A phone on its side: as wide as on a wide screen, in the middle. */
   .toasts.narrow.side {
