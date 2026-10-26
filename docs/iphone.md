@@ -93,7 +93,10 @@ repo) in the local channel, so the `?off=` switches (`src/lib/switchedOff.ts`)
 and `?fps` work and its rooms are this machine's alone, with source maps kept
 for `profile.mjs`. Its first visit fills the phone's codex as a long-time
 player's would be (every item seen, 2000 answers; `--empty` leaves it
-empty), so the codex has its full weight. `serve.mjs` serves builds on the
+empty), so the codex has its full weight. With `--qa` it has the QA desk
+too (`docs/qa.md`), for a scene on the phone on its own:
+`qa.html?frame&s=<scene key>`, its controls as `&k.<key>=<value>`.
+`serve.mjs` serves builds on the
 home network until stopped, each on a port of its own: `http://192.168.178.88:4403/`.
 
 To set a change against what it changes, build both (check out the commit
