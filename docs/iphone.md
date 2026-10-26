@@ -203,7 +203,11 @@ with its numbers in the comments.
   And 300 ms after a tap is still among the frames it set off: what a tap
   or a reveal brings about to be done later (the codex written, the
   achievements checked) waits for calm, `whenCalm`, 800 ms on from the
-  last tap.
+  last tap. Whatever shows what it writes must not show it stale: an
+  answer waiting for calm is written as soon as the codex is read
+  (`recordWhenCalm` in `src/lib/codex.ts`), so the end screen after a
+  quick Next still has it, and earned achievements go under the game the
+  answer was given in, not the one under way when they are checked.
 - **A masked SVG costs its frames while what it masks changes.** Delve's
   ladder (`DelveLadder.svelte`) is masked round its stars; while its 260
   lines inked themselves in, the lobby came in at 24 to 35 fps, and at 60

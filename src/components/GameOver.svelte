@@ -170,7 +170,11 @@
   );
 
   // ---- what this device knows ------------------------------------------------
-  /** This device's codex (its own answers), as the screen comes in; read again a moment later, should the game's last answer still have been on its way. */
+  /**
+   * This device's codex (its own answers), as the screen comes in (after a quick Next, the game's last answer is
+   * still waiting for a calm moment to be written: loadCodex writes it first); read again a moment later, should
+   * that answer still have been on its way.
+   */
   let codex = $state(loadCodex());
   onMount(() => {
     const t = setTimeout(() => (codex = loadCodex()), 1500);

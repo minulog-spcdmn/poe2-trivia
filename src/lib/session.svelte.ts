@@ -241,6 +241,8 @@ const mySecret = stored('secret', () => randomToken(32));
 const myTab = randomToken(16);
 /** A new player's id, online or on this device. */
 const newPlayerId = () => randomToken(12);
+/** The game a state is of (its startedAt), as what it earns is noted under (noteEarned); none in the lobby. */
+const gameOf = (s: GameState) => (s.phase !== 'lobby' ? s.startedAt : undefined);
 
 /** Host-side bookkeeping for one guest connection. */
 interface Guest {
@@ -348,8 +350,9 @@ class Session {
   earned = $state<{ game: number; ids: string[] } | null>(null);
   /**
    * Notes what a check of the achievements earned, under the game it was
-   * earned in (`game`, its startedAt, as it stood when the check was asked
-   * for: the check is async, and a next game may have begun by its end).
+   * earned in (`game`, its startedAt, as it stood when what earned it
+   * happened: the check comes later, as late as the page's next calm
+   * moment, and a next game may have begun by its end).
    */
   private noteEarned(ids: string[], game: number | undefined) {
     if (game === undefined || !ids.length) return;
@@ -2565,7 +2568,7 @@ class Session {
     if (!run) return;
     const r = recordRun(run);
     if (!r) return;
-    this.noteAchievements();
+    this.noteAchievements(gameOf(next));
     const was = this.delveResult?.id === run.id ? this.delveResult : null;
     this.delveResult = { id: run.id, depth: run.depth, previousBest: was ? was.previousBest : r.previousBest, best: was ? was.best : r.best };
   }
@@ -2652,14 +2655,15 @@ class Session {
     const blast = blastedAway(prev, next);
     // (Only the items this build has: online, the reveal is the host's word.)
     const known = (id: string) => engine.byId.has(id);
-    // Written once the moment has played out (whenCalm): the whole codex is
-    // read and written again for it, a dozen ms or more on a phone with a
-    // full one, which held a frame of the reveal as it began.
+    // Written once the moment has played out, or as the codex is read
+    // (codex.ts recordWhenCalm): the whole codex is read and written again
+    // for it, a dozen ms or more on a phone with a full one, which held a
+    // frame of the reveal as it began.
     if (blast) {
       void import('./codex')
-        .then(({ blastedEncounter, keepable, recordEncounter }) => {
+        .then(({ blastedEncounter, keepable, recordWhenCalm }) => {
           const e = keepable(blastedEncounter(next, blast, me, hotSeat), known);
-          if (e) whenCalm(() => recordEncounter(e));
+          if (e) recordWhenCalm(e);
         })
         .catch((err) => console.warn('codex', err));
       return;
@@ -2670,18 +2674,16 @@ class Session {
     const qid = next.question?.askedAt;
     if (prev.phase === 'reveal' && prev.question?.askedAt === qid) return;
     const ms = this.answered?.qid === qid ? this.answered?.ms : undefined;
+    // The game what it earns is earned in, as it is now: by the time the page is calm, Again may have begun the next.
+    const game = gameOf(next);
     // Its own chunk: the first download stays small.
     // After a redeploy the old chunk is gone; the encounter just goes unrecorded.
     void import('./codex')
-      .then(({ encounterAt, keepable, recordEncounter }) => {
+      .then(({ encounterAt, keepable, recordWhenCalm }) => {
         const met = encounterAt(next, me, hotSeat, ms);
         const e = met && keepable(met, known);
-        if (!e) return;
         // (Then the achievements, checked with it in the codex.)
-        whenCalm(() => {
-          recordEncounter(e);
-          this.noteAchievements();
-        });
+        if (e) recordWhenCalm(e, () => this.noteAchievements(game));
       })
       .catch((err) => console.warn('codex', err));
   }
@@ -2704,43 +2706,45 @@ class Session {
     void Promise.all([import('./achievements'), import('./achievementToasts')])
       .then(([{ noteState }, { announceAchievements }]) => {
         const earned = noteState(prev, next, me, hotSeat, { items: engine.items, veilShare });
-        this.noteEarned(earned.earned.map((a) => a.id), next.phase !== 'lobby' ? next.startedAt : undefined);
+        this.noteEarned(earned.earned.map((a) => a.id), gameOf(next));
         if (wait > 0) setTimeout(() => announceAchievements(earned, 'game'), wait);
         else announceAchievements(earned, 'game');
       })
       .catch((err) => console.warn('achievements', err));
   }
 
-  /** A check of the achievements is waiting for a calm moment (noteAchievements). */
-  private achievementsDue = false;
+  /** A check of the achievements waiting for a calm moment (noteAchievements), and the game it is for. */
+  private achievementsDue: { game: number | undefined } | null = null;
 
   /**
    * Brings the achievements up to date with what was just recorded in the
-   * codex or the Delve records, and announces any earned (lib/achievementToasts.ts).
-   * It reads and sums up the whole codex, so it waits for a calm moment
-   * (whenCalm: once what the tap or reveal set off has played out; on a
-   * phone a timer for an idle one landed among its frames) rather than
-   * running as a reveal begins (its notice waits a moment anyway), after
-   * what was recorded for it, and several asked for before it runs make one
-   * check.
+   * codex or the Delve records, and announces any earned (lib/achievementToasts.ts),
+   * as earned in `game` (its startedAt, as it was when that was recorded:
+   * noteEarned). It reads and sums up the whole codex, so it waits for a
+   * calm moment (whenCalm: once what the tap or reveal set off has played
+   * out; on a phone a timer for an idle one landed among its frames) rather
+   * than running as a reveal begins (its notice waits a moment anyway),
+   * after what was recorded for it, and several asked for in one game before
+   * it runs make one check.
    */
-  private noteAchievements() {
-    if (this.achievementsDue) return;
-    this.achievementsDue = true;
-    // The game the check is for: by the time it runs (a calm moment, a second or so on) a next one may have begun.
-    const game = this.state?.phase !== 'lobby' ? this.state?.startedAt : undefined;
+  private noteAchievements(game: number | undefined) {
+    // (One for another game is a check of its own, after this one: what that one earns is that game's.)
+    if (this.achievementsDue && this.achievementsDue.game === game) return;
+    const due = { game };
+    this.achievementsDue = due;
+    const done = () => void (this.achievementsDue === due && (this.achievementsDue = null));
     // (Asked for in the calm moment that recorded an answer, it follows on in it.)
     whenCalm(
       () =>
         void Promise.all([import('./achievements'), import('./achievementToasts')])
           .then(([{ checkAchievements }, { announceAchievements }]) => {
-            this.achievementsDue = false;
+            done();
             const check = checkAchievements(engine.items);
             if (!check.first) this.noteEarned(check.earned.map((a) => a.id), game);
             announceAchievements(check, 'game');
           })
           .catch((err) => {
-            this.achievementsDue = false;
+            done();
             console.warn('achievements', err);
           }),
     );

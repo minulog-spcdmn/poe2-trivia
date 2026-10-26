@@ -49,6 +49,7 @@
 import { difficultyOf, isFake, type Blast, type Difficulty, type GameState, type QuestionMode } from './game.ts';
 import { ITEM_KINDS, VEIN_MAX_STRIKES, delveTier, isGroupRun, type FindKind, type ItemKind } from './delve.ts';
 import { clearAside, openStored } from './keepAside.ts';
+import { whenCalm } from './idle.ts';
 import { readStored, removeStored, storeKey, writeStored } from './storage.ts';
 import { copiesOf } from './sync/store.ts';
 
@@ -585,9 +586,11 @@ export const ownCodexRaw = () => storedRaw(readStored(CODEX));
  * The stored codex (empty when there is none, or it can't be read; never
  * written over for that), with what the player's other devices have added
  * to theirs (lib/sync/store.ts). Always read fresh: another tab may have
- * added to it.
+ * added to it. What this page met and has yet to write (recordWhenCalm) is
+ * written first, so it is never read without it.
  */
 export function loadCodex(): Codex {
+  recordWaiting();
   const raw = ownCodexRaw();
   const others = copiesOf('codex', parseCodex);
   if (!others.length) return parseCodex(raw) ?? emptyCodex();
@@ -703,6 +706,35 @@ export function recordEncounter(e: Encounter) {
 }
 
 /**
+ * Encounters met in a game and not yet written, oldest first (recordWhenCalm).
+ * Writing one reads and writes the whole codex again, a dozen ms or more on
+ * a phone with a full one, which held a frame of the reveal it came with.
+ */
+let waiting: Encounter[] = [];
+
+/** Writes the encounters waiting, all in one. */
+function recordWaiting() {
+  if (!waiting.length) return;
+  const met = waiting;
+  waiting = [];
+  update((c) => met.reduce((x, e) => record(x, e), c));
+}
+
+/**
+ * Adds an encounter to the stored codex once the page is calm (lib/idle.ts
+ * whenCalm), and then does `then` (the achievements checked with it in the
+ * codex); or as the codex is next read, should that come first (the end
+ * screen after a quick Next: loadCodex), so it is never read without it.
+ */
+export function recordWhenCalm(e: Encounter, then?: () => void) {
+  waiting.push(e);
+  whenCalm(() => {
+    recordWaiting();
+    then?.();
+  });
+}
+
+/**
  * Items met outside a game (today's unique on the start page, and in "Find
  * the art" a wrong pick, which the reveal names): seen, no answer counted.
  */
@@ -761,6 +793,8 @@ export function recordPractice(ok: boolean) {
  * meanwhile under the old name, is never taken up.
  */
 export function resetCodex() {
+  // (What was met before it goes with it.)
+  waiting = [];
   removeStored(PRACTICE);
   clearAside(PRACTICE);
   for (const name of [CODEX, LEGACY]) {
