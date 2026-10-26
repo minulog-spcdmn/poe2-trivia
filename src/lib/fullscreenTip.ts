@@ -8,10 +8,20 @@
 // fullscreen (lib/fullscreen.ts) mustn't silence it for good. A browser tab
 // that has just put the game on the home screen stays a tab, so that's
 // remembered instead: the tip is taken as read.
+//
+// An iPhone's or iPad's home-screen app keeps storage of its own, apart from
+// Safari's (lib/installedApp.ts), so it opens as a first visit would. To
+// whoever has nothing there to lose yet (no name saved, nothing in the codex)
+// that's nothing to mention; to whoever has, the tip says so, and how to bring
+// it over: pairing the two in Settings (lib/sync/), while this tab is still
+// open. Android's and a desktop's installed apps share their browser's
+// storage, so their tips need none of it.
 
 import { browserEnv, fullscreenKeys, fullscreenNow, onFullscreenChange, type FullscreenState } from './fullscreen.ts';
+import { loadCodex, type Codex } from './codex.ts';
+import { NAME_STORED } from './names.ts';
 import { readStored, writeStored } from './storage.ts';
-import { toasts } from './toasts.svelte';
+import { toasts, type ToastOptions } from './toasts.svelte';
 
 /** How long a calm moment lasts before the tip shows: long enough to have looked around first. */
 const DELAY_MS = 4000;
@@ -28,14 +38,27 @@ const TITLE = 'Pro tip';
 /** What the tip says: the keys on a desktop, the way to the home screen on a phone or tablet. */
 export type TipFor = 'desktop' | 'android' | 'ios';
 
-const MESSAGE: Record<TipFor, () => string> = {
+/** Whether the player has anything a fresh start would lose: a name saved, or anything in the codex. */
+export const hasProgress = (name: string, codex: Codex) => name !== '' || Object.keys(codex.items).length > 0 || codex.log.length > 0;
+
+/** Whether this browser's player has, as stored now. */
+export const progressHere = () => hasProgress(readStored(NAME_STORED) ?? '', loadCodex());
+
+const MESSAGE: Record<TipFor, (progress: boolean) => string> = {
   desktop: () => `Press ${fullscreenKeys(browserEnv())} to play in fullscreen.`,
   android: () => "Add PoE2.Quest to your home screen from the browser’s menu to play in fullscreen.",
-  ios: () => 'Tap Share, then Add to Home Screen, to play in fullscreen.',
+  ios: (progress) =>
+    progress
+      ? 'Tap Share, then Add to Home Screen, for fullscreen. It starts fresh: pair it with this tab in Settings to keep your progress.'
+      : 'Tap Share, then Add to Home Screen, to play in fullscreen.',
 };
 
-/** Puts the tip up (the lab shows each this way too, leaving the counts alone). */
-export const showTip = (tipFor: TipFor = fullscreenNow().install ?? 'desktop') => toasts.show(MESSAGE[tipFor](), 'info', { title: TITLE });
+/** What the tip says, for the player's progress (only an iPhone's or iPad's tip minds it). */
+export const tipText = (tipFor: TipFor, progress: boolean) => MESSAGE[tipFor](progress);
+
+/** Puts the tip up (the lab and the QA desk show each this way too, leaving the counts alone). */
+export const showTip = (tipFor: TipFor = fullscreenNow().install ?? 'desktop', progress = tipFor === 'ios' && progressHere(), opts: ToastOptions = {}) =>
+  toasts.show(tipText(tipFor, progress), 'info', { title: TITLE, ...opts });
 
 /** Whether this window is due a tip at all, counts aside: a desktop not fullscreen, or a phone or tablet that could add the game to its home screen. */
 const wants = (s: FullscreenState) => (s.desktop ? !s.fullscreen : s.install !== null);
