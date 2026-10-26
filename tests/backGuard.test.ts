@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BackGuard, memorySteps } from '../src/lib/backGuard.ts';
+import { BackGuard, PageLayers, layerDepth, memorySteps } from '../src/lib/backGuard.ts';
 
 /** The browser's popstate comes a moment after a back. */
 const settled = () => new Promise((r) => setTimeout(r));
@@ -218,4 +218,97 @@ test('the guard’s own drop of a page is only for one under it: in a room with 
   steps.page({ settings: true }, '#settings');
   guard.want(true);
   assert.equal(dropped, 0);
+});
+
+// ---- a page's layers: the codex's item card, out of a room ----
+
+/** The codex opened from the start page (HashRoute.show(): its entry marked, with its hash), its layers over it. */
+function codexPage() {
+  const steps = memorySteps();
+  steps.page({ codex: true }, '#codex');
+  const layers = new PageLayers(steps);
+  const closed: string[] = [];
+  const back = async () => {
+    steps.back();
+    await settled();
+  };
+  return { steps, layers, closed, back };
+}
+
+test('an item opened on the codex is one step over the codex’s own, at its address and marked as its entry is', () => {
+  const { steps, layers } = codexPage();
+  layers.layer(() => {});
+  assert.equal(steps.entries.length, 3);
+  assert.equal(steps.at, 2);
+  assert.deepEqual(steps.state(), { codex: true, over: 1 });
+  assert.equal(steps.hashes[2], '#codex');
+  assert.equal(layerDepth(steps.state()), 1);
+});
+
+test('Back with an item open closes the item alone: the codex’s entry is where the page is', async () => {
+  const { steps, layers, closed, back } = codexPage();
+  layers.layer(() => closed.push('item'));
+  await back();
+  assert.deepEqual(closed, ['item']);
+  assert.equal(steps.at, 1);
+  assert.deepEqual(steps.state(), { codex: true });
+  assert.equal(steps.hashed(), true);
+  // The next Back is the codex’s: nothing of the item is left to close.
+  await back();
+  assert.deepEqual(closed, ['item']);
+  assert.equal(steps.at, 0);
+});
+
+test('an item closed by its own close is gone back from, and never closed again by Back', async () => {
+  const { steps, layers, closed } = codexPage();
+  const off = layers.layer(() => closed.push('item'));
+  off();
+  await settled();
+  assert.equal(steps.at, 1);
+  assert.deepEqual(steps.state(), { codex: true });
+  assert.deepEqual(closed, []);
+});
+
+test('taken off as Back closes it (the card’s teardown), it goes back no further', async () => {
+  const { steps, layers, back } = codexPage();
+  let off = () => {};
+  off = layers.layer(() => off());
+  await back();
+  assert.equal(steps.at, 1);
+});
+
+test('two layers: Back closes the top one only', async () => {
+  const { steps, layers, closed, back } = codexPage();
+  layers.layer(() => closed.push('under'));
+  layers.layer(() => closed.push('top'));
+  assert.equal(layerDepth(steps.state()), 2);
+  await back();
+  assert.deepEqual(closed, ['top']);
+  assert.equal(layerDepth(steps.state()), 1);
+  await back();
+  assert.deepEqual(closed, ['top', 'under']);
+  assert.equal(steps.at, 1);
+});
+
+test('a layer’s entry left by a reload is counted: the next one goes over it, and Back still closes it', async () => {
+  const steps = memorySteps({ codex: true, over: 1 }, '#codex');
+  const layers = new PageLayers(steps);
+  let closed = 0;
+  layers.layer(() => closed++);
+  assert.deepEqual(steps.state(), { codex: true, over: 2 });
+  steps.back();
+  await settled();
+  assert.equal(closed, 1);
+});
+
+test('the guard and the layers hear one history together, each only what is its own', async () => {
+  const { steps, layers, closed, back } = codexPage();
+  const guard = new BackGuard(steps);
+  const asked: string[] = [];
+  guard.asked(() => asked.push('leave?'));
+  layers.layer(() => closed.push('item'));
+  await back();
+  assert.deepEqual(closed, ['item']);
+  assert.deepEqual(asked, []);
+  assert.equal(steps.at, 1);
 });

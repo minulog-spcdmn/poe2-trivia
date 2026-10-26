@@ -81,11 +81,13 @@ export async function boot(asked: URLSearchParams) {
   if (!scene || !built || !seat) throw new Error(`No scene called ${key}${scene ? ` with a seat ${asked.get('seat')}` : ''}.`);
   if (built.query || built.hash) history.replaceState(null, '', `${location.pathname}?${asked}${built.query ? `&${built.query}` : ''}${built.hash ?? ''}`);
 
-  // The browser's back in a room (lib/backGuard.ts) on a history of the frame's own: its guard
-  // never goes into the desk's (whose back steps through the benches), and a scene's { back } goes back on it.
-  const { backGuard, memorySteps } = await import('../../lib/backGuard.ts');
+  // The browser's back in a room (lib/backGuard.ts) on a history of the frame's own: its guard,
+  // and the steps the codex's item card puts up, never go into the desk's (whose back steps
+  // through the benches), and a scene's { back } goes back on it.
+  const { backGuard, pageLayers, memorySteps } = await import('../../lib/backGuard.ts');
   const steps = memorySteps();
   backGuard.use(steps);
+  pageLayers.use(steps);
 
   await import('../../app.css');
   const [{ mount }, { default: Root }, codex, records, daily, rooms, sound, spatial, fxUi, cursor, autoscroll, { switchedOff }, { toasts }, game, media] = await Promise.all([
