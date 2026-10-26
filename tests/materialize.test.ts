@@ -101,6 +101,8 @@ const laid = new Set<FakeCanvas>();
 interface FakeCanvas {
   width: number;
   height: number;
+  /** Its inline style (a clone gets a copy, as cloneNode copies the attribute). */
+  style: { opacity?: string };
   /** The OffscreenCanvas it handed over, watched for whether anything still holds it. */
   handedOver: WeakRef<object> | null;
   /** Its clones (cloneNode). */
@@ -115,6 +117,7 @@ function fakeCanvas(): FakeCanvas {
   const canvas = {
     clientWidth: 100,
     isConnected: true,
+    style: {} as { opacity?: string },
     handedOver: null as WeakRef<object> | null,
     clones: [] as FakeCanvas[],
     getContext: () => ctx,
@@ -130,6 +133,7 @@ function fakeCanvas(): FakeCanvas {
     },
     cloneNode() {
       const c = fakeCanvas();
+      c.style = { ...canvas.style };
       canvas.clones.push(c);
       return c;
     },
@@ -379,6 +383,8 @@ test('with a burn in hand it has longer to answer; one lost is drawn whole over 
   assert.ok(cover && laid.has(cover), 'laid over it');
   assert.equal(cover.getContext().drawn, 1);
   assert.deepEqual([cover.width, cover.height], [canvas.width, canvas.height]);
+  assert.equal(canvas.style.opacity, '0', 'what the worker left there hidden under it');
+  assert.notEqual(cover.style.opacity, '0', 'the cover shown');
   assert.ok(!second.terminated);
   destroy();
   assert.ok(!laid.has(cover), 'gone with it');
@@ -399,6 +405,8 @@ test('a worker that breaks is given no more: what it hadn’t finished is drawn 
   third.onerror!();
   const [cover] = canvas.clones;
   assert.ok(cover && laid.has(cover));
+  assert.equal(canvas.style.opacity, '0', 'the frozen frame hidden under it');
+  assert.notEqual(cover.style.opacity, '0');
   assert.ok(!third.terminated, 'kept while its canvas is on the page');
   const handed = offscreen.handed;
   const after = await show();

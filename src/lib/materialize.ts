@@ -249,12 +249,15 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
 
   /**
    * The burn in the worker is lost (retire): the canvas handed over keeps
-   * what the worker last drew there, stopped part way with its mist, or
-   * nothing if it never got that far, and the page can't draw on it. The
-   * patch's picture goes whole on a clone of it laid over it, placed and
-   * styled the same, as a burn on the page would end. (The clone keeps
-   * data-shape, so the effects' light keeps to the picture as it's shown,
-   * fx/effects.ts assemble.)
+   * what the worker last drew there, stopped part way with its mist and
+   * gold, the whole picture if it was only slow and finished underneath,
+   * or nothing, and the page can't draw on it. The patch's picture goes
+   * whole on a clone of it laid over it, placed and styled the same, as a
+   * burn on the page would end, and the canvas under it is hidden: through
+   * the picture's soft rim and glows it would show, more opaque than the
+   * picture and tinted for the rest of the question. (So the clone keeps
+   * data-shape, and the effects' light, which weighs each piece by its
+   * opacity, keeps to the cover alone, fx/effects.ts assemble.)
    */
   const cover = (img: PatchImage) => {
     const c = canvas.cloneNode(false) as HTMLCanvasElement;
@@ -265,6 +268,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
       return;
     }
     canvas.after(c);
+    canvas.style.opacity = '0';
     over = c;
   };
 
