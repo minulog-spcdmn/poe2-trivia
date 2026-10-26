@@ -6,7 +6,9 @@
 //
 // One history entry stands guard over the page while a room is open: the
 // same address, no hash, so the #codex and #settings pages
-// (lib/hashRoute.svelte.ts) never take it for theirs. Back takes it away; the
+// (lib/hashRoute.svelte.ts) never take it for theirs, and never over a page's
+// entry (a room resumed on a load of #settings drops the page first), so Back
+// from it never opens a page again under the game. Back takes it away; the
 // page puts it back at once and does what Back was for, so there's only ever
 // the one, put back on top of itself, never a step per screen. It goes up in
 // the tap that starts, makes or joins the room: an entry a page makes with
@@ -18,16 +20,22 @@
 // at once may pass over it and really leave: the way out for whoever means
 // it. The next tap on the page makes it hold again.)
 //
-// A modal <dialog> (the privacy sheet) already closes on Android's back by
-// itself (Chrome's close watchers), with no history step: Back only comes here
-// when the browser didn't close it (an iPhone's swipe, a desktop's back), and
-// it's closed first, as the browser would have.
+// The one modal <dialog>, the privacy sheet, opens only in the iPhone's
+// home-screen app (lib/legalSheet.svelte.ts; everywhere else the privacy link
+// opens a tab of its own), where Back (the edge swipe) doesn't close it by
+// itself: it's closed first, as its own back button would. (Were it ever on
+// Android, Chrome's close watchers would close it with no history step, and
+// Back wouldn't come here at all.) One already sliding away is passed over.
 
 /** The history the guard stands in: the browser's, or one of its own (tests, the QA desk's frames). */
 export interface Steps {
   /** The state of the entry the page is on. */
   state(): unknown;
+  /** Whether that entry's address has a hash (a page's: #settings). */
+  hashed(): boolean;
+  /** A new entry, its address the page's without a hash. */
   push(state: unknown): void;
+  /** The entry the page is on made `state`, its address losing any hash. */
   replace(state: unknown): void;
   back(): void;
   /** `heard` is called whenever the page goes back or forward to another of its entries. */
@@ -52,6 +60,12 @@ export class BackGuard {
   private onBack = () => {};
   /** An open modal <dialog> the browser left open, to close first; the page's, in the browser. */
   topDialog: () => (() => void) | null = () => null;
+  /**
+   * A page's entry the guard would go up over (a room resumed on a load of
+   * #settings): dropped where it stands, a plain entry, the page closed (the
+   * header's gear opens it again). The page's own drop, in the browser (App).
+   */
+  dropPage: () => void = () => this.steps.replace(null);
 
   constructor(steps: Steps) {
     this.use(steps);
@@ -101,7 +115,9 @@ export class BackGuard {
     // (Going back from the last one: this one goes up once that's done.)
     if (!this.wanted || this.placed || this.going) return;
     this.placed = true;
-    if (!isGuard(this.steps.state())) this.steps.push({ [KEY]: true });
+    if (isGuard(this.steps.state())) return;
+    if (this.steps.hashed()) this.dropPage();
+    this.steps.push({ [KEY]: true });
   }
 
   private remove() {
@@ -139,18 +155,30 @@ export class BackGuard {
   }
 }
 
-/** A history of its own, starting on one entry (`state`), going back a moment later, as a browser's does. */
-export function memorySteps(state: unknown = null) {
+/**
+ * A history of its own, starting on one entry (`state`, its address's hash
+ * `hash`), going back a moment later, as a browser's does. (`page` puts an
+ * entry with a hash on top, as a page's own opening does.)
+ */
+export function memorySteps(state: unknown = null, hash = '') {
   let heard = () => {};
   const steps = {
     entries: [state],
+    hashes: [hash],
     at: 0,
     state: () => steps.entries[steps.at],
+    hashed: () => !!steps.hashes[steps.at],
     push(s: unknown) {
-      steps.entries.splice(++steps.at, Infinity, s);
+      steps.page(s, '');
+    },
+    page(s: unknown, hash: string) {
+      steps.at++;
+      steps.entries.splice(steps.at, Infinity, s);
+      steps.hashes.splice(steps.at, Infinity, hash);
     },
     replace(s: unknown) {
       steps.entries[steps.at] = s;
+      steps.hashes[steps.at] = '';
     },
     back() {
       if (steps.at === 0) return;
@@ -165,18 +193,25 @@ export function memorySteps(state: unknown = null) {
 }
 
 function browserSteps(): Steps {
+  const here = () => location.pathname + location.search;
   return {
     state: () => history.state,
-    push: (s) => history.pushState(s, ''),
-    replace: (s) => history.replaceState(s, ''),
+    hashed: () => !!location.hash,
+    push: (s) => history.pushState(s, '', here()),
+    replace: (s) => history.replaceState(s, '', here()),
     back: () => history.back(),
     listen: (heard) => addEventListener('popstate', heard),
   };
 }
 
-/** The page's own modal <dialog> open on top, if any, closed as its Escape would (its cancel first, which it may take over). */
+/**
+ * The page's own modal <dialog> open on top, if any, closed as its Escape
+ * would (its cancel first, which it may take over). One already sliding away
+ * (LegalSheet's `going`, still open until it's gone) isn't, so a Back
+ * meanwhile goes to what's under it.
+ */
 function openDialog() {
-  const d = [...document.querySelectorAll('dialog')].filter((d) => d.open && d.matches(':modal')).at(-1);
+  const d = [...document.querySelectorAll('dialog')].filter((d) => d.open && d.matches(':modal') && !d.classList.contains('going')).at(-1);
   if (!d) return null;
   return () => {
     if (d.dispatchEvent(new Event('cancel', { cancelable: true }))) d.close();

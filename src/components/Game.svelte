@@ -33,6 +33,7 @@
   import { dealing } from '../lib/dealing.svelte';
   import { arrival, speak } from '../lib/zoneArrival.svelte';
   import { closeItemWindow, itemWindow } from '../lib/itemWindow.svelte';
+  import { backGuard } from '../lib/backGuard';
   import ItemWindow from './ItemWindow.svelte';
   import { warmGame } from './gameCircles.svelte';
   import { backdropDropShadow } from '../lib/backdropDropShadow';
@@ -45,6 +46,12 @@
   const local = $derived(session.mode === 'local');
   // An item opened from a question stays open from one question to the next, until the game ends.
   onMount(() => closeItemWindow);
+  // Open, the browser's back closes it before anything under it (lib/backGuard.ts); off
+  // as it's closed, not once its flight away is done, so a Back meanwhile isn't lost on it.
+  const itemOpen = $derived(!!itemWindow.item);
+  $effect(() => {
+    if (itemOpen) return backGuard.layer(closeItemWindow);
+  });
   // The name plate's weave, ready before the first question shows one.
   onMount(warmWeave);
 

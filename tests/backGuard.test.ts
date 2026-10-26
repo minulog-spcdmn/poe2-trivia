@@ -177,3 +177,45 @@ test('the history it was moved off is no longer heard', async () => {
   await settled();
   assert.equal(asked, 1);
 });
+
+test('a room resumed on a page’s entry (a reload with #settings open) drops the page first: the guard goes over a plain entry', async () => {
+  const steps = memorySteps({ settings: true }, '#settings');
+  const guard = new BackGuard(steps);
+  let dropped = 0;
+  guard.dropPage = () => {
+    dropped++;
+    steps.replace(null);
+  };
+  const asked: string[] = [];
+  guard.asked(() => asked.push('leave?'));
+  guard.want(true);
+  assert.equal(dropped, 1);
+  assert.deepEqual(steps.entries, [null, { guard: true }]);
+  assert.deepEqual(steps.hashes, ['', '']);
+  // Back lands on the plain entry: it asks, and no page is opened under the game.
+  steps.back();
+  await settled();
+  assert.deepEqual(asked, ['leave?']);
+  assert.equal(steps.hashed(), false);
+});
+
+test('the guard itself never takes a page’s hash, and a page opened over it is gone back from to the guard', async () => {
+  const { steps, guard, asked, back } = room();
+  guard.want(true);
+  assert.equal(steps.hashed(), false);
+  steps.page({ settings: true }, '#settings');
+  await back();
+  assert.ok(guarded(steps.state()));
+  assert.equal(steps.hashed(), false);
+  assert.deepEqual(asked, []);
+});
+
+test('the guard’s own drop of a page is only for one under it: in a room with the guard up, opening a page drops nothing', () => {
+  const { steps, guard } = room();
+  let dropped = 0;
+  guard.dropPage = () => dropped++;
+  guard.want(true);
+  steps.page({ settings: true }, '#settings');
+  guard.want(true);
+  assert.equal(dropped, 0);
+});

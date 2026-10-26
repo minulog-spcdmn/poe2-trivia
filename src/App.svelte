@@ -488,6 +488,10 @@
   // goes up as the tap that opens the room sets the session's mode (this runs
   // before that tap's event is done), and only once a page over the start
   // page (the codex, the settings) has gone back to it.
+  // Never over the settings' own entry (a room resumed on a reload with them
+  // open, as an iPhone reloads a tab left in the background): they're dropped
+  // first, so Back from the guard can't open them again under the game.
+  backGuard.dropPage = () => settingsRoute.drop();
   $effect(() => backGuard.want(!!session.mode && !page));
   onMount(() => backGuard.asked(() => (codexAllowed ? session.leave() : askLeave())));
   $effect(() => {

@@ -30,6 +30,7 @@
   import { warmPlate } from '../lib/plateStore.svelte';
   import { circleAtPlace } from '../lib/circlePlaces';
   import { cameFromThisSite, countArrival, type JoinVia } from '../lib/count';
+  import { withoutInvite } from '../lib/inviteAddress';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -489,15 +490,19 @@
     e?.preventDefault();
     const n = checkName(inviteName, inviteField);
     if (!n) return;
+    // Out of the address first: the guard Back meets in the room (lib/backGuard.ts)
+    // goes up in this tap over this entry, and leaving the room goes back to it,
+    // which mustn't be the invite again, to join it once more. (The screen stays
+    // for a join that fails.)
+    clearInviteAddress();
     startJoin(invite, n, 'join', inviteVia);
   }
+  /** The address without the invite (its room, and what older links and the beta's first look add). */
+  function clearInviteAddress() {
+    history.replaceState(history.state, '', withoutInvite(location.href));
+  }
   function leaveInvite() {
-    const url = new URL(location.href);
-    url.searchParams.delete('room');
-    // Older invite links named their host (?by=): the room says that now.
-    url.searchParams.delete('by');
-    url.searchParams.delete('first');
-    history.replaceState(history.state, '', url);
+    clearInviteAddress();
     invite = '';
   }
   // Joined: the link has done its job (a reload shouldn't ask again).
