@@ -23,8 +23,6 @@ import { onSaved } from './lib/codex';
 import { whenIdle } from './lib/idle';
 import { lastPlayed } from './lib/lastPlayed';
 import { toasts } from './lib/toasts.svelte';
-import { preloadPeerJs } from './lib/peer';
-import { preloadEd25519 } from './lib/ownerKey';
 import { bootSync } from './lib/sync/boot.svelte';
 
 // First: a pairing link's code leaves the address before anything reads it (lib/sync/boot.svelte.ts).
@@ -65,14 +63,11 @@ addEventListener('dragstart', (e) => {
 // app uses, which a fresh import during hot reloading wouldn't be).
 if (import.meta.env.DEV) Object.assign(window, { __fx: fxCore, __e: fxEffects, __m: fxMoments, __s: session });
 
+// PeerJS and Ed25519 aren't part of the startup scripts: App fetches them
+// ahead once the page has settled, in turn with the rest it fetches ahead
+// (App.svelte, lib/settled.ts).
 const app = mount(Root, {
   target: document.getElementById('app')!,
 });
-
-// PeerJS and Ed25519 aren't part of the startup scripts: they come in once
-// the page has settled, ready before anyone hosts or joins (lib/peer.ts,
-// lib/ownerKey.ts, lib/settled.ts).
-preloadPeerJs();
-preloadEd25519();
 
 export default app;

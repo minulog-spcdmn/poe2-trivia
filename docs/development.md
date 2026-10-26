@@ -132,12 +132,14 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   (`src/lib/backdropDropShadow.ts`) is blurred in a worker
   (`dropBlurWorker.ts`) once its shape holds still, CSS painting the
   shadow meanwhile: the turn's banner, made afresh each turn, took 20 to
-  30 ms of blur on the main thread as the turn came in. The game's own
-  screens (`Game.svelte`, `GameOver.svelte`) are a chunk of their own, about
-  a quarter of the script, fetched at the first idle moment or at once on the
-  way into a room, so the start page loads and runs without them (tried once
-  more if the fetch fails; after that the game screen offers a reload, as
-  some browsers won't fetch a module that failed again). The sheets of the
+  30 ms of blur on the main thread as the turn came in. A room's own
+  screens (`Lobby.svelte` and the other players' pointers; `Game.svelte`, a
+  zone's card, `GameOver.svelte`) are chunks of their own, fetched once the
+  start page has settled (`whenSettled` in `src/lib/settled.ts`) or on the
+  way into a room (the lobby first, the game's after it), so the start page
+  loads and runs without them (tried once more if the fetch fails; after
+  that the screen offers a reload, as some browsers won't fetch a module
+  that failed again). The sheets of the
   screens fetched later (the game's, the Codex's, the dialogs') come without
   their @keyframes, which the build moves into the sheet the page starts
   with (`keyframesFirst.ts`): Chrome restyles every animated element on the

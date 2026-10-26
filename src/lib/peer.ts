@@ -51,7 +51,7 @@ export function loadPeerJs(): Promise<PeerJs> {
 /** PeerJS when it is loaded already, so a peer can be made right away. */
 export const peerJsNow = (): PeerJs | null => peerJs;
 
-/** Loads PeerJS once the page has settled (lib/settled.ts: not over the start page's entrance), so hosting or joining doesn't wait for it. */
-export function preloadPeerJs() {
-  whenSettled(() => loadPeerJs().catch(() => {}));
+/** Loads PeerJS once the page has settled (lib/settled.ts: not over the start page's entrance), so hosting or joining doesn't wait for it; returns what takes that back if it hasn't run. */
+export function preloadPeerJs(): () => void {
+  return whenSettled(() => loadPeerJs().catch(() => {}));
 }

@@ -33,6 +33,8 @@
   import { closeSettings, openSettings, settingsRoute } from './lib/settingsRoute.svelte';
   import { whenSettled } from './lib/settled';
   import { loadFonts, loadFontsAhead } from './lib/fontsAhead';
+  import { loadPeerJs, preloadPeerJs } from './lib/peer';
+  import { preloadEd25519 } from './lib/ownerKey';
   import { shellHeightsRead } from './lib/shellHeights.svelte';
   import { toasts } from './lib/toasts.svelte';
   import { BETA, LOCAL } from './lib/channel';
@@ -372,7 +374,7 @@
   // page loads and runs without them: on a first visit everything in the
   // startup script is downloaded before the page shows at all, which on a
   // phone on a busy Wi-Fi is seconds. Fetched once the start page has
-  // settled, or at once on the way into a room. A fetch that fails is tried
+  // settled, or on the way into a room (below). A fetch that fails is tried
   // once more while a room is open (a dropped connection may be back), but
   // no more: some browsers keep a module that failed as failed, and a deploy
   // that replaced the chunk fails every time. After that, only a reload
@@ -417,19 +419,29 @@
     ]),
   );
   // Ahead, one at a time once the page has settled (lib/settled.ts), in the
-  // order they're likeliest wanted: the lobby, the game, the faces the codex
-  // and the item windows use, the codex.
+  // order they're likeliest wanted: what a new game or a join waits for (the
+  // lobby, PeerJS), the game's screens, Ed25519 (for the owner's rooms,
+  // lib/ownerKey.ts), the faces the codex and the item windows use, the
+  // codex. (All of it from here: anything queued as the page starts, before
+  // App has mounted, would go ahead of the lobby.)
   onMount(() => {
-    const undo = [whenSettled(loadLobby), whenSettled(loadGamePages)];
-    loadFontsAhead();
-    undo.push(whenSettled(fetchCodexPage));
+    const undo = [whenSettled(loadLobby), preloadPeerJs(), whenSettled(loadGamePages), preloadEd25519(), loadFontsAhead(), whenSettled(fetchCodexPage)];
     return () => undo.forEach((f) => f());
   });
-  // (From the moment a room is being made or joined, while it still connects.)
+  // From the moment a room is being made or joined, while it still connects:
+  // the lobby first, and the game's screens only once it's in, and online
+  // PeerJS too (the room is opened or joined through it). On a phone on a
+  // busy Wi-Fi they'd share the link with what the lobby waits for. A game
+  // under way already (a reload, a resume) has them all at once.
   $effect(() => {
     if (!inRoom() && !session.mode) return;
-    untrack(loadLobby);
-    untrack(loadGamePages);
+    if (screen === 'game' || screen === 'over') {
+      untrack(loadLobby);
+      untrack(loadGamePages);
+      return;
+    }
+    const online = session.mode === 'host' || session.mode === 'client';
+    untrack(() => void Promise.all([loadLobby(), online && loadPeerJs().catch(() => {})]).then(loadGamePages));
   });
 
   // Each screen starts at the top (a guest who scrolled down to the join

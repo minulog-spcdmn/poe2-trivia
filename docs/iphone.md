@@ -208,7 +208,11 @@ with its numbers in the comments.
   for the page to settle now (`whenSettled`, `src/lib/settled.ts`): until
   what is making an entrance lets go (`holdSettled`: a rune circle until it
   has drawn itself in), then for frames in a row with time to spare, one
-  piece at a time. And on a first visit the page is blank until the whole
+  piece at a time. The faces still come as one piece: after decoding them,
+  the 44 ms of laying the page out again was the font set changing, not the
+  faces in it (four faces no element used, added to the page, cost the
+  same), so one at a time would lay it out four times. And on a first
+  visit the page is blank until the whole
   startup script has arrived (on a venue's Wi-Fi, seconds), so what only a
   room shows (the lobby, the other players' pointers, a zone's card) is
   chunks of its own (`App.svelte`, `tests/startupScript.test.ts`).

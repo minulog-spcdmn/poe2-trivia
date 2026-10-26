@@ -30,9 +30,9 @@ export const OWNER_PUBLIC_KEY = 'SIwtcxovVQ_Mfp8NkPmSzMKgYx1ejNtyuw-VLrgkS8M';
 
 const ed25519 = () => import('@noble/ed25519');
 
-/** Loads Ed25519 once the page has settled (lib/settled.ts), so a room's signature isn't left to a download that may no longer be there. */
-export function preloadEd25519() {
-  whenSettled(() => ed25519().catch(() => {}));
+/** Loads Ed25519 once the page has settled (lib/settled.ts), so a room's signature isn't left to a download that may no longer be there; returns what takes that back if it hasn't run. */
+export function preloadEd25519(): () => void {
+  return whenSettled(() => ed25519().catch(() => {}));
 }
 
 const SALT = 'poe2trivia.owner-key';

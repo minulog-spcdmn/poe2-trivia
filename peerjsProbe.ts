@@ -8,8 +8,8 @@ import type { Plugin } from 'vite';
  * connection and a data channel and closing them again. The first peer
  * connection a browser makes starts its WebRTC machinery, which holds the
  * page's thread for up to a second (on a fast desktop, in a fresh browser),
- * and PeerJS is imported while the start page is up (in idle time after its
- * first paint, lib/peer.ts preloadPeerJs), when that would stall it. All PeerJS
+ * and PeerJS is imported while the start page is up (once it has settled,
+ * lib/peer.ts preloadPeerJs), when that would stall it. All PeerJS
  * asks of the probe is whether WebRTC is there at all (Peer's constructor);
  * so the probe goes, and what it found is read from what the browser has.
  * The first peer connection is then made when one is needed: joining a

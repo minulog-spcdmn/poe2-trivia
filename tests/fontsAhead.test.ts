@@ -1,8 +1,9 @@
-// The faces other screens use are loaded ahead one at a time, each in an idle
-// moment of its own once the page has settled (lib/fontsAhead.ts), not all
-// four in one go: on the iPhone that was a long frame decoding them and
-// another laying the page out again. The codex, opened before they're all
-// in, still has the rest at once, and no face is ever loaded twice.
+// The faces other screens use are loaded ahead once the page has settled
+// (lib/fontsAhead.ts), all four in that one moment: the browser lays the
+// whole page out again each time the font set changes, whatever changed in
+// it, so one face at a time would be four of those. Nothing is fetched ahead
+// with Save-Data on, the codex still has the faces at once when it's opened
+// before they're in, and no face is ever loaded twice.
 import './asVite.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,7 +14,8 @@ const g = globalThis as Record<string, unknown>;
 // A page with requestIdleCallback (the settling uses its idle moments), the
 // stylesheet's family variables and a font set that logs what it's asked to load.
 g.requestIdleCallback = (f: () => void) => (idles.push(f), idles.length);
-Object.defineProperty(globalThis, 'navigator', { value: {}, configurable: true });
+const connection = { saveData: false };
+Object.defineProperty(globalThis, 'navigator', { value: { connection }, configurable: true });
 g.document = {
   documentElement: {},
   visibilityState: 'visible',
@@ -22,31 +24,41 @@ g.document = {
 const FAMILIES: Record<string, string> = {
   '--font-cinzel': "'Cinzel', serif",
   '--font-tooltip': "'Fontin SmallCaps', serif",
-  '--font-tooltip-italic': "'Fontin Italic', serif",
+  '--font-tooltip-italic': "'Fontin', serif",
   '--font-body': "'EB Garamond', serif",
 };
 g.getComputedStyle = () => ({ getPropertyValue: (name: string) => FAMILIES[name] ?? '' });
 
 const { loadFonts, loadFontsAhead } = await import('../src/lib/fontsAhead.ts');
+const ALL = ["900 16px 'Cinzel'", "400 16px 'Fontin SmallCaps'", "italic 400 16px 'Fontin'", "500 16px 'EB Garamond'"];
 
-/** The next idle moment, and what the face it loaded resolves. */
+/** The next idle moment, and what the faces it loaded resolve. */
 async function idle() {
   idles.shift()?.();
   for (let i = 0; i < 5; i++) await Promise.resolve();
 }
 
-test('one face per idle moment, then the codex has the rest at once, and none twice', async () => {
+test('with Save-Data on, nothing is queued', () => {
+  connection.saveData = true;
+  loadFontsAhead()();
+  connection.saveData = false;
+  assert.equal(idles.length, 0);
+  assert.deepEqual(loads, []);
+});
+
+test('the four faces in one settled moment, none before it', async () => {
   loadFontsAhead();
   assert.deepEqual(loads, []);
-  await idle();
-  assert.deepEqual(loads, ["900 16px 'Cinzel'"]);
-  // (The next idle moment is asked for only once that face is in.)
   assert.equal(idles.length, 1);
   await idle();
-  assert.deepEqual(loads, ["900 16px 'Cinzel'", "400 16px 'Fontin SmallCaps'"]);
+  assert.deepEqual(loads, ALL);
+  // (Nothing more is queued: no settled moment of their own for the others.)
+  assert.equal(idles.length, 0);
+});
+
+test('the codex, opened after, loads none of them again; nor does another settled moment', async () => {
   await loadFonts();
-  assert.deepEqual(loads, ["900 16px 'Cinzel'", "400 16px 'Fontin SmallCaps'", "italic 400 16px 'Fontin Italic'", "500 16px 'EB Garamond'"]);
+  loadFontsAhead();
   await idle();
-  await idle();
-  assert.equal(loads.length, 4);
+  assert.deepEqual(loads, ALL);
 });
