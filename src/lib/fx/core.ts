@@ -18,6 +18,7 @@
 import { BEHIND_PICTURE, BEHIND_UI, FxRenderer, MAX_HIDES, SHAPE_FLOATS, ShapeType, pictureReady, type DialogLight, type HideLight, type SigilPicture, type Silhouette } from './renderer';
 import { webgl2Refused, whenGpuCaughtUp, type Build } from './gl';
 import { ParticlePool, type ParticleSpec } from './particles';
+import { hideGaps, type Stood } from './gaps';
 import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
 import { cornerOnScreen, ringOf } from '../corner';
@@ -1106,7 +1107,7 @@ function dialogNow(): DialogLight {
     hides.push({ box: r, radius: round, amount: o });
     stood.push({ el, box: r, round, amount: o });
   }
-  if (narrow?.matches) hideGaps(stood, hides);
+  if (narrow?.matches) hideGaps(stood, hides, headerBottom);
   // (A window, with a dialog's backdrop up but no box of it yet, dims nothing either.)
   return { amount: windowed ? 0 : amount, box: null, radius: 0, hides };
 }
@@ -1131,48 +1132,8 @@ function edgeOf(el: Element): { radius: string; ring: number } {
   return c;
 }
 
-/** A front's box on screen as it hides the light (dialogNow): its outer ring in, its corners' radius, how much it hides. */
-type Stood = { el: Element; box: DOMRect; round: number; amount: number };
-
-/** Phones (lib/layout.ts `phone`), where the toasts stand across the top, under the header (Toasts.svelte's narrow stack). */
+/** Phones (lib/layout.ts `phone`), where the toasts stand across the top, under the header (Toasts.svelte's narrow stack), and the gaps above them hide the light too (gaps.ts). */
 const narrow = typeof matchMedia === 'function' ? matchMedia(PHONE) : null;
-
-/** How far under the header, or under the toast above it, a phone's toast may rest and still hide the light in the gap (Toasts.svelte keeps 6px under the header, 0.4rem between). */
-const UNDER_HEADER = 10;
-
-/**
- * On a phone the toasts stand across the top, one under another a few px
- * under the header (Toasts.svelte), over the player's pill and its streak's
- * fire. The gap above each hides the light too, up to the toast of the stack
- * just above it or, for the first, the header, so the fire passes behind them
- * rather than burning in a thin line between. (Past the corners' curve on
- * both sides, so the gap meets each box with no notch at either end.)
- */
-function hideGaps(stood: Stood[], hides: HideLight[]) {
-  // (The header's bottom, read once, as only the first toast rests under it.)
-  let header: number | null | undefined;
-  for (const s of stood) {
-    if (hides.length >= MAX_HIDES) return;
-    const { box: r } = s;
-    let above: Stood | null = null;
-    for (const t of stood) {
-      if (t === s || t.el.parentElement !== s.el.parentElement) continue;
-      if (t.box.bottom <= r.top && t.box.left < r.right && t.box.right > r.left && (!above || t.box.bottom > above.box.bottom)) above = t;
-    }
-    if (above) {
-      if (r.top - above.box.bottom > UNDER_HEADER) continue;
-      const left = Math.max(r.left, above.box.left);
-      const top = above.box.bottom - above.round;
-      const box = new DOMRect(left, top, Math.min(r.right, above.box.right) - left, r.top + s.round - top);
-      hides.push({ box, radius: 0, amount: Math.min(s.amount, above.amount) });
-      continue;
-    }
-    if (header === undefined) header = headerBottom();
-    if (header !== null && r.top > header && r.top - header <= UNDER_HEADER) {
-      hides.push({ box: new DOMRect(r.left, header, r.width, r.top - header + s.round), radius: 0, amount: s.amount });
-    }
-  }
-}
 
 /** The bottom of the app's header on screen (App.svelte), or null with none showing. */
 function headerBottom(): number | null {
