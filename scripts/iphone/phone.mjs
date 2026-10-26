@@ -210,6 +210,16 @@ export function phases({ raf, marks, late }) {
   return rows;
 }
 
+/** What setups/rafTime.js found, if it ran: each phase's animation-frame callbacks and timers, by their source, the costliest first. */
+export function printRafStats(stats) {
+  if (!stats) return;
+  for (const [phase, by] of Object.entries(stats)) {
+    console.log('  ' + phase);
+    for (const [k, [n, js, dirty]] of Object.entries(by).sort((a, b) => b[1][1] + b[1][2] - a[1][1] - a[1][2]).slice(0, 8))
+      console.log(`    js ${js.toFixed(0).padStart(5)} ms  left dirty ${dirty.toFixed(0).padStart(5)} ms  ${String(n).padStart(4)}x  ${k}`);
+  }
+}
+
 export function printPhases(rows) {
   const pad = (v, n) => String(v).padStart(n);
   for (const [k, v] of Object.entries(rows)) console.log(`  ${k.padEnd(12)} ${pad(v.ms, 6)} ms  ${pad(v.fps, 5)} fps  >25 ${pad(v.over25, 3)}  >50 ${pad(v.over50, 3)}  max ${pad(v.max, 4)}  held ${v.held}`);

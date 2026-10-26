@@ -112,7 +112,7 @@ owner can use it.
 | `goto.mjs <url>` | Sends the tab to an address, a build for the owner to try, say. |
 | `shot.mjs <out.png>` | A screenshot of the tab, at the phone's pixels. |
 | `codex.mjs <url> <label>` | The codex as a thumb goes through it: opened, down to the items, scrolled through them and back, two items opened and closed. Each phase's frames, and the page's CPU. |
-| `game.mjs <url> <label>` | A game (`MODE=delve`, `turns` or `race`; `ROUNDS=4`): New game, a mode, Begin, then cards, question, answer and reveal, each click timed in parts. Each phase's frames. |
+| `game.mjs <url> <label>` | A game (`MODE=delve`, `turns` or `race`; `ROUNDS=4`): New game, a mode, Begin, then cards, question, answer and reveal, each click timed in parts. Each phase's frames. It answers right (`ANSWER=right`, so a Delve run lives on), or always the first option (`ANSWER=first`). |
 | `layers.mjs [--do "<js>"]` | The tab's compositing layers: what, how many, why. With `--do`, which painted while that ran. |
 | `profile.mjs <label.prof.json>` | What ran in each phase of a `game.mjs` run with `PROFILE=1`, by file and line in `src/`. |
 | `timeline.mjs <a> [b]` | What a run's timeline (`TIMELINE=1`) recorded in each phase: styles, layouts and paints, and who forced them. |

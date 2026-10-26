@@ -11,7 +11,7 @@
 
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { button, log, open, phases, printPhases, runDir, setup, sleep, watchFrames } from './phone.mjs';
+import { button, log, open, phases, printPhases, printRafStats, runDir, setup, sleep, watchFrames } from './phone.mjs';
 
 const [url, label, dir] = process.argv.slice(2);
 if (!url || !label) {
@@ -72,13 +72,7 @@ if (process.env.TIMELINE === '1') await page.send('Timeline.stop').catch(() => {
 await sleep(1000);
 const got = await frames.read();
 page.close();
-// What setups/rafTime.js found: each phase's animation-frame callbacks and timers, by their source.
-if (got.rafStats)
-  for (const [phase, by] of Object.entries(got.rafStats)) {
-    console.log('  ' + phase);
-    for (const [k, [n, js, dirty]] of Object.entries(by).sort((a, b) => b[1][1] + b[1][2] - a[1][1] - a[1][2]).slice(0, 8))
-      console.log(`    js ${js.toFixed(0).padStart(5)} ms  left dirty ${dirty.toFixed(0).padStart(5)} ms  ${String(n).padStart(4)}x  ${k}`);
-  }
+printRafStats(got.rafStats);
 const rows = phases(got);
 printPhases(rows);
 const mean = (i) => (cpu.length ? Math.round(cpu.reduce((s, c) => s + c[i], 0) / cpu.length) : '-');

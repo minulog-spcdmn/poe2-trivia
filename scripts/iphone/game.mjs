@@ -2,15 +2,16 @@
 // game, a name if it asks, a mode, Begin, then rounds of cards, question,
 // answer and reveal, whatever the game shows next. It prints the frames of
 // each phase, as the page got them, and each click timed in parts.
-//   [MODE=delve|turns|race] [ROUNDS=4] [SETUP=<js or setups/ file>] [TIMELINE=1] [PROFILE=1]
+//   [MODE=delve|turns|race] [ROUNDS=4] [ANSWER=right|first] [SETUP=<js or setups/ file>] [TIMELINE=1] [PROFILE=1]
 //     node scripts/iphone/game.mjs <url> <label> [out dir]
 // Writes <label>.game.json into the out dir (.phone/runs/), with
 // <label>.timeline.json (TIMELINE) and <label>.prof.json (PROFILE, for
-// profile.mjs) beside it.
+// profile.mjs) beside it. It answers right (ANSWER=right, the default), so a
+// Delve run lives through its rounds, or always the first option (first).
 
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { button, log, open, phases, printPhases, runDir, setup, sleep, watchFrames } from './phone.mjs';
+import { button, log, open, phases, printPhases, printRafStats, runDir, setup, sleep, watchFrames } from './phone.mjs';
 
 const [url, label, dir] = process.argv.slice(2);
 if (!url || !label) {
@@ -20,6 +21,7 @@ if (!url || !label) {
 const out = runDir(dir);
 const MODE = process.env.MODE ?? 'delve';
 const ROUNDS = +(process.env.ROUNDS ?? 4);
+const ANSWER = process.env.ANSWER ?? 'right';
 const SETUP = setup();
 
 const page = await open(url, { fresh: true });
@@ -94,13 +96,26 @@ await sleep(2000);
 await mark('begin');
 await timedClick(`document.querySelector('button[data-cursor="begin"]')`, 'begin');
 
-// Rounds: whatever the game shows, acted on.
+// Rounds: whatever the game shows, acted on. (A reveal first: in Take turns
+// the others' options stay enabled under it, with its Next showing.)
 const state = `(() => {
   if (document.querySelector('button.card:not([disabled])')) return 'cards';
-  if (document.querySelector('[data-cursor^="opt:"]:not([disabled])')) return 'question';
   const n = document.querySelector('button[data-cursor="next"]');
-  if (n && !n.disabled) return 'reveal';
+  if (n && !n.disabled && n.offsetParent) return 'reveal';
+  if (document.querySelector('[data-cursor^="opt:"]:not([disabled])')) return 'question';
   return null;
+})()`;
+/** The option to tap: the right one, as the room's state in the tab's session storage (lib/storage.ts) has it, or the first. */
+const option = `(() => {
+  const any = document.querySelector('[data-cursor^="opt:"]:not([disabled])');
+  if (${JSON.stringify(ANSWER)} !== 'right') return any;
+  try {
+    const key = Object.keys(sessionStorage).find((k) => /[.]session[.]v[0-9]+$/.test(k));
+    const q = JSON.parse(sessionStorage.getItem(key)).state.question;
+    return document.querySelector('[data-cursor="opt:' + q.options.indexOf(q.itemId) + '"]:not([disabled])') ?? any;
+  } catch {
+    return any;
+  }
 })()`;
 let round = 0;
 let last = null;
@@ -117,7 +132,7 @@ for (let steps = 0; steps < ROUNDS * 4 && round < ROUNDS; steps++) {
   } else if (s === 'question') {
     await sleep(3500);
     await mark(`answer${round}`);
-    await timedClick(`document.querySelector('[data-cursor^="opt:"]:not([disabled])')`, 'answer' + round);
+    await timedClick(option, 'answer' + round);
   } else {
     await sleep(3000);
     await mark(`next${round}`);
@@ -138,6 +153,7 @@ if (process.env.PROFILE === '1') {
 await sleep(800);
 const got = await frames.read();
 page.close();
+printRafStats(got.rafStats);
 if (got.extra) log('extra', JSON.stringify(got.extra));
 if (got.ins) for (const x of got.ins) log('inserted', x.mark, x.n, 'js~' + x.sinceRaf, 'style+layout ' + x.styleLayout, 'to frame ' + x.toRaf, 'frame ' + x.afterRaf, '|', x.top);
 const rows = phases(got);
