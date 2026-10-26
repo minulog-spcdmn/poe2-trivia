@@ -33,19 +33,33 @@ app, and has no Safari):
 
 - Chrome: **⋯ → Settings → Content Settings → Web Inspector** on.
 - This PC trusted (**Trust** and the passcode, the first time it's plugged in).
-- The home-screen app can be driven too, though Safari's own setting
-  (Settings → Apps → Safari → Advanced → Web Inspector) isn't there without
-  Safari. On 26 October 2026 every page driven so far turned out to be it:
-  opened at poe2.quest, then sent to the PC's address, out of its scope, so
-  iOS showed the page in its in-app browser view (bars like Safari's,
-  Safari's user agent, `navigator.standalone` true, display-mode
-  fullscreen). What's measured there is WebKit on this phone, which holds
-  for Safari and Chrome alike (on iOS both are WebKit); anything that hangs
-  on being installed (`installedApp()`, `navigator.standalone`,
-  display-mode) is that hybrid's, neither a Chrome tab's nor the installed
-  app's. So check which app a run drives first: `node scripts/iphone/ask.mjs
-  "navigator.userAgent + ' ' + navigator.standalone"` (`CriOS` in the
-  agent is Chrome).
+- The home-screen app can be driven too, while it's in front (iOS holds a
+  background app's scripts), though Safari's own setting (Settings → Apps →
+  Safari → Advanced → Web Inspector) isn't there without Safari. The phone
+  lists Chrome's pages and the app's together, in no set order: the scripts
+  take Chrome's (`CriOS` in its user agent), `IPHONE_APP=app` the app's,
+  `IPHONE_APP=any` the first listed. Before that, a whole day of runs (26
+  October 2026) drove the app's page taking it for Chrome's.
+
+What each reads (that day: iOS 27.0.1, Chrome 155):
+
+- **Chrome's tab**: `navigator.standalone` false, display-mode browser, 393 x
+  665 with its bars up, 100lvh 773. The game takes a browser's path.
+- **The home-screen app**, opened fresh at poe2.quest: Safari's user agent,
+  `standalone` true, display-mode fullscreen, 393 x 793, 100svh 793 but
+  100lvh 852. The game takes the app's path. The PC's builds are out of its
+  scope, so the app itself can only be read on the live site.
+- **The app sent to the PC's address**, out of its scope: iOS shows the page
+  in the app's in-app browser view, bars like Safari's, 393 x 663, still
+  `standalone` true and fullscreen, so the game takes the app's path under
+  a browser's bars. That's neither a player's Chrome nor their app: speed
+  measured there is still WebKit on this phone (Safari's and Chrome's
+  engine on iOS), but nothing that hangs on being installed
+  (`installedApp()`, `standalone`, display-mode, the heights) is.
+
+Chrome turns an address typed without `http://` into `https://`, which the
+PC's builds don't serve (`ERR_SSL_PROTOCOL_ERROR`): type it in full, or send
+the tab there from the PC.
 
 ## Every time
 
