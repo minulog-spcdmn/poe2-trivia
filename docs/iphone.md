@@ -200,6 +200,18 @@ with its numbers in the comments.
   waits 300 ms there instead, and each step still runs as one task: a step
   over a frame's time drops a frame on the phone however idle the page
   looked. Work that takes tens of ms a step there belongs in a worker.
+- **A timer is not an idle moment, and the start page's first seconds are
+  its entrance.** Loading the game's screens on `whenIdle`'s 500 ms timer
+  put their evaluation on the frame today's circle laid its layers on the
+  page (45 to 67 ms), and the four faces loaded ahead on its 1 s timer
+  were a 50 to 62 ms frame mid draw-in. Work fetched ahead of need waits
+  for the page to settle now (`whenSettled`, `src/lib/settled.ts`): until
+  what is making an entrance lets go (`holdSettled`: a rune circle until it
+  has drawn itself in), then for frames in a row with time to spare, one
+  piece at a time. And on a first visit the page is blank until the whole
+  startup script has arrived (on a venue's Wi-Fi, seconds), so what only a
+  room shows (the lobby, the other players' pointers, a zone's card) is
+  chunks of its own (`App.svelte`, `tests/startupScript.test.ts`).
 - **A masked SVG costs its frames while what it masks changes.** Delve's
   ladder (`DelveLadder.svelte`) is masked round its stars; while its 260
   lines inked themselves in, the lobby came in at 24 to 35 fps, and at 60
