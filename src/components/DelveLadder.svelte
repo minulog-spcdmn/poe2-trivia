@@ -8,6 +8,7 @@
   import { drawDescent } from '../lib/descentDrawer';
   import { FIND_TEXT } from '../lib/difficultyText';
   import { unzoomRect, zoomOf } from '../lib/stage';
+  import { motion } from '../lib/motion.svelte';
   import ItemGlyph from './ItemGlyph.svelte';
 
   // The descent, engraved (lib/descentPlate draws it): Sol over the mouth of
@@ -114,10 +115,10 @@
   /**
    * Whether the plate and its glow are masked round the stars yet: from when
    * the first star's cutout starts to show (at once while still, or with
-   * reduced motion), as until then the mask hides nothing. A masked plate is
-   * painted through its mask whenever any of it changes, and on an iPhone,
-   * as the plate inked itself in, that held the lobby to 24 to 35 fps (60
-   * unmasked). Once on, the mask stays: taken off again, an iPhone still
+   * reduced motion, even should either come mid-entrance), as until then
+   * the mask hides nothing. A masked plate is painted through its mask
+   * whenever any of it changes, and on an iPhone, as the plate inked itself
+   * in, that held the lobby to 24 to 35 fps (60 unmasked). Once on, the mask stays: taken off again, an iPhone still
    * paid for it. The cutouts' delays count from the first plate: one drawn
    * again keeps their animations running.
    */
@@ -127,8 +128,7 @@
     const p = plate;
     if (!p || untrack(() => starsCut)) return;
     firstPlateAt ||= performance.now();
-    const still = document.documentElement.hasAttribute('data-still') || matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const due = still ? 0 : Math.min(...[p.star, p.last].map((s) => s?.delay ?? Infinity));
+    const due = motion.still ? 0 : Math.min(...[p.star, p.last].map((s) => s?.delay ?? Infinity));
     if (due === Infinity) return;
     const wait = firstPlateAt + 1000 * due - performance.now();
     if (wait <= 0) {

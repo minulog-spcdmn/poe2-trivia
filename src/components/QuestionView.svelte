@@ -495,9 +495,11 @@
   // line up with it first. A picture shown whole needs neither.
   let fullLoaded = $state(false);
   let fullBox = $state<[number, number, number, number] | null>(null);
+  // (Whether, not which: the veil sent again, to a guest reconnecting, is the same picture.)
+  const veiled = $derived(!!media?.veil);
   $effect(() => {
     const d = drawn;
-    if (!reveal || !d || !media?.veil) {
+    if (!reveal || !d || !veiled) {
       fullLoaded = false;
       fullBox = null;
       return;
@@ -511,9 +513,9 @@
     // the page has the art, so the worker reads it from the cache.
     img
       .decode()
-      .then(() => visibleBoxOf(img, d.w, d.h))
+      .then(() => (live ? visibleBoxOf(img, d.w, d.h) : null))
       .then((box) => {
-        if (!live) return;
+        if (!live || !box) return;
         fullBox = box;
         done();
       }, done);
