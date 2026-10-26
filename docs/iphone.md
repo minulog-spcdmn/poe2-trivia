@@ -10,6 +10,7 @@ owner to try a build and say how it feels.
 Nothing on this PC stands in for it. WebKit in Playwright runs the codex at
 about 7 fps here, slow or not, and an iPhone's costs (its compositor, its
 layers, a main thread several times slower) don't show in desktop Chrome.
+(Android Chrome does have a stand-in here, emulators: docs/android.md.)
 
 ## What's set up
 
