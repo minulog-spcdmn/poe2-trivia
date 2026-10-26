@@ -774,10 +774,11 @@
 {/if}
 
 <style>
+  /* Its sides clear of a phone's notch on its side, as the lobby's are. */
   .codex {
     width: min(1080px, 100%);
     margin: 0 auto;
-    padding: 1.4rem 1rem 2.5rem;
+    padding: 1.4rem max(1rem, env(safe-area-inset-right)) 2.5rem max(1rem, env(safe-area-inset-left));
     display: flex;
     flex-direction: column;
     gap: 1.4rem;

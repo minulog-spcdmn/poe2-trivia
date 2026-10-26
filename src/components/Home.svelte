@@ -796,7 +796,8 @@
   /* One stage, at most 1440 px wide and centred: two columns (the menu,
      Today's unique) at their own sizes, 1200 px across in all, then the open
      rooms across it, then the footer. Narrower windows give up side padding
-     (down to 32 px) before anything else, then stack in one column.
+     (down to 32 px, or a phone's notch on its side if that is wider) before
+     anything else, then stack in one column.
      Columns and rooms sit in the middle of the window's height, the footer at
      its bottom. On large windows the whole app is scaled up (lib/stage.ts,
      App.svelte's shell).
@@ -827,7 +828,8 @@
       'foot foot';
     justify-content: space-between;
     column-gap: 40px;
-    padding: 26px max(32px, (min(100%, 1440px) - 1200px) / 2) 22px;
+    padding: 26px max(32px, (min(100%, 1440px) - 1200px) / 2, env(safe-area-inset-right)) 22px
+      max(32px, (min(100%, 1440px) - 1200px) / 2, env(safe-area-inset-left));
   }
   .intro {
     /* The title's size; the kicker under it is fitted to it. */
@@ -1457,7 +1459,7 @@
   /* Phones: tighter gutters and a smaller title (the column stays at most 560 px); no cursor. */
   @media (max-width: 640px) {
     .home {
-      padding: 28px 16px 20px;
+      padding: 28px max(16px, env(safe-area-inset-right)) 20px max(16px, env(safe-area-inset-left));
     }
     .intro {
       --title-size: 54px;
