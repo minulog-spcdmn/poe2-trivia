@@ -58,7 +58,9 @@ boot's output, one after the other.
 
 The windows open along the top of a second monitor, if there is one (instance
 k in column k), never on the main screen, and the emulators' consoles stay
-hidden. `pool.mjs place [n]` puts the windows back if they've moved.
+hidden. Turning a phone on its side can move its window: `watch` puts back
+any that lands on the main screen, and `pool.mjs place [n]` puts them all
+back in their columns.
 
 Two drawing at once is the most this PC carries smoothly (below, "Why it's
 slow"). With several running, always give adb the serial: `adb -s
@@ -143,6 +145,11 @@ drawing alone held 60 fps on the start page and a codex scroll, two at once
   `glReadPixels` error in the GL translator), one hung (adb silent) and one
   went black with Chrome still running. `watch` restarts them when idle
   before they get there, and restarts what dies anyway.
+- **A launch can hang.** Twice, one launched a few seconds after the
+  instance before it on the same ports was killed came up as a qemu that
+  never printed a line or booted. pool.mjs now waits for everything the old
+  one left (its qemu's crash handler too) to be gone and its log free before
+  a launch, and stops and relaunches one that adb hasn't seen two minutes on.
 - **A white page now and then is the emulator's.** If Chrome's GPU process
   dies anyway, reload; a phone doesn't do that.
 - **Keep the AVD's base clean.** Launched without `-read-only`, an emulator

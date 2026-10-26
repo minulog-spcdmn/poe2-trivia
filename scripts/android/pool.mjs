@@ -43,9 +43,23 @@ const powershell = (command) => {
 const instance = (k) => ({ k, port: 5554 + 2 * k, serial: `emulator-${5554 + 2 * k}`, cdp: 9333 + k });
 const running = () => [...adb(['devices']).matchAll(/^(emulator-\d+)\s+device$/gm)].map((m) => m[1]);
 const qemu = (e) => powershell(`Get-CimInstance Win32_Process -Filter "name like 'qemu%'" | ? { $_.CommandLine -match '-ports ${e.port},' } | select -first 1 -expand ProcessId`);
-// Everything of an instance: its cmd, emulator.exe and qemu. A launch on its
-// ports while any of the last one's is still going down never starts.
-const holders = (e) => powershell(`Get-CimInstance Win32_Process -Filter "name='cmd.exe' or name='emulator.exe' or name like 'qemu%'" | ? { $_.CommandLine -match '-ports ${e.port},' } | select -expand ProcessId`).split(/\s+/).filter(Boolean);
+// Everything of an instance: its cmd, emulator.exe and qemu, which carry its
+// ports, and its qemu's crash handler, which doesn't and is known by its
+// parent, the qemu its last boot started (kept in <serial>.qemu, so it's
+// found once that qemu is gone too, as long as nothing else took its id).
+const qemuFile = (e) => join(logs, `${e.serial}.qemu`);
+const holders = (e) => {
+  const last = existsSync(qemuFile(e)) ? Number(readFileSync(qemuFile(e), 'utf8')) || 0 : 0;
+  return powershell(`$all = Get-CimInstance Win32_Process -Filter "name='cmd.exe' or name='emulator.exe' or name like 'qemu%' or name='crashpad_handler.exe'"
+$mine = @($all | ? { $_.CommandLine -match '-ports ${e.port},' })
+$taken = $all | ? { $_.ProcessId -eq ${last} -and -not ($mine.ProcessId -contains ${last}) }
+$crash = if ($taken) { @() } else { @($all | ? { $_.Name -eq 'crashpad_handler.exe' -and $_.ParentProcessId -eq ${last} -and $_.CommandLine -match 'AndroidEmulator' }) }
+($mine + $crash).ProcessId`).split(/\s+/).filter(Boolean);
+};
+const stopAll = (ids) => ids.length && powershell(`Stop-Process -Id ${ids.join(',')} -Force`);
+const listed = (e) => new RegExp(`^${e.serial}\\s`, 'm').test(adb(['devices']));
+// cmd can't append to a file another process still has open.
+const free = (file) => powershell(`try { [IO.File]::Open('${file.replace(/'/g, "''")}', 'OpenOrCreate', 'Write', 'None').Close(); 'free' } catch { 'held' }`) === 'free';
 const say = (line) => {
   const stamped = `${new Date().toTimeString().slice(0, 8)} ${line}`;
   console.log(stamped);
@@ -78,12 +92,18 @@ const useTransport = () => {
 // also keeps it out of node's job, so it outlives this script. Each boot's
 // output goes on the end of the instance's log, so a crash's log survives
 // the restart.
-// A launch now and then never starts (seen right after the instance before it
-// on those ports went down), so it's tried again when no qemu shows up.
+// A launch now and then hung before it printed a line, its qemu up but never
+// booting (twice in a row on 26 October 2026, each a few seconds after the
+// instance before it on those ports was killed). So each launch waits for
+// whatever the last one left to be gone and its log to be free, counts only
+// once adb sees the new emulator, and is stopped and tried again when adb
+// hasn't two minutes on.
 const boot = async (e) => {
   useTransport();
   const log = join(logs, `${e.serial}.log`);
   for (let attempt = 1; attempt <= 3; attempt++) {
+    for (let i = 0; i < 30 && (holders(e).length || !free(log)); i++) await sleep(2000);
+    stopAll(holders(e));
     appendFileSync(log, `\n===== ${new Date().toISOString()} boot\n`);
     const line = `""${emulatorExe}" ${flags(e).join(' ')} >> "${log}" 2>&1"`;
     try {
@@ -91,12 +111,22 @@ const boot = async (e) => {
     } catch (err) {
       say(`${e.serial}: Start-Process failed: ${String(err.stderr ?? err).trim().slice(0, 200)}`);
     }
-    for (let i = 0; i < 30; i++) {
+    let pid = '';
+    for (let i = 0; i < 30 && !pid; i++) {
       await sleep(2000);
-      if (qemu(e)) return true;
+      pid = qemu(e);
     }
-    say(`${e.serial}: no emulator a minute after launch ${attempt}`);
-    await sleep(5000);
+    if (!pid) {
+      say(`${e.serial}: no emulator a minute after launch ${attempt}`);
+      continue;
+    }
+    writeFileSync(qemuFile(e), pid);
+    for (let i = 0; i < 60; i++) {
+      if (listed(e)) return true;
+      await sleep(2000);
+    }
+    say(`${e.serial}: launch ${attempt} hung before adb saw it, stopping it`);
+    stopAll(holders(e));
   }
   return false;
 };
@@ -140,6 +170,25 @@ Add-Type 'using System; using System.Runtime.InteropServices; public class PoolW
     await sleep(1000);
   }
   return 'no window';
+};
+// A window that has wandered onto the main screen (turning the phone on its
+// side moves and resizes it) goes back to its place; anywhere else it's left.
+const offMain = (e) => {
+  const at = slot(e);
+  if (!at) return '';
+  return powershell(`$p = Get-CimInstance Win32_Process -Filter "name like 'qemu%'" | ? { $_.CommandLine -match '-ports ${e.port},' } | select -first 1
+if (-not $p) { exit }
+$h = (Get-Process -Id $p.ProcessId).MainWindowHandle
+if ($h -eq 0) { exit }
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type 'using System; using System.Runtime.InteropServices; public struct PoolRect { public int L, T, Rt, B; } public class PoolGuard { [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out PoolRect r); [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr a, int x, int y, int cx, int cy, uint f); }'
+$r = New-Object PoolRect
+[void][PoolGuard]::GetWindowRect($h, [ref]$r)
+$m = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+if ($r.L -lt $m.Right -and $r.Rt -gt $m.Left -and $r.T -lt $m.Bottom -and $r.B -gt $m.Top) {
+  [void][PoolGuard]::SetWindowPos($h, [IntPtr]::Zero, ${at.x}, ${at.y}, 0, 0, 0x15)
+  'moved'
+}`);
 };
 
 // Every build is served on a port in 4400-4499, reached as 10.0.2.2 or, through
@@ -207,7 +256,10 @@ if (cmd === 'start') {
   for (const e of all) {
     if (up.includes(e.serial)) continue;
     remember(e);
-    await boot(e);
+    if (!(await boot(e))) {
+      console.error(`${e.serial} never started: see its log and pool.log in .phone/android/pool-logs/`);
+      process.exit(1);
+    }
     console.log(`${e.serial} starting (log in .phone/android/pool-logs/)`);
     await place(e);
   }
@@ -231,17 +283,14 @@ if (cmd === 'watch') {
   const misses = new Map(all.map((e) => [e.serial, { adb: 0, cdp: 0 }]));
   const restart = async (e, why) => {
     say(`${e.serial}: ${why}, restarting`);
+    // (boot waits for it to go down, and stops what's left after a minute.)
     adb(['-s', e.serial, 'emu', 'kill'], 10000);
-    for (let i = 0; i < 30 && holders(e).length; i++) await sleep(2000);
-    const left = holders(e);
-    if (left.length) powershell(`Stop-Process -Id ${left.join(',')} -Force`);
-    await sleep(3000);
     remember(e);
-    await boot(e);
+    const started = await boot(e);
     await place(e);
-    const ok = await ready(e, 'about:blank');
+    const ok = started && (await ready(e, 'about:blank'));
     await place(e);
-    say(`${e.serial}: ${ok ? 'back, Chrome on about:blank' : "didn't come back in 5 minutes"}`);
+    say(`${e.serial}: ${ok ? 'back, Chrome on about:blank' : started ? "didn't come back in 5 minutes" : 'never started'}`);
     misses.set(e.serial, { adb: 0, cdp: 0 });
   };
   say(`watching ${all.map((e) => e.serial).join(', ')}`);
@@ -253,6 +302,7 @@ if (cmd === 'watch') {
         await restart(e, 'its emulator is gone');
         continue;
       }
+      if (offMain(e) === 'moved') say(`${e.serial}: its window was on the main screen, moved it back`);
       m.adb = adb(['-s', e.serial, 'shell', 'echo', 'ok'], 30000) === 'ok' ? 0 : m.adb + 1;
       if (m.adb >= 3) {
         await restart(e, 'adb has had no answer for three checks');
