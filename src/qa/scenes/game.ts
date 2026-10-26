@@ -5,7 +5,7 @@
 // vein's dig.
 
 import { MAX_PLAYERS, PRESETS, TALL_ART_GROUPS, type Knobs, type Settings } from '../../lib/game.ts';
-import { WAY_OUT } from '../../lib/delve.ts';
+import { DELVE_IDLE_ROUNDS, WAY_OUT } from '../../lib/delve.ts';
 import type { Control, Values } from '../bench.ts';
 import { longestNamed, longestWord } from '../build/engine.ts';
 import { pid } from '../build/people.ts';
@@ -340,7 +340,9 @@ export function gameScenes(): Scene[] {
     // Finds among the team's cards too, as Delve alone deals them (its notes
     // beside the cards with the vote's line, on a phone's browser on its
     // side), and dynamite in Doryani's pack, for the line on what stays
-    // unused on them.
+    // unused on them. And the vote before anyone has voted (its rule's
+    // sentence in the clock's place) or with Una idle (a line of its own
+    // under the wait): the most that line has to fit beside the cards.
     scene(
       'delve-together-cards',
       'Delve together',
@@ -355,7 +357,8 @@ export function gameScenes(): Scene[] {
           ...(on === 'both' || on === 'flare' ? [{ category: flare, kind: 'flare' as const }] : []),
         ];
         if (v.held) t.s.delve!.inventory = { [pid('Doryani')]: { wards: 0, flares: 0, dynamite: 1 } };
-        return t.act({ type: 'vote', category: t.s.offered[1] }, 'Doryani');
+        if (v.idle) t.s.delve!.missed = { [pid('Una of the Vaal')]: DELVE_IDLE_ROUNDS };
+        return v.voted === false ? t : t.act({ type: 'vote', category: t.s.offered[1] }, 'Doryani');
       },
       {
         controls: [
@@ -373,11 +376,15 @@ export function gameScenes(): Scene[] {
             ],
           },
           { kind: 'toggle', key: 'held', label: 'Dynamite in a pack', default: false },
+          { kind: 'toggle', key: 'voted', label: 'Doryani has voted', default: true },
+          { kind: 'toggle', key: 'idle', label: 'Una idle', default: false },
         ],
         states: [
           { label: 'The cards dealt, Doryani has voted', values: {} },
           { label: 'An Azurite Vein and a Flare Cache', values: { finds: 'both' } },
           { label: 'Both, with dynamite in a pack', values: { finds: 'both', held: true } },
+          { label: 'Before anyone votes, two finds held', values: { finds: 'both', held: true, voted: false } },
+          { label: 'Una idle, two finds held', values: { finds: 'both', held: true, idle: true } },
           { label: 'An Azurite Vein alone, on the first card', values: { finds: 'vein' } },
           { label: 'A Flare Cache alone, on the last card', values: { finds: 'flare' } },
         ],

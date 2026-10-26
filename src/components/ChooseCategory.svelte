@@ -2727,11 +2727,16 @@
       /* The team's vote on the right, the lock rule's side: over the rule,
          the two one block of small print as under the cards, or under the
          note there (a dig's way out, a find) and what stays unused on the
-         finds. Its lines wrap in the column: a long name breaks, and a long
-         wait (six long names) ends in an ellipsis at three lines, two under
-         a note and the line on what stays unused, so the stack never
-         outgrows the screen (you come first in it). On the left the prompt
-         keeps its place when the draw takes the vote and the rule away. */
+         finds. Its lines wrap in the column: a long name breaks, and the
+         vote keeps to four lines, so the stack never outgrows the screen. One
+         fewer for each of the clock, the line on who is idle (itself cut to
+         one) and the line on what stays unused under the note; what is left
+         goes to the wait (you come first in it, and a long wait, six long
+         names, ends in an ellipsis), or before the first vote, with no clock
+         yet, to the rule's sentence. The clamp is each line's own (.live lays
+         them out as if it weren't there), so the rules under it count them.
+         On the left the prompt keeps its place when the draw takes the vote
+         and the rule away. */
       .choose:not(.duel) > .vote-status {
         grid-column: 3;
         grid-row: 1 / -1;
@@ -2750,12 +2755,31 @@
       .choose:not(.duel) > .vote-status .live > span:not(.sr) {
         display: -webkit-box;
         -webkit-box-orient: vertical;
+        -webkit-line-clamp: 4;
+        line-clamp: 4;
+      }
+      /* (A line off for any one of the three, two for any two, three for
+         all three: each rule names more of them than the one before, so it
+         weighs more and holds where both match.) */
+      .choose:not(.duel) > .vote-status:has(.closes) .live > span:not(.sr, .idle),
+      .choose:not(.duel) > .vote-status:has(.idle) .live > span:not(.sr, .idle),
+      .choose.beside:has(.find-notes > .note.muted) > .vote-status .live > span:not(.sr, .idle) {
         -webkit-line-clamp: 3;
         line-clamp: 3;
       }
-      .choose.beside:has(.find-notes > .note.muted) > .vote-status .live > span:not(.sr) {
+      .choose:not(.duel) > .vote-status:has(.closes):has(.idle) .live > span:not(.sr, .idle),
+      .choose.beside:has(.find-notes > .note.muted) > .vote-status:has(.closes) .live > span:not(.sr, .idle),
+      .choose.beside:has(.find-notes > .note.muted) > .vote-status:has(.idle) .live > span:not(.sr, .idle) {
         -webkit-line-clamp: 2;
         line-clamp: 2;
+      }
+      .choose.beside:has(.find-notes > .note.muted) > .vote-status:has(.closes):has(.idle) .live > span:not(.sr, .idle) {
+        -webkit-line-clamp: 1;
+        line-clamp: 1;
+      }
+      .choose:not(.duel) > .vote-status .live > span.idle {
+        -webkit-line-clamp: 1;
+        line-clamp: 1;
       }
       /* (Over the rule; alone, watching, at the cards' middle.) */
       .choose:not(.duel):has(> .note):not(:has(.find-note[data-side='right'])) > .vote-status {
