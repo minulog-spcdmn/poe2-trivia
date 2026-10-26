@@ -71,6 +71,23 @@ const BACK: Control[] = [
   },
 ];
 
+/** A guest joining room KXR4QT. */
+const GUEST = { mode: 'client' as const, me: null };
+/** How a join gives up (session.svelte.ts' JOIN_FAILED), its sticky notice on the start page. */
+const JOIN_FAILED: Control[] = [
+  {
+    kind: 'choice',
+    key: 'why',
+    label: 'What it got to',
+    default: 'missing',
+    options: [
+      { value: 'missing', label: 'Room may be missing' },
+      { value: 'blocked', label: 'Found, no way through' },
+      { value: 'server', label: 'No server' },
+    ],
+  },
+];
+
 /** What an invite's room answers, and whether it's this device's first visit. */
 const INVITE: Control[] = [
   {
@@ -115,6 +132,17 @@ export function homeScenes(): Scene[] {
       build: (v) => returning(v),
     }),
     home('connecting', 'Joining a room: connecting', { build: () => returning({}, { status: 'connecting' }) }),
+    // A guest on its way: after 6 s it says it's still going, and why it may take a while.
+    home('joining', 'Joining a room: travelling, then still on the way', { build: () => returning({}, { status: 'connecting', seat: GUEST }) }),
+    home('join-failed', 'Joining a room that never lets you in', {
+      controls: JOIN_FAILED,
+      states: [
+        { label: 'The server said the room may be missing: No answer', values: {} },
+        { label: 'The room was found, the connection never came up: Couldn’t connect', values: { why: 'blocked' } },
+        { label: 'The matchmaking server never answered: No connection', values: { why: 'server' } },
+      ],
+      build: (v = {}) => returning({}, { status: 'connecting', seat: GUEST, steps: [{ joinFail: (v.why ?? 'missing') as 'missing' | 'blocked' | 'server' }] }),
+    }),
     home(
       'invite',
       'An invite link',

@@ -193,6 +193,7 @@ export async function boot(asked: URLSearchParams) {
   for (const step of built.steps ?? []) {
     if ('wait' in step) await new Promise((r) => setTimeout(r, step.wait));
     else if ('fail' in step) session.labFail(step.fail);
+    else if ('joinFail' in step) session.labJoinFail(step.joinFail);
     else if ('then' in step) {
       // The room moves on: a new question's pictures first, as the host sends them before it.
       if (step.then.question?.askedAt !== session.state?.question?.askedAt) await pictures(step.then);
