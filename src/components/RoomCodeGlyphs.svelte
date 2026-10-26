@@ -1,17 +1,19 @@
 <script lang="ts">
   // A room code's letters, each in its own box, as the lobby shows them (and
   // the invite screen, the room it leads to). A click, a drag across it or a
-  // long press selects the whole code and copies it, and a small note by the
-  // pointer says so; the letters light up while selected, in place of the
-  // browser's highlight, and go back to rest once it is copied. A copy by
-  // hand gives just the letters too, and the selection can't be dragged off
-  // as a picture. `hidden` shows dots (for streaming; a copy still gives the
-  // code), `sparks` makes each letter spark as it lands, `delay` holds back
-  // their drop (ms).
-  import { onDestroy } from 'svelte';
+  // tap copies the whole code, and a small note by the pointer (above a
+  // finger) says so; the letters light up while selected or just copied, in
+  // place of the browser's highlight, and go back to rest after. A long
+  // press selects it and leaves the copy to the phone's own Copy (data-copy
+  // keeps it, lib/noMenu.ts). A copy by hand gives just the letters too, and
+  // the selection can't be dragged off as a picture. `hidden` shows dots
+  // (for streaming; a copy still gives the code), `sparks` makes each letter
+  // spark as it lands, `delay` holds back their drop (ms).
+  import { flushSync, onDestroy } from 'svelte';
   import { fade } from 'svelte/transition';
   import { glyphLanded } from '../lib/fx/moments';
-  import { zoomOf } from '../lib/stage';
+  import { ownRect, zoomOf } from '../lib/stage';
+  import { noteSpot } from '../lib/pointerNote';
   import { backdropShadow } from '../lib/backdropShadow';
 
   let { code, hidden = false, sparks = false, delay = 0 }: { code: string; hidden?: boolean; sparks?: boolean; delay?: number } = $props();
@@ -31,42 +33,82 @@
   const NOTE_MS = 1300;
   /** The note by the pointer: where (in this page's own px, under the stage's zoom), and what it says. */
   let note = $state<{ x: number; y: number; text: string } | null>(null);
+  let noteEl = $state<HTMLElement>();
+  /**
+   * The note's size (its own px), measured as it shows, and whether a finger
+   * or a pen made it: it is kept on the screen by its size, and over a tap
+   * goes above it, out from under the hand (lib/pointerNote.ts).
+   */
+  let noteSize = { w: 0, h: 0 };
+  let noteByTouch = false;
+  /** Lit as just copied, for LIT_MS: on a phone the tap's selection doesn't last (Chrome on Android collapses it at once), so it can't be what lights the code. */
+  let lit = $state(false);
   let litTimer: ReturnType<typeof setTimeout> | undefined;
   let noteTimer: ReturnType<typeof setTimeout> | undefined;
-  const place = (e: PointerEvent) => {
+  const place = (e: MouseEvent) => {
     if (!note) return;
+    // In the note's own px: the page (and the note with it) may be zoomed (lib/stage.ts), the window isn't.
     const z = zoomOf(glyphs ?? document.body);
-    note = { ...note, x: e.clientX / z, y: e.clientY / z };
+    note = { ...note, ...noteSpot({ x: e.clientX / z, y: e.clientY / z }, noteSize, { w: innerWidth / z, h: innerHeight / z }, noteByTouch) };
   };
-  function show(e: PointerEvent, text: string) {
+  function show(e: MouseEvent, text: string) {
     note = { x: 0, y: 0, text };
+    noteByTouch = touched;
+    // Drawn at once, still before the frame is painted, to be measured; once, not on every move after.
+    flushSync();
+    const r = noteEl && ownRect(noteEl);
+    noteSize = { w: r?.width ?? 0, h: r?.height ?? 0 };
     place(e);
     clearTimeout(noteTimer);
     noteTimer = setTimeout(() => (note = null), NOTE_MS);
   }
 
-  /** A press on the code: once it lets go (wherever the pointer is by then), what it selected is copied. */
+  /**
+   * A press on the code. A mouse copies once it lets go (wherever the
+   * pointer is by then), so a drag that starts on the code and ends off it
+   * counts: its selection is there by then. A finger or a pen copies on the
+   * tap's click instead, which still has the tap's user activation for the
+   * clipboard: Android Chrome runs a stylus through the same gestures as a
+   * finger, and only selects the code after their pointerup, and a long
+   * press there often ends in a pointercancel, with no pointerup at all
+   * (that one is left to the phone's own Copy over the selection). A pen's
+   * drag that ends off the code leaves just its selection, for Ctrl+C.
+   */
+  let touched = false;
   function press(e: PointerEvent) {
     if (e.button !== 0) return;
-    addEventListener('pointerup', release, { once: true });
+    touched = e.pointerType !== 'mouse';
+    if (!touched) addEventListener('pointerup', release, { once: true });
   }
-  async function release(e: PointerEvent) {
+  function release(e: PointerEvent) {
     // A click selects the whole code (user-select: all), a drag some or all of it: the code is what is wanted either way.
-    if (!selectionHere()) return;
+    if (selectionHere()) void copy(e);
+  }
+  function tapped(e: MouseEvent) {
+    if (touched) void copy(e);
+  }
+  async function copy(e: MouseEvent) {
     let copied = false;
     try {
       await navigator.clipboard.writeText(code);
       copied = true;
     } catch {
-      // Older browsers and some app views: the selection, copied the old way (copyCode below cleans it).
+      // Older browsers and some app views: the code, selected here (a tap's
+      // own selection may not be there yet) and copied the old way (copyCode
+      // below cleans it).
+      if (glyphs && !selectionHere()) getSelection()?.selectAllChildren(glyphs);
       copied = document.execCommand?.('copy') ?? false;
     }
-    // Copying by hand: a key on a keyboard, a long press on a touch screen.
-    show(e, copied ? 'Room code copied' : e.pointerType === 'mouse' ? 'Press Ctrl+C to copy it' : 'Hold the code to copy it');
+    // Copying by hand: a key on a keyboard, a long press on a touch screen (or a pen).
+    show(e, copied ? 'Room code copied' : touched ? 'Hold the code to copy it' : 'Press Ctrl+C to copy it');
     if (!copied) return;
+    lit = true;
     clearTimeout(litTimer);
     // Lit a moment as copied, then back to rest: the selection goes, and the glow with it.
-    litTimer = setTimeout(() => selectionHere() && getSelection()?.removeAllRanges(), LIT_MS);
+    litTimer = setTimeout(() => {
+      lit = false;
+      if (selectionHere()) getSelection()?.removeAllRanges();
+    }, LIT_MS);
   }
   onDestroy(() => {
     removeEventListener('pointerup', release);
@@ -100,8 +142,8 @@
 <svelte:document onselectionchange={selectionChanged} />
 <svelte:window onpointermove={place} />
 
-<!-- svelte-ignore a11y_no_static_element_interactions (the pointer handlers copy what a press selected; the dragstart only stops a drag of the selection) -->
-<span class="glyphs" class:hidden class:selected bind:this={glyphs} oncopy={copyCode} ondragstart={(e) => e.preventDefault()} onpointerdown={press}>
+<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events (the pointer handlers copy what a press selected, a tap the code; the dragstart only stops a drag of the selection; by keyboard the code is copied as any text is) -->
+<span class="glyphs" class:hidden class:selected={selected || lit} data-copy bind:this={glyphs} oncopy={copyCode} ondragstart={(e) => e.preventDefault()} onpointerdown={press} onclick={tapped}>
   {#each code.split('') as ch, i (i)}
     <!-- The letter in gold; its gleam is drawn from data-ch (a pseudo-element), so a copy gives each letter once. -->
     <span class="glyph" use:landing={i} use:backdropShadow={{ fill: 'linear' }} style:animation-delay="{delay + i * 80}ms" style:--i={i} data-ch={hidden ? '•' : ch}><span class="ch">{hidden ? '•' : ch}</span></span>
@@ -109,13 +151,13 @@
 </span>
 {#if note}
   <!-- By the pointer, as long as it shows. -->
-  <span class="note" role="status" style:left="{note.x}px" style:top="{note.y}px" in:fade={{ duration: 120 }} out:fade={{ duration: 250 }}>{note.text}</span>
+  <span class="note" role="status" bind:this={noteEl} style:left="{note.x}px" style:top="{note.y}px" in:fade={{ duration: 120 }} out:fade={{ duration: 250 }}>{note.text}</span>
 {/if}
 
 <style>
   /* The boxes share the width they are given, so the letters are sized from
      it (six boxes, five gaps), never wider than a box: an M or a W must not
-     be clipped. One click or long press selects the whole code. */
+     be clipped. One click, tap or long press selects the whole code. */
   .glyphs {
     display: flex;
     gap: 0.5rem;
@@ -259,11 +301,11 @@
       transform: translateY(-18px) rotateX(70deg);
     }
   }
-  /* The note by the pointer: just below and right of it, never in its way. */
+  /* The note by the pointer, never in its way: below and right of a mouse,
+     above a tap, and on the screen (placed by lib/pointerNote.ts). */
   .note {
     position: fixed;
     z-index: 96;
-    translate: 14px 16px;
     padding: 0.3rem 0.65rem;
     pointer-events: none;
     white-space: nowrap;

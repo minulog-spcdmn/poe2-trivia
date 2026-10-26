@@ -590,7 +590,7 @@
           {#if folded}
             <!-- (Folded: no room code, the depth and zone alone.) -->
           {:else if session.code && !session.hideCode}
-            <span>Room <b class="code">{session.code}</b></span>
+            <span>Room <b class="code" data-copy>{session.code}</b></span>
           {:else}
             <span>Delve</span>
           {/if}
@@ -614,7 +614,7 @@
           {/key}
         {:else if gs && screen === 'game'}
           {#if session.code && !session.hideCode && !folded}
-            <span>Room <b class="code">{session.code}</b></span>
+            <span>Room <b class="code" data-copy>{session.code}</b></span>
             <span class="dot">•</span>
           {/if}
           {#if session.spectating}
@@ -832,8 +832,9 @@
 {/if}
 
 <style>
-  /* The room code stays selectable (the rest of the game isn't): a tap or
-     double-click takes the whole code, to share it. */
+  /* The room code stays selectable (the rest of the game isn't): a
+     double-click or a long press takes the whole code, to share it, and the
+     long press keeps the phone's own Copy (data-copy, lib/noMenu.ts). */
   .code {
     -webkit-user-select: all;
     user-select: all;
