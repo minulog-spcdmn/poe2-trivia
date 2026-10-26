@@ -218,10 +218,13 @@ with its numbers in the comments.
   `scrollTop +=` each frame) had WebKit repaint the row of tiles across that
   edge, and the tiles' drop shadows with it, on every frame: 49 fps against
   60, all of it outside the page's main thread. What only a tab has is
-  toolbars that slide: its `100lvh` is taller than its `100svh` (768 px
-  against 663), and `installedApp()` goes by that now. Check it with
-  `ask.mjs "document.documentElement.style.cssText"`: empty in Chrome's
-  tab, the three heights in the home-screen app. A swipe is scrolled by the
+  toolbars that slide: its `100lvh` is taller than its `100svh` (there the
+  backdrop is 768 px tall at `100lvh`, the page 663 with the toolbars up),
+  and `heldToScreen()` in `viewport.ts` goes by that now; the privacy sheet
+  still goes by `navigator.standalone` alone, since it is about storage.
+  Check it with `ask.mjs
+  "document.documentElement.style.getPropertyValue('--screen-h')"`: empty
+  in Chrome's tab, the screen's height in the home-screen app. A swipe is scrolled by the
   browser and never showed it, so `codex.mjs` scrolls that way first
   (`scroll`) and keeps the scripted scroll as a phase of its own
   (`scripted`) to catch it coming back. A scroll the page drives is not
