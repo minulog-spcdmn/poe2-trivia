@@ -51,8 +51,10 @@ what's done in it. Instance k (from 0) is the adb serial
 `watch` runs until stopped (in the background): it restarts an instance
 whose emulator is gone, whose adb stops answering, or whose Chrome stays
 silent for minutes, and restarts a worn one (up two and a half hours, on an
-old graphics channel, or logging graphics errors by the hundred) the next
-time all its tabs sit on about:blank. Its log is
+old graphics channel, or logging graphics errors by the hundred) once all
+its tabs have sat on about:blank for five minutes. A restart drops its
+`adb reverse` rules, so a run that drives one sets them again when it
+finds the instance new. Its log is
 `.phone/android/pool-logs/pool.log`; each instance's own log keeps every
 boot's output, one after the other.
 

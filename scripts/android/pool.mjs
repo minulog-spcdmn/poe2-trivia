@@ -319,7 +319,9 @@ if (cmd === 'watch') {
       if (m.cdp >= 9) await restart(e, "Chrome's DevTools have been silent for minutes");
       if (!cdp) continue;
       // Worn ones are restarted the next time they sit idle (every tab on
-      // about:blank, two checks in a row): one booted on an old graphics
+      // about:blank for five minutes, so not while someone driving it has
+      // only parked it between steps; a restart drops their adb reverse
+      // too): one booted on an old graphics
       // channel, one up for over two and a half hours, or one whose emulator
       // has logged its graphics errors by the hundred since it booted. Those
       // that ran for hours did that, and then hung, died or went black.
@@ -333,8 +335,8 @@ if (cmd === 'watch') {
         : errors > 200 ? `${errors} graphics errors in its log` : '';
       const tabs = worn ? await fetch(`http://localhost:${e.cdp}/json`).then((r) => r.json(), () => null) : null;
       const idle = tabs?.filter((t) => t.type === 'page').every((t) => t.url === 'about:blank');
-      m.idle = worn && idle ? (m.idle ?? 0) + 1 : 0;
-      if (m.idle >= 2) await restart(e, `idle and worn (${worn})`);
+      m.idleSince = worn && idle ? (m.idleSince ?? Date.now()) : undefined;
+      if (m.idleSince && Date.now() - m.idleSince > 5 * 60_000) await restart(e, `idle and worn (${worn})`);
     }
     await sleep(20000);
   }
