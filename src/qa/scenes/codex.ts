@@ -1,5 +1,6 @@
 // The codex, opened from the start page (#codex): empty, part filled, an
 // item open, and its Delve (with runs and without) and Achievements pages.
+// And the codex that never came (the Wi-Fi gone as it was fetched).
 
 import { DELVE_RULESET } from '../../lib/delve.ts';
 import type { DelveRun } from '../../lib/delveRecord.ts';
@@ -21,6 +22,8 @@ export function codexScenes(): Scene[] {
     codex('delve-none', 'The Delve page, never delved', () => filled([{ click: '#codex-tab-delve' }], [])),
     codex('feats', 'The Achievements page', () => filled([{ click: '#codex-tab-feats' }])),
     codex('delve-empty', 'The Delve page, no run yet', () => ({ state: null, hash: '#codex', met: 40, steps: [{ click: '#codex-tab-delve' }] })),
+    // Its chunk lost: the Reload, as each try shows it while the connection is down (lib/chunkRetry.ts).
+    codex('lost', "Didn't come: the connection dropped", () => ({ state: null, hash: '#codex', lost: 'Codex' })),
     // The swap between screens (App.svelte), back out: the Codex closed.
     { ...codex('to-home', 'Closed: back to the start page', () => filled([{ wait: 1600 }, { click: 'button[aria-label="Close the codex"]' }])), group: 'Moving between screens' },
   ];

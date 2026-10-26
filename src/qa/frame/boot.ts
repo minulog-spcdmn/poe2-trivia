@@ -133,6 +133,8 @@ export async function boot(asked: URLSearchParams) {
     const { sync } = await import('../../lib/sync/link.svelte.ts');
     Object.assign(sync, { linked: 0, ...built.sync });
   }
+  // A page that never comes (only where the scene says, as with sync's link).
+  if (built.lost) (await import('../../lib/chunkRetry.ts')).loseOnCue(built.lost);
   // The tip to play fullscreen is about the desk's own window, never the scene's (lib/fullscreenTip.ts): taken as read.
   storage.writeStored('fullscreenTip.shown', '3');
   // No network: the rooms the start page finds are the scene's. (Only where it has some, so the map of

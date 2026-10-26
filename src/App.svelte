@@ -34,6 +34,8 @@
   import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
   import { closeSettings, openSettings, settingsRoute } from './lib/settingsRoute.svelte';
   import { whenIdle } from './lib/idle';
+  import { countFailedImport } from './lib/count';
+  import { retried } from './lib/chunkRetry';
   import { loadFonts, loadFontsAhead } from './lib/fontsAhead';
   import { shellHeightsRead } from './lib/shellHeights.svelte';
   import { toasts } from './lib/toasts.svelte';
@@ -365,14 +367,28 @@
   // Its fonts and the tooltips' too (lib/fontsAhead.ts), from the first idle
   // moment, so they don't lay the codex out again as it opens; opened before
   // they're in, it waits for them a moment (at most a quarter of a second).
-  let codexChunk: Promise<typeof import('./components/Codex.svelte')> | null = null;
-  const fetchCodexPage = () => (codexChunk ??= import('./components/Codex.svelte'));
+  // A fetch that fails says the page couldn't be loaded (pageLost), and
+  // opening the codex again fetches it again (a dropped connection may be
+  // back): not by the same import, which the browser keeps failed, but under
+  // an address of its own (lib/chunkRetry.ts). Each failure is counted all
+  // the same (countFailedImport), as it would be uncaught: most often a page
+  // left open across a deploy, which no fetch brings back; the Reload does.
+  const fetchCodexPage = retried(() => import('./components/Codex.svelte'), countFailedImport, 'Codex');
   let codexPage: Promise<typeof import('./components/Codex.svelte')> | null = null;
   const loadCodexPage = () =>
-    (codexPage ??= Promise.all([fetchCodexPage(), Promise.race([loadFonts(), new Promise((r) => setTimeout(r, 250))])]).then(([page]) => page));
+    (codexPage ??= Promise.all([fetchCodexPage(), Promise.race([loadFonts(), new Promise((r) => setTimeout(r, 250))])]).then(
+      ([page]) => page,
+      (e) => {
+        codexPage = null;
+        throw e;
+      },
+    ));
   onMount(loadFontsAhead);
+  // The settings page, a chunk of its own too: fetched again and counted as the codex's is.
+  const loadSettingsPage = retried(() => import('./components/Settings.svelte'), countFailedImport, 'Settings');
   onMount(() => {
-    const t = setTimeout(fetchCodexPage, 2000);
+    // Only ahead of time: a failure here (counted in fetchCodexPage) waits for the codex to be opened.
+    const t = setTimeout(() => void fetchCodexPage().catch(() => {}), 2000);
     return () => clearTimeout(t);
   });
 
@@ -660,11 +676,15 @@
           <!-- Loaded when first opened: most visits never do. -->
           {#await loadCodexPage() then { default: Codex }}
             <Codex />
+          {:catch}
+            {@render pageLost()}
           {/await}
         {:else if shown === 'settings'}
           <!-- Loaded when first opened, as the codex is. -->
-          {#await import('./components/Settings.svelte') then { default: Settings }}
+          {#await loadSettingsPage() then { default: Settings }}
             <Settings />
+          {:catch}
+            {@render pageLost()}
           {/await}
         {:else if shown && GameOver}
           <GameOver />
@@ -685,13 +705,21 @@
 
 <!-- The game's screens still on their way (loadGamePages), or lost. -->
 {#snippet gamePagesWait()}
-  <div class="pages-wait">
-    {#if gamePagesLost}
-      <p>Part of the game couldn’t be loaded.</p>
-      <button class="btn primary" onclick={() => location.reload()}>Reload</button>
-    {:else}
+  {#if gamePagesLost}
+    {@render pageLost()}
+  {:else}
+    <div class="pages-wait">
       <span class="spinner" aria-label="Loading"></span>
-    {/if}
+    </div>
+  {/if}
+{/snippet}
+
+<!-- A page's chunk that didn't come (the game's screens, the codex, the settings): a reload brings it. (The codex and
+     the settings are fetched again as they're opened again, too: lib/chunkRetry.ts.) -->
+{#snippet pageLost()}
+  <div class="pages-wait">
+    <p>Part of the game couldn’t be loaded.</p>
+    <button class="btn primary" onclick={() => location.reload()}>Reload</button>
   </div>
 {/snippet}
 
@@ -737,8 +765,10 @@
           <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
         </button>
       </div>
-      {#await import('./components/Settings.svelte') then { default: Settings }}
+      {#await loadSettingsPage() then { default: Settings }}
         <Settings over />
+      {:catch}
+        {@render pageLost()}
       {/await}
     </div>
   </div>

@@ -1,6 +1,7 @@
 // The settings page, opened from the start page (#settings): as it comes,
 // with the sound turned down and keys changed, and a key waiting to be set.
-// And the same settings over a game, from the header's gear.
+// And the same settings over a game, from the header's gear. And both as
+// they are when the settings never came (the Wi-Fi gone as they were fetched).
 
 import { rebind, DEFAULT_BINDINGS } from '../../lib/keys.ts';
 import type { Control } from '../bench.ts';
@@ -52,6 +53,12 @@ const SYNC_CODE = 'K7QXM2PA9FHE3TDW';
 
 /** Option 1 on Q, and Q's old place freed: what a player who moved the answers to the left hand has. */
 const CHANGED = rebind(rebind(DEFAULT_BINDINGS, 'option1', 0, 'KeyQ'), 'detonate', 1, 'KeyX');
+
+/** The settings opened over a question of a game on this device. */
+function overAQuestion(): Built {
+  const t = new Table(['Kalguur', 'Doryani', 'Una of the Vaal'], {}, { host: null }).start().pick();
+  return { state: t.s, act: t.room, at: t.clock.now + 3000, hash: '#settings' };
+}
 
 export function settingsScenes(): Scene[] {
   return [
@@ -130,10 +137,24 @@ export function settingsScenes(): Scene[] {
       group: 'Settings',
       label: "Over a question, from the header's gear",
       seats: [{ mode: 'local', me: null }],
-      build: (): Built => {
-        const t = new Table(['Kalguur', 'Doryani', 'Una of the Vaal'], {}, { host: null }).start().pick();
-        return { state: t.s, act: t.room, at: t.clock.now + 3000, hash: '#settings' };
-      },
+      build: (): Built => overAQuestion(),
+    },
+    // Their chunk lost: the Reload, as each try shows it while the connection is down (lib/chunkRetry.ts).
+    {
+      key: 'settings/lost',
+      screen: 'settings',
+      group: 'Settings',
+      label: "Didn't come: the connection dropped",
+      seats: [{ mode: 'none', me: null }],
+      build: (): Built => ({ state: null, hash: '#settings', lost: 'Settings' }),
+    },
+    {
+      key: 'settings/over-lost',
+      screen: 'settings',
+      group: 'Settings',
+      label: "Over a question, didn't come",
+      seats: [{ mode: 'local', me: null }],
+      build: (): Built => ({ ...overAQuestion(), lost: 'Settings' }),
     },
   ];
 }
