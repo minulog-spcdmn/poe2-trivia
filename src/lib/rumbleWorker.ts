@@ -2,7 +2,7 @@
 // thread: on an iPhone its 6 s of noise held the page for about 75 ms, a
 // frame or two after Begin.
 
-import { fillRumble, rumbleLength } from './rumbleNoise';
+import { fillRumble, rumbleLength } from './rumbleNoise.ts';
 
 export type RumbleJob = { sampleRate: number; lp: number };
 export type RumbleAnswer = { left: Float32Array; right: Float32Array };
