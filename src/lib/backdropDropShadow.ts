@@ -96,6 +96,15 @@ export function releaseAllDrops() {
   for (const node of tagged) node.removeAttribute('data-bs-drop');
 }
 
+/**
+ * The atlases' textures are new and empty (a backdrop started afresh: its
+ * context restored, or the app mounted again): the next measureDrops builds
+ * the atlases again for them, even with no mask changed.
+ */
+export function dropAtlasLost() {
+  atlasDirty = true;
+}
+
 // ---------- parsing ----------
 
 let probe: HTMLDivElement | null = null;

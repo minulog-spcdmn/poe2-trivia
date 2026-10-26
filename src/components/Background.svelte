@@ -84,6 +84,13 @@
     return () => {
       canvas.removeEventListener('webglcontextrestored', restored);
       stop?.();
+      // Gone while the context is away: the browser was asked for it back
+      // (see contextLost in lib/backdrop.ts), so it's let go as it comes,
+      // not kept on the detached canvas until it's collected.
+      if (away)
+        canvas.addEventListener('webglcontextrestored', () => canvas.getContext('webgl2')?.getExtension('WEBGL_lose_context')?.loseContext(), {
+          once: true,
+        });
     };
   });
 </script>

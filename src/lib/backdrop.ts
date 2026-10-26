@@ -10,7 +10,7 @@
 // WebGL is unavailable.
 
 import { SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShadow';
-import { DROPS_PER_MASK, MAX_MASKS, measureDrops, releaseAllDrops } from './backdropDropShadow';
+import { DROPS_PER_MASK, MAX_MASKS, dropAtlasLost, measureDrops, releaseAllDrops } from './backdropDropShadow';
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
 import { backdropFrame, fxActive, fxScaledDown, fxSlowGap, fxUserOn, onFxChange, onFxScale, setBackdropPixels, shakeOffset } from './fx/core';
 import { GpuTimer } from './fx/gpuTimer';
@@ -1261,12 +1261,13 @@ export const backdropOnWebgl = () => onWebgl > 0;
  * first frame drawn at once: see begin); Delve's follow in the background
  * once Delve is on its way (wantDelveBackdrop). Returns a cleanup function,
  * or null when WebGL2 (with highp fragment floats) is unavailable. `onLost`
- * fires if the context is lost later, or the first frame fails, after the
- * renderer has shut itself down, so the caller can fall back to CSS: for
- * good, or, with `restorable`, until the browser gives the context back
- * (webglcontextrestored on the canvas), when the caller starts the backdrop
- * on it afresh. `onDrawn` fires as the first frame is drawn (when the
- * context was restored, the caller shows the canvas again then, not before).
+ * fires if the context is lost later, or the first frame or Delve's programs
+ * fail, after the renderer has shut itself down, so the caller can fall back
+ * to CSS: for good, or, with `restorable`, until the browser gives the
+ * context back (webglcontextrestored on the canvas), when the caller starts
+ * the backdrop on it afresh. `onDrawn` fires as the first frame is drawn
+ * (when the context was restored, the caller shows the canvas again then,
+ * not before).
  */
 export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: boolean) => void, onDrawn?: () => void): (() => void) | null {
   // (With an alpha channel where an opaque canvas stalls the page: see
@@ -1620,7 +1621,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
         s.build = null;
         if (!progs) {
           s.parts = null;
-          // (A lost context goes to the CSS backdrop by itself: see lost.)
+          // (A lost context goes to the CSS backdrop by itself: see contextLost.)
           if (!gl!.isContextLost()) failed();
           return;
         }
@@ -1811,6 +1812,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
   };
   const sharpTex = texture(0, gl.LINEAR);
   const blurTex = texture(1, gl.LINEAR);
+  // (Empty: the atlases go into them anew, whatever an earlier backdrop uploaded.)
+  dropAtlasLost();
 
   // Ember positions by screen tile, one float texel each (unit 2).
   const emberTex = gl.createTexture();
@@ -2435,7 +2438,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
     if (!dead) letGo(gl!);
   }
 
-  /** The first frame failed: the caller switches to the CSS backdrop for good. */
+  /** The first frame, or Delve's programs, failed: the caller switches to the CSS backdrop for good. */
   function lost() {
     stop();
     onLost(false);
