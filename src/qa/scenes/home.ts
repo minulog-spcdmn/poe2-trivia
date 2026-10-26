@@ -131,6 +131,10 @@ export function homeScenes(): Scene[] {
       ],
       build: (v) => returning(v),
     }),
+    // Join refused for a short code: the notice stays up, so on a phone a tap in a field brings the keyboard up under it (it keeps to the top of what shows).
+    home('code-short', 'Joining with a code too short: the notice', {
+      build: () => returning({}, { steps: [{ toast: 'Room codes have 6 letters and digits.', kind: 'error', opts: { title: 'Code too short' } }] }),
+    }),
     home('connecting', 'Joining a room: connecting', { build: () => returning({}, { status: 'connecting' }) }),
     // A guest on its way: after 6 s it says it's still going, and why it may take a while.
     home('joining', 'Joining a room: travelling, then still on the way', { build: () => returning({}, { status: 'connecting', seat: GUEST }) }),
