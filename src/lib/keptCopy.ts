@@ -8,20 +8,22 @@
 // tab that comes back that way to pick up, as a reload would.
 //
 // Only a game no page is playing any more is ever picked up. A tab holds a
-// Web Lock named after its slot from its first game on, for as long as the
-// page lives (a tab frozen in the background still holds it; one the browser
-// killed doesn't), and only a page that gets a slot's lock picks its game up,
-// so a game is never picked up twice, nor by a second tab while the first
-// still has it. Nor is a room picked up that a page still here is in as the
-// same one (a guest's seat, a host's room): a player who joined again from a
-// new tab plays on there, and the old tab coming back later never takes the
-// seat from it. And a room a page leaves (on purpose, removed, closed, or
-// for another game) is left for good: the older copies of it go too, so an
-// old tab coming back never takes the player into a room they left from a
-// newer one. Where there are no Web Locks (a page that isn't secure, a
-// browser from before them) nothing is kept: whether the game's tab is still
-// there can't be told, and a game played on in two tabs at once is worse
-// than one lost.
+// Web Lock named after its slot for as long as its page has a game in it (a
+// tab frozen in the background still holds it; one the browser killed
+// doesn't), and only a page that gets a slot's lock picks its game up, so a
+// game is never picked up twice, nor by a second tab while the first still
+// has it. (A page with no game holds none: Chrome keeps a page that holds a
+// lock out of its back/forward cache, so the start page, left by a link and
+// gone back to, would load anew rather than come back at once.) Nor is a
+// room picked up that a page still here is in as the same one (a guest's
+// seat, a host's room): a player who joined again from a new tab plays on
+// there, and the old tab coming back later never takes the seat from it. And
+// a room a page leaves (on purpose, removed, closed, or for another game) is
+// left for good: the older copies of it go too, so an old tab coming back
+// never takes the player into a room they left from a newer one. Where there
+// are no Web Locks (a page that isn't secure, a browser from before them)
+// nothing is kept: whether the game's tab is still there can't be told, and
+// a game played on in two tabs at once is worse than one lost.
 //
 // And only a page the browser brought back without its tab's sessionStorage
 // picks up: brought back (a reload, or a history entry restored, which is
@@ -30,10 +32,16 @@
 // there. A page opened anew (a second tab on purpose, an invite link, the
 // site opened again after its tab was closed) starts fresh as it always has,
 // and so does a tab of the site's gone back to (its game, if it had one, was
-// left there).
+// left there). Except in an iPhone's home-screen app (installedApp.ts), which
+// iOS brings back by opening it anew at its start page: it has one window,
+// its storage apart from Safari's, and every link out of it opens in Safari,
+// so any page of it opened with nothing in sessionStorage is the app coming
+// back. (And a game the player swiped the app away from comes back the next
+// time it's opened, as a native app's would.)
 
 import { BOT, LAB, QA, readStored, readStoredStarting, removeStored, storeKey, writeStored } from './storage.ts';
 import { randomToken } from './roomCode.ts';
+import { installedApp } from './installedApp.ts';
 
 /** How long a game on this device (hot-seat, a Delve run alone, a room that never went online) is kept for its tab to come back to: as long as the tab would have shown it, had it lived. */
 export const KEEP_HERE_MS = 24 * 3600_000;
@@ -135,13 +143,14 @@ function copies(save: string, now: number, mine?: string): Copy[] {
 /**
  * Whether this page was brought back (reloaded, or its history entry
  * restored) rather than opened anew, and `tabNew`: its tab's sessionStorage
- * without this site's mark.
+ * without this site's mark. `standalone`: the page is an iPhone's home-screen
+ * app (installedApp.ts), where being opened anew is how iOS brings it back.
  */
-export function restoredHere(tabNew: boolean): boolean {
+export function restoredHere(tabNew: boolean, standalone: boolean): boolean {
   if (!tabNew) return false;
   try {
     const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
-    return nav?.type === 'reload' || nav?.type === 'back_forward';
+    return nav?.type === 'reload' || nav?.type === 'back_forward' || (standalone && nav?.type === 'navigate');
   } catch {
     return false;
   }
@@ -154,10 +163,14 @@ export function restoredHere(tabNew: boolean): boolean {
  * save goes under in sessionStorage (session.svelte.ts SAVE).
  */
 export function keeper(locks: LockManager | undefined, restored: () => boolean, save: string) {
-  /** The slot whose lock this page holds (from its first game on), or null. */
+  /** The slot whose lock this page holds (while it has a game, and a moment after), or null. */
   let mine: string | null = null;
+  /** What lets go of its lock. */
+  let release: (() => void) | null = null;
   /** While the slot is being got (what is wanted by then is written once it is). */
   let claiming = false;
+  /** Whether the page has looked for a game to pick up (takeCopy): once, as it starts. */
+  let looked = false;
   /** What the slot is to hold (null: nothing, the game left); `at`, when it was saved or the page last left. */
   let wanted: { raw: string; room: string | null; at: number } | null = null;
   let alive: string | null = null;
@@ -179,11 +192,30 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean, 
     if (!wanted) {
       removeStored(copyName(slot));
       removeStored(aliveName(slot));
+      letGoSoon();
       return;
     }
     // The save is JSON already: set in as it is, not quoted again on every write.
     writeStored(copyName(slot), `{"v":${JSON.stringify(save)},"at":${wanted.at},"room":${JSON.stringify(wanted.room)},"save":${wanted.raw}}`);
     if (alive) writeStored(aliveName(slot), alive);
+  }
+
+  /**
+   * The slot emptied: its lock is let go of in a moment, unless a game is to
+   * be kept in it again by then. A page holding a lock is kept out of
+   * Chrome's back/forward cache, and the page left on the start page after a
+   * game has nothing to hold it for. (A game started anew mostly saves in the
+   * same task as its reset() let go of the last, and the lock stays; a room
+   * opening saves later, and takes it again then.) The slot stays the tab's
+   * (SLOT), for its next game to claim.
+   */
+  function letGoSoon() {
+    setTimeout(() => {
+      if (wanted || !release) return;
+      release();
+      release = null;
+      mine = null;
+    });
   }
 
   /**
@@ -201,10 +233,12 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean, 
     // written here, and whatever comes after claims (or writes) for itself.
     claiming = true;
     let got: string | null = null;
-    if (had && (await hold(had))) got = had;
+    let letGo = had ? await hold(had) : null;
+    if (letGo) got = had;
     else if (wanted) {
       const slot = randomToken(12);
-      if (await hold(slot)) {
+      letGo = await hold(slot);
+      if (letGo) {
         got = slot;
         writeStored(SLOT, slot, 'session');
       }
@@ -212,6 +246,7 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean, 
     claiming = false;
     if (!got) return;
     mine = got;
+    release = letGo;
     // The slot about to be written: room is made for it first.
     copies(save, Date.now(), mine);
     put(mine);
@@ -306,27 +341,31 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean, 
      * same one, another page's), its slot taken over by this page, or null.
      * `may` says, once the slot is got, whether the page still wants it
      * (nothing else started meanwhile); if not, the slot is let go of as it
-     * was.
+     * was. Looked for once, as the page starts: a page that played its own
+     * game and left it never goes on into another tab's.
      */
     async takeCopy(may: () => boolean): Promise<Taken | null> {
+      if (looked) return null;
+      looked = true;
       if (!locks || mine || claiming || !restored()) return null;
       // Read before any copy is let go of below (an old one may be a page's still playing).
       const live = await roomsHeld();
       if (!live) return null;
       for (const c of copies(save, Date.now())) {
-        const release = await hold(c.slot);
+        const letGo = await hold(c.slot);
         // Its page is still here (in another tab, maybe frozen in the background): its game stays there.
-        if (!release) continue;
+        if (!letGo) continue;
         // Read again under its lock (another page may have taken it and let go of it meanwhile).
         const raw = readStored(copyName(c.slot));
         const got = raw === null ? null : readCopy(c.slot, raw, save);
         // A game started here meanwhile: nothing is picked up over it.
         if (mine || claiming || !may()) {
-          release();
+          letGo();
           return null;
         }
         if (got && fresh(got, Date.now()) && !(got.room && live.has(got.room))) {
           mine = c.slot;
+          release = letGo;
           writeStored(SLOT, c.slot, 'session');
           return { save: JSON.stringify(got.save), alive: got.alive };
         }
@@ -334,7 +373,7 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean, 
         // joined it again from a new tab): not to be picked up by this page or any later.
         removeStored(copyName(c.slot));
         removeStored(aliveName(c.slot));
-        release();
+        letGo();
       }
       return null;
     },
@@ -356,7 +395,7 @@ if (KEEPS) writeStored(HERE, '1', 'session');
  * it). Called once, by the session.
  */
 export function keeping(save: string) {
-  const here = keeper(KEEPS ? navigator.locks : undefined, () => restoredHere(tabNew), save);
+  const here = keeper(KEEPS ? navigator.locks : undefined, () => restoredHere(tabNew, installedApp()), save);
   // (No document where a test plays the page.)
   if (KEEPS && typeof document !== 'undefined') {
     // A phone's browser kills a tab only once it's out of sight.

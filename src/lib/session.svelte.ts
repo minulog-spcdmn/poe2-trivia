@@ -724,8 +724,9 @@ class Session {
 
   /**
    * Nothing saved in this tab: a tab the browser brought back after killing it
-   * in the background (its sessionStorage comes back empty) picks up the copy
-   * its game left in localStorage (lib/keptCopy.ts), as a reload would have.
+   * in the background (its sessionStorage comes back empty), or an iPhone's
+   * home-screen app iOS let go of and opened anew, picks up the copy its game
+   * left in localStorage (lib/keptCopy.ts), as a reload would have.
    * Only a game no other page still has (nor a room another page is in as
    * the same guest or host), and not over anything started here meanwhile.
    */

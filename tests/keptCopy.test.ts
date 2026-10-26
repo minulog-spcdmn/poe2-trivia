@@ -70,6 +70,10 @@ const hosting = (code: string) => JSON.stringify({ mode: 'host', code, state: { 
 const yes = () => true;
 const copiesLeft = () => [...local.keys()].filter((k) => k.startsWith(storeKey('kept.')));
 const slotOf = (tab: Tab) => tab.store.get(storeKey('session.slot'));
+/** Whether the tab's page holds its slot's lock. */
+const holds = (tab: Tab) => locks.held.get(storeKey(`kept.${slotOf(tab)}`)) === tab.name;
+/** Lets a moment pass, for what a page lets go of in one (an emptied slot's lock). */
+const moment = () => new Promise((r) => setTimeout(r, 5));
 
 beforeEach(() => {
   local.clear();
@@ -163,6 +167,8 @@ test('a reloaded page that leaves before saving again clears its tab’s copy', 
   await on(a, (k) => start(k, save(1)));
   const a2 = reload(a);
   await on(a2, (k) => k.dropCopy());
+  await moment();
+  assert.ok(!holds(a2), 'its slot’s lock taken to clear it, and let go of again');
   kill(a2);
   assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null);
 });
@@ -199,6 +205,46 @@ test('the newest game is picked up first', async () => {
   kill(newer);
   assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, save(2));
   assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, save(1));
+});
+
+test('a page holds its slot’s lock only while it has a game to keep', async () => {
+  // Chrome keeps a page holding a lock out of its back/forward cache: the start page after a game must not hold one.
+  const a = page();
+  await on(a, (k) => start(k, save(1)));
+  const slot = slotOf(a);
+  // Another game started at once (its reset and first save in one go): held all along.
+  await on(a, (k) => start(k, save(2)));
+  await moment();
+  assert.ok(holds(a));
+  await on(a, (k) => k.dropCopy());
+  await moment();
+  assert.ok(!holds(a), 'let go of with the game');
+  assert.deepEqual(copiesLeft(), []);
+  // A room opened later (it saves only once it's online, a while after its reset): the tab's slot taken again then.
+  await on(a, (k) => keep(k, hosting('ROOM')));
+  assert.equal(slotOf(a), slot);
+  assert.ok(holds(a));
+  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null, 'still its own while it plays');
+  kill(a);
+  assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, hosting('ROOM'));
+});
+
+test('a page brought back looks for a game to pick up once, as it starts', async () => {
+  const a = page();
+  await on(a, (k) => start(k, save(1)));
+  kill(a);
+  await later();
+  const b = page();
+  await on(b, (k) => start(k, save(2)));
+  kill(b);
+  const back = page({ back: true });
+  const took = await on(back, (k) => k.takeCopy(yes));
+  assert.equal(took?.save, save(2));
+  await on(back, (k) => start(k, took!.save));
+  await on(back, (k) => k.dropCopy());
+  await moment();
+  assert.equal(await on(back, (k) => k.takeCopy(yes)), null, 'its own game left, it never goes on into another tab’s');
+  assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, save(1), 'still there for its own tab');
 });
 
 test('a host’s last moment comes back with its room', async () => {
@@ -341,15 +387,20 @@ test('without Web Locks nothing is kept or picked up', async () => {
 test('only a page brought back into a tab with nothing of the site’s counts as restored', () => {
   const was = performance.getEntriesByType;
   try {
-    for (const [type, tabNew, restored] of [
-      ['back_forward', true, true],
-      ['reload', true, true],
-      ['navigate', true, false],
-      ['back_forward', false, false],
-      ['reload', false, false],
+    // (`standalone`: an iPhone's home-screen app, which iOS brings back by opening it anew.)
+    for (const [type, tabNew, standalone, restored] of [
+      ['back_forward', true, false, true],
+      ['reload', true, false, true],
+      ['navigate', true, false, false],
+      ['back_forward', false, false, false],
+      ['reload', false, false, false],
+      ['navigate', true, true, true],
+      ['reload', true, true, true],
+      ['navigate', false, true, false],
+      ['reload', false, true, false],
     ] as const) {
       performance.getEntriesByType = (() => [{ type }]) as unknown as typeof was;
-      assert.equal(restoredHere(tabNew), restored, `${type}, ${tabNew ? 'a new' : 'the'} tab`);
+      assert.equal(restoredHere(tabNew, standalone), restored, `${type}, ${tabNew ? 'a new' : 'the'} tab${standalone ? ', home-screen app' : ''}`);
     }
   } finally {
     performance.getEntriesByType = was;

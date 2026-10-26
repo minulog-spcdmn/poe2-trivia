@@ -71,3 +71,27 @@ test('a run comes back to the tab the browser killed, and to no other', async ()
   locks.kill('b');
   assert.equal((await open('later', new Map(), 'back_forward')).mode, null);
 });
+
+test('an iPhone’s home-screen app, opened anew by iOS after letting it go, picks its run up too', async () => {
+  // As installedApp.ts tells the app from a tab.
+  const standalone = (on: boolean) => Object.defineProperty(navigator, 'standalone', { value: on, configurable: true });
+  try {
+    standalone(true);
+    const app = await open('app', new Map(), 'navigate');
+    assert.equal(app.mode, null, 'opened for the first time, it starts fresh');
+    app.startLocal();
+    assert.ok(app.seatLocal('Ann'));
+    app.dispatch({ type: 'start' });
+    await settle();
+    const was = app.state!;
+    locks.kill('app');
+    const back = await open('appBack', new Map(), 'navigate');
+    assert.equal(back.state?.startedAt, was.startedAt, 'the same game');
+    // A tab in the browser opened anew the same way is one opened on purpose: it starts fresh.
+    locks.kill('appBack');
+    standalone(false);
+    assert.equal((await open('tabAnew', new Map(), 'navigate')).mode, null);
+  } finally {
+    delete (navigator as { standalone?: boolean }).standalone;
+  }
+});
