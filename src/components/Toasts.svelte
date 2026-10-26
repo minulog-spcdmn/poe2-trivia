@@ -34,9 +34,10 @@
 
   // Phones show fewer at once, so a burst of news can't cover the game: on
   // its side one, as the room under the header holds no more without
-  // reaching the answers. The lost connection takes one of the places.
+  // reaching the answers. Elsewhere the lost connection takes one of the
+  // places; on its side it can't, or news would have none.
   $effect(() => {
-    const max = (side ? 1 : narrow ? 2 : 6) - (lost ? 1 : 0);
+    const max = side ? 1 : (narrow ? 2 : 6) - (lost ? 1 : 0);
     untrack(() => toasts.setMax(max));
   });
 

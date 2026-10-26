@@ -26,11 +26,13 @@ export function overlayScenes(): Scene[] {
     overlay('closed', 'The host closed the room', [doryani], () => inGame([{ fail: 'closed' }])),
     overlay('moved', 'The game moved to another tab', [doryani], () => inGame([{ fail: 'replaced' }])),
     // A burst of news during a question: wide screens stack it bottom right, phones at the top, as many as they keep.
+    // Last the longest a guest gets mid-question (session.svelte.ts TOO_QUICK), two lines: the one a phone on its side shows.
     overlay('news', 'News during a question: a burst of notices', [doryani], () =>
       inGame([
         { toast: 'Una of the Vaal', kind: 'warn', opts: { title: 'Player disconnected', who: una } },
         { toast: 'Una of the Vaal', kind: 'warn', opts: { title: 'Turn skipped', who: una } },
         { toast: 'Brea', opts: { title: 'Spectator joined', who: { name: 'Brea' } } },
+        { toast: 'Too quick to count: the question had only just reached you. Answer again.', kind: 'error' },
       ]),
     ),
     overlay('leave', 'Leaving a game: the dialog', [kalguur, doryani], () => inGame([{ click: 'button[aria-label="Leave game"]' }])),
