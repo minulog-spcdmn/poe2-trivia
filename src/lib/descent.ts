@@ -936,19 +936,63 @@ function workLights(to: number, ms: number): boolean {
   return settled >= goal;
 }
 
+/** The light table as far as it is worked out (see extendLights), as a worker hands it to the page (lib/lightsAhead.ts). */
+export type LightTable = { end: number; settled: number; hall: Float64Array; rest: Float64Array; k: Float64Array; light: Float64Array; level: Float64Array };
+
+/**
+ * Works the whole light table out, a stretch at a time (extendLights, as
+ * lightAt and workLights do), handing on the table as it stands after each:
+ * for the worker that works it out away from the page (lib/lightWorker.ts).
+ */
+export function* lightTables(): Generator<LightTable> {
+  while (settled < LIGHT_TABLE) {
+    extendLights(settled + 1);
+    const n = tableEnd + 1;
+    yield { end: tableEnd, settled, hall: tableHall.slice(0, n), rest: tableRest.slice(0, n), k: tableK.slice(0, n), light: tableLight.slice(0, n), level: tableLevel.slice(0, n) };
+  }
+}
+
+/**
+ * Takes the light table as worked out elsewhere (lightTables), where it is
+ * further on than here. It is the same table, a stretch at a time from the
+ * same depths, so what lightAt has already answered stays as it was.
+ */
+export function adoptLights(t: LightTable) {
+  if (t.settled <= settled) return;
+  tableHall.set(t.hall);
+  tableRest.set(t.rest);
+  tableK.set(t.k);
+  tableLight.set(t.light);
+  tableLevel.set(t.level);
+  tableEnd = t.end;
+  settled = t.settled;
+}
+
+/**
+ * Starts the light table being worked out away from the page, if it can be
+ * (lib/lightsAhead.ts: a worker, given it with workLightsAway), and says
+ * whether it is under way. While it is, the page works out only what a
+ * frame can't do without (lightAt), not what lies ahead: on an iPhone each
+ * stretch held the page 52 to 56 ms, however few milliseconds an idle
+ * moment had.
+ */
+let away: (() => boolean) | null = null;
+export const workLightsAway = (start: () => boolean) => void (away = start);
+
 /** How deep the light is being worked out in idle moments (see warmLights), and whether it is under way. */
 let warmTo = 0;
 let warming = false;
 /** How long a step may wait for an idle moment, and the timer where there's none. */
 const IDLE = { timeout: 250, fallback: 16 };
 /**
- * Works the light out to depth `to` in idle moments, a few milliseconds at
- * a time, ahead of the scene getting there (a run starting, a rejoin deep
- * down): so it is there by the time a frame needs it.
+ * Works the light out to depth `to` ahead of the scene getting there (a run
+ * starting, a rejoin deep down), so it is there by the time a frame needs
+ * it: away from the page (see away), or else in idle moments, a few
+ * milliseconds at a time.
  */
 function warmLights(to: number) {
   warmTo = Math.max(warmTo, Math.min(LIGHT_TABLE, Math.ceil(to)));
-  if (warming || settled >= warmTo) return;
+  if (warming || settled >= warmTo || away?.()) return;
   warming = true;
   const step = (deadline?: Deadline) => {
     const ms = deadline ? Math.max(2, deadline.timeRemaining() - 2) : 4;
@@ -957,6 +1001,9 @@ function warmLights(to: number) {
   };
   whenIdle(step, IDLE);
 }
+
+/** The light table's worker has stopped short (it failed): what was wanted ahead is worked out here after all, in idle moments. */
+export const lightsHere = () => warmLights(warmTo);
 
 /**
  * How bright the scene's light is drawn at depth `d` with `look` (the look
@@ -1174,16 +1221,18 @@ export function snapDescent(): boolean {
 
 /**
  * A jump deep down (a rejoin) waits to fade in until the light there is
- * worked out: a few milliseconds of it a frame (FRAME_MS, see workLights),
- * the rest in idle moments (warmLights), meanwhile showing the scene as it
- * was. Nothing of the new depth shows until its light is there, so it
- * fades in as it would have at once, its light the same, a moment later.
- * Returns whether it is still waiting.
+ * worked out: away from the page (see away), or else a few milliseconds of
+ * it a frame (FRAME_MS, see workLights) and the rest in idle moments
+ * (warmLights), meanwhile showing the scene as it was. Nothing of the new
+ * depth shows until its light is there, so it fades in as it would have at
+ * once, its light the same, a moment later. Returns whether it is still
+ * waiting.
  */
 const FRAME_MS = 3;
 function waiting(): boolean {
   const to = Math.floor(Math.max(shown, target)) + 1;
   if (lit(shown) && lit(target)) return false;
+  if (away?.()) return true;
   return !workLights(to, FRAME_MS);
 }
 
