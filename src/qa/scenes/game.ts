@@ -143,7 +143,7 @@ export function gameScenes(): Scene[] {
       ...many,
       states: [
         { label: 'Picking a category', values: {} },
-        // The longest a name may be (MAX_NAME): another's turn on the banner, shrunk to fit an upright phone.
+        // Names of 19 to 20 characters, near MAX_NAME: Doryani's (19) turn on the banner, seen from Kalguur's seat, shrunk to fit an upright phone.
         { label: 'Long names', values: { names: 'long' } },
       ],
     }),
