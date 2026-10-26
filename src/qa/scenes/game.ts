@@ -163,6 +163,7 @@ export function gameScenes(): Scene[] {
           { label: 'Answered right', values: {} },
           { label: 'Six of the longest names', values: { asked: 'longest' } },
           { label: 'Eight of the longest names', values: { answers: '8', asked: 'longest' } },
+          { label: 'Ten of the longest names', values: { answers: '10', asked: 'longest' } },
         ],
       },
     ),
