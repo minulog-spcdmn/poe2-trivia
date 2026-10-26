@@ -20,7 +20,8 @@ import { webgl2Refused, whenGpuCaughtUp, type Build } from './gl';
 import { ParticlePool, type ParticleSpec } from './particles';
 import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
-import { cornerOnScreen } from '../corner';
+import { cornerOnScreen, ringOf } from '../corner';
+import { PHONE } from '../layout';
 import { zoomOf } from '../stage';
 import { readStored, writeStored } from '../storage';
 import { whenIdle } from '../idle';
@@ -1085,8 +1086,7 @@ function dialogNow(): DialogLight {
   const windowed = hides.length > 0;
   // (Ancestors the toasts share are read once.)
   const own = new Map<Element, number>();
-  // (The header's bottom, read once and only on a phone, as a toast rests under it.)
-  let under: number | null | undefined;
+  const stood: Stood[] = [];
   for (const el of fronts) {
     if (hides.length >= MAX_HIDES) break;
     const b = el.getBoundingClientRect();
@@ -1104,17 +1104,9 @@ function dialogNow(): DialogLight {
     const round = corner > 0 ? corner + ring : 0;
     const r = ring > 0 ? new DOMRect(b.x - ring, b.y - ring, b.width + 2 * ring, b.height + 2 * ring) : b;
     hides.push({ box: r, radius: round, amount: o });
-    // On a phone the toasts stand across the top, a few px under the header
-    // (Toasts.svelte), over the player's pill and its streak's fire. The gap
-    // above the first hides the light too, so the fire passes behind the
-    // toast rather than burning in a thin line along its top. (Down past its
-    // corners' curve, so the gap meets its box with no notch at either end.)
-    if (!narrow?.matches || hides.length >= MAX_HIDES) continue;
-    if (under === undefined) under = headerBottom();
-    if (under !== null && r.top > under && r.top - under <= UNDER_HEADER) {
-      hides.push({ box: new DOMRect(r.left, under, r.width, r.top - under + round), radius: 0, amount: o });
-    }
+    stood.push({ el, box: r, round, amount: o });
   }
+  if (narrow?.matches) hideGaps(stood, hides);
   // (A window, with a dialog's backdrop up but no box of it yet, dims nothing either.)
   return { amount: windowed ? 0 : amount, box: null, radius: 0, hides };
 }
@@ -1139,23 +1131,48 @@ function edgeOf(el: Element): { radius: string; ring: number } {
   return c;
 }
 
-/** The outer ring a computed box-shadow draws (see edgeOf), in px. */
-function ringOf(shadow: string): number {
-  let ring = 0;
-  // (Its colours are read without their commas: `rgba(0, 0, 0, 0.65) 0px 0px 0px 1px, …`.)
-  for (const one of shadow.replace(/[a-z-]+\([^)]*\)/gi, '').split(',')) {
-    if (/\binset\b/.test(one)) continue;
-    const [x, y, blur, spread] = (one.match(/-?[\d.]+px/g) ?? []).map(parseFloat);
-    if (x === 0 && y === 0 && !blur && spread > ring) ring = spread;
-  }
-  return ring;
-}
+/** A front's box on screen as it hides the light (dialogNow): its outer ring in, its corners' radius, how much it hides. */
+type Stood = { el: Element; box: DOMRect; round: number; amount: number };
 
-/** Phones (lib/layout.ts `phone`), where the toasts stand across the top, under the header (Toasts.svelte). */
-const narrow = typeof matchMedia === 'function' ? matchMedia('(max-width: 640px)') : null;
+/** Phones (lib/layout.ts `phone`), where the toasts stand across the top, under the header (Toasts.svelte's narrow stack). */
+const narrow = typeof matchMedia === 'function' ? matchMedia(PHONE) : null;
 
-/** How far under the header a phone's toast may rest and still hide the light in the gap above it (Toasts.svelte keeps 6px). */
+/** How far under the header, or under the toast above it, a phone's toast may rest and still hide the light in the gap (Toasts.svelte keeps 6px under the header, 0.4rem between). */
 const UNDER_HEADER = 10;
+
+/**
+ * On a phone the toasts stand across the top, one under another a few px
+ * under the header (Toasts.svelte), over the player's pill and its streak's
+ * fire. The gap above each hides the light too, up to the toast of the stack
+ * just above it or, for the first, the header, so the fire passes behind them
+ * rather than burning in a thin line between. (Past the corners' curve on
+ * both sides, so the gap meets each box with no notch at either end.)
+ */
+function hideGaps(stood: Stood[], hides: HideLight[]) {
+  // (The header's bottom, read once, as only the first toast rests under it.)
+  let header: number | null | undefined;
+  for (const s of stood) {
+    if (hides.length >= MAX_HIDES) return;
+    const { box: r } = s;
+    let above: Stood | null = null;
+    for (const t of stood) {
+      if (t === s || t.el.parentElement !== s.el.parentElement) continue;
+      if (t.box.bottom <= r.top && t.box.left < r.right && t.box.right > r.left && (!above || t.box.bottom > above.box.bottom)) above = t;
+    }
+    if (above) {
+      if (r.top - above.box.bottom > UNDER_HEADER) continue;
+      const left = Math.max(r.left, above.box.left);
+      const top = above.box.bottom - above.round;
+      const box = new DOMRect(left, top, Math.min(r.right, above.box.right) - left, r.top + s.round - top);
+      hides.push({ box, radius: 0, amount: Math.min(s.amount, above.amount) });
+      continue;
+    }
+    if (header === undefined) header = headerBottom();
+    if (header !== null && r.top > header && r.top - header <= UNDER_HEADER) {
+      hides.push({ box: new DOMRect(r.left, header, r.width, r.top - header + s.round), radius: 0, amount: s.amount });
+    }
+  }
+}
 
 /** The bottom of the app's header on screen (App.svelte), or null with none showing. */
 function headerBottom(): number | null {

@@ -277,16 +277,24 @@ export function gameScenes(): Scene[] {
     }),
     // An achievement's notice over a streak's fire. On a phone the notices
     // stand across the top, on the player's entry, and the fire passes behind
-    // the notice: none of it burns along its edge or in the gap above it.
+    // them: none of it burns along an edge, in the gap above the first or in
+    // the one between two (two achievements at once come one by one,
+    // lib/achievementToasts.ts).
     {
       ...scene('delve-notice', 'Delve alone', 'On a streak, an achievement’s notice over the fire', [ALONE], delveAlone),
-      controls: [{ kind: 'range', key: 'streak', label: 'In a row', min: 3, max: 120, default: 80 }],
-      states: DELVE_FLAMES.map((f) => ({ label: `${f.name[0].toUpperCase()}${f.name.slice(1)} fire (${f.from} in a row)`, values: { streak: f.from } })),
+      controls: [
+        { kind: 'range', key: 'streak', label: 'In a row', min: 3, max: 120, default: 80 },
+        { kind: 'range', key: 'notices', label: 'Achievements', min: 1, max: 2, default: 1 },
+      ],
+      states: [
+        ...DELVE_FLAMES.map((f) => ({ label: `${f.name[0].toUpperCase()}${f.name.slice(1)} fire (${f.from} in a row)`, values: { streak: f.from } })),
+        { label: 'Two achievements at once, on the hottest fire', values: { streak: DELVE_FLAMES.at(-1)!.from, notices: 2 } },
+      ],
       build: (v = {}) => {
         const t = delveAlone().playTo((s) => (s.players[0].streak ?? 0) >= Number(v.streak ?? 80) && s.phase === 'choosing');
-        const earned = ACHIEVEMENTS.find((a) => a.id === 'saving-grace')!;
-        const toast = { message: earned.title, title: 'Achievement earned', seal: { sign: earned.sign, tier: earned.tier } };
-        return { state: t.s, act: t.room, at: t.clock.now, steps: [{ wait: 800 }, { toast }] } satisfies Built;
+        const earned = ['saving-grace', 'streak-100'].slice(0, Number(v.notices ?? 1)).map((id) => ACHIEVEMENTS.find((a) => a.id === id)!);
+        const toasts = earned.map((a) => ({ toast: { message: a.title, title: 'Achievement earned', seal: { sign: a.sign, tier: a.tier } } }));
+        return { state: t.s, act: t.room, at: t.clock.now, steps: [{ wait: 800 }, ...toasts] } satisfies Built;
       },
     },
     // The game's own arrival: the run moves on into the zone while the screen

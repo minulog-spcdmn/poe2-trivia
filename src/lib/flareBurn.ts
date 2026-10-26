@@ -29,6 +29,7 @@ import { cornerOnScreen } from './corner';
 import { flareBurning as fxBurning, flareLit, flareStruck, type Ring } from './fx/flare';
 import { motion } from './motion.svelte';
 import { zoomOf } from './stage';
+import { beforeToasts } from './portal';
 
 /** ms from the strike until its streak reaches the clock and sets it alight (TimerRing.svelte holds the clock at 0 till then). */
 export const FLARE_IGNITE_MS = 430;
@@ -284,11 +285,12 @@ export function flareStrike({ timer, pill, icon }: FlareStrike) {
   // It dims behind an open dialog like the page's other overlays (lib/portal.ts).
   layer.dataset.behindDialog = 'dim';
   // Under the toasts (90, Toasts.svelte), which cover it as they cover the
-  // page's light: at 90 too, and added to the page after them, it drew over
-  // them. On a phone they stand on the player's entry and the clock, so its
-  // streak and sparks ran across a toast.
-  Object.assign(layer.style, { position: 'fixed', inset: '0', zIndex: '89', pointerEvents: 'none', overflow: 'hidden', contain: 'strict' });
-  document.body.append(layer);
+  // page's light, and over all else: at their z-index but before them in the
+  // page (lib/portal.ts). Added after them, it drew over them; on a phone
+  // they stand on the player's entry and the clock, so its streak and sparks
+  // ran across a toast.
+  Object.assign(layer.style, { position: 'fixed', inset: '0', zIndex: '90', pointerEvents: 'none', overflow: 'hidden', contain: 'strict' });
+  beforeToasts(layer);
 
   const src: Point | null = from ? { x: from.left + from.width / 2, y: from.top + from.height / 2 } : null;
   const dst: Ring | null = to ? { x: to.left + to.width / 2, y: to.top + to.height / 2, r: (Math.max(to.width, to.height) / 2) * (26 / 32) } : null;
