@@ -148,6 +148,41 @@
     return { destroy: () => clearTimeout(t) };
   }
 
+  /**
+   * Svelte action: the banner's line kept to the screen's width, its size
+   * shrunk as far as it must (as GameOver's headline is): a long name's turn
+   * would run off both edges of an upright phone. The rules beside it keep
+   * their least width. A line that fits is left at its size.
+   */
+  function bannerFit(node: HTMLElement, _title: string) {
+    const banner = node.parentElement!;
+    const size = () => {
+      node.style.fontSize = '';
+      const gap = parseFloat(getComputedStyle(banner).columnGap) || 0;
+      const rule = node.previousElementSibling ? parseFloat(getComputedStyle(node.previousElementSibling).minWidth) || 0 : 0;
+      const room = banner.clientWidth - 2 * (gap + rule);
+      // Measured at its resting spacing (--banner-track): the entrance opens it wide at first, and it closes again.
+      node.style.setProperty('letter-spacing', 'var(--banner-track)', 'important');
+      const w = node.getBoundingClientRect().width;
+      node.style.removeProperty('letter-spacing');
+      // Floored, so the line never ends a fraction of a pixel past its room.
+      if (room > 0 && w > room) node.style.fontSize = `${Math.floor((parseFloat(getComputedStyle(node).fontSize) * room) / w)}px`;
+    };
+    size();
+    // Again as its font comes in (it may only start loading once the title asks for it), and as the column changes (a phone turned).
+    void document.fonts?.ready.then(size);
+    document.fonts?.addEventListener('loadingdone', size);
+    const ro = new ResizeObserver(size);
+    ro.observe(banner);
+    return {
+      update: size,
+      destroy: () => {
+        ro.disconnect();
+        document.fonts?.removeEventListener('loadingdone', size);
+      },
+    };
+  }
+
   /** Svelte action: the deathmatch intro's title bursts in. */
   function introFx(node: HTMLElement) {
     const t = setTimeout(() => deathmatchIntro(node), 120);
@@ -426,7 +461,7 @@
             {/if}
             <div class="banner" class:dm={!!dm} style:--c={bannerColor}>
               <span class="rule"></span>
-              <h2 class:start={startsRun} use:bannerFx={{ color: bannerColor, big: bannerBig }} use:backdropDropShadow>{bannerTitle}</h2>
+              <h2 class:start={startsRun} use:bannerFit={bannerTitle} use:bannerFx={{ color: bannerColor, big: bannerBig }} use:backdropDropShadow>{bannerTitle}</h2>
               <span class="rule"></span>
             </div>
           </div>
@@ -676,6 +711,9 @@
     --drop-shadow: 0 3px 12px rgba(0, 0, 0, 0.9), 0 0 24px color-mix(in srgb, var(--c), transparent 40%);
     text-shadow: var(--drop-shadow-paint, var(--drop-shadow));
     animation: arrive 0.9s var(--ease-out) both;
+    /* Its resting spacing (h1-h3's, app.css), named so bannerFit measures at it. */
+    --banner-track: 0.04em;
+    letter-spacing: var(--banner-track);
     text-align: center;
     white-space: nowrap;
     /* One line, so no leading over and under it: the space round the banner is its margins. */
