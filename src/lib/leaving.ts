@@ -13,7 +13,7 @@
 /** What is on its way out: made inert by Svelte, or marked leaving here. */
 export const GONE = '[inert], [data-leaving]';
 
-/** What an element's own `inert` would do for it as it goes out, done as `leaving` does it. */
+/** What an element's own `inert` would do for it as it goes out, done as outWithoutInert does it. */
 function goOut(node: HTMLElement) {
   node.dataset.leaving = '';
   node.style.pointerEvents = 'none';
