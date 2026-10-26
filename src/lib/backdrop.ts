@@ -1261,10 +1261,14 @@ export const backdropOnWebgl = () => onWebgl > 0;
  * first frame drawn at once: see begin); Delve's follow in the background
  * once Delve is on its way (wantDelveBackdrop). Returns a cleanup function,
  * or null when WebGL2 (with highp fragment floats) is unavailable. `onLost`
- * fires if the context is lost later, after the renderer has shut itself
- * down, so the caller can fall back to CSS.
+ * fires if the context is lost later, or the first frame fails, after the
+ * renderer has shut itself down, so the caller can fall back to CSS: for
+ * good, or, with `restorable`, until the browser gives the context back
+ * (webglcontextrestored on the canvas), when the caller starts the backdrop
+ * on it afresh. `onDrawn` fires as the first frame is drawn (when the
+ * context was restored, the caller shows the canvas again then, not before).
  */
-export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): (() => void) | null {
+export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: boolean) => void, onDrawn?: () => void): (() => void) | null {
   // (With an alpha channel where an opaque canvas stalls the page: see
   // opaqueCanvasStalls. Every pixel is drawn opaque all the same, the main
   // pass writing alpha 1.)
@@ -2388,9 +2392,16 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     embers.tint(on ? VEIN_EMBERS : CALM);
     embers.vein(on);
   });
-  // (Counted in onWebgl once its frames have begun; stop can come twice: lost, then the caller's.)
+  // (Counted in onWebgl once its frames have begun.)
   let counted = false;
-  function stop() {
+  // Stop can come twice: lost, then the caller's. Only the first does
+  // anything: by the second the canvas may have its context back, drawn with
+  // by a backdrop started afresh, which letGo would lose again.
+  let stopped = false;
+  /** Takes everything down, and gives the context back at once (see letGo) unless it's already lost (`dead`). */
+  function stop(dead = false) {
+    if (stopped) return;
+    stopped = true;
     if (counted) onWebgl--;
     counted = false;
     offVein();
@@ -2416,22 +2427,32 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     timer?.dispose();
     viewRo.disconnect();
     viewProbe.remove();
-    canvas.removeEventListener('webglcontextlost', lost);
+    canvas.removeEventListener('webglcontextlost', contextLost);
     reduceMotion.removeEventListener('change', onMotionChange);
     offFx();
     releaseAll();
     releaseAllDrops();
-    letGo(gl!);
+    if (!dead) letGo(gl!);
   }
 
-  // A lost context stays lost: we don't call preventDefault(), so the browser
-  // won't restore it, and the caller switches to the CSS backdrop for good.
-  // Tear everything down so nothing keeps drawing into the dead context.
+  /** The first frame failed: the caller switches to the CSS backdrop for good. */
   function lost() {
     stop();
-    onLost();
+    onLost(false);
   }
-  canvas.addEventListener('webglcontextlost', lost);
+  // Phones often drop the context while the page is in the background (an
+  // app switch, memory running short). preventDefault() asks the browser to
+  // give it back; meanwhile everything is torn down, so nothing keeps drawing
+  // into the dead context, and the caller shows the CSS backdrop until then.
+  // The context's objects died with it, so the caller builds them all again
+  // on the restored one, by starting the backdrop afresh. (Not let go: that
+  // would keep it lost.)
+  function contextLost(e: Event) {
+    e.preventDefault();
+    stop(true);
+    onLost(true);
+  }
+  canvas.addEventListener('webglcontextlost', contextLost);
   reduceMotion.addEventListener('change', onMotionChange);
   const offFx = onFxChange(onMotionChange);
 
@@ -2467,6 +2488,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: () => void): ((
     if (lean.ui === 'drops') whenPageIdle(leanNext, replaceLean, 3000);
     onWebgl++;
     counted = true;
+    onDrawn?.();
   }
 
   // Paint the first frame before the page is first painted (the CSS

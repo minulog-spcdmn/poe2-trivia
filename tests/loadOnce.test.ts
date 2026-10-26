@@ -76,6 +76,7 @@ test('a hiccup is tried again; a picture that never loads is let go, to be tried
 
 test('the backdrop gives its context back when it stops', () => {
   const src = readFileSync(new URL('../src/lib/backdrop.ts', import.meta.url), 'utf8');
-  const stop = src.slice(src.indexOf('  function stop() {'), src.indexOf('  // A lost context stays lost'));
-  assert.match(stop, /letGo\(gl!?\);/);
+  // (Unless the context is already lost, and to be given back by the browser.)
+  const stop = src.slice(src.indexOf('  function stop(dead = false) {'), src.indexOf('  /** The first frame failed'));
+  assert.match(stop, /if \(!dead\) letGo\(gl!?\);/);
 });

@@ -116,7 +116,8 @@ function fakeGl(parallel = true, floats = true) {
   const draws: { kind: string; into: string; texel: boolean; idle: boolean }[] = [];
   /** What was let go: programs by kind, targets by name. */
   const deleted: string[] = [];
-  const state = { done: false, fails: new Set<string>() };
+  /** (`letGo`: how often the context was given back with WEBGL_lose_context.) */
+  const state = { done: false, fails: new Set<string>(), letGo: 0 };
   const consts = new Map<string, number>();
   const K = (name: string) => {
     if (!consts.has(name)) consts.set(name, consts.size + 1);
@@ -133,7 +134,7 @@ function fakeGl(parallel = true, floats = true) {
     getShaderPrecisionFormat: () => ({ precision: 23 }),
     getSupportedExtensions: () => (floats ? ['EXT_color_buffer_float'] : []),
     getExtension: (name: string) =>
-      name === 'KHR_parallel_shader_compile' ? (parallel ? { COMPLETION_STATUS_KHR: K('COMPLETION_STATUS_KHR') } : null) : name === 'WEBGL_lose_context' ? { loseContext() {} } : {},
+      name === 'KHR_parallel_shader_compile' ? (parallel ? { COMPLETION_STATUS_KHR: K('COMPLETION_STATUS_KHR') } : null) : name === 'WEBGL_lose_context' ? { loseContext: () => void state.letGo++ } : {},
     getParameter: (p: number) => (p === K('MAX_FRAGMENT_UNIFORM_VECTORS') ? 1024 : 'fake'),
     checkFramebufferStatus: () => K('FRAMEBUFFER_COMPLETE'),
     getSyncParameter: () => K('SIGNALED'),
@@ -194,8 +195,13 @@ function fakeCanvas(gl: object) {
     getContext: (_: string, options: WebGLContextAttributes) => ((asked.options = options), gl),
     toggleAttribute: (name: string, on: boolean) => void (on ? attrs.add(name) : attrs.delete(name)),
     removeAttribute: (name: string) => void attrs.delete(name),
-    addEventListener() {},
-    removeEventListener() {},
+    listeners: new Map<string, (e: Event) => void>(),
+    addEventListener(type: string, f: (e: Event) => void) {
+      this.listeners.set(type, f);
+    },
+    removeEventListener(type: string, f: (e: Event) => void) {
+      if (this.listeners.get(type) === f) this.listeners.delete(type);
+    },
   };
 }
 
@@ -206,10 +212,16 @@ function start(parallel = true, fails: string[] = [], floats = true, done = fals
   state.done = done;
   const canvas = fakeCanvas(gl);
   let lost = false;
+  let restorable: boolean | null = null;
+  let drawn = 0;
   queued = new Map();
   idleQueued = new Map();
-  const stop = startBackdrop(canvas as unknown as HTMLCanvasElement, () => (lost = true));
-  return { log, state, canvas, stop, draws, deleted, lost: () => lost };
+  const stop = startBackdrop(
+    canvas as unknown as HTMLCanvasElement,
+    (r) => ((lost = true), (restorable = r)),
+    () => drawn++,
+  );
+  return { log, state, canvas, stop, draws, deleted, lost: () => lost, restorable: () => restorable, drawn: () => drawn };
 }
 /** A few frames, done or not. */
 const frames = () => {
@@ -351,10 +363,38 @@ test('one failing to build leaves the page to the CSS backdrop', () => {
     assert.ok(later.stop);
     frame();
     assert.ok(later.lost());
+    assert.equal(later.restorable(), false, 'for good');
+    assert.equal(later.drawn(), 0);
     later.stop!();
   } finally {
     console.warn = warn;
   }
+});
+
+test('the context lost (a phone with the page in the background): the browser is asked for it back, nothing more is drawn, and it is not let go', () => {
+  const b = start();
+  frame();
+  assert.equal(b.drawn(), 1, 'the first frame drawn');
+  let asked = false;
+  b.canvas.listeners.get('webglcontextlost')!({ preventDefault: () => void (asked = true) } as unknown as Event);
+  assert.ok(asked, 'preventDefault, so the browser restores it');
+  assert.ok(b.lost());
+  assert.equal(b.restorable(), true, 'until it is given back');
+  assert.ok(!b.canvas.listeners.has('webglcontextlost'), 'torn down');
+  const drawnThen = b.draws.length;
+  settle();
+  assert.equal(b.draws.length, drawnThen, 'nothing drawn into the dead context');
+  // The caller's stop after: nothing more (the canvas may be drawn again by a backdrop started afresh).
+  b.stop!();
+  assert.equal(b.state.letGo, 0, 'not lost for good by letGo');
+});
+
+test('stopped by its caller, the context is given back at once, once', () => {
+  const b = start();
+  frame();
+  b.stop!();
+  b.stop!();
+  assert.equal(b.state.letGo, 1);
 });
 
 test('the merged pass failing to build keeps the two passes', () => {

@@ -42,6 +42,11 @@
   // later), never just to be torn down again as it starts.
   let webgl = $state(true);
   let failed = $state(false);
+  // A context the browser took away (a phone with the page in the background)
+  // and is to give back: the CSS layers stand in meanwhile, the canvas hidden
+  // but still laid out, so the backdrop started again on it has its size. It
+  // shows again with its first frame drawn, as the CSS layers go.
+  let away = $state(false);
 
   onMount(() => {
     const fail = () => {
@@ -51,20 +56,42 @@
     let stop: (() => void) | null = null;
     // (Switched off for a test, on the beta: ?off=webgl, lib/switchedOff.ts.)
     if (switchedOff('webgl')) return fail();
-    try {
-      stop = startBackdrop(canvas, fail);
-    } catch (e) {
-      console.warn(e);
-    }
-    if (!stop) fail();
-    return () => stop?.();
+    const lost = (restorable: boolean) => {
+      if (!restorable) return fail();
+      webgl = false;
+      away = true;
+    };
+    const drawn = () => {
+      webgl = true;
+      away = false;
+    };
+    const start = () => {
+      stop = null;
+      try {
+        stop = startBackdrop(canvas, lost, drawn);
+      } catch (e) {
+        console.warn(e);
+      }
+      if (!stop) fail();
+    };
+    // Given back: everything built again on it, as at the start. (Never
+    // given back, the CSS backdrop stays.)
+    const restored = () => {
+      if (away && !failed) start();
+    };
+    start();
+    canvas.addEventListener('webglcontextrestored', restored);
+    return () => {
+      canvas.removeEventListener('webglcontextrestored', restored);
+      stop?.();
+    };
   });
 </script>
 
 <!-- Behind a dialog the WebGL backdrop darkens itself (lib/behindDialog.ts); the
      CSS one takes the filter, without the blur, which would fade its edges. -->
 <div class="bg" class:css={!webgl} data-behind-dialog={webgl ? undefined : 'dim'} aria-hidden="true">
-  <canvas bind:this={canvas} class:hidden={failed}></canvas>
+  <canvas bind:this={canvas} class:hidden={failed} class:away></canvas>
   {#if !webgl}
     <div class="glow"></div>
     <div class="floor" style:--floor={css(look.floor, look.floorK)} style:--floor-h={look.floorH}></div>
@@ -138,6 +165,9 @@
   }
   canvas.hidden {
     display: none;
+  }
+  canvas.away {
+    visibility: hidden;
   }
   .grain {
     position: absolute;
