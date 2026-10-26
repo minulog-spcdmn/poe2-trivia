@@ -33,9 +33,19 @@ app, and has no Safari):
 
 - Chrome: **⋯ → Settings → Content Settings → Web Inspector** on.
 - This PC trusted (**Trust** and the passcode, the first time it's plugged in).
-- Not done yet: the home-screen app goes by the iOS setting (Settings → Apps
-  → Safari → Advanced → Web Inspector), which isn't there without Safari.
-  Only Chrome can be driven so far.
+- The home-screen app can be driven too, though Safari's own setting
+  (Settings → Apps → Safari → Advanced → Web Inspector) isn't there without
+  Safari. On 26 October 2026 every page driven so far turned out to be it:
+  opened at poe2.quest, then sent to the PC's address, out of its scope, so
+  iOS showed the page in its in-app browser view (bars like Safari's,
+  Safari's user agent, `navigator.standalone` true, display-mode
+  fullscreen). What's measured there is WebKit on this phone, which holds
+  for Safari and Chrome alike (on iOS both are WebKit); anything that hangs
+  on being installed (`installedApp()`, `navigator.standalone`,
+  display-mode) is that hybrid's, neither a Chrome tab's nor the installed
+  app's. So check which app a run drives first: `node scripts/iphone/ask.mjs
+  "navigator.userAgent + ' ' + navigator.standalone"` (`CriOS` in the
+  agent is Chrome).
 
 ## Every time
 

@@ -1,8 +1,9 @@
 // Whether an emulator's Chrome draws on the PC's GPU, and how it keeps up:
 // Chrome's GPU status, the page's WebGL renderer, then the frames of the
 // start page (its WebGL backdrop animating) and of a codex scroll. The frame
-// rates say whether the emulator is starved (one alone holds 60, two at once
-// 50 to 60), never what a phone would get.
+// rates say whether the emulator is starved (on a quiet PC one alone held 60,
+// two at once 58 and 49; docs/android.md, "Why it's slow"), never what a
+// phone would get.
 //   node scripts/android/gpu.mjs [DevTools port=9333] [url=http://10.0.2.2:4403/]
 
 import { browser, page, sleep } from './cdp.mjs';
@@ -29,6 +30,7 @@ const renderer = await p.ev(`(() => { const c = document.createElement('canvas')
 console.log(`WebGL renderer: ${renderer}`);
 
 const stats = (t) => {
+  if (!t?.length) return 'no frames (the page went away, or the emulator stalled)';
   const s = [...t].sort((a, b) => a - b);
   const q = (x) => s[Math.min(s.length - 1, Math.floor(x * s.length))].toFixed(1);
   const fps = t.length / (t.reduce((a, b) => a + b, 0) / 1000);
