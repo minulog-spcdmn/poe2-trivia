@@ -1,13 +1,13 @@
-// The name plate's field (NamePlate.svelte): an interlace of waves against
-// their mirror images, the rows closer together than the waves are tall, so
-// that every strap crosses not just its own mirror but the mirrors in the
-// rows above and below. Six crossings a wave, and the straps go over and
-// under in turn along each, as the circle's star does. Faint, as if cut into
-// the dark; one tile of it repeats over the whole plate.
+// The field of the plate behind a unique's name (components/NamePlate.svelte):
+// waves against their mirror images, the rows closer together than the
+// waves are tall, so that every strap crosses not just its own mirror but
+// the mirrors in the rows above and below. Six crossings a wave, and the
+// straps go over and under in turn along each, as the circle's star does.
 //
-// Pure geometry, apart from the plate so that a worker can work it out
-// (weaveWorker.ts): on an iPhone it held the page some 60 ms, in the tap that
-// opened the codex's first item window (lib/weaveTile.ts).
+// It depends on nothing but the numbers here, so it is worked out once, as
+// the app is built (weaveTile.ts, beside vite.config.ts), and the plate
+// only shows it: on an iPhone working it out held the page 61 to 68 ms,
+// in the frames Begin brings the game's screen in.
 
 type Pt = [number, number];
 const f = (v: number) => v.toFixed(2);
@@ -15,11 +15,10 @@ const pt = (p: Pt) => `${f(p[0])} ${f(p[1])}`;
 const dist = (p: Pt, q: Pt) => Math.hypot(q[0] - p[0], q[1] - p[1]);
 const poly = (pts: Pt[]) => 'M' + pts.map(pt).join('L');
 
-/** How wide a wave is (px): the tile's width. */
+/** How wide a wave is, and how far apart the rows are (px): the tile's size. */
 export const BAY = 40;
-const AMP = 8.5;
-/** How far apart the rows are (px): the tile's height. */
 export const ROW = 11;
+const AMP = 8.5;
 const W = 0.75;
 const GAP = 0.7;
 // The pattern repeats every row, so a tile one row high holds it; the rows
@@ -35,13 +34,13 @@ const UNDER = { rise: [SKEW, Math.PI, 2 * Math.PI - SKEW], fall: [0, Math.PI - S
 const STEPS = 240;
 const wave = (c: number, sign: number): Pt[] =>
   Array.from({ length: STEPS + 1 }, (_, k) => [(k / STEPS) * BAY, c + sign * AMP * Math.sin((2 * Math.PI * k) / STEPS)] as Pt);
-type Strand = { sign: number; mid: Pt[] };
+const strands = () => ROWS.flatMap((r) => [1, -1].map((sign) => ({ sign, mid: wave(r * ROW, sign) })));
+type Strand = ReturnType<typeof strands>[number];
 /** How near (squared) another strap's middle comes where this one passes under it. */
 const REACH2 = (W + GAP) ** 2;
-
 /** One edge of a strap, `side` (±1) of its wave, cut where it passes under another. */
-function strapEdge(strands: Strand[], s: Strand, side: number) {
-  const others = strands.filter((o) => o.sign !== s.sign);
+const strapEdge = (all: Strand[], s: Strand, side: number) => {
+  const others = all.filter((o) => o.sign !== s.sign);
   const under = s.sign > 0 ? UNDER.rise : UNDER.fall;
   const pieces: Pt[][] = [[]];
   s.mid.forEach((p, i) => {
@@ -70,21 +69,21 @@ function strapEdge(strands: Strand[], s: Strand, side: number) {
     } else pieces.at(-1)!.push(e);
   });
   return pieces.filter((q) => q.length > 1).map(poly).join('');
-}
+};
 
-/** The tile's straps, as one SVG path. */
-export function weavePath(): string {
-  const strands: Strand[] = ROWS.flatMap((r) => [1, -1].map((sign) => ({ sign, mid: wave(r * ROW, sign) })));
-  return strands.flatMap((s) => [1, -1].map((side) => strapEdge(strands, s, side))).join('');
+/** One tile of the weave, BAY by ROW, as an SVG image. */
+export function weaveSvg(): string {
+  const all = strands();
+  const d = all.flatMap((s) => [1, -1].map((side) => strapEdge(all, s, side))).join('');
+  return `<svg xmlns='http://www.w3.org/2000/svg' width='${BAY}' height='${ROW}' viewBox='0 0 ${BAY} ${ROW}'><path d='${d}' fill='none' stroke='#c47a44' stroke-width='0.55'/></svg>`;
 }
 
 /**
- * The tile drawn from its path, as a CSS background: it repeats over the
- * whole plate whatever its height, in every browser (an SVG pattern fill
+ * The class that lays the weave over an element (the plate's field), and the
+ * stylesheet that says how: the tile as a CSS background, which repeats over
+ * the whole plate whatever its height, in every browser (an SVG pattern fill
  * fell short of the plate's top and bottom on some phones).
  */
-export function weaveImage(d: string): string {
-  return `url("data:image/svg+xml,${encodeURIComponent(
-    `<svg xmlns='http://www.w3.org/2000/svg' width='${BAY}' height='${ROW}' viewBox='0 0 ${BAY} ${ROW}'><path d='${d}' fill='none' stroke='#c47a44' stroke-width='0.55'/></svg>`,
-  )}")`;
-}
+export const WEAVE_CLASS = 'plate-weave';
+export const weaveCss = () =>
+  `.${WEAVE_CLASS}{background-image:url("data:image/svg+xml,${encodeURIComponent(weaveSvg())}");background-size:${BAY}px ${ROW}px}\n`;

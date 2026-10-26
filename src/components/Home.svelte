@@ -28,7 +28,6 @@
   import SiteFooter from './SiteFooter.svelte';
   import { probeRoom, type RoomInfo } from '../lib/rooms';
   import { warmPlate } from '../lib/plateStore.svelte';
-  import { warmWeave } from '../lib/weaveTile';
   import { circleAtPlace } from '../lib/circlePlaces';
   import { cameFromThisSite, countArrival, type JoinVia } from '../lib/count';
   import { withoutInvite } from '../lib/inviteAddress';
@@ -195,14 +194,12 @@
   /** The keyboard cursor: arrows move it, Enter chooses, it follows the mouse. */
   let cursor = $state(untrack(() => invite) ? 0 : lastEntry());
   /**
-   * The Codex's collection circle and its item window's name plate, built
-   * ahead away from the page once its entry is pointed at (the Codex warms
-   * the rest as it opens).
+   * The Codex's collection circle, built ahead away from the page once its
+   * entry is pointed at (the Codex warms the rest as it opens).
    */
   const warmCodex = (e: Entry) => {
     if (e !== 'codex') return;
     warmPlate(circleAtPlace('collection'));
-    warmWeave();
   };
   $effect(() => void warmCodex(ENTRIES[cursor]));
   /**

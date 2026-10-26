@@ -255,14 +255,41 @@ with its numbers in the comments.
   then it hides nothing. Try such a thing with a CSS rule (`mask: none`
   through `ask.mjs`): taking the `mask` attribute off from script didn't
   take the cost away.
+- **An idle step is as long as the work it can't split.** Delve's light
+  table was worked out in idle steps of 4 ms, but a step is at least one
+  stretch of the table, and a stretch took 52 to 56 ms on the phone, two or
+  three of them in the frames after Begin. It's worked out in a worker now
+  (`src/lib/lightsAhead.ts`, `lightWorker.ts`) from the moment a Delve is
+  on its way, as is the cave-in sound (`caveInWorker.ts`, 48 to 65 ms a
+  step). The strata past the zones that the table reads come with it, so
+  the page never generates one (1 to 9 ms each on a PC, in the frame a
+  depth first showed it). What only depends on constants isn't worked out
+  on the page at all: the name plate's weave (61 to 68 ms) is made as the
+  app is built (`src/lib/weave.ts`, `weaveTile.ts`).
+- **Waking the audio context holds the page.** On a cold page
+  `AudioContext.resume()` blocks while iOS starts the audio session, 40 to
+  50 ms, and the first tap is mostly New game: it landed in the lobby's
+  first frame. `wake` (`src/lib/sound.ts`) waits until the first frame
+  after the tap's click has been drawn, on timers, which carry the tap's
+  gesture on for a second, as iOS asks of a context starting. Every call
+  waits and resumes on timers of its own, though another is waiting: on
+  iOS 15 to 16.3 the first wake comes in the idle moment after a touch's
+  pointerdown, which is no gesture, and the touchend's and click's, which
+  are, come in while it waits (`tests/soundWake.test.ts`).
+- **A part of an SVG that animates repaints the whole SVG.** WebKit gives
+  no part of an SVG a layer of its own: the name plate's seal bloom, a
+  circle breathing in the plate's SVG, repainted all of the plate's lines
+  every frame for as long as a reveal was up. It's an element of its own
+  now, over the seal, and only its opacity changes (`NamePlate.svelte`).
 
 Still open: Begin's worst frame, about 230 to 285 ms. About 70 ms of it is
 script mounting the game screen and about 140 ms its styles, layout and
-paint; a frame or two later the cave-in sound's steps follow, and an
-item's details parse in about 60 ms. The rumble's 6 s noise buffer, which
-took about 75 ms of that time in one go, is now worked out in a worker
-(`src/lib/rumbleWorker.ts`, its samples in `src/lib/rumbleNoise.ts`); a
-trace from the phone still has to show it gone from the main thread.
+paint; and an item's details parse in about 60 ms. The rumble's 6 s noise
+buffer, which took about 75 ms of that time in one go, is now worked out
+in a worker (`src/lib/rumbleWorker.ts`, its samples in
+`src/lib/rumbleNoise.ts`), as are the light table and the cave-in, and the
+weave is made as the app is built; a trace from the phone still has to
+show them gone from the main thread.
 
 Still open too: a first visit's blank page. `index.html` is empty until
 the startup script has come and mounted the start page, and its CSS and

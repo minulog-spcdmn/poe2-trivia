@@ -23,7 +23,6 @@
   import { circleOf } from './circles';
   import { circleAtPlace } from '../lib/circlePlaces';
   import { warmPlate } from '../lib/plateStore.svelte';
-  import { warmWeave } from '../lib/weaveTile';
   import CodexItem from './CodexItem.svelte';
   import CodexFilter from './CodexFilter.svelte';
   import CodexDelve from './CodexDelve.svelte';
@@ -43,12 +42,12 @@
   announceAchievements(checkAchievements(engine.items), 'codex');
   let achievements = $state.raw(loadAchievements());
   let wins = $state.raw(loadWins());
-  // The pages' circles, and the item window's eye and name plate, built
-  // ahead away from the page once the Codex is open (the collection's circle
-  // sooner, as its entry on the start page is pointed at: Home.svelte).
+  // The pages' circles, and the item window's eye, built ahead away from the
+  // page once the Codex is open (the collection's circle sooner, as its entry
+  // on the start page is pointed at: Home.svelte). The name plate's weave
+  // comes with the app (lib/weave.ts).
   onMount(() => {
     for (const place of ['collection', 'achievements', 'codexDelve', 'item'] as const) warmPlate(circleAtPlace(place));
-    warmWeave();
   });
   // A game in another tab may add to it meanwhile.
   onMount(() =>
