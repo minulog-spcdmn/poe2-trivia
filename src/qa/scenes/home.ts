@@ -96,7 +96,11 @@ function invite(v: Values = {}): Built {
   return v.first ? { state: null, name: '', met: [], query, invite: answer } : returning({}, { query, invite: answer });
 }
 
-/** A join the room turns down for its name: the same name as a player's there, or one that only looks like it. */
+/**
+ * A join the room turns down for its name: the same name as a player's there, or one that only looks like it.
+ * The joiner comes by an invite with that name saved, so the start page goes straight into the join (Home.svelte)
+ * and, turned down, leaves the code in Join a room's row with the room's own words for it.
+ */
 const REFUSED: Control[] = [
   {
     kind: 'choice',
@@ -110,9 +114,10 @@ const REFUSED: Control[] = [
   },
 ];
 function refused(v: Values = {}): Built {
-  // The room's own words for it, as nameProblem gives them to the host that turns the join down.
-  const why = nameProblem(v.name === 'like' ? 'Pixe1' : 'pixel', ['Doryani', 'Pixel'])!;
-  return returning({}, { query: 'room=KXR4QT', invite: room(4, { code: 'KXR4QT', players: 3 }), steps: [{ wait: 600 }, { refused: why }] });
+  // The name the page greets is the one turned down: the room's words for it, as nameProblem gives them to the host.
+  const joiner = v.name === 'like' ? 'Pixe1' : 'pixel';
+  const why = nameProblem(joiner, ['Doryani', 'Pixel'])!;
+  return returning({}, { name: joiner, query: 'room=KXR4QT', invite: room(4, { code: 'KXR4QT', players: 3 }), steps: [{ refused: why }] });
 }
 
 const home = (key: string, label: string, s: Omit<Scene, 'key' | 'label' | 'screen' | 'group' | 'seats'>, group = 'Start page'): Scene => ({ key: `home/${key}`, screen: 'home', group, label, seats: [ME], ...s });

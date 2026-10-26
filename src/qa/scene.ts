@@ -41,7 +41,7 @@ export type Step =
   | { wait: number }
   /** The room turns this device out, as the host's word for it would (session.labFail). */
   | { fail: 'kicked' | 'closed' | 'replaced' }
-  /** The room turns this device's join down with this message, as the host's error for it would (session.labRefuse). */
+  /** The room turns this device's join down with this message, as the host's error for it would (session.labRefuse), once the join is under way. */
   | { refused: string }
   /** The app crashes, once or twice in a row (Root.svelte's recovery). */
   | { crash: 1 | 2 }

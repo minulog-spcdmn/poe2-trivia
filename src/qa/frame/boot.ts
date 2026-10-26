@@ -191,7 +191,13 @@ export async function boot(asked: URLSearchParams) {
   for (const step of built.steps ?? []) {
     if ('wait' in step) await new Promise((r) => setTimeout(r, step.wait));
     else if ('fail' in step) session.labFail(step.fail);
-    else if ('refused' in step) session.labRefuse(step.refused);
+    else if ('refused' in step) {
+      // While the join is under way, as the host's answer comes (an invite's starts itself as the page shows).
+      // Looked for every turn of the event loop: once PeerJS is in, the frame's want of WebRTC (above) fails
+      // the join for no connection, a toast the room's answer would only clear.
+      for (let i = 0; i < 500 && session.status !== 'connecting'; i++) await new Promise((r) => setTimeout(r));
+      session.labRefuse(step.refused);
+    }
     else if ('then' in step) {
       // The room moves on: a new question's pictures first, as the host sends them before it.
       if (step.then.question?.askedAt !== session.state?.question?.askedAt) await pictures(step.then);
