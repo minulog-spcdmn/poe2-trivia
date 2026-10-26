@@ -56,7 +56,11 @@ its tabs have sat on about:blank for five minutes. A restart drops its
 `adb reverse` rules, so a run that drives one sets them again when it
 finds the instance new. Its log is
 `.phone/android/pool-logs/pool.log`; each instance's own log keeps every
-boot's output, one after the other.
+boot's output, one after the other. The emulator writes that output in
+4 KB blocks, so while it runs its log lags behind by up to 4 KB (the
+worn rule's count of graphics errors with it), the lines carry no time, and
+an emulator that dies loses its last block. Count errors in a log only once
+its emulator has exited.
 
 The windows open along the top of a second monitor, if there is one (instance
 k in column k), never on the main screen, and the emulators' consoles stay
@@ -147,6 +151,13 @@ drawing alone held 60 fps on the start page and a codex scroll, two at once
   `glReadPixels` error in the GL translator), one hung (adb silent) and one
   went black with Chrome still running. `watch` restarts them when idle
   before they get there, and restarts what dies anyway.
+- **A hang on the asg channel too.** On 26 October 2026 one instance, 77
+  minutes into an agent's run, logged eight "Failed to find ColorBuffer" /
+  "Failed to bind to texture" pairs, then the emulator's own watchdog found
+  its main loop and all four CPU threads silent for 15 s and ended it on
+  purpose (it dumps and dies; with crash reports on Never the dump is
+  deleted at the next start). `watch` had it back in under a minute. A
+  run on an instance that vanishes should take the next free one.
 - **A launch can hang.** Twice, one launched a few seconds after the
   instance before it on the same ports was killed came up as a qemu that
   never printed a line or booted. pool.mjs now waits for everything the old
@@ -164,6 +175,36 @@ drawing alone held 60 fps on the start page and a codex scroll, two at once
 - **Bigger levers, not taken.** Each would need the owner: Google's
   next-generation emulator (upstream QEMU 11, with the interrupt controller
   in the hypervisor; a preview, only for API 37 images, from Android Studio
-  Canary), the AEHD driver instead of WHPX (Hyper-V off, so a second boot
-  entry; retired by Google at the end of 2026), or emulator 37.3.5 (a
-  prerelease with gfxstream's fix for a hang and crash of this kind).
+  Canary), or the AEHD driver instead of WHPX (Hyper-V off, so a second boot
+  entry; retired by Google at the end of 2026).
+
+## Emulator 37.3.5 on trial
+
+37.3.5 is a dev-channel build (the Android SDK Preview License, which the
+owner accepted for it) installed beside the SDK in
+`%LOCALAPPDATA%\Android\emulator-37.3.5\`. It carries gfxstream's fix
+ca53620 for a GL context left unbound when another thread's bind fails,
+which in a third party's CI lost the device in 6 of 3,622 runs on 37.2.12
+and 0 of 10,002 on 37.3.5. pool.mjs boots the second instance
+(`emulator-5556`) on it, so a pool of two or more runs one beside the SDK's
+37.2.12; `pool.mjs list` and each boot line in the instance's log say which.
+`EMULATOR_TRIAL=off` before `start` or `watch` keeps them all on 37.2.12.
+
+Measured on 26 October 2026, one instance at a time on a copy of the AVD,
+alternating versions: no speed difference (every interval took in zero; the
+PC's load moves fps by about 1 per point of host CPU, far more than the
+version), 9 of 9 and 8 of 8 boots, 30 of 30 Chrome restarts, 606 of 606
+DevTools screenshots on each, 10 minutes of a game scene on each. One 37.3.5
+boot's Chrome never answered DevTools, cause unknown. None of that says
+which one stays up for hours: 37.2.12 hung once in about 7 instance-hours
+(above, "A hang on the asg channel too"), and that hang didn't show the
+fix's signature ("context was preempted", "Failed to restore previous
+context: 12297"), so 37.3.5 may not fix it.
+
+So the trial: count, per version, hangs and deaths, Chrome failures the
+watchdog had to repair, and black or stale screens, from logs after their
+emulator exited. Put 37.2.12 back on that instance (`EMULATOR_TRIAL=off`)
+at the first hang, a start failure that repeats, lost graphics, or a page
+that draws differently. Move all three over once the trial instance has run
+about seven hours clean, or sooner if a 37.2.12 hang's log shows the fix's
+signature before its hang lines.

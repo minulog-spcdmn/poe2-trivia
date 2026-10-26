@@ -18,6 +18,13 @@ import { connect } from './cdp.mjs';
 const sdk = process.env.ANDROID_HOME ?? join(process.env.LOCALAPPDATA ?? '', 'Android', 'Sdk');
 const adbExe = join(sdk, 'platform-tools', 'adb.exe');
 const emulatorExe = join(sdk, 'emulator', 'emulator.exe');
+// A trial of emulator 37.3.5, a dev-channel build installed beside the SDK
+// (docs/android.md, "Emulator 37.3.5 on trial"): the second instance runs it,
+// so a pool of two or more has one on it beside the SDK's, to count hangs
+// over hours. EMULATOR_TRIAL=off keeps every instance on the SDK's.
+const trialExe = join(process.env.LOCALAPPDATA ?? '', 'Android', 'emulator-37.3.5', 'emulator', 'emulator.exe');
+const exeFor = (e) => (e.k === 1 && process.env.EMULATOR_TRIAL !== 'off' && existsSync(trialExe) ? trialExe : emulatorExe);
+const versionOf = (exe) => (exe === trialExe ? '37.3.5 (trial)' : 'from the SDK');
 const AVD = 'poe2quest-pixel';
 const avdConfig = join(process.env.USERPROFILE ?? '', '.android', 'avd', `${AVD}.avd`, 'config.ini');
 const logs = join(root, '.phone', 'android', 'pool-logs');
@@ -104,10 +111,12 @@ const boot = async (e) => {
   for (let attempt = 1; attempt <= 3; attempt++) {
     for (let i = 0; i < 30 && (holders(e).length || !free(log)); i++) await sleep(2000);
     stopAll(holders(e));
-    appendFileSync(log, `\n===== ${new Date().toISOString()} boot\n`);
-    const line = `""${emulatorExe}" ${flags(e).join(' ')} >> "${log}" 2>&1"`;
+    const exe = exeFor(e);
+    appendFileSync(log, `\n===== ${new Date().toISOString()} boot, emulator ${versionOf(exe)}\n`);
+    const line = `""${exe}" ${flags(e).join(' ')} >> "${log}" 2>&1"`;
     try {
-      execFileSync('powershell', ['-NoProfile', '-c', `Start-Process -FilePath cmd.exe -ArgumentList '/c ${line.replace(/'/g, "''")}' -WindowStyle Hidden`], { timeout: 60000, windowsHide: true, stdio: 'pipe' });
+      // The SDK named, since an emulator outside it finds the system image through it.
+      execFileSync('powershell', ['-NoProfile', '-c', `Start-Process -FilePath cmd.exe -ArgumentList '/c ${line.replace(/'/g, "''")}' -WindowStyle Hidden`], { timeout: 60000, windowsHide: true, stdio: 'pipe', env: { ...process.env, ANDROID_SDK_ROOT: sdk, ANDROID_HOME: sdk } });
     } catch (err) {
       say(`${e.serial}: Start-Process failed: ${String(err.stderr ?? err).trim().slice(0, 200)}`);
     }
@@ -237,7 +246,10 @@ if (cmd === 'stop') {
 if (cmd === 'list') {
   for (const s of running()) {
     const k = (Number(s.slice('emulator-'.length)) - 5554) / 2;
-    console.log(`${s}  DevTools http://localhost:${9333 + k}/json`);
+    // Which emulator it booted on, from its log's last boot line.
+    const log = join(logs, `${s}.log`);
+    const booted = existsSync(log) ? [...readFileSync(log, 'utf8').matchAll(/^===== \S+ boot, emulator (.+)$/gm)].at(-1)?.[1] : undefined;
+    console.log(`${s}  DevTools http://localhost:${9333 + k}/json  emulator ${booted ?? 'not known'}`);
   }
   process.exit(0);
 }
