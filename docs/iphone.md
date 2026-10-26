@@ -221,6 +221,17 @@ with its numbers in the comments.
   waits 300 ms there instead, and each step still runs as one task: a step
   over a frame's time drops a frame on the phone however idle the page
   looked. Work that takes tens of ms a step there belongs in a worker.
+  And 300 ms after a tap is still among the frames it set off: what a tap
+  or a reveal brings about to be done later (the codex written, the
+  achievements checked) waits for calm, `whenCalm`, 800 ms on from the
+  last tap. Whatever shows what it writes must not show it stale: an
+  answer waiting for calm is written as soon as the codex is read
+  (`recordWhenCalm` in `src/lib/codex.ts`), so the end screen after a
+  quick Next still has it, and earned achievements go under the game the
+  answer was given in, not the one under way when they are checked. That
+  holds for what reads the codex's log raw too: the Delve records count a
+  run's wards from it as the run ends or is left (`codexLog` in
+  `src/lib/delveRecord.ts`).
 - **A timer is not an idle moment, and the start page's first seconds are
   its entrance.** Loading the game's screens on `whenIdle`'s 500 ms timer
   put their evaluation on the frame today's circle laid its layers on the
@@ -281,6 +292,22 @@ with its numbers in the comments.
   circle breathing in the plate's SVG, repainted all of the plate's lines
   every frame for as long as a reveal was up. It's an element of its own
   now, over the seal, and only its opacity changes (`NamePlate.svelte`).
+- **Some changes to an element repaint every layer inside it.** WebKit
+  repaints each compositing layer in an element that turns `inert` (as
+  Svelte makes everything going out), whose opacity goes from 1 to under
+  it or back, or whose layers are resized or moved by a fraction of a pixel.
+  A turn's stage, the question's rune circle in it, is some 60 to 80
+  layers: Next repainted them twice over (inert, then the fade), and the
+  answer once (the circle's colour, and the line over the art 3 px shorter,
+  which resized the circle). An opacity starting under 1, a colour taken a
+  ring at a time, or `pointer-events: none` repaints next to nothing:
+  `outWithoutInert` (`src/lib/leaving.ts`), the stage at rest at 0.999
+  (`Game.svelte`), `heldInk` (`ArcaneStage.svelte`). Count the layers a
+  change repaints (the timeline's paints in the frame after a tap) before
+  looking at the script. A group is composited apart in every frame
+  something in it moves, though, the circle turning: weigh the calm
+  question's and reveal's frames with `?off=group` (the stage resting at 1)
+  against those without.
 
 Still open: Begin's worst frame, about 230 to 285 ms. About 70 ms of it is
 script mounting the game screen and about 140 ms its styles, layout and

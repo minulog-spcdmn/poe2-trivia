@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { fade } from 'svelte/transition';
+  import { fade } from '../lib/transitions';
   import { castFor, type Cast } from '../lib/artShadow';
   import { fitOf, SHADOW } from '../lib/castShadow';
 

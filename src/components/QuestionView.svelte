@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fly, fade, scale, slide } from 'svelte/transition';
+  import { fly, fade, scale, slide } from '../lib/transitions';
   import { session, engine } from '../lib/session.svelte';
   import { glare } from '../lib/glare';
   import { AUTO_NEXT_MS, answerDrawn, autoNextLeft, clockMs, clockRuns, drawnAs, isFake, questionTopic } from '../lib/game';
@@ -1273,23 +1273,26 @@
        this item" is done with by then) rather than standing beside the
        verdict, where a long sentence (a team's, say) would make the row
        under the answers taller and push Next up: that row keeps the verdict
-       and Next alone, and the art gives up what the sentence needs. -->
+       and Next alone, and the art gives up what the sentence needs. The
+       line it takes the place of stays, unseen under it (.held), so the line
+       keeps its height for a sentence no taller: the answers and the art
+       under it stay where they were and the art's circle keeps its size, so
+       nothing on the screen moves, or has to be drawn again, for it. -->
   <div class="task" data-cursor="task" class:snug class:timed={!!timer && clocked}>
+    <p class="task-text" class:held={!!reveal && upright.current}>
+      <!-- Said to whoever can't answer as what is going on, and so it holds through the reveal. -->
+      {#if !race && !coop && !session.myTurn}
+        {active.name} <span class="muted">{q.mode === 'art' ? 'picks the art that matches the name' : 'names this item'}</span>
+      {:else if coop && !canAnswer}
+        <span class="muted">{session.spectating ? 'The team' : 'Your team'} {q.mode === 'art' ? 'picks the art that matches the name' : 'names this item'}</span>
+      {:else if race && session.spectating}
+        <span class="muted">The racers {q.mode === 'art' ? 'pick the art that matches the name' : 'name this item'}</span>
+      {:else}
+        {q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item'}
+      {/if}
+    </p>
     {#if reveal && upright.current}
       <p class="task-text outcome" data-cursor="outcome" in:fly={{ y: 10, duration: 400, delay: 250 }}>{@render outcome()}</p>
-    {:else}
-      <p class="task-text">
-        <!-- Said to whoever can't answer as what is going on, and so it holds through the reveal. -->
-        {#if !race && !coop && !session.myTurn}
-          {active.name} <span class="muted">{q.mode === 'art' ? 'picks the art that matches the name' : 'names this item'}</span>
-        {:else if coop && !canAnswer}
-          <span class="muted">{session.spectating ? 'The team' : 'Your team'} {q.mode === 'art' ? 'picks the art that matches the name' : 'names this item'}</span>
-        {:else if race && session.spectating}
-          <span class="muted">The racers {q.mode === 'art' ? 'pick the art that matches the name' : 'name this item'}</span>
-        {:else}
-          {q.mode === 'art' ? 'Pick the art that matches the name' : 'Name this item'}
-        {/if}
-      </p>
     {/if}
     <!-- Mounted once for the whole question, so a branch changing never
          restarts it; at the reveal it stays, stopped and dimmed, saying how
@@ -1559,11 +1562,24 @@
     z-index: 1;
     margin: 0 0 1.6rem;
     text-align: center;
+    /* The question's line and, at a phone's reveal, the outcome over it, in one cell. */
+    display: grid;
   }
   .task-text {
+    grid-area: 1 / 1;
     margin: 0;
     font-size: 1.2rem;
     line-height: 1.45;
+  }
+  /* What it said, kept for its height under the outcome. */
+  .task-text.held {
+    visibility: hidden;
+  }
+  /* At the top of the cell, where it stood when it took the line's place:
+     a question's line that wraps (a long name picking the art) leaves the
+     room it frees under the outcome, not around it. */
+  .task-text.outcome {
+    align-self: start;
   }
   /* Room kept either side for the timer at the right end, so a long line
      (a long name picking the art) wraps short of it and stays centred. */

@@ -191,6 +191,16 @@ export const union = (a: Box | null, b: Box | null): Box | null =>
 /** The whole plate (-100 to 100): the box of a layer that isn't given one of its own. */
 export const WHOLE: Box = [-100, -100, 100, 100];
 
+/** How far from the plate's centre a box reaches, along either axis. */
+export const reachOf = (b: Box) => Math.max(...b.map(Math.abs));
+
+/** Boxes from the plate's centre out: their indices, the one reaching least first (those reaching as far in their own order). */
+export const insideOut = (boxes: Box[]) =>
+  boxes
+    .map((b, i) => [reachOf(b), i] as const)
+    .sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    .map(([, i]) => i);
+
 const pc = (n: number) => `${+(n * 100).toFixed(4)}%`;
 
 /**
