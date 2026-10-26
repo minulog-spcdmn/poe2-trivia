@@ -274,8 +274,9 @@ with its numbers in the comments.
   same), so one at a time would lay it out four times.
 - **A script's `click()` isn't a finger.** It sends none of a finger's
   pointer events, so what a press starts took another path. A finger's
-  press makes the Web Audio bus while it's down (`src/lib/sound.ts`), and
-  its lift wakes it, both before the click; after a bare `click()`, the
+  press makes the Web Audio bus while it's down (`src/lib/sound.ts`),
+  before the click, and its lift wakes it once the frame in hand is drawn
+  (`wake`, below); after a bare `click()`, the
   click's own sound made it, about 50 ms in the middle of the screen that
   tap brought in (the codex), a cost no player has. What the Codex entry
   readies as a finger lands on it (`Home.svelte`) never ran either.
