@@ -1,7 +1,7 @@
 <script lang="ts">
   import { sfx } from '../lib/sound';
   import { cubicOut } from 'svelte/easing';
-  import { fly } from 'svelte/transition';
+  import { fly } from '../lib/transitions';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';

@@ -85,7 +85,7 @@ import {
 import { readLegacy, readStored, removeLegacy, removeStored, storeKey, writeStored } from './storage';
 import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, TAP, actionOf, cursorKey, cursorsLive, entryAt, entryMs, stampOf, type CursorAt, type CursorEntry } from './cursors';
 import { peerCursors } from './peerCursors.svelte';
-import { whenIdle } from './idle';
+import { whenCalm } from './idle';
 import { frameEvent } from './fpsMeter';
 import { SIGILS_KEY, loadSigils } from './sigils';
 import { COLOUR_KEY, loadColour } from './colour';
@@ -2652,11 +2652,14 @@ class Session {
     const blast = blastedAway(prev, next);
     // (Only the items this build has: online, the reveal is the host's word.)
     const known = (id: string) => engine.byId.has(id);
+    // Written once the moment has played out (whenCalm): the whole codex is
+    // read and written again for it, a dozen ms or more on a phone with a
+    // full one, which held a frame of the reveal as it began.
     if (blast) {
       void import('./codex')
         .then(({ blastedEncounter, keepable, recordEncounter }) => {
           const e = keepable(blastedEncounter(next, blast, me, hotSeat), known);
-          if (e) recordEncounter(e);
+          if (e) whenCalm(() => recordEncounter(e));
         })
         .catch((err) => console.warn('codex', err));
       return;
@@ -2674,8 +2677,11 @@ class Session {
         const met = encounterAt(next, me, hotSeat, ms);
         const e = met && keepable(met, known);
         if (!e) return;
-        recordEncounter(e);
-        this.noteAchievements();
+        // (Then the achievements, checked with it in the codex.)
+        whenCalm(() => {
+          recordEncounter(e);
+          this.noteAchievements();
+        });
       })
       .catch((err) => console.warn('codex', err));
   }
@@ -2705,41 +2711,39 @@ class Session {
       .catch((err) => console.warn('achievements', err));
   }
 
-  /** A check of the achievements is waiting for an idle moment (noteAchievements). */
+  /** A check of the achievements is waiting for a calm moment (noteAchievements). */
   private achievementsDue = false;
 
   /**
    * Brings the achievements up to date with what was just recorded in the
    * codex or the Delve records, and announces any earned (lib/achievementToasts.ts).
-   * It reads and sums up the whole codex, so it waits for an idle moment
-   * rather than running as a reveal begins (its notice waits a moment
-   * anyway), and several asked for before it runs make one check.
+   * It reads and sums up the whole codex, so it waits for a calm moment
+   * (whenCalm: once what the tap or reveal set off has played out; on a
+   * phone a timer for an idle one landed among its frames) rather than
+   * running as a reveal begins (its notice waits a moment anyway), after
+   * what was recorded for it, and several asked for before it runs make one
+   * check.
    */
   private noteAchievements() {
     if (this.achievementsDue) return;
     this.achievementsDue = true;
-    // The game the check is for: by the time it runs (an idle moment, up to a second on) a next one may have begun.
+    // The game the check is for: by the time it runs (a calm moment, a second or so on) a next one may have begun.
     const game = this.state?.phase !== 'lobby' ? this.state?.startedAt : undefined;
-    void Promise.all([import('./achievements'), import('./achievementToasts')])
-      .then(([{ checkAchievements }, { announceAchievements }]) =>
-        whenIdle(
-          () => {
+    // (Asked for in the calm moment that recorded an answer, it follows on in it.)
+    whenCalm(
+      () =>
+        void Promise.all([import('./achievements'), import('./achievementToasts')])
+          .then(([{ checkAchievements }, { announceAchievements }]) => {
             this.achievementsDue = false;
-            try {
-              const check = checkAchievements(engine.items);
-              if (!check.first) this.noteEarned(check.earned.map((a) => a.id), game);
-              announceAchievements(check, 'game');
-            } catch (err) {
-              console.warn('achievements', err);
-            }
-          },
-          { timeout: 1000, fallback: 300 },
-        ),
-      )
-      .catch((err) => {
-        this.achievementsDue = false;
-        console.warn('achievements', err);
-      });
+            const check = checkAchievements(engine.items);
+            if (!check.first) this.noteEarned(check.earned.map((a) => a.id), game);
+            announceAchievements(check, 'game');
+          })
+          .catch((err) => {
+            this.achievementsDue = false;
+            console.warn('achievements', err);
+          }),
+    );
   }
 
   /** Delve: the fuse waiting to burn, for the question and the 0 it burns down to (`key`). */

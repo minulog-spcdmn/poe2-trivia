@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { fade } from 'svelte/transition';
+  import { fade } from '../lib/transitions';
 
   // One item picture, centred in whatever space its parent gives it, with the
   // item's proportions and at most `scale` times its size in art pixels: `w`
