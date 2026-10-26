@@ -273,10 +273,43 @@ function audio(): Bus | null {
   const b = build();
   if (!primed) prime(b);
   // iOS also parks the context as 'interrupted' after a call or a trip to the lock screen.
-  if (b.ac.state !== 'running') void b.ac.resume().catch(() => {});
+  if (b.ac.state !== 'running') wake(b.ac);
   return b;
 }
 
+/** Whether the context is to be woken (see wake). */
+let waking = false;
+/** How long a wake waits for the frame in hand at most (ms), on a page that draws none (out of sight). */
+const WAKE_WAIT = 250;
+/** When (performance ms) the page last heard a press, a click or a key (installUiSounds). */
+let pressedAt = -Infinity;
+
+/**
+ * Wakes the context once the frame in hand is drawn, not in the tap that
+ * wants it. On an iPhone waking it holds the page while the system starts
+ * its audio session, 40 to 50 ms the first time, and the first tap is mostly
+ * one that brings a new screen in (New game): woken in it, the new screen's
+ * first frame came that much later. Now the first frame begun after the
+ * tap's last event (its click), the new screen's, is drawn first, and the
+ * wake holds up one of its own. It waits on timers, as they carry the tap's
+ * gesture on (for a second), which iOS asks of a context starting; what
+ * plays meanwhile is heard as it wakes.
+ */
+function wake(ac: AudioContext) {
+  if (waking) return;
+  waking = true;
+  let drawn = typeof requestAnimationFrame === 'undefined';
+  const frame = (t: number) => (t > pressedAt ? (drawn = true) : requestAnimationFrame(frame));
+  if (!drawn) requestAnimationFrame(frame);
+  const from = performance.now();
+  // (A timer comes after the whole of a frame, its drawing too, never in the middle of one.)
+  const go = () => {
+    if (!drawn && performance.now() - from < WAKE_WAIT) return void setTimeout(go, 4);
+    waking = false;
+    if (ac.state !== 'running') void ac.resume().catch(() => {});
+  };
+  setTimeout(go, 0);
+}
 
 /**
  * When (performance ms) the speakers play the context's time `t` (s): by
@@ -1311,6 +1344,7 @@ export function installUiSounds() {
   addEventListener(
     'click',
     (e) => {
+      pressedAt = performance.now();
       const el = (e.target as Element | null)?.closest?.('button, a[href]');
       if (!el || (el as HTMLButtonElement).disabled || el.closest('[data-sfx="none"]')) return;
       sfx('click', { from: { from: el } });
@@ -1327,8 +1361,10 @@ export function installUiSounds() {
   // The first press doesn't make the context in its own handler, though: that
   // takes 25 to 65 ms (see build), which the press would show late by. It's
   // made in the idle moment after, while the button or finger is still down
-  // (a quick tap's pointerup makes it there and then if that moment hasn't come).
+  // (a quick tap's pointerup makes it there and then if that moment hasn't come),
+  // and woken once the screen the tap brings in is drawn (see wake).
   const warm = (e: Event) => {
+    pressedAt = performance.now();
     if (muted) return;
     if (!bus && e.type === 'pointerdown') {
       if (typeof AudioContext !== 'undefined') buildSoon(true);
