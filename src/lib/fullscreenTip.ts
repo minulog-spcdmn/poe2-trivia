@@ -42,14 +42,14 @@ export type TipFor = 'desktop' | 'android' | 'ios';
 export const hasProgress = (name: string, codex: Codex) => name !== '' || Object.keys(codex.items).length > 0 || codex.log.length > 0;
 
 /** Whether this browser's player has, as stored now. */
-const progressHere = () => hasProgress(readStored(NAME_STORED) ?? '', loadCodex());
+export const progressHere = () => hasProgress(readStored(NAME_STORED) ?? '', loadCodex());
 
 const MESSAGE: Record<TipFor, (progress: boolean) => string> = {
   desktop: () => `Press ${fullscreenKeys(browserEnv())} to play in fullscreen.`,
   android: () => "Add PoE2.Quest to your home screen from the browser’s menu to play in fullscreen.",
   ios: (progress) =>
     progress
-      ? 'Tap Share, then Add to Home Screen, for fullscreen. The app starts fresh; pair the two in Settings to bring your progress.'
+      ? 'Tap Share, then Add to Home Screen, for fullscreen. It starts fresh: pair it with this tab in Settings to keep your progress.'
       : 'Tap Share, then Add to Home Screen, to play in fullscreen.',
 };
 
