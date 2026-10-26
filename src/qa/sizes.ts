@@ -31,6 +31,8 @@ export const SIZES = [
   // the low end of them, walked too: the team's vote scrolled there alone.
   { key: 'landscapeAndroidShort', label: 'Android phone on its side, short', w: 824, h: 285, dpr: 2.75, touch: true, walk: true },
   { key: 'landscapeAndroid', label: 'Android phone on its side', w: 863, h: 304, dpr: 2.625, touch: true, walk: true },
+  // The same phone in fullscreen, Chrome's bars away: all of its 412, where the team's cards scrolled alone, walked so the sweep sees them.
+  { key: 'landscapeAndroidFull', label: 'Android phone on its side, full screen', w: 915, h: 412, dpr: 2.625, touch: true, walk: true },
   // On its side in a browser: the address bar stays up (a game never scrolls it away), so 340 of the screen's 390.
   { key: 'landscape', label: 'Phone on its side', w: 844, h: 340, dpr: 3, touch: true, walk: true },
   { key: 'landscapeFull', label: 'Phone on its side, full screen', w: 844, h: 390, dpr: 3, touch: true },

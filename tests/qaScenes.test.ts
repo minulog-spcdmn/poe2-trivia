@@ -196,12 +196,14 @@ test('the sizes are one list: unique keys, a 4K screen at each scaling, the desi
 // and an Android phone's in Chrome, 285 to 310, where the category cards
 // first scrolled unseen, and then the team's vote only at the low end of
 // it. The walk takes the iPhone and both ends of the Android phones' band,
-// so every sweep checks them.
+// so every sweep checks them, and an Android phone in fullscreen (Chrome's
+// bars away, 401 to 418 tall), where the team's cards scrolled.
 test('the walk takes a phone on its side in its browser at an iPhone’s height and at both ends of an Android phone’s', () => {
   const side = WALK_SIZES.map((k) => sizeOf(k)).filter((s) => s.touch && s.w > s.h && s.h <= 500);
   assert.ok(side.some((s) => s.h === 340), 'no iPhone on its side, its bars up');
   assert.ok(side.some((s) => s.h > 290 && s.h <= 310), 'no Android phone on its side, its bars up');
   assert.ok(side.some((s) => s.h <= 290), 'no Android phone on its side at the low end of their heights');
+  assert.ok(side.some((s) => s.h > 400 && s.h < 419), 'no Android phone on its side in fullscreen');
 });
 
 test("a frame answers media queries as its device would, and leaves width to the frame", () => {
