@@ -16,6 +16,7 @@ import { edgeBlast } from './fx/blast';
 import { fxActive } from './fx/core';
 import { unzoomRect, zoomOf } from './stage';
 import { BLAST_IMPACT_MS } from './blastTiming';
+import { at, measure, type Found } from './blastParts';
 
 export { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS } from './blastTiming';
 /** How long the whole of it lasts (ms), the last of the smoke included. */
@@ -158,42 +159,6 @@ export type BlastAway = {
 };
 
 type Part = { el: HTMLElement; rect: DOMRect; origin?: string };
-/** A part as measured on the question itself: where it is in its tree, its box, and whether it is inline. */
-type Found = { path: number[]; rect: DOMRect; inline: boolean };
-
-/**
- * The parts a question is blown into, measured on `src` before anything on
- * the page changes (so nothing is laid out twice): its children, and the
- * children of anything big (half the question) or a list of answers or
- * pictures (three or more side by side, a tenth of it), whose own frame and
- * fill (`hollow`) go as its parts fly.
- */
-function measure(src: Element, area: number, z: number, path: number[] = [], parts: Found[] = [], hollow: number[][] = []) {
-  Array.from(src.children).forEach((k, i) => {
-    const at = [...path, i];
-    const r = unzoomRect(k.getBoundingClientRect(), z);
-    const a = r.width * r.height;
-    if (!a) {
-      // display: contents and the like: what is inside it counts.
-      if (k.children.length) measure(k, area, z, at, parts, hollow);
-      return;
-    }
-    if (a > area * 0.5 || (k.children.length >= 3 && a > area * 0.1)) {
-      hollow.push(at);
-      measure(k, area, z, at, parts, hollow);
-      return;
-    }
-    parts.push({ path: at, rect: r, inline: getComputedStyle(k).display === 'inline' });
-  });
-  return { parts, hollow };
-}
-
-/** The element at `path` in `root`'s tree. */
-function at(root: Element, path: number[]): HTMLElement | null {
-  let el: Element | undefined = root;
-  for (const i of path) el = el?.children[i];
-  return (el as HTMLElement) ?? null;
-}
 
 /**
  * Cracks a part in three where the blast strikes it (at height `y`, from

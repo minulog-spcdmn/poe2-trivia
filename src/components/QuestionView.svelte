@@ -1515,7 +1515,9 @@
   .task {
     position: relative;
     /* Over the soft shadows of the tooltip under it, which reach up into
-       it, as it was before the tooltip was positioned (for its rims). */
+       it, as it was before the tooltip was positioned (for its rims). (The
+       banner above it is at 1 as well, and the cards fading out over the
+       question at 2: Game.svelte.) */
     z-index: 1;
     margin: 0 0 1.6rem;
     text-align: center;

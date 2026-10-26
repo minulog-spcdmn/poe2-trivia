@@ -94,11 +94,12 @@
      while it does, and WebKit on iOS gives a composited element's drop
      shadow to Core Animation, which works the shadow out again on every
      frame it draws; inside the box the picture and its shadow are painted
-     into the box's layer once. A find-the-art reveal swaps all six
-     pictures at once (twelve fades) and Next brings six in, and both ran
-     at about 12 fps for close to a second on an iPhone. It looks the same:
-     a fade or a turn applies to an element's filtered drawing, and the
-     box is the picture's size. */
+     into the box's layer once. A find-the-art reveal, which ran at about
+     12 fps for close to a second on an iPhone, swaps all six pictures at
+     once (twelve fades). It looks the same: a fade or a turn applies to an
+     element's filtered drawing, and the box is the picture's size. (The
+     first picture comes in by .art-fit's fade, above, never by this one:
+     a local intro doesn't play as its {#key} first runs.) */
   .shot,
   .shot > img {
     display: block;

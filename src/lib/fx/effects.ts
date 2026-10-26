@@ -455,12 +455,22 @@ function assemble(el: HTMLElement): { pic: HTMLCanvasElement; key: string } {
   return a;
 }
 
+/** Whether `el`'s own transform, as computed now (mid-animation too), mirrors what it draws. */
+function flips(el: Element | null): boolean {
+  const tf = el ? getComputedStyle(el).transform : 'none';
+  if (tf === 'none') return false;
+  const m = new DOMMatrix(tf);
+  return m.a * m.d < 0;
+}
+
 /**
  * Where a picture is, for effects to shine from behind it: its box at its
  * own proportions, centred where it's drawn and as tall as it's drawn; how
  * far it's turned round (drawn narrower than that, by its own or an
- * ancestor's transform; mirrored by its own), so the light keeps to its
- * outline while it turns; and how visible it is.
+ * ancestor's transform; mirrored by its own or its box's, as ArtImage
+ * turns a mirrored picture round on its .shot, so its drop shadow keeps
+ * still), so the light keeps to its outline while it turns; and how
+ * visible it is.
  */
 function silhouetteOf(el: HTMLElement): Silhouette {
   const frame = currentFrame();
@@ -470,9 +480,8 @@ function silhouetteOf(el: HTMLElement): Silhouette {
   const r = el.getBoundingClientRect();
   const h = r.height;
   const w = el.offsetHeight ? (el.offsetWidth * h) / el.offsetHeight : r.width;
-  const tf = getComputedStyle(el).transform;
-  const m = tf === 'none' ? null : new DOMMatrix(tf);
-  const mirrored = !!m && m.a * m.d < 0;
+  // (Both mirrored, they turn it back.)
+  const mirrored = flips(el) !== flips(el.parentElement);
   const turn = w > 0 ? Math.min(1, r.width / w) : 1;
   const sil = { pic, key, x: r.left + r.width / 2, y: r.top + h / 2, w, h, flip: mirrored ? -turn : turn, alpha: opacityOf(el) };
   silhouettes.set(el, { frame, sil });

@@ -1,7 +1,7 @@
-// A find-the-art answer, and Next into one, ran at about 12 fps on an iPhone
-// for close to a second: what changes on screen there changed in ways that
-// had big things painted or worked out again on every frame. What keeps it
-// cheap, and the same to see as before, read from the CSS and the markup.
+// A find-the-art answer ran at about 12 fps on an iPhone for close to a
+// second: what changes on screen there changed in ways that had big things
+// painted or worked out again on every frame. What keeps it cheap, and the
+// same to see as before, read from the CSS and the markup.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -58,6 +58,17 @@ test('in ArtImage only the picture has a filter, and the picture never animates'
   assert.equal(filters, 1, "the picture's drop shadow is there, once");
 });
 
+test("the reveal's light takes a picture's turn from its box too, where ArtImage turns it", () => {
+  // The flare and rays round a picture (moments.ts reveal, `clear`) keep to
+  // its outline, mirrored while the picture still is: silhouetteOf reads
+  // the img's own transform and its parent's, the .shot it turns in (above).
+  const fx = readFileSync('src/lib/fx/effects.ts', 'utf8');
+  const from = fx.indexOf('function silhouetteOf(');
+  assert.ok(from >= 0, 'fx/effects.ts has silhouetteOf');
+  const body = fx.slice(from, fx.indexOf('\n}\n', from));
+  assert.match(body, /flips\(el\)\s*!==\s*flips\(el\.parentElement\)/, "silhouetteOf reads a picture's mirroring from it and its box (.shot), or the light shines round it unmirrored as it turns");
+});
+
 // ---- the tooltip's verdict: a fade on its rims, the same as the easing was ----
 
 const qv = parse('src/components/QuestionView.svelte');
@@ -96,6 +107,10 @@ test('every tooltip has its rims first, so all that is in it is drawn over them'
   for (const t of tooltips) assert.match(t[1]!, /^\s*\{@render rims\(\)\}/, 'the tooltip opens with {@render rims()}');
 });
 
-test('the task line stays over the tooltip, now positioned, as it was', () => {
-  assert.ok(Number(one(qv.css, '.task', 'z-index')) >= 1, ".task needs a z-index: the tooltip is positioned (for its rims), and its soft shadows reach up over the task's line");
+test('the task line and the banner stay over the tooltip, now positioned, and the cards leaving over them, as they were', () => {
+  const task = Number(one(qv.css, '.task', 'z-index'));
+  assert.ok(task >= 1, ".task needs a z-index: the tooltip is positioned (for its rims), and its soft shadows reach up over the task's line");
+  const game = parse('src/components/Game.svelte');
+  assert.ok(Number(one(game.css, '.head', 'z-index')) >= 1, "Game's .head (the banner) needs a z-index: the tooltip comes later, and where CSS paints its soft shadows they reach up to the banner");
+  assert.ok(Number(one(game.css, '.cards-slot:global(.leaving)', 'z-index')) > task, "the cards fade out over the question, its task line too: their z-index tops .task's");
 });
