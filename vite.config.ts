@@ -15,6 +15,7 @@ import { keyframesFirst } from './keyframesFirst.ts';
 import { polyfillsFirst, polyfillsScript } from './polyfillsFirst.ts';
 import { peerjsProbe } from './peerjsProbe.ts';
 import { qaServer } from './qaServer.ts';
+import { weaveTile } from './weaveTile.ts';
 
 /**
  * Content Security Policy for the production build: the page may only run its
@@ -334,7 +335,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), glslMinify(), peerjsProbe(), polyfillsFirst(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), keyframesFirst(), backdropSave(), devHub(env), qaServer(process.cwd())],
+    plugins: [svelte(), glslMinify(), peerjsProbe(), polyfillsFirst(), csp(env), betaPages(env), preloadFonts(), fontinNotice(), keyframesFirst(), backdropSave(), devHub(env), weaveTile(), qaServer(process.cwd())],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
     // Module workers, so one (the plates', lib/plateWorker.ts) can load only what it's asked for.
     worker: { format: 'es' },
