@@ -14,7 +14,9 @@ import { descent, hallTurn, STRATA, strataAt } from './descent.ts';
 import { AMBIENCE, ARCHETYPE_AMBIENCE, CAVE_IN, DEPTH, FIRE, MIX, MOMENTS, RUMBLE, VEIN_AMBIENCE, VEIN_DUCK, ZONE_AMBIENCE, type Bed, type BedLayer, type Layer } from './soundDesign.ts';
 import { whenIdle } from './idle.ts';
 import { fillRumble, rumbleLength } from './rumbleNoise.ts';
-import type { RumbleAnswer, RumbleJob } from './rumbleWorker.ts';
+import type { RumbleJob } from './rumbleWorker.ts';
+import { caveInLength, caveInParts } from './caveInNoise.ts';
+import type { CaveInJob } from './caveInWorker.ts';
 import { readStored, writeStored } from './storage.ts';
 
 export type Sfx =
@@ -275,6 +277,7 @@ function audio(): Bus | null {
   return b;
 }
 
+
 /**
  * When (performance ms) the speakers play the context's time `t` (s): by
  * the context's own stamp of what it's playing when, or else by its clock
@@ -502,7 +505,7 @@ export const CAVE_IN_RATE = 22050;
 /** Sounds worked out here rather than loaded, by the name the moments give them. */
 const GENERATED: Record<string, (ac: AudioContext) => AudioBuffer | Promise<AudioBuffer>> = {
   [RUMBLE.file]: (ac) => rumbleThere(ac),
-  [CAVE_IN.file]: (ac) => inIdleSteps(caveInSteps(ac)),
+  [CAVE_IN.file]: (ac) => caveInThere(ac),
 };
 
 /**
@@ -572,32 +575,35 @@ export function rumble(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>
   return buf;
 }
 
+/** What a sound's worker answers (lib/rumbleWorker.ts, lib/caveInWorker.ts): its two channels. */
+type Channels = { left: Float32Array; right: Float32Array };
+
 /**
- * The rumble worked out in a worker of its own (lib/rumbleWorker.ts), which
- * then stops; here, as rumble, where there's none or it fails. On an iPhone
- * it held the page for about 75 ms here, just after Begin.
+ * A sound worked out in a worker made for the one job (`start` makes it),
+ * which then stops, its channels put in a buffer at `sampleRate`; worked out
+ * `here` instead where there's no worker, or it fails.
  */
-function rumbleThere(ac: AudioContext): Promise<AudioBuffer> {
-  if (typeof Worker === 'undefined') return Promise.resolve(rumble(ac));
+function inWorker(ac: AudioContext, start: () => Worker, job: unknown, sampleRate: number, here: () => AudioBuffer | Promise<AudioBuffer>): Promise<AudioBuffer> {
+  if (typeof Worker === 'undefined') return Promise.resolve(here());
   return new Promise((resolve, reject) => {
-    const here = () => {
+    const onPage = () => {
       try {
-        resolve(rumble(ac));
+        resolve(here());
       } catch (e) {
         reject(e);
       }
     };
     let w: Worker;
     try {
-      w = new Worker(new URL('./rumbleWorker.ts', import.meta.url), { type: 'module' });
+      w = start();
     } catch {
-      here();
+      onPage();
       return;
     }
-    w.onmessage = ({ data }: MessageEvent<RumbleAnswer>) => {
+    w.onmessage = ({ data }: MessageEvent<Channels>) => {
       w.terminate();
       try {
-        const buf = ac.createBuffer(2, data.left.length, ac.sampleRate);
+        const buf = ac.createBuffer(2, data.left.length, sampleRate);
         buf.getChannelData(0).set(data.left);
         buf.getChannelData(1).set(data.right);
         resolve(buf);
@@ -608,12 +614,22 @@ function rumbleThere(ac: AudioContext): Promise<AudioBuffer> {
     // (Failed to load, say: worked out here instead.)
     const instead = () => {
       w.terminate();
-      here();
+      onPage();
     };
     w.onerror = instead;
     w.onmessageerror = instead;
-    w.postMessage({ sampleRate: ac.sampleRate, lp: RUMBLE.lp } satisfies RumbleJob);
+    w.postMessage(job);
   });
+}
+
+/**
+ * The rumble worked out in a worker of its own (lib/rumbleWorker.ts); here,
+ * as rumble, where there's none or it fails. On an iPhone it held the page
+ * for about 75 ms here, just after Begin.
+ */
+function rumbleThere(ac: AudioContext): Promise<AudioBuffer> {
+  const start = () => new Worker(new URL('./rumbleWorker.ts', import.meta.url), { type: 'module' });
+  return inWorker(ac, start, { sampleRate: ac.sampleRate, lp: RUMBLE.lp } satisfies RumbleJob, ac.sampleRate, () => rumble(ac));
 }
 
 /**
@@ -624,7 +640,8 @@ function rumbleThere(ac: AudioContext): Promise<AudioBuffer> {
  * noise, bigger and lower first and then smaller, higher and sparser as it
  * settles. Each side gets its own stones, so it sounds wide. Peaks at about
  * -1 dB; CAVE_IN's gain sets its level in the mix. Worked out at no more
- * than CAVE_IN_RATE, and only once a Delve starts (see prepareDelve).
+ * than CAVE_IN_RATE, and only once a Delve starts (see prepareDelve). (The
+ * samples themselves: caveInParts.)
  */
 export function caveIn(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>) {
   const steps = caveInSteps(ac);
@@ -637,81 +654,20 @@ export function caveIn(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>
 /** caveIn in three parts (the rumble, then each side's stones), so it can be worked out a part per idle moment. */
 function* caveInSteps(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>): Generator<void, AudioBuffer> {
   const sr = Math.min(ac.sampleRate, CAVE_IN_RATE);
-  const seconds = CAVE_IN.seconds;
-  const len = Math.floor(sr * seconds);
-  const buf = ac.createBuffer(2, len, sr);
-  const ch = [buf.getChannelData(0), buf.getChannelData(1)];
-  const at = (t: number) => Math.floor(t * sr);
-  /** A knock of noise at `t0` (s), ringing at `hz` with decay `tau` (s), at `amp`, added to `d`. */
-  const knock = (d: Float32Array, t0: number, hz: number, tau: number, amp: number) => {
-    const w = (2 * Math.PI * Math.min(hz, sr * 0.45)) / sr;
-    // A two-pole resonator: rings at hz, wider the shorter it is.
-    const r = Math.exp(-1 / (tau * sr * 0.35));
-    const [c1, c2] = [2 * r * Math.cos(w), -r * r];
-    // Its peak gain at hz is about 1 / ((1 - r) * sqrt(1 - 2r cos 2w + r^2)): set it back to 1.
-    const norm = (1 - r) * Math.sqrt(1 - 2 * r * Math.cos(2 * w) + r * r);
-    let [y1, y2] = [0, 0];
-    const start = at(t0);
-    const end = Math.min(len, start + at(tau * 6));
-    for (let i = start; i < end; i++) {
-      const k = (i - start) / sr;
-      const x = (Math.random() * 2 - 1) * Math.exp(-k / tau) * Math.min(1, k / 0.0015);
-      const y = x + c1 * y1 + c2 * y2;
-      y2 = y1;
-      y1 = y;
-      d[i] += y * norm * amp;
-    }
-  };
-  /** A low thud at `t0`: a sine falling from `hz` that dies away over `tau`. */
-  const thud = (d: Float32Array, t0: number, hz: number, tau: number, amp: number) => {
-    let phase = 0;
-    const start = at(t0);
-    const end = Math.min(len, start + at(tau * 6));
-    for (let i = start; i < end; i++) {
-      const k = (i - start) / sr;
-      phase += (2 * Math.PI * hz * (0.75 + 0.25 * Math.exp(-k / 0.06))) / sr;
-      d[i] += Math.sin(phase) * Math.exp(-k / tau) * Math.min(1, k / 0.004) * amp;
-    }
-  };
-  // The rumble: noise kept to the low end (two lowpasses at 120 Hz, the
-  // subsonic taken out), swelling in at once and dying away. The same in
-  // both ears, as it fills the hall.
-  const lp = 1 - Math.exp((-2 * Math.PI * 120) / sr);
-  const hp = 1 - Math.exp((-2 * Math.PI * 35) / sr);
-  let [a, b, lo] = [0, 0, 0];
-  for (let i = 0; i < len; i++) {
-    const t = i / sr;
-    a += lp * (Math.random() * 2 - 1 - a);
-    b += lp * (a - b);
-    lo += hp * (b - lo);
-    const env = Math.min(1, t / 0.03) * Math.exp(-t / 0.45);
-    ch[0][i] += (b - lo) * env * CAVE_IN.rumble;
-    ch[1][i] += (b - lo) * env * CAVE_IN.rumble;
-  }
-  for (let side = 0; side < 2; side++) {
-    yield;
-    const d = ch[side];
-    // The crack as the rock gives, and the heavy blocks coming down.
-    knock(d, 0.002 * side, 2600, 0.012, 0.9);
-    knock(d, 0.004, 900, 0.03, 0.7);
-    thud(d, 0.01, 62, 0.16, 0.9);
-    thud(d, 0.16 + 0.04 * side, 48, 0.2, 0.75);
-    // The collapse: stones, big and low first, smaller, higher and sparser as it settles.
-    let t = 0.03 + Math.random() * 0.02;
-    while (t < seconds - 0.12) {
-      const u = t / seconds;
-      const size = Math.pow(1 - u, 1.5) * (0.5 + Math.random() * 0.5);
-      knock(d, t, 300 + 2800 * (1 - size) * (0.6 + Math.random() * 0.8), 0.006 + 0.03 * size, (0.18 + 0.75 * size) * CAVE_IN.stones);
-      t += 0.012 + 0.09 * Math.pow(u, 1.2) * (0.4 + Math.random() * 1.2);
-    }
-  }
-  // To about -1 dB at the peak, fading out over the last moment.
-  let peak = 0;
-  for (const d of ch) for (let i = 0; i < len; i++) peak = Math.max(peak, Math.abs(d[i]));
-  const k = 0.89 / (peak || 1);
-  const tail = at(0.15);
-  for (const d of ch) for (let i = 0; i < len; i++) d[i] *= k * Math.min(1, (len - i) / tail);
+  const buf = ac.createBuffer(2, caveInLength(sr), sr);
+  yield* caveInParts(sr, buf.getChannelData(0), buf.getChannelData(1));
   return buf;
+}
+
+/**
+ * The cave-in worked out in a worker of its own (lib/caveInWorker.ts); here,
+ * a part per idle moment, where there's none or it fails. On an iPhone each
+ * part held the page 48 to 65 ms here, a frame each, as a Delve began.
+ */
+function caveInThere(ac: AudioContext): Promise<AudioBuffer> {
+  const sampleRate = Math.min(ac.sampleRate, CAVE_IN_RATE);
+  const start = () => new Worker(new URL('./caveInWorker.ts', import.meta.url), { type: 'module' });
+  return inWorker(ac, start, { sampleRate } satisfies CaveInJob, sampleRate, () => inIdleSteps(caveInSteps(ac)));
 }
 
 export function filter(ac: BaseAudioContext, type: BiquadFilterType, frequency: number, q = 0.707, gain = 0) {
