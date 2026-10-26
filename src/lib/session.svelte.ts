@@ -715,7 +715,11 @@ class Session {
       this.status = 'connecting';
       this.loadPrivate(saved.priv);
       this.openRoom(saved.code, 0, underRuleset(renameCategories(saved.state)));
-    } else if (saved.mode === 'client') this.join(saved.code, saved.name, !!saved.watch);
+    } else if (saved.mode === 'client') {
+      // A first visit's join the page reloaded on before the room let it in (a refresh while it seemed stuck, or
+      // iOS dropping the tab) has no name saved yet: the room taking it now saves it, as it would have then.
+      this.join(saved.code, saved.name, !!saved.watch, undefined, !savedName());
+    }
   }
 
   // ---- hosting ----------------------------------------------------------
@@ -1827,7 +1831,7 @@ class Session {
   /** A join's failure, counted only when the join was (not a guest's reload getting back in). */
   private joinFailure = (failure: Failure): Failure | undefined => (this.joinVia ? failure : undefined);
 
-  join(code: string, name: string, watch = false, via?: JoinVia) {
+  join(code: string, name: string, watch = false, via?: JoinVia, keepName = !!via) {
     // The host's room has its own settings: a shared link's Delve is moot.
     this.delveLink = false;
     this.reset();
@@ -1835,8 +1839,9 @@ class Session {
     this.status = 'connecting';
     this.joinName = name;
     // One set off from the start page (with a `via`) saves its name if the room takes it, and not before:
-    // a name turned down there mustn't greet the next visit. A reload getting back in has its name saved.
-    this.nameToKeep.start(via ? name : null);
+    // a name turned down there mustn't greet the next visit. A reload getting back in keeps its name only
+    // when none is saved yet (resume), and the bot's guests keep none.
+    this.nameToKeep.start(keepName ? name : null);
     this.watchOnly = watch;
     this.code = code.toUpperCase().trim();
     if (!CODE_PATTERN.test(this.code)) {

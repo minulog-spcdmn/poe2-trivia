@@ -13,7 +13,7 @@ import { writeStored } from './storage.ts';
 export class JoinName {
   private name: string | null = null;
 
-  /** A join sets off under `name`, saved if the room takes it; null: one whose name is saved already (a reload getting back in). */
+  /** A join sets off under `name`, saved if the room takes it; null: one whose name is saved already (a reload getting back in) or isn't the player's (the bot's guests). */
   start(name: string | null) {
     this.name = name;
   }
