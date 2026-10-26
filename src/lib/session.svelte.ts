@@ -1830,6 +1830,13 @@ class Session {
   private joinVia: JoinVia | null = null;
   /** A join's failure, counted only when the join was (not a guest's reload getting back in). */
   private joinFailure = (failure: Failure): Failure | undefined => (this.joinVia ? failure : undefined);
+  /**
+   * Whether the last join was turned down by the room itself (its host
+   * answered at the door: a name, a full or locked room, an old version)
+   * rather than lost on the way to it. The start page marks the code only for
+   * the second: the code was right if the room answered (Home.svelte settle).
+   */
+  refusedAtDoor = false;
 
   join(code: string, name: string, watch = false, via?: JoinVia, keepName = !!via) {
     // The host's room has its own settings: a shared link's Delve is moot.
@@ -1838,6 +1845,7 @@ class Session {
     this.mode = 'client';
     this.status = 'connecting';
     this.joinName = name;
+    this.refusedAtDoor = false;
     // One set off from the start page (with a `via`) saves its name if the room takes it, and not before:
     // a name turned down there mustn't greet the next visit. A reload getting back in keeps its name only
     // when none is saved yet (resume), and the bot's guests keep none.
@@ -2176,9 +2184,10 @@ class Session {
             if (this.answered?.qid === msg.askedAt) this.answered = null;
             this.turnedDown = { askedAt: msg.askedAt };
           }
-          if (this.status === 'connecting')
+          if (this.status === 'connecting') {
+            this.refusedAtDoor = true;
             this.fail(versionRefusal(msg.message), "Couldn’t join", { failure: this.joinFailure(isVersionRefusal(msg) ? 'join-version-mismatch' : 'join-refused') });
-          else this.flash(msg.message, 'error');
+          } else this.flash(msg.message, 'error');
           break;
         case 'kicked':
         case 'closed':
@@ -2420,6 +2429,7 @@ class Session {
 
   /** The QA desk (src/qa): the room turns this device's join down with `message`, as the host's error for it would (uncounted). */
   labRefuse(message: string) {
+    this.refusedAtDoor = true;
     this.fail(message, "Couldn’t join");
   }
 

@@ -66,3 +66,35 @@ test('a reload getting back in saves nothing: its name is saved already', () => 
   assert.equal(readStored(NAME_STORED), 'Alva');
   assert.deepEqual(heard, []);
 });
+
+test('a join under the name saved already writes nothing, so the other devices hear nothing', () => {
+  writeStored(NAME_STORED, 'Alva');
+  heard.length = 0;
+  const join = new JoinName();
+  join.start('Alva');
+  join.taken();
+  assert.equal(readStored(NAME_STORED), 'Alva');
+  assert.deepEqual(heard, []);
+});
+
+test('a name chosen while the join is asked (synced from another device, or set in another tab) stands', () => {
+  writeStored(NAME_STORED, 'Alva');
+  const join = new JoinName();
+  join.start('Pixel');
+  writeStored(NAME_STORED, 'Bob');
+  heard.length = 0;
+  join.taken();
+  assert.equal(readStored(NAME_STORED), 'Bob', 'not written over by the name the join set off under');
+  assert.deepEqual(heard, []);
+});
+
+test('nor is a rename synced in during a join under the saved name undone', () => {
+  writeStored(NAME_STORED, 'Alva');
+  const join = new JoinName();
+  join.start('Alva');
+  writeStored(NAME_STORED, 'Bob');
+  heard.length = 0;
+  join.taken();
+  assert.equal(readStored(NAME_STORED), 'Bob');
+  assert.deepEqual(heard, []);
+});

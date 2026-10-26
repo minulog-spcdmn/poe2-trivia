@@ -100,9 +100,10 @@ function invite(v: Values = {}): Built {
  * A join the room turns down for its name: the same name as a player's there, or one that only looks like it.
  * A returning joiner comes by an invite with that name saved, their own from before, so the start page goes
  * straight into the join (Home.svelte) and, turned down, leaves the code in Join a room's row with the room's
- * own words for it; the name stays theirs, to change at the greeting's quill. On a first visit the name is
- * typed on the invite and joined with: turned down, it stays in its field to change, and isn't saved
- * (lib/joinName.ts), so the page still says Welcome rather than Welcome back.
+ * own words for it, the code not marked (the room answered, so it was right); the name stays theirs, to change
+ * at the greeting's quill. On a first visit the name is typed on the invite and joined with: turned down, it
+ * stays in its field to change, with the focus, and isn't saved (lib/joinName.ts), so the page still says
+ * Welcome rather than Welcome back.
  */
 const REFUSED: Control[] = [
   {
