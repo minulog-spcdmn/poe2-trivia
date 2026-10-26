@@ -19,6 +19,7 @@
   import { fxUserOn, onFxChange, shakeTarget } from './lib/fx/core';
   import { IMPRINT_URL, PRIVACY_URL } from './lib/site';
   import { openPrivacy } from './lib/legalSheet.svelte';
+  import { backGuard } from './lib/backGuard';
   import LegalSheet from './components/LegalSheet.svelte';
   import { dialogBackdrop } from './lib/behindDialog';
   import { dialogIn, dialogOut } from './lib/dialogIn';
@@ -496,6 +497,22 @@
     if (alone && screen === 'lobby') leave();
     else confirmLeave = true;
   }
+
+  // The browser's back in a room (lib/backGuard.ts): it closes what's open
+  // over the game first, and with nothing open asks before leaving, as the
+  // header's leave does (or, still joining, gives the join up). The guard
+  // goes up as the tap that opens the room sets the session's mode (this runs
+  // before that tap's event is done), and only once a page over the start
+  // page (the codex, the settings) has gone back to it.
+  // Never over the settings' own entry (a room resumed on a reload with them
+  // open, as an iPhone reloads a tab left in the background): they're dropped
+  // first, so Back from the guard can't open them again under the game.
+  backGuard.dropPage = () => settingsRoute.drop();
+  $effect(() => backGuard.want(!!session.mode && !page));
+  onMount(() => backGuard.asked(() => (codexAllowed ? session.leave() : askLeave())));
+  $effect(() => {
+    if (confirmLeave) return backGuard.layer(() => (confirmLeave = false));
+  });
 
   /**
    * The legal links keep their place under a game and its result but don't

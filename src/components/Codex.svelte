@@ -10,6 +10,7 @@
   import { categoryGlyph, itemSrcset, itemThumb } from '../lib/ui';
   import { DIFFICULTY_NAMES } from '../lib/difficultyText';
   import { closeCodex, codexRoute } from '../lib/codexRoute.svelte';
+  import { pageLayers } from '../lib/backGuard';
   import { backdropShadow } from '../lib/backdropShadow';
   import { dialogBackdrop } from '../lib/behindDialog';
   import { dialogIn, dialogOut } from '../lib/dialogIn';
@@ -285,6 +286,12 @@
   ]);
 
   let open = $state<Item | null>(null);
+  // Open, the browser's back closes it and leaves the codex as it was, scrolled where it was
+  // (lib/backGuard.ts PageLayers); one step however many items are opened from it in turn.
+  const itemOpen = $derived(!!open);
+  $effect(() => {
+    if (itemOpen) return pageLayers.layer(() => (open = null));
+  });
   let confirmReset = $state(false);
   function reset() {
     // Synced, the other devices' progress would come straight back: this browser stops syncing, and theirs stays theirs.

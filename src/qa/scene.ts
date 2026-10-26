@@ -49,6 +49,8 @@ export type Step =
   | { crash: 1 | 2 }
   /** A notice arrives (lib/toasts.svelte.ts), worded as the game words it (an achievement earned, say: lib/achievementToasts.ts); it stays up, its fuse held, until closed. */
   | { toast: string; kind?: ToastKind; opts?: ToastOptions }
+  /** The browser's back (Android's button, an iPhone's swipe), on the frame's history of its own (lib/backGuard.ts). */
+  | { back: true }
   /**
    * The room moves on to `state` (the scene's game played on: dynamite going
    * off, an answer given), its clock standing still at `at` (host clock, ms),
