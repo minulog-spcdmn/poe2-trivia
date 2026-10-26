@@ -200,6 +200,10 @@ with its numbers in the comments.
   waits 300 ms there instead, and each step still runs as one task: a step
   over a frame's time drops a frame on the phone however idle the page
   looked. Work that takes tens of ms a step there belongs in a worker.
+  And 300 ms after a tap is still among the frames it set off: what a tap
+  or a reveal brings about to be done later (the codex written, the
+  achievements checked) waits for calm, `whenCalm`, 800 ms on from the
+  last tap.
 - **A masked SVG costs its frames while what it masks changes.** Delve's
   ladder (`DelveLadder.svelte`) is masked round its stars; while its 260
   lines inked themselves in, the lobby came in at 24 to 35 fps, and at 60
@@ -209,6 +213,19 @@ with its numbers in the comments.
   then it hides nothing. Try such a thing with a CSS rule (`mask: none`
   through `ask.mjs`): taking the `mask` attribute off from script didn't
   take the cost away.
+- **Some changes to an element repaint every layer inside it.** WebKit
+  repaints each compositing layer in an element that turns `inert` (as
+  Svelte makes everything going out), whose opacity goes from 1 to under
+  it or back, or whose layers are resized or moved by a fraction of a pixel.
+  A turn's stage, the question's rune circle in it, is some 60 to 80
+  layers: Next repainted them twice over (inert, then the fade), and the
+  answer once (the circle's colour, and the line over the art 3 px shorter,
+  which resized the circle). An opacity starting under 1, a colour taken a
+  ring at a time, or `pointer-events: none` repaints next to nothing:
+  `outWithoutInert` (`src/lib/leaving.ts`), the stage at rest at 0.999
+  (`Game.svelte`), `heldInk` (`ArcaneStage.svelte`). Count the layers a
+  change repaints (the timeline's paints in the frame after a tap) before
+  looking at the script.
 
 Still open: Begin's worst frame, about 230 to 285 ms. About 70 ms of it is
 script mounting the game screen and about 140 ms its styles, layout and
