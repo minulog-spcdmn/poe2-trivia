@@ -18,7 +18,8 @@
   //   the dark.
 
   import { LUNA, LUNA_HATCH, SOL_RAYS } from '../lib/alchemy';
-  import { whenIdle } from '../lib/idle';
+  import { BAY, ROW } from '../lib/weave';
+  import { warmWeave, weaveTile } from '../lib/weaveTile';
 
   type Pt = [number, number];
   type Hole = { c: Pt; r: number };
@@ -148,83 +149,11 @@
     .join('');
 
   // ---- the field ---------------------------------------------------------------
-  // Waves against their mirror images, the rows closer together than the
-  // waves are tall, so that every strap crosses not just its own mirror but
-  // the mirrors in the rows above and below. Six crossings a wave, and the
-  // straps go over and under in turn along each, as the circle's star does.
+  // The weave (lib/weave.ts), worked out ahead of the first plate in a
+  // worker (lib/weaveTile.ts): a game's first question warms it, and the
+  // codex as it opens.
 
-  const BAY = 40;
-  const AMP = 8.5;
-  const ROW = 11;
-  const W = 0.75;
-  const GAP = 0.7;
-  // The pattern repeats every row, so a tile one row high holds it; the rows
-  // either side are drawn too, for the waves that reach into it.
-  const ROWS = [-2, -1, 0, 1, 2, 3];
-  /** Where along a wave (as an angle) it crosses a mirror in the next row up or down. */
-  const SKEW = Math.asin(ROW / (2 * AMP));
-  // Along a rising wave the crossings come at 0, SKEW, π - SKEW, π, π + SKEW
-  // and 2π - SKEW; it goes under at every second one. Its mirror goes under
-  // at the others.
-  const UNDER = { rise: [SKEW, Math.PI, 2 * Math.PI - SKEW], fall: [0, Math.PI - SKEW, Math.PI + SKEW, 2 * Math.PI] };
-  /** How many steps a wave is drawn in, across the bay (its points evenly spaced across). */
-  const STEPS = 240;
-  const wave = (c: number, sign: number): Pt[] =>
-    Array.from({ length: STEPS + 1 }, (_, k) => [(k / STEPS) * BAY, c + sign * AMP * Math.sin((2 * Math.PI * k) / STEPS)] as Pt);
-  const STRANDS = ROWS.flatMap((r) => [1, -1].map((sign) => ({ sign, mid: wave(r * ROW, sign) })));
-  /** How near (squared) another strap's middle comes where this one passes under it. */
-  const REACH2 = (W + GAP) ** 2;
-  /** One edge of a strap, `side` (±1) of its wave, cut where it passes under another. */
-  const strapEdge = (s: (typeof STRANDS)[number], side: number) => {
-    const others = STRANDS.filter((o) => o.sign !== s.sign);
-    const under = s.sign > 0 ? UNDER.rise : UNDER.fall;
-    const pieces: Pt[][] = [[]];
-    s.mid.forEach((p, i) => {
-      const [q, r] = [s.mid[Math.max(0, i - 1)], s.mid[Math.min(s.mid.length - 1, i + 1)]];
-      const len = dist(q, r);
-      const e: Pt = [p[0] - ((r[1] - q[1]) / len) * W * side, p[1] + ((r[0] - q[0]) / len) * W * side];
-      const theta = (2 * Math.PI * p[0]) / BAY;
-      const crossing = under.some((a) => Math.abs(theta - a) < 0.5);
-      // Only the points within 3 px across can count, and a wave's points
-      // are evenly spaced across (wave): just those are asked, a step more
-      // either side for the rounding, not every point of every other wave. (The
-      // distance squared: Math.hypot is slow, and this runs as a plate opens.)
-      const lo = Math.max(0, Math.floor(((e[0] - 3) * STEPS) / BAY) - 1);
-      const hi = Math.min(STEPS, Math.ceil(((e[0] + 3) * STEPS) / BAY) + 1);
-      const close = (o: (typeof STRANDS)[number]) => {
-        for (let k = lo; k <= hi; k++) {
-          const dx = o.mid[k][0] - e[0];
-          const dy = o.mid[k][1] - e[1];
-          if (Math.abs(dx) < 3 && dx * dx + dy * dy < REACH2) return true;
-        }
-        return false;
-      };
-      const near = crossing && others.some(close);
-      if (near) {
-        if (pieces.at(-1)!.length) pieces.push([]);
-      } else pieces.at(-1)!.push(e);
-    });
-    return pieces.filter((q) => q.length > 1).map(poly).join('');
-  };
-  let weaveTile: string | undefined;
-  /**
-   * One tile of the weave, as a CSS background: it repeats over the whole
-   * plate whatever its height, in every browser (an SVG pattern fill fell
-   * short of the plate's top and bottom on some phones). Worked out when a
-   * plate first shows, not as the page loads: the start page has no plate.
-   */
-  const weave = () => {
-    if (weaveTile) return weaveTile;
-    const d = STRANDS.flatMap((s) => [1, -1].map((side) => strapEdge(s, side))).join('');
-    return (weaveTile = `url("data:image/svg+xml,${encodeURIComponent(
-      `<svg xmlns='http://www.w3.org/2000/svg' width='${BAY}' height='${ROW}' viewBox='0 0 ${BAY} ${ROW}'><path d='${d}' fill='none' stroke='#c47a44' stroke-width='0.55'/></svg>`,
-    )}")`);
-  };
-  /**
-   * The weave worked out in an idle moment ahead of the first plate (a game's first question), not in the click that brings
-   * it (6 ms in a trace). The same tile either way; returns the cancel.
-   */
-  export const warmWeave = () => whenIdle(() => void weave(), { timeout: 2000 });
+  export { warmWeave };
 </script>
 
 <script lang="ts">
@@ -316,7 +245,7 @@
 {/snippet}
 
 <span class="plate" class:lit aria-hidden="true" bind:this={plateEl} style:--end-scale={endScale}>
-  <span class="field" style:background-image={weave()} style:--tile="{BAY}px {ROW}px"></span>
+  <span class="field" style:background-image={weaveTile()} style:--tile="{BAY}px {ROW}px"></span>
   <!-- The lines twice, as on the circle: a soft, wide copy for the glow, and the lines. -->
   <svg class="art glow" width="100%" height="100%">{@render plate()}</svg>
   <svg class="art" width="100%" height="100%">

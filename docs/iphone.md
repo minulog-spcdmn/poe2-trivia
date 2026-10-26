@@ -111,7 +111,7 @@ owner can use it.
 | `ask.mjs "<js>"` | Runs an expression in the phone's tab and prints its value. |
 | `goto.mjs <url>` | Sends the tab to an address, a build for the owner to try, say. |
 | `shot.mjs <out.png>` | A screenshot of the tab, at the phone's pixels. |
-| `codex.mjs <url> <label>` | The codex as a thumb goes through it: opened, down to the items, scrolled through them and back, two items opened and closed. Each phase's frames, and the page's CPU. |
+| `codex.mjs <url> <label>` | The codex as a thumb goes through it: opened, down to the items, scrolled through them and back, two items opened and closed, each tap a finger's (`tap`). Each phase's frames, and the page's CPU. |
 | `game.mjs <url> <label>` | A game (`MODE=delve`, `turns` or `race`; `ROUNDS=4`): New game, a mode, Begin, then cards, question, answer and reveal, each click timed in parts. Each phase's frames. |
 | `layers.mjs [--do "<js>"]` | The tab's compositing layers: what, how many, why. With `--do`, which painted while that ran. |
 | `profile.mjs <label.prof.json>` | What ran in each phase of a `game.mjs` run with `PROFILE=1`, by file and line in `src/`. |
@@ -154,7 +154,9 @@ doesn't:
   `ask.mjs` (`filter: none` on the codex's tiles, say), one at a time,
   each against the build as it is.
 - `Runtime.evaluate` takes `emulateUserGesture: true`, so what wants a
-  tap (sound) works.
+  tap (sound) works. Where a press matters, tap with `tap()`
+  (`phone.mjs`), a finger's events, not `click()`: see "A script's
+  `click()` isn't a finger" below.
 
 ## What the iPhone taught us
 
@@ -231,6 +233,19 @@ with its numbers in the comments.
   the 44 ms of laying the page out again was the font set changing, not the
   faces in it (four faces no element used, added to the page, cost the
   same), so one at a time would lay it out four times.
+- **A script's `click()` isn't a finger.** It sends none of a finger's
+  pointer events, so what a press starts took another path. A finger's
+  press makes the Web Audio bus while it's down (`src/lib/sound.ts`), and
+  its lift wakes it, both before the click; after a bare `click()`, the
+  click's own sound made it, about 50 ms in the middle of the screen that
+  tap brought in (the codex), a cost no player has. What the Codex entry
+  readies as a finger lands on it (`Home.svelte`) never ran either.
+  `codex.mjs` taps with `tap()` (`phone.mjs`) now: a finger's events, the
+  lift 80 ms after the landing, and only the lift a gesture (`game.mjs`
+  still clicks, to time each click in parts). What the trace did
+  show of the first tap's sound holds for a finger too: the hall's reverb
+  took its steps over the second after it, as that screen came in; it's
+  worked out in a worker now (`src/lib/hallWorker.ts`).
 - **A masked SVG costs its frames while what it masks changes.** Delve's
   ladder (`DelveLadder.svelte`) is masked round its stars; while its 260
   lines inked themselves in, the lobby came in at 24 to 35 fps, and at 60
@@ -262,3 +277,21 @@ markup in `index.html`). Still in the script besides, though the start
 page's first frame needs none of it: the sound design (`sound.ts`,
 `soundDesign.ts`), obscenity's lists (`offensive.ts`) and the half of the
 session only a room uses (`protocol.ts`, `cursors.ts`, `media.svelte.ts`).
+
+Still open too: the codex's item window, as it fades in and out. Each tile's
+`filter: drop-shadow` is drawn again under the page's fading filter
+(`behindDialog.ts`) on every frame of both fades: the opening's frames took
+33 to 50 ms, 16 to 30 with the shadows off, and the ten frames after a
+close 241 to 280 ms, 178 to 197 without. The close's first frame (59 to
+79 ms) was some 12 ms of restyling the document, as `data-dialog-up` went
+and every tile's shadow came back, and some 20 ms of drawing those shadows
+under the filter. Only the restyle is smaller, and only on WebKit: the
+shadows go and come back in the sections near the screen alone
+(`shadeless` in `Codex.svelte`), while Blink still restyles every picture.
+Taking the rest away means drawing the shadow without a filter: baked per
+item (`0 6px 10px`, black at 0.7) and drawn under the picture as an image
+of its own, reaching past the `.art` box as the shadow does, checked at
+the sizes the grid's tiles take. Most pictures are 72 px high at any
+width; the 23 wider than they are high (belts, and a relic) are as wide as
+the tile where 72 px high wouldn't fit in it, and so change size with the
+screen.

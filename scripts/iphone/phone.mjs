@@ -103,10 +103,11 @@ export async function connect(wsUrl) {
   /**
    * Runs `expr` in the page and gives back its value, a promise awaited
    * (WebKit's evaluate can't wait for one: Runtime.awaitPromise does). As a
-   * user's gesture, so what wants one (sound, fullscreen) works.
+   * user's gesture, so what wants one (sound, fullscreen) works, unless
+   * `gesture` is false.
    */
-  const evaluate = async (expr) => {
-    const r = await send('Runtime.evaluate', { expression: `(async () => (${expr}))()`, returnByValue: false, emulateUserGesture: true });
+  const evaluate = async (expr, { gesture = true } = {}) => {
+    const r = await send('Runtime.evaluate', { expression: `(async () => (${expr}))()`, returnByValue: false, emulateUserGesture: gesture });
     if (r.wasThrown) throw new Error('page threw: ' + JSON.stringify(r.result?.description ?? r.result));
     const a = await send('Runtime.awaitPromise', { promiseObjectId: r.result.objectId, returnByValue: true }, 120000);
     if (a.wasThrown) throw new Error('page threw: ' + JSON.stringify(a.result?.description ?? a.result));
@@ -120,8 +121,8 @@ export async function connect(wsUrl) {
  * new address can swap the page's process, which ends the old connection).
  * With `fresh`, a room the page kept from the last run is let go of (and the
  * page loaded again), so the game opens at home, not on that room's end
- * screen. With the connection: ev (evaluate) and until(expr, what, ms),
- * which waits for `expr` to be truthy.
+ * screen. With the connection: ev (evaluate), until(expr, what, ms), which
+ * waits for `expr` to be truthy, and tap(el), a finger's tap.
  */
 export async function open(url, { fresh = false } = {}) {
   const want = url.split(/[?#]/)[0];
@@ -156,8 +157,56 @@ export async function open(url, { fresh = false } = {}) {
       await sleep(150);
     }
   };
-  return Object.assign(page, { ev, until });
+  /**
+   * A finger's tap on the element `el` (an expression for the page), as the
+   * page gets one: pointerover, pointerenter, pointerdown and touchstart as
+   * it lands, then `holdMs` later (and a round trip) pointerup, pointerout,
+   * pointerleave, touchend and the click. A bare click() sends none of the
+   * pointer's events, so what a press starts took another path than a
+   * player's: the sound's bus was made after the click, in the screen it
+   * brought in, where a finger's press makes it before (lib/sound.ts), and
+   * what an entry readies as a finger lands never ran (Home.svelte). Only the
+   * lift is a gesture, as on the phone: a touch's pointerdown isn't one.
+   */
+  const tap = async (el, holdMs = 80) => {
+    const down = `(() => {
+      const el = ${el};
+      if (!el) throw new Error('nothing to tap');
+      const r = el.getBoundingClientRect();
+      window.__finger = { el, x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      ${FINGER}(['pointerover', 'pointerenter', 'pointerdown', 'touchstart']);
+    })()`;
+    await page.evaluate(down, { gesture: false });
+    await sleep(holdMs);
+    await ev(`${FINGER}(['pointerup', 'pointerout', 'pointerleave', 'touchend', 'click'])`);
+  };
+  return Object.assign(page, { ev, until, tap });
 }
+
+/**
+ * Sends the page a finger's events of `types` at the element its tap landed
+ * on (window.__finger, set by tap), as the phone sends them: a touch's
+ * pointer events, pointerenter and pointerleave at the element and each one
+ * round it; touch events by name (nothing in the app reads their touches);
+ * and the click, with a real click's detail of 1.
+ */
+const FINGER = `((types) => {
+  const { el, x, y } = window.__finger;
+  const at = { bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, view: window };
+  const round = [];
+  for (let e = el; e; e = e.parentElement) round.push(e);
+  for (const type of types) {
+    if (type === 'click') el.dispatchEvent(new MouseEvent(type, { ...at, detail: 1, button: 0 }));
+    else if (type.startsWith('touch')) el.dispatchEvent(new Event(type, { bubbles: true, cancelable: true, composed: true }));
+    else {
+      const pointer = { ...at, pointerId: 1, pointerType: 'touch', isPrimary: true, button: /down|up/.test(type) ? 0 : -1, buttons: type === 'pointerdown' ? 1 : 0 };
+      const each = { ...pointer, bubbles: false, cancelable: false };
+      if (type === 'pointerenter') for (const e of [...round].reverse()) e.dispatchEvent(new PointerEvent(type, each));
+      else if (type === 'pointerleave') for (const e of round) e.dispatchEvent(new PointerEvent(type, each));
+      else el.dispatchEvent(new PointerEvent(type, pointer));
+    }
+  }
+})`;
 
 /** A button by its text (a regex's source), on screen and enabled, as an expression for the page. */
 export const button = (re) => `[...document.querySelectorAll('button')].find((b) => ${re}.test(b.textContent.trim()) && !b.disabled && b.offsetParent)`;

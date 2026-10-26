@@ -616,10 +616,16 @@ const otherRecords = () => copiesOf('delve', parseRecords);
  * Read fresh: another tab may have added to them.
  */
 export function loadRecords(): DelveRecords {
-  const own = parseRecords(ownRecordsRaw()) ?? emptyRecords();
+  const raw = ownRecordsRaw();
   const others = otherRecords();
-  return others.length ? combineRecords(own, others) : own;
+  // Read again only once they or the copies change, as the codex is (loadCodex). (Nobody changes what they're given.)
+  if (kept?.raw === raw && kept.others === others) return kept.records;
+  const own = parseRecords(raw) ?? emptyRecords();
+  const records = others.length ? combineRecords(own, others) : own;
+  kept = { raw, others, records };
+  return records;
 }
+let kept: { raw: string | null; others: DelveRecords[]; records: DelveRecords } | null = null;
 
 function combineTally(a: DelveTally | undefined, b: DelveTally): DelveTally {
   if (!a) return b;
