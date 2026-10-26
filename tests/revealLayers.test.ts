@@ -29,33 +29,43 @@ const one = (root: postcss.Root, selector: string, prop: string) => {
 /** Shadows in a box-shadow list (split at the commas between them, not those in colours). */
 const shadows = (value: string) => value.split(/,(?![^(]*\))/).map((s) => s.trim().replace(/\s+/g, ' '));
 
-// ---- the pictures: their fades and turns never move the shadowed element ----
+// ---- the pictures: their shadows a bitmap, never a filter, fading and turning with them ----
 
 const art = parse('src/components/ArtImage.svelte');
 
-test("a picture's fades and turn are on its box, never on the picture with its shadow", () => {
+test("a picture's fades and turn are on its box, which holds the picture over its shadow", () => {
   const img = art.markup.match(/<img\b[^>]*>/g);
   assert.equal(img?.length, 1, 'ArtImage draws one <img>');
-  assert.doesNotMatch(img![0], /\b(in|out|transition|animate):|class:unflip/, 'the <img> carries the drop shadow: a fade or a turn on it has WebKit composite it, its shadow live on every frame; put it on .shot');
-  const shot = art.markup.match(/<span class="shot"[^>]*>\s*<img\b/);
-  assert.ok(shot, 'the picture is alone in its .shot');
+  assert.doesNotMatch(img![0], /\b(in|out|transition|animate):|class:unflip/, 'the picture fades and turns with its shadow, on .shot');
+  const shot = art.markup.match(/<span class="shot"[^>]*>([\s\S]*?)<\/span>/);
+  assert.ok(shot, 'ArtImage has its .shot');
   assert.match(shot[0], /in:fade/);
   assert.match(shot[0], /out:fade/);
   assert.match(shot[0], /class:unflip/);
+  // (Both positioned, in that order: the picture is drawn over its shadow.)
+  const inside = shot[1]!;
+  const cast = inside.indexOf('<canvas');
+  assert.ok(cast >= 0 && /class="cast"/.test(inside) && cast < inside.indexOf('<img'), "the shadow's canvas comes first in .shot, the picture after it");
+  assert.equal(one(art.css, '.shot > img', 'position'), 'relative');
+  assert.equal(one(art.css, '.cast', 'position'), 'absolute');
 });
 
-test('in ArtImage only the picture has a filter, and the picture never animates', () => {
+test('in ArtImage nothing has a filter but a picture whose shadow is not made, and the picture never animates', () => {
+  // A filter is drawn again whenever what holds it is painted, or on every
+  // frame where it is composited: a find-the-art reveal, twelve fades, ran
+  // at 26 to 32 fps on an iPhone with the pictures' drop-shadow() and at 56
+  // to 59 without (lib/artShadow.ts).
   let filters = 0;
   art.css.walkRules((r: Rule) => {
     const props = new Set(r.nodes.filter((n): n is Declaration => n.type === 'decl').map((d) => d.prop));
-    const onImg = r.selectors.every((s) => /\bimg$/.test(s.trim()));
     if (props.has('filter')) {
       filters++;
-      assert.ok(onImg, `${r.selector} has a filter: only the picture itself may, so that what fades or turns has none`);
+      assert.deepEqual(r.selectors, ['.shot > img.filtered'], `${r.selector} has a filter: only a picture whose shadow couldn't be made (yet) may`);
     }
-    if (onImg) for (const p of ['animation', 'transition', 'transform', 'translate', 'scale', 'rotate']) assert.ok(!props.has(p), `${r.selector} { ${p} }: the picture with its shadow must sit still`);
+    if (r.selectors.some((s) => /\bimg\b/.test(s))) for (const p of ['animation', 'transition', 'transform', 'translate', 'scale', 'rotate']) assert.ok(!props.has(p), `${r.selector} { ${p} }: the picture sits still in its .shot`);
   });
-  assert.equal(filters, 1, "the picture's drop shadow is there, once");
+  assert.equal(filters, 1, 'the CSS drop shadow is there, once, for a picture without its bitmap');
+  assert.match(art.markup, /class:filtered=\{!shown\.cast\}/, 'only a picture without its bitmap takes the filter');
 });
 
 test("the reveal's light takes a picture's turn from its box too, where ArtImage turns it", () => {

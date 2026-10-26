@@ -468,9 +468,8 @@ function flips(el: Element | null): boolean {
  * own proportions, centred where it's drawn and as tall as it's drawn; how
  * far it's turned round (drawn narrower than that, by its own or an
  * ancestor's transform; mirrored by its own or its box's, as ArtImage
- * turns a mirrored picture round on its .shot, so its drop shadow keeps
- * still), so the light keeps to its outline while it turns; and how
- * visible it is.
+ * turns a mirrored picture round on its .shot, with its shadow), so the
+ * light keeps to its outline while it turns; and how visible it is.
  */
 function silhouetteOf(el: HTMLElement): Silhouette {
   const frame = currentFrame();
