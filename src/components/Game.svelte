@@ -37,6 +37,7 @@
   import { warmGame } from './gameCircles.svelte';
   import { backdropDropShadow } from '../lib/backdropDropShadow';
   import { outWithoutInert } from '../lib/leaving';
+  import { switchedOff } from '../lib/switchedOff';
 
   const s = $derived(session.state!);
   // The circles behind the coming question and at the game's end, built ahead away from the page.
@@ -348,16 +349,18 @@
   }
 
   /**
-   * A turn's stage at rest: a hair short of opaque (its CSS, .stage), so it
-   * is always a group of its own that fades as one. WebKit (every browser on
-   * an iPhone) repaints every compositing layer in an element whose opacity
-   * goes from 1 to under it, or back: the stage going out after Next, or
-   * done coming in, repainted the question's rune circle (some forty layers)
-   * and all else in it, 15 to 25 ms of a frame. From 0.999, next to none.
-   * The stage comes in to it and goes out from it, the same fades as ever
-   * (Svelte's fade, which reads it off the page; here it's known).
+   * A turn's stage at rest: a hair short of opaque, so it is always a group
+   * of its own that fades as one. WebKit (every browser on an iPhone)
+   * repaints every compositing layer in an element whose opacity goes from 1
+   * to under it, or back: the stage going out after Next, or done coming in,
+   * repainted the question's rune circle (some forty layers) and all else in
+   * it, 15 to 25 ms of a frame. From 0.999, next to none. The stage comes in
+   * to it and goes out from it, the same fades as ever (Svelte's fade, which
+   * reads it off the page; here it's known). A group is composited apart
+   * while the circle in it turns, so on the beta ?off=group rests it at 1
+   * (lib/switchedOff.ts), to weigh that against what it saves.
    */
-  const STAGE_OPACITY = 0.999;
+  const STAGE_OPACITY = switchedOff('group') ? 1 : 0.999;
   /** Svelte transition: a turn's stage fades in, once the last one is going. */
   const stageIn = (_node: Element) => ({ duration: 300, delay: 200, css: (t: number) => `opacity: ${t * STAGE_OPACITY}` });
   /** Svelte transition: the last turn's stage fades out under the next. */
@@ -428,7 +431,7 @@
   <div class="turns">
     {#key stageKey}
       <!-- Going, the stage is let go without being made inert, which would repaint it all (lib/leaving.ts). -->
-      <div class="stage" use:outWithoutInert in:stageIn out:stageOut>
+      <div class="stage" style:opacity={STAGE_OPACITY} use:outWithoutInert in:stageIn out:stageOut>
         {#if held}
           <!-- Going down into a new zone: nothing yet but the scene plunging. -->
         {:else}
@@ -558,8 +561,6 @@
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    /* A group of its own at rest, as it fades in and out (STAGE_OPACITY). */
-    opacity: 0.999;
   }
   /* The cards, and the question that takes their place, in one cell. */
   .turn-body {

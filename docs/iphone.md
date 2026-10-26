@@ -225,7 +225,10 @@ with its numbers in the comments.
   `outWithoutInert` (`src/lib/leaving.ts`), the stage at rest at 0.999
   (`Game.svelte`), `heldInk` (`ArcaneStage.svelte`). Count the layers a
   change repaints (the timeline's paints in the frame after a tap) before
-  looking at the script.
+  looking at the script. A group is composited apart in every frame
+  something in it moves, though, the circle turning: weigh the calm
+  question's and reveal's frames with `?off=group` (the stage resting at 1)
+  against those without.
 
 Still open: Begin's worst frame, about 230 to 285 ms. About 70 ms of it is
 script mounting the game screen and about 140 ms its styles, layout and
