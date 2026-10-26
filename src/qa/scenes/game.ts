@@ -240,15 +240,49 @@ export function gameScenes(): Scene[] {
         .playTo((s) => !!s.deathmatch?.eliminated.length && s.phase === 'choosing', (name) => name !== 'Una of the Vaal'),
     ),
     scene('delve-cards', 'Delve alone', 'The cards dealt', [ALONE], delveAlone),
-    scene('delve-finds', 'Delve alone', 'The cards dealt: an Azurite Vein and a Flare Cache among them', [ALONE], () => {
-      const t = delveAlone();
-      const [vein, , flare] = t.s.offered;
-      t.s.delve!.finds = [
-        { category: vein, kind: 'azurite' },
-        { category: flare, kind: 'flare' },
-      ];
-      return t;
-    }),
+    // Which cards hold a find: a vein on the first and a flare on the last,
+    // or one of them alone, its note on its card's side (where a phone's
+    // browser on its side gives the lock rule the other); and dynamite in
+    // the pack, for the line on what stays unused on them.
+    scene(
+      'delve-finds',
+      'Delve alone',
+      'The cards dealt, finds among them',
+      [ALONE],
+      (v) => {
+        const t = delveAlone();
+        const [vein, , flare] = t.s.offered;
+        const on = v.finds ?? 'both';
+        t.s.delve!.finds = [
+          ...(on === 'flare' ? [] : [{ category: vein, kind: 'azurite' as const }]),
+          ...(on === 'vein' ? [] : [{ category: flare, kind: 'flare' as const }]),
+        ];
+        if (v.held) t.s.delve!.inventory = { [pid('Kalguur')]: { wards: 0, flares: 0, dynamite: 1 } };
+        return t;
+      },
+      {
+        controls: [
+          {
+            kind: 'choice',
+            key: 'finds',
+            label: 'Finds',
+            default: 'both',
+            options: [
+              { value: 'both', label: 'A vein and a flare' },
+              { value: 'vein', label: 'A vein, first card' },
+              { value: 'flare', label: 'A flare, last card' },
+            ],
+          },
+          { kind: 'toggle', key: 'held', label: 'Dynamite in the pack', default: false },
+        ],
+        states: [
+          { label: 'An Azurite Vein and a Flare Cache', values: {} },
+          { label: 'Both, with dynamite in the pack', values: { held: true } },
+          { label: 'An Azurite Vein alone, on the first card', values: { finds: 'vein' } },
+          { label: 'A Flare Cache alone, on the last card', values: { finds: 'flare' } },
+        ],
+      },
+    ),
     scene('delve-dig', 'Delve alone', 'A vein struck once: dig deeper, or the way out', [ALONE], () => {
       const t = delveAlone();
       const vein = t.s.offered[0];

@@ -2519,27 +2519,37 @@
   }
   @media (orientation: landscape) and (max-height: 370px) and (min-width: 561px) {
     .choose,
-    .choose.coop,
     .choose.delve {
       --z: 0.7;
     }
+    /* The team's vote has a line more to fit, clear of the seals under the
+       cards: at 0.66 it needs 371px, and at 0.6, its least, 353. */
+    .choose.coop {
+      --z: 0.6;
+    }
   }
-  /* (At 0.7 the stack needs 357px, the cards' 210 and 147 round them: the
-     step down comes there, or a screen 351 to 356 tall scrolls. Game.svelte's
-     banner closes up at the same height.) */
+  /* (At 0.7, with the gaps above, the stack needs 357px, the cards' 210 and
+     147 round them: from there the lines round the cards close up, and
+     Game.svelte's banner with them, which is all a screen 351 to 356 tall
+     needs to keep them at 0.7.) */
   @media (orientation: landscape) and (max-height: 357px) and (min-width: 561px) {
     .choose,
     .choose.coop,
     .choose.delve {
-      --z: 0.66;
       gap: 0.25rem;
-    }
-    /* The team's vote has a line more to fit, clear of the seals under the cards. */
-    .choose.coop {
-      --z: 0.6;
     }
     .choose.delve {
       gap: 0.2rem;
+    }
+  }
+  @media (orientation: landscape) and (max-height: 350px) and (min-width: 561px) {
+    .choose,
+    .choose.delve {
+      --z: 0.66;
+    }
+    /* (The team's stays at its 0.6, above, which .delve would otherwise outweigh.) */
+    .choose.coop {
+      --z: 0.6;
     }
   }
   /* A phone's browser on its side shorter than the iPhone's 340 (Chrome on
@@ -2547,26 +2557,26 @@
      cards and lock rule needs 333px under the header and the banner, and the
      cards are as small as their names allow (0.66, above). So the prompt
      and the lock rule stand beside the cards instead, in the room a row of
-     them leaves left and right (about 180px each side of three): the
-     prompt (a dig's line, its lamp at its end, by the cards) on the left,
-     the lock rule on the right, each at the cards' middle. A find's note
-     keeps its card's side, as at every height (`beside`, above): on the
-     left under the prompt, the two meeting at the cards' middle, on the
-     right with what stays unused under it; the lock rule makes way for a
-     note on the right, as it does on every phone for the notes. Narrower
-     (the slot under 780 across) the stack stays, and the lock rule makes
-     way. */
+     them leaves left and right (110 to 140px each side of three, from a
+     phone 772 across, the slot 740, the columns a little closer under 780):
+     the prompt (a dig's line) on the left, the lock rule on the right, each
+     at the cards' middle. A find's note keeps its card's side, as at every
+     height (`beside`, above): on the left under the prompt, the two meeting
+     at the cards' middle, on the right with what stays unused under it; the
+     lock rule makes way for a note on the right, as it does on every phone
+     for the notes. Narrower (the slot under 740 across) the stack stays, and
+     the lock rule makes way. */
   @media (orientation: landscape) and (max-height: 335px) and (min-width: 561px) {
     .choose:not(.duel) > .note,
     .choose.beside .find-notes ~ .note {
       display: none;
     }
-    @container slot (min-width: 780px) {
+    @container slot (min-width: 740px) {
       .choose:not(.duel) {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
         grid-template-areas: none;
-        column-gap: 2.6rem;
+        column-gap: 1.6rem;
         align-items: center;
       }
       .choose:not(.duel) > .cards {
@@ -2580,13 +2590,28 @@
         justify-self: end;
         text-align: right;
       }
-      /* The lamp at the line's end, by the cards, level with its words. */
+      /* (So narrow a column breaks a long name rather than let it run off
+         the screen's edge, as one word as long as a name allows would.) */
+      .choose:not(.duel) > .prompt,
       .choose:not(.duel) > .line .prompt {
-        padding-inline: 0 44px;
-        text-align: right;
+        overflow-wrap: anywhere;
+      }
+      /* A dig's lamp stays where the question's task line has it (see
+         .line): its line beside the cards keeps no room for it, and the ring
+         stands at the slot's top right, a corner the notes leave empty, so
+         it stays put as the strike comes in. */
+      .choose:not(.duel) {
+        position: relative;
+      }
+      .choose:not(.duel) > .line {
+        position: static;
+      }
+      .choose:not(.duel) > .line .prompt {
+        padding-inline: 0;
       }
       .choose:not(.duel) > .line .clock {
-        translate: 0 -50%;
+        /* (Half the task line's one line, as 50% of the line was.) */
+        top: calc(1.05rem * 1.3 / 2);
       }
       .choose:not(.duel) > .note,
       .choose.beside:not(:has(.find-note[data-side='right'])) .find-notes ~ .note {
@@ -2598,6 +2623,16 @@
         margin: 0;
         text-align: left;
       }
+      /* A find's notes in the columns themselves, at their size beside the
+         cards on a wider slot (above, which leaves a slot under 780 to this). */
+      .choose.beside .find-notes {
+        display: contents;
+      }
+      .choose.beside .find-notes .find-note {
+        max-width: 15rem;
+        font-size: 0.85rem;
+        line-height: 1.3;
+      }
       .choose.beside:has(.find-note[data-side='left']) > .prompt,
       .choose.beside:has(.find-note[data-side='left']) > .line {
         grid-row: 1;
@@ -2607,11 +2642,15 @@
         grid-column: 1;
         grid-row: 2;
         align-self: start;
+        justify-self: end;
         margin-top: 0.5rem;
+        text-align: right;
       }
       .choose.beside .find-note[data-side='right'] {
         grid-column: 3;
         grid-row: 1 / span 2;
+        justify-self: start;
+        text-align: left;
       }
       .choose.beside:has(.find-notes > .note.muted) .find-note[data-side='right'] {
         grid-row: 1;
@@ -2626,14 +2665,15 @@
         margin-top: 0.5rem;
         text-align: left;
       }
-      /* What stays under the cards at every depth: the team's vote, and a third find's notes. */
-      .choose:not(.duel) > .vote-status,
-      .choose:not(.duel):not(.beside) > .find-notes {
+      /* The team's vote stays in a row of its own under the cards, as at every height. */
+      .choose:not(.duel) > .vote-status {
         grid-column: 1 / -1;
         grid-row: 3;
       }
-      .choose:not(.duel):not(.beside) > .find-notes {
-        justify-self: center;
+    }
+    @container slot (min-width: 780px) {
+      .choose:not(.duel) {
+        column-gap: 2.6rem;
       }
     }
   }
