@@ -373,7 +373,7 @@
   // an address of its own (lib/chunkRetry.ts). Each failure is counted all
   // the same (countFailedImport), as it would be uncaught: most often a page
   // left open across a deploy, which no fetch brings back; the Reload does.
-  const fetchCodexPage = retried(() => import('./components/Codex.svelte'), countFailedImport);
+  const fetchCodexPage = retried(() => import('./components/Codex.svelte'), countFailedImport, 'Codex');
   let codexPage: Promise<typeof import('./components/Codex.svelte')> | null = null;
   const loadCodexPage = () =>
     (codexPage ??= Promise.all([fetchCodexPage(), Promise.race([loadFonts(), new Promise((r) => setTimeout(r, 250))])]).then(
@@ -385,7 +385,7 @@
     ));
   onMount(loadFontsAhead);
   // The settings page, a chunk of its own too: fetched again and counted as the codex's is.
-  const loadSettingsPage = retried(() => import('./components/Settings.svelte'), countFailedImport);
+  const loadSettingsPage = retried(() => import('./components/Settings.svelte'), countFailedImport, 'Settings');
   onMount(() => {
     // Only ahead of time: a failure here (counted in fetchCodexPage) waits for the codex to be opened.
     const t = setTimeout(() => void fetchCodexPage().catch(() => {}), 2000);

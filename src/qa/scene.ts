@@ -8,6 +8,7 @@ import type { Answer } from '../lib/codex.ts';
 import type { DelveRun } from '../lib/delveRecord.ts';
 import type { RoomInfo } from '../lib/roomInfo.ts';
 import type { PlateName } from '../lib/plates/index.ts';
+import type { RetriedPage } from '../lib/retriedPages.ts';
 import type { SizeKey } from './sizes.ts';
 import type { Control, State, Values } from './bench.ts';
 
@@ -98,6 +99,8 @@ export interface Built {
   stored?: Record<string, string>;
   /** The circle behind the end screen, instead of the one the game falls to (components/gameCircles.svelte.ts). */
   circle?: PlateName | null;
+  /** A page whose chunk never comes, as with the Wi-Fi gone as it's fetched (lib/chunkRetry.ts): what a player gets then. */
+  lost?: RetriedPage;
   /** How this device's sync stands (lib/sync/link.svelte.ts: the frame never syncs, so this is all there is). Missing: not paired. */
   sync?: { code: string; met: boolean; status: 'connecting' | 'waiting' | 'linked' | 'offline'; linked?: number; lastAt?: number };
 }

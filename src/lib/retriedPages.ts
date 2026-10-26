@@ -2,7 +2,8 @@
 // read it without the page's DOM.
 
 /** The pages App loads through `retried` (lib/chunkRetry.ts), as their components, and so the build's chunks, are named. */
-export const RETRIED_PAGES = ['Codex', 'Settings'];
+export const RETRIED_PAGES = ['Codex', 'Settings'] as const;
+export type RetriedPage = (typeof RETRIED_PAGES)[number];
 
 const RETRIED = new RegExp(`^assets/(?:${RETRIED_PAGES.join('|')})-[\\w-]+\\.js$`);
 

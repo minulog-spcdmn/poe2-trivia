@@ -9,7 +9,11 @@ import { pathToFileURL } from 'node:url';
 /** Whether a stylesheet linked from now on comes. */
 const network = { up: true };
 
-/** A <link> as far as lib/chunkRetry.ts and Vite's preload use one. */
+/**
+ * A <link> as far as lib/chunkRetry.ts and Vite's preload use one. A sheet
+ * that failed has a `sheet` all the same, as the browsers give it one: only
+ * its error event says it failed.
+ */
 class FakeLink {
   rel = '';
   href = '';
@@ -19,13 +23,17 @@ class FakeLink {
   addEventListener(type: string, f: () => void) {
     this.on[type] = f;
   }
+  /** It loads, or fails, a moment later (a task of its own, as a browser's). */
+  settle(came: boolean) {
+    setTimeout(() => {
+      this.sheet = {};
+      this.on[came ? 'load' : 'error']?.();
+    });
+  }
   /** Linked in after this one: it loads, or fails, as the network is a moment later. */
   after(link: FakeLink) {
     links.splice(links.indexOf(this) + 1, 0, link);
-    setTimeout(() => {
-      if (network.up) link.sheet = {};
-      link.on[network.up ? 'load' : 'error']?.();
-    });
+    link.settle(network.up);
   }
   remove() {
     links.splice(links.indexOf(this), 1);
@@ -35,7 +43,7 @@ class FakeLink {
 const links: FakeLink[] = [];
 (globalThis as Record<string, unknown>).document = { head: { querySelectorAll: () => [...links] }, createElement: () => new FakeLink() };
 
-const { retried, attemptUrl, failedUrl } = await import('../src/lib/chunkRetry.ts');
+const { retried, attemptUrl, failedUrl, loseOnCue } = await import('../src/lib/chunkRetry.ts');
 const { RETRIED_PAGES, preloadedWith } = await import('../src/lib/retriedPages.ts');
 
 // A built page's chunk and a chunk the page has already, which it imports as
@@ -52,19 +60,23 @@ type Page = { default: string; store: object; url: string };
 
 /**
  * Vite's preload of `chunk` as the build has it (lib/retriedPages.ts): the
- * chunk linked ahead and its stylesheets, those in `came` loaded, then the
- * import, which fails where the network is down.
+ * chunk linked ahead and its stylesheets, those in `came` loading, the rest
+ * failing; then, once they have, the import, which fails where the network
+ * is down.
  */
 function vitePreload(chunk: string, sheets: string[], came: string[] = []) {
   let calls = 0;
-  const load = () => {
+  const load = async () => {
     calls++;
     for (const [rel, href] of [['modulepreload', chunk], ...sheets.map((s) => ['stylesheet', s])]) {
       const link = new FakeLink();
-      Object.assign(link, { rel, href, crossOrigin: '', sheet: came.includes(href) ? {} : null });
+      Object.assign(link, { rel, href, crossOrigin: '' });
       links.push(link);
+      if (rel === 'stylesheet') link.settle(came.includes(href));
     }
-    return network.up ? (import(chunk) as Promise<Page>) : Promise.reject(new TypeError('Importing a module script failed.'));
+    await new Promise((r) => setTimeout(r, 5));
+    if (!network.up) throw new TypeError('Importing a module script failed.');
+    return (await import(chunk)) as Page;
   };
   return { load, calls: () => calls };
 }
@@ -169,11 +181,26 @@ test('the build links a retried page’s chunk ahead without its imports, and ev
 
 test('App loads the retried pages through retried, and only so; the build links them as retriedPages says', () => {
   const app = readFileSync(new URL('../src/App.svelte', import.meta.url), 'utf8');
-  const through = [...app.matchAll(/retried\(\(\) => import\('\.\/components\/(\w+)\.svelte'\)/g)].map((m) => m[1]);
-  assert.deepEqual(through.toSorted(), RETRIED_PAGES.toSorted());
+  const through = [...app.matchAll(/retried\(\(\) => import\('\.\/components\/(\w+)\.svelte'\), countFailedImport, '(\w+)'\)/g)];
+  assert.deepEqual(through.map((m) => m[1]).toSorted(), RETRIED_PAGES.toSorted());
+  for (const m of through) assert.equal(m[2], m[1], 'named as its component, so a scene that loses it loses this one');
   for (const name of RETRIED_PAGES) {
     const imports = [...app.matchAll(new RegExp(`(?<!typeof |retried\\(\\(\\) => )import\\('\\./components/${name}\\.svelte'\\)`, 'g'))];
     assert.equal(imports.length, 0, `${name} imported past retried, which a failure would leave failed`);
   }
   assert.match(readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8'), /modulePreload: \{ resolveDependencies: preloadedWith \}/);
+});
+
+test('a page lost on cue (the QA desk) fails as a dropped connection would, every time, and nothing is fetched', async () => {
+  links.length = 0;
+  let calls = 0;
+  const fails: unknown[] = [];
+  const get = retried(() => (calls++, Promise.resolve('came')), (e) => fails.push(e), 'Settings');
+  const other = retried(() => Promise.resolve('came'), undefined, 'Codex');
+  loseOnCue('Settings');
+  await assert.rejects(get(), /Importing a module script failed/);
+  await assert.rejects(get(), /Importing a module script failed/);
+  assert.equal(calls, 0);
+  assert.equal(fails.length, 2, 'counted as any failure');
+  assert.equal(await other(), 'came', 'only the page lost');
 });

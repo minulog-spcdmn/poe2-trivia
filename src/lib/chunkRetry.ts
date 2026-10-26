@@ -20,6 +20,8 @@
 // once the chunk itself has come, by the browser. One that fails then, the
 // Wi-Fi going in that moment, still needs a reload, which the page offers.
 
+import type { RetriedPage } from './retriedPages.ts';
+
 /** `url` with the attempt it's fetched for: an address of its own, as the module map and the cache see it. */
 export function attemptUrl(url: string, attempt: number) {
   const u = new URL(url);
@@ -29,6 +31,11 @@ export function attemptUrl(url: string, attempt: number) {
 
 /** The address in a failed import's message, where the browser names it (Chromium, Firefox; not WebKit). */
 export const failedUrl = (e: unknown) => /dynamically imported module: (\S+)/.exec((e as Error | null)?.message ?? '')?.[1] ?? '';
+
+/** Pages a QA desk's frame has lost on purpose (its scene's `lost`). */
+const lostOnCue = new Set<RetriedPage>();
+/** The QA desk's frames only: every fetch of `page` fails from now on, as with the Wi-Fi gone, so its scene shows what a player gets then. */
+export const loseOnCue = (page: RetriedPage) => void lostOnCue.add(page);
 
 /** `old`, a stylesheet that failed to load, linked again for `attempt` in its place (so in its order among the page's sheets). */
 function relink(old: HTMLLinkElement, attempt: number) {
@@ -54,18 +61,22 @@ function relink(old: HTMLLinkElement, attempt: number) {
  * in the build) the first time it's asked for, and kept once it has come.
  * One that failed (`failed` hears each time) is fetched again the next time
  * it's asked for, under an address of its own (above), its stylesheets that
- * failed with it too.
+ * failed with it too. `page` is its name, as RETRIED_PAGES has it.
  *
  * Its address is the one Vite's preload links ahead of it (lib/retriedPages.ts),
  * as `load` adds it to the page; or, where nothing was linked (the dev
  * server), the one the browser's error names. With neither, `load` is all
  * there is to try again.
  */
-export function retried<T>(load: () => Promise<T>, failed: (e: unknown) => void = () => {}): () => Promise<T> {
+export function retried<T>(load: () => Promise<T>, failed: (e: unknown) => void = () => {}, page?: RetriedPage): () => Promise<T> {
   let loading: Promise<T> | null = null;
   let tries = 0;
   let url = '';
   const sheets: HTMLLinkElement[] = [];
+  // The sheets that failed, as their own error events tell: not by their
+  // `sheet`, which a failed one has all the same (Chromium and WebKit give
+  // it an empty one).
+  const lost = new WeakSet<HTMLLinkElement>();
   const first = () => {
     // Vite's preload links the chunk and its stylesheets as it's called, before it waits for anything.
     const before = new Set(document.head.querySelectorAll('link'));
@@ -73,21 +84,33 @@ export function retried<T>(load: () => Promise<T>, failed: (e: unknown) => void 
     const added = [...document.head.querySelectorAll('link')].filter((l) => !before.has(l));
     // (Called again, it links nothing: Vite's preload remembers what it linked.)
     url ||= added.find((l) => l.rel === 'modulepreload')?.href ?? '';
-    sheets.push(...added.filter((l) => l.rel === 'stylesheet'));
+    // (In time to hear one fail: a link's load and error come as tasks of their own, after this.)
+    for (const l of added) {
+      if (l.rel !== 'stylesheet') continue;
+      sheets.push(l);
+      l.addEventListener('error', () => lost.add(l), { once: true });
+    }
     return loaded;
   };
   const again = async (attempt: number) => {
     // Its styles first, as Vite's preload has them, so the page never shows
     // without them; a sheet that came is kept, whether or not the rest do.
+    // (One linked again that fails is left out of the page, its old one kept
+    // there, still lost; one that comes takes the old one's place.)
     await Promise.all(
       sheets.map(async (s, i) => {
-        if (!s.sheet) sheets[i] = await relink(s, attempt);
+        if (lost.has(s)) sheets[i] = await relink(s, attempt);
       }),
     );
     return (await import(/* @vite-ignore */ attemptUrl(url, attempt))) as T;
   };
+  const fetched = () => {
+    // (Lost on cue: it fails as WebKit's import says it, naming no address, and nothing is fetched.)
+    if (page && lostOnCue.has(page)) return Promise.reject(new TypeError('Importing a module script failed.'));
+    return tries++ === 0 || !url ? first() : again(tries - 1);
+  };
   return () =>
-    (loading ??= (tries++ === 0 || !url ? first() : again(tries - 1)).catch((e) => {
+    (loading ??= fetched().catch((e) => {
       url ||= failedUrl(e);
       loading = null;
       failed(e);
