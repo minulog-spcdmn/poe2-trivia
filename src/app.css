@@ -250,7 +250,8 @@ body {
   overflow-x: hidden;
   /* A game, not a document: taps and drags never select its text. What a
      player types stays selectable, and anything meant to be copied says so
-     (user-select: text or all where it is set). */
+     (user-select: text or all where it is set, which also sets
+     -webkit-touch-callout back to default, so the Copy bar shows). */
   -webkit-user-select: none;
   user-select: none;
   /* Nor does holding a finger on an item picture or a control bring up iOS's
@@ -263,7 +264,8 @@ textarea,
   -webkit-user-select: text;
   user-select: text;
 }
-/* Text a player types or may copy, and links, keep the system's callout. */
+/* Text a player types, and links, keep the system's callout; so does any text
+   set to user-select: text or all (the room and sync codes, where it is set). */
 input,
 textarea,
 [contenteditable],
