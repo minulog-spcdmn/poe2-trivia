@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { type DrawnItem } from '../lib/game';
@@ -8,6 +8,7 @@
   import { phone } from '../lib/layout';
   import { closeItemWindow, readPlace, writePlace, type WindowPlace } from '../lib/itemWindow.svelte';
   import { hideLightIn } from '../lib/fx/core';
+  import { backGuard } from '../lib/backGuard';
   import { zoomOf } from '../lib/stage';
   import NamePlate, { SOCKET_X } from './NamePlate.svelte';
   import ItemDetails, { loadStats, statsLoaded } from './ItemDetails.svelte';
@@ -26,6 +27,9 @@
   // transition, on the compositor's clock, nothing measured meanwhile), and
   // there's always room below the plate to unroll into.
   let { item }: { item: DrawnItem } = $props();
+
+  // Open, the browser's back closes it before anything under it (lib/backGuard.ts).
+  onMount(() => backGuard.layer(closeItemWindow));
 
   /** Kept this far from the screen's edges (px). */
   const EDGE = 8;

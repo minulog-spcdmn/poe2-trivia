@@ -1,15 +1,17 @@
 // Over the game: being turned out of a room (removed, the room closed, the
-// game moved to another tab), the dialog before leaving one, and coming
-// back from a crash (Root.svelte: a guest leaves the room, a second crash
-// soon after leaves any game, and one with no game left stops the page).
+// game moved to another tab), the dialog before leaving one (the header's
+// leave, or the browser's back), and coming back from a crash (Root.svelte:
+// a guest leaves the room, a second crash soon after leaves any game, and
+// one with no game left stops the page).
 
 import { pid } from '../build/people.ts';
 import { Table } from '../build/play.ts';
 import type { Built, Scene, Seat, Step } from '../scene.ts';
 
 const THREE = ['Kalguur', 'Doryani', 'Una of the Vaal'];
-const inGame = (steps: Step[]): Built => {
+const inGame = (steps: Step[], answered = false): Built => {
   const t = new Table(THREE).start().pick();
+  if (answered) t.answer(t.turn, true);
   // (Turned out, it lands on the start page: its room list finds nothing.)
   return { state: t.s, act: t.room, at: t.clock.now + 3000, steps, rooms: [] };
 };
@@ -23,6 +25,9 @@ export function overlayScenes(): Scene[] {
     overlay('closed', 'The host closed the room', [doryani], () => inGame([{ fail: 'closed' }])),
     overlay('moved', 'The game moved to another tab', [doryani], () => inGame([{ fail: 'replaced' }])),
     overlay('leave', 'Leaving a game: the dialog', [kalguur, doryani], () => inGame([{ click: 'button[aria-label="Leave game"]' }])),
+    // The browser's back (lib/backGuard.ts): with nothing open it asks, as the header's leave does; with the item's window open, it closes that alone.
+    overlay('back', 'Back in a game: asked before leaving', [kalguur, doryani], () => inGame([{ back: true }])),
+    overlay('back-item', "Back with an item's window open: it closes, the game stays", [kalguur], () => inGame([{ click: 'button.details' }, { wait: 800 }, { back: true }], true)),
     overlay('crash-host', 'The host crashed once: back on its feet', [kalguur], () => inGame([{ crash: 1 }])),
     overlay('crash-guest', 'A guest crashed once: out of the room', [doryani], () => inGame([{ crash: 1 }])),
     overlay('crash-twice', 'The host crashed twice: out of the game', [kalguur], () => inGame([{ crash: 2 }])),

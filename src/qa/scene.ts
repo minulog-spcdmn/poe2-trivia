@@ -43,6 +43,8 @@ export type Step =
   | { fail: 'kicked' | 'closed' | 'replaced' }
   /** The app crashes, once or twice in a row (Root.svelte's recovery). */
   | { crash: 1 | 2 }
+  /** The browser's back (Android's button, an iPhone's swipe), on the frame's history of its own (lib/backGuard.ts). */
+  | { back: true }
   /**
    * The room moves on to `state` (the scene's game played on: dynamite going
    * off, an answer given), its clock standing still at `at` (host clock, ms),
