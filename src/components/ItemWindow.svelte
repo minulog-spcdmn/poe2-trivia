@@ -282,6 +282,15 @@
   .socket:focus-visible {
     outline: 1px solid var(--gold-lo);
   }
+  /* A finger's reach round each: 44px on screen (the window is at the page's zoom), drawn no bigger. A miss so near no longer lands on the plate, which folds it or drags it. */
+  @media (pointer: coarse) {
+    .socket::before {
+      content: '';
+      position: absolute;
+      inset: min(0px, (32px - 44px / var(--stage-zoom, 1)) / 2);
+      border-radius: 50%;
+    }
+  }
   .socket svg {
     fill: none;
     stroke: currentColor;
