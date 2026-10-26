@@ -1,3 +1,4 @@
+import { GONE } from './leaving.ts';
 import { BLEND_PX, LIT, MAX_BESIDE, MAX_HOPS, TAP, anchorCode, besideOf, cursorAt, toAnchor, type CursorAt, type Hop, type PointerKind } from './cursors.ts';
 
 /**
@@ -28,10 +29,10 @@ interface Found {
   r: DOMRect;
 }
 
-/** An anchor a pointer can go on: one there is, on this screen (not on its way out: Svelte makes that inert), with a size. */
+/** An anchor a pointer can go on: one there is, on this screen (not on its way out: lib/leaving.ts), with a size. */
 function found(el: HTMLElement): Found | null {
   const code = anchorCode(el.dataset.cursor ?? '');
-  if (code === null || el.closest('[inert]')) return null;
+  if (code === null || el.closest(GONE)) return null;
   const r = el.getBoundingClientRect();
   return r.width && r.height ? { el, code, r } : null;
 }
