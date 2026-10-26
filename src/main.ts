@@ -49,9 +49,12 @@ const TOGGLED: Record<Toggled, string> = {
 onCountToggle((t) => toasts.show(TOGGLED[t], t === 'unsaved' ? 'error' : 'info', { title: 'Visit counts' }));
 // No browser menu on a right click: it brings the system's cursor, and the
 // game has no use for it. Text fields keep theirs, where it's how many paste,
-// and links theirs (open in a new tab, copy the address).
+// links theirs (open in a new tab, copy the address), and the codes players
+// pass on (data-copy: the room code, the sync code) theirs, since on a phone
+// the same event is a long press, and preventing it takes away the Copy that
+// Android Chrome shows over the selection.
 addEventListener('contextmenu', (e) => {
-  if (!(e.target as Element | null)?.closest('input, textarea, [contenteditable], a[href]')) e.preventDefault();
+  if (!(e.target as Element | null)?.closest('input, textarea, [contenteditable], a[href], [data-copy]')) e.preventDefault();
 });
 // No image lifts off the page as a ghost when pressed and moved: nothing in
 // the game is dropped anywhere. (A dragstart, not draggable="false" on each,

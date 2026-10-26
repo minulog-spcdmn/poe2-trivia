@@ -274,7 +274,7 @@
       {:else if view === 'scan'}
         <p class="how">Point the camera at your other device’s code.</p>
       {:else if code || offered}
-        <p class="code" aria-label="Sync code">{shownCode((view === 'offered' ? offered : code)!)}</p>
+        <p class="code" aria-label="Sync code" data-copy>{shownCode((view === 'offered' ? offered : code)!)}</p>
       {/if}
     </div>
 
