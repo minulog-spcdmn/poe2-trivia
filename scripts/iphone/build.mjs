@@ -2,8 +2,10 @@
 // in the local channel, so its rooms are this machine's and the ?off=
 // switches work (lib/switchedOff.ts), with a full codex put in the phone's
 // storage on its first visit, as a long-time player's (every item seen, 2000
-// answers), unless --empty.
-//   node scripts/iphone/build.mjs <name> [--empty]
+// answers), unless --empty. With --qa, the QA desk too (qa.html, which only
+// the beta builds), so the phone can open a scene on its own:
+// qa.html?frame&s=<scene key>[&k.<control>=<value>].
+//   node scripts/iphone/build.mjs <name> [--empty] [--qa]
 // Then serve.mjs puts it on the home network. To set a change against what it
 // changes, build each (check out one, build it as before, the other as after)
 // and serve both, each on its own port.
@@ -16,13 +18,15 @@ import { root, work } from './phone.mjs';
 const args = process.argv.slice(2);
 const name = args.find((a) => !a.startsWith('--'));
 if (!name || !/^[\w-]+$/.test(name)) {
-  console.error('usage: node scripts/iphone/build.mjs <name> [--empty]');
+  console.error('usage: node scripts/iphone/build.mjs <name> [--empty] [--qa]');
   process.exit(2);
 }
 const outDir = join(work, name);
 process.env.VITE_CHANNEL = 'local';
 // (Source maps kept but not linked, for profile.mjs to name what ran.)
-await build({ root, logLevel: 'warn', build: { outDir, emptyOutDir: true, sourcemap: 'hidden' } });
+// (The desk's page beside the config's own, which the inline config is merged into.)
+const qa = args.includes('--qa') ? { rollupOptions: { input: { qa: join(root, 'qa.html') } } } : {};
+await build({ root, logLevel: 'warn', build: { outDir, emptyOutDir: true, sourcemap: 'hidden', ...qa } });
 
 if (!args.includes('--empty')) {
   // The codex as Codex.svelte keeps it (lib/storage.ts names the local channel's keys).

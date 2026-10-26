@@ -38,15 +38,30 @@ export async function tabs() {
 }
 
 /**
- * The tab to drive: the first showing a web page. (Chrome's new-tab page,
- * about://newtab/, is listed and takes commands, but never runs them: a web
- * page has to be open in the tab first.)
+ * The tab to drive: a web page in Chrome (CriOS in its user agent), or with
+ * IPHONE_APP=app one in the home-screen app (Safari's agent), or with
+ * IPHONE_APP=any the first listed. The phone lists every app's pages
+ * together, in no set order, so the first can be the home-screen app's with
+ * Chrome in front: a day of runs (26 October 2026) drove the app's in-app
+ * browser view, the app sent out of its scope to the PC's address, taking it
+ * for Chrome. (Chrome's new-tab page, about://newtab/, is listed and takes
+ * commands, but never runs them: a web page has to be open in the tab first.)
  */
 export async function webTab() {
+  const want = process.env.IPHONE_APP ?? 'chrome';
   const all = await tabs();
-  const t = all.find((x) => x.webSocketDebuggerUrl && /^https?:/.test(x.url ?? ''));
-  if (!t) throw new Error(`no web page open on the phone (tabs: ${all.map((x) => x.url).join(', ') || 'none'}): open any site in Chrome there once`);
-  return t;
+  const pages = all.filter((x) => x.webSocketDebuggerUrl && /^https?:/.test(x.url ?? ''));
+  if (!pages.length) throw new Error(`no web page open on the phone (tabs: ${all.map((x) => x.url).join(', ') || 'none'}): open any site in Chrome there once`);
+  if (want === 'any') return { ...pages[0], app: 'the first page listed' };
+  for (const t of pages) {
+    const page = await connect(t.webSocketDebuggerUrl).catch(() => null);
+    if (!page) continue;
+    const ua = await Promise.race([page.evaluate('navigator.userAgent').catch(() => ''), sleep(8000).then(() => '')]);
+    page.close();
+    if (ua && (want === 'chrome') === /CriOS/.test(ua)) return { ...t, app: want === 'chrome' ? 'Chrome' : 'the home-screen app' };
+  }
+  // (A page that didn't answer is in an app in the background: iOS holds its scripts until it's in front.)
+  throw new Error(`no web page answering in ${want === 'chrome' ? 'Chrome' : 'the home-screen app'} on the phone (pages: ${pages.map((x) => x.url).join(', ')}): is it in front? IPHONE_APP=any takes the first listed`);
 }
 
 /** A connection to one tab: send(method, params), on(event, fn), evaluate(expr), close(). */
@@ -257,6 +272,16 @@ export function phases({ raf, marks, late }) {
     };
   }
   return rows;
+}
+
+/** What setups/rafTime.js found, if it ran: each phase's animation-frame callbacks and timers, by their source, the costliest first. */
+export function printRafStats(stats) {
+  if (!stats) return;
+  for (const [phase, by] of Object.entries(stats)) {
+    console.log('  ' + phase);
+    for (const [k, [n, js, dirty]] of Object.entries(by).sort((a, b) => b[1][1] + b[1][2] - a[1][1] - a[1][2]).slice(0, 8))
+      console.log(`    js ${js.toFixed(0).padStart(5)} ms  left dirty ${dirty.toFixed(0).padStart(5)} ms  ${String(n).padStart(4)}x  ${k}`);
+  }
 }
 
 export function printPhases(rows) {
