@@ -34,6 +34,7 @@
   import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
   import { closeSettings, openSettings, settingsRoute } from './lib/settingsRoute.svelte';
   import { whenIdle } from './lib/idle';
+  import { countFailedImport } from './lib/count';
   import { loadFonts, loadFontsAhead } from './lib/fontsAhead';
   import { shellHeightsRead } from './lib/shellHeights.svelte';
   import { toasts } from './lib/toasts.svelte';
@@ -365,13 +366,16 @@
   // Its fonts and the tooltips' too (lib/fontsAhead.ts), from the first idle
   // moment, so they don't lay the codex out again as it opens; opened before
   // they're in, it waits for them a moment (at most a quarter of a second).
-  // A fetch that fails isn't kept: the next time the codex opens fetches it
-  // again (a dropped connection may be back), and until then the page says
-  // it couldn't be loaded (pageLost).
+  // A fetch that fails isn't kept: opening the codex again tries again (a
+  // dropped connection may be back; some browsers keep a failed module
+  // failed, see loadGamePages), and until then the page says it couldn't be
+  // loaded (pageLost). It's counted all the same (countFailedImport), as it
+  // would be uncaught: most often a page left open across a deploy.
   let codexChunk: Promise<typeof import('./components/Codex.svelte')> | null = null;
   const fetchCodexPage = () =>
     (codexChunk ??= import('./components/Codex.svelte').catch((e) => {
       codexChunk = null;
+      countFailedImport();
       throw e;
     }));
   let codexPage: Promise<typeof import('./components/Codex.svelte')> | null = null;
@@ -384,8 +388,14 @@
       },
     ));
   onMount(loadFontsAhead);
+  // The settings page, a chunk of its own too: a failure counted as the codex's is.
+  const loadSettingsPage = () =>
+    import('./components/Settings.svelte').catch((e) => {
+      countFailedImport();
+      throw e;
+    });
   onMount(() => {
-    // Only ahead of time: a failure here waits for the codex to be opened.
+    // Only ahead of time: a failure here (counted in fetchCodexPage) waits for the codex to be opened.
     const t = setTimeout(() => void fetchCodexPage().catch(() => {}), 2000);
     return () => clearTimeout(t);
   });
@@ -679,7 +689,7 @@
           {/await}
         {:else if shown === 'settings'}
           <!-- Loaded when first opened, as the codex is. -->
-          {#await import('./components/Settings.svelte') then { default: Settings }}
+          {#await loadSettingsPage() then { default: Settings }}
             <Settings />
           {:catch}
             {@render pageLost()}
@@ -762,7 +772,7 @@
           <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
         </button>
       </div>
-      {#await import('./components/Settings.svelte') then { default: Settings }}
+      {#await loadSettingsPage() then { default: Settings }}
         <Settings over />
       {:catch}
         {@render pageLost()}

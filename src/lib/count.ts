@@ -370,6 +370,17 @@ export const ownScript = (where: string, assets: string) => where.includes(asset
 /** A module that failed to load: a page left open across an update asking for one the update removed. */
 export const failedImport = (message: string) => /dynamically imported module|Importing a module script failed/i.test(message);
 
+/** Whether "error/script" went out this page load, and how its listeners (countScriptErrors) are taken off once it has. */
+let scriptErrorCounted = false;
+let stopScriptErrors = () => {};
+/** Counts "error/script", once a page load, whichever way it came. */
+function scriptErrorDone() {
+  if (scriptErrorCounted) return;
+  scriptErrorCounted = true;
+  stopScriptErrors();
+  countEvent('error/script');
+}
+
 /**
  * An uncaught error in the game's own scripts ("error/script"), thrown or
  * rejected, or a module of the game's that failed to load; once a page load.
@@ -379,20 +390,28 @@ export const failedImport = (message: string) => /dynamically imported module|Im
 export function countScriptErrors() {
   if (!counting || typeof addEventListener === 'undefined') return;
   const assets = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}assets/`;
-  const done = () => {
-    removeEventListener('error', onError);
-    removeEventListener('unhandledrejection', onRejection);
-    countEvent('error/script');
-  };
   const onError = (e: ErrorEvent) => {
-    if (ownScript(e.filename ?? '', assets) || ownScript((e.error as Error | undefined)?.stack ?? '', assets)) done();
+    if (ownScript(e.filename ?? '', assets) || ownScript((e.error as Error | undefined)?.stack ?? '', assets)) scriptErrorDone();
   };
   const onRejection = (e: PromiseRejectionEvent) => {
     const err = e.reason as { stack?: unknown; message?: unknown } | null;
-    if (ownScript(typeof err?.stack === 'string' ? err.stack : '', assets) || failedImport(typeof err?.message === 'string' ? err.message : '')) done();
+    if (ownScript(typeof err?.stack === 'string' ? err.stack : '', assets) || failedImport(typeof err?.message === 'string' ? err.message : '')) scriptErrorDone();
+  };
+  stopScriptErrors = () => {
+    removeEventListener('error', onError);
+    removeEventListener('unhandledrejection', onRejection);
   };
   addEventListener('error', onError);
   addEventListener('unhandledrejection', onRejection);
+}
+
+/**
+ * A module of the game's that failed to load where the page catches it (the
+ * codex's, the settings'), so it never reaches countScriptErrors' listeners:
+ * counted as theirs would be ("error/script", the once a page load they share).
+ */
+export function countFailedImport() {
+  if (counting) scriptErrorDone();
 }
 
 const arrivals = new Set<string>();
