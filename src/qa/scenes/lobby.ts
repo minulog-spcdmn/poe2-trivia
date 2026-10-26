@@ -154,12 +154,13 @@ export function lobbyScenes(): Scene[] {
       build: (v = {}) => atScreen(['Kalguur', 'Doryani'], v),
     },
     // A name turned down at the host's screen: the notice stays up, so on a phone a tap in the name field brings the keyboard up under it (it keeps under what shows of the header, or to the top of what shows).
+    // The host's seat alone: only the host's screen has the field, so a guest never sees the refusal.
     {
       key: 'lobby/name-refused',
       screen: 'lobby',
       group: 'Lobby',
       label: 'A name turned down at the host’s screen: the notice',
-      seats: [host('Kalguur'), guest('Doryani')],
+      seats: [host('Kalguur')],
       build: () => ({ ...atScreen(['Kalguur', 'Doryani'], {}), steps: [{ toast: NAME_TOO_SHORT, kind: 'error' }] }),
     },
     {
