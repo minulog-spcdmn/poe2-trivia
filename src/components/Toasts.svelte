@@ -41,6 +41,26 @@
     untrack(() => toasts.setMax(max));
   });
 
+  // The stack is fixed to the layout viewport, but with the iOS keyboard up
+  // what the player sees is the visual viewport: shorter, and scrolled down
+  // the page to keep the field in view. At the layout viewport's top a notice
+  // about the name or code being typed would sit half or wholly above the
+  // screen, so on phones the stack follows the visual viewport's top down.
+  let visualTop = $state(0);
+  $effect(() => {
+    const vv = window.visualViewport;
+    if (!narrow || !vv) return;
+    const follow = () => (visualTop = Math.max(0, vv.offsetTop));
+    follow();
+    vv.addEventListener('scroll', follow);
+    vv.addEventListener('resize', follow);
+    return () => {
+      vv.removeEventListener('scroll', follow);
+      vv.removeEventListener('resize', follow);
+      visualTop = 0;
+    };
+  });
+
   /** Svelte action: a little sparkle as good news arrives (gold round the creator's notice). */
   function sparkle(node: HTMLElement, o: { kind: ToastKind; herald?: boolean }) {
     if (o.kind === 'info') requestAnimationFrame(() => node.isConnected && lightOf(node, () => (o.herald ? heraldNotice(node) : twinkle(node))));
@@ -66,6 +86,7 @@
   class:narrow
   class:side
   style:--header="{headerHeight}px"
+  style:--visual-top={narrow ? `${visualTop}px` : null}
   role="region"
   aria-label="Notifications"
   aria-live="polite"
@@ -160,12 +181,14 @@
     flex-direction: column-reverse;
     align-items: stretch;
     gap: 0.4rem;
+    /* Down to the top of what shows while the keyboard is up (visualTop above). */
+    translate: 0 var(--visual-top, 0px);
   }
   /* A phone on its side: as wide as on a wide screen, in the middle. */
   .toasts.narrow.side {
     left: 50%;
     right: auto;
-    translate: -50% 0;
+    translate: -50% var(--visual-top, 0px);
     width: min(330px, calc(100vw - 44px));
   }
 
