@@ -1524,8 +1524,11 @@
   .task-text.held {
     visibility: hidden;
   }
+  /* At the top of the cell, where it stood when it took the line's place:
+     a question's line that wraps (a long name picking the art) leaves the
+     room it frees under the outcome, not around it. */
   .task-text.outcome {
-    align-self: center;
+    align-self: start;
   }
   /* Room kept either side for the timer at the right end, so a long line
      (a long name picking the art) wraps short of it and stays centred. */
