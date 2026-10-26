@@ -139,7 +139,14 @@ export function gameScenes(): Scene[] {
   const manyAsked = { controls: [players(3, 3), ...ANSWERS] };
   const crowdAsked = { controls: [players(3, 5), ...ANSWERS] };
   return [
-    scene('turns-choosing', 'Take turns', 'Picking a category', turnsSeats, turns, many),
+    scene('turns-choosing', 'Take turns', 'Picking a category', turnsSeats, turns, {
+      ...many,
+      states: [
+        { label: 'Picking a category', values: {} },
+        // The longest a name may be (MAX_NAME): another's turn on the banner, shrunk to fit an upright phone.
+        { label: 'Long names', values: { names: 'long' } },
+      ],
+    }),
     scene('turns-question', 'Take turns', 'A question, its clock running', turnsSeats, (v) => turns(v).pick(), manyAsked),
     scene(
       'turns-right',

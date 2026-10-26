@@ -148,6 +148,33 @@
     return { destroy: () => clearTimeout(t) };
   }
 
+  /**
+   * Svelte action: the banner's line kept to the screen's width, its size
+   * shrunk as far as it must (as GameOver's headline is): a long name's turn
+   * would run off both edges of an upright phone. The rules beside it keep
+   * their least width. A line that fits is left at its size.
+   */
+  function bannerFit(node: HTMLElement, _title: string) {
+    const banner = node.parentElement!;
+    const size = () => {
+      node.style.fontSize = '';
+      const gap = parseFloat(getComputedStyle(banner).columnGap) || 0;
+      const rule = node.previousElementSibling ? parseFloat(getComputedStyle(node.previousElementSibling).minWidth) || 0 : 0;
+      const room = banner.clientWidth - 2 * (gap + rule);
+      // Measured at its letters' own spacing: the entrance opens it wide at first, and it closes again.
+      node.style.setProperty('letter-spacing', 'normal', 'important');
+      const w = node.scrollWidth;
+      node.style.removeProperty('letter-spacing');
+      if (room > 0 && w > room) node.style.fontSize = `${(parseFloat(getComputedStyle(node).fontSize) * room) / w}px`;
+    };
+    size();
+    // Again as its font comes in, and as the column changes (a phone turned).
+    void document.fonts?.ready.then(size);
+    const ro = new ResizeObserver(size);
+    ro.observe(banner);
+    return { update: size, destroy: () => ro.disconnect() };
+  }
+
   /** Svelte action: the deathmatch intro's title bursts in. */
   function introFx(node: HTMLElement) {
     const t = setTimeout(() => deathmatchIntro(node), 120);
@@ -426,7 +453,7 @@
             {/if}
             <div class="banner" class:dm={!!dm} style:--c={bannerColor}>
               <span class="rule"></span>
-              <h2 class:start={startsRun} use:bannerFx={{ color: bannerColor, big: bannerBig }} use:backdropDropShadow>{bannerTitle}</h2>
+              <h2 class:start={startsRun} use:bannerFit={bannerTitle} use:bannerFx={{ color: bannerColor, big: bannerBig }} use:backdropDropShadow>{bannerTitle}</h2>
               <span class="rule"></span>
             </div>
           </div>
