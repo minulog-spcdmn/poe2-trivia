@@ -210,6 +210,7 @@ export async function boot(asked: URLSearchParams) {
         crash.left = 1;
       }
     }
+    else if ('toast' in step) toasts.hold(toasts.show(step.toast, step.kind, step.opts));
     else (await found(step.click))?.click();
   }
 

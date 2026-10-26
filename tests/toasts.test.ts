@@ -58,6 +58,15 @@ test('past the most shown, the oldest give way and the newest stay', () => {
   assert.deepEqual(messages(), ['notice 5']);
 });
 
+test('none allowed still keeps the newest: a sticky reason shown then stays', () => {
+  toasts.show('Spectator joined');
+  toasts.setMax(0);
+  toasts.show('No room has the code ABCD.', 'error', { title: 'No such room', sticky: true });
+  assert.deepEqual(messages(), ['No room has the code ABCD.']);
+  mock.timers.tick(60_000);
+  assert.deepEqual(messages(), ['No room has the code ABCD.']);
+});
+
 test('a notice held under the pointer keeps the time it had left, however long it is held', () => {
   const id = toasts.show('Room closed');
   mock.timers.tick(2000);

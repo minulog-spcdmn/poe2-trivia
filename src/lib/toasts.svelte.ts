@@ -79,8 +79,9 @@ class Toasts {
     this.list = this.list.filter((t) => t.kind !== 'error');
   }
 
+  /** At least one: the newest always stays, a sticky reason above all. */
   setMax(max: number) {
-    this.max = max;
+    this.max = Math.max(1, max);
     this.trim();
   }
 

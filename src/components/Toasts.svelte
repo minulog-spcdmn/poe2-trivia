@@ -3,7 +3,7 @@
   import { flip } from 'svelte/animate';
   import { fade, fly } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
-  import { phone } from '../lib/layout';
+  import { flat, handheld } from '../lib/layout';
   import { toasts, type ToastKind } from '../lib/toasts.svelte';
   import { playerColor } from '../lib/ui';
   import { heraldNotice, twinkle } from '../lib/fx/moments';
@@ -19,20 +19,25 @@
   /** Height of the app header, if one is showing: phones keep the stack below it, clear of its buttons. */
   let { headerHeight = 0 }: { headerHeight?: number } = $props();
 
-  // Bottom right on wide screens. On phones the stack sits at the top instead:
-  // the keyboard covers the bottom while typing a name or code, and the answer
-  // buttons are down there during a game.
-  const narrow = $derived(phone.current);
+  // Bottom right on wide screens. On phones, either way up, the stack sits at
+  // the top instead: the keyboard covers the bottom while typing a name or
+  // code, and the answer buttons are down there during a game. On its side
+  // (lib/layout.ts `flat`) the answers fill the right half too, so the stack
+  // stands narrow in the middle, over the banner and the question's line.
+  const narrow = $derived(handheld.current);
+  const side = $derived(flat.current);
   const enter = $derived(narrow ? { y: -24, duration: 320 } : { x: 56, duration: 320 });
 
   // A guest's lost connection to the host stays up (with what to do about it)
   // until it's back or they leave.
   const lost = $derived(session.mode === 'client' && session.status === 'lost');
 
-  // Phones show fewer at once, so a burst of news can't cover the game. The
-  // lost connection takes one of the places.
+  // Phones show fewer at once, so a burst of news can't cover the game: on
+  // its side one, as the room under the header holds no more without
+  // reaching the answers. Elsewhere the lost connection takes one of the
+  // places; on its side it can't, or news would have none.
   $effect(() => {
-    const max = (narrow ? 2 : 6) - (lost ? 1 : 0);
+    const max = side ? 1 : (narrow ? 2 : 6) - (lost ? 1 : 0);
     untrack(() => toasts.setMax(max));
   });
 
@@ -59,6 +64,7 @@
   class="toasts"
   data-behind-dialog
   class:narrow
+  class:side
   style:--header="{headerHeight}px"
   role="region"
   aria-label="Notifications"
@@ -154,6 +160,13 @@
     flex-direction: column-reverse;
     align-items: stretch;
     gap: 0.4rem;
+  }
+  /* A phone on its side: as wide as on a wide screen, in the middle. */
+  .toasts.narrow.side {
+    left: 50%;
+    right: auto;
+    translate: -50% 0;
+    width: min(330px, calc(100vw - 44px));
   }
 
   /* Each kind is a stone colour: gold for news, amber for trouble, crimson for errors. */
