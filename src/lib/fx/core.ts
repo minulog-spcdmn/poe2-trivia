@@ -782,6 +782,17 @@ function show(on: boolean) {
   shown = on;
   canvas.style.visibility = on ? 'visible' : 'hidden';
 }
+/**
+ * Hidden, whatever `shown` says: before the renderer is made (its context
+ * may be lost while its shaders build), and once it's gone. A canvas whose
+ * context Chrome lost as its GPU process died is composited white, and it
+ * covers the whole page (plus-lighter over everything), for as long as no
+ * restore comes, which after a real crash may be never.
+ */
+function hide() {
+  shown = false;
+  if (canvas) canvas.style.visibility = 'hidden';
+}
 
 /**
  * A phone scrolls the page on its own, ahead of the frames drawn here, so a
@@ -1415,6 +1426,7 @@ function teardown() {
   // frame from now on.)
   covers.clear();
   stopShake();
+  hide();
   for (const l of listeners) l(userOn);
 }
 
@@ -1586,6 +1598,7 @@ function setHidden(away: boolean) {
 export function startFx(c: HTMLCanvasElement): () => void {
   canvas = c;
   placedAt = '';
+  hide();
   prepare(c);
   const onMotion = () => {
     if (!fxActive()) clearAll();
@@ -1596,10 +1609,14 @@ export function startFx(c: HTMLCanvasElement): () => void {
   setHidden(document.hidden);
   const onVisibility = () => setHidden(document.hidden);
   document.addEventListener('visibilitychange', onVisibility);
-  // Phones often drop the context while the tab is in the background.
-  // preventDefault() asks the browser to give it back; then everything is
-  // built again on it. (The old renderer's objects died with the context, and
-  // its destroy() would lose the restored one, so it's simply dropped.)
+  // Phones often drop the context while the tab is in the background, and
+  // Chrome drops it when its GPU process dies. preventDefault() asks the
+  // browser to give it back; meanwhile the canvas is hidden (see hide) and
+  // effects are off, as with no WebGL2, and the page hears so. Given back,
+  // everything is built again on it, and the canvas shows with its first
+  // effect drawn. (The old renderer's objects died with the context, and its
+  // destroy() would lose the restored one, so it's simply dropped.) Never
+  // given back, effects stay off.
   const onLost = (e: Event) => {
     e.preventDefault();
     teardown();
