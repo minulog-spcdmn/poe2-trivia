@@ -964,10 +964,10 @@
   {/if}
 {/snippet}
 
-<!-- The tooltip's edge in the verdict's colour, its border and glow, one for each, faded in over the plain one (see .rim). -->
+<!-- The tooltip's edge in the verdict's colour, its border and glow, one for each, faded in over the plain one (see .verdict-rim). -->
 {#snippet rims()}
-  <span class="rim good" aria-hidden="true"></span>
-  <span class="rim bad" aria-hidden="true"></span>
+  <span class="verdict-rim good" aria-hidden="true"></span>
+  <span class="verdict-rim bad" aria-hidden="true"></span>
 {/snippet}
 
 {#snippet mirrorLine()}
@@ -1614,7 +1614,7 @@
      the tooltip's, and the glow (the soft shadow --bs1 makes) under the
      black ring, as before. The rims come first in the tooltip, so
      everything in it is drawn over them. */
-  .rim {
+  .verdict-rim {
     position: absolute;
     inset: -1px;
     border: 1px solid;
@@ -1625,25 +1625,25 @@
       opacity 0.6s,
       visibility 0.6s;
   }
-  .rim.good {
+  .verdict-rim.good {
     border-color: #4f7a45;
     box-shadow:
       0 0 0 1px #000,
       0 0 50px rgba(150, 190, 110, 0.12);
   }
-  .rim.bad {
+  .verdict-rim.bad {
     border-color: #7a3a2c;
     box-shadow:
       0 0 0 1px #000,
       0 0 50px rgba(200, 90, 60, 0.09);
   }
-  .tooltip.good > .rim.good,
-  .tooltip.bad > .rim.bad {
+  .tooltip.good > .verdict-rim.good,
+  .tooltip.bad > .verdict-rim.bad {
     opacity: 1;
     visibility: visible;
   }
   /* (Where the backdrop draws the glow, the rim is the border alone.) */
-  .tooltip:global([data-bs-on]) > .rim {
+  .tooltip:global([data-bs-on]) > .verdict-rim {
     box-shadow: none;
   }
   .head {

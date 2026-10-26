@@ -81,7 +81,7 @@ test("the tooltip's verdict colours only fade (on the rims), never ease on the t
   assert.doesNotMatch(one(qv.css, '.tooltip', 'box-shadow'), /--bs1-color/, "the glow CSS paints is the rims', so the tooltip's own box-shadow never changes");
   for (const tone of ['good', 'bad'])
     for (const prop of ['border-color', 'box-shadow', 'border']) assert.equal(declsOf(qv.css, `.tooltip.${tone}`, prop).length, 0, `.tooltip.${tone} sets ${prop}: that's the rim's`);
-  for (const part of one(qv.css, '.rim', 'transition').split(',')) assert.match(part.trim(), /^(opacity|visibility)\b/, `.rim transitions ${part.trim()}`);
+  for (const part of one(qv.css, '.verdict-rim', 'transition').split(',')) assert.match(part.trim(), /^(opacity|visibility)\b/, `.verdict-rim transitions ${part.trim()}`);
 });
 
 test("a rim's glow is the one --bs1 makes, in the verdict's colour, under the tooltip's ring", () => {
@@ -91,13 +91,13 @@ test("a rim's glow is the one --bs1 makes, in the verdict's colour, under the to
   for (const tone of ['good', 'bad']) {
     const color = one(qv.css, `.tooltip.${tone}`, '--bs1-color');
     // (Listed first, the ring is drawn over the glow, as on the tooltip.)
-    assert.deepEqual(shadows(one(qv.css, `.rim.${tone}`, 'box-shadow')), [ring, `0 ${oy!.replace(/^0px$/, '0')} ${blur} ${color}`], `.rim.${tone}'s glow is 0 var(--bs1) var(--bs1-color) as .tooltip.${tone} has them`);
-    assert.match(one(qv.css, `.rim.${tone}`, 'border-color'), /^#[0-9a-f]{6}$/i, 'an opaque border, faded in over the plain one');
+    assert.deepEqual(shadows(one(qv.css, `.verdict-rim.${tone}`, 'box-shadow')), [ring, `0 ${oy!.replace(/^0px$/, '0')} ${blur} ${color}`], `.verdict-rim.${tone}'s glow is 0 var(--bs1) var(--bs1-color) as .tooltip.${tone} has them`);
+    assert.match(one(qv.css, `.verdict-rim.${tone}`, 'border-color'), /^#[0-9a-f]{6}$/i, 'an opaque border, faded in over the plain one');
   }
   // The rim's box is the tooltip's border box.
   assert.match(one(qv.css, '.tooltip', 'border'), /^1px solid /);
-  assert.equal(one(qv.css, '.rim', 'inset'), '-1px');
-  assert.match(one(qv.css, '.rim', 'border'), /^1px solid$/);
+  assert.equal(one(qv.css, '.verdict-rim', 'inset'), '-1px');
+  assert.match(one(qv.css, '.verdict-rim', 'border'), /^1px solid$/);
   assert.equal(one(qv.css, '.tooltip', 'position'), 'relative');
 });
 
@@ -105,6 +105,19 @@ test('every tooltip has its rims first, so all that is in it is drawn over them'
   const tooltips = [...qv.markup.matchAll(/<div\s+class="tooltip[^"]*"[^>]*>([\s\S]{0,80})/g)];
   assert.equal(tooltips.length, 2, 'the name question and the art question each have a tooltip');
   for (const t of tooltips) assert.match(t[1]!, /^\s*\{@render rims\(\)\}/, 'the tooltip opens with {@render rims()}');
+});
+
+test('only the two rims carry their class, so their rules hide nothing else in QuestionView', () => {
+  // Svelte keeps a rule to its component, not to the tooltip: .verdict-rim
+  // hides whatever in QuestionView has the class. Named rim at first, the
+  // rims' rules hid the gold outline of Delve's lost-life vials as well, a
+  // <path class="rim"> in the same component.
+  const carriers = (markup: string) =>
+    [...markup.matchAll(/\bclass(?:="([^"]*)"|:([\w-]+))/g)].filter((m) => m[2] === 'verdict-rim' || (m[1] ?? '').split(/\s+/).includes('verdict-rim')).length;
+  const rims = qv.markup.match(/\{#snippet rims\(\)\}([\s\S]*?)\{\/snippet\}/);
+  assert.ok(rims, 'QuestionView has its rims() snippet');
+  assert.equal(carriers(rims[1]!), 2, 'the snippet draws the two rims, good and bad');
+  assert.equal(carriers(qv.markup), 2, 'nothing but the two rims has the class verdict-rim');
 });
 
 test('the task line and the banner stay over the tooltip, now positioned, and the cards leaving over them, as they were', () => {
