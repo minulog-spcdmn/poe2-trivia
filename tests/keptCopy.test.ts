@@ -33,17 +33,26 @@ interface Tab {
   k: ReturnType<typeof keeper>;
 }
 let tabs = 0;
-/** A page: `back` when it was brought back (reloaded or restored), not opened anew; `from` a tab whose sessionStorage it starts with (duplicated). */
-function page({ back = false, from, store = new Map(from?.store) }: { back?: boolean; from?: Tab; store?: Map<string, string> } = {}): Tab {
+/**
+ * A page: `back` when it was brought back (reloaded or restored), not opened
+ * anew; `from` a tab whose sessionStorage it starts with (duplicated);
+ * `standalone` when it is an iPhone's home-screen app.
+ */
+function page({
+  back = false,
+  from,
+  store = new Map(from?.store),
+  standalone = false,
+}: { back?: boolean; from?: Tab; store?: Map<string, string>; standalone?: boolean } = {}): Tab {
   const name = `tab${++tabs}`;
-  return { name, store, session: memoryStorage(store), k: keeper(locks.of(name), () => back, SAVE) };
+  return { name, store, session: memoryStorage(store), k: keeper(locks.of(name), () => back, () => standalone, SAVE) };
 }
 /** The browser killed the tab: its page's locks go, its sessionStorage too (as Android Chrome's does). No pagehide. */
 const kill = (tab: Tab) => locks.kill(tab.name);
 /** The page went for good (its tab closed, a reload): a pagehide not for the back/forward cache, then its locks go. */
 function close(tab: Tab) {
   current = tab;
-  tab.k.closing();
+  tab.k.pageHidden(false);
   kill(tab);
 }
 /** The same tab reloaded: a new page, its sessionStorage kept. */
@@ -205,6 +214,32 @@ test('a page that closes keeps nothing after, whatever is saved as it goes', asy
   kill(a);
   assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null);
   assert.deepEqual([...local.keys()], []);
+});
+
+test('a tab’s page that unloads leaves nothing to pick up once its tab is gone', async () => {
+  const a = page();
+  await on(a, (k) => start(k, save(1)));
+  await on(a, (k) => k.pageHidden(false));
+  kill(a);
+  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null);
+  assert.deepEqual(copiesLeft(), []);
+});
+
+test('a home-screen app’s page that unloads leaves its run for the app to come back to', async () => {
+  // The player swiped the app away: iOS unloads its one window, and opens it anew later.
+  const a = page({ standalone: true });
+  await on(a, (k) => start(k, save(1)));
+  await on(a, (k) => k.pageHidden(false));
+  kill(a);
+  assert.equal((await on(page({ back: true, standalone: true }), (k) => k.takeCopy(yes)))?.save, save(1));
+});
+
+test('a page put in the back/forward cache still gives its game back if its tab is killed there', async () => {
+  const a = page();
+  await on(a, (k) => start(k, save(1)));
+  await on(a, (k) => k.pageHidden(true));
+  kill(a);
+  assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, save(1));
 });
 
 test('a reloaded page that leaves before saving again clears its tab’s copy', async () => {
@@ -422,7 +457,7 @@ test('only the newest few copies are kept', async () => {
 });
 
 test('without Web Locks nothing is kept or picked up', async () => {
-  const blind = { ...page(), k: keeper(undefined, () => true, SAVE) };
+  const blind = { ...page(), k: keeper(undefined, () => true, () => false, SAVE) };
   await on(blind, (k) => start(k, save(1)));
   assert.equal(local.size, 0);
   leftAgo('x', 0, null);

@@ -161,10 +161,11 @@ export function restoredHere(tabNew: boolean, standalone: boolean): boolean {
 /**
  * A page's keeping (one per page; a test makes one per tab it plays): with
  * `locks` (none: nothing is kept or picked up), whether the browser brought
- * the page back without its tab's sessionStorage, and `save`, the name the
- * save goes under in sessionStorage (session.svelte.ts SAVE).
+ * the page back without its tab's sessionStorage, whether the page is an
+ * iPhone's home-screen app (installedApp.ts), and `save`, the name the save
+ * goes under in sessionStorage (session.svelte.ts SAVE).
  */
-export function keeper(locks: LockManager | undefined, restored: () => boolean, save: string) {
+export function keeper(locks: LockManager | undefined, restored: () => boolean, standalone: () => boolean, save: string) {
   /** The slot whose lock this page holds (while it has a game, and a moment after), or null. */
   let mine: string | null = null;
   /** What lets go of its lock. */
@@ -341,6 +342,18 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean, 
       removeStored(aliveName(mine));
     },
 
+    /**
+     * The page hidden for the last time (pagehide), `persisted` when it went
+     * into the back/forward cache: such a page may come back, and its copy is
+     * only stamped; one that unloads never does, and its copy goes. Except in
+     * an iPhone's home-screen app, whose one window swiped away is to come
+     * back as it was: there is no other tab there to pick its game up wrongly.
+     */
+    pageHidden(persisted: boolean) {
+      if (persisted || standalone()) this.leaving();
+      else this.closing();
+    },
+
     /** The host's last moment noted (session.svelte.ts noteAlive), beside the copy. */
     keepAlive(at: string) {
       if (!locks) return;
@@ -420,14 +433,12 @@ if (KEEPS) writeStored(HERE, '1', 'session');
  * it). Called once, by the session.
  */
 export function keeping(save: string) {
-  const here = keeper(KEEPS ? navigator.locks : undefined, () => restoredHere(tabNew, installedApp()), save);
+  const here = keeper(KEEPS ? navigator.locks : undefined, () => restoredHere(tabNew, installedApp()), () => installedApp(), save);
   // (No document where a test plays the page.)
   if (KEEPS && typeof document !== 'undefined') {
     // A phone's browser kills a tab only once it's out of sight.
     document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && here.leaving());
-    // A page put in the back/forward cache may come back; one that unloads never does. Except
-    // in an iPhone's home-screen app, whose one window swiped away is to come back as it was.
-    addEventListener('pagehide', (e) => (e.persisted || installedApp() ? here.leaving() : here.closing()));
+    addEventListener('pagehide', (e) => here.pageHidden(e.persisted));
   }
   return here;
 }
