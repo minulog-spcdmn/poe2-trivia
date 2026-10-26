@@ -12,6 +12,19 @@ test('a viewport handed back shorter keeps the screen’s height', () => {
   assert.equal(screenHeight(tallest, 390, 797, SW, SH), 844);
 });
 
+test('a large viewport taller than the page is taken, held to the screen', () => {
+  // Chrome's tab: the page 663px high with its toolbars up, 768px at 100lvh.
+  assert.equal(screenHeight(new Map(), 390, 663, SW, SH, 768), 768);
+  // Never past the screen's side, upright or on its side.
+  assert.equal(screenHeight(new Map(), 390, 663, SW, SH, 900), 844);
+  assert.equal(screenHeight(new Map(), 844, 340, SW, SH, 500), 390);
+  // Shorter than the page, or than what was seen, it changes nothing.
+  assert.equal(screenHeight(new Map(), 390, 663, SW, SH, 600), 663);
+  const tallest = new Map<number, number>();
+  screenHeight(tallest, 390, 844, SW, SH);
+  assert.equal(screenHeight(tallest, 390, 797, SW, SH, 797), 844);
+});
+
 test('each way up has its own height', () => {
   const tallest = new Map<number, number>();
   screenHeight(tallest, 390, 844, SW, SH);

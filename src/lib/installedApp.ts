@@ -4,9 +4,9 @@
  * tab of its own leaves the app for a Safari sheet. An installed app elsewhere
  * (Android's, a desktop's) shares its browser's storage, so it needs nothing
  * of this. Chrome's tab on an iPhone (a WKWebView) says navigator.standalone
- * too. The privacy page opening over the game (legalSheet.svelte.ts) does it
- * no harm, and viewport.ts tells the two apart where it matters
- * (heldToScreen).
+ * too, and takes the app's path harmlessly: the privacy page opens over the
+ * game (legalSheet.svelte.ts), and viewport.ts sizes the screen's height to
+ * at least its large viewport, toolbars gone.
  */
 export const installedApp = (nav: Navigator | undefined = typeof navigator === 'undefined' ? undefined : navigator): boolean =>
   (nav as (Navigator & { standalone?: boolean }) | undefined)?.standalone === true;

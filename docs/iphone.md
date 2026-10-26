@@ -211,20 +211,22 @@ with its numbers in the comments.
   take the cost away.
 - **Chrome's tab is a WKWebView, and says `navigator.standalone`.** It
   answers `(display-mode: fullscreen)` too, as the home-screen app does
-  from the manifest, and its user agent has no `CriOS`. Taken for the
-  home-screen app, Chrome's tab had its screen's height measured
-  (`src/lib/viewport.ts`), the backdrop ended at the viewport's bottom edge,
+  from the manifest, and its user agent has no `CriOS`. So it gets the
+  home-screen app's measured heights (`src/lib/viewport.ts`), and the
+  screen's height (`--screen-h`) was once its page's height with the
+  toolbars up, 663 px: the backdrop ended at that edge, across the screen,
   and a scroll the page drives itself (the old `codex.mjs` scroll,
-  `scrollTop +=` each frame) had WebKit repaint the row of tiles across that
-  edge, and the tiles' drop shadows with it, on every frame: 49 fps against
-  60, all of it outside the page's main thread. What only a tab has is
-  toolbars that slide: its `100lvh` is taller than its `100svh` (there the
-  backdrop is 768 px tall at `100lvh`, the page 663 with the toolbars up),
-  and `heldToScreen()` in `viewport.ts` goes by that now; the privacy sheet
-  still goes by `navigator.standalone` alone, since it is about storage.
-  Check it with `ask.mjs
-  "document.documentElement.style.getPropertyValue('--screen-h')"`: empty
-  in Chrome's tab, the screen's height in the home-screen app. A swipe is scrolled by the
+  `scrollTop +=` each frame) had WebKit repaint the row of tiles across it,
+  and the tiles' drop shadows with it, on every frame: 49 fps against 60,
+  all of it outside the page's main thread. With the backdrop at `100lvh`
+  (768 px there) it was 60. The screen's height is now at least the large
+  viewport's, under the same cap at the screen's side, so a tab's backdrop
+  reaches the screen's bottom and the app's height can only grow toward its
+  screen; `--view-h` and `--app-h` are measured as before. Check it in
+  Chrome's tab with `ask.mjs
+  "document.documentElement.style.getPropertyValue('--screen-h')"`: `768px`
+  on the owner's phone, upright. (The home-screen app can't be reached from
+  here, see above.) A swipe is scrolled by the
   browser and never showed it, so `codex.mjs` scrolls that way first
   (`scroll`) and keeps the scripted scroll as a phase of its own
   (`scripted`) to catch it coming back. A scroll the page drives is not

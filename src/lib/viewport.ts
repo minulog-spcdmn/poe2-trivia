@@ -17,19 +17,35 @@ import { installedApp } from './installedApp.ts';
  * wrong: there are no toolbars to slide, so the screen is the tallest the
  * page has been at its width (--screen-h, the backdrop and the effects), and
  * what is laid out for is the page's height now (--view-h, --app-h).
+ *
+ * Chrome's tab on an iPhone (a WKWebView) says navigator.standalone too, and
+ * has toolbars that slide. Its page's height with them up (663 px on the
+ * owner's phone) put the backdrop's bottom edge across the screen, short of
+ * where they go, and a scroll the page drove itself (the iPhone bench's) had
+ * WebKit repaint the row of codex tiles across that edge, and their drop
+ * shadows with it, every frame: 49 fps against 60. So the screen's height is
+ * at least the large viewport's, toolbars gone (100lvh, 768 px there, where
+ * the backdrop ends at the screen's bottom and the scroll keeps 60): in a tab
+ * that is where the screen ends, and in the app, whatever its lvh says, it
+ * can only raise the height toward the screen's side, never lower it.
  */
 export function holdViewport() {
   // (The game's page only: app.css holds html.held still, the dev pages zoom as pages do.)
   document.documentElement.classList.add('held');
   // (macOS Safari sends these for a trackpad's pinch too: a desktop keeps its zoom.)
   if (navigator.maxTouchPoints > 0) for (const type of ['gesturestart', 'gesturechange']) addEventListener(type, (e) => e.preventDefault());
-  if (!heldToScreen()) return;
+  if (!installedApp()) return;
 
   const meta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
   // (As index.html has it: what each return sets back, however soon the next comes.)
   const viewport = meta?.content ?? '';
   const tallest = new Map<number, number>();
   const root = document.documentElement.style;
+  // (A WebKit too old for lvh, before iOS 15.4, drops the height: 0, and the page's own is taken.)
+  const large = document.createElement('div');
+  large.setAttribute('aria-hidden', 'true');
+  large.style.cssText = 'position:fixed;top:0;left:0;width:0;height:100lvh;visibility:hidden;pointer-events:none';
+  document.documentElement.append(large);
   const measure = () => {
     // Not while away (iOS resizes the page for the app switcher's picture).
     if (document.hidden) return;
@@ -37,7 +53,7 @@ export function holdViewport() {
     // innerHeight, which a zoom or the keyboard makes the part left showing.
     const { clientWidth: w, clientHeight: h } = document.documentElement;
     if (!h) return;
-    root.setProperty('--screen-h', `${screenHeight(tallest, w, h, screen.width, screen.height)}px`);
+    root.setProperty('--screen-h', `${screenHeight(tallest, w, h, screen.width, screen.height, large.offsetHeight)}px`);
     root.setProperty('--view-h', `${h}px`);
     root.setProperty('--app-h', `${h}px`);
   };
@@ -71,54 +87,17 @@ export function holdViewport() {
 }
 
 /**
- * Whether the page gets the home-screen app's fixes above. navigator.standalone
- * alone doesn't say so (installedApp.ts): Chrome's tab on an iPhone has it true
- * as well, and it answers (display-mode: fullscreen) as the app does, so the
- * manifest's display mode can't tell them apart either. Taken for the app,
- * Chrome's tab had its screen's height measured, so the backdrop ended at the
- * viewport's bottom edge, where a scroll the page drove itself (the iPhone
- * bench's) had WebKit repaint the row of codex tiles across it every frame
- * (49 fps against 60), and short of the bottom once Chrome's toolbars slid
- * away. What a tab has and the app hasn't is those toolbars: a tab's large
- * viewport, toolbars gone, is taller than its small one (in Chrome's on the
- * owner's phone the backdrop is 768 px tall at 100lvh, the page 663 with the
- * toolbars up), and the app's two are the same, the screen. A tab whose
- * toolbars never slide (an iPad's, say) is taken for the app, which does it
- * no harm: its viewport doesn't change either, so the heights measured are
- * what its vh units say.
- */
-export const heldToScreen = (
-  nav: Navigator | undefined = typeof navigator === 'undefined' ? undefined : navigator,
-  slides: () => boolean = toolbarsSlide,
-): boolean => installedApp(nav) && !slides();
-
-/**
- * Whether the browser's toolbars slide away as the page scrolls: 100lvh
- * taller than 100svh. Only asked where navigator.standalone is true, so it
- * lays out nothing anywhere else. A WebKit too old for those units (before
- * iOS 15.4) says no, and its tabs are taken for the app as they always were.
- */
-function toolbarsSlide(): boolean {
-  if (typeof document === 'undefined' || typeof CSS === 'undefined' || !CSS.supports('height: 100lvh')) return false;
-  const probe = document.createElement('div');
-  probe.style.cssText = 'position: fixed; top: 0; left: 0; width: 0; height: 100lvh; visibility: hidden; pointer-events: none';
-  document.documentElement.append(probe);
-  const large = probe.getBoundingClientRect().height;
-  probe.style.height = '100svh';
-  const small = probe.getBoundingClientRect().height;
-  probe.remove();
-  return large - small > 1;
-}
-
-/**
  * The screen's height at width `w`: the tallest seen at it, `h` now among them
  * (kept in `tallest`), and never more than the screen's side that way up (a
  * reading half old and half new as the phone turns says the page is as tall
  * as it is wide). `screenW` by `screenH` is the screen, either way round.
+ * `large` is the large viewport's height (100lvh, 0 where it isn't known):
+ * taller than `h` it is taken, under the same cap, and shorter it changes
+ * nothing.
  */
-export function screenHeight(tallest: Map<number, number>, w: number, h: number, screenW: number, screenH: number): number {
+export function screenHeight(tallest: Map<number, number>, w: number, h: number, screenW: number, screenH: number, large = 0): number {
   const side = w < h ? Math.max(screenW, screenH) : Math.min(screenW, screenH);
-  const most = Math.max(tallest.get(w) ?? 0, Math.min(h, side));
+  const most = Math.max(tallest.get(w) ?? 0, Math.min(Math.max(h, large), side));
   tallest.set(w, most);
   return most;
 }

@@ -62,7 +62,7 @@ await sleep(800);
 // middle-button autoscroll does (autoscroll.ts). Not what a thumb gets: a
 // scroll on the main thread makes WebKit repaint whatever crosses the edge of
 // a fixed layer that ends where the screen does, so this catches the
-// backdrop sized to the viewport again (heldToScreen in viewport.ts).
+// backdrop short of the screen again (--screen-h, viewport.ts).
 await mark('scripted');
 await ev(`new Promise((done) => { let n = 0; const step = () => { document.scrollingElement.scrollTop += n < 100 ? 30 : -30; if (++n < 200) requestAnimationFrame(step); else done(); }; requestAnimationFrame(step); })`);
 await sleep(800);
