@@ -200,6 +200,14 @@ with its numbers in the comments.
   waits 300 ms there instead, and each step still runs as one task: a step
   over a frame's time drops a frame on the phone however idle the page
   looked. Work that takes tens of ms a step there belongs in a worker.
+- **A visit's first press makes its sound.** Making the Web Audio bus and
+  waking it held the page about 50 ms, in a task just after the first tap,
+  in the middle of the screen that tap brought in (the codex, for many a
+  visit), and the hall's reverb took its steps over the second after. Only
+  waking a context needs the gesture: the bus is made once the page has
+  settled (`installUiSounds({ ahead: true })`, `src/lib/sound.ts`) and the
+  hall is worked out in a worker (`src/lib/hallWorker.ts`). A trace from
+  the phone still has to show what the press's `resume()` costs alone.
 - **A masked SVG costs its frames while what it masks changes.** Delve's
   ladder (`DelveLadder.svelte`) is masked round its stars; while its 260
   lines inked themselves in, the lobby came in at 24 to 35 fps, and at 60

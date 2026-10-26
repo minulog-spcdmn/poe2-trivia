@@ -13,6 +13,8 @@ import { archetypeAt } from './backdrops.ts';
 import { descent, hallTurn, STRATA, strataAt } from './descent.ts';
 import { AMBIENCE, ARCHETYPE_AMBIENCE, CAVE_IN, DEPTH, FIRE, MIX, MOMENTS, RUMBLE, VEIN_AMBIENCE, VEIN_DUCK, ZONE_AMBIENCE, type Bed, type BedLayer, type Layer } from './soundDesign.ts';
 import { whenIdle } from './idle.ts';
+import { HALL_SECONDS, fillHall, hallLength } from './hallNoise.ts';
+import type { HallAnswer, HallJob } from './hallWorker.ts';
 import { readStored, writeStored } from './storage.ts';
 
 export type Sfx =
@@ -422,11 +424,10 @@ let primed = false;
 function prime(b: Bus) {
   primed = true;
   // The hall's impulse takes a moment to work out: not in the tap that
-  // starts the sound (the first sounds just play dry), and a part per idle
-  // moment, as that tap's screen comes in (whole, it held up a frame by
-  // some 50 ms in the codex's).
+  // starts the sound (the first sounds just play dry), and away from the
+  // page (hallThere), as that tap's screen comes in.
   // (Should it fail, the context closed meanwhile, the sound stays dry.)
-  setTimeout(() => void inIdleSteps(hallSteps(b.ac, HALL_SECONDS)).then((buf) => (b.reverb.buffer = buf), () => {}), 300);
+  setTimeout(() => void hallThere(b.ac).then((buf) => idle(() => (b.reverb.buffer = buf)), () => {}), 300);
   for (const file of MOMENT_FILES) if (!GENERATED[file]) void load(file).catch(() => {});
   // Already in a Delve: work out its sounds now (see depthAmbience).
   if (depth > 0) prepareDelve(b);
@@ -524,37 +525,68 @@ function inIdleSteps<T>(steps: Generator<void, T>): Promise<T> {
 }
 
 /** How long (s) the hall's impulse response is. */
-export const HALL_SECONDS = 2.8;
+export { HALL_SECONDS };
 
 /** How many parts each channel of the hall's impulse is worked out in (see hallSteps). */
 const HALL_PARTS = 4;
 
 /**
- * A dark stone-hall impulse response: stereo noise that decays and loses its
- * highs as it goes. Worked out a quarter of a channel per step, from the
- * first idle moment on.
+ * The hall's impulse (lib/hallNoise.ts: stereo noise that decays and loses
+ * its highs as it goes), worked out here where no worker can (hallThere): a
+ * quarter of a channel per step, from the first idle moment on.
  */
-function* hallSteps(ac: AudioContext, seconds: number): Generator<void, AudioBuffer> {
+export function* hallSteps(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>): Generator<void, AudioBuffer> {
   // Nothing before the first idle moment (inIdleSteps runs a first step at once).
   yield;
-  const len = Math.floor(ac.sampleRate * seconds);
+  const len = hallLength(ac.sampleRate);
   const buf = ac.createBuffer(2, len, ac.sampleRate);
   for (let ch = 0; ch < buf.numberOfChannels; ch++) {
     const d = buf.getChannelData(ch);
     let lp = 0;
     for (let part = 0; part < HALL_PARTS; part++) {
       if (ch || part) yield;
-      const end = Math.floor((len * (part + 1)) / HALL_PARTS);
-      for (let i = Math.floor((len * part) / HALL_PARTS); i < end; i++) {
-        const p = i / len;
-        // One-pole lowpass whose cutoff falls over the tail.
-        lp += (0.45 - 0.4 * p) * (Math.random() * 2 - 1 - lp);
-        const onset = Math.min(1, i / (ac.sampleRate * 0.015));
-        d[i] = lp * onset * Math.pow(1 - p, 3);
-      }
+      lp = fillHall(d, ac.sampleRate, Math.floor((len * part) / HALL_PARTS), Math.floor((len * (part + 1)) / HALL_PARTS), lp);
     }
   }
   return buf;
+}
+
+/**
+ * The hall's impulse worked out in a worker of its own (lib/hallWorker.ts),
+ * which then stops; here a step per idle moment (hallSteps) where there's
+ * none or it fails. On an iPhone its steps here held the page over the
+ * second after the first tap, as the screen that tap brought came in.
+ */
+function hallThere(ac: AudioContext): Promise<AudioBuffer> {
+  const here = () => inIdleSteps(hallSteps(ac));
+  if (typeof Worker === 'undefined') return here();
+  return new Promise((resolve, reject) => {
+    let w: Worker;
+    try {
+      w = new Worker(new URL('./hallWorker.ts', import.meta.url), { type: 'module' });
+    } catch {
+      resolve(here());
+      return;
+    }
+    w.onmessage = ({ data }: MessageEvent<HallAnswer>) => {
+      w.terminate();
+      try {
+        const buf = ac.createBuffer(data.channels.length, data.channels[0].length, ac.sampleRate);
+        data.channels.forEach((c, i) => buf.getChannelData(i).set(c));
+        resolve(buf);
+      } catch (e) {
+        reject(e);
+      }
+    };
+    // (Failed to load, say: worked out here instead.)
+    const instead = () => {
+      w.terminate();
+      resolve(here());
+    };
+    w.onerror = instead;
+    w.onmessageerror = instead;
+    w.postMessage({ sampleRate: ac.sampleRate } satisfies HallJob);
+  });
 }
 
 /**
@@ -1306,9 +1338,10 @@ export function pointerSpeed(trail: readonly { x: number; y: number; t: number }
  * UI sounds for every control: a faint brush when the mouse moves onto one,
  * and a click when it's pressed. Controls that play their own sound (or none)
  * opt out of the click with `data-sfx="none"`. Also starts the ambience with
- * the first interaction.
+ * the first interaction. `ahead`: the bus is made in an idle moment once the
+ * page has loaded (the game's page; not every frame of the QA desk).
  */
-export function installUiSounds() {
+export function installUiSounds({ ahead = false }: { ahead?: boolean } = {}) {
   let hovered: Element | null = null;
   // The pointer's last few moves (client px, ms), for how fast it came over a control.
   const trail: { x: number; y: number; t: number }[] = [];
@@ -1367,4 +1400,16 @@ export function installUiSounds() {
     addEventListener(type, warm, { capture: true, passive: true });
   }
   document.addEventListener('visibilitychange', updateAmbience);
+  // Made before the first press, then, once the page has settled: making it
+  // needs no gesture (see build), and made after that press (buildSoon) it
+  // held the page some 50 ms on an iPhone, in the middle of the screen the
+  // press brought in (the codex's first frames, a tap on Codex being many a
+  // visit's first). The press then only has to wake it (audio()).
+  if (ahead)
+    whenIdle(
+      () => {
+        if (!muted && !bus && !document.hidden && typeof AudioContext !== 'undefined') build();
+      },
+      { timeout: 4000, fallback: 2500 },
+    );
 }
