@@ -2,7 +2,7 @@ import type { PeerOptions } from 'peerjs';
 import type * as PeerJsModule from 'peerjs';
 import { CHANNEL, LOCAL, roomPrefix } from './channel';
 import { QA_ROOM } from './storage';
-import { whenIdle } from './idle';
+import { whenSettled } from './settled';
 import { QA_PEER_PATH, QA_PEER_PORT } from '../qa/live/signal';
 
 // Bump when the protocol or item data changes so old tabs can't join new rooms.
@@ -51,7 +51,7 @@ export function loadPeerJs(): Promise<PeerJs> {
 /** PeerJS when it is loaded already, so a peer can be made right away. */
 export const peerJsNow = (): PeerJs | null => peerJs;
 
-/** Loads PeerJS once the page is idle, so hosting or joining doesn't wait for it. */
+/** Loads PeerJS once the page has settled (lib/settled.ts: not over the start page's entrance), so hosting or joining doesn't wait for it. */
 export function preloadPeerJs() {
-  whenIdle(() => void loadPeerJs().catch(() => {}), { timeout: 3000, fallback: 1000 });
+  whenSettled(() => loadPeerJs().catch(() => {}));
 }

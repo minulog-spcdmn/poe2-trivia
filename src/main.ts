@@ -70,7 +70,8 @@ const app = mount(Root, {
 });
 
 // PeerJS and Ed25519 aren't part of the startup scripts: they come in once
-// the page is idle, ready before anyone hosts or joins (lib/peer.ts, lib/ownerKey.ts).
+// the page has settled, ready before anyone hosts or joins (lib/peer.ts,
+// lib/ownerKey.ts, lib/settled.ts).
 preloadPeerJs();
 preloadEd25519();
 

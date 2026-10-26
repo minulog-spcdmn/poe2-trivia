@@ -23,16 +23,16 @@
 
 import { base64url, fromBase64url } from './base64url.ts';
 import { readKey, writeKey } from './storage.ts';
-import { whenIdle } from './idle.ts';
+import { whenSettled } from './settled.ts';
 
 /** The owner key's public half (raw Ed25519, base64url): scripts/owner-key.mjs prints it for the words. */
 export const OWNER_PUBLIC_KEY = 'SIwtcxovVQ_Mfp8NkPmSzMKgYx1ejNtyuw-VLrgkS8M';
 
 const ed25519 = () => import('@noble/ed25519');
 
-/** Loads Ed25519 once the page is idle, so a room's signature isn't left to a download that may no longer be there. */
+/** Loads Ed25519 once the page has settled (lib/settled.ts), so a room's signature isn't left to a download that may no longer be there. */
 export function preloadEd25519() {
-  whenIdle(() => void ed25519().catch(() => {}), { timeout: 3000, fallback: 1000 });
+  whenSettled(() => ed25519().catch(() => {}));
 }
 
 const SALT = 'poe2trivia.owner-key';
