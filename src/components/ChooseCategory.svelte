@@ -2466,8 +2466,29 @@
     .choose.beside .find-notes ~ .note {
       grid-column: 1 / -1;
     }
+    /* (Not the notes' own second row, above, which here is the cards'.) */
+    .choose.beside .find-notes .note.muted {
+      grid-row: auto;
+    }
     .choose.beside .find-notes ~ .note {
       display: block;
+    }
+    /* What stays unused on two finds takes the lock rule's line, as the
+       notes take it on a narrower phone, so the stack keeps its height. */
+    .choose.beside:has(.find-notes > .note.muted) .find-notes ~ .note {
+      display: none;
+    }
+  }
+  /* Together, after the vote's line, in the lock rule's place: the seals
+     under the cards stay clear, and the two read as one block of small
+     print, as the vote and the rule do. (Under 336 tall the columns beside
+     the cards take both, further down.) */
+  @media (min-height: 336px) {
+    @container slot (min-width: 780px) {
+      .choose.beside .find-notes:has(~ .vote-status) .note.muted {
+        order: 1;
+        margin-top: -0.6rem;
+      }
     }
   }
   @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
@@ -2564,8 +2585,16 @@
      height (`beside`, above): on the left under the prompt, the two meeting
      at the cards' middle, on the right with what stays unused under it; the
      lock rule makes way for a note on the right, as it does on every phone
-     for the notes. Narrower (the slot under 740 across) the stack stays, and
-     the lock rule makes way. */
+     for the notes. The team's vote stands on the right too (below): in a
+     row of its own under the cards it took the 29px a phone 285 to 298
+     tall hasn't got. Narrower (the slot under 740 across) the stack stays,
+     and the lock rule makes way.
+
+     Each side is a stack of up to three, at the cards' middle: alone, one
+     spans every row (1 / -1); two meet at it, the first at the foot of row
+     2 and the next from the top of row 3; a third comes under them in row
+     4. Rows 1 and 5 take what the cards leave, so the stacks stay whole
+     (the space a card's height leaves never opens between their lines). */
   @media (orientation: landscape) and (max-height: 335px) and (min-width: 561px) {
     .choose:not(.duel) > .note,
     .choose.beside .find-notes ~ .note {
@@ -2575,18 +2604,20 @@
       .choose:not(.duel) {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+        grid-template-rows: 1fr auto auto auto 1fr;
         grid-template-areas: none;
         column-gap: 1.6rem;
+        row-gap: 0;
         align-items: center;
       }
       .choose:not(.duel) > .cards {
         grid-column: 2;
-        grid-row: 1 / span 2;
+        grid-row: 1 / -1;
       }
       .choose:not(.duel) > .prompt,
       .choose:not(.duel) > .line {
         grid-column: 1;
-        grid-row: 1 / span 2;
+        grid-row: 1 / -1;
         justify-self: end;
         text-align: right;
       }
@@ -2617,7 +2648,7 @@
       .choose.beside:not(:has(.find-note[data-side='right'])) .find-notes ~ .note {
         display: block;
         grid-column: 3;
-        grid-row: 1 / span 2;
+        grid-row: 1 / -1;
         justify-self: start;
         max-width: 15rem;
         margin: 0;
@@ -2635,40 +2666,92 @@
       }
       .choose.beside:has(.find-note[data-side='left']) > .prompt,
       .choose.beside:has(.find-note[data-side='left']) > .line {
-        grid-row: 1;
+        grid-row: 2;
         align-self: end;
       }
       .choose.beside .find-note[data-side='left'] {
         grid-column: 1;
-        grid-row: 2;
+        grid-row: 3 / span 2;
         align-self: start;
         justify-self: end;
-        margin-top: 0.5rem;
+        margin-top: 0.6rem;
         text-align: right;
       }
       .choose.beside .find-note[data-side='right'] {
         grid-column: 3;
-        grid-row: 1 / span 2;
+        grid-row: 1 / -1;
         justify-self: start;
         text-align: left;
       }
       .choose.beside:has(.find-notes > .note.muted) .find-note[data-side='right'] {
-        grid-row: 1;
+        grid-row: 2;
         align-self: end;
       }
+      /* (Row 3 alone, the team's vote under it in row 4.) */
       .choose.beside .find-notes .note.muted {
         grid-column: 3;
-        grid-row: 2;
+        grid-row: 3;
         align-self: start;
         justify-self: start;
         max-width: 15rem;
-        margin-top: 0.5rem;
+        margin-top: 0.6rem;
         text-align: left;
       }
-      /* The team's vote stays in a row of its own under the cards, as at every height. */
+      /* The team's vote on the right, the lock rule's side: over the rule,
+         the two one block of small print as under the cards, or under the
+         note there (a dig's way out, a find) and what stays unused on the
+         finds. Its lines wrap in the column: a long name breaks, and a long
+         wait (six long names) ends in an ellipsis at three lines, two under
+         a note and the line on what stays unused, so the stack never
+         outgrows the screen (you come first in it). On the left the prompt
+         keeps its place when the draw takes the vote and the rule away. */
       .choose:not(.duel) > .vote-status {
-        grid-column: 1 / -1;
-        grid-row: 3;
+        grid-column: 3;
+        grid-row: 1 / -1;
+        justify-self: start;
+        justify-content: flex-start;
+        gap: 0.1rem 0.8rem;
+        max-width: 15rem;
+        margin: 0;
+        font-size: 0.85rem;
+        line-height: 1.3;
+        text-align: left;
+        white-space: normal;
+        flex-wrap: wrap;
+        overflow-wrap: anywhere;
+      }
+      .choose:not(.duel) > .vote-status .live > span:not(.sr) {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 3;
+        line-clamp: 3;
+      }
+      .choose.beside:has(.find-notes > .note.muted) > .vote-status .live > span:not(.sr) {
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+      }
+      /* (Over the rule; alone, watching, at the cards' middle.) */
+      .choose:not(.duel):has(> .note):not(:has(.find-note[data-side='right'])) > .vote-status {
+        grid-row: 2;
+        align-self: end;
+      }
+      .choose.coop:not(.duel):not(:has(.find-note[data-side='right'])) > .note {
+        grid-row: 3 / span 2;
+        align-self: start;
+        margin-top: 0.6rem;
+      }
+      /* (Under the note.) */
+      .choose.coop.beside .find-note[data-side='right'] {
+        grid-row: 2;
+        align-self: end;
+      }
+      .choose.beside:has(.find-note[data-side='right']) > .vote-status {
+        grid-row: 3 / span 2;
+        align-self: start;
+        margin-top: 0.6rem;
+      }
+      .choose.beside:has(.find-notes > .note.muted) > .vote-status {
+        grid-row: 4;
       }
     }
     @container slot (min-width: 780px) {

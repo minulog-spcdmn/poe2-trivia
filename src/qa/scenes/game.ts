@@ -336,6 +336,10 @@ export function gameScenes(): Scene[] {
         return { state: shown, act: t.room, at, steps: [{ wait: 1200 }, { then: t.s, at: t.clock.now }] } satisfies Built;
       },
     },
+    // Finds among the team's cards too, as Delve alone deals them (its notes
+    // beside the cards with the vote's line, on a phone's browser on its
+    // side), and dynamite in Doryani's pack, for the line on what stays
+    // unused on them.
     scene(
       'delve-together-cards',
       'Delve together',
@@ -343,9 +347,40 @@ export function gameScenes(): Scene[] {
       [host('Kalguur'), guest('Doryani'), WATCHER],
       (v) => {
         const t = delveTogether(v);
+        const [vein, , flare] = t.s.offered;
+        const on = v.finds ?? 'none';
+        t.s.delve!.finds = [
+          ...(on === 'both' || on === 'vein' ? [{ category: vein, kind: 'azurite' as const }] : []),
+          ...(on === 'both' || on === 'flare' ? [{ category: flare, kind: 'flare' as const }] : []),
+        ];
+        if (v.held) t.s.delve!.inventory = { [pid('Doryani')]: { wards: 0, flares: 0, dynamite: 1 } };
         return t.act({ type: 'vote', category: t.s.offered[1] }, 'Doryani');
       },
-      { controls: [players(2, 3)] },
+      {
+        controls: [
+          players(2, 3),
+          {
+            kind: 'choice',
+            key: 'finds',
+            label: 'Finds',
+            default: 'none',
+            options: [
+              { value: 'none', label: 'None' },
+              { value: 'both', label: 'A vein and a flare' },
+              { value: 'vein', label: 'A vein, first card' },
+              { value: 'flare', label: 'A flare, last card' },
+            ],
+          },
+          { kind: 'toggle', key: 'held', label: 'Dynamite in a pack', default: false },
+        ],
+        states: [
+          { label: 'The cards dealt, Doryani has voted', values: {} },
+          { label: 'An Azurite Vein and a Flare Cache', values: { finds: 'both' } },
+          { label: 'Both, with dynamite in a pack', values: { finds: 'both', held: true } },
+          { label: 'An Azurite Vein alone, on the first card', values: { finds: 'vein' } },
+          { label: 'A Flare Cache alone, on the last card', values: { finds: 'flare' } },
+        ],
+      },
     ),
     scene(
       'delve-together-dig',
