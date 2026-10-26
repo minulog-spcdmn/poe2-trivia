@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { SOL_RAYS } from '../lib/alchemy';
   import { star8 } from '../lib/arcane';
   import * as art from '../lib/ouroborosArt';
@@ -110,6 +110,25 @@
   });
   $effect(() => {
     if (plate) natural = plate.natural;
+  });
+  /**
+   * Whether the plate and its glow are masked round the stars yet: from when
+   * the first star's cutout starts to show (at once while still, or with
+   * reduced motion), as until then the mask hides nothing. A masked plate is
+   * painted through its mask whenever any of it changes, and on an iPhone,
+   * as the plate inked itself in, that held the lobby to 24 to 35 fps (60
+   * unmasked). Once on, the mask stays: taken off again, an iPhone still
+   * paid for it.
+   */
+  let starsCut = $state(false);
+  $effect(() => {
+    const p = plate;
+    if (!p || untrack(() => starsCut)) return;
+    const still = document.documentElement.hasAttribute('data-still') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const due = still ? 0 : Math.min(...[p.star, p.last].map((s) => s?.delay ?? Infinity));
+    if (due === Infinity) return;
+    const timer = setTimeout(() => (starsCut = true), 1000 * due);
+    return () => clearTimeout(timer);
   });
   $effect(() => {
     stacked = !beside;
@@ -299,7 +318,7 @@
 
     <!-- The glow: the lit lines again, whole, wide and soft, under the plate. It breathes. -->
     <svg class="glow" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
-      <g mask="url(#{uid}-cut)">
+      <g mask={starsCut ? `url(#${uid}-cut)` : null}>
         {#each p.parts as part, i (i)}
           {#each part.glow as g, j (j)}<path d={g.d} class="{g.kind} {part.tone}" style:--c={part.color} />{/each}
         {/each}
@@ -310,7 +329,7 @@
     </svg>
 
     <svg class="plate" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
-      <g mask="url(#{uid}-cut)">
+      <g mask={starsCut ? `url(#${uid}-cut)` : null}>
         {#each p.shades as s, i (i)}
           <path class="shade draw {s.tone}" d={s.d} style:--c={s.color} style:--d={sec(s.delay)} style:--t={sec(s.t)} style:--o={s.o} pathLength="100" />
         {/each}

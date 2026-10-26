@@ -6,7 +6,7 @@
   import { shown } from '../lib/media.svelte';
   import { FINALE_MS, materialize, type BurnParams } from '../lib/materialize';
   import { frontier } from '../lib/frontier';
-  import { visibleBox } from '../lib/patches';
+  import { visibleBoxOf } from '../lib/veilCutter';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import Avatar from './Avatar.svelte';
@@ -503,18 +503,14 @@
     }
     let live = true;
     const done = () => live && (fullLoaded = true);
+    const src = itemImage(drawn.art);
     const img = new Image();
-    img.src = itemImage(drawn.art);
-    img.decode().then(() => {
+    img.src = src;
+    // Measured in art pixels, as the host measures the veiled copy (in the
+    // veil's worker: on the page it held an iPhone's reveal a frame).
+    Promise.all([img.decode(), visibleBoxOf(src, drawn.w, drawn.h)]).then(([, box]) => {
       if (!live) return;
-      // Measured in art pixels, as the host measures the veiled copy.
-      const c = document.createElement('canvas');
-      c.width = drawn.w;
-      c.height = drawn.h;
-      const g = c.getContext('2d', { willReadFrequently: true })!;
-      g.imageSmoothingQuality = 'high';
-      g.drawImage(img, 0, 0, c.width, c.height);
-      fullBox = visibleBox(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height);
+      fullBox = box;
       done();
     }, done);
     const timer = setTimeout(done, 3000);

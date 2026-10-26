@@ -3,6 +3,7 @@
 // and at the reveal; on the page itself where no worker can run, or where
 // one fails.
 
+import { visibleBox } from './patches';
 import { placeOf, VeilCut, type OwnVeil, type PatchImage, type PatchPlace, type VeilWire } from './veilCut';
 import type { VeilAnswer, VeilJob } from './veilWorker';
 
@@ -95,6 +96,30 @@ class Cutting implements CutHandle {
   }
 }
 
+/**
+ * Where the visible pixels are in the picture at `url` drawn `w` × `h`
+ * (visibleBox): worked out in the worker, or on the page where it can't be.
+ */
+export async function visibleBoxOf(url: string, w: number, h: number): Promise<[number, number, number, number]> {
+  const v = veilWorker();
+  if (v) {
+    const id = ++jobs;
+    const box = await new Promise<[number, number, number, number] | null>((resolve) => {
+      boxes.set(id, resolve);
+      v.postMessage({ t: 'box', id, url: new URL(url, location.href).href, w, h } satisfies VeilJob);
+    });
+    if (box) return box;
+  }
+  const img = new Image();
+  img.src = url;
+  await img.decode();
+  const c = canvasOnPage(w, h);
+  const g = c.getContext('2d', { willReadFrequently: true })!;
+  g.imageSmoothingQuality = 'high';
+  g.drawImage(img, 0, 0, w, h);
+  return visibleBox(g.getImageData(0, 0, w, h).data, w, h);
+}
+
 let worker: Worker | null | undefined;
 let keys = 0;
 let jobs = 0;
@@ -102,6 +127,8 @@ let jobs = 0;
 const cutting = new Map<number, (places: PatchPlace[] | null | undefined) => void>();
 /** Pictures asked of the worker, by job (null: it failed). */
 const asked = new Map<number, (bitmap: ImageBitmap | null) => void>();
+/** Boxes asked of the worker, by job (null: it failed). */
+const boxes = new Map<number, (box: [number, number, number, number] | null) => void>();
 
 function askWorker(key: number, i: number): Promise<ImageBitmap | null> {
   const w = worker;
@@ -127,6 +154,10 @@ function veilWorker(): Worker | null {
       const done = cutting.get(data.key);
       cutting.delete(data.key);
       done?.(data.error === undefined ? (data.places ?? null) : undefined);
+    } else if (data.t === 'box') {
+      const done = boxes.get(data.id);
+      boxes.delete(data.id);
+      done?.(data.box ?? null);
     } else {
       const done = asked.get(data.id);
       asked.delete(data.id);
@@ -138,8 +169,10 @@ function veilWorker(): Worker | null {
     worker = null;
     for (const done of cutting.values()) done(undefined);
     for (const done of asked.values()) done(null);
+    for (const done of boxes.values()) done(null);
     cutting.clear();
     asked.clear();
+    boxes.clear();
   };
   return worker;
 }

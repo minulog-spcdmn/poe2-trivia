@@ -191,11 +191,23 @@ with its numbers in the comments.
   when first needed, typed arrays transferred, and the page doing it
   itself where there's no worker (or no `OffscreenCanvas`). The worst frame
   after Next went from between 344 and 1,113 ms to between 53 and 81, and
-  Begin's from between 690 and 946 ms to about 285.
+  Begin's from between 690 and 946 ms to about 285. Reading an image's
+  pixels is the same: finding where the item sits in the full art at the
+  reveal (`getImageData`) cost an answer a frame of 50 to 68 ms; it's read
+  in the veil's worker now (`visibleBoxOf` in `src/lib/veilCutter.ts`).
 - **Safari has no `requestIdleCallback`.** `whenIdle` (`src/lib/idle.ts`)
   waits 300 ms there instead, and each step still runs as one task: a step
   over a frame's time drops a frame on the phone however idle the page
   looked. Work that takes tens of ms a step there belongs in a worker.
+- **A masked SVG costs its frames while what it masks changes.** Delve's
+  ladder (`DelveLadder.svelte`) is masked round its stars; while its 260
+  lines inked themselves in, the lobby came in at 24 to 35 fps, and at 60
+  with the mask overridden. Nothing showed in the page's own thread: its
+  styles, layouts and paints were the same, and so were its layers. The
+  mask now goes on only as the first star's cutout starts to show, as until
+  then it hides nothing. Try such a thing with a CSS rule (`mask: none`
+  through `ask.mjs`): taking the `mask` attribute off from script didn't
+  take the cost away.
 
 Still open: Begin's worst frame, about 230 to 285 ms. About 70 ms of it is
 script mounting the game screen and about 140 ms its styles, layout and
