@@ -3,7 +3,9 @@
 // process), whose boxes the page puts on the patch's canvas as they come, it
 // draws every frame's pixels and flies every spark exactly as the page drew
 // them before the worker took the burns over (materialize.ts at f620318b,
-// hashed: BEFORE). A burn whose canvas goes stops in the worker too. Until
+// hashed: BEFORE). A page slower than the worker has one frame at a time,
+// all that changed since the last in it, and ends on the same picture with
+// the same sparks flown. A burn whose canvas goes stops in the worker too. Until
 // the worker has said it's there, and while it doesn't answer back from a
 // long while in the background, the page burns them; one that doesn't answer
 // is given no more and let go, those it hadn't finished drawn whole on their
@@ -100,11 +102,19 @@ function fakeContext(where: Tally) {
         }
     },
     getImageData: () => new FakeImageData(px.slice(), W, H),
+    /** What it shows. */
+    pixels: () => px,
     /** The box of `img` from (x0, y0), w × h (the whole of it by default), put at (dx, dy) on and after it: hashed as where it lands and what it brings. */
     putImageData(img: FakeImageData, dx: number, dy: number, x0 = 0, y0 = 0, w = img.width, h = img.height) {
       where.puts++;
       for (const v of [dx + x0, dy + y0, w, h]) mix(v);
-      for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) for (let c = 0; c < 4; c++) mix(img.data[(y * img.width + x) * 4 + c]);
+      for (let y = y0; y < y0 + h; y++)
+        for (let x = x0; x < x0 + w; x++)
+          for (let c = 0; c < 4; c++) {
+            const v = img.data[(y * img.width + x) * 4 + c];
+            mix(v);
+            px[((dy + y) * W + dx + x) * 4 + c] = v;
+          }
     },
   };
 }
@@ -117,7 +127,7 @@ const offscreen: Tally = { drawn: 0, puts: 0 };
 interface FakeCanvas {
   width: number;
   height: number;
-  getContext(): { drawn: number };
+  getContext(): { drawn: number; pixels(): Uint8ClampedArray };
 }
 
 /** A patch's <canvas>, 100 CSS px wide on a 3x screen. */
@@ -229,6 +239,11 @@ class FakeWorker {
   terminated = false;
   /** What it was told (only what: a picture sent isn't kept here). */
   sent: { t: string }[] = [];
+  /** The page's answers to its frames, held back till `answer` (a page slower than the worker); null: they go at once. */
+  late: { t: string }[] | null = null;
+  /** Its frames with the page not put yet, and the most there were at once. */
+  out = 0;
+  most = 0;
   constructor() {
     made.push(this);
     void import('../src/lib/burnWorker.ts').then(() => {
@@ -238,7 +253,17 @@ class FakeWorker {
   }
   postMessage(data: { t: string }) {
     this.sent.push({ t: data.t });
-    if (!this.deaf && !this.terminated) queueMicrotask(() => scope.onmessage!({ data }));
+    if (data.t === 'put' && this.late) this.late.push(data);
+    else this.tell(data);
+  }
+  /** The answers held back go. */
+  answer() {
+    for (const data of this.late?.splice(0) ?? []) this.tell(data);
+  }
+  tell(data: { t: string }) {
+    if (this.deaf || this.terminated) return;
+    if (data.t === 'put') this.out--;
+    queueMicrotask(() => scope.onmessage!({ data }));
   }
   terminate() {
     this.terminated = true;
@@ -246,13 +271,17 @@ class FakeWorker {
 }
 scope.postMessage = (news) => {
   const w = made.findLast((m) => !m.terminated);
-  if (w && !w.deaf) queueMicrotask(() => w.onmessage?.({ data: news }));
+  if (!w || w.deaf) return;
+  if ((news as { t: string }).t === 'frame') w.most = Math.max(w.most, ++w.out);
+  queueMicrotask(() => w.onmessage?.({ data: news }));
 };
 scope.requestAnimationFrame = g.requestAnimationFrame;
 const listeners: (() => void)[] = [];
 const doc = { hidden: false, addEventListener: (_: string, f: () => void) => listeners.push(f) };
 /** Burns sent to a worker, all told. */
 const sentBurns = () => made.reduce((n, w) => n + w.sent.filter((s) => s.t === 'burn').length, 0);
+/** What `w` was last told, the page's answers to its frames aside. */
+const told = (w: FakeWorker) => w.sent.findLast((s) => s.t !== 'put')!.t;
 
 function useWorkers() {
   g.self = scope;
@@ -291,6 +320,47 @@ test('in the worker, its boxes put on the page, it burns in the same, frame by f
   assert.equal(offscreen.puts, 0);
   assert.equal(page.drawn, before.drawn, 'the page drew no picture itself');
   assert.ok(page.puts > before.puts + 100, 'it put the worker’s boxes');
+  assert.equal(made[0].most, 1, 'one frame at a time');
+});
+
+/**
+ * A patch spreading in from a seam, burnt in the worker, the page answering
+ * its frames at once or (`slow`) on every fourth of the display's: what its
+ * canvas ended on, what it set off, how many boxes it put, and the most
+ * frames it had at once.
+ */
+async function burnFor(slow: boolean) {
+  const w = made[0];
+  w.late = slow ? [] : null;
+  w.most = 0;
+  now = 1000;
+  seed = 12345;
+  fired.length = 0;
+  const puts = page.puts;
+  const { canvas, destroy } = await show();
+  for (let n = 1; frames.length || w.late?.length; n++) {
+    const due = frames;
+    frames = [];
+    now += 16.67;
+    for (const step of due) step(now);
+    await settle();
+    if (n % 4 === 0 || !frames.length) w.answer();
+    await settle();
+  }
+  w.late = null;
+  const ended = canvas.getContext().pixels().slice();
+  destroy();
+  return { ended, fired: fired.splice(0), puts: page.puts - puts, most: w.most };
+}
+
+test('a page slower than the worker has a frame at a time, all that changed in it: it ends on the same picture, every spark flown', async () => {
+  const prompt = await burnFor(false);
+  const slow = await burnFor(true);
+  assert.equal(slow.most, 1, 'one frame at a time');
+  assert.ok(slow.puts < prompt.puts / 3, `fewer boxes put (${slow.puts} against ${prompt.puts})`);
+  assert.ok(prompt.ended.some((v) => v > 0));
+  assert.deepEqual(slow.ended, prompt.ended, 'the same picture at the end');
+  assert.deepEqual(slow.fired, prompt.fired, 'the same sparks');
 });
 
 test('a burn whose canvas goes stops in the worker too', async () => {
@@ -300,7 +370,7 @@ test('a burn whose canvas goes stops in the worker too', async () => {
   assert.ok(put > 0);
   destroy();
   await settle();
-  assert.equal(made[0].sent.at(-1)!.t, 'stop');
+  assert.equal(told(made[0]), 'stop');
   await play();
   assert.equal(page.puts, put);
 });
@@ -309,12 +379,12 @@ test('burnt in, nothing more is said of it when its canvas goes', async () => {
   const { destroy } = await show();
   await play();
   destroy();
-  assert.equal(made[0].sent.at(-1)!.t, 'burn');
+  assert.equal(told(made[0]), 'burn');
 });
 
 test('back after a short while, the worker isn’t asked, and burns the next patch', async () => {
   hideFor(HIDDEN_CHECK_MS - 1000);
-  assert.notEqual(made[0].sent.at(-1)!.t, 'ping');
+  assert.notEqual(told(made[0]), 'ping');
   const sent = sentBurns();
   const { destroy } = await show();
   assert.equal(sentBurns(), sent + 1);
@@ -327,7 +397,7 @@ test('back after a long while, the page burns them till the worker answers; one 
   const first = made[0];
   first.deaf = true;
   hideFor(HIDDEN_CHECK_MS);
-  assert.equal(first.sent.at(-1)!.t, 'ping');
+  assert.equal(told(first), 'ping');
   const sent = sentBurns();
   const meanwhile = await show();
   assert.equal(sentBurns(), sent, 'burnt on the page');
@@ -338,7 +408,7 @@ test('back after a long while, the page burns them till the worker answers; one 
   await settle();
   const next = await show();
   assert.equal(sentBurns(), sent + 1, 'the new worker burns it');
-  assert.equal(made[1].sent.at(-1)!.t, 'burn');
+  assert.equal(told(made[1]), 'burn');
   await play();
   meanwhile.destroy();
   next.destroy();
@@ -351,7 +421,7 @@ test('with a burn in hand it has longer to answer; one lost is drawn whole on it
   await play(5);
   second.deaf = true;
   hideFor(HIDDEN_CHECK_MS);
-  assert.equal(second.sent.at(-1)!.t, 'ping');
+  assert.equal(told(second), 'ping');
   t.mock.timers.tick(PING_MS);
   assert.equal(made.length, 2, 'still waiting');
   assert.equal(canvas.getContext().drawn, 0);
@@ -379,7 +449,7 @@ test('one the worker can’t begin is drawn whole on its canvas', async () => {
   };
   const { canvas, destroy } = await show();
   g.OffscreenCanvas = OffscreenCanvas;
-  assert.equal(third.sent.at(-1)!.t, 'burn');
+  assert.equal(told(third), 'burn');
   assert.equal(canvas.getContext().drawn, 1);
   assert.ok(!third.terminated, 'the worker kept: it may yet read the next');
   destroy();
@@ -389,7 +459,7 @@ test('a worker that breaks is given no more: what it hadn’t finished is drawn 
   const third = made[2];
   const { canvas, destroy } = await show();
   await play(5);
-  assert.equal(third.sent.at(-1)!.t, 'burn');
+  assert.equal(told(third), 'burn');
   third.onerror!();
   assert.ok(third.terminated);
   assert.equal(canvas.getContext().drawn, 1);

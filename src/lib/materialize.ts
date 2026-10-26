@@ -9,10 +9,11 @@
 // to the item's own shape.
 //
 // The burn's arithmetic (burn.ts) runs in a worker (burnWorker.ts), the page
-// doing no more than put each frame's box on the patch's canvas and fly its
-// sparks; all of it on the page where there's no worker, or none that can
-// read a picture's pixels (no OffscreenCanvas), and until one has said it's
-// there.
+// doing no more than put the box that changed on the patch's canvas and fly
+// its sparks, a frame at a time: the worker sends the next once the page has
+// put the last. All of it runs on the page where there's no worker, or none
+// that can read a picture's pixels (no OffscreenCanvas), and until one has
+// said it's there.
 
 import { Burn, type BurnSetup } from './burn';
 import { fxDensity, veilIgnites, veilSpark } from './fx/moments';
@@ -120,11 +121,24 @@ function hear(b: Burner, news: BurnNews) {
   if (news.t === 'here') {
     b.here = true;
     clearTimeout(b.asked);
-  } else if (news.t === 'begun') b.burns.get(news.id)?.begun(news.px, news.at);
-  else {
-    for (const [id, box, px] of news.boxes) b.burns.get(id)?.box(box, px);
+    return;
+  }
+  const back: [number, Pixels][] = [];
+  try {
+    for (const [id, px, at] of news.begun) {
+      back.push([id, px]);
+      b.burns.get(id)?.begun(px, at);
+    }
+    for (const [id, box, px] of news.boxes) {
+      back.push([id, px]);
+      b.burns.get(id)?.box(box, px);
+    }
     for (const [id, s] of news.sparks) b.burns.get(id)?.sparks(s);
     for (const id of news.done) b.burns.get(id)?.done();
+  } finally {
+    // Put: the next frame can come, in the same pixels. (Whatever happened
+    // here: unanswered, the worker would send no more.)
+    b.worker.postMessage({ t: 'put', back } satisfies BurnJob, back.map(([, px]) => px.buffer));
   }
 }
 
@@ -266,7 +280,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     raf = requestAnimationFrame(frame);
   };
 
-  /** Burns in the worker, each frame's box put on the canvas as it comes. */
+  /** Burns in the worker, each frame's box put on the canvas as it comes (the canvas's pixels, only the box of them filled). */
   const burnThere = async (b: Burner, img: ImageBitmap, setup: BurnSetup) => {
     // A copy goes: the question keeps its own till it's over (media.svelte.ts),
     // and with it the patch's picture, should the burn there be lost.
@@ -291,7 +305,7 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
         ctx.putImageData(new ImageData(px, W, H), 0, 0);
         if (at) ignite(at);
       },
-      box: ([x, y, w, h], px) => ctx.putImageData(new ImageData(px, w, h), x, y),
+      box: (box, px) => ctx.putImageData(new ImageData(px, W, H), 0, 0, ...box),
       sparks: (s) => (canvas.isConnected ? fly(s) : destroy()),
       done: () => {
         b.burns.delete(id);

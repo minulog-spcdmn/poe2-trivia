@@ -201,13 +201,18 @@ with its numbers in the comments.
   every frame of its fizzle ran on the page, most of a race question's
   time on the phone (486 of 851 samples in one), the question screens at
   50 to 54 fps with frames of 60 to 120 ms. Their arithmetic (`burn.ts`)
-  runs in `burnWorker.ts` now, which sends each frame the box of each
-  patch that changed, its pixels as they now are; the page puts them on
-  the patch's canvas as they come, a copy. The worker doesn't draw on the
-  canvases itself (`transferControlToOffscreen`): on Chrome on Android (an
-  emulator's, Chrome 133) a canvas drawn from a worker
-  showed nothing, or a white block, for as long as the patch was there,
-  where the same pixels put on the page showed.
+  runs in `burnWorker.ts` now, which sends the box of each patch that
+  changed, its pixels as they now are; the page puts them on the patch's
+  canvas, a copy. Only one frame is with the page at a time: the burns tick
+  at the display's rate whatever the page does, so while the page hasn't
+  put the last, the worker gathers what changed and sends it as one once
+  it has. Otherwise a page slower than the display (a busy reveal, Low
+  Power Mode) puts a pile of frames back to back that are never shown.
+  Each patch's pixels go back and forth in one buffer. The worker doesn't
+  draw on the canvases itself (`transferControlToOffscreen`): on Chrome on
+  Android (an emulator's, Chrome 133) a canvas drawn from a worker showed
+  nothing, or a white block, for as long as the patch was there, where the
+  same pixels put on the page showed.
 - **Safari has no `requestIdleCallback`.** `whenIdle` (`src/lib/idle.ts`)
   waits 300 ms there instead, and each step still runs as one task: a step
   over a frame's time drops a frame on the phone however idle the page
