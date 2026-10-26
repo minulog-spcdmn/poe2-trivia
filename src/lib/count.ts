@@ -373,13 +373,18 @@ export const failedImport = (message: string) => /dynamically imported module|Im
 /**
  * An uncaught error in the game's own scripts ("error/script"), thrown or
  * rejected, or a module of the game's that failed to load; once a page load.
- * Installed first thing (lib/countErrors.ts), so a start that fails is
- * mostly caught too.
+ * Installed first thing (lib/countErrors.ts), and those from before it, as
+ * the modules main.ts imports ran, kept until then (lib/errorsFirst.ts), so
+ * a start that fails is caught too.
  */
 export function countScriptErrors() {
+  const before = takeErrorsFirst();
   if (!counting || typeof addEventListener === 'undefined') return;
   const assets = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}assets/`;
+  let counted = false;
   const done = () => {
+    if (counted) return;
+    counted = true;
     removeEventListener('error', onError);
     removeEventListener('unhandledrejection', onRejection);
     countEvent('error/script');
@@ -391,8 +396,21 @@ export function countScriptErrors() {
     const err = e.reason as { stack?: unknown; message?: unknown } | null;
     if (ownScript(typeof err?.stack === 'string' ? err.stack : '', assets) || failedImport(typeof err?.message === 'string' ? err.message : '')) done();
   };
+  for (const e of before) {
+    if (e.type === 'error') onError(e as ErrorEvent);
+    else onRejection(e as PromiseRejectionEvent);
+  }
+  if (counted) return;
   addEventListener('error', onError);
   addEventListener('unhandledrejection', onRejection);
+}
+
+/** The errors kept from before any module ran (lib/errorsFirst.ts), which stops keeping them; none on a page without that script, or taken already. */
+function takeErrorsFirst(): Event[] {
+  const page = globalThis as { __errorsFirst?: () => Event[] };
+  const take = page.__errorsFirst;
+  delete page.__errorsFirst;
+  return take?.() ?? [];
 }
 
 const arrivals = new Set<string>();

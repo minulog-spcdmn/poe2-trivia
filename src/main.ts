@@ -1,6 +1,8 @@
 // First: the game's script errors are counted from here on (lib/countErrors.ts).
-// (The built-ins an older browser lacks are filled in before this runs, by an
-// inline script, vite.config.ts polyfillsFirst.)
+// The modules imported below run before this file's own code all the same
+// (the startup script's shared chunks): theirs are kept until then by the
+// inline script at the top of the page (lib/errorsFirst.ts), the one that
+// fills in the built-ins an older browser lacks (vite.config.ts polyfillsFirst).
 import './lib/countErrors';
 import { mount } from 'svelte';
 import './app.css';
