@@ -4,7 +4,7 @@
 // does it away from the page's main thread (veilWorker.ts) and the page
 // itself, where no worker can (veilCutter.ts).
 
-import { patchCoverage, patchShapes, unpackLabels, type PatchShape } from './patches';
+import { patchCoverage, patchShapes, unpackLabels, visibleBox, type PatchShape } from './patches';
 
 /** A patch's own picture: a canvas when cut on the page, a bitmap from the worker. */
 export type PatchImage = HTMLCanvasElement | ImageBitmap;
@@ -42,7 +42,17 @@ export function shapesOf({ w, h, labels }: VeilWire): { shapes: PatchShape[]; li
 export const placeOf = ({ x, y, w, h, edges }: PatchShape): PatchPlace => ({ x, y, w, h, edges });
 
 type Surface = HTMLCanvasElement | OffscreenCanvas;
-type Ctx = Pick<CanvasRenderingContext2D, 'drawImage' | 'getImageData' | 'putImageData'>;
+type Ctx = Pick<CanvasRenderingContext2D, 'drawImage' | 'getImageData' | 'putImageData' | 'imageSmoothingQuality'>;
+
+/** Where the visible pixels are in `img` drawn over the whole of `canvas` (visibleBox), as the host measures a veiled picture. */
+export function drawnBox(img: CanvasImageSource, canvas: Surface): [number, number, number, number] {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true }) as unknown as Ctx | null;
+  if (!ctx) throw new Error('no 2d canvas');
+  const { width: W, height: H } = canvas;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, 0, 0, W, H);
+  return visibleBox(ctx.getImageData(0, 0, W, H).data, W, H);
+}
 
 /**
  * A patch's own picture, at the veiled picture's resolution (`img`, of W × H

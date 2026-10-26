@@ -3,7 +3,7 @@
 // each patch's picture as it uncovers (many at once at the reveal), held the
 // page up just as its effects were playing.
 
-import { placeOf, VeilCut, type OwnVeil, type PatchPlace, type VeilWire } from './veilCut';
+import { drawnBox, placeOf, VeilCut, type OwnVeil, type PatchPlace, type VeilWire } from './veilCut';
 
 export type VeilJob =
   /** A veiled picture to cut, from the wire or the host's own; answered with its patches' places. */
@@ -11,12 +11,15 @@ export type VeilJob =
   /** Patch `i`'s picture; answered with a bitmap. */
   | { t: 'picture'; id: number; key: number; i: number }
   /** A new question: the pictures cut so far are done with (`key`: only that one). */
-  | { t: 'forget'; key?: number };
+  | { t: 'forget'; key?: number }
+  /** Where the visible pixels are in the picture at `url`, drawn `w` × `h` (visibleBox). */
+  | { t: 'box'; id: number; url: string; w: number; h: number };
 
 export type VeilAnswer =
   /** A cut's places (null: its labels don't fit it), or why it couldn't be cut here. */
   | { t: 'cut'; key: number; places?: PatchPlace[] | null; error?: string }
-  | { t: 'picture'; id: number; bitmap?: ImageBitmap; error?: string };
+  | { t: 'picture'; id: number; bitmap?: ImageBitmap; error?: string }
+  | { t: 'box'; id: number; box?: [number, number, number, number]; error?: string };
 
 const answer = (a: VeilAnswer, transfer: Transferable[] = []) => self.postMessage(a, { transfer });
 
@@ -26,6 +29,20 @@ self.onmessage = async ({ data: job }: MessageEvent<VeilJob>) => {
   if (job.t === 'forget') {
     if (job.key === undefined) cuts.clear();
     else cuts.delete(job.key);
+    return;
+  }
+  if (job.t === 'box') {
+    // (At the reveal, on the page, this held an iPhone a frame of 50 to 68 ms.)
+    try {
+      const img = await createImageBitmap(await (await fetch(job.url)).blob());
+      try {
+        answer({ t: 'box', id: job.id, box: drawnBox(img, new OffscreenCanvas(job.w, job.h)) });
+      } finally {
+        img.close();
+      }
+    } catch (err) {
+      answer({ t: 'box', id: job.id, error: String(err) });
+    }
     return;
   }
   if (job.t === 'cut') {

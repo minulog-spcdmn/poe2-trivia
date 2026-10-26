@@ -6,7 +6,7 @@
   import { shown } from '../lib/media.svelte';
   import { FINALE_MS, materialize, type BurnParams } from '../lib/materialize';
   import { frontier } from '../lib/frontier';
-  import { visibleBox } from '../lib/patches';
+  import { visibleBoxOf } from '../lib/veilCutter';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import Avatar from './Avatar.svelte';
@@ -489,14 +489,17 @@
     const timer = setTimeout(() => (veilDone = true), wait);
     return () => clearTimeout(timer);
   });
-  // The full art loads as the reveal starts, so the veiled picture only hands
+  // The full art loads as the reveal starts, so a veiled picture only hands
   // over once it can show (or after a while, should it not load). Where the
   // item is in it (in art pixels, the item's own size) lets the veiled copy
-  // line up with it first.
+  // line up with it first. A picture shown whole needs neither.
   let fullLoaded = $state(false);
   let fullBox = $state<[number, number, number, number] | null>(null);
+  // (Whether, not which: the veil sent again, to a guest reconnecting, is the same picture.)
+  const veiled = $derived(!!media?.veil);
   $effect(() => {
-    if (!reveal || !drawn) {
+    const d = drawn;
+    if (!reveal || !d || !veiled) {
       fullLoaded = false;
       fullBox = null;
       return;
@@ -504,19 +507,18 @@
     let live = true;
     const done = () => live && (fullLoaded = true);
     const img = new Image();
-    img.src = itemImage(drawn.art);
-    img.decode().then(() => {
-      if (!live) return;
-      // Measured in art pixels, as the host measures the veiled copy.
-      const c = document.createElement('canvas');
-      c.width = drawn.w;
-      c.height = drawn.h;
-      const g = c.getContext('2d', { willReadFrequently: true })!;
-      g.imageSmoothingQuality = 'high';
-      g.drawImage(img, 0, 0, c.width, c.height);
-      fullBox = visibleBox(g.getImageData(0, 0, c.width, c.height).data, c.width, c.height);
-      done();
-    }, done);
+    img.src = itemImage(d.art);
+    // Measured in art pixels, as the host measures the veiled copy, in the
+    // veil's worker (on the page it held an iPhone's reveal a frame), once
+    // the page has the art, so the worker reads it from the cache.
+    img
+      .decode()
+      .then(() => (live ? visibleBoxOf(img, d.w, d.h) : null))
+      .then((box) => {
+        if (!live || !box) return;
+        fullBox = box;
+        done();
+      }, done);
     const timer = setTimeout(done, 3000);
     return () => {
       live = false;

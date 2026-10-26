@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { SOL_RAYS } from '../lib/alchemy';
   import { star8 } from '../lib/arcane';
   import * as art from '../lib/ouroborosArt';
@@ -8,6 +8,7 @@
   import { drawDescent } from '../lib/descentDrawer';
   import { FIND_TEXT } from '../lib/difficultyText';
   import { unzoomRect, zoomOf } from '../lib/stage';
+  import { motion } from '../lib/motion.svelte';
   import ItemGlyph from './ItemGlyph.svelte';
 
   // The descent, engraved (lib/descentPlate draws it): Sol over the mouth of
@@ -110,6 +111,32 @@
   });
   $effect(() => {
     if (plate) natural = plate.natural;
+  });
+  /**
+   * Whether the plate and its glow are masked round the stars yet: from when
+   * the first star's cutout starts to show (at once while still, or with
+   * reduced motion, even should either come mid-entrance), as until then
+   * the mask hides nothing. A masked plate is painted through its mask
+   * whenever any of it changes, and on an iPhone, as the plate inked itself
+   * in, that held the lobby to 24 to 35 fps (60 unmasked). Once on, the mask stays: taken off again, an iPhone still
+   * paid for it. The cutouts' delays count from the first plate: one drawn
+   * again keeps their animations running.
+   */
+  let starsCut = $state(false);
+  let firstPlateAt = 0;
+  $effect(() => {
+    const p = plate;
+    if (!p || untrack(() => starsCut)) return;
+    firstPlateAt ||= performance.now();
+    const due = motion.still ? 0 : Math.min(...[p.star, p.last].map((s) => s?.delay ?? Infinity));
+    if (due === Infinity) return;
+    const wait = firstPlateAt + 1000 * due - performance.now();
+    if (wait <= 0) {
+      starsCut = true;
+      return;
+    }
+    const timer = setTimeout(() => (starsCut = true), wait);
+    return () => clearTimeout(timer);
   });
   $effect(() => {
     stacked = !beside;
@@ -299,7 +326,7 @@
 
     <!-- The glow: the lit lines again, whole, wide and soft, under the plate. It breathes. -->
     <svg class="glow" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
-      <g mask="url(#{uid}-cut)">
+      <g mask={starsCut ? `url(#${uid}-cut)` : null}>
         {#each p.parts as part, i (i)}
           {#each part.glow as g, j (j)}<path d={g.d} class="{g.kind} {part.tone}" style:--c={part.color} />{/each}
         {/each}
@@ -310,7 +337,7 @@
     </svg>
 
     <svg class="plate" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
-      <g mask="url(#{uid}-cut)">
+      <g mask={starsCut ? `url(#${uid}-cut)` : null}>
         {#each p.shades as s, i (i)}
           <path class="shade draw {s.tone}" d={s.d} style:--c={s.color} style:--d={sec(s.delay)} style:--t={sec(s.t)} style:--o={s.o} pathLength="100" />
         {/each}
@@ -1057,6 +1084,7 @@
       transform: translate(0, 0);
     }
   }
+  /* Until its carve starts, the plate and glow go unmasked (starsCut waits as long), so a carve made to start sooner must start starsCut sooner too. */
   .cutout {
     fill: #000;
     stroke: none;
