@@ -18,9 +18,11 @@
 import { BEHIND_PICTURE, BEHIND_UI, FxRenderer, MAX_HIDES, SHAPE_FLOATS, ShapeType, pictureReady, type DialogLight, type HideLight, type SigilPicture, type Silhouette } from './renderer';
 import { webgl2Refused, whenGpuCaughtUp, type Build } from './gl';
 import { ParticlePool, type ParticleSpec } from './particles';
+import { hideGaps, type Stood } from './gaps';
 import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
-import { cornerOnScreen } from '../corner';
+import { cornerOnScreen, ringOf } from '../corner';
+import { PHONE } from '../layout';
 import { zoomOf } from '../stage';
 import { readStored, writeStored } from '../storage';
 import { whenIdle } from '../idle';
@@ -1085,14 +1087,27 @@ function dialogNow(): DialogLight {
   const windowed = hides.length > 0;
   // (Ancestors the toasts share are read once.)
   const own = new Map<Element, number>();
+  const stood: Stood[] = [];
   for (const el of fronts) {
     if (hides.length >= MAX_HIDES) break;
-    const r = el.getBoundingClientRect();
-    if (!(r.width > 0 && r.height > 0)) continue;
+    const b = el.getBoundingClientRect();
+    if (!(b.width > 0 && b.height > 0)) continue;
     // As it (or what it's in) fades in and out, it hides as much as it shows.
     const o = opacityOf(el, own);
-    if (o > 0) hides.push({ box: r, radius: cornerOnScreen(cornerOf(el), r.width, r.height, zoomOf(el)), amount: o });
+    if (!(o > 0)) continue;
+    // Its outer ring (a toast's dark line round its border) is as opaque as
+    // its box, so the light hides behind that too: without it, a streak's fire
+    // under a toast still burns along the toast's edge.
+    const z = zoomOf(el);
+    const edge = edgeOf(el);
+    const ring = edge.ring * z;
+    const corner = cornerOnScreen(edge.radius, b.width, b.height, z);
+    const round = corner > 0 ? corner + ring : 0;
+    const r = ring > 0 ? new DOMRect(b.x - ring, b.y - ring, b.width + 2 * ring, b.height + 2 * ring) : b;
+    hides.push({ box: r, radius: round, amount: o });
+    stood.push({ el, box: r, round, amount: o });
   }
+  if (narrow?.matches) hideGaps(stood, hides, headerBottom);
   // (A window, with a dialog's backdrop up but no box of it yet, dims nothing either.)
   return { amount: windowed ? 0 : amount, box: null, radius: 0, hides };
 }
@@ -1100,13 +1115,30 @@ function dialogNow(): DialogLight {
 /** What stands over the page (overPage). */
 const fronts = new Set<Element>();
 
-/** Each one's corner radius as its style gives it, read again when the window's size changes (a phone turned, a breakpoint crossed). */
-const corners = new WeakMap<Element, { at: string; radius: string }>();
-function cornerOf(el: Element): string {
+/**
+ * Each one's corner radius and outer ring as its style gives them, read again
+ * when the window's size changes (a phone turned, a breakpoint crossed). Its
+ * ring is the widest of its shadows that is all spread, with no offset or
+ * blur (`0 0 0 1px`), in its own px.
+ */
+const edges = new WeakMap<Element, { at: string; radius: string; ring: number }>();
+function edgeOf(el: Element): { radius: string; ring: number } {
   const at = `${innerWidth}x${innerHeight}`;
-  let c = corners.get(el);
-  if (c?.at !== at) corners.set(el, (c = { at, radius: getComputedStyle(el).borderTopLeftRadius }));
-  return c.radius;
+  let c = edges.get(el);
+  if (c?.at !== at) {
+    const style = getComputedStyle(el);
+    edges.set(el, (c = { at, radius: style.borderTopLeftRadius, ring: ringOf(style.boxShadow) }));
+  }
+  return c;
+}
+
+/** Phones (lib/layout.ts `phone`), where the toasts stand across the top, under the header (Toasts.svelte's narrow stack), and the gaps above them hide the light too (gaps.ts). */
+const narrow = typeof matchMedia === 'function' ? matchMedia(PHONE) : null;
+
+/** The bottom of the app's header on screen (App.svelte), or null with none showing. */
+function headerBottom(): number | null {
+  const r = document.querySelector('header[data-cursor="header"]')?.getBoundingClientRect();
+  return r && r.height > 0 ? r.bottom : null;
 }
 
 /** Whether `a` is an element of something that stands over the page (overPage). */

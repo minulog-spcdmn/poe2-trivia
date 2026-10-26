@@ -33,3 +33,16 @@ export function portalToPage(node: HTMLElement) {
     },
   };
 }
+
+/**
+ * Puts `node`, an overlay fixed over the screen at the toasts' z-index (90,
+ * Toasts.svelte), into the page just before the toasts: it draws over
+ * everything below 90 (the item window too, at 89 and moved to the end of
+ * <body> by portal as it opens) and under the toasts, which come after it.
+ * With no toasts on the page, at the end of <body>.
+ */
+export function beforeToasts(node: HTMLElement) {
+  const toasts = document.querySelector('.toasts');
+  if (toasts?.parentNode) toasts.before(node);
+  else document.body.append(node);
+}

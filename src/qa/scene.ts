@@ -47,7 +47,7 @@ export type Step =
   | { joinFail: 'missing' | 'blocked' | 'server' }
   /** The app crashes, once or twice in a row (Root.svelte's recovery). */
   | { crash: 1 | 2 }
-  /** A notice arrives (lib/toasts.svelte.ts), worded as the game words it; it stays up, its fuse held, until closed. */
+  /** A notice arrives (lib/toasts.svelte.ts), worded as the game words it (an achievement earned, say: lib/achievementToasts.ts); it stays up, its fuse held, until closed. */
   | { toast: string; kind?: ToastKind; opts?: ToastOptions }
   /**
    * The room moves on to `state` (the scene's game played on: dynamite going

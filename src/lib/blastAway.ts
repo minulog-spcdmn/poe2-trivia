@@ -16,6 +16,7 @@ import { edgeBlast } from './fx/blast';
 import { fxActive } from './fx/core';
 import { unzoomRect, zoomOf } from './stage';
 import { BLAST_IMPACT_MS } from './blastTiming';
+import { beforeToasts } from './portal';
 
 export { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS } from './blastTiming';
 /** How long the whole of it lasts (ms), the last of the smoke included. */
@@ -284,9 +285,12 @@ export function blastAway({ node, side, mine }: BlastAway) {
   layer.setAttribute('aria-hidden', 'true');
   // It dims behind an open dialog like the page's other overlays (lib/portal.ts).
   layer.dataset.behindDialog = 'dim';
+  // Under the toasts (90, Toasts.svelte), as the question it blows apart is,
+  // and over all else: at their z-index but before them in the page
+  // (lib/portal.ts). Added after them, it drew over them.
   Object.assign(layer.style, { position: 'fixed', inset: '0', zIndex: '90', pointerEvents: 'none', overflow: 'hidden', contain: 'strict' });
   if (Z !== 1) layer.style.zoom = String(Z);
-  document.body.append(layer);
+  beforeToasts(layer);
   const anim = (el: Element, frames: Keyframe[], o: KeyframeAnimationOptions) => el.animate(frames, { fill: 'both', ...o });
 
   // ---- the question, blown apart and flung to the far side ----
