@@ -6,7 +6,7 @@ import { MediaQuery } from 'svelte/reactivity';
  * pins the scoreboard to the top and docks the reveal's Next button at the
  * bottom (`dock`), so neither scrolls away. Matches the 640px breakpoint in
  * the components' CSS. The query is written out once, here (the effects
- * layer reads it too, for the toasts' narrow stack: lib/fx/core.ts).
+ * layer reads it too, within HANDHELD below).
  */
 export const PHONE = '(max-width: 640px)';
 export const phone = new MediaQuery(PHONE);
@@ -46,8 +46,9 @@ export const upright = new MediaQuery(UPRIGHT);
 /** A full room: more players than the scoreboard's row (and, on a phone on its side, the header's) has room for at full size. */
 export const fullRoom = (players: number) => players > 6;
 
-/** A phone either way up (`phone` or `flat`): the game's slim scoreboard. */
-export const handheld = new MediaQuery(`${PHONE}, ${FLAT}`);
+/** A phone either way up (`phone` or `flat`): the game's slim scoreboard, and the toasts' stack at the top (the effects layer reads it too, lib/fx/core.ts). */
+export const HANDHELD = `${PHONE}, ${FLAT}`;
+export const handheld = new MediaQuery(HANDHELD);
 
 const docked = new Set<HTMLElement>();
 function setDock() {

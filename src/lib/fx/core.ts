@@ -22,7 +22,7 @@ import { hideGaps, type Stood } from './gaps';
 import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
 import { cornerOnScreen, ringOf } from '../corner';
-import { PHONE } from '../layout';
+import { HANDHELD } from '../layout';
 import { zoomOf } from '../stage';
 import { readStored, writeStored } from '../storage';
 import { whenIdle } from '../idle';
@@ -1143,8 +1143,8 @@ function edgeOf(el: Element): { radius: string; ring: number } {
   return c;
 }
 
-/** Phones (lib/layout.ts `phone`), where the toasts stand across the top, under the header (Toasts.svelte's narrow stack), and the gaps above them hide the light too (gaps.ts). */
-const narrow = typeof matchMedia === 'function' ? matchMedia(PHONE) : null;
+/** Phones either way up (lib/layout.ts `handheld`), where the toasts stand across the top, under the header (Toasts.svelte's narrow stack), and the gaps above them hide the light too (gaps.ts). */
+const narrow = typeof matchMedia === 'function' ? matchMedia(HANDHELD) : null;
 
 /** The bottom of the app's header on screen (App.svelte), or null with none showing. */
 function headerBottom(): number | null {
