@@ -11,10 +11,11 @@
 // from it never opens a page again under the game. Back takes it away; the
 // page does what Back was for and puts it back in the next tap, so there's
 // only ever the one, put back on top of itself, never a step per screen. It
-// goes up in a tap (the one that starts, makes or joins the room, then the
-// next one after each Back): an entry a page makes with nobody touching it,
-// Chrome's back button and iOS's swipe both pass over. Leaving, it's gone back
-// from (as HashRoute.close() goes), so a room left leaves no steps behind.
+// goes up only in a tap (the one that starts, makes or joins the room; after
+// each Back, and in a room resumed on a load, the next one): an entry a page
+// makes with nobody touching it, Chrome's back button and iOS's swipe both
+// pass over. Leaving, it's gone back from (as HashRoute.close() goes), so a
+// room left leaves no steps behind.
 //
 // (Not put back from Back itself, which is no tap: iOS's swipe passes over an
 // entry made then, and the one under it, however often the page is tapped
@@ -46,6 +47,8 @@ export interface Steps {
   back(): void;
   /** `heard` is called whenever the page goes back or forward to another of its entries. */
   listen(heard: () => void): void;
+  /** Whether the page is in a tap or key press (or just after one), where an entry it makes is one the browser's back stops at. */
+  inTap(): boolean;
   /** `run` is called once, within the next tap or key press on the page. */
   nextTap(run: () => void): void;
 }
@@ -124,6 +127,7 @@ export class BackGuard {
   private place() {
     // (Going back from the last one: this one goes up once that's done.)
     if (!this.wanted || this.placed || this.going) return;
+    if (!this.steps.inTap()) return this.again();
     this.placed = true;
     if (isGuard(this.steps.state())) return;
     if (this.steps.hashed()) this.dropPage();
@@ -273,6 +277,8 @@ export function memorySteps(state: unknown = null, hash = '') {
     listen(h: () => void) {
       heard.push(h);
     },
+    /** (Always, unless a test says not: the QA desk's frames put a scene's room up with no tap.) */
+    inTap: () => true,
     /** Waiting for the next tap. */
     taps: [] as (() => void)[],
     nextTap(run: () => void) {
@@ -308,6 +314,8 @@ function browserSteps(): Steps {
     replace: (s) => history.replaceState(s, '', here()),
     back: () => history.back(),
     listen: (heard) => addEventListener('popstate', heard),
+    // (A browser that can't tell: as if it were.)
+    inTap: () => navigator.userActivation?.isActive ?? true,
     nextTap: onNextTap,
   };
 }

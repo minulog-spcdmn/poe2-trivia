@@ -173,6 +173,19 @@ test('a guard left behind under a page when the room ended is passed over', asyn
   assert.deepEqual(asked, []);
 });
 
+test('a room resumed on a load, with no tap behind it, puts its guard up in the first tap', async () => {
+  const { steps, guard, asked, back } = room();
+  steps.inTap = () => false;
+  guard.want(true);
+  assert.equal(steps.at, 0);
+  steps.inTap = () => true;
+  steps.tap();
+  assert.equal(steps.at, 1);
+  assert.ok(guarded(steps.state()));
+  await back();
+  assert.deepEqual(asked, ['leave?']);
+});
+
 test('a guard from an earlier load of the page is made a plain step, and this load’s goes over it', () => {
   const steps = memorySteps({ guard: true });
   const guard = new BackGuard(steps);
