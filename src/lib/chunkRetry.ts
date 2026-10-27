@@ -20,8 +20,8 @@
 // once the chunk itself has come, by the browser. One that fails then, the
 // Wi-Fi going in that moment, still needs a reload, which the page offers.
 // Other chunks' preloads aren't trimmed, though, and link some of the same
-// imports: the game screens' (fetched in the first idle moment, so nearly
-// always just ahead of the codex's own fetch in the background) link the
+// imports: the game screens' (fetched ahead once the start page has settled,
+// always ahead of the codex's own fetch in the background: App.svelte) link the
 // codex's ItemDetails and its circles, and the sync dialog's links the
 // circles too. An outage that failed those leaves the codex to the reload,
 // as it leaves the game. Trimming every other chunk's list of whatever a

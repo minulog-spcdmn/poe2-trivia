@@ -4,6 +4,7 @@
   import { HOLLOW_CLEAR, type Plate, type StageLayer } from '../lib/engraver';
   import { WHOLE, placed, type Box } from '../lib/plateBox';
   import { switchedOff } from '../lib/switchedOff';
+  import { holdSettled } from '../lib/settled';
 
   export type { StageLayer };
 
@@ -79,6 +80,10 @@
     let timers: ReturnType<typeof setTimeout>[] = [];
     let stopped = false;
     let pen: Pen | undefined;
+    // Work run ahead of need waits until the circle has drawn itself in
+    // (lib/settled.ts): its layers going on the page and the pen are
+    // enough for a phone's frames.
+    const release = holdSettled();
     /** Hands a layer's SVGs, on the page, to the pen. */
     const draw = (name: string) => summon?.querySelectorAll<SVGSVGElement>(`svg[data-layer="${name}"]`).forEach((svg) => pen?.add(svg));
     /** Times each layer from `start` (performance.now()'s clock), when the summoning began. */
@@ -95,6 +100,7 @@
           });
         at(Math.max(l.lines.end, l.glow.end) + 0.15, () => (drawn[l.name] = true));
       }
+      at(Math.max(...layers.map((l) => Math.max(l.lines.end, l.glow.end))) + 0.15, release);
     };
     // (Its only animation: the circle's settling in.) Moved on the page
     // before it starts, as a dialog's backdrop is to the end of <body>
@@ -116,6 +122,7 @@
       pen?.stop();
       timers.forEach(clearTimeout);
       timers = [];
+      release();
     };
   });
   const plate = (p: Plate, name: string) => (drawn[name] ? p.still : shown[name] ? p.drawing : '');

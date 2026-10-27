@@ -228,6 +228,18 @@ with its numbers in the comments.
   waits 300 ms there instead, and each step still runs as one task: a step
   over a frame's time drops a frame on the phone however idle the page
   looked. Work that takes tens of ms a step there belongs in a worker.
+- **A timer is not an idle moment, and the start page's first seconds are
+  its entrance.** Loading the game's screens on `whenIdle`'s 500 ms timer
+  put their evaluation on the frame today's circle laid its layers on the
+  page (45 to 67 ms), and the four faces loaded ahead on its 1 s timer
+  were a 50 to 62 ms frame mid draw-in. Work fetched ahead of need waits
+  for the page to settle now (`whenSettled`, `src/lib/settled.ts`): until
+  what is making an entrance lets go (`holdSettled`: a rune circle until it
+  has drawn itself in), then for frames in a row with time to spare, one
+  piece at a time. The faces still come as one piece: after decoding them,
+  the 44 ms of laying the page out again was the font set changing, not the
+  faces in it (four faces no element used, added to the page, cost the
+  same), so one at a time would lay it out four times.
 - **A masked SVG costs its frames while what it masks changes.** Delve's
   ladder (`DelveLadder.svelte`) is masked round its stars; while its 260
   lines inked themselves in, the lobby came in at 24 to 35 fps, and at 60
@@ -245,3 +257,17 @@ item's details parse in about 60 ms. The rumble's 6 s noise buffer, which
 took about 75 ms of that time in one go, is now worked out in a worker
 (`src/lib/rumbleWorker.ts`, its samples in `src/lib/rumbleNoise.ts`); a
 trace from the phone still has to show it gone from the main thread.
+
+Still open too: a first visit's blank page. `index.html` is empty until
+the startup script has come and mounted the start page, and its CSS and
+the start page's four fonts are fetched alongside it: on a venue's Wi-Fi
+(200 KB/s shared) the page stayed blank for 4.5 to 5.3 s. Taking what
+only a room shows out of the script (the lobby, the other players'
+pointers, a zone's card; `App.svelte`, kept out by
+`tests/startupScript.test.ts`) took all that from 518 KB gzipped to 466
+(349 of them script): about a quarter of a second of those. The seconds
+go only once the start page paints before its script has come (its
+markup in `index.html`). Still in the script besides, though the start
+page's first frame needs none of it: the sound design (`sound.ts`,
+`soundDesign.ts`), obscenity's lists (`offensive.ts`) and the half of the
+session only a room uses (`protocol.ts`, `cursors.ts`, `media.svelte.ts`).

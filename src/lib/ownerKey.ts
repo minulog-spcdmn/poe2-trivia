@@ -14,25 +14,26 @@
 //
 // Ed25519 comes from @noble/ed25519 (it needs no more of Web Crypto than
 // SHA-512, which every browser the game runs in has, unlike Ed25519 itself),
-// loaded in idle time after the start page shows (preloadEd25519), or the
-// first time something is signed or checked before that: the start page
-// doesn't wait for it, and a tab left open across a deploy has it already.
+// loaded once the start page has settled, after the game's screens
+// (preloadEd25519, queued by App.svelte), or the first time something is
+// signed or checked before that: the start page doesn't wait for it, and a
+// tab left open across a deploy has it already.
 //
 // scripts/owner-key.mjs prints the public key for new words. Pick them
 // at random (four or more) and never commit them.
 
 import { base64url, fromBase64url } from './base64url.ts';
 import { readKey, writeKey } from './storage.ts';
-import { whenIdle } from './idle.ts';
+import { whenSettled } from './settled.ts';
 
 /** The owner key's public half (raw Ed25519, base64url): scripts/owner-key.mjs prints it for the words. */
 export const OWNER_PUBLIC_KEY = 'SIwtcxovVQ_Mfp8NkPmSzMKgYx1ejNtyuw-VLrgkS8M';
 
 const ed25519 = () => import('@noble/ed25519');
 
-/** Loads Ed25519 once the page is idle, so a room's signature isn't left to a download that may no longer be there. */
-export function preloadEd25519() {
-  whenIdle(() => void ed25519().catch(() => {}), { timeout: 3000, fallback: 1000 });
+/** Loads Ed25519 once the page has settled (lib/settled.ts), so a room's signature isn't left to a download that may no longer be there; returns what takes that back if it hasn't run. */
+export function preloadEd25519(): () => void {
+  return whenSettled(() => ed25519().catch(() => {}));
 }
 
 const SALT = 'poe2trivia.owner-key';
