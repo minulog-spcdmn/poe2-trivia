@@ -10,6 +10,7 @@ import { emulate } from './emulate.ts';
 import { freeze, installFreeze } from './freeze.ts';
 import { check, listen, outline } from './checks.ts';
 import { settle } from './settle.ts';
+import { maybe } from './optional.ts';
 import { isSizeKey, sizeOf } from '../sizes.ts';
 import { deskOrigin, isDeskMessage, type FrameMessage } from '../messages.ts';
 import { seatsIn, type Seat } from '../scene.ts';
@@ -84,10 +85,13 @@ export async function boot(asked: URLSearchParams) {
   // The browser's back in a room (lib/backGuard.ts) on a history of the frame's own: its guard,
   // and the steps the codex's item card puts up, never go into the desk's (whose back steps
   // through the benches), and a scene's { back } goes back on it.
-  const { backGuard, pageLayers, memorySteps } = await import('../../lib/backGuard.ts');
-  const steps = memorySteps();
-  backGuard.use(steps);
-  pageLayers.use(steps);
+  // (Looked up rather than imported, as are noMenu.ts and chunkRetry.ts below: ./optional.ts.)
+  const guard = await maybe<typeof import('../../lib/backGuard.ts')>('../../lib/backGuard.ts');
+  const steps = guard?.memorySteps();
+  if (guard && steps) {
+    guard.backGuard.use(steps);
+    guard.pageLayers.use(steps);
+  }
 
   await import('../../app.css');
   const [{ mount }, { default: Root }, codex, records, daily, rooms, sound, spatial, fxUi, cursor, autoscroll, noMenu, { switchedOff }, { toasts }, game, media] = await Promise.all([
@@ -102,7 +106,7 @@ export async function boot(asked: URLSearchParams) {
     import('../../lib/fx/ui.ts'),
     import('../../lib/ownCursor.ts'),
     import('../../lib/autoscroll.ts'),
-    import('../../lib/noMenu.ts'),
+    maybe<typeof import('../../lib/noMenu.ts')>('../../lib/noMenu.ts'),
     import('../../lib/switchedOff.ts'),
     import('../../lib/toasts.svelte.ts'),
     import('../../lib/game.ts'),
@@ -143,7 +147,7 @@ export async function boot(asked: URLSearchParams) {
     Object.assign(sync, { linked: 0, ...built.sync });
   }
   // A page that never comes (only where the scene says, as with sync's link).
-  if (built.lost) (await import('../../lib/chunkRetry.ts')).loseOnCue(built.lost);
+  if (built.lost) (await maybe<typeof import('../../lib/chunkRetry.ts')>('../../lib/chunkRetry.ts'))?.loseOnCue(built.lost);
   // The tip to play fullscreen is about the desk's own window, never the scene's (lib/fullscreenTip.ts): taken as read.
   storage.writeStored('fullscreenTip.shown', '3');
   // No network: the rooms the start page finds are the scene's. (Only where it has some, so the map of
@@ -179,7 +183,7 @@ export async function boot(asked: URLSearchParams) {
   fxUi.installUiFx();
   if (!switchedOff('cursor')) cursor.installCursor();
   autoscroll.installAutoscroll();
-  noMenu.installNoMenu();
+  noMenu?.installNoMenu();
   const [{ default: Crash }, { crash }] = await Promise.all([import('./Crash.svelte'), import('./crashCue.svelte.ts')]);
   mount(Root, { target: document.getElementById('app')!, props: { qaInside: Crash } });
   // The pointers bench's seats: this one's pointer to the bench, or another's from it (./pointerRelay.ts).
@@ -236,7 +240,7 @@ export async function boot(asked: URLSearchParams) {
       }
     }
     else if ('toast' in step) toasts.hold(toasts.show(step.toast, step.kind, step.opts));
-    else if ('back' in step) steps.back();
+    else if ('back' in step) (steps ?? history).back();
     else (await found(step.click))?.click();
   }
 
