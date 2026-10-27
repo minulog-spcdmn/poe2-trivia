@@ -171,14 +171,25 @@ export function homeScenes(): Scene[] {
     home('connecting', 'Joining a room: connecting', { build: () => returning({}, { status: 'connecting' }) }),
     // A guest on its way: after 6 s it says it's still going, and why it may take a while.
     home('joining', 'Joining a room: travelling, then still on the way', { build: () => returning({}, { status: 'connecting', seat: GUEST }) }),
+    // A code typed into Join a room and joined, as a player would (the wide layout opens the entry first; on a
+    // phone the field is out already): the start page takes the code back into its field, and marks it only
+    // when the code is what's in doubt (session.codeDoubted).
     home('join-failed', 'Joining a room that never lets you in', {
       controls: JOIN_FAILED,
       states: [
-        { label: 'The server said the room may be missing: No answer', values: {} },
-        { label: 'The room was found, the connection never came up: Couldn’t connect', values: { why: 'blocked' } },
-        { label: 'The matchmaking server never answered: No connection', values: { why: 'server' } },
+        { label: 'The server said the room may be missing: No answer, the code marked', values: {} },
+        { label: 'The room was found, the connection never came up: Couldn’t connect, the code left as typed', values: { why: 'blocked' } },
+        { label: 'The matchmaking server never answered: No connection, the code left as typed', values: { why: 'server' } },
       ],
-      build: (v = {}) => returning({}, { status: 'connecting', seat: GUEST, steps: [{ joinFail: (v.why ?? 'missing') as 'missing' | 'blocked' | 'server' }] }),
+      build: (v = {}) =>
+        returning({}, {
+          steps: [
+            { click: ':is(.entry:nth-child(2 of .entry) .pick, form.join .field.code)' },
+            { fill: '.field.code', text: 'KXR4QT' },
+            { click: 'form:has(> .field.code) button[type="submit"]' },
+            { joinFail: (v.why ?? 'missing') as 'missing' | 'blocked' | 'server' },
+          ],
+        }),
     }),
     home(
       'invite',

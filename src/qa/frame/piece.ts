@@ -63,7 +63,7 @@ export async function bootPiece(asked: URLSearchParams) {
     import('../../lib/fx/ui.ts'),
     import('../../lib/ownCursor.ts'),
     import('../../lib/autoscroll.ts'),
-    maybe<typeof import('../../lib/noMenu.ts')>('../../lib/noMenu.ts'),
+    maybe('../../lib/noMenu.ts'),
     import('../../lib/switchedOff.ts'),
   ]);
   piece.values = valuesOf(bench.controls, Object.fromEntries([...asked].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v])));

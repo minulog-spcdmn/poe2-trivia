@@ -5,5 +5,13 @@
 
 const optional = import.meta.glob(['../../lib/backGuard.ts', '../../lib/noMenu.ts', '../../lib/chunkRetry.ts']);
 
+/** Each of them by its path, the glob's key (so a path mistyped in a frame is a type error, not a module quietly left out). */
+interface Optional {
+  '../../lib/backGuard.ts': typeof import('../../lib/backGuard.ts');
+  '../../lib/noMenu.ts': typeof import('../../lib/noMenu.ts');
+  '../../lib/chunkRetry.ts': typeof import('../../lib/chunkRetry.ts');
+}
+
 /** One of those modules, or undefined where this tree has no such file. */
-export const maybe = <T>(path: string): Promise<T | undefined> => (optional[path]?.() as Promise<T> | undefined) ?? Promise.resolve(undefined);
+export const maybe = <P extends keyof Optional>(path: P): Promise<Optional[P] | undefined> =>
+  (optional[path]?.() as Promise<Optional[P]> | undefined) ?? Promise.resolve(undefined);

@@ -71,6 +71,8 @@ test('the game and every QA frame install it, the game no handler of its own', (
     assert.match(src, /^\s*(noMenu\??\.)?installNoMenu\(\);$/m, `${file} calls installNoMenu()`);
   }
   assert.doesNotMatch(readFileSync('src/main.ts', 'utf8'), /addEventListener\('(contextmenu|dragstart)'/);
+  // And the lookup they call it through finds it (a path its glob lacks would quietly install nothing).
+  assert.match(readFileSync('src/qa/frame/optional.ts', 'utf8'), /import\.meta\.glob\(\[[^\]]*'\.\.\/\.\.\/lib\/noMenu\.ts'/);
 });
 
 test('a tap on the room code copies it on its click, not on a selection after', () => {
