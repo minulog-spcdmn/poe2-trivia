@@ -393,13 +393,13 @@
 
   // A join that ends back here without a room (no such room, no answer):
   // its code is the one to check, and the toast (session.fail) says why. One
-  // whose room was there (it turned the join down: a name, a full room; or
-  // only the connection to it failed) had the code right: the code isn't
-  // marked; and if it was the name it turned down, a name typed for it, the
-  // thing to change, takes the focus back (a saved name is changed at the
-  // greeting's quill). Not
-  // one tapped in the Open rooms list in its own place: nobody typed that code,
-  // and Join's field is out of sight up the page.
+  // that failed for another reason (the room turned it down: a name, a full
+  // room; or the connection, the network or the page let it down) may have
+  // had the code right: the code isn't marked (session.codeDoubted); and if
+  // it was the name it turned down, a name typed for it, the thing to change,
+  // takes the focus back (a saved name is changed at the greeting's quill).
+  // Not one tapped in the Open rooms list in its own place: nobody typed that
+  // code, and Join's field is out of sight up the page.
   let joining: { code: string; via: JoinVia } | null = null;
   /** The join that failed last, its code left in Join a room's field. */
   let left: { code: string; via: JoinVia } | null = null;
@@ -415,7 +415,7 @@
     if (joining && !session.state && busy !== 'rooms') {
       code = joining.code;
       left = joining;
-      codeError = !session.roomFound;
+      codeError = session.codeDoubted;
       if (!invite) open = 'join';
       if (session.nameRefused) void tick().then(() => (invite ? inviteField : nameField)?.focus());
     }

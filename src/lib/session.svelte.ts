@@ -1857,14 +1857,14 @@ class Session {
   /** A join's failure, counted only when the join was (not a guest's reload getting back in). */
   private joinFailure = (failure: Failure): Failure | undefined => (this.joinVia ? failure : undefined);
   /**
-   * Whether the last join found its room rather than being lost on the way
-   * to it: its host answered at the door (a name, a full or locked room, an
-   * old version, a player it removed), or the server found the room and only
-   * the connection between the two never came up. The start page marks the
-   * code only when not: the code was right if the room was there
-   * (Home.svelte settle).
+   * Whether the last join failed in a way that puts its code in doubt: it
+   * isn't a code, or no room by it answered. The start page marks the code
+   * only then (Home.svelte settle). Turned away at the door (a name, a full
+   * or locked room, an old version, a player it removed), a room found but
+   * never connected to, a page that can't open its pictures or a server out
+   * of reach all leave a code that may well be right.
    */
-  roomFound = false;
+  codeDoubted = false;
   /** Whether what the host turned down at the door was the name (lib/names.ts isNameProblem): the start page puts the player back on it. */
   nameRefused = false;
 
@@ -1875,7 +1875,7 @@ class Session {
     this.mode = 'client';
     this.status = 'connecting';
     this.joinName = name;
-    this.roomFound = false;
+    this.codeDoubted = false;
     this.nameRefused = false;
     // One set off from the start page (with a `via`) saves its name if the room takes it, and not before:
     // a name turned down there mustn't greet the next visit. A reload getting back in keeps its name only
@@ -1884,6 +1884,7 @@ class Session {
     this.watchOnly = watch;
     this.code = code.toUpperCase().trim();
     if (!CODE_PATTERN.test(this.code)) {
+      this.codeDoubted = true;
       this.fail(`“${this.code}” isn’t a valid room code.`, 'Invalid code');
       return;
     }
@@ -2000,6 +2001,7 @@ class Session {
   private roomUnavailable() {
     if (this.hostConn?.open) return;
     if (this.unavailableUntil && Date.now() >= this.unavailableUntil) {
+      this.codeDoubted = true;
       this.fail(`No room has the code ${this.code}. Check it with your host.`, 'No such room', { failure: this.joinFailure('join-no-such-room') });
       return;
     }
@@ -2225,7 +2227,6 @@ class Session {
             this.turnedDown = { askedAt: msg.askedAt };
           }
           if (this.status === 'connecting') {
-            this.roomFound = true;
             this.nameRefused = isNameProblem(msg.message);
             this.fail(versionRefusal(msg.message), "Couldn’t join", { failure: this.joinFailure(isVersionRefusal(msg) ? 'join-version-mismatch' : 'join-refused') });
           } else this.flash(msg.message, 'error');
@@ -2233,8 +2234,6 @@ class Session {
         case 'kicked':
         case 'closed':
         case 'replaced':
-          // (Turned out at the door, a removed player trying again: the room was there.)
-          if (this.status === 'connecting') this.roomFound = true;
           this.turnedOut(msg.t);
           break;
         case 'busy':
@@ -2520,15 +2519,13 @@ class Session {
 
   /** The QA desk (src/qa): the room turns this device's join down with `message`, as the host's error for it would (uncounted). */
   labRefuse(message: string) {
-    this.roomFound = true;
     this.nameRefused = isNameProblem(message);
     this.fail(message, "Couldn’t join");
   }
 
   /** A join that never got in, told as what went wrong; `failure` counted (count.ts). */
   private joinFailed(why: JoinFailed, failure?: 'join-no-answer' | 'join-no-connection') {
-    // (Blocked: the server found the room, only the connection never came up.)
-    if (why === 'blocked') this.roomFound = true;
+    if (why === 'missing') this.codeDoubted = true;
     const [message, title] = JOIN_FAILED[why](this.code);
     this.fail(message, title, { failure: failure && this.joinFailure(failure) });
   }
