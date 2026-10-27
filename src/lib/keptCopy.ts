@@ -22,10 +22,24 @@
 // left for good: the older copies of it go too, so an old tab coming back
 // never takes the player into a room they left from a newer one. A game whose
 // page unloads (its tab closed, or the page left for another) is left too: a
-// killed tab gets no pagehide, a closed one does. Where there
+// killed tab gets no pagehide, a closed one does. (Android Chrome's tab
+// switcher closes a tab without that reaching storage, and its copy stays:
+// what keeps it from being picked up is the tab's history, below.) Where there
 // are no Web Locks (a page that isn't secure, a browser from before them)
 // nothing is kept: whether the game's tab is still there can't be told, and
 // a game played on in two tabs at once is worse than one lost.
+//
+// A tab picks up only its own game, which it knows by its history: a
+// browser bringing a tab back brings its history back too, each entry's
+// state and all, where its sessionStorage is gone, and a closed tab takes
+// its history with it. Every entry the game's pages write names the tab's
+// slot (withTab), and so does the entry the page is on once it gets a slot
+// or goes to another. A page brought back in a tab picks up only the copy
+// of the slot its entry names, and nothing when it names none. So after a
+// kill, which brings every tab back with an empty sessionStorage, the tab in
+// front (the codex, say) never takes the game of the tab behind it, which
+// gets it back when it comes back in turn; and a closed tab's copy, which no
+// tab's history names any more, stays where it is until it is too old.
 //
 // And only a page the browser brought back without its tab's sessionStorage
 // picks up: brought back (a reload, or a history entry restored, which is
@@ -38,8 +52,10 @@
 // iOS brings back by opening it anew at its start page: it has one window,
 // its storage apart from Safari's, and every link out of it opens in Safari,
 // so any page of it opened with nothing in sessionStorage is the app coming
-// back. (And a game the player swiped the app away from comes back the next
-// time it's opened, as a native app's would.)
+// back. Opened anew, it has no history to name a slot: being the one window
+// there is, it picks up the newest game no page holds. (And a game the player
+// swiped the app away from comes back the next time it's opened, as a native
+// app's would.)
 
 import { BOT, LAB, QA, readStored, readStoredStarting, removeStored, storeKey, writeStored } from './storage.ts';
 import { randomToken } from './roomCode.ts';
@@ -58,8 +74,13 @@ export const KEEP_ONLINE_MS = 3600_000;
 /** At most this many copies are kept (the newest), whatever their age: one per tab that had a game. */
 export const MAX_COPIES = 4;
 
-/** In this tab's sessionStorage: its slot, so a reload keeps it (and a duplicated tab, which copies it, is told apart by its lock). */
+/** In this tab's sessionStorage: its slot, so a reload keeps it (and a duplicated tab, which copies it, is told apart by its lock). Named in the tab's history too (TAB). */
 const SLOT = 'session.slot';
+/**
+ * In the state of a history entry of the tab's: its slot, for a page brought
+ * back on that entry, its sessionStorage gone, to know its own copy by.
+ */
+const TAB = 'tab';
 /** In this tab's sessionStorage, from every page of the game's: that the tab has been here (restored, it hasn't). */
 const HERE = 'session.here';
 /**
@@ -87,6 +108,43 @@ interface Copy {
 export interface Taken {
   save: string;
   alive: string | null;
+}
+
+/** The slot a history entry's state names, or null. */
+function slotNamed(state: unknown): string | null {
+  const slot = (state as Record<string, unknown> | null)?.[TAB];
+  return typeof slot === 'string' && slot ? slot : null;
+}
+
+/** `state` naming `slot`, whatever else it holds kept (the room's guard, a page's mark). */
+const naming = (state: unknown, slot: string) => ({ ...(state as Record<string, unknown> | null), [TAB]: slot });
+
+/** The history entry a page is on, as its keeper reads it and names the tab's slot in it: the browser's, or a test's. */
+export interface Entry {
+  state(): unknown;
+  /** The entry made `state`, its address as it is. */
+  replace(state: unknown): void;
+}
+
+/** The browser's (none where a test plays the page without one). */
+const pageEntry: Entry = {
+  state: () => (typeof history === 'undefined' ? null : history.state),
+  replace: (state) => history.replaceState(state, ''),
+};
+
+/**
+ * `state` for a history entry the page writes (pushState, replaceState),
+ * with the tab's slot named in it: the one in its sessionStorage, or, in a
+ * page brought back that hasn't taken its copy yet (its sessionStorage still
+ * empty), the one the entry it is on names. Every entry the game's pages
+ * write goes through here (the room's guard and the layers over a page,
+ * backGuard.ts; the codex and the settings, hashRoute.svelte.ts), so
+ * whichever entry the tab is left on, it comes back naming its slot. The
+ * others that write one keep the state that is there (history.state).
+ */
+export function withTab(state: unknown): unknown {
+  const slot = readStored(SLOT, 'session') ?? slotNamed(pageEntry.state());
+  return slot ? naming(state, slot) : state;
 }
 
 /** Whether a copy saved or last left at `at` (or its host last here at `alive`) is still to be picked up at `now`. */
@@ -162,10 +220,11 @@ export function restoredHere(tabNew: boolean, standalone: boolean): boolean {
  * A page's keeping (one per page; a test makes one per tab it plays): with
  * `locks` (none: nothing is kept or picked up), whether the browser brought
  * the page back without its tab's sessionStorage, whether the page is an
- * iPhone's home-screen app (installedApp.ts), and `save`, the name the save
- * goes under in sessionStorage (session.svelte.ts SAVE).
+ * iPhone's home-screen app (installedApp.ts), `save`, the name the save
+ * goes under in sessionStorage (session.svelte.ts SAVE), and `entry`, the
+ * history entry the page is on.
  */
-export function keeper(locks: LockManager | undefined, restored: () => boolean, standalone: () => boolean, save: string) {
+export function keeper(locks: LockManager | undefined, restored: () => boolean, standalone: () => boolean, save: string, entry: Entry) {
   /** The slot whose lock this page holds (while it has a game, and a moment after), or null. */
   let mine: string | null = null;
   /** What lets go of its lock. */
@@ -191,6 +250,21 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean, 
         .request(storeKey(copyName(slot)), { ifAvailable: true }, (lock) => (lock ? new Promise<void>((release) => resolve(release)) : resolve(null)))
         .catch(() => resolve(null));
     });
+
+  /**
+   * The entry the page is on made to name `slot`, the tab's, whatever else
+   * it holds kept: it is by its history that the tab, brought back, knows
+   * its own copy.
+   */
+  function name(slot: string) {
+    const state = entry.state();
+    if (slotNamed(state) === slot) return;
+    try {
+      entry.replace(naming(state, slot));
+    } catch {
+      // (Turned down, as Safari does past so many in a few seconds: the entry stays as it was.)
+    }
+  }
 
   /** The slot written as it is wanted now. */
   function put(slot: string) {
@@ -228,6 +302,8 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean, 
    * reloads, unless another page holds it (a duplicated tab copies the
    * tab's sessionStorage, and with it the slot), else a new one once there is
    * a game to keep. With nothing to keep and no slot, there's nothing to do.
+   * The entry the page is on names the slot got (a duplicated tab's, copied
+   * with its history, named the first tab's till then).
    */
   async function claim() {
     if (claiming || mine) return;
@@ -255,6 +331,7 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean, 
     // The slot about to be written: room is made for it first.
     copies(save, Date.now(), mine);
     put(mine);
+    name(mine);
   }
 
   /**
@@ -326,10 +403,12 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean, 
      * another, or reloaded): its copy goes, as the game is let go of. A tab
      * the player closed is a game walked away from (the session counts it
      * so), and its copy, stamped as it went and its lock gone with the page,
-     * would look just like a killed tab's to a page of the site brought back
-     * later in another tab. A killed tab gets no pagehide, so its copy stays;
-     * a reloaded page has its game from its tab's sessionStorage, and keeps
-     * a copy again as it resumes. Nothing is claimed, as the page is going.
+     * would look just like a killed tab's. (Where this never reaches storage,
+     * as from Android Chrome's tab switcher, no tab's history names the copy
+     * any more, so it isn't picked up either.) A killed tab gets no pagehide,
+     * so its copy stays; a reloaded page has its game from its tab's
+     * sessionStorage, and keeps a copy again as it resumes. Nothing is
+     * claimed, as the page is going.
      */
     closing() {
       if (!locks) return;
@@ -354,6 +433,18 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean, 
       else this.closing();
     },
 
+    /**
+     * The page went to another of its history entries (popstate): that one
+     * names the tab's slot too. (The start page's entry under the room's
+     * guard, put up before the tab had its slot, is where a Back in the game
+     * goes, and the tab may be killed there with the Leave dialog open.)
+     */
+    moved() {
+      if (!locks) return;
+      const slot = readStored(SLOT, 'session');
+      if (slot) name(slot);
+    },
+
     /** The host's last moment noted (session.svelte.ts noteAlive), beside the copy. */
     keepAlive(at: string) {
       if (!locks) return;
@@ -374,22 +465,28 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean, 
     },
 
     /**
-     * A page the browser brought back without its tab's sessionStorage: the
-     * newest game no page holds any more (nor plays on in: its room, as the
-     * same one, another page's), its slot taken over by this page, or null.
-     * `may` says, once the slot is got, whether the page still wants it
-     * (nothing else started meanwhile); if not, the slot is let go of as it
-     * was. Looked for once, as the page starts: a page that played its own
-     * game and left it never goes on into another tab's.
+     * A page the browser brought back without its tab's sessionStorage: its
+     * tab's game, if no page holds it any more (nor plays on in it: its room,
+     * as the same one, another page's), its slot taken over by this page, or
+     * null. A tab's game is the copy of the slot its history entry names
+     * (none named, none to pick up); the home-screen app's, opened anew with
+     * no history and the one window there is, the newest. `may` says, once
+     * the slot is got, whether the page still wants it (nothing else started
+     * meanwhile); if not, the slot is let go of as it was. Looked for once,
+     * as the page starts: a page that played its own game and left it never
+     * goes on into another tab's.
      */
     async takeCopy(may: () => boolean): Promise<Taken | null> {
       if (looked) return null;
       looked = true;
       if (!locks || mine || claiming || !restored()) return null;
+      const app = standalone();
+      const own = app ? null : slotNamed(entry.state());
+      if (!app && !own) return null;
       // Read before any copy is let go of below (an old one may be a page's still playing).
       const live = await roomsHeld();
       if (!live) return null;
-      for (const c of copies(save, Date.now())) {
+      for (const c of copies(save, Date.now()).filter((c) => app || c.slot === own)) {
         const letGo = await hold(c.slot);
         // Its page is still here (in another tab, maybe frozen in the background): its game stays there.
         if (!letGo) continue;
@@ -405,6 +502,7 @@ export function keeper(locks: LockManager | undefined, restored: () => boolean, 
           mine = c.slot;
           release = letGo;
           writeStored(SLOT, c.slot, 'session');
+          name(c.slot);
           return { save: JSON.stringify(got.save), alive: got.alive };
         }
         // Gone, too old by now, or its room is another page's to play on in (the player
@@ -433,12 +531,13 @@ if (KEEPS) writeStored(HERE, '1', 'session');
  * it). Called once, by the session.
  */
 export function keeping(save: string) {
-  const here = keeper(KEEPS ? navigator.locks : undefined, () => restoredHere(tabNew, installedApp()), () => installedApp(), save);
+  const here = keeper(KEEPS ? navigator.locks : undefined, () => restoredHere(tabNew, installedApp()), () => installedApp(), save, pageEntry);
   // (No document where a test plays the page.)
   if (KEEPS && typeof document !== 'undefined') {
     // A phone's browser kills a tab only once it's out of sight.
     document.addEventListener('visibilitychange', () => document.visibilityState === 'hidden' && here.leaving());
     addEventListener('pagehide', (e) => here.pageHidden(e.persisted));
+    addEventListener('popstate', () => here.moved());
   }
   return here;
 }

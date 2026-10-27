@@ -1,11 +1,12 @@
 import './asVite.ts';
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { memoryStorage, sharedLocks } from './helpers.ts';
+import { memoryHistory, memoryStorage, sharedLocks } from './helpers.ts';
 
 // The copy a tab keeps of its save (lib/keptCopy.ts), for a tab the browser
 // kills in the background and brings back with its sessionStorage empty.
-// Each tab here has a keeper of its own and a sessionStorage of its own;
+// Each tab here has a keeper of its own, a sessionStorage of its own and a
+// history of its own, which the browser brings back with the tab (`restore`);
 // they share localStorage and the locks, as tabs of one browser do. A page
 // is driven as the session drives it: every game it starts or picks up
 // begins with reset(), which lets go of what was kept, before its first save
@@ -13,9 +14,16 @@ import { memoryStorage, sharedLocks } from './helpers.ts';
 
 const local = new Map<string, string>();
 (globalThis as { localStorage?: unknown }).localStorage = memoryStorage(local);
-/** The tab whose sessionStorage the app's code sees now. */
-let current: Tab;
-Object.defineProperty(globalThis, 'sessionStorage', { get: () => current.session, configurable: true });
+/** The tab whose sessionStorage the app's code sees now, and whose history the modules writing its entries do. */
+let current: Tab | undefined;
+Object.defineProperty(globalThis, 'sessionStorage', { get: () => current?.session, configurable: true });
+Object.defineProperty(globalThis, 'history', { get: () => current?.history, configurable: true });
+Object.defineProperty(globalThis, 'location', { get: () => current?.history.location, configurable: true });
+// (Of what a page listens for, only its popstate comes: on the history of the tab it is in.)
+Object.assign(globalThis, {
+  addEventListener: (type: string, fn: () => void) => type === 'popstate' && current?.history.listen(fn),
+  removeEventListener: () => {},
+});
 
 const { keeper, restoredHere, KEEP_HERE_MS, KEEP_ONLINE_MS, MAX_COPIES } = await import('../src/lib/keptCopy.ts');
 const { readStored, storeKey } = await import('../src/lib/storage.ts');
@@ -26,39 +34,49 @@ const SAVE = 'session.v4';
 /** The locks every tab shares. */
 const locks = sharedLocks();
 
+type History = ReturnType<typeof memoryHistory>;
 interface Tab {
   name: string;
   session: ReturnType<typeof memoryStorage>;
   store: Map<string, string>;
+  history: History;
   k: ReturnType<typeof keeper>;
 }
 let tabs = 0;
+/** The entry a page is on, as its keeper reads and names it. */
+const entryOf = (h: History) => ({ state: () => h.state, replace: (s: unknown) => h.replaceState(s, '') });
 /**
  * A page: `back` when it was brought back (reloaded or restored), not opened
- * anew; `from` a tab whose sessionStorage it starts with (duplicated);
- * `standalone` when it is an iPhone's home-screen app.
+ * anew; `from` a tab whose sessionStorage and history it starts with
+ * (duplicated); `history` its tab's (restored, reloaded); `standalone` when
+ * it is an iPhone's home-screen app.
  */
 function page({
   back = false,
   from,
   store = new Map(from?.store),
+  history = from ? from.history.copy() : memoryHistory(),
   standalone = false,
-}: { back?: boolean; from?: Tab; store?: Map<string, string>; standalone?: boolean } = {}): Tab {
+}: { back?: boolean; from?: Tab; store?: Map<string, string>; history?: History; standalone?: boolean } = {}): Tab {
   const name = `tab${++tabs}`;
-  return { name, store, session: memoryStorage(store), k: keeper(locks.of(name), () => back, () => standalone, SAVE) };
+  return { name, store, history, session: memoryStorage(store), k: keeper(locks.of(name), () => back, () => standalone, SAVE, entryOf(history)) };
 }
 /** The browser killed the tab: its page's locks go, its sessionStorage too (as Android Chrome's does). No pagehide. */
 const kill = (tab: Tab) => locks.kill(tab.name);
+/** The tab the browser killed, brought back: its history as it was, its entries' states and all, and its sessionStorage empty. */
+const restore = (tab: Tab) => page({ back: true, history: tab.history.copy() });
+/** A tab brought back on an entry that names `slot` (one whose copy `leftAgo` stored). */
+const naming = (slot: string) => page({ back: true, history: memoryHistory([{ state: { tab: slot }, url: 'https://poe2.quest/' }]) });
 /** The page went for good (its tab closed, a reload): a pagehide not for the back/forward cache, then its locks go. */
 function close(tab: Tab) {
   current = tab;
   tab.k.pageHidden(false);
   kill(tab);
 }
-/** The same tab reloaded: a new page, its sessionStorage kept. */
+/** The same tab reloaded: a new page, its sessionStorage and history kept. */
 function reload(tab: Tab) {
   close(tab);
-  return page({ back: true, store: tab.store });
+  return page({ back: true, store: tab.store, history: tab.history });
 }
 const settle = () => new Promise((r) => setImmediate(r));
 async function on<T>(tab: Tab, fn: (k: Tab['k']) => T): Promise<Awaited<T>> {
@@ -85,10 +103,31 @@ const hosting = (code: string) => JSON.stringify({ mode: 'host', code, state: { 
 const yes = () => true;
 const copiesLeft = () => [...local.keys()].filter((k) => k.startsWith(storeKey('kept.')));
 const slotOf = (tab: Tab) => tab.store.get(storeKey('session.slot'));
+/** The slot the entry the tab is on names. */
+const named = (tab: Tab) => (tab.history.state as { tab?: string } | null)?.tab;
 /** Whether the tab's page holds its slot's lock. */
 const holds = (tab: Tab) => locks.held.get(storeKey(`kept.${slotOf(tab)}`)) === tab.name;
 /** Lets a moment pass, for what a page lets go of in one (an emptied slot's lock). */
 const moment = () => new Promise((r) => setTimeout(r, 5));
+
+/**
+ * The modules that write a page's history entries (the room's guard and the
+ * layers over a page, backGuard.ts; a page with an address of its own,
+ * hashRoute.svelte.ts), loaded afresh as a page of `tab`'s in a browser.
+ */
+async function browserPage(tab: Tab) {
+  current = tab;
+  const g = globalThis as { window?: unknown };
+  g.window = globalThis;
+  try {
+    return {
+      ...((await import(`../src/lib/backGuard.ts?page=${tab.name}`)) as typeof import('../src/lib/backGuard.ts')),
+      ...((await import(`../src/lib/hashRoute.svelte.ts?page=${tab.name}`)) as typeof import('../src/lib/hashRoute.svelte.ts')),
+    };
+  } finally {
+    delete g.window;
+  }
+}
 
 beforeEach(() => {
   local.clear();
@@ -99,18 +138,64 @@ test('a tab killed in the background and brought back picks up its game', async 
   const a = page();
   await on(a, (k) => start(k, save(1)));
   await on(a, (k) => keep(k, save(2)));
+  assert.equal(named(a), slotOf(a), 'the entry it is on names the tab’s slot');
   kill(a);
-  const back = page({ back: true });
+  const back = restore(a);
   const took = await on(back, (k) => k.takeCopy(yes));
   assert.deepEqual(took, { save: save(2), alive: null }, 'the last save, as it was');
   // Picked up as a reload picks it up (resume: reset, then the game saved again), in the same slot, held.
   await on(back, (k) => start(k, took!.save));
   await on(back, (k) => keep(k, save(3)));
-  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null, 'picked up once only');
+  assert.equal(await on(restore(a), (k) => k.takeCopy(yes)), null, 'picked up once only');
   assert.equal(slotOf(back), slotOf(a), 'the tab’s slot taken over');
   assert.equal(copiesLeft().length, 1);
   kill(back);
-  assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, save(3));
+  assert.equal((await on(restore(back), (k) => k.takeCopy(yes)))?.save, save(3));
+});
+
+test('each tab brought back picks up its own game, not the newest', async () => {
+  const old = page();
+  await on(old, (k) => start(k, save(1)));
+  await later();
+  const newer = page();
+  await on(newer, (k) => start(k, save(2)));
+  kill(old);
+  kill(newer);
+  assert.equal((await on(restore(old), (k) => k.takeCopy(yes)))?.save, save(1));
+  assert.equal((await on(restore(newer), (k) => k.takeCopy(yes)))?.save, save(2));
+});
+
+test('a tab with no game, brought back first, takes none: the game waits for its own tab', async () => {
+  // A game in one tab, the codex in another, in front; the browser killed both.
+  const game = page();
+  await on(game, (k) => start(k, save(1)));
+  const codex = page();
+  kill(game);
+  kill(codex);
+  // Every tab comes back with its sessionStorage empty, the one in front first.
+  const front = restore(codex);
+  assert.equal(await on(front, (k) => k.takeCopy(yes)), null);
+  assert.equal(named(front), undefined, 'its history names no slot');
+  assert.equal(copiesLeft().length, 1, 'the game’s copy still there');
+  assert.equal((await on(restore(game), (k) => k.takeCopy(yes)))?.save, save(1), 'for its own tab, brought back after');
+});
+
+test('a game whose tab was closed with its copy left behind is picked up by no other tab', async () => {
+  // Another tab of the site, whose own game was left: its history names its slot, which holds nothing now.
+  const other = page();
+  await on(other, (k) => start(k, save(5)));
+  await on(other, (k) => k.dropCopy());
+  await moment();
+  const a = page();
+  await on(a, (k) => start(k, save(1)));
+  await on(a, (k) => k.leaving());
+  // Closed from Android Chrome's tab switcher: its lock goes with the page, but its copy stays, as if it had no pagehide.
+  kill(a);
+  // The other tab, killed in the background later and brought back.
+  kill(other);
+  assert.equal(await on(restore(other), (k) => k.takeCopy(yes)), null);
+  assert.equal(await on(restore(page()), (k) => k.takeCopy(yes)), null, 'nor one that never had a game');
+  assert.equal(copiesLeft().length, 1, 'the closed tab’s copy, which no tab’s history names');
 });
 
 test('a page whose reset settled before its first save still keeps its game', async () => {
@@ -122,14 +207,14 @@ test('a page whose reset settled before its first save still keeps its game', as
   assert.ok(slotOf(a), 'a slot got');
   assert.equal(copiesLeft().length, 1);
   kill(a);
-  assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, save(2));
+  assert.equal((await on(restore(a), (k) => k.takeCopy(yes)))?.save, save(2));
 });
 
 test('a restored page whose reset came first can still pick up its game', async () => {
   const a = page();
   await on(a, (k) => start(k, save(1)));
   kill(a);
-  const back = page({ back: true });
+  const back = restore(a);
   await on(back, (k) => k.dropCopy());
   assert.equal((await on(back, (k) => k.takeCopy(yes)))?.save, save(1));
 });
@@ -140,35 +225,38 @@ test('a tab opened anew never picks up a game, its tab gone or not', async () =>
   assert.equal(await on(page(), (k) => k.takeCopy(yes)), null, 'a second tab while the first plays');
   kill(a);
   assert.equal(await on(page(), (k) => k.takeCopy(yes)), null, 'the site opened again after the tab went');
-  assert.ok(await on(page({ back: true }), (k) => k.takeCopy(yes)), 'still there for the tab when it comes back');
+  assert.ok(await on(restore(a), (k) => k.takeCopy(yes)), 'still there for the tab when it comes back');
 });
 
 test('a page brought back never takes over a game another page still has', async () => {
   // A tab frozen in the background still holds its lock.
   const a = page();
   await on(a, (k) => start(k, save(1)));
-  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null);
+  assert.equal(await on(restore(a), (k) => k.takeCopy(yes)), null);
   // A plain reload keeps its own sessionStorage (and its slot), so it takes nothing either: session.svelte.ts resumes from the save.
   const a2 = reload(a);
   await on(a2, (k) => start(k, save(2)));
-  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null, 'the reloaded page holds the slot again');
+  assert.equal(await on(restore(a2), (k) => k.takeCopy(yes)), null, 'the reloaded page holds the slot again');
   assert.equal(copiesLeft().length, 1, 'one copy for the tab, through its reloads');
   // Its copy went as the old page did, and the game resumed kept one again.
   kill(a2);
-  assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, save(2));
+  assert.equal((await on(restore(a2), (k) => k.takeCopy(yes)))?.save, save(2));
 });
 
-test('a duplicated tab keeps its game apart, never over the first one’s', async () => {
+test('a duplicated tab gets a slot of its own and names it, and each tab gets its own game back', async () => {
   const a = page();
   await on(a, (k) => start(k, save(1)));
   const dup = page({ from: a });
+  assert.equal(named(dup), slotOf(a), 'its history copied, naming the first tab’s slot');
   await on(dup, (k) => start(k, save(9)));
   assert.notEqual(slotOf(dup), slotOf(a), 'a slot of its own');
+  assert.equal(named(dup), slotOf(dup), 'named in the entry it is on');
+  assert.equal(named(a), slotOf(a), 'the first tab’s as it was');
   kill(dup);
   kill(a);
-  const saves = [];
-  for (let i = 0; i < 3; i++) saves.push((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save ?? null);
-  assert.deepEqual(saves.sort(), [save(1), save(9), null].sort(), 'each game once');
+  // Brought back, the duplicate first: each picks up its own.
+  assert.equal((await on(restore(dup), (k) => k.takeCopy(yes)))?.save, save(9));
+  assert.equal((await on(restore(a), (k) => k.takeCopy(yes)))?.save, save(1));
 });
 
 test('a game left is not picked up', async () => {
@@ -176,7 +264,7 @@ test('a game left is not picked up', async () => {
   await on(a, (k) => start(k, save(1)));
   await on(a, (k) => k.dropCopy());
   kill(a);
-  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null);
+  assert.equal(await on(restore(a), (k) => k.takeCopy(yes)), null);
   assert.deepEqual([...local.keys()], [], 'nothing left in localStorage');
 });
 
@@ -186,7 +274,8 @@ test('a game whose tab the player closed is never picked up by another', async (
   await on(a, (k) => k.leaving());
   close(a);
   // A tab of the site without a game, killed in the background and restored later.
-  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null);
+  assert.equal(await on(restore(page()), (k) => k.takeCopy(yes)), null);
+  assert.equal(await on(restore(a), (k) => k.takeCopy(yes)), null, 'nor by the closed tab, brought back with its history');
   assert.deepEqual([...local.keys()], [], 'nothing left in localStorage');
 });
 
@@ -199,7 +288,7 @@ test('a room whose tab the player closed is left for good, older tabs’ copies 
   await on(b, (k) => start(k, guest('ROOM')));
   await on(b, (k) => k.leaving());
   close(b);
-  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null);
+  assert.equal(await on(restore(a), (k) => k.takeCopy(yes)), null, 'the older tab, brought back, starts fresh');
   assert.deepEqual(copiesLeft(), []);
 });
 
@@ -212,7 +301,7 @@ test('a page that closes keeps nothing after, whatever is saved as it goes', asy
     k.keepAlive(String(Date.now()));
   });
   kill(a);
-  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null);
+  assert.equal(await on(restore(a), (k) => k.takeCopy(yes)), null);
   assert.deepEqual([...local.keys()], []);
 });
 
@@ -221,7 +310,7 @@ test('a tab’s page that unloads leaves nothing to pick up once its tab is gone
   await on(a, (k) => start(k, save(1)));
   await on(a, (k) => k.pageHidden(false));
   kill(a);
-  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null);
+  assert.equal(await on(restore(a), (k) => k.takeCopy(yes)), null);
   assert.deepEqual(copiesLeft(), []);
 });
 
@@ -234,12 +323,29 @@ test('a home-screen app’s page that unloads leaves its run for the app to come
   assert.equal((await on(page({ back: true, standalone: true }), (k) => k.takeCopy(yes)))?.save, save(1));
 });
 
+test('the home-screen app, opened anew with no history, picks up the newest game no page holds, and names its slot', async () => {
+  const old = page({ standalone: true });
+  await on(old, (k) => start(k, save(1)));
+  kill(old);
+  await later();
+  const newer = page({ standalone: true });
+  await on(newer, (k) => start(k, save(2)));
+  kill(newer);
+  await later();
+  // (One a page still holds, newer still, stays its own.)
+  await on(page({ standalone: true }), (k) => start(k, save(3)));
+  const app = page({ back: true, standalone: true });
+  assert.equal((await on(app, (k) => k.takeCopy(yes)))?.save, save(2));
+  assert.equal(named(app), slotOf(app), 'the entry it is on names the slot it took');
+  assert.equal((await on(page({ back: true, standalone: true }), (k) => k.takeCopy(yes)))?.save, save(1));
+});
+
 test('a page put in the back/forward cache still gives its game back if its tab is killed there', async () => {
   const a = page();
   await on(a, (k) => start(k, save(1)));
   await on(a, (k) => k.pageHidden(true));
   kill(a);
-  assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, save(1));
+  assert.equal((await on(restore(a), (k) => k.takeCopy(yes)))?.save, save(1));
 });
 
 test('a reloaded page that leaves before saving again clears its tab’s copy', async () => {
@@ -250,23 +356,23 @@ test('a reloaded page that leaves before saving again clears its tab’s copy', 
   await moment();
   assert.ok(!holds(a2), 'its slot’s lock taken to clear it, and let go of again');
   kill(a2);
-  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null);
+  assert.equal(await on(restore(a2), (k) => k.takeCopy(yes)), null);
 });
 
 test('a page that started something meanwhile picks nothing up, and leaves the copy for its own tab', async () => {
   const a = page();
   await on(a, (k) => start(k, save(1)));
   kill(a);
-  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(() => false)), null);
+  assert.equal(await on(restore(a), (k) => k.takeCopy(() => false)), null);
   // A game started while it looked: its own slot is being got, and nothing is taken over it.
-  const busy = page({ back: true });
+  const busy = restore(a);
   const looked = await on(busy, (k) => {
     const took = k.takeCopy(yes);
     start(k, save(5));
     return took;
   });
   assert.equal(looked, null);
-  assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, save(1));
+  assert.equal((await on(restore(a), (k) => k.takeCopy(yes)))?.save, save(1));
 });
 
 /** Lets the clock move on, so the next copy is newer than the last. */
@@ -274,18 +380,6 @@ async function later() {
   const t0 = Date.now();
   while (Date.now() === t0) await settle();
 }
-
-test('the newest game is picked up first', async () => {
-  const old = page();
-  await on(old, (k) => start(k, save(1)));
-  await later();
-  const newer = page();
-  await on(newer, (k) => start(k, save(2)));
-  kill(old);
-  kill(newer);
-  assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, save(2));
-  assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, save(1));
-});
 
 test('a page holds its slot’s lock only while it has a game to keep', async () => {
   // Chrome keeps a page holding a lock out of its back/forward cache: the start page after a game must not hold one.
@@ -304,9 +398,9 @@ test('a page holds its slot’s lock only while it has a game to keep', async ()
   await on(a, (k) => keep(k, hosting('ROOM')));
   assert.equal(slotOf(a), slot);
   assert.ok(holds(a));
-  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null, 'still its own while it plays');
+  assert.equal(await on(restore(a), (k) => k.takeCopy(yes)), null, 'still its own while it plays');
   kill(a);
-  assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, hosting('ROOM'));
+  assert.equal((await on(restore(a), (k) => k.takeCopy(yes)))?.save, hosting('ROOM'));
 });
 
 test('a page brought back looks for a game to pick up once, as it starts', async () => {
@@ -317,14 +411,68 @@ test('a page brought back looks for a game to pick up once, as it starts', async
   const b = page();
   await on(b, (k) => start(k, save(2)));
   kill(b);
-  const back = page({ back: true });
+  const back = restore(b);
   const took = await on(back, (k) => k.takeCopy(yes));
   assert.equal(took?.save, save(2));
   await on(back, (k) => start(k, took!.save));
   await on(back, (k) => k.dropCopy());
   await moment();
   assert.equal(await on(back, (k) => k.takeCopy(yes)), null, 'its own game left, it never goes on into another tab’s');
-  assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, save(1), 'still there for its own tab');
+  assert.equal((await on(restore(a), (k) => k.takeCopy(yes)))?.save, save(1), 'still there for its own tab');
+});
+
+test('a page gone back to an entry from before its tab had a slot names it there too', async () => {
+  const a = page();
+  const { backGuard } = await browserPage(a);
+  backGuard.topDialog = () => null;
+  const asked: string[] = [];
+  backGuard.asked(() => asked.push('leave?'));
+  // The room's guard goes up in the tap that starts the game, before the tab has a slot.
+  backGuard.want(true);
+  await on(a, (k) => start(k, save(1)));
+  assert.deepEqual(a.history.state, { guard: true, tab: slotOf(a) }, 'the entry it got its slot on names it');
+  // Back in the game: the start page's entry, the Leave dialog open over it.
+  a.history.back();
+  await settle();
+  assert.deepEqual(asked, ['leave?']);
+  // (The page's popstate, as keeping() hears it.)
+  await on(a, (k) => k.moved());
+  assert.deepEqual(a.history.state, { tab: slotOf(a) });
+  kill(a);
+  assert.equal((await on(restore(a), (k) => k.takeCopy(yes)))?.save, save(1), 'killed there, its tab still comes back to its game');
+});
+
+test('the room’s guard, a layer over a page and the settings name the tab’s slot in their entries, beside their own marks', async () => {
+  const a = page();
+  await on(a, (k) => start(k, save(1)));
+  const tab = slotOf(a);
+  const { backGuard, pageLayers, HashRoute } = await browserPage(a);
+  const settings = new HashRoute('#settings', 'settings');
+  // As App lifts a page open over the game for the guard to go up under.
+  backGuard.liftPage = (guard) => settings.lift(guard);
+  settings.show();
+  assert.deepEqual(a.history.state, { settings: true, tab });
+  // A room resumed with the settings open: its guard goes up under them, the settings' entry made a plain step.
+  backGuard.want(true);
+  // The settings dropped where they stand (the room ended under them), then a layer put up over the page.
+  settings.drop();
+  pageLayers.layer(() => {});
+  assert.deepEqual(
+    a.history.entries.map((e) => e.state),
+    [{ tab }, { tab }, { guard: true, tab }, { tab }, { tab, over: 1 }],
+  );
+});
+
+test('a page brought back on the room’s guard makes it a plain step that still names the tab’s slot, before it has taken its game', async () => {
+  const a = page();
+  await on(a, (k) => start(k, save(1)));
+  (await browserPage(a)).backGuard.want(true);
+  kill(a);
+  const back = restore(a);
+  // The guard from the earlier load is made a plain step as the page loads (backGuard.ts adopt), its sessionStorage still empty.
+  await browserPage(back);
+  assert.deepEqual(back.history.state, { tab: slotOf(a) });
+  assert.equal((await on(back, (k) => k.takeCopy(yes)))?.save, save(1));
 });
 
 test('a host’s last moment comes back with its room', async () => {
@@ -332,7 +480,7 @@ test('a host’s last moment comes back with its room', async () => {
   await on(a, (k) => start(k, hosting('ABCD')));
   await on(a, (k) => k.keepAlive('12345'));
   kill(a);
-  assert.deepEqual(await on(page({ back: true }), (k) => k.takeCopy(yes)), { save: hosting('ABCD'), alive: '12345' });
+  assert.deepEqual(await on(restore(a), (k) => k.takeCopy(yes)), { save: hosting('ABCD'), alive: '12345' });
 });
 
 test('a seat the player took again from a new tab stays there when the old tab comes back', async () => {
@@ -343,11 +491,11 @@ test('a seat the player took again from a new tab stays there when the old tab c
   const b = page();
   await on(b, (k) => start(k, guest('ROOM')));
   // The old tab switched to later: its game went on in the new one, which keeps it.
-  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null);
+  assert.equal(await on(restore(a), (k) => k.takeCopy(yes)), null);
   assert.deepEqual(copiesLeft(), [storeKey(`kept.${slotOf(b)}`)], 'the old tab’s copy let go of, never to rejoin over the new one');
   // The new tab's own game still comes back if it is killed in turn.
   kill(b);
-  assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, guest('ROOM'));
+  assert.equal((await on(restore(b), (k) => k.takeCopy(yes)))?.save, guest('ROOM'));
 });
 
 test('a host’s room is so too, but not a room others in this browser are only in', async () => {
@@ -357,7 +505,7 @@ test('a host’s room is so too, but not a room others in this browser are only 
   kill(a);
   const dup = page();
   await on(dup, (k) => start(k, hosting('ROOM')));
-  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null);
+  assert.equal(await on(restore(a), (k) => k.takeCopy(yes)), null);
   kill(dup);
   local.clear();
   // A guest of the room in another tab is waiting for its host; a game on this device elsewhere is no room.
@@ -366,7 +514,7 @@ test('a host’s room is so too, but not a room others in this browser are only 
   kill(host);
   await on(page(), (k) => start(k, guest('ROOM')));
   await on(page(), (k) => start(k, save(1)));
-  assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, hosting('ROOM'));
+  assert.equal((await on(restore(host), (k) => k.takeCopy(yes)))?.save, hosting('ROOM'));
 });
 
 test('a room left from a newer tab is never gone back into by an older one', async () => {
@@ -382,9 +530,8 @@ test('a room left from a newer tab is never gone back into by an older one', asy
   await on(b, (k) => start(k, guest('ROOM')));
   await on(b, (k) => k.dropCopy());
   // The old tab switched to later: the room was left, so it starts fresh.
-  const back = page({ back: true });
-  assert.equal((await on(back, (k) => k.takeCopy(yes)))?.save, guest('OTHER'), 'only the other room’s copy is still there');
-  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null);
+  assert.equal(await on(restore(a), (k) => k.takeCopy(yes)), null);
+  assert.equal((await on(restore(elsewhere), (k) => k.takeCopy(yes)))?.save, guest('OTHER'), 'the other room’s copy is still there for its tab');
 });
 
 test('a tab moved out of its seat by a newer one leaves the newer one’s copy be', async () => {
@@ -399,7 +546,7 @@ test('a tab moved out of its seat by a newer one leaves the newer one’s copy b
   await on(a, (k) => k.dropCopy());
   assert.deepEqual(copiesLeft(), [storeKey(`kept.${slotOf(b)}`)]);
   kill(b);
-  assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, guest('ROOM'));
+  assert.equal((await on(restore(b), (k) => k.takeCopy(yes)))?.save, guest('ROOM'));
 });
 
 /** Stores a copy as a tab killed `ago` ms before now left it, kept under `v`. */
@@ -413,8 +560,8 @@ test('a game on this device is kept for a day, a room online for an hour', async
   leftAgo('stale', KEEP_ONLINE_MS + 60_000, 'client ROOM');
   leftAgo('old', KEEP_HERE_MS + 60_000, null);
   const got = [];
-  for (let i = 0; i < 3; i++) got.push(await on(page({ back: true }), (k) => k.takeCopy(yes)));
-  assert.equal(got.filter(Boolean).length, 2);
+  for (const slot of ['here', 'online', 'stale', 'old']) got.push(!!(await on(naming(slot), (k) => k.takeCopy(yes))));
+  assert.deepEqual(got, [true, true, false, false]);
   assert.equal(readStored('kept.stale'), null, 'let go of');
   assert.equal(readStored('kept.old'), null);
 });
@@ -422,7 +569,7 @@ test('a game on this device is kept for a day, a room online for an hour', async
 test('a copy kept under another save name is never picked up', async () => {
   // As a build whose save format changed (SAVE renamed) finds the last build's.
   leftAgo('before', 60_000, null, 'session.v3');
-  assert.equal(await on(page({ back: true }), (k) => k.takeCopy(yes)), null);
+  assert.equal(await on(naming('before'), (k) => k.takeCopy(yes)), null);
   assert.equal(readStored('kept.before'), null, 'let go of');
   // And the copies this keeper writes carry its name.
   const a = page();
@@ -433,7 +580,7 @@ test('a copy kept under another save name is never picked up', async () => {
 test('a host still pinging keeps its room fresh past its last save', async () => {
   leftAgo('host', KEEP_ONLINE_MS + 60_000, 'host ROOM');
   local.set(storeKey('keptAlive.host'), String(Date.now() - 60_000));
-  assert.ok(await on(page({ back: true }), (k) => k.takeCopy(yes)));
+  assert.ok(await on(naming('host'), (k) => k.takeCopy(yes)));
 });
 
 test('a guest’s copy is as old as the time since its page was left, not since it joined', async () => {
@@ -444,7 +591,7 @@ test('a guest’s copy is as old as the time since its page was left, not since 
   local.set(name, local.get(name)!.replace(/"at":\d+/, `"at":${Date.now() - KEEP_ONLINE_MS - 60_000}`));
   await on(a, (k) => k.leaving());
   kill(a);
-  assert.equal((await on(page({ back: true }), (k) => k.takeCopy(yes)))?.save, guest('ABCD'));
+  assert.equal((await on(restore(a), (k) => k.takeCopy(yes)))?.save, guest('ABCD'));
 });
 
 test('only the newest few copies are kept', async () => {
@@ -457,7 +604,7 @@ test('only the newest few copies are kept', async () => {
 });
 
 test('without Web Locks nothing is kept or picked up', async () => {
-  const blind = { ...page(), k: keeper(undefined, () => true, () => false, SAVE) };
+  const blind = { ...page(), k: keeper(undefined, () => true, () => false, SAVE, entryOf(memoryHistory())) };
   await on(blind, (k) => start(k, save(1)));
   assert.equal(local.size, 0);
   leftAgo('x', 0, null);

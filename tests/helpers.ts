@@ -1,6 +1,7 @@
 // What the tests share: the item data, a seeded random source, a storage
-// stand-in and the locks of a browser's tabs, a game in its lobby and a room on a
-// clock the test moves. (Not a test file itself: npm test runs tests/*.test.ts.)
+// stand-in, a tab's history and the locks of a browser's tabs, a game in its
+// lobby and a room on a clock the test moves. (Not a test file itself: npm
+// test runs tests/*.test.ts.)
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -43,6 +44,52 @@ export function memoryStorage(store = new Map<string, string>(), fits: (key: str
       return store.size;
     },
   };
+}
+
+/**
+ * A tab's history as its page sees it (`history`, and `location` for the
+ * address of the entry it is on): each entry's state, kept as a copy as the
+ * browser keeps it, and its address. Going back or forward tells whoever
+ * `listen`s a moment later, as a popstate does. `copy()` is the same history
+ * in another tab: one the browser brought back (its entries' states and
+ * all), or a duplicated one.
+ */
+export function memoryHistory(entries: { state: unknown; url: string }[] = [{ state: null, url: 'https://poe2.quest/' }], at = entries.length - 1) {
+  const heard: (() => void)[] = [];
+  /** An address as the page gives it (none: the one it is on), made whole against the one it is on. */
+  const address = (url?: string | URL | null) => new URL(url ?? h.entries[h.at].url, h.entries[h.at].url).href;
+  const h = {
+    entries: entries.map((e) => ({ state: structuredClone(e.state), url: e.url })),
+    at,
+    get state(): unknown {
+      return h.entries[h.at].state;
+    },
+    get location() {
+      return new URL(h.entries[h.at].url);
+    },
+    pushState(state: unknown, _unused: string, url?: string | URL | null) {
+      const entry = { state: structuredClone(state), url: address(url) };
+      h.entries.splice(++h.at, Infinity, entry);
+    },
+    replaceState(state: unknown, _unused: string, url?: string | URL | null) {
+      h.entries[h.at] = { state: structuredClone(state), url: address(url) };
+    },
+    go(n: number) {
+      queueMicrotask(() => {
+        const to = Math.min(Math.max(h.at + n, 0), h.entries.length - 1);
+        if (to === h.at) return;
+        h.at = to;
+        for (const fn of heard) fn();
+      });
+    },
+    back: () => h.go(-1),
+    forward: () => h.go(1),
+    listen(fn: () => void) {
+      heard.push(fn);
+    },
+    copy: () => memoryHistory(h.entries, h.at),
+  };
+  return h;
 }
 
 /**

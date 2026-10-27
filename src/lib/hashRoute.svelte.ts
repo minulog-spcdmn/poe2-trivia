@@ -1,7 +1,9 @@
 // A page opened over the start page with an address of its own (#codex,
 // #settings), so it can be linked to and the browser's back button closes it.
+// Each entry it writes names the tab's slot too (lib/keptCopy.ts withTab).
 
 import { layerDepth } from './backGuard';
+import { withTab } from './keptCopy';
 
 export class HashRoute {
   open = $state(false);
@@ -26,7 +28,7 @@ export class HashRoute {
 
   show() {
     if (this.open) return;
-    history.pushState({ [this.key]: true }, '', this.hash);
+    history.pushState(withTab({ [this.key]: true }), '', this.hash);
     this.open = true;
   }
 
@@ -64,15 +66,15 @@ export class HashRoute {
   lift(under: () => void) {
     if (!this.open) return under();
     const hash = location.hash;
-    history.replaceState(null, '', location.pathname + location.search);
+    history.replaceState(withTab(null), '', location.pathname + location.search);
     under();
-    history.pushState({ [this.key]: true }, '', hash);
+    history.pushState(withTab({ [this.key]: true }), '', hash);
   }
 
   /** Gone where it stands, the address losing its hash: for when what it was over has gone (a room it was opened in, ended). */
   drop() {
     if (!this.open) return;
-    history.replaceState(null, '', location.pathname + location.search);
+    history.replaceState(withTab(null), '', location.pathname + location.search);
     this.open = false;
   }
 }
