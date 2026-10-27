@@ -1042,9 +1042,25 @@ export function absorbWins(raw: string): boolean {
 export function checkAchievements(items: Item[], moments: string[] = []): Check {
   const o = open();
   if (!o) return none();
-  const s = summarize(loadCodex(), loadRecords(), items, loadWins());
-  return earn(o.store, o.first, [...earnedFrom(s), ...moments]);
+  return earn(o.store, o.first, [...earnedFrom(storedSummary(items)), ...moments]);
 }
+
+/**
+ * The summary of what is stored now, worked out again only once the codex,
+ * the records, the wins or the items change: the start page checks as it
+ * loads, and the Codex again as it opens, where on a phone working it out
+ * was a good part of the frame it came in on. (loadCodex and loadRecords
+ * give the same object back until what's stored changes.)
+ */
+function storedSummary(items: Item[]): Summary {
+  const [codex, delve, wins] = [loadCodex(), loadRecords(), loadWins()];
+  const k = summed;
+  if (k?.codex === codex && k.delve === delve && k.items === items && k.wins.now === wins.now && k.wins.best === wins.best) return k.summary;
+  const summary = summarize(codex, delve, items, wins);
+  summed = { codex, delve, items, wins, summary };
+  return summary;
+}
+let summed: { codex: Codex; delve: DelveRecords; items: Item[]; wins: WinRun; summary: Summary } | null = null;
 
 /**
  * The game against others this tab is in, as it has followed it: in this

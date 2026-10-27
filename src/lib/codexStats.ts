@@ -56,6 +56,21 @@ export function median(xs: number[]): number | null {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
+/**
+ * codexStats for the codex as stored (loadCodex, which gives the same object
+ * back until it changes): the last one kept, so it can be worked out ahead,
+ * as the Codex's entry on the start page is pointed at, rather than in the
+ * frame the Codex comes in on (Home.svelte).
+ */
+export function storedCodexStats(c: Codex, items: Item[], categories: string[]): CodexStats {
+  const k = kept;
+  if (k?.c === c && k.items === items && k.categories === categories) return k.stats;
+  const stats = codexStats(c, items, categories);
+  kept = { c, items, categories, stats };
+  return stats;
+}
+let kept: { c: Codex; items: Item[]; categories: string[]; stats: CodexStats } | null = null;
+
 /** Everything the codex page shows, for the items the game has now. */
 export function codexStats(c: Codex, items: Item[], categories: string[], limit = 5): CodexStats {
   const byId = new Map(items.map((it) => [it.id, it]));

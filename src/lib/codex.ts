@@ -590,14 +590,16 @@ export const ownCodexRaw = () => storedRaw(readStored(CODEX));
 export function loadCodex(): Codex {
   const raw = ownCodexRaw();
   const others = copiesOf('codex', parseCodex);
-  if (!others.length) return parseCodex(raw) ?? emptyCodex();
-  // (Combined again only once its own or the copies change: the codex is read often. Nobody changes what it's given.)
-  if (combined?.raw === raw && combined.others === others) return combined.codex;
-  const codex = combineCodex(parseCodex(raw) ?? emptyCodex(), others);
-  combined = { raw, others, codex };
+  // Read again only once its own or the copies change: the codex is read
+  // often, the start page and the Codex as it opens each reading it more than
+  // once, and on a phone that was some ms each time. (Nobody changes what it's given.)
+  if (kept?.raw === raw && kept.others === others) return kept.codex;
+  const own = parseCodex(raw) ?? emptyCodex();
+  const codex = others.length ? combineCodex(own, others) : own;
+  kept = { raw, others, codex };
   return codex;
 }
-let combined: { raw: string | null; others: Codex[]; codex: Codex } | null = null;
+let kept: { raw: string | null; others: Codex[]; codex: Codex } | null = null;
 
 const sum = (a: Tally, b: Tally): Tally => ({ n: a.n + b.n, ok: a.ok + b.ok });
 const sumCounts = (a: Record<string, number>, b: Record<string, number>) => {

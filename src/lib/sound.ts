@@ -15,6 +15,8 @@ import { AMBIENCE, ARCHETYPE_AMBIENCE, CAVE_IN, DEPTH, FIRE, MIX, MOMENTS, RUMBL
 import { whenIdle } from './idle.ts';
 import { fillRumble, rumbleLength } from './rumbleNoise.ts';
 import type { RumbleAnswer, RumbleJob } from './rumbleWorker.ts';
+import { HALL_SECONDS, fillHall, hallLength } from './hallNoise.ts';
+import type { HallAnswer, HallJob } from './hallWorker.ts';
 import { readStored, writeStored } from './storage.ts';
 
 export type Sfx =
@@ -424,11 +426,12 @@ let primed = false;
 function prime(b: Bus) {
   primed = true;
   // The hall's impulse takes a moment to work out: not in the tap that
-  // starts the sound (the first sounds just play dry), and a part per idle
-  // moment, as that tap's screen comes in (whole, it held up a frame by
-  // some 50 ms in the codex's).
+  // starts the sound (the first sounds just play dry), and away from the
+  // page (hallThere), as that tap's screen comes in. The reverb takes it in
+  // an idle moment (taking it in works it over again), or within half a
+  // second where the page never idles (a busy Delve on a slow phone).
   // (Should it fail, the context closed meanwhile, the sound stays dry.)
-  setTimeout(() => void inIdleSteps(hallSteps(b.ac, HALL_SECONDS)).then((buf) => (b.reverb.buffer = buf), () => {}), 300);
+  setTimeout(() => void hallThere(b.ac).then((buf) => whenIdle(() => (b.reverb.buffer = buf), { timeout: 500, fallback: 200 }), () => {}), 300);
   for (const file of MOMENT_FILES) if (!GENERATED[file]) void load(file).catch(() => {});
   // Already in a Delve: work out its sounds now (see depthAmbience).
   if (depth > 0) prepareDelve(b);
@@ -526,37 +529,68 @@ function inIdleSteps<T>(steps: Generator<void, T>): Promise<T> {
 }
 
 /** How long (s) the hall's impulse response is. */
-export const HALL_SECONDS = 2.8;
+export { HALL_SECONDS };
 
 /** How many parts each channel of the hall's impulse is worked out in (see hallSteps). */
 const HALL_PARTS = 4;
 
 /**
- * A dark stone-hall impulse response: stereo noise that decays and loses its
- * highs as it goes. Worked out a quarter of a channel per step, from the
- * first idle moment on.
+ * The hall's impulse (lib/hallNoise.ts: stereo noise that decays and loses
+ * its highs as it goes), worked out here where no worker can (hallThere): a
+ * quarter of a channel per step, from the first idle moment on.
  */
-function* hallSteps(ac: AudioContext, seconds: number): Generator<void, AudioBuffer> {
+export function* hallSteps(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>): Generator<void, AudioBuffer> {
   // Nothing before the first idle moment (inIdleSteps runs a first step at once).
   yield;
-  const len = Math.floor(ac.sampleRate * seconds);
+  const len = hallLength(ac.sampleRate);
   const buf = ac.createBuffer(2, len, ac.sampleRate);
   for (let ch = 0; ch < buf.numberOfChannels; ch++) {
     const d = buf.getChannelData(ch);
     let lp = 0;
     for (let part = 0; part < HALL_PARTS; part++) {
       if (ch || part) yield;
-      const end = Math.floor((len * (part + 1)) / HALL_PARTS);
-      for (let i = Math.floor((len * part) / HALL_PARTS); i < end; i++) {
-        const p = i / len;
-        // One-pole lowpass whose cutoff falls over the tail.
-        lp += (0.45 - 0.4 * p) * (Math.random() * 2 - 1 - lp);
-        const onset = Math.min(1, i / (ac.sampleRate * 0.015));
-        d[i] = lp * onset * Math.pow(1 - p, 3);
-      }
+      lp = fillHall(d, ac.sampleRate, Math.floor((len * part) / HALL_PARTS), Math.floor((len * (part + 1)) / HALL_PARTS), lp);
     }
   }
   return buf;
+}
+
+/**
+ * The hall's impulse worked out in a worker of its own (lib/hallWorker.ts),
+ * which then stops; here a step per idle moment (hallSteps) where there's
+ * none or it fails. On an iPhone its steps here held the page over the
+ * second after the first tap, as the screen that tap brought came in.
+ */
+function hallThere(ac: AudioContext): Promise<AudioBuffer> {
+  const here = () => inIdleSteps(hallSteps(ac));
+  if (typeof Worker === 'undefined') return here();
+  return new Promise((resolve, reject) => {
+    let w: Worker;
+    try {
+      w = new Worker(new URL('./hallWorker.ts', import.meta.url), { type: 'module' });
+    } catch {
+      resolve(here());
+      return;
+    }
+    w.onmessage = ({ data }: MessageEvent<HallAnswer>) => {
+      w.terminate();
+      try {
+        const buf = ac.createBuffer(data.channels.length, data.channels[0].length, ac.sampleRate);
+        data.channels.forEach((c, i) => buf.getChannelData(i).set(c));
+        resolve(buf);
+      } catch (e) {
+        reject(e);
+      }
+    };
+    // (Failed to load, say: worked out here instead.)
+    const instead = () => {
+      w.terminate();
+      resolve(here());
+    };
+    w.onerror = instead;
+    w.onmessageerror = instead;
+    w.postMessage({ sampleRate: ac.sampleRate } satisfies HallJob);
+  });
 }
 
 /**
@@ -1384,6 +1418,9 @@ export function installUiSounds() {
   // takes 25 to 65 ms (see build), which the press would show late by. It's
   // made in the idle moment after, while the button or finger is still down
   // (a quick tap's pointerup makes it there and then if that moment hasn't come).
+  // Either way it's made before the click, not in the screen the click brings
+  // in. (Nor any sooner, as the page loads: a context made before any gesture
+  // is one Chrome warns of, and may let run from then on, playing nothing.)
   const warm = (e: Event) => {
     if (muted) return;
     if (!bus && e.type === 'pointerdown') {
