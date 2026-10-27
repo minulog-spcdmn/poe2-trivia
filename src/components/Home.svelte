@@ -28,7 +28,6 @@
   import SiteFooter from './SiteFooter.svelte';
   import { probeRoom, type RoomInfo } from '../lib/rooms';
   import { warmPlate } from '../lib/plateStore.svelte';
-  import { warmWeave } from '../lib/weaveTile';
   import { circleAtPlace } from '../lib/circlePlaces';
   import { cameFromThisSite, countArrival, type JoinVia } from '../lib/count';
   import { withoutInvite } from '../lib/inviteAddress';
@@ -202,7 +201,6 @@
   const warmCodex = (e: Entry) => {
     if (e !== 'codex') return;
     warmPlate(circleAtPlace('collection'));
-    warmWeave();
   };
   $effect(() => void warmCodex(ENTRIES[cursor]));
   /**

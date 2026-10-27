@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 /** Just enough of a worker's `self` to catch what it posts back. */
-const posted: { message: { channels: Float32Array[] }; transfer: ArrayBuffer[] }[] = [];
+const posted: { message: { left: Float32Array; right: Float32Array }; transfer: ArrayBuffer[] }[] = [];
 const self = {
   onmessage: null as null | ((e: { data: unknown }) => void),
   postMessage(message: never, options: { transfer: ArrayBuffer[] }) {
@@ -44,7 +44,8 @@ test("the hall's worker answers with the page's own samples, both channels, tran
   assert.ok(self.onmessage, 'the worker listens');
   withNoise(7, () => self.onmessage!({ data: { sampleRate } }));
   assert.equal(posted.length, 1);
-  const { message: { channels }, transfer } = posted[0];
+  const { message: { left, right }, transfer } = posted[0];
+  const channels = [left, right];
   // The page's way, against just enough of an AudioContext.
   const page = withNoise(7, () => {
     const data = [0, 1].map(() => new Float32Array(hallLength(sampleRate)));
@@ -53,7 +54,6 @@ test("the hall's worker answers with the page's own samples, both channels, tran
     for (let r = steps.next(); !r.done; r = steps.next());
     return data;
   });
-  assert.equal(channels.length, 2);
   for (let c = 0; c < 2; c++) {
     assert.equal(channels[c].length, hallLength(sampleRate));
     assert.ok(channels[c].some((v) => v !== 0), 'it rings');

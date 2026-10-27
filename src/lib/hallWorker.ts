@@ -5,10 +5,10 @@
 import { fillHall, hallLength } from './hallNoise.ts';
 
 export type HallJob = { sampleRate: number };
-export type HallAnswer = { channels: Float32Array<ArrayBuffer>[] };
+export type HallAnswer = { left: Float32Array<ArrayBuffer>; right: Float32Array<ArrayBuffer> };
 
 self.onmessage = ({ data: job }: MessageEvent<HallJob>) => {
-  const channels = [0, 1].map(() => new Float32Array(hallLength(job.sampleRate)));
-  for (const d of channels) fillHall(d, job.sampleRate, 0, d.length, 0);
-  self.postMessage({ channels } satisfies HallAnswer, { transfer: channels.map((c) => c.buffer) });
+  const [left, right] = [0, 1].map(() => new Float32Array(hallLength(job.sampleRate)));
+  for (const d of [left, right]) fillHall(d, job.sampleRate, 0, d.length, 0);
+  self.postMessage({ left, right } satisfies HallAnswer, { transfer: [left.buffer, right.buffer] });
 };

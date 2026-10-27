@@ -23,7 +23,6 @@
   import { circleOf } from './circles';
   import { circleAtPlace } from '../lib/circlePlaces';
   import { warmPlate } from '../lib/plateStore.svelte';
-  import { warmWeave } from '../lib/weaveTile';
   import CodexItem from './CodexItem.svelte';
   import CodexFilter from './CodexFilter.svelte';
   import CodexDelve from './CodexDelve.svelte';
@@ -48,7 +47,6 @@
   // sooner, as its entry on the start page is pointed at: Home.svelte).
   onMount(() => {
     for (const place of ['collection', 'achievements', 'codexDelve', 'item'] as const) warmPlate(circleAtPlace(place));
-    warmWeave();
   });
   // A game in another tab may add to it meanwhile.
   onMount(() =>

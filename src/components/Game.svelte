@@ -7,7 +7,6 @@
   import Scoreboard from './Scoreboard.svelte';
   import ChooseCategory from './ChooseCategory.svelte';
   import QuestionView from './QuestionView.svelte';
-  import { warmWeave } from './NamePlate.svelte';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import TimerRing from './TimerRing.svelte';
@@ -53,8 +52,6 @@
   $effect(() => {
     if (itemOpen) return backGuard.layer(closeItemWindow);
   });
-  // The name plate's weave, ready before the first question shows one.
-  onMount(warmWeave);
   // The worker that makes the pictures' shadows, loaded and warm before the first question with art waits for it.
   onMount(warmCasts);
 

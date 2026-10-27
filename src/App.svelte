@@ -23,6 +23,7 @@
   import { dialogBackdrop } from './lib/behindDialog';
   import { dialogIn, dialogOut } from './lib/dialogIn';
   import { wantDelveBackdrop } from './lib/backdrop';
+  import { wantDelveLights } from './lib/lightsAhead';
   import { inVein, setVein, veinStrike } from './lib/vein';
   import { veinTremor } from './lib/tremor';
   import Background from './components/Background.svelte';
@@ -186,9 +187,12 @@
   });
   // Delve on its way (chosen in the lobby, a Delve room joined, a run picked
   // up, or one begun from a shared link): the backdrop builds its Delve
-  // programs now, in the background, so they're ready when the run starts.
+  // programs now, in the background, and its light is worked out (in a
+  // worker, lib/lightsAhead.ts), so they're ready when the run starts.
   $effect(() => {
-    if (gs && (gs.settings.mode === 'delve' || gs.delve)) wantDelveBackdrop();
+    if (!gs || (gs.settings.mode !== 'delve' && !gs.delve)) return;
+    wantDelveBackdrop();
+    wantDelveLights();
   });
   // Delve: a new zone's cards on their way (lib/dealing.svelte.ts). Set
   // before the DOM updates, so neither the header's depth nor the stage

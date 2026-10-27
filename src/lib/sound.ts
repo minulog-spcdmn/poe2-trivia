@@ -14,9 +14,11 @@ import { descent, hallTurn, STRATA, strataAt } from './descent.ts';
 import { AMBIENCE, ARCHETYPE_AMBIENCE, CAVE_IN, DEPTH, FIRE, MIX, MOMENTS, RUMBLE, VEIN_AMBIENCE, VEIN_DUCK, ZONE_AMBIENCE, type Bed, type BedLayer, type Layer } from './soundDesign.ts';
 import { whenIdle } from './idle.ts';
 import { fillRumble, rumbleLength } from './rumbleNoise.ts';
-import type { RumbleAnswer, RumbleJob } from './rumbleWorker.ts';
+import type { RumbleJob } from './rumbleWorker.ts';
 import { HALL_SECONDS, fillHall, hallLength } from './hallNoise.ts';
-import type { HallAnswer, HallJob } from './hallWorker.ts';
+import type { HallJob } from './hallWorker.ts';
+import { caveInLength, caveInParts } from './caveInNoise.ts';
+import type { CaveInJob } from './caveInWorker.ts';
 import { readStored, writeStored } from './storage.ts';
 
 export type Sfx =
@@ -273,8 +275,72 @@ function audio(): Bus | null {
   const b = build();
   if (!primed) prime(b);
   // iOS also parks the context as 'interrupted' after a call or a trip to the lock screen.
-  if (b.ac.state !== 'running') void b.ac.resume().catch(() => {});
+  if (b.ac.state !== 'running') wake(b.ac);
   return b;
+}
+
+/** How many wakes wait for their frame (see wake). */
+let waking = 0;
+/** Whether a frame is asked for, for the wakes waiting (see watchFrames). */
+let watching = false;
+/** When (performance ms) the last frame the wakes watched for called back (see watchFrames). */
+let frameAt = -Infinity;
+/** How long a wake waits for the frame in hand at most (ms), on a page that draws none (out of sight). */
+export const WAKE_WAIT = 250;
+/** When (performance ms) the page last heard a press, a click or a key (installUiSounds). */
+let pressedAt = -Infinity;
+
+/**
+ * Wakes the context once the frame in hand is drawn, not in the tap that
+ * wants it. On an iPhone waking it holds the page while the system starts
+ * its audio session, 40 to 50 ms the first time, and the first tap is mostly
+ * one that brings a new screen in (New game): woken in it, the new screen's
+ * first frame came that much later. Now the first frame begun after the
+ * tap's last event (its click), the new screen's, is drawn first, and the
+ * wake holds up one of its own. It waits on timers, as they carry the tap's
+ * gesture on (for a second), which iOS asks of a context starting; what
+ * plays meanwhile is heard as it wakes.
+ *
+ * Each call waits on timers of its own and resumes the context from them,
+ * though another wake is waiting already, as that one may carry no gesture.
+ * On iOS 15 to 16.3 (no navigator.userActivation, so allowed() holds from
+ * the first touch) the first tap's context is made, and woken, in the idle
+ * moment after its pointerdown, which iOS doesn't count a gesture; its
+ * touchend and click come in while that wake waits, and were theirs dropped
+ * for it, the context's first start would be asked for without one, and
+ * refused. (Nor do only the latest call's timers resume it: that idle moment
+ * may come after a quick tap's pointerup, which wakes it in a gesture.)
+ * Asked again, resume() does no harm: refused, it does nothing, and on a
+ * context already on its way up it only waits with the first. And a wake
+ * waits for a frame begun after the last press, whenever that came: a press
+ * between that frame and the wake's next look brings a screen of its own.
+ */
+function wake(ac: AudioContext) {
+  const from = performance.now();
+  waking++;
+  watchFrames();
+  // (A timer comes after the whole of a frame, its drawing too, never in the middle of one.)
+  const go = () => {
+    const drawn = typeof requestAnimationFrame === 'undefined' || frameAt > Math.max(from, pressedAt);
+    if (!drawn && performance.now() - from < WAKE_WAIT) return void setTimeout(go, 4);
+    waking--;
+    if (ac.state !== 'running') void ac.resume().catch(() => {});
+  };
+  setTimeout(go, 0);
+}
+
+/** Notes when each frame begins (frameAt), for as long as a wake waits for one. */
+function watchFrames() {
+  if (watching || typeof requestAnimationFrame === 'undefined') return;
+  watching = true;
+  const frame = () => {
+    // When it's called back, not the frame's own stamp: a browser may stamp a
+    // frame with the vsync it began on, before a press that it draws.
+    frameAt = performance.now();
+    if (waking > 0) requestAnimationFrame(frame);
+    else watching = false;
+  };
+  requestAnimationFrame(frame);
 }
 
 /**
@@ -505,7 +571,7 @@ export const CAVE_IN_RATE = 22050;
 /** Sounds worked out here rather than loaded, by the name the moments give them. */
 const GENERATED: Record<string, (ac: AudioContext) => AudioBuffer | Promise<AudioBuffer>> = {
   [RUMBLE.file]: (ac) => rumbleThere(ac),
-  [CAVE_IN.file]: (ac) => inIdleSteps(caveInSteps(ac)),
+  [CAVE_IN.file]: (ac) => caveInThere(ac),
 };
 
 /**
@@ -558,39 +624,12 @@ export function* hallSteps(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuff
 /**
  * The hall's impulse worked out in a worker of its own (lib/hallWorker.ts),
  * which then stops; here a step per idle moment (hallSteps) where there's
- * none or it fails. On an iPhone its steps here held the page over the
+ * none, it fails, or it's late. On an iPhone its steps here held the page over the
  * second after the first tap, as the screen that tap brought came in.
  */
 function hallThere(ac: AudioContext): Promise<AudioBuffer> {
-  const here = () => inIdleSteps(hallSteps(ac));
-  if (typeof Worker === 'undefined') return here();
-  return new Promise((resolve, reject) => {
-    let w: Worker;
-    try {
-      w = new Worker(new URL('./hallWorker.ts', import.meta.url), { type: 'module' });
-    } catch {
-      resolve(here());
-      return;
-    }
-    w.onmessage = ({ data }: MessageEvent<HallAnswer>) => {
-      w.terminate();
-      try {
-        const buf = ac.createBuffer(data.channels.length, data.channels[0].length, ac.sampleRate);
-        data.channels.forEach((c, i) => buf.getChannelData(i).set(c));
-        resolve(buf);
-      } catch (e) {
-        reject(e);
-      }
-    };
-    // (Failed to load, say: worked out here instead.)
-    const instead = () => {
-      w.terminate();
-      resolve(here());
-    };
-    w.onerror = instead;
-    w.onmessageerror = instead;
-    w.postMessage({ sampleRate: ac.sampleRate } satisfies HallJob);
-  });
+  const start = () => new Worker(new URL('./hallWorker.ts', import.meta.url), { type: 'module' });
+  return inWorker(ac, start, { sampleRate: ac.sampleRate } satisfies HallJob, ac.sampleRate, () => inIdleSteps(hallSteps(ac)));
 }
 
 /**
@@ -606,49 +645,58 @@ export function rumble(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>
   return buf;
 }
 
-/** How long the rumble's worker has to answer, its script fetched on first use (ms): past that the page works it out, never leaving the dig silent. */
-export const RUMBLE_WAIT_MS = 2000;
+/** What a sound's worker answers (lib/rumbleWorker.ts, lib/caveInWorker.ts, lib/hallWorker.ts): its two channels. */
+type Channels = { left: Float32Array; right: Float32Array };
+
+/** How long a sound's worker has to answer, its script fetched on first use (ms): past that the page works the sound out, never leaving it silent. */
+export const WORKER_WAIT_MS = 2000;
 
 /**
- * The rumble worked out in a worker of its own (lib/rumbleWorker.ts), which
- * then stops; here, as rumble, where there's none, it fails, or it hasn't
- * answered in RUMBLE_WAIT_MS. On an iPhone it held the page for about 75 ms
- * here, just after Begin. (Exported for the tests.)
+ * A sound worked out in a worker made for the one job (`start` makes it),
+ * which then stops, its channels put in a buffer at `sampleRate`; worked out
+ * `here` instead where there's no worker, it fails, or it hasn't answered in
+ * WORKER_WAIT_MS (an answer after that is dropped).
  */
-export function rumbleThere(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>): Promise<AudioBuffer> {
-  if (typeof Worker === 'undefined') return Promise.resolve(rumble(ac));
+function inWorker(
+  ac: Pick<BaseAudioContext, 'createBuffer'>,
+  start: () => Worker,
+  job: unknown,
+  sampleRate: number,
+  here: () => AudioBuffer | Promise<AudioBuffer>,
+): Promise<AudioBuffer> {
+  if (typeof Worker === 'undefined') return Promise.resolve(here());
   return new Promise((resolve, reject) => {
     let done = false;
-    const here = () => {
+    const onPage = () => {
       if (done) return;
       done = true;
       try {
-        resolve(rumble(ac));
+        resolve(here());
       } catch (e) {
         reject(e);
       }
     };
     let w: Worker;
     try {
-      w = new Worker(new URL('./rumbleWorker.ts', import.meta.url), { type: 'module' });
+      w = start();
     } catch {
-      here();
+      onPage();
       return;
     }
     // (Failed to load, say, or no answer in time: worked out here instead.)
     const instead = () => {
       clearTimeout(late);
       w.terminate();
-      here();
+      onPage();
     };
-    const late = setTimeout(instead, RUMBLE_WAIT_MS);
-    w.onmessage = ({ data }: MessageEvent<RumbleAnswer>) => {
+    const late = setTimeout(instead, WORKER_WAIT_MS);
+    w.onmessage = ({ data }: MessageEvent<Channels>) => {
       clearTimeout(late);
       w.terminate();
       if (done) return;
       done = true;
       try {
-        const buf = ac.createBuffer(2, data.left.length, ac.sampleRate);
+        const buf = ac.createBuffer(2, data.left.length, sampleRate);
         buf.getChannelData(0).set(data.left);
         buf.getChannelData(1).set(data.right);
         resolve(buf);
@@ -658,8 +706,18 @@ export function rumbleThere(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuf
     };
     w.onerror = instead;
     w.onmessageerror = instead;
-    w.postMessage({ sampleRate: ac.sampleRate, lp: RUMBLE.lp } satisfies RumbleJob);
+    w.postMessage(job);
   });
+}
+
+/**
+ * The rumble worked out in a worker of its own (lib/rumbleWorker.ts); here,
+ * as rumble, where there's none, it fails, or it's late. On an iPhone it held
+ * the page for about 75 ms here, just after Begin. (Exported for the tests.)
+ */
+export function rumbleThere(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>): Promise<AudioBuffer> {
+  const start = () => new Worker(new URL('./rumbleWorker.ts', import.meta.url), { type: 'module' });
+  return inWorker(ac, start, { sampleRate: ac.sampleRate, lp: RUMBLE.lp } satisfies RumbleJob, ac.sampleRate, () => rumble(ac));
 }
 
 /**
@@ -670,7 +728,8 @@ export function rumbleThere(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuf
  * noise, bigger and lower first and then smaller, higher and sparser as it
  * settles. Each side gets its own stones, so it sounds wide. Peaks at about
  * -1 dB; CAVE_IN's gain sets its level in the mix. Worked out at no more
- * than CAVE_IN_RATE, and only once a Delve starts (see prepareDelve).
+ * than CAVE_IN_RATE, and only once a Delve starts (see prepareDelve). (The
+ * samples themselves: caveInParts.)
  */
 export function caveIn(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>) {
   const steps = caveInSteps(ac);
@@ -683,81 +742,20 @@ export function caveIn(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>
 /** caveIn in three parts (the rumble, then each side's stones), so it can be worked out a part per idle moment. */
 function* caveInSteps(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>): Generator<void, AudioBuffer> {
   const sr = Math.min(ac.sampleRate, CAVE_IN_RATE);
-  const seconds = CAVE_IN.seconds;
-  const len = Math.floor(sr * seconds);
-  const buf = ac.createBuffer(2, len, sr);
-  const ch = [buf.getChannelData(0), buf.getChannelData(1)];
-  const at = (t: number) => Math.floor(t * sr);
-  /** A knock of noise at `t0` (s), ringing at `hz` with decay `tau` (s), at `amp`, added to `d`. */
-  const knock = (d: Float32Array, t0: number, hz: number, tau: number, amp: number) => {
-    const w = (2 * Math.PI * Math.min(hz, sr * 0.45)) / sr;
-    // A two-pole resonator: rings at hz, wider the shorter it is.
-    const r = Math.exp(-1 / (tau * sr * 0.35));
-    const [c1, c2] = [2 * r * Math.cos(w), -r * r];
-    // Its peak gain at hz is about 1 / ((1 - r) * sqrt(1 - 2r cos 2w + r^2)): set it back to 1.
-    const norm = (1 - r) * Math.sqrt(1 - 2 * r * Math.cos(2 * w) + r * r);
-    let [y1, y2] = [0, 0];
-    const start = at(t0);
-    const end = Math.min(len, start + at(tau * 6));
-    for (let i = start; i < end; i++) {
-      const k = (i - start) / sr;
-      const x = (Math.random() * 2 - 1) * Math.exp(-k / tau) * Math.min(1, k / 0.0015);
-      const y = x + c1 * y1 + c2 * y2;
-      y2 = y1;
-      y1 = y;
-      d[i] += y * norm * amp;
-    }
-  };
-  /** A low thud at `t0`: a sine falling from `hz` that dies away over `tau`. */
-  const thud = (d: Float32Array, t0: number, hz: number, tau: number, amp: number) => {
-    let phase = 0;
-    const start = at(t0);
-    const end = Math.min(len, start + at(tau * 6));
-    for (let i = start; i < end; i++) {
-      const k = (i - start) / sr;
-      phase += (2 * Math.PI * hz * (0.75 + 0.25 * Math.exp(-k / 0.06))) / sr;
-      d[i] += Math.sin(phase) * Math.exp(-k / tau) * Math.min(1, k / 0.004) * amp;
-    }
-  };
-  // The rumble: noise kept to the low end (two lowpasses at 120 Hz, the
-  // subsonic taken out), swelling in at once and dying away. The same in
-  // both ears, as it fills the hall.
-  const lp = 1 - Math.exp((-2 * Math.PI * 120) / sr);
-  const hp = 1 - Math.exp((-2 * Math.PI * 35) / sr);
-  let [a, b, lo] = [0, 0, 0];
-  for (let i = 0; i < len; i++) {
-    const t = i / sr;
-    a += lp * (Math.random() * 2 - 1 - a);
-    b += lp * (a - b);
-    lo += hp * (b - lo);
-    const env = Math.min(1, t / 0.03) * Math.exp(-t / 0.45);
-    ch[0][i] += (b - lo) * env * CAVE_IN.rumble;
-    ch[1][i] += (b - lo) * env * CAVE_IN.rumble;
-  }
-  for (let side = 0; side < 2; side++) {
-    yield;
-    const d = ch[side];
-    // The crack as the rock gives, and the heavy blocks coming down.
-    knock(d, 0.002 * side, 2600, 0.012, 0.9);
-    knock(d, 0.004, 900, 0.03, 0.7);
-    thud(d, 0.01, 62, 0.16, 0.9);
-    thud(d, 0.16 + 0.04 * side, 48, 0.2, 0.75);
-    // The collapse: stones, big and low first, smaller, higher and sparser as it settles.
-    let t = 0.03 + Math.random() * 0.02;
-    while (t < seconds - 0.12) {
-      const u = t / seconds;
-      const size = Math.pow(1 - u, 1.5) * (0.5 + Math.random() * 0.5);
-      knock(d, t, 300 + 2800 * (1 - size) * (0.6 + Math.random() * 0.8), 0.006 + 0.03 * size, (0.18 + 0.75 * size) * CAVE_IN.stones);
-      t += 0.012 + 0.09 * Math.pow(u, 1.2) * (0.4 + Math.random() * 1.2);
-    }
-  }
-  // To about -1 dB at the peak, fading out over the last moment.
-  let peak = 0;
-  for (const d of ch) for (let i = 0; i < len; i++) peak = Math.max(peak, Math.abs(d[i]));
-  const k = 0.89 / (peak || 1);
-  const tail = at(0.15);
-  for (const d of ch) for (let i = 0; i < len; i++) d[i] *= k * Math.min(1, (len - i) / tail);
+  const buf = ac.createBuffer(2, caveInLength(sr), sr);
+  yield* caveInParts(sr, buf.getChannelData(0), buf.getChannelData(1));
   return buf;
+}
+
+/**
+ * The cave-in worked out in a worker of its own (lib/caveInWorker.ts); here,
+ * a part per idle moment, where there's none or it fails. On an iPhone each
+ * part held the page 48 to 65 ms here, a frame each, as a Delve began.
+ */
+function caveInThere(ac: AudioContext): Promise<AudioBuffer> {
+  const sampleRate = Math.min(ac.sampleRate, CAVE_IN_RATE);
+  const start = () => new Worker(new URL('./caveInWorker.ts', import.meta.url), { type: 'module' });
+  return inWorker(ac, start, { sampleRate } satisfies CaveInJob, sampleRate, () => inIdleSteps(caveInSteps(ac)));
 }
 
 export function filter(ac: BaseAudioContext, type: BiquadFilterType, frequency: number, q = 0.707, gain = 0) {
@@ -1401,6 +1399,7 @@ export function installUiSounds() {
   addEventListener(
     'click',
     (e) => {
+      pressedAt = performance.now();
       const el = (e.target as Element | null)?.closest?.('button, a[href]');
       if (!el || (el as HTMLButtonElement).disabled || el.closest('[data-sfx="none"]')) return;
       sfx('click', { from: { from: el } });
@@ -1417,11 +1416,13 @@ export function installUiSounds() {
   // The first press doesn't make the context in its own handler, though: that
   // takes 25 to 65 ms (see build), which the press would show late by. It's
   // made in the idle moment after, while the button or finger is still down
-  // (a quick tap's pointerup makes it there and then if that moment hasn't come).
-  // Either way it's made before the click, not in the screen the click brings
-  // in. (Nor any sooner, as the page loads: a context made before any gesture
-  // is one Chrome warns of, and may let run from then on, playing nothing.)
+  // (a quick tap's pointerup makes it there and then if that moment hasn't come),
+  // and woken once the screen the tap brings in is drawn (see wake). Either way
+  // it's made before the click, not in the screen the click brings in. (Nor
+  // any sooner, as the page loads: a context made before any gesture is one
+  // Chrome warns of, and may let run from then on, playing nothing.)
   const warm = (e: Event) => {
+    pressedAt = performance.now();
     if (muted) return;
     if (!bus && e.type === 'pointerdown') {
       if (typeof AudioContext !== 'undefined') buildSoon(true);

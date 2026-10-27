@@ -1,7 +1,8 @@
 // lib/sound.ts makes its bus (its audio context, which holds the page up 25
 // to 65 ms) as a finger lands on the visit's first control, while it's still
-// down, and wakes it as the finger lifts: both before the click, so none of
-// it lands in the screen the click brings in (the codex, say). Nor sooner:
+// down, before the click, and wakes it once the screen the tap brings in is
+// drawn (wake, on timers, which carry the tap's gesture): so none of it lands
+// in that screen's first frame (the codex, say). Nor sooner:
 // nothing is made before a press, as a context made without a gesture is one
 // Chrome warns of. And the hall's reverb that press starts working out comes
 // even on a page that never idles. Safari's way (no requestIdleCallback, so
@@ -114,7 +115,7 @@ test('nothing is made before a press, however long the page waits', async () => 
   assert.equal(fetched.length, 0);
 });
 
-test('a finger held a moment: the bus is made while it is down, woken as it lifts, and the click makes nothing', async () => {
+test('a finger held a moment: the bus is made while it is down, woken after it lifts, and the click makes nothing', async () => {
   await freshPage('held');
   land();
   assert.equal(contexts.length, 0, 'not in the pointerdown');
@@ -124,14 +125,17 @@ test('a finger held a moment: the bus is made while it is down, woken as it lift
   assert.equal(fetched.length, 0, 'nothing loads before sound may play');
   lift();
   assert.equal(contexts.length, 1, 'the same context');
-  assert.equal(contexts[0].state, 'running', 'woken by the lift, before the click');
+  assert.equal(contexts[0].state, 'suspended', 'not in the tap itself');
+  // Once the screen the tap brings in is drawn (no frames here: at once), on the tap's own timers.
+  await wait(10);
+  assert.equal(contexts[0].state, 'running', 'woken after the lift, in its gesture');
   // The screen the click brings in: nothing more is made there.
   await wait(2000);
   assert.equal(contexts.length, 1);
   assert.ok(fetched.length > 0, 'its sounds load');
 });
 
-test('a quick tap, lifted before the press has its moment: made and woken in the lift, still before the click', async () => {
+test('a quick tap, lifted before the press has its moment: made in the lift, still before the click, and woken after it', async () => {
   await freshPage('quick');
   land();
   await wait(20);
@@ -139,6 +143,7 @@ test('a quick tap, lifted before the press has its moment: made and woken in the
   // (The click only ever asks for it in a moment: made by now, it was made in the lift.)
   lift();
   assert.equal(contexts.length, 1, 'made in the lift');
+  await wait(10);
   assert.equal(contexts[0].state, 'running');
   await wait(2000);
   assert.equal(contexts.length, 1, 'the press, when its moment comes, finds it made');

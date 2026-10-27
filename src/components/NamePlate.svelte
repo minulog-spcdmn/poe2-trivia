@@ -18,8 +18,8 @@
   //   the dark.
 
   import { LUNA, LUNA_HATCH, SOL_RAYS } from '../lib/alchemy';
-  import { BAY, ROW } from '../lib/weave';
-  import { warmWeave, weaveTile } from '../lib/weaveTile';
+  import { WEAVE_CLASS } from '../lib/weave';
+  import 'virtual:plate-weave.css';
 
   type Pt = [number, number];
   type Hole = { c: Pt; r: number };
@@ -106,6 +106,8 @@
   const SEAL_R = 10;
   const SIGN_SCALE = SEAL_R / 13;
   const HOLES = [{ c: SEAL, r: SEAL_R + 1.6 }];
+  /** How far the seal's bloom of light reaches. */
+  const BLOOM_R = SEAL_R + 3.5;
 
   /** The cusp where the ogee meets the flame. */
   const CUSP: Pt = [40.6, 22.7];
@@ -148,12 +150,9 @@
     .map((l) => poly(l) + 'Z')
     .join('');
 
-  // ---- the field ---------------------------------------------------------------
-  // The weave (lib/weave.ts), worked out ahead of the first plate in a
-  // worker (lib/weaveTile.ts): a game's first question warms it, and the
-  // codex as it opens.
-
-  export { warmWeave };
+  // The field (the interlace) is lib/weave.ts's tile, worked out as the app
+  // is built: a stylesheet laying it over the plate (weaveTile.ts), once for
+  // every plate, rather than a data URL in each one's style.
 </script>
 
 <script lang="ts">
@@ -195,69 +194,89 @@
   {/each}
 {/snippet}
 
-<!-- One end of the plate. -->
-{#snippet cap(sign: 'sol' | 'luna' | 'empty')}
+<!--
+  One end of the plate, in layers: `under` the tracery and the seal's well,
+  `over` the seal's ring and sign, and between them the seal's bloom (an
+  element of its own: see .bloom); `glow` all its lines, for the glow.
+-->
+{#snippet cap(sign: 'sol' | 'luna' | 'empty', layer: 'glow' | 'under' | 'over')}
   <g class="end">
-    <path d={GROUND} class="ground" />
-    <path d={SPANDREL_GROUND} class="ground leaf" />
-    <path d={SPINE_PATHS} class="draw fine" style:--d="0.6s" pathLength="100" />
-    <!-- The frame: the outer rule runs on from the spandrels, the inner from
-         the flames, on past the middle (as long as before: 70% of the plate, so
-         the pen keeps its pace) so they scale with the end; each end
-         is clipped at the middle (see plate()), so the two ends' rules meet
-         there instead of overlapping, which showed as a brighter stretch. -->
-    {#each [-1, 1] as side (side)}
-      <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="140%" y2={side * 29.5} class="draw rule metal thin" style:--d="0.6s" pathLength="100" />
-      <line x1={f(INNER_RULE_X)} y1={side * 26.5} x2="140%" y2={side * 26.5} class="draw rule metal" style:--d="1.1s" pathLength="100" />
-      <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="104%" y2={side * 29.5} class="spark" pathLength="100" />
-    {/each}
-    {@render moulding(END.spandrels)}
-    {@render moulding(END.ogees)}
-    {@render moulding(END.flames)}
+    {#if layer !== 'over'}
+      <path d={GROUND} class="ground" />
+      <path d={SPANDREL_GROUND} class="ground leaf" />
+      <path d={SPINE_PATHS} class="draw fine" style:--d="0.6s" pathLength="100" />
+      <!-- The frame: the outer rule runs on from the spandrels, the inner from
+           the flames, on past the middle (as long as before: 70% of the plate, so
+           the pen keeps its pace) so they scale with the end; each end
+           is clipped at the middle (see plate()), so the two ends' rules meet
+           there instead of overlapping, which showed as a brighter stretch. -->
+      {#each [-1, 1] as side (side)}
+        <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="140%" y2={side * 29.5} class="draw rule metal thin" style:--d="0.6s" pathLength="100" />
+        <line x1={f(INNER_RULE_X)} y1={side * 26.5} x2="140%" y2={side * 26.5} class="draw rule metal" style:--d="1.1s" pathLength="100" />
+        <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="104%" y2={side * 29.5} class="spark" pathLength="100" />
+      {/each}
+      {@render moulding(END.spandrels)}
+      {@render moulding(END.ogees)}
+      {@render moulding(END.flames)}
+    {/if}
     <!-- The seal, pressed in like the circle's. -->
     <g class="seal" style:--d="0.3s">
-      <circle cx={SEAL[0]} cy={SEAL[1]} r={SEAL_R + 1} class="well" />
-      <circle cx={SEAL[0]} cy={SEAL[1]} r={SEAL_R + 3.5} class="bloom" style:fill="url(#{id('bloom')})" />
-      {@render moulding(END.ring)}
-      {#if sign !== 'empty'}
-        <g class="sign" style:--d="0.7s" transform="translate({pt(SEAL)}) scale({f(SIGN_SCALE)})">
-          {#if sign === 'sol'}
-            <circle r="5" />
-            <circle r="1.1" />
-            <path d={SOL_RAYS} />
-          {:else}
-            <!-- Turned as on the circle, her horns facing out. -->
-            <g transform="rotate(180)">
-              <path d={LUNA} />
-              <path d={LUNA_HATCH} class="hatch" />
-            </g>
-          {/if}
-        </g>
+      {#if layer !== 'over'}
+        <circle cx={SEAL[0]} cy={SEAL[1]} r={SEAL_R + 1} class="well" />
+      {/if}
+      {#if layer !== 'under'}
+        {@render moulding(END.ring)}
+        {#if sign !== 'empty'}
+          <g class="sign" style:--d="0.7s" transform="translate({pt(SEAL)}) scale({f(SIGN_SCALE)})">
+            {#if sign === 'sol'}
+              <circle r="5" />
+              <circle r="1.1" />
+              <path d={SOL_RAYS} />
+            {:else}
+              <!-- Turned as on the circle, her horns facing out. -->
+              <g transform="rotate(180)">
+                <path d={LUNA} />
+                <path d={LUNA_HATCH} class="hatch" />
+              </g>
+            {/if}
+          </g>
+        {/if}
       {/if}
     </g>
   </g>
 {/snippet}
 
-{#snippet plate()}
+{#snippet plate(layer: 'glow' | 'under' | 'over')}
   <!-- The ends, round the middle, each in its own half of the plate. -->
-  <svg width="50%" height="100%" overflow="hidden"><svg y="50%" overflow="visible">{@render cap(start)}</svg></svg>
-  <svg x="50%" width="50%" height="100%" overflow="hidden"><svg x="100%" y="50%" overflow="visible"><g transform="scale(-1 1)">{@render cap(end)}</g></svg></svg>
+  <svg width="50%" height="100%" overflow="hidden"><svg y="50%" overflow="visible">{@render cap(start, layer)}</svg></svg>
+  <svg x="50%" width="50%" height="100%" overflow="hidden"><svg x="100%" y="50%" overflow="visible"><g transform="scale(-1 1)">{@render cap(end, layer)}</g></svg></svg>
 {/snippet}
 
-<span class="plate" class:lit aria-hidden="true" bind:this={plateEl} style:--end-scale={endScale}>
-  <span class="field" style:background-image={weaveTile()} style:--tile="{BAY}px {ROW}px"></span>
+<span class="plate" class:lit aria-hidden="true" bind:this={plateEl} style:--end-scale={endScale} style:--seal-x="{SOCKET_X}px" style:--bloom-r="{BLOOM_R}px">
+  <span class="field {WEAVE_CLASS}"></span>
   <!-- The lines twice, as on the circle: a soft, wide copy for the glow, and the lines. -->
-  <svg class="art glow" width="100%" height="100%">{@render plate()}</svg>
-  <svg class="art" width="100%" height="100%">
-    <defs>
-      <radialGradient id={id('bloom')}>
-        <stop offset="0" stop-color="#f7a860" stop-opacity="0.9" />
-        <stop offset="0.5" stop-color="#d9702e" stop-opacity="0.4" />
-        <stop offset="1" stop-color="#d9702e" stop-opacity="0" />
-      </radialGradient>
-    </defs>
-    {@render plate()}
-  </svg>
+  <svg class="art glow" width="100%" height="100%">{@render plate('glow')}</svg>
+  <svg class="art" width="100%" height="100%">{@render plate('under')}</svg>
+  <!-- Each seal's bloom of light, over its well and under its ring and sign
+       as it was in the seal: pressed in with the seal (.seal), flaring and
+       breathing as the seals light (.bloom). -->
+  {#each ['left', 'right'] as side (side)}
+    <span class="seal bloom-at {side}" style:--d="0.3s">
+      <span class="bloom">
+        <svg viewBox="{-BLOOM_R} {-BLOOM_R} {2 * BLOOM_R} {2 * BLOOM_R}" width="100%" height="100%">
+          <defs>
+            <radialGradient id={id(`bloom-${side}`)}>
+              <stop offset="0" stop-color="#f7a860" stop-opacity="0.9" />
+              <stop offset="0.5" stop-color="#d9702e" stop-opacity="0.4" />
+              <stop offset="1" stop-color="#d9702e" stop-opacity="0" />
+            </radialGradient>
+          </defs>
+          <circle r={BLOOM_R} style:fill="url(#{id(`bloom-${side}`)})" />
+        </svg>
+      </span>
+    </span>
+  {/each}
+  <svg class="art" width="100%" height="100%">{@render plate('over')}</svg>
 </span>
 
 <style>
@@ -289,9 +308,9 @@
   }
 
   /* The interlace: over the whole plate, faint, as if cut into the dark;
-     fainter still under the ends' tracery. */
+     fainter still under the ends' tracery. (The tile itself, and its size:
+     WEAVE_CLASS's stylesheet.) */
   .field {
-    background-size: var(--tile);
     background-position: center;
     background-repeat: repeat;
     opacity: 0.085;
@@ -349,7 +368,6 @@
   }
   .glow .ground,
   .glow .well,
-  .glow .bloom,
   .glow .sign,
   .glow .spark {
     display: none;
@@ -373,11 +391,33 @@
   .lit .sign :global(*) {
     stroke: #ffd2a0;
   }
+  /* The bloom is an element of its own over the seal, sized and placed as
+     the circle it was in the seal's SVG: it breathes for as long as the
+     seals are lit, and in there that repainted the whole of the plate's
+     lines every frame (WebKit gives no part of an SVG a layer of its own).
+     On a layer of its own it only fades, and nothing repaints. */
+  .bloom-at {
+    position: absolute;
+    top: calc(50% - var(--bloom-r) * var(--end-scale, 1));
+    width: calc(2 * var(--bloom-r) * var(--end-scale, 1));
+    height: calc(2 * var(--bloom-r) * var(--end-scale, 1));
+  }
+  .bloom-at.left {
+    left: calc((var(--seal-x) - var(--bloom-r)) * var(--end-scale, 1));
+  }
+  .bloom-at.right {
+    right: calc((var(--seal-x) - var(--bloom-r)) * var(--end-scale, 1));
+  }
+  .bloom,
+  .bloom svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
   .bloom {
     opacity: 0;
-    transform-box: fill-box;
-    transform-origin: center;
     transition: opacity 0.8s;
+    will-change: opacity;
   }
   .lit .bloom {
     opacity: 0.45;
