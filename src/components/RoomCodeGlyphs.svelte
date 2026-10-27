@@ -165,7 +165,6 @@
     container-type: inline-size;
     -webkit-user-select: all;
     user-select: all;
-    -webkit-touch-callout: default;
   }
   /* Selected, the letters light up in place of the browser's highlight. */
   .glyphs ::selection,
