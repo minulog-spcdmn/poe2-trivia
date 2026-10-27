@@ -40,7 +40,7 @@ import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSI
 import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, roomSecret } from './guard';
 import { LaneReceiver, LaneSender, openLane, parseFakeLink } from './artLane';
 import { honestRtt, measuredRtt, PING_SAMPLES } from './linkRtt';
-import { NAME_STORED, cleanName, isHeldName, nameSkeleton, nameUsable } from './names';
+import { NAME_STORED, cleanName, isHeldName, isNameProblem, nameSkeleton, nameUsable } from './names';
 import { JoinName } from './joinName';
 import { checkJoin, joinProof, newChallenge, ownerUnlocked, roomProof } from './ownerKey';
 import { prepareMedia, shown, warmMedia, type PreparedMedia } from './media.svelte';
@@ -1857,12 +1857,16 @@ class Session {
   /** A join's failure, counted only when the join was (not a guest's reload getting back in). */
   private joinFailure = (failure: Failure): Failure | undefined => (this.joinVia ? failure : undefined);
   /**
-   * Whether the last join was turned down by the room itself (its host
-   * answered at the door: a name, a full or locked room, an old version)
-   * rather than lost on the way to it. The start page marks the code only for
-   * the second: the code was right if the room answered (Home.svelte settle).
+   * Whether the last join found its room rather than being lost on the way
+   * to it: its host answered at the door (a name, a full or locked room, an
+   * old version, a player it removed), or the server found the room and only
+   * the connection between the two never came up. The start page marks the
+   * code only when not: the code was right if the room was there
+   * (Home.svelte settle).
    */
-  refusedAtDoor = false;
+  roomFound = false;
+  /** Whether what the host turned down at the door was the name (lib/names.ts isNameProblem): the start page puts the player back on it. */
+  nameRefused = false;
 
   join(code: string, name: string, watch = false, via?: JoinVia, keepName = !!via) {
     // The host's room has its own settings: a shared link's Delve is moot.
@@ -1871,7 +1875,8 @@ class Session {
     this.mode = 'client';
     this.status = 'connecting';
     this.joinName = name;
-    this.refusedAtDoor = false;
+    this.roomFound = false;
+    this.nameRefused = false;
     // One set off from the start page (with a `via`) saves its name if the room takes it, and not before:
     // a name turned down there mustn't greet the next visit. A reload getting back in keeps its name only
     // when none is saved yet (resume), and the bot's guests keep none.
@@ -2220,13 +2225,16 @@ class Session {
             this.turnedDown = { askedAt: msg.askedAt };
           }
           if (this.status === 'connecting') {
-            this.refusedAtDoor = true;
+            this.roomFound = true;
+            this.nameRefused = isNameProblem(msg.message);
             this.fail(versionRefusal(msg.message), "Couldn’t join", { failure: this.joinFailure(isVersionRefusal(msg) ? 'join-version-mismatch' : 'join-refused') });
           } else this.flash(msg.message, 'error');
           break;
         case 'kicked':
         case 'closed':
         case 'replaced':
+          // (Turned out at the door, a removed player trying again: the room was there.)
+          if (this.status === 'connecting') this.roomFound = true;
           this.turnedOut(msg.t);
           break;
         case 'busy':
@@ -2512,12 +2520,15 @@ class Session {
 
   /** The QA desk (src/qa): the room turns this device's join down with `message`, as the host's error for it would (uncounted). */
   labRefuse(message: string) {
-    this.refusedAtDoor = true;
+    this.roomFound = true;
+    this.nameRefused = isNameProblem(message);
     this.fail(message, "Couldn’t join");
   }
 
   /** A join that never got in, told as what went wrong; `failure` counted (count.ts). */
   private joinFailed(why: JoinFailed, failure?: 'join-no-answer' | 'join-no-connection') {
+    // (Blocked: the server found the room, only the connection never came up.)
+    if (why === 'blocked') this.roomFound = true;
     const [message, title] = JOIN_FAILED[why](this.code);
     this.fail(message, title, { failure: failure && this.joinFailure(failure) });
   }

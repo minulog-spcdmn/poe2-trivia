@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanName, initialOf, isHeldName, nameProblem, nameSkeleton } from '../src/lib/names.ts';
+import { NAME_TOO_SHORT, cleanName, initialOf, isHeldName, isNameProblem, nameProblem, nameSkeleton } from '../src/lib/names.ts';
 import { offensive } from '../src/lib/offensive.ts';
 
 test("a name's initial is its first letter, capitalised, whole even when it takes two code units", () => {
@@ -54,4 +54,16 @@ test('the word filter sees through look-alike letters too', () => {
   assert.ok(offensive('nіggеr'), 'Cyrillic і and е');
   assert.ok(offensive('ɴigger'), 'a Latin small capital');
   assert.equal(offensive('Zoe Arcana'), false);
+});
+
+test("a host's refusal is told apart: the name's, which the start page puts the player back on, from the room's", () => {
+  // Every way nameProblem turns a name down.
+  for (const [name, others] of [['', []], ['K', []], ['admin', []], ['Una', ['una']], ['Una1', ['UnaI']]] as [string, string[]][]) {
+    const said = nameProblem(name, others);
+    assert.ok(said, name);
+    assert.ok(isNameProblem(said), said);
+  }
+  assert.ok(isNameProblem(NAME_TOO_SHORT));
+  // The room's own refusals: the name was fine.
+  for (const said of ['The lobby is full.', 'The host has locked this room.', 'Not allowed.']) assert.equal(isNameProblem(said), false, said);
 });
