@@ -3,8 +3,11 @@
 // not even what it had already sent: every job it held must still be made,
 // or its picture keeps the CSS filter the shadow is there to replace. The
 // worker is there before the first picture waits on it, and a shadow made
-// ahead of its picture is the one the picture gets. Run here against
-// stand-ins for the browser's Worker, canvas and <img>.
+// ahead of its picture is the one the picture gets. One that falls silent
+// (a phone stopped it in the background) is let go, what it held made on
+// the page, and a fresh one takes its place; back from a long while in the
+// background, an idle one is asked whether it's still there first. Run here
+// against stand-ins for the browser's Worker, canvas, <img> and document.
 import './asVite.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -48,10 +51,25 @@ const canvas = () => ({
     done(new Blob(['png'], { type: 'image/png' }));
   },
 });
+/** The page's document, hidden and shown again (hideFor). */
+const listeners: (() => void)[] = [];
+const doc = { hidden: false, createElement: canvas, addEventListener: (_: string, f: () => void) => listeners.push(f) };
+/** The wall clock, wound on by hand: how long the page was hidden is timed by it (prepPool.ts onShownAgain). */
+let away = 0;
+const wallClock = Date.now;
+Date.now = () => wallClock() + away;
+/** The page hidden for `ms` by the wall clock, and shown again. */
+function hideFor(ms: number) {
+  doc.hidden = true;
+  for (const f of listeners) f();
+  away += ms;
+  doc.hidden = false;
+  for (const f of listeners) f();
+}
 Object.assign(globalThis, {
   Worker: FakeWorker,
   createImageBitmap: async () => ({ close() {} }),
-  document: { createElement: canvas },
+  document: doc,
   Image: class {
     alt = '';
     src = '';
@@ -164,4 +182,83 @@ test('each shadow is timed on the page’s timeline, with the worker’s own par
   assert.equal(entries.length, before + 1);
   assert.deepEqual(entries.at(-1)!.detail, { w: 120, h: 90, where: 'worker', worked: 4 });
   assert.ok(entries.at(-1)!.duration >= 0);
+});
+
+const { HIDDEN_CHECK_MS, PING_MS, PREP_STALL_MS } = await import('../src/lib/prepPool.ts');
+/** Every promise and posted job run its course (setImmediate isn't among the timers mocked). */
+const turn = async (t: { mock: { timers: { tick: (ms: number) => void } } }) => {
+  for (let k = 0; k < 4; k++) {
+    await new Promise((done) => setImmediate(done));
+    t.mock.timers.tick(1);
+  }
+};
+
+test('a worker that falls silent: what it held is made on the page, and a fresh one takes its place', async (t) => {
+  const { castFor } = await shadows('silent');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const before = workers.length;
+  madeHere = 0;
+  answer = fromWorker;
+  const first = castFor(picture, 120, 90);
+  await turn(t);
+  assert.ok(await first);
+  const silent = workers[before]!;
+  // (Stopped by the phone, say: no error, no answer.)
+  answer = (w, job) => (w === silent ? undefined : fromWorker(w, job));
+  const casts = Array.from({ length: 6 }, () => castFor(picture, 120, 90));
+  await turn(t);
+  t.mock.timers.tick(PREP_STALL_MS - 10);
+  await turn(t);
+  assert.equal(madeHere, 0, 'waited on');
+  t.mock.timers.tick(10);
+  for (const cast of await Promise.all(casts)) assert.ok(cast, 'each made all the same');
+  assert.equal(madeHere, 6, 'on the page');
+  assert.ok(silent.terminated, 'let go');
+  assert.equal(workers.length, before + 2, 'a fresh one, at once');
+  const next = castFor(picture, 120, 90);
+  await turn(t);
+  assert.ok(await next);
+  assert.equal(workers.at(-1)!.jobs, 1, 'the fresh one makes the next');
+  assert.equal(madeHere, 6);
+});
+
+test('back after a long while, an idle worker is asked whether it’s still there; one that doesn’t say is replaced before a picture waits on it', async (t) => {
+  const { castFor } = await shadows('asked');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const before = workers.length;
+  madeHere = 0;
+  /** Pings sent, and to whom. */
+  const pinged: FakeWorker[] = [];
+  const answers = (deaf: FakeWorker | null) => (w: FakeWorker, job: { id: number } | { ping: true }) => {
+    if ('ping' in job) pinged.push(w);
+    if (w === deaf) return;
+    if ('ping' in job) w.reply({ id: 0 });
+    else fromWorker(w, job);
+  };
+  answer = answers(null);
+  const first = castFor(picture, 120, 90);
+  await turn(t);
+  assert.ok(await first);
+  const mine = workers[before]!;
+  hideFor(HIDDEN_CHECK_MS - 1000);
+  await turn(t);
+  assert.ok(!pinged.includes(mine), 'not after a short while');
+  hideFor(HIDDEN_CHECK_MS);
+  await turn(t);
+  assert.ok(pinged.includes(mine), 'asked');
+  t.mock.timers.tick(PING_MS);
+  assert.ok(!mine.terminated, 'it said so, and stays');
+
+  answer = answers(mine);
+  hideFor(HIDDEN_CHECK_MS);
+  await turn(t);
+  t.mock.timers.tick(PING_MS);
+  assert.ok(mine.terminated, 'silent, let go');
+  const fresh = workers.at(-1)!;
+  assert.notEqual(fresh, mine);
+  const next = castFor(picture, 120, 90);
+  await turn(t);
+  assert.ok(await next);
+  assert.equal(fresh.jobs, 1, 'the fresh one makes it');
+  assert.equal(madeHere, 0);
 });

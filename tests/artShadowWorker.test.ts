@@ -53,7 +53,14 @@ test('the worker makes a shadow as it loads, a tile’s size, before any job', a
   assert.ok(warm[0]!.put, 'blurred before anything else runs');
   await new Promise((done) => setTimeout(done));
   assert.ok(warm[0]!.png, 'and encoded');
-  assert.equal(sent.length, 0, 'answering no one');
+  assert.deepEqual(sent, [{ id: 0 }], 'saying only that it’s there');
+});
+
+test('asked whether it’s still there, it says so', async () => {
+  const before = canvases.length;
+  await scope.onmessage!({ data: { ping: true } });
+  assert.deepEqual(sent.at(-1), { id: 0 });
+  assert.equal(canvases.length, before, 'drawing nothing');
 });
 
 test('a job is answered with castShadow’s shadow of the picture, and how long it took', async () => {

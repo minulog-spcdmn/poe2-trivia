@@ -19,14 +19,28 @@
 // shadow's spill into the tiles round it, and each fading box round a
 // picture and its shadow gets drawn offscreen on every frame of its fade.
 // An <img> is painted with the rest of its box, once.
+//
+// A phone that keeps a page in the background a long while may stop its
+// workers without a word (lib/prepPool.ts), and the shadows' worker lives as
+// long as the page: one that owes an answer and gives none for
+// PREP_STALL_MS has stalled (START_MS before its first word: its script may
+// be on its way over a slow link). What it held is made here, and a fresh
+// one takes its place. Back after HIDDEN_CHECK_MS, an idle one is asked
+// whether it's still there, and replaced if it doesn't answer within
+// PING_MS, before a picture waits on it.
 
 import { castBox, shadowOf } from './castShadow';
-import type { CastAnswer, CastJob } from './artShadowWorker';
+import type { CastAnswer, CastJob, CastPing } from './artShadowWorker';
+import { HIDDEN_CHECK_MS, onShownAgain, PING_MS, PREP_STALL_MS, START_MS } from './prepPool';
 
 /** A picture's shadow, for it drawn `w` x `h` (CSS px): an <img>, decoded, `cw` x `ch` CSS px, the picture `pad` in from its top and left. */
 export type Cast = { image: HTMLImageElement; w: number; h: number; pad: number; cw: number; ch: number };
 
 let worker: Worker | null | undefined;
+/** Whether the worker has said a word: it does as it loads, and with each answer. */
+let heard = false;
+/** The wait for the worker's next word, while it owes one (see expect). */
+let watch: ReturnType<typeof setTimeout> | undefined;
 let lastJob = 0;
 /** What each job sent to the worker does with its answer. */
 const answers = new Map<number, (a: CastAnswer) => void>();
@@ -39,10 +53,47 @@ const answers = new Map<number, (a: CastAnswer) => void>();
  */
 function stop(w: Worker) {
   w.terminate();
-  if (worker === w) worker = null;
+  if (worker !== w) return;
+  worker = null;
+  rest();
   for (const [id, done] of answers) done({ id });
   answers.clear();
 }
+
+/** Waits `ms` for a word from `w`, which owes one; with none, it has stalled. */
+function expect(w: Worker, ms: number) {
+  clearTimeout(watch);
+  watch = setTimeout(() => stalled(w), ms);
+}
+
+/** Nothing owed. */
+function rest() {
+  clearTimeout(watch);
+  watch = undefined;
+}
+
+/**
+ * `w` owed a word and said none. What it held is made here (stop). One that
+ * had spoken was stopped meanwhile, and a fresh one takes its place; one
+ * that never did won't start, and the shadows are made here from now on.
+ */
+function stalled(w: Worker) {
+  if (worker !== w) return;
+  const started = heard;
+  stop(w);
+  if (!started) return;
+  worker = undefined;
+  castWorker();
+}
+
+/** Back after a long while in the background, an idle worker is asked whether it's still there (one with jobs in hand is waited on already). */
+function cameBack(hiddenMs: number) {
+  const w = worker;
+  if (hiddenMs < HIDDEN_CHECK_MS || !w || !heard || watch !== undefined) return;
+  w.postMessage({ ping: true } satisfies CastPing);
+  expect(w, PING_MS);
+}
+let watching = false;
 
 /** The worker the shadows are made in, made the first time it's wanted (warmCasts, ahead of need); null where there's none. */
 function castWorker(): Worker | null {
@@ -52,14 +103,23 @@ function castWorker(): Worker | null {
   try {
     const w = new Worker(new URL('./artShadowWorker.ts', import.meta.url), { type: 'module' });
     w.onmessage = ({ data }: MessageEvent<CastAnswer>) => {
+      heard = true;
       answers.get(data.id)?.(data);
       answers.delete(data.id);
+      // (Still owed some: the next has as long again.)
+      if (answers.size) expect(w, PREP_STALL_MS);
+      else rest();
     };
     // (Failed to load, say: what it was doing comes back undone, and is done here from now on.)
     w.onerror = () => stop(w);
     worker = w;
+    heard = false;
   } catch {
     worker = null;
+  }
+  if (worker && !watching && typeof document !== 'undefined') {
+    watching = true;
+    onShownAgain(document, cameBack);
   }
   return worker;
 }
@@ -87,6 +147,7 @@ async function castThere(w: Worker, img: HTMLImageElement, width: number, height
   return new Promise((done) => {
     answers.set(id, done);
     w.postMessage({ id, image, w: width, h: height } satisfies CastJob, [image]);
+    if (watch === undefined) expect(w, heard ? PREP_STALL_MS : START_MS);
   });
 }
 

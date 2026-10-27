@@ -194,9 +194,8 @@
   /** The keyboard cursor: arrows move it, Enter chooses, it follows the mouse. */
   let cursor = $state(untrack(() => invite) ? 0 : lastEntry());
   /**
-   * The Codex's collection circle and its item window's name plate, built
-   * ahead away from the page once its entry is pointed at (the Codex warms
-   * the rest as it opens).
+   * The Codex's collection circle, built ahead away from the page once its
+   * entry is pointed at (the Codex warms the rest as it opens).
    */
   const warmCodex = (e: Entry) => {
     if (e !== 'codex') return;

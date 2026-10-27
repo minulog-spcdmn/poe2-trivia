@@ -42,9 +42,9 @@
   announceAchievements(checkAchievements(engine.items), 'codex');
   let achievements = $state.raw(loadAchievements());
   let wins = $state.raw(loadWins());
-  // The pages' circles, and the item window's eye and name plate, built
-  // ahead away from the page once the Codex is open (the collection's circle
-  // sooner, as its entry on the start page is pointed at: Home.svelte).
+  // The pages' circles, and the item window's eye, built ahead away from the
+  // page once the Codex is open (the collection's circle sooner, as its entry
+  // on the start page is pointed at: Home.svelte).
   onMount(() => {
     for (const place of ['collection', 'achievements', 'codexDelve', 'item'] as const) warmPlate(circleAtPlace(place));
   });

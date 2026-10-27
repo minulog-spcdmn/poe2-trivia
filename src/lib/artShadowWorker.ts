@@ -12,6 +12,8 @@ export type CastJob = { id: number; image: ImageBitmap; w: number; h: number };
  * nothing can (no OffscreenCanvas).
  */
 export type CastAnswer = { id: number; png?: Blob; worked?: number; cant?: boolean };
+/** Asks whether it's still there (lib/artShadow.ts): answered `{ id: 0 }`, as it says once it has loaded. */
+export type CastPing = { ping: true };
 
 /** The shadow of `image` drawn `w` x `h` (CSS px), as a PNG. */
 async function cast(image: CanvasImageSource, w: number, h: number): Promise<Blob> {
@@ -34,8 +36,14 @@ async function cast(image: CanvasImageSource, w: number, h: number): Promise<Blo
 // 4 for the first too), and the first question's pictures waited for it.
 // Its part up to the PNG runs before any job is taken.
 if (typeof OffscreenCanvas !== 'undefined') cast(new OffscreenCanvas(1, 1), 110, 110).catch(() => {});
+// (It's there: the page waits on it from now on with that in mind.)
+self.postMessage({ id: 0 } satisfies CastAnswer);
 
-self.onmessage = async ({ data: job }: MessageEvent<CastJob>) => {
+self.onmessage = async ({ data: job }: MessageEvent<CastJob | CastPing>) => {
+  if ('ping' in job) {
+    self.postMessage({ id: 0 } satisfies CastAnswer);
+    return;
+  }
   const answer: CastAnswer = { id: job.id };
   if (typeof OffscreenCanvas === 'undefined') {
     job.image.close();
