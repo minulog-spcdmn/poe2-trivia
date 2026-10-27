@@ -26,6 +26,7 @@
   import { toasts } from '../lib/toasts.svelte';
   import { doused, reveal } from '../lib/fx/moments';
   import { whenIdle } from '../lib/idle';
+  import { holdSettled } from '../lib/settled';
   import { onStoredElsewhere } from '../lib/storage';
   import { turnOf } from '../lib/turns';
   import { loadPlate } from '../lib/plateStore.svelte';
@@ -86,18 +87,32 @@
   // first idle moment after the start page's first frames (half a second at
   // most), once both are at hand.
   let Circle = $state.raw<Component<{ size?: string; state?: 'idle' | 'good' | 'bad'; strength?: number }> | null>(null);
+  // Until then the page isn't settled (lib/settled.ts): the circle is on its
+  // way, and work run ahead of need waits for it to have come and drawn
+  // itself in (from the frame it's on the page, its stage holds the page).
   $effect(() => {
     const day = today;
     const name = turnOf(day, DAILY);
-    return whenIdle(
+    const release = holdSettled();
+    const stop = whenIdle(
       () =>
         void Promise.all([LOAD[name](), loadPlate(name)]).then(
-          ([m]) => day === untrack(() => today) && (Circle = m.default),
+          ([m]) => {
+            if (day === untrack(() => today)) Circle = m.default;
+            requestAnimationFrame(() => setTimeout(release));
+          },
           // (Without its circle, today's unique plays on as it is.)
-          (e) => console.error("today's circle:", e),
+          (e) => {
+            console.error("today's circle:", e);
+            release();
+          },
         ),
       { timeout: 500, fallback: 100 },
     );
+    return () => {
+      stop();
+      release();
+    };
   });
   const daily = $derived(dailyQuestion(itemData as Item[], fakeNames, today));
 

@@ -32,6 +32,12 @@
 // itself: it's closed first, as its own back button would. (Were it ever on
 // Android, Chrome's close watchers would close it with no history step, and
 // Back wouldn't come here at all.) One already sliding away is passed over.
+//
+// Every entry put up or replaced in the browser's history names the tab's
+// slot too (lib/keptCopy.ts withTab), for a tab the browser kills and brings
+// back to know its game by; each mark here is read by its own key alone.
+
+import { withTab } from './keptCopy.ts';
 
 /** The history the guard stands in: the browser's, or one of its own (tests, the QA desk's frames). */
 export interface Steps {
@@ -327,9 +333,9 @@ function browserSteps(): Steps {
   return {
     state: () => history.state,
     hashed: () => !!location.hash,
-    push: (s) => history.pushState(s, '', here()),
-    stack: (s) => history.pushState(s, '', location.href),
-    replace: (s) => history.replaceState(s, '', here()),
+    push: (s) => history.pushState(withTab(s), '', here()),
+    stack: (s) => history.pushState(withTab(s), '', location.href),
+    replace: (s) => history.replaceState(withTab(s), '', here()),
     back: () => history.back(),
     listen: (heard) => addEventListener('popstate', heard),
     // (A browser that can't tell: as if it were.)

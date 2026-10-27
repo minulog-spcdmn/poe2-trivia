@@ -11,6 +11,6 @@ if (!expr) {
 }
 const t = await webTab();
 const page = await connect(t.webSocketDebuggerUrl);
-console.log(`${t.device} (iOS ${t.ios}): ${t.url}`);
+console.log(`${t.device} (iOS ${t.ios}), ${t.app}: ${t.url}`);
 console.log(await page.evaluate(expr));
 process.exit(0);

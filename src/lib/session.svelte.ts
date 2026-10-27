@@ -58,6 +58,7 @@ import { GameCounts, Steps, countEvent, countFailure, countStep, counting, markA
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
+import { keeping } from './keptCopy';
 import {
   DRAIN_POLL_MS,
   blastedAway,
@@ -86,7 +87,7 @@ import {
 import { readLegacy, readStored, removeLegacy, removeStored, storeKey, writeStored } from './storage';
 import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, TAP, actionOf, cursorKey, cursorsLive, entryAt, entryMs, stampOf, type CursorAt, type CursorEntry } from './cursors';
 import { peerCursors } from './peerCursors.svelte';
-import { whenIdle } from './idle';
+import { whenCalm } from './idle';
 import { frameEvent } from './fpsMeter';
 import { SIGILS_KEY, loadSigils } from './sigils';
 import { COLOUR_KEY, loadColour } from './colour';
@@ -261,6 +262,8 @@ const mySecret = stored('secret', () => randomToken(32));
 const myTab = randomToken(16);
 /** A new player's id, online or on this device. */
 const newPlayerId = () => randomToken(12);
+/** The game a state is of (its startedAt), as what it earns is noted under (noteEarned); none in the lobby. */
+const gameOf = (s: GameState) => (s.phase !== 'lobby' ? s.startedAt : undefined);
 
 /** Host-side bookkeeping for one guest connection. */
 interface Guest {
@@ -368,8 +371,9 @@ class Session {
   earned = $state<{ game: number; ids: string[] } | null>(null);
   /**
    * Notes what a check of the achievements earned, under the game it was
-   * earned in (`game`, its startedAt, as it stood when the check was asked
-   * for: the check is async, and a next game may have begun by its end).
+   * earned in (`game`, its startedAt, as it stood when what earned it
+   * happened: the check comes later, as late as the page's next calm
+   * moment, and a next game may have begun by its end).
    */
   private noteEarned(ids: string[], game: number | undefined) {
     if (game === undefined || !ids.length) return;
@@ -715,7 +719,10 @@ class Session {
   /** Picks up a hot-seat game or a hosted room after a page refresh. */
   resume() {
     const saved = readSaved();
-    if (!saved) return;
+    if (!saved) {
+      this.resumeKept();
+      return;
+    }
     // Picking up a game: a shared link's Delve was not for it, nor for the next one.
     this.delveLink = false;
     if (saved.mode === 'local') this.startLocal(
@@ -735,7 +742,10 @@ class Session {
       this.reset();
       // Kept while the room reopens, so neither a refresh nor a failed try loses the game.
       writeSaved(saved);
-      if (alive) writeStored(ALIVE, alive, 'session');
+      if (alive) {
+        writeStored(ALIVE, alive, 'session');
+        kept.keepAlive(alive);
+      }
       this.mode = 'host';
       this.status = 'connecting';
       this.loadPrivate(saved.priv);
@@ -745,6 +755,23 @@ class Session {
       // iOS dropping the tab) has no name saved yet: the room taking it now saves it, as it would have then.
       this.join(saved.code, saved.name, !!saved.watch, undefined, !savedName());
     }
+  }
+
+  /**
+   * Nothing saved in this tab: a tab the browser brought back after killing it
+   * in the background (its sessionStorage comes back empty), or an iPhone's
+   * home-screen app iOS let go of and opened anew, picks up the copy its game
+   * left in localStorage (lib/keptCopy.ts), as a reload would have.
+   * Only a game no other page still has (nor a room another page is in as
+   * the same guest or host), and not over anything started here meanwhile.
+   */
+  private resumeKept() {
+    void kept.takeCopy(() => !this.mode && !this.state && this.status === 'idle').then((took) => {
+      if (!took) return;
+      writeStored(SAVE, took.save, 'session');
+      if (took.alive) writeStored(ALIVE, took.alive, 'session');
+      this.resume();
+    });
   }
 
   // ---- hosting ----------------------------------------------------------
@@ -2695,7 +2722,7 @@ class Session {
     if (!run) return;
     const r = recordRun(run);
     if (!r) return;
-    this.noteAchievements();
+    this.noteAchievements(gameOf(next));
     const was = this.delveResult?.id === run.id ? this.delveResult : null;
     this.delveResult = { id: run.id, depth: run.depth, previousBest: was ? was.previousBest : r.previousBest, best: was ? was.best : r.best };
   }
@@ -2782,11 +2809,15 @@ class Session {
     const blast = blastedAway(prev, next);
     // (Only the items this build has: online, the reveal is the host's word.)
     const known = (id: string) => engine.byId.has(id);
+    // Written once the moment has played out, or as the codex is read
+    // (codex.ts recordWhenCalm): the whole codex is read and written again
+    // for it, a dozen ms or more on a phone with a full one, which held a
+    // frame of the reveal as it began.
     if (blast) {
       void import('./codex')
-        .then(({ blastedEncounter, keepable, recordEncounter }) => {
+        .then(({ blastedEncounter, keepable, recordWhenCalm }) => {
           const e = keepable(blastedEncounter(next, blast, me, hotSeat), known);
-          if (e) recordEncounter(e);
+          if (e) recordWhenCalm(e);
         })
         .catch((err) => console.warn('codex', err));
       return;
@@ -2797,15 +2828,16 @@ class Session {
     const qid = next.question?.askedAt;
     if (prev.phase === 'reveal' && prev.question?.askedAt === qid) return;
     const ms = this.answered?.qid === qid ? this.answered?.ms : undefined;
+    // The game what it earns is earned in, as it is now: by the time the page is calm, Again may have begun the next.
+    const game = gameOf(next);
     // Its own chunk: the first download stays small.
     // After a redeploy the old chunk is gone; the encounter just goes unrecorded.
     void import('./codex')
-      .then(({ encounterAt, keepable, recordEncounter }) => {
+      .then(({ encounterAt, keepable, recordWhenCalm }) => {
         const met = encounterAt(next, me, hotSeat, ms);
         const e = met && keepable(met, known);
-        if (!e) return;
-        recordEncounter(e);
-        this.noteAchievements();
+        // (Then the achievements, checked with it in the codex.)
+        if (e) recordWhenCalm(e, () => this.noteAchievements(game));
       })
       .catch((err) => console.warn('codex', err));
   }
@@ -2828,48 +2860,48 @@ class Session {
     void Promise.all([import('./achievements'), import('./achievementToasts')])
       .then(([{ noteState }, { announceAchievements }]) => {
         const earned = noteState(prev, next, me, hotSeat, { items: engine.items, veilShare });
-        this.noteEarned(earned.earned.map((a) => a.id), next.phase !== 'lobby' ? next.startedAt : undefined);
+        this.noteEarned(earned.earned.map((a) => a.id), gameOf(next));
         if (wait > 0) setTimeout(() => announceAchievements(earned, 'game'), wait);
         else announceAchievements(earned, 'game');
       })
       .catch((err) => console.warn('achievements', err));
   }
 
-  /** A check of the achievements is waiting for an idle moment (noteAchievements). */
-  private achievementsDue = false;
+  /** A check of the achievements waiting for a calm moment (noteAchievements), and the game it is for. */
+  private achievementsDue: { game: number | undefined } | null = null;
 
   /**
    * Brings the achievements up to date with what was just recorded in the
-   * codex or the Delve records, and announces any earned (lib/achievementToasts.ts).
-   * It reads and sums up the whole codex, so it waits for an idle moment
-   * rather than running as a reveal begins (its notice waits a moment
-   * anyway), and several asked for before it runs make one check.
+   * codex or the Delve records, and announces any earned (lib/achievementToasts.ts),
+   * as earned in `game` (its startedAt, as it was when that was recorded:
+   * noteEarned). It reads and sums up the whole codex, so it waits for a
+   * calm moment (whenCalm: once what the tap or reveal set off has played
+   * out; on a phone a timer for an idle one landed among its frames) rather
+   * than running as a reveal begins (its notice waits a moment anyway),
+   * after what was recorded for it, and several asked for in one game before
+   * it runs make one check.
    */
-  private noteAchievements() {
-    if (this.achievementsDue) return;
-    this.achievementsDue = true;
-    // The game the check is for: by the time it runs (an idle moment, up to a second on) a next one may have begun.
-    const game = this.state?.phase !== 'lobby' ? this.state?.startedAt : undefined;
-    void Promise.all([import('./achievements'), import('./achievementToasts')])
-      .then(([{ checkAchievements }, { announceAchievements }]) =>
-        whenIdle(
-          () => {
-            this.achievementsDue = false;
-            try {
-              const check = checkAchievements(engine.items);
-              if (!check.first) this.noteEarned(check.earned.map((a) => a.id), game);
-              announceAchievements(check, 'game');
-            } catch (err) {
-              console.warn('achievements', err);
-            }
-          },
-          { timeout: 1000, fallback: 300 },
-        ),
-      )
-      .catch((err) => {
-        this.achievementsDue = false;
-        console.warn('achievements', err);
-      });
+  private noteAchievements(game: number | undefined) {
+    // (One for another game is a check of its own, after this one: what that one earns is that game's.)
+    if (this.achievementsDue && this.achievementsDue.game === game) return;
+    const due = { game };
+    this.achievementsDue = due;
+    const done = () => void (this.achievementsDue === due && (this.achievementsDue = null));
+    // (Asked for in the calm moment that recorded an answer, it follows on in it.)
+    whenCalm(
+      () =>
+        void Promise.all([import('./achievements'), import('./achievementToasts')])
+          .then(([{ checkAchievements }, { announceAchievements }]) => {
+            done();
+            const check = checkAchievements(engine.items);
+            if (!check.first) this.noteEarned(check.earned.map((a) => a.id), game);
+            announceAchievements(check, 'game');
+          })
+          .catch((err) => {
+            done();
+            console.warn('achievements', err);
+          }),
+    );
   }
 
   /** Delve: the fuse waiting to burn, for the question and the 0 it burns down to (`key`). */
@@ -3318,7 +3350,10 @@ class Session {
    * (engine 'resumed'). Noted with the save, every ping and as the page goes.
    */
   noteAlive() {
-    if (this.mode === 'host' && this.state?.delve) writeStored(ALIVE, String(Date.now()), 'session');
+    if (this.mode !== 'host' || !this.state?.delve) return;
+    const at = String(Date.now());
+    writeStored(ALIVE, at, 'session');
+    kept.keepAlive(at);
   }
 
   /**
@@ -3442,10 +3477,16 @@ class Session {
   }
 }
 
-/** The save's storage name, in sessionStorage (each tab its own; the room bot keeps a copy, src/bot/host.ts). */
+/**
+ * The save's storage name, in sessionStorage (each tab its own). A copy is
+ * kept in localStorage for a tab the browser kills and brings back
+ * (lib/keptCopy.ts); the room bot keeps one its own way (src/bot/host.ts).
+ */
 export const SAVE = 'session.v4';
 /** Beside the save, in sessionStorage: when the host was last here (Session.noteAlive; the room bot keeps a copy too). */
 export const ALIVE = 'session.alive';
+/** The copy of the save kept in localStorage, under its name: a copy kept by a build that saved under another is never picked up. */
+const kept = keeping(SAVE);
 
 /** The host's last moment before its reload, as 'resumed' takes it (nothing when unknown). */
 function lastAlive(): { at?: number } {
@@ -3507,10 +3548,17 @@ function readSaved(): Saved | null {
 }
 
 function writeSaved(saved: Saved | null) {
-  if (saved) writeStored(SAVE, JSON.stringify(saved), 'session');
-  else {
+  if (saved) {
+    const raw = JSON.stringify(saved);
+    writeStored(SAVE, raw, 'session');
+    // Its room named with the part this page plays there: every tab of this browser joins a room
+    // as the same player, so two guests' tabs in one room hold one seat, as two hosts' would hold
+    // one room. (A room that never went online, with no code, is kept as a game on this device is.)
+    kept.keepCopy(raw, saved.mode !== 'local' && saved.code ? `${saved.mode} ${saved.code}` : null);
+  } else {
     removeStored(SAVE, 'session');
     removeStored(ALIVE, 'session');
+    kept.dropCopy();
   }
 }
 

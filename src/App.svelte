@@ -5,7 +5,6 @@
   import { isGroupRun, shownDepth } from './lib/delve';
   import { dealing, followDeal, shownRound } from './lib/dealing.svelte';
   import { arrival, beginArrival, endArrival } from './lib/zoneArrival.svelte';
-  import ZoneCard from './components/zonecard/ZoneCard.svelte';
   import { ownRect, stageZoom } from './lib/stage';
   import { onMount, untrack, type Component } from 'svelte';
   import { fade, type TransitionConfig } from 'svelte/transition';
@@ -24,6 +23,7 @@
   import { dialogBackdrop } from './lib/behindDialog';
   import { dialogIn, dialogOut } from './lib/dialogIn';
   import { wantDelveBackdrop } from './lib/backdrop';
+  import { wantDelveLights } from './lib/lightsAhead';
   import { inVein, setVein, veinStrike } from './lib/vein';
   import { veinTremor } from './lib/tremor';
   import Background from './components/Background.svelte';
@@ -31,22 +31,21 @@
   import FxLayer from './components/FxLayer.svelte';
   import Toasts from './components/Toasts.svelte';
   import Home from './components/Home.svelte';
-  import Lobby from './components/Lobby.svelte';
   import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
   import { closeSettings, openSettings, settingsRoute } from './lib/settingsRoute.svelte';
-  import { whenIdle } from './lib/idle';
   import { countFailedImport } from './lib/count';
   import { retried } from './lib/chunkRetry';
-  import { loadFonts, loadFontsAhead } from './lib/fontsAhead';
+  import { whenSettled } from './lib/settled';
+  import { loadFonts, loadFontsAhead, loadRoomFonts } from './lib/fontsAhead';
+  import { loadPeerJs, preloadPeerJs } from './lib/peer';
+  import { preloadEd25519 } from './lib/ownerKey';
   import { shellHeightsRead } from './lib/shellHeights.svelte';
   import { toasts } from './lib/toasts.svelte';
   import { BETA, LOCAL } from './lib/channel';
   import { watchFullscreenTip } from './lib/fullscreenTip';
   import { watchGpuNotice } from './lib/gpuNotice';
   import { setCursorColor } from './lib/ownCursor';
-  import PeerCursors from './components/PeerCursors.svelte';
   import DuelMark from './components/DuelMark.svelte';
-  import Recorder from './components/Recorder.svelte';
   import { wantsRecording } from './lib/recorder';
   import { playerColor } from './lib/ui';
   import { flat, fullRoom } from './lib/layout';
@@ -188,9 +187,12 @@
   });
   // Delve on its way (chosen in the lobby, a Delve room joined, a run picked
   // up, or one begun from a shared link): the backdrop builds its Delve
-  // programs now, in the background, so they're ready when the run starts.
+  // programs now, in the background, and its light is worked out (in a
+  // worker, lib/lightsAhead.ts), so they're ready when the run starts.
   $effect(() => {
-    if (gs && (gs.settings.mode === 'delve' || gs.delve)) wantDelveBackdrop();
+    if (!gs || (gs.settings.mode !== 'delve' && !gs.delve)) return;
+    wantDelveBackdrop();
+    wantDelveLights();
   });
   // Delve: a new zone's cards on their way (lib/dealing.svelte.ts). Set
   // before the DOM updates, so neither the header's depth nor the stage
@@ -369,15 +371,17 @@
   });
 
   // The codex page is its own chunk: fetch it ahead, so opening it doesn't wait.
-  // Its fonts and the tooltips' too (lib/fontsAhead.ts), from the first idle
-  // moment, so they don't lay the codex out again as it opens; opened before
-  // they're in, it waits for them a moment (at most a quarter of a second).
+  // Its fonts and the tooltips' too (lib/fontsAhead.ts), so they don't lay
+  // the codex out again as it opens; opened before they're in, it waits for
+  // them a moment (at most a quarter of a second).
   // A fetch that fails says the page couldn't be loaded (pageLost), and
   // opening the codex again fetches it again (a dropped connection may be
   // back): not by the same import, which the browser keeps failed, but under
   // an address of its own (lib/chunkRetry.ts). Each failure is counted all
   // the same (countFailedImport), as it would be uncaught: most often a page
   // left open across a deploy, which no fetch brings back; the Reload does.
+  // (Fetched ahead too, last in the queue below: a failure there waits for
+  // the codex to be opened.)
   const fetchCodexPage = retried(() => import('./components/Codex.svelte'), countFailedImport, 'Codex');
   let codexPage: Promise<typeof import('./components/Codex.svelte')> | null = null;
   const loadCodexPage = () =>
@@ -388,45 +392,86 @@
         throw e;
       },
     ));
-  onMount(loadFontsAhead);
   // The settings page, a chunk of its own too: fetched again and counted as the codex's is.
   const loadSettingsPage = retried(() => import('./components/Settings.svelte'), countFailedImport, 'Settings');
-  onMount(() => {
-    // Only ahead of time: a failure here (counted in fetchCodexPage) waits for the codex to be opened.
-    const t = setTimeout(() => void fetchCodexPage().catch(() => {}), 2000);
-    return () => clearTimeout(t);
-  });
 
-  // The game's screens (a question, the end of a game) are a chunk of their
-  // own, so the start page loads and runs without them: fetched in the first
-  // idle moment, or at once on the way into a room. A fetch that fails is
-  // tried once more while a room is open (a dropped connection may be back),
-  // but no more: some browsers keep a module that failed as failed, and a
-  // deploy that replaced the chunk fails every time. After that, only a
-  // reload brings it, which the game screen offers (a room carries on
-  // through one).
+  // A room's screens (the lobby and the other players' pointers; a question,
+  // a zone's card, the end of a game) are chunks of their own, so the start
+  // page loads and runs without them: on a first visit everything in the
+  // startup script is downloaded before the page shows at all, which on a
+  // phone on a busy Wi-Fi is seconds. Fetched once the start page has
+  // settled, or on the way into a room (below). A fetch that fails is tried
+  // once more while a room is open (a dropped connection may be back), but
+  // no more: some browsers keep a module that failed as failed, and a deploy
+  // that replaced the chunk fails every time. After that, only a reload
+  // brings it, which the screen offers (a room carries on through one).
+  let Lobby = $state<typeof import('./components/Lobby.svelte').default | null>(null);
+  let PeerCursors = $state<typeof import('./components/PeerCursors.svelte').default | null>(null);
   let Game = $state<Component | null>(null);
   let GameOver = $state<Component | null>(null);
+  let ZoneCard = $state<typeof import('./components/zonecard/ZoneCard.svelte').default | null>(null);
   let gamePagesLost = $state(false);
-  let gamePages: Promise<unknown> | null = null;
-  let gamePagesFailed = 0;
   const inRoom = () => screen !== 'home' && screen !== 'codex' && screen !== 'settings';
-  const loadGamePages = () =>
-    (gamePages ??= Promise.all([
-      import('./components/Game.svelte').then((m) => (Game = m.default)),
+  /** Loads some of the room's screens (`load` sets them) once, tried again as above should it fail. */
+  function roomPages(load: () => Promise<unknown>) {
+    let loading: Promise<unknown> | null = null;
+    let failed = 0;
+    const get = (): Promise<unknown> =>
+      (loading ??= load().catch(() => {
+        if (++failed < 2) {
+          loading = null;
+          setTimeout(() => inRoom() && get(), 1000);
+        } else if (!gamePagesLost) {
+          gamePagesLost = true;
+          toasts.show("Part of the game couldn’t be loaded. Reload the page to carry on.", 'error', { title: 'Loading failed' });
+        }
+      }));
+    return get;
+  }
+  const loadLobby = roomPages(() =>
+    Promise.all([
+      import('./components/Lobby.svelte').then((m) => (Lobby = m.default)),
+      import('./components/PeerCursors.svelte').then((m) => (PeerCursors = m.default)),
+    ]),
+  );
+  // (A zone's card comes with the question it opens on, never without.)
+  const loadGamePages = roomPages(() =>
+    Promise.all([
+      Promise.all([import('./components/Game.svelte'), import('./components/zonecard/ZoneCard.svelte')]).then(([g, z]) => {
+        ZoneCard = z.default;
+        Game = g.default;
+      }),
       import('./components/GameOver.svelte').then((m) => (GameOver = m.default)),
-    ]).catch(() => {
-      if (++gamePagesFailed < 2) {
-        gamePages = null;
-        setTimeout(() => inRoom() && loadGamePages(), 1000);
-      } else {
-        gamePagesLost = true;
-        toasts.show("Part of the game couldn’t be loaded. Reload the page to carry on.", 'error', { title: 'Loading failed' });
-      }
-    }));
-  onMount(() => whenIdle(loadGamePages, { timeout: 1500, fallback: 500 }));
+    ]),
+  );
+  // Ahead, one at a time once the page has settled (lib/settled.ts), in the
+  // order they're likeliest wanted: what a new game or a join waits for (the
+  // lobby, PeerJS), the game's screens, Ed25519 (for the owner's rooms,
+  // lib/ownerKey.ts), the faces the lobby, the codex and the item windows
+  // use, the codex. (All of it from here: anything queued as the page starts, before
+  // App has mounted, would go ahead of the lobby.)
+  onMount(() => {
+    const undo = [whenSettled(loadLobby), preloadPeerJs(), whenSettled(loadGamePages), preloadEd25519(), loadFontsAhead(), whenSettled(fetchCodexPage)];
+    return () => undo.forEach((f) => f());
+  });
+  // From the moment a room is being made or joined, while it still connects:
+  // the lobby first, and the game's screens only once it's in, and online
+  // PeerJS too (the room is opened or joined through it). On a phone on a
+  // busy Wi-Fi they'd share the link with what the lobby waits for. A game
+  // under way already (a reload, a resume) has them all at once. The lobby's
+  // face comes at once either way, its room code and avatars being set in it
+  // (lib/fontsAhead.ts); the other faces wait for the queue above, which
+  // loads it again for nothing.
   $effect(() => {
-    if (inRoom()) untrack(loadGamePages);
+    if (!inRoom() && !session.mode) return;
+    untrack(loadRoomFonts);
+    if (screen === 'game' || screen === 'over') {
+      untrack(loadLobby);
+      untrack(loadGamePages);
+      return;
+    }
+    const online = session.mode === 'host' || session.mode === 'client';
+    untrack(() => void Promise.all([loadLobby(), online && loadPeerJs().catch(() => {})]).then(loadGamePages));
   });
 
   // Each screen starts at the top (a guest who scrolled down to the join
@@ -667,8 +712,13 @@
 
   <main>
     <!-- Other players' pointers, in an online room: the lobby and the game (lib/cursors.ts says when). -->
-    {#if (session.mode === 'host' || session.mode === 'client') && session.state}<PeerCursors />{/if}
-    {#if recording}<Recorder onstop={() => (recording = false)} />{/if}
+    {#if (session.mode === 'host' || session.mode === 'client') && session.state && PeerCursors}<PeerCursors />{/if}
+    <!-- (A chunk of its own: only the beta's and the dev server's ?record has it.) -->
+    {#if recording}
+      {#await import('./components/Recorder.svelte') then { default: Recorder }}
+        <Recorder onstop={() => (recording = false)} />
+      {/await}
+    {/if}
     <!-- While the last screen goes (shown null), an empty one stands in, coming and going at once: the next is made
          by the {#key} itself, not by a block made with it, so its own (local) transitions play. -->
     {#key shown}
@@ -692,7 +742,7 @@
         {#if shown === 'home'}
           <Home />
         {:else if shown === 'lobby'}
-          <Lobby />
+          {#if Lobby}<Lobby />{:else}{@render gamePagesWait()}{/if}
         {:else if shown === 'game'}
           {#if Game}<Game />{:else}{@render gamePagesWait()}{/if}
         {:else if shown === 'codex'}
@@ -726,7 +776,7 @@
   {/if}
 </div>
 
-<!-- The game's screens still on their way (loadGamePages), or lost. -->
+<!-- The room's screens still on their way (roomPages), or lost. -->
 {#snippet gamePagesWait()}
   {#if gamePagesLost}
     {@render pageLost()}
@@ -752,7 +802,7 @@
   <a href={PRIVACY_URL} target="_blank" rel="noopener" onclick={openPrivacy}>Datenschutz</a>
 {/snippet}
 
-{#if zoneCard}
+{#if zoneCard && ZoneCard}
   {#key zoneCard.key}
     <ZoneCard a={zoneCard} bar={headerHeight} />
   {/key}

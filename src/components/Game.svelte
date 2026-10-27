@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { fade, fly, scale, slide } from 'svelte/transition';
+  import { fade, fly, scale, slide } from '../lib/transitions';
   import { cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
   import { pageScroll } from '../lib/pageScroll';
@@ -7,7 +7,6 @@
   import Scoreboard from './Scoreboard.svelte';
   import ChooseCategory from './ChooseCategory.svelte';
   import QuestionView from './QuestionView.svelte';
-  import { warmWeave } from './NamePlate.svelte';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import TimerRing from './TimerRing.svelte';
@@ -36,7 +35,10 @@
   import { backGuard } from '../lib/backGuard';
   import ItemWindow from './ItemWindow.svelte';
   import { warmGame } from './gameCircles.svelte';
+  import { warmCasts } from '../lib/artShadow';
   import { backdropDropShadow } from '../lib/backdropDropShadow';
+  import { outWithoutInert } from '../lib/leaving';
+  import { switchedOff } from '../lib/switchedOff';
 
   const s = $derived(session.state!);
   // The circles behind the coming question and at the game's end, built ahead away from the page.
@@ -52,8 +54,8 @@
   $effect(() => {
     if (itemOpen) return backGuard.layer(closeItemWindow);
   });
-  // The name plate's weave, ready before the first question shows one.
-  onMount(warmWeave);
+  // The worker that makes the pictures' shadows, loaded and warm before the first question with art waits for it.
+  onMount(warmCasts);
 
 
   const race = $derived(s.settings.mode === 'race');
@@ -313,7 +315,7 @@
       } else if (live) speak(key, `Deeper than ever: depth ${shownDepth(depth)}, past your best of ${shownDepth(depth - 1)}.`);
     });
   });
-  /** Ms from a turn's stage coming in to its line over the banner coming in: once the stage has faded in (its in:fade, below). */
+  /** Ms from a turn's stage coming in to its line over the banner coming in: once the stage has faded in (stageIn, below). */
   const PAST_IN = 500;
   /** Svelte action: deeper than ever, seen as it happened: as its line comes in, a sting and a few glints on it. */
   function pastFx(node: HTMLElement, p: Past) {
@@ -389,6 +391,24 @@
   }
 
   /**
+   * A turn's stage at rest: a hair short of opaque, so it is always a group
+   * of its own that fades as one. WebKit (every browser on an iPhone)
+   * repaints every compositing layer in an element whose opacity goes from 1
+   * to under it, or back: the stage going out after Next, or done coming in,
+   * repainted the question's rune circle (some forty layers) and all else in
+   * it, 15 to 25 ms of a frame. From 0.999, next to none. The stage comes in
+   * to it and goes out from it, the same fades as ever (Svelte's fade, which
+   * reads it off the page; here it's known). A group is composited apart
+   * while the circle in it turns, so on the beta ?off=group rests it at 1
+   * (lib/switchedOff.ts), to weigh that against what it saves.
+   */
+  const STAGE_OPACITY = switchedOff('group') ? 1 : 0.999;
+  /** Svelte transition: a turn's stage fades in, once the last one is going. */
+  const stageIn = (_node: Element) => ({ duration: 300, delay: 200, css: (t: number) => `opacity: ${t * STAGE_OPACITY}` });
+  /** Svelte transition: the last turn's stage fades out under the next. */
+  const stageOut = (_node: Element) => ({ duration: 180, css: (t: number) => `opacity: ${t * STAGE_OPACITY}` });
+
+  /**
    * Svelte transition: the cards fade out over the question that takes their
    * place, rather than going at once, so the effects on them (a picked card's
    * fire) fade with them rather than outlining where they were. They take
@@ -452,7 +472,8 @@
        instead of stacking (which briefly doubled the page height). -->
   <div class="turns">
     {#key stageKey}
-      <div class="stage" in:fade={{ duration: 300, delay: 200 }} out:fade={{ duration: 180 }}>
+      <!-- Going, the stage is let go without being made inert, which would repaint it all (lib/leaving.ts). -->
+      <div class="stage" style:opacity={STAGE_OPACITY} use:outWithoutInert in:stageIn out:stageOut>
         {#if held}
           <!-- Going down into a new zone: nothing yet but the scene plunging. -->
         {:else}
@@ -476,7 +497,7 @@
           <!-- The cards fade out over the question that takes their place (see cardsOut). -->
           <div class="turn-body">
             {#if s.phase === 'choosing' || drawing}
-              <div class="cards-slot" out:cardsOut>
+              <div class="cards-slot" use:outWithoutInert out:cardsOut>
                 <ChooseCategory
                   drawn={drawing ? (s.question?.category ?? null) : leaving ? WAY_OUT : null}
                   ondrawn={() => (raffle = null)}
@@ -596,7 +617,9 @@
   .cards-slot:global(.leaving) {
     height: 0;
     min-height: 0;
-    z-index: 1;
+    /* Over the question, its task line too, and over the banner: both are
+       at 1, over the soft shadows of the question's tooltip (see .head). */
+    z-index: 2;
     pointer-events: none;
   }
   /* The question and, as it cross-fades with reduced motion, the one dynamite
@@ -608,9 +631,14 @@
     grid-area: 1 / 1;
     min-width: 0;
   }
-  /* The banner, holding its margins, and the kicker over it. */
+  /* The banner, holding its margins, and the kicker over it. It stays over
+     the soft shadows of the question's tooltip where CSS paints them (on a
+     phone), which reach up to it: the tooltip is positioned, for its
+     verdict's rims (QuestionView), and comes later, so it would paint them
+     over the banner. */
   .head {
     position: relative;
+    z-index: 1;
     display: flow-root;
   }
   .sr {

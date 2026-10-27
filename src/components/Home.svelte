@@ -193,9 +193,31 @@
 
   /** The keyboard cursor: arrows move it, Enter chooses, it follows the mouse. */
   let cursor = $state(untrack(() => invite) ? 0 : lastEntry());
-  /** The Codex's collection circle, built ahead away from the page once its entry is pointed at (the Codex warms the rest as it opens). */
-  const warmCodex = (e: Entry) => e === 'codex' && warmPlate(circleAtPlace('collection'));
+  /**
+   * The Codex's collection circle, built ahead away from the page once its
+   * entry is pointed at (the Codex warms the rest as it opens).
+   */
+  const warmCodex = (e: Entry) => {
+    if (e !== 'codex') return;
+    warmPlate(circleAtPlace('collection'));
+  };
   $effect(() => void warmCodex(ENTRIES[cursor]));
+  /**
+   * And as the mouse comes over it or a finger lands on it, its figures
+   * (lib/codexStats.ts) worked out then, while nothing moves, rather than in
+   * the frame the Codex comes in on, which on a phone they made late. (The
+   * codex itself has been read here already, and the Codex reads it back
+   * unchanged.) Not once it's on its way: it works them out itself.
+   */
+  const readyCodex = (e: Entry) => {
+    warmCodex(e);
+    if (e !== 'codex') return;
+    void Promise.all([import('../lib/codex'), import('../lib/codexStats')])
+      .then(([{ loadCodex }, { storedCodexStats }]) => {
+        if (!codexRoute.open) storedCodexStats(loadCodex(), engine.items, engine.categories);
+      })
+      .catch(() => {});
+  };
   /** The entry whose row (fields in place of its description) is open. */
   let open = $state<Entry | null>(null);
   let entryEls: HTMLButtonElement[] = $state([]);
@@ -469,6 +491,8 @@
 
   /** The cursor follows the mouse (touch has none). */
   function hover(e: PointerEvent, i: number) {
+    // (A finger landing on an entry points at it too.)
+    readyCodex(ENTRIES[i]);
     if (e.pointerType !== 'mouse') return;
     hovered = true;
     if (open === ENTRIES[i]) clearTimeout(idleTimer);
@@ -749,7 +773,7 @@
         <!-- The Codex and Settings: set as the list's entries are, side by side. -->
         <div class="pair two" class:dimmed={connecting} inert={connecting} in:fly|global={calm({ y: 12, duration: 500, delay: 440 })}>
           {#each PAIR as { e, name } (e)}
-            <button class="pair-pick" bind:this={entryEls[ENTRIES.indexOf(e)]} onclick={() => choose(e)} onpointerenter={() => warmCodex(e)} onfocus={() => warmCodex(e)}>
+            <button class="pair-pick" bind:this={entryEls[ENTRIES.indexOf(e)]} onclick={() => choose(e)} onpointerenter={() => readyCodex(e)} onfocus={() => readyCodex(e)}>
               <span class="pair-name">{name}<span class="go"><DrawnMark shape="chevron" /></span></span>
               {#each pairLines[e] as line}<span class="pair-line">{line}</span>{/each}
             </button>

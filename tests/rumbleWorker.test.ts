@@ -33,7 +33,7 @@ test("the rumble's worker answers with both channels, the loop's length, right h
 test('a rumble worker that never answers is let go, and the page works it out', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   await import('./asVite.ts');
-  const { rumbleThere, RUMBLE_WAIT_MS } = await import('../src/lib/sound.ts');
+  const { rumbleThere, WORKER_WAIT_MS } = await import('../src/lib/sound.ts');
   let ended = false;
   /** A worker that loads and is asked, and says nothing. */
   (globalThis as { Worker?: unknown }).Worker = class {
@@ -49,7 +49,7 @@ test('a rumble worker that never answers is let go, and the page works it out', 
   const ac = { sampleRate: 8000, createBuffer: (n: number, len: number) => ({ getChannelData: (i: number) => (channels[i] ??= new Float32Array(len)), length: len, numberOfChannels: n }) };
   let buf: unknown = null;
   void rumbleThere(ac as never).then((b) => (buf = b));
-  t.mock.timers.tick(RUMBLE_WAIT_MS - 1);
+  t.mock.timers.tick(WORKER_WAIT_MS - 1);
   await Promise.resolve();
   assert.equal(buf, null, 'still waiting');
   t.mock.timers.tick(1);

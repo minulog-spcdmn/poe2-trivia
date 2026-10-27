@@ -10,6 +10,7 @@
   import { portal } from '../lib/portal';
   import { MOUSE } from '../lib/cursors';
   import { anchorAt } from '../lib/pointerAnchor';
+  import { GONE } from '../lib/leaving';
   import { peerCursors } from '../lib/peerCursors.svelte';
   import { CHANNEL } from '../lib/channel';
   import { Recording, sceneOf, stopRecording, type Layout } from '../lib/recorder';
@@ -37,7 +38,7 @@
     const boxes: Layout['boxes'] = {};
     for (const el of document.querySelectorAll<HTMLElement>('[data-cursor]')) {
       const name = el.dataset.cursor!;
-      if (boxes[name] || el.closest('[inert]')) continue;
+      if (boxes[name] || el.closest(GONE)) continue;
       const r = el.getBoundingClientRect();
       if (r.width && r.height) boxes[name] = [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)];
     }

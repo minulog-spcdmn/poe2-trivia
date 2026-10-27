@@ -329,11 +329,22 @@ export function endgameAt(k: number, seed = seedAt(k)): Generated {
       if (u >= UNLIKE) break;
     }
   }
-  if (own) {
-    if (generated.size > 512) generated.clear();
-    generated.set(k, g!);
-  }
+  if (own) keep(k, g!);
   return g!;
+}
+
+function keep(k: number, g: Generated) {
+  if (generated.size > 512) generated.clear();
+  generated.set(k, g);
+}
+
+/**
+ * Takes stratum `k` past the zones as endgameAt generated it elsewhere from
+ * the same backdrops (in the light table's worker, lib/lightsAhead.ts), so
+ * it isn't generated again here; one this page has generated itself stays.
+ */
+export function adoptStratum(k: number, g: Generated) {
+  if (!generated.has(k)) keep(k, g);
 }
 
 /**

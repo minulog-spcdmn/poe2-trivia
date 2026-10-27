@@ -2,8 +2,9 @@
   import { flushSync, untrack, type Snippet } from 'svelte';
   import { drawIn, type Pen } from '../lib/drawIn';
   import { HOLLOW_CLEAR, type Plate, type StageLayer } from '../lib/engraver';
-  import { WHOLE, placed, type Box } from '../lib/plateBox';
+  import { WHOLE, insideOut, placed, type Box } from '../lib/plateBox';
   import { switchedOff } from '../lib/switchedOff';
+  import { holdSettled } from '../lib/settled';
 
   export type { StageLayer };
 
@@ -79,6 +80,10 @@
     let timers: ReturnType<typeof setTimeout>[] = [];
     let stopped = false;
     let pen: Pen | undefined;
+    // Work run ahead of need waits until the circle has drawn itself in
+    // (lib/settled.ts): its layers going on the page and the pen are
+    // enough for a phone's frames.
+    const release = holdSettled();
     /** Hands a layer's SVGs, on the page, to the pen. */
     const draw = (name: string) => summon?.querySelectorAll<SVGSVGElement>(`svg[data-layer="${name}"]`).forEach((svg) => pen?.add(svg));
     /** Times each layer from `start` (performance.now()'s clock), when the summoning began. */
@@ -95,6 +100,7 @@
           });
         at(Math.max(l.lines.end, l.glow.end) + 0.15, () => (drawn[l.name] = true));
       }
+      at(Math.max(...layers.map((l) => Math.max(l.lines.end, l.glow.end))) + 0.15, release);
     };
     // (Its only animation: the circle's settling in.) Moved on the page
     // before it starts, as a dialog's backdrop is to the end of <body>
@@ -116,9 +122,54 @@
       pen?.stop();
       timers.forEach(clearTimeout);
       timers = [];
+      release();
     };
   });
   const plate = (p: Plate, name: string) => (drawn[name] ? p.still : shown[name] ? p.drawing : '');
+
+  // Answered, the circle takes its new colour (its mood's, below) a ring at
+  // a time, from the centre out, one more each frame after the answer's own,
+  // so the whole circle has it a few frames on, under the flare and the wave
+  // running out over it. Each ring takes it at once, never eased (see
+  // .arcane). A ring (one of `groups`) is a few compositing layers, its
+  // strokes in currentColor, and each layer takes a new colour by being
+  // drawn again: the whole circle in one frame was some forty layers on an
+  // iPhone, 15 to 20 ms of the answer's next frame. Until its turn a ring
+  // keeps the colour before (`was`). A colour given (`color`) is the
+  // circle's whatever its mood: nothing to hold.
+  /** The rings in the order they take it: the centre's first. */
+  const outward = insideOut(groups.map((g) => g[0].box ?? WHOLE));
+  /** Each ring's place in that order. */
+  const turnOf = new Map(outward.map((at, n) => [groups[at][0].name, n]));
+  /** The mood the rings not yet turned still show the colour of (null: none held). */
+  let was = $state<'idle' | 'good' | 'bad' | null>(null);
+  /** How many rings have taken the colour. */
+  let turned = $state(0);
+  let moodSeen = untrack(() => mood);
+  $effect.pre(() => {
+    const now = mood;
+    if (now === moodSeen) return;
+    const before = moodSeen;
+    moodSeen = now;
+    if (untrack(() => color)) return;
+    untrack(() => {
+      was = before;
+      turned = 0;
+    });
+    let frame = 0;
+    const step = () => {
+      // (The answer's own frame first, every ring in the colour before.)
+      if (frame++ && ++turned >= groups.length) {
+        was = null;
+        return;
+      }
+      raf = requestAnimationFrame(step);
+    };
+    let raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  });
+  /** The colour a ring holds to until its turn (CSS, through the mood's own; none once it has turned). */
+  const heldInk = (ring: StageLayer[]) => (was && turnOf.get(ring[0].name)! >= turned ? `var(--ink-${was})` : undefined);
 </script>
 
 {#if !off}
@@ -203,8 +254,11 @@
     {#snippet layer(l: StageLayer, inside: Box)}
       {@render masked([l], inside)}
     {/snippet}
+    <!-- Each ring in a box of its own (the circle's size), which holds it to the colour before for its first frames after an answer. -->
     {#each groups as group (group[0].name)}
-      {@render masked(group, WHOLE)}
+      <div class="hold" style:color={heldInk(group)}>
+        {@render masked(group, WHOLE)}
+      </div>
     {/each}
     {@render heart?.()}
     {#if point}
@@ -231,24 +285,31 @@
     height: var(--size, min(92cqw, 92cqh, 420px));
     pointer-events: none;
     opacity: 0.22;
-    color: #d9a45a;
+    /* Each mood's colour, named so a ring can hold to the one before for a
+       moment (heldInk). */
+    --ink-idle: #d9a45a;
+    --ink-good: #d8dfa0;
+    --ink-bad: #d98a6e;
+    color: var(--ink-idle);
     /* Only the opacity eases (on the compositor). The colour changes at
        once: every stroke of the circle takes it (currentColor), and easing
        it restyled and repainted each of those hundreds of strokes every
        frame for most of a second, right as a reveal's effects began, which
-       made them stutter. The reveal's flare covers the change. */
+       made them stutter. The reveal's flare covers the change, and its
+       rings take it one a frame (heldInk). */
     transition: opacity 0.8s;
   }
   .arcane.good {
     opacity: 0.3;
-    color: #d8dfa0;
+    color: var(--ink-good);
   }
   .arcane.bad {
     opacity: 0.16;
-    color: #d98a6e;
+    color: var(--ink-bad);
   }
   /* A circle's heart (its own markup) is laid out as a layer too. */
   .summon,
+  .hold,
   .summon :global(.layer),
   .summon :global(svg),
   .bloom,

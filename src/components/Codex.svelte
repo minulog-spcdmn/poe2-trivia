@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { flushSync, onMount, tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { fade } from 'svelte/transition';
   import { engine, savedName, session } from '../lib/session.svelte';
   import { nameUsable } from '../lib/names';
   import { CODEX_KEY, PRACTICE_KEY, RECENT, loadCodex, loadPractice, resetCodex, type Tally } from '../lib/codex';
-  import { accuracy, codexStats, tallyOf } from '../lib/codexStats';
+  import { accuracy, storedCodexStats, tallyOf } from '../lib/codexStats';
   import { shownDepth } from '../lib/delve';
   import { categoryGlyph, itemSrcset, itemThumb } from '../lib/ui';
   import { DIFFICULTY_NAMES } from '../lib/difficultyText';
@@ -14,7 +14,6 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { dialogBackdrop } from '../lib/behindDialog';
   import { dialogIn, dialogOut } from '../lib/dialogIn';
-  import { whenIdle } from '../lib/idle';
   import { savingData } from '../lib/saveData';
   import { canWrap, gridHeight, type GridMeasure } from '../lib/heldGrid';
   import { ownRect } from '../lib/stage';
@@ -44,8 +43,8 @@
   let achievements = $state.raw(loadAchievements());
   let wins = $state.raw(loadWins());
   // The pages' circles, and the item window's eye, built ahead away from the
-  // page once the Codex is open (the collection's sooner, as its entry on
-  // the start page is pointed at: Home.svelte).
+  // page once the Codex is open (the collection's circle sooner, as its entry
+  // on the start page is pointed at: Home.svelte).
   onMount(() => {
     for (const place of ['collection', 'achievements', 'codexDelve', 'item'] as const) warmPlate(circleAtPlace(place));
   });
@@ -60,7 +59,7 @@
     }),
   );
 
-  const stats = $derived(codexStats(codex, engine.items, engine.categories));
+  const stats = $derived(storedCodexStats(codex, engine.items, engine.categories));
   const difficulties = $derived(
     (Object.keys(DIFFICULTY_NAMES) as Difficulty[]).flatMap((d) => {
       const t = stats.byDifficulty[d];
@@ -96,7 +95,7 @@
   // once took some 60 ms of style and layout in the codex's first frame, and
   // all their pictures set loading at once another 45 ms. So each section
   // after the first holds its tiles out of layout (content-visibility) until
-  // its turn, one a frame once the codex is in (or sooner, as the browser
+  // its turn, taken in order once the codex is in (or sooner, as the browser
   // does, when it nears the screen), its header laid out as ever and its
   // grid standing meanwhile at the height its rows will take (heldHeights).
   // Its turn lays it out as any page is, and starts its pictures loading.
@@ -105,33 +104,79 @@
   // that height. One that nears the screen before its turn has its tiles
   // made then (near), as the browser lays out a held one; once made, a
   // section's tiles stay, its later turns (after a search) only lay it out.
+  //
+  // A turn is taken by time, not a section a frame: a section was 300 to 570
+  // elements made and laid out in one frame, on an iPhone 24 to 49 ms each.
+  // So a turn makes its section's tiles a few at a time, for a few ms of each
+  // frame (STAGE_MS), and the frame lays out what it made, its grid standing
+  // at its rows' height until all of them are in (partway).
   const saveData = savingData();
   /** How many sections have had their turn (of those shown: a search or a pick shows fewer). */
   let staged = $state(0);
-  const held = (i: number) => i >= Math.max(1, staged);
+  /** How many of its tiles the section having its turn (the `staged`th) has made so far. */
+  let part = $state(0);
+  /** The section having its turn, its tiles made so far laid out. */
+  const partway = (i: number) => i === staged && part > 0;
+  const held = (i: number) => i >= Math.max(1, staged) && !partway(i);
   const thumbsLoading = $derived.by<'lazy' | 'eager'>(() => (!saveData && staged >= sections.length ? 'eager' : 'lazy'));
-  // A section a frame, from the first idle moment after the codex comes in
-  // (idle moments are few while it does: one each took seconds), and on as
-  // more show (a search cleared).
+  // From once the codex is in (rising: not after a fixed moment, which on a
+  // phone came while it was still rising, and every turn then cost the
+  // entrance frames), and on as more show (a search cleared).
   let staging = $state(false);
-  onMount(() => whenIdle(() => (staging = true), { timeout: 500 }));
+  $effect(() => {
+    if (!rising) staging = true;
+  });
   // A new search or pick shows its sections afresh (their tiles made anew):
   // they take their turns again, set before the page updates.
   $effect.pre(() => {
     void query;
     void only;
     staged = 0;
+    part = 0;
   });
+  /**
+   * How long (ms) a frame spends making a turn's tiles. The frame then lays
+   * them out, which takes about as long again, so with the rest of what it
+   * draws it keeps to its time.
+   */
+  const STAGE_MS = 3;
+  /** How many tiles are made at a time within it. */
+  const STAGE_STEP = 4;
   $effect(() => {
-    if (!staging || staged >= sections.length) return;
-    const raf = requestAnimationFrame(() => staged++);
+    if (!staging) return;
+    void sections;
+    let raf = 0;
+    const step = () => {
+      const until = performance.now() + STAGE_MS;
+      while (staged < sections.length) {
+        const sec = sections[staged];
+        // (The first section is always laid out.)
+        if (staged === 0) staged = 1;
+        else if (made.has(sec.stats.category)) {
+          // Its tiles made already: laid out whole, which is this frame's work.
+          staged++;
+          part = 0;
+          flushSync();
+          break;
+        } else if (part + STAGE_STEP >= sec.items.length) {
+          staged++;
+          part = 0;
+        } else part += STAGE_STEP;
+        flushSync();
+        if (performance.now() >= until) break;
+      }
+      raf = staged < sections.length ? requestAnimationFrame(step) : 0;
+    };
+    raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
   });
   /** The sections (by category) whose tiles have been made. */
   const made = new SvelteSet<string>();
-  const madeAt = (i: number) => !held(i) || made.has(sections[i].stats.category);
+  const madeAt = (i: number) => i < Math.max(1, staged) || made.has(sections[i].stats.category);
+  /** The tiles section `i` shows: all, once made; those made so far, partway through its turn; else none. */
+  const tilesAt = (i: number, items: Item[]) => (madeAt(i) ? items : partway(i) ? items.slice(0, part) : null);
   $effect(() => {
-    for (let i = 0; i < sections.length && !held(i); i++) made.add(sections[i].stats.category);
+    for (let i = 0; i < sections.length && i < Math.max(1, staged); i++) made.add(sections[i].stats.category);
   });
   /** The sections' grids as shown (bound), the first measured for the others' height while they're held. */
   let gridEls = $state<HTMLElement[]>([]);
@@ -146,6 +191,41 @@
     gridEls.forEach((g, i) => g && i < sections.length && !madeAt(i) && io.observe(g));
     return () => io.disconnect();
   });
+  // Behind a dialog all the way in (an item window, or the erase's confirm),
+  // the tiles' shadows go (the styles), but only in the sections near the
+  // screen as it opened (a screen either way), whose shadows the browser
+  // draws: every tile's taken off and put back restyled all five hundred, on
+  // an iPhone some 12 ms of the frame the window starts to close in. WebKit
+  // restyles only the near sections' pictures now, so that 12 ms is the
+  // most this saves; Blink restyles every picture the rule names either way.
+  // The shadows' own cost stays: they come back as the fade-out starts and
+  // are drawn again under the page's fading filter on each frame of both
+  // fades (docs/iphone.md, "Still open").
+  // The page still scrolls under a dialog (a wheel, a drag on its backdrop or
+  // a key chains to the document), so a section that comes near while one is
+  // up joins those, a screen before it shows, as every tile went before; none
+  // leaves until the dialog closes, so one view never mixes the two.
+  /** The sections (by category) near the screen now, as an observer last told it: kept aside, not shown. */
+  const near = new Set<string>();
+  $effect(() => {
+    near.clear();
+    const io = new IntersectionObserver(
+      (seen) => {
+        for (const e of seen) {
+          const category = (e.target as HTMLElement).dataset.category!;
+          if (e.isIntersecting) near.add(category);
+          else near.delete(category);
+        }
+        // (This runs after mount, so reading open here has no $effect.pre's ordering to mind.)
+        if ((open || confirmReset) && [...near].some((c) => !shadeless.has(c)))
+          shadeless = new Set([...shadeless, ...near]);
+      },
+      { rootMargin: '100% 0px' },
+    );
+    gridEls.forEach((g) => g && io.observe(g));
+    return () => io.disconnect();
+  });
+  // (Which those are is taken as a dialog opens, and added to while it's up: shadeless, below open and confirmReset.)
   // A held grid's height is worked out from its names (lib/heldGrid.ts). The
   // first grid gives a tile's fixed parts, a line's height, the columns and
   // a name's width and font, each time it lays out at a new size (a
@@ -306,6 +386,22 @@
     wins = loadWins();
     confirmReset = false;
   }
+  /**
+   * The sections near the screen as the last dialog opened, and those that
+   * came near while it was up, whose tiles' shadows go behind it. Kept as it
+   * closes: the rule waits for
+   * data-dialog-up (lib/behindDialog.ts), which goes as the fade-out starts,
+   * a frame or two after the close, so the shadows come back then as ever.
+   * Let go of as it closed, they came back in the close's own frame, still
+   * under the page's full filter. (Down here, below what it reads: an
+   * $effect.pre runs as the codex is made, before the rest of this script,
+   * and one above `open` stopped the codex opening at all;
+   * tests/effectPreOrder.test.ts.)
+   */
+  let shadeless = $state.raw<ReadonlySet<string>>(new Set());
+  $effect.pre(() => {
+    if (open || confirmReset) shadeless = new Set(near);
+  });
 
   // ---- three pages: the collection, Delve (CodexDelve) and achievements (CodexAchievements) ----
 
@@ -334,7 +430,13 @@
     const el = codexEl;
     let live = true;
     void (async () => {
-      await tick();
+      // Asked for once the frame that shows the page has worked out its
+      // styles, making its animations there, not as it mounts: there
+      // getAnimations had to work out the whole codex's styles on the spot,
+      // on a phone some 10 ms of the frame it came in on (ArcaneStage waits
+      // for its own the same way).
+      await new Promise((ready) => requestAnimationFrame(() => setTimeout(ready)));
+      if (!live) return;
       for (;;) {
         // (The document's running animations, a handful: not a walk through the codex's every tile.)
         const going = document.getAnimations().filter((a) => a instanceof CSSAnimation && RISING.test(a.animationName) && a.playState !== 'finished' && within(el, a));
@@ -650,7 +752,7 @@
       {#if view === 'grid'}
         {#each sections as sec, i (sec.stats.category)}
           {@const loading = !saveData && i < staged ? 'eager' : 'lazy'}
-          {@const tiles = madeAt(i)}
+          {@const tiles = tilesAt(i, sec.items)}
           {@const h = heldHeights?.[i] ?? 600}
           <section class="cat-section">
             <header>
@@ -667,9 +769,18 @@
                 {/each}
               </ul>
             {/if}
-            <ul class="grid" class:held={held(i)} style:contain-intrinsic-height={held(i) ? `auto ${h}px` : null} style:height={tiles ? null : `${h}px`} data-category={sec.stats.category} bind:this={gridEls[i]}>
+            <ul
+              class="grid"
+              class:held={held(i)}
+              class:partway={partway(i)}
+              class:shadeless={shadeless.has(sec.stats.category)}
+              style:contain-intrinsic-height={held(i) ? `auto ${h}px` : null}
+              style:height={madeAt(i) ? null : `${h}px`}
+              data-category={sec.stats.category}
+              bind:this={gridEls[i]}
+            >
               {#if tiles}
-              {#each sec.items as it (it.id)}
+              {#each tiles as it (it.id)}
                 {@const e = codex.items[it.id]}
                 <li>
                   {#if e}
@@ -1407,6 +1518,11 @@
   .grid.held {
     content-visibility: auto;
   }
+  /* Partway through its turn, the rows made so far stand at the top of the
+     grid's full height, as they will once all are in, not stretched to fill it. */
+  .grid.partway {
+    align-content: start;
+  }
   .cat-section header {
     display: flex;
     flex-wrap: wrap;
@@ -1496,8 +1612,9 @@
   /* Behind a dialog all the way in (an item window, say), dimmed to a third
      and blurred (lib/behindDialog.ts), without their shadows: Safari on a
      phone drew every shadow on screen again on each frame an item window drew
-     in above them, and it opened at 36fps on an iPhone (58 without). */
-  :global(:root[data-dialog-up]) button.tile .art img {
+     in above them, and it opened at 36fps on an iPhone (58 without). Only
+     those near the screen as it opened, the ones drawn (shadeless). */
+  :global(:root[data-dialog-up]) .grid.shadeless button.tile .art img {
     filter: none;
   }
   .name {
