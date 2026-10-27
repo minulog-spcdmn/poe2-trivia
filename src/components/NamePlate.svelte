@@ -194,72 +194,61 @@
   {/each}
 {/snippet}
 
-<!--
-  One end of the plate, in layers: `under` the tracery and the seal's well,
-  `over` the seal's ring and sign, and between them the seal's bloom (an
-  element of its own: see .bloom); `glow` all its lines, for the glow.
--->
-{#snippet cap(sign: 'sol' | 'luna' | 'empty', layer: 'glow' | 'under' | 'over')}
+<!-- One end of the plate. -->
+{#snippet cap(sign: 'sol' | 'luna' | 'empty')}
   <g class="end">
-    {#if layer !== 'over'}
-      <path d={GROUND} class="ground" />
-      <path d={SPANDREL_GROUND} class="ground leaf" />
-      <path d={SPINE_PATHS} class="draw fine" style:--d="0.6s" pathLength="100" />
-      <!-- The frame: the outer rule runs on from the spandrels, the inner from
-           the flames, on past the middle (as long as before: 70% of the plate, so
-           the pen keeps its pace) so they scale with the end; each end
-           is clipped at the middle (see plate()), so the two ends' rules meet
-           there instead of overlapping, which showed as a brighter stretch. -->
-      {#each [-1, 1] as side (side)}
-        <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="140%" y2={side * 29.5} class="draw rule metal thin" style:--d="0.6s" pathLength="100" />
-        <line x1={f(INNER_RULE_X)} y1={side * 26.5} x2="140%" y2={side * 26.5} class="draw rule metal" style:--d="1.1s" pathLength="100" />
-        <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="104%" y2={side * 29.5} class="spark" pathLength="100" />
-      {/each}
-      {@render moulding(END.spandrels)}
-      {@render moulding(END.ogees)}
-      {@render moulding(END.flames)}
-    {/if}
+    <path d={GROUND} class="ground" />
+    <path d={SPANDREL_GROUND} class="ground leaf" />
+    <path d={SPINE_PATHS} class="draw fine" style:--d="0.6s" pathLength="100" />
+    <!-- The frame: the outer rule runs on from the spandrels, the inner from
+         the flames, on past the middle (as long as before: 70% of the plate, so
+         the pen keeps its pace) so they scale with the end; each end
+         is clipped at the middle (see plate()), so the two ends' rules meet
+         there instead of overlapping, which showed as a brighter stretch. -->
+    {#each [-1, 1] as side (side)}
+      <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="140%" y2={side * 29.5} class="draw rule metal thin" style:--d="0.6s" pathLength="100" />
+      <line x1={f(INNER_RULE_X)} y1={side * 26.5} x2="140%" y2={side * 26.5} class="draw rule metal" style:--d="1.1s" pathLength="100" />
+      <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="104%" y2={side * 29.5} class="spark" pathLength="100" />
+    {/each}
+    {@render moulding(END.spandrels)}
+    {@render moulding(END.ogees)}
+    {@render moulding(END.flames)}
     <!-- The seal, pressed in like the circle's. -->
     <g class="seal" style:--d="0.3s">
-      {#if layer !== 'over'}
-        <circle cx={SEAL[0]} cy={SEAL[1]} r={SEAL_R + 1} class="well" />
-      {/if}
-      {#if layer !== 'under'}
-        {@render moulding(END.ring)}
-        {#if sign !== 'empty'}
-          <g class="sign" style:--d="0.7s" transform="translate({pt(SEAL)}) scale({f(SIGN_SCALE)})">
-            {#if sign === 'sol'}
-              <circle r="5" />
-              <circle r="1.1" />
-              <path d={SOL_RAYS} />
-            {:else}
-              <!-- Turned as on the circle, her horns facing out. -->
-              <g transform="rotate(180)">
-                <path d={LUNA} />
-                <path d={LUNA_HATCH} class="hatch" />
-              </g>
-            {/if}
-          </g>
-        {/if}
+      <circle cx={SEAL[0]} cy={SEAL[1]} r={SEAL_R + 1} class="well" />
+      {@render moulding(END.ring)}
+      {#if sign !== 'empty'}
+        <g class="sign" style:--d="0.7s" transform="translate({pt(SEAL)}) scale({f(SIGN_SCALE)})">
+          {#if sign === 'sol'}
+            <circle r="5" />
+            <circle r="1.1" />
+            <path d={SOL_RAYS} />
+          {:else}
+            <!-- Turned as on the circle, her horns facing out. -->
+            <g transform="rotate(180)">
+              <path d={LUNA} />
+              <path d={LUNA_HATCH} class="hatch" />
+            </g>
+          {/if}
+        </g>
       {/if}
     </g>
   </g>
 {/snippet}
 
-{#snippet plate(layer: 'glow' | 'under' | 'over')}
+{#snippet plate()}
   <!-- The ends, round the middle, each in its own half of the plate. -->
-  <svg width="50%" height="100%" overflow="hidden"><svg y="50%" overflow="visible">{@render cap(start, layer)}</svg></svg>
-  <svg x="50%" width="50%" height="100%" overflow="hidden"><svg x="100%" y="50%" overflow="visible"><g transform="scale(-1 1)">{@render cap(end, layer)}</g></svg></svg>
+  <svg width="50%" height="100%" overflow="hidden"><svg y="50%" overflow="visible">{@render cap(start)}</svg></svg>
+  <svg x="50%" width="50%" height="100%" overflow="hidden"><svg x="100%" y="50%" overflow="visible"><g transform="scale(-1 1)">{@render cap(end)}</g></svg></svg>
 {/snippet}
 
 <span class="plate" class:lit aria-hidden="true" bind:this={plateEl} style:--end-scale={endScale} style:--seal-x="{SOCKET_X}px" style:--bloom-r="{BLOOM_R}px">
   <span class="field {WEAVE_CLASS}"></span>
   <!-- The lines twice, as on the circle: a soft, wide copy for the glow, and the lines. -->
-  <svg class="art glow" width="100%" height="100%">{@render plate('glow')}</svg>
-  <svg class="art" width="100%" height="100%">{@render plate('under')}</svg>
-  <!-- Each seal's bloom of light, over its well and under its ring and sign
-       as it was in the seal: pressed in with the seal (.seal), flaring and
-       breathing as the seals light (.bloom). -->
+  <svg class="art glow" width="100%" height="100%">{@render plate()}</svg>
+  <svg class="art" width="100%" height="100%">{@render plate()}</svg>
+  <!-- Each seal's bloom of light, over the seal: pressed in with it (.seal),
+       flaring and breathing as the seals light (.bloom). -->
   {#each ['left', 'right'] as side (side)}
     <span class="seal bloom-at {side}" style:--d="0.3s">
       <span class="bloom">
@@ -276,7 +265,6 @@
       </span>
     </span>
   {/each}
-  <svg class="art" width="100%" height="100%">{@render plate('over')}</svg>
 </span>
 
 <style>
@@ -395,7 +383,10 @@
      the circle it was in the seal's SVG: it breathes for as long as the
      seals are lit, and in there that repainted the whole of the plate's
      lines every frame (WebKit gives no part of an SVG a layer of its own).
-     On a layer of its own it only fades, and nothing repaints. */
+     On a layer of its own it only fades, and nothing repaints. It lies over
+     the ring and sign too, where in the seal it lay under them: drawn in an
+     SVG of their own over its layer, they came out soft at the plate's right
+     end. */
   .bloom-at {
     position: absolute;
     top: calc(50% - var(--bloom-r) * var(--end-scale, 1));
@@ -424,6 +415,14 @@
     animation:
       flare 1.3s ease-out both,
       breathe 6s 1.3s ease-in-out infinite alternate;
+  }
+  /* Held at rest: cut to a blink by app.css's reduced motion, the breath ran
+     once and left the bloom drawn as it ended (0.22), half as bright as it
+     rests (0.45), till something happened to paint it again. */
+  @media (prefers-reduced-motion: reduce) {
+    .lit .bloom {
+      animation: none;
+    }
   }
   .seal {
     transform-box: fill-box;
