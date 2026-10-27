@@ -67,7 +67,8 @@ test('the game and every QA frame install it, the game no handler of its own', (
   for (const file of ['src/main.ts', 'src/qa/frame/boot.ts', 'src/qa/frame/piece.ts', 'src/qa/live/seat.ts']) {
     const src = readFileSync(file, 'utf8');
     assert.match(src, /lib\/noMenu(\.ts)?'/, `${file} imports lib/noMenu.ts`);
-    assert.match(src, /^\s*(noMenu\.)?installNoMenu\(\);$/m, `${file} calls installNoMenu()`);
+    // (The scene's and piece's frames call it through frame/optional.ts's lookup, so noMenu?.)
+    assert.match(src, /^\s*(noMenu\??\.)?installNoMenu\(\);$/m, `${file} calls installNoMenu()`);
   }
   assert.doesNotMatch(readFileSync('src/main.ts', 'utf8'), /addEventListener\('(contextmenu|dragstart)'/);
 });
