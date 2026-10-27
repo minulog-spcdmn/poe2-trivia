@@ -88,16 +88,12 @@ test('Delve ranges run from the top to the deepest one reached, gaps as zero', (
   assert.deepEqual(countsOf([], DAYS).delve.ranges, []);
 });
 
-test('a day with more Delve depths than runs ended is left out of the depths', () => {
-  // Oct 15: three ended, five depths (some counted twice). Old names count as ends too.
-  const l = countsOf([path('end/delve-online', [2, 3, 0]), path('end/delve', [0, 0, 1]), path('delve/depth-0-9', [2, 4, 1]), path('delve/depth-60-69', [0, 1, 0])], DAYS);
-  assert.deepEqual(l.delve.leftOut, ['2026-10-15']);
-  assert.equal(l.delve.total, 3);
-  assert.deepEqual(l.delve.ranges, [{ from: 0, count: 3 }]);
-  // A run ended just before midnight, its depth counted just after: the day after keeps its depths.
-  const late = countsOf([path('end/delve', [2, 1, 0]), path('delve/depth-0-9', [1, 2, 0])], DAYS);
-  assert.deepEqual(late.delve.leftOut, []);
-  assert.equal(late.delve.total, 3);
+test('a day with more Delve depths than runs ended keeps them all', () => {
+  // Oct 15: three ended, four depths. Before events went without a session, one player's runs in an evening counted their end once but each range once: the deep one is real.
+  const l = countsOf([path('end/delve-online', [2, 3, 0]), path('end/delve', [0, 0, 1]), path('delve/depth-0-9', [2, 3, 1]), path('delve/depth-60-69', [0, 1, 0])], DAYS);
+  assert.equal(l.delve.total, 7);
+  assert.deepEqual(l.delve.ranges.at(-1), { from: 60, count: 1 });
+  assert.equal(l.delve.ranges.length, 7);
 });
 
 test('a total is of the days asked for alone, not all the call read', () => {
