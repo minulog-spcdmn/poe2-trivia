@@ -34,8 +34,10 @@ const MESSAGE: Record<TipFor, () => string> = {
   ios: () => 'Tap Share, then Add to Home Screen, to play in fullscreen.',
 };
 
-/** Puts the tip up (the lab shows each this way too, leaving the counts alone). */
-export const showTip = (tipFor: TipFor = fullscreenNow().install ?? 'desktop') => toasts.show(MESSAGE[tipFor](), 'info', { title: TITLE });
+export const tipText = (tipFor: TipFor) => MESSAGE[tipFor]();
+
+/** Puts the tip up (the lab and the QA desk show each this way too, leaving the counts alone). */
+export const showTip = (tipFor: TipFor = fullscreenNow().install ?? 'desktop') => toasts.show(tipText(tipFor), 'info', { title: TITLE });
 
 /** Whether this window is due a tip at all, counts aside: a desktop not fullscreen, or a phone or tablet that could add the game to its home screen. */
 const wants = (s: FullscreenState) => (s.desktop ? !s.fullscreen : s.install !== null);

@@ -730,8 +730,9 @@ they're worth more sigils than are unlocked already. Kept in this browser (`src/
     it's hidden only once its player leaves the page. Text fields get an
     engraved I-beam. With Windows' high contrast on, the system's own
     cursors come back. Text fields don't offer autofill, and a right click
-    brings no browser menu (but in a text field), since both show the
-    system's cursor. Scrolling with the middle
+    brings no browser menu (but in a text field or on a link), since both
+    show the system's cursor; a long press on the room code or the sync code
+    still brings a phone's Copy (`src/lib/noMenu.ts`). Scrolling with the middle
     button (Windows and Linux, where browsers do it) is the game's own
     (`src/lib/autoscroll.ts`), so it can wear the look: a seal where it
     began, with the ways left to go, and a dart pointing the way it scrolls.

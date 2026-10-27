@@ -108,15 +108,28 @@ export function nameRefusal(name: string): NameRefusal | null {
 /** Whether this device can play under a name: long enough, not reserved, not held. */
 export const nameUsable = (name: string) => nameRefusal(name) === null;
 
+/** What nameProblem says of an empty name. */
+const NAME_EMPTY = 'Please enter a name with at least one letter or number.';
+/** How nameProblem ends the rest of what it says. */
+const PICK_ANOTHER = 'Pick another name.';
+
+/** Whether a host's refusal is nameProblem's, about the name (the thing to change), not the room (full, locked, an old version). */
+export const isNameProblem = (message: string) => message === NAME_EMPTY || message === NAME_TOO_SHORT || message.endsWith(PICK_ANOTHER);
+
 /** Returns why a name is not allowed, or null if it's fine. */
 export function nameProblem(name: string, others: string[]): string | null {
-  if (!name) return 'Please enter a name with at least one letter or number.';
+  if (!name) return NAME_EMPTY;
   if (nameTooShort(name)) return NAME_TOO_SHORT;
   // Doesn't repeat the name back, which would show it to the host when it's turned down at the door.
   if (offensive(name)) return 'That name is not allowed. Pick another name.';
   const skel = nameSkeleton(name);
   if (RESERVED.has(skel) || RESERVED.has(name.toLowerCase().replace(/[^a-z]/g, '')))
     return `“${name}” is reserved. Pick another name.`;
+  // The same name, told plainly: at a convention two players often bring the
+  // same one, and "looks too much like" itself reads as a fault in the check.
+  const lower = name.toLowerCase();
+  const same = others.find((o) => o.toLowerCase() === lower);
+  if (same) return `Someone here is already called “${same}”. Pick another name.`;
   const clash = others.find((o) => nameSkeleton(o) === skel);
   if (clash) return `“${name}” looks too much like “${clash}”. Pick another name.`;
   return null;

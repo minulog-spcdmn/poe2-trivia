@@ -3,7 +3,7 @@
   import { flip } from 'svelte/animate';
   import { fade, fly } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
-  import { phone } from '../lib/layout';
+  import { flat, phone } from '../lib/layout';
   import { toasts, type ToastKind } from '../lib/toasts.svelte';
   import { playerColor } from '../lib/ui';
   import { heraldNotice, twinkle } from '../lib/fx/moments';
@@ -19,21 +19,49 @@
   /** Height of the app header, if one is showing: phones keep the stack below it, clear of its buttons. */
   let { headerHeight = 0 }: { headerHeight?: number } = $props();
 
-  // Bottom right on wide screens. On phones the stack sits at the top instead:
-  // the keyboard covers the bottom while typing a name or code, and the answer
+  // Bottom right on wide screens, and on a phone on its side (lib/layout.ts
+  // `flat`). On an upright phone the stack sits at the top instead: the
+  // keyboard covers the bottom while typing a name or code, and the answer
   // buttons are down there during a game.
   const narrow = $derived(phone.current);
+  const side = $derived(flat.current);
   const enter = $derived(narrow ? { y: -24, duration: 320 } : { x: 56, duration: 320 });
 
   // A guest's lost connection to the host stays up (with what to do about it)
   // until it's back or they leave.
   const lost = $derived(session.mode === 'client' && session.status === 'lost');
 
-  // Phones show fewer at once, so a burst of news can't cover the game. The
-  // lost connection takes one of the places.
+  // Phones show fewer at once, so a burst of news can't cover the game: on
+  // its side one, over the answers in the right half. Elsewhere the lost
+  // connection takes one of the places; on its side it can't, or news would
+  // have none.
   $effect(() => {
-    const max = (narrow ? 2 : 6) - (lost ? 1 : 0);
+    const max = side ? 1 : (narrow ? 2 : 6) - (lost ? 1 : 0);
     untrack(() => toasts.setMax(max));
+  });
+
+  // The stack is fixed to the layout viewport, but with the iOS keyboard up
+  // what the player sees is the visual viewport: shorter, and scrolled down
+  // the page to keep the field in view. At the layout viewport's top a notice
+  // about the name or code being typed would sit half or wholly above the
+  // screen, so on phones the stack follows the visual viewport's top down
+  // once the header it keeps under has scrolled away with the page. Only how
+  // far down that top is comes from here; where the stack goes for it is the
+  // stylesheet's (.toasts.narrow's top), so its gaps are written once.
+  let visualTop = $state(0);
+  $effect(() => {
+    const vv = window.visualViewport;
+    if (!narrow || !vv) return;
+    // (A negative reading, an overscroll, leaves the stack where it is.)
+    const follow = () => (visualTop = Math.max(0, vv.offsetTop));
+    follow();
+    vv.addEventListener('scroll', follow);
+    vv.addEventListener('resize', follow);
+    return () => {
+      vv.removeEventListener('scroll', follow);
+      vv.removeEventListener('resize', follow);
+      visualTop = 0;
+    };
   });
 
   /** Svelte action: a little sparkle as good news arrives (gold round the creator's notice). */
@@ -60,6 +88,7 @@
   data-behind-dialog
   class:narrow
   style:--header="{headerHeight}px"
+  style:--visual-top={narrow ? `${visualTop}px` : null}
   role="region"
   aria-label="Notifications"
   aria-live="polite"
@@ -144,9 +173,13 @@
     width: min(330px, calc(100vw - 44px));
     pointer-events: none;
   }
-  /* Phones: across the top, newest first. */
+  /* Phones: across the top, newest first: 6px under the header, or 10px down
+     and clear of the notch. While the keyboard is up, what shows is scrolled
+     down the page (--visual-top above) and the header goes up with the page:
+     the stack keeps under what still shows of it, and once that is less than
+     the gap, the same 10px (or the notch) below the top of what shows. */
   .toasts.narrow {
-    top: max(calc(var(--header) + 6px), 10px, env(safe-area-inset-top));
+    top: max(calc(var(--header) + 6px), calc(var(--visual-top, 0px) + max(10px, env(safe-area-inset-top))));
     bottom: auto;
     left: max(10px, env(safe-area-inset-left));
     right: max(10px, env(safe-area-inset-right));

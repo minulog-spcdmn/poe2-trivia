@@ -3525,6 +3525,31 @@
       grid-template-columns: minmax(0, 1.4fr) minmax(0, 3fr);
     }
   }
+  /* A phone's browser on its side under 336 tall, a fractional height such
+     as 335.2 too (Chrome on an Android phone, its bars up, leaves 285 to
+     310; the iPhone's 340 has room enough): the room under the task line is
+     too short for three rows of names in two lines each. So five or six
+     names take the art's width too, as seven do, and stay on one line; and
+     seven or eight take the ten's slimmer rows, four of them in the room. */
+  @media (orientation: landscape) and (height < 336px) and (min-width: 760px) {
+    .stage:has(> .options > :nth-child(5)) {
+      grid-template-columns: minmax(0, 1.4fr) minmax(0, 3fr);
+    }
+  }
+  @media (orientation: landscape) and (height < 336px) and (min-width: 561px) {
+    .options.compact .option {
+      padding-block: 0;
+      gap: 0.45rem;
+    }
+    .options.compact .option .key {
+      width: 20px;
+      height: 20px;
+      font-size: 0.64rem;
+    }
+    .options.compact .text {
+      line-height: 1.1;
+    }
+  }
   /* A phone upright (lib/layout.ts `upright`): the question fills the room
      Game.svelte leaves it under the banner, and no more. The answers keep a
      thumb's height and the row under them (the result and Next, in the flow:
@@ -3545,9 +3570,19 @@
       font-size: 1.1rem;
       line-height: 1.3;
     }
-    /* The reveal's sentence in the task's place, the size it has beside the verdict. */
+    /* The reveal's sentence in the task's place, the size it has beside the
+       verdict, on lines as tall as the task's (1.1rem at 1.3, above: 1.43 of
+       its 1rem), and the +1's bigger figure inside them: the art under it
+       gave up 5px as the sentence came in, which shook the circle behind it.
+       The losses' smaller lines under it keep the height they had. */
     .task-text.outcome {
       font-size: 1rem;
+      line-height: 1.43;
+    }
+    .task-text.outcome b.good {
+      line-height: 0;
+    }
+    .task-text.outcome .losses {
       line-height: 1.25;
     }
     .stage {

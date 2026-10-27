@@ -99,3 +99,39 @@ test("the cards' corners are --filigree's images, in its order and size", () => 
   assert.equal(corners('mask-position', '.card.dm .corners'), order);
   for (const l of layers) assert.equal(l[2]!.trim(), corners('background-size'));
 });
+
+// ---- face down in the deal --------------------------------------------------
+// The CSS reads .down from the card itself, so the deal must put it there:
+// once the turn sat inside .sides, a class on the turn's parent landed on
+// .sides, and the cards were dealt with no back, their faces mirrored and
+// upside down (WebKit) or blank (Chromium) until they stood on edge. And the
+// sides swap on the turn's own clock: a timer counted from the deal ran ahead
+// of the turn, which starts only after the mount's long frame.
+
+const SCRIPT = SOURCE.slice(0, SOURCE.indexOf('<style>'));
+const DEAL = (() => {
+  const from = SCRIPT.indexOf('function deal(');
+  assert.ok(from >= 0, 'the deal transition (function deal) is there');
+  return SCRIPT.slice(from, SCRIPT.indexOf('\n  }\n', from));
+})();
+
+test('every .down in the CSS is read from the card itself', () => {
+  let seen = 0;
+  CSS.walkRules((r) => {
+    for (const s of r.selectors)
+      for (const part of s.split(/\s+|[>+~]/))
+        if (part.includes(':global(.down)')) {
+          seen++;
+          assert.match(part, /^\.card(?=[.:]|$)/, `${s}: .down is put on the card (.card:global(.down)), so it must be read there`);
+        }
+  });
+  assert.ok(seen >= 10, 'found the face-down rules');
+});
+
+test("the deal puts .down on the card, and takes it off on the turn's own clock", () => {
+  const holder = DEAL.match(/(\w+)\??\.classList\.add\('down'\)/)?.[1];
+  assert.ok(holder, 'the deal adds .down');
+  assert.ok(DEAL.includes(`const ${holder} = node.closest('.card');`), `the deal adds .down to ${holder}, which must be node.closest('.card'): the CSS reads it from the card, and the turn sits inside .sides`);
+  assert.doesNotMatch(DEAL, /setTimeout\([^;]*'down'/, "a timer counted from the deal runs ahead of the turn; take .down off in the transition's tick");
+  assert.match(DEAL, /tick: \([^)]*\) => \{[\s\S]*classList\.remove\('down'\)/, "the deal takes .down off in its tick, on the turn's own clock");
+});

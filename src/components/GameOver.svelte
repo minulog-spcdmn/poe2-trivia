@@ -58,6 +58,7 @@
   import { loadCodex } from '../lib/codex';
   import { achievementById, type Achievement } from '../lib/achievements';
   import { readsShellHeights } from '../lib/shellHeights.svelte';
+  import { backGuard } from '../lib/backGuard';
 
   // Its styles read the shell's --header-h and --legal-h (App.svelte).
   readsShellHeights();
@@ -265,6 +266,11 @@
   // ---- the item window ------------------------------------------------------
   let CodexItem = $state<typeof import('./CodexItem.svelte').default | null>(null);
   let open = $state<import('../lib/game').Item | null>(null);
+  // Open, the browser's back closes it before it would ask to leave the room (lib/backGuard.ts).
+  const itemOpen = $derived(!!open);
+  $effect(() => {
+    if (itemOpen) return backGuard.layer(() => (open = null));
+  });
   function inspect(id: string) {
     const it = engine.byId.get(id);
     if (!it) return;

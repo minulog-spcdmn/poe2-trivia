@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanName, initialOf, isHeldName, nameProblem, nameSkeleton } from '../src/lib/names.ts';
+import { NAME_TOO_SHORT, cleanName, initialOf, isHeldName, isNameProblem, nameProblem, nameSkeleton } from '../src/lib/names.ts';
 import { offensive } from '../src/lib/offensive.ts';
 
 test("a name's initial is its first letter, capitalised, whole even when it takes two code units", () => {
@@ -26,10 +26,17 @@ test('look-alike letters from any script count as the Latin letters they pass fo
   assert.equal(nameProblem('さくら', ['Bob']), null);
   assert.equal(nameProblem('هاني', ['هادي']), null);
   assert.equal(nameProblem('حامد', ['דוד']), null);
-  assert.match(nameProblem('هادي', ['هادي']) ?? '', /looks too much like/);
+  assert.match(nameProblem('هادي', ['هادي']) ?? '', /already called/);
   // Modifier letters draw as signs (a tatweel, an apostrophe), and some letters as a stroke: none make another name.
   for (const fake of ['zoeـarcana', 'zoe_arcanaʼ', 'zoe一arcana', 'zoeㅡarcana']) assert.ok(isHeldName(fake), fake);
   assert.match(nameProblem('Boـb', ['Bob']) ?? '', /looks too much like/);
+});
+
+test('a name already taken says so plainly, in any case; a look-alike still says it looks like one', () => {
+  assert.equal(nameProblem('Pixel', ['Pixel']), 'Someone here is already called “Pixel”. Pick another name.');
+  assert.equal(nameProblem('pixel', ['Alva', 'PIXEL']), 'Someone here is already called “PIXEL”. Pick another name.');
+  assert.equal(nameProblem('Pixe1', ['Pixel']), '“Pixe1” looks too much like “Pixel”. Pick another name.');
+  assert.equal(nameProblem('Pixel', ['Pixie']), null);
 });
 
 test('characters that draw nothing, or many letters wide, are taken out of a name', () => {
@@ -47,4 +54,16 @@ test('the word filter sees through look-alike letters too', () => {
   assert.ok(offensive('nіggеr'), 'Cyrillic і and е');
   assert.ok(offensive('ɴigger'), 'a Latin small capital');
   assert.equal(offensive('Zoe Arcana'), false);
+});
+
+test("a host's refusal is told apart: the name's, which the start page puts the player back on, from the room's", () => {
+  // Every way nameProblem turns a name down.
+  for (const [name, others] of [['', []], ['K', []], ['admin', []], ['Una', ['una']], ['Una1', ['UnaI']]] as [string, string[]][]) {
+    const said = nameProblem(name, others);
+    assert.ok(said, name);
+    assert.ok(isNameProblem(said), said);
+  }
+  assert.ok(isNameProblem(NAME_TOO_SHORT));
+  // The room's own refusals: the name was fine.
+  for (const said of ['The lobby is full.', 'The host has locked this room.', 'Not allowed.']) assert.equal(isNameProblem(said), false, said);
 });

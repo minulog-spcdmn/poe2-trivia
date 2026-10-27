@@ -33,6 +33,7 @@
   import { dealing } from '../lib/dealing.svelte';
   import { arrival, speak } from '../lib/zoneArrival.svelte';
   import { closeItemWindow, itemWindow } from '../lib/itemWindow.svelte';
+  import { backGuard } from '../lib/backGuard';
   import ItemWindow from './ItemWindow.svelte';
   import { warmGame } from './gameCircles.svelte';
   import { backdropDropShadow } from '../lib/backdropDropShadow';
@@ -45,6 +46,12 @@
   const local = $derived(session.mode === 'local');
   // An item opened from a question stays open from one question to the next, until the game ends.
   onMount(() => closeItemWindow);
+  // Open, the browser's back closes it before anything under it (lib/backGuard.ts); off
+  // as it's closed, not once its flight away is done, so a Back meanwhile isn't lost on it.
+  const itemOpen = $derived(!!itemWindow.item);
+  $effect(() => {
+    if (itemOpen) return backGuard.layer(closeItemWindow);
+  });
   // The name plate's weave, ready before the first question shows one.
   onMount(warmWeave);
 
@@ -146,6 +153,41 @@
   function bannerFx(node: HTMLElement, o: { color: string; big: boolean }) {
     const t = setTimeout(() => turnBanner(node, o.color, o.big));
     return { destroy: () => clearTimeout(t) };
+  }
+
+  /**
+   * Svelte action: the banner's line kept to the screen's width, its size
+   * shrunk as far as it must (as GameOver's headline is): a long name's turn
+   * would run off both edges of an upright phone. The rules beside it keep
+   * their least width. A line that fits is left at its size.
+   */
+  function bannerFit(node: HTMLElement, _title: string) {
+    const banner = node.parentElement!;
+    const size = () => {
+      node.style.fontSize = '';
+      const gap = parseFloat(getComputedStyle(banner).columnGap) || 0;
+      const rule = node.previousElementSibling ? parseFloat(getComputedStyle(node.previousElementSibling).minWidth) || 0 : 0;
+      const room = banner.clientWidth - 2 * (gap + rule);
+      // Measured at its resting spacing (--banner-track): the entrance opens it wide at first, and it closes again.
+      node.style.setProperty('letter-spacing', 'var(--banner-track)', 'important');
+      const w = node.getBoundingClientRect().width;
+      node.style.removeProperty('letter-spacing');
+      // Floored, so the line never ends a fraction of a pixel past its room.
+      if (room > 0 && w > room) node.style.fontSize = `${Math.floor((parseFloat(getComputedStyle(node).fontSize) * room) / w)}px`;
+    };
+    size();
+    // Again as its font comes in (it may only start loading once the title asks for it), and as the column changes (a phone turned).
+    void document.fonts?.ready.then(size);
+    document.fonts?.addEventListener('loadingdone', size);
+    const ro = new ResizeObserver(size);
+    ro.observe(banner);
+    return {
+      update: size,
+      destroy: () => {
+        ro.disconnect();
+        document.fonts?.removeEventListener('loadingdone', size);
+      },
+    };
   }
 
   /** Svelte action: the deathmatch intro's title bursts in. */
@@ -426,7 +468,7 @@
             {/if}
             <div class="banner" class:dm={!!dm} style:--c={bannerColor}>
               <span class="rule"></span>
-              <h2 class:start={startsRun} use:bannerFx={{ color: bannerColor, big: bannerBig }} use:backdropDropShadow>{bannerTitle}</h2>
+              <h2 class:start={startsRun} use:bannerFit={bannerTitle} use:bannerFx={{ color: bannerColor, big: bannerBig }} use:backdropDropShadow>{bannerTitle}</h2>
               <span class="rule"></span>
             </div>
           </div>
@@ -676,6 +718,9 @@
     --drop-shadow: 0 3px 12px rgba(0, 0, 0, 0.9), 0 0 24px color-mix(in srgb, var(--c), transparent 40%);
     text-shadow: var(--drop-shadow-paint, var(--drop-shadow));
     animation: arrive 0.9s var(--ease-out) both;
+    /* Its resting spacing (h1-h3's, app.css), named so bannerFit measures at it. */
+    --banner-track: 0.04em;
+    letter-spacing: var(--banner-track);
     text-align: center;
     white-space: nowrap;
     /* One line, so no leading over and under it: the space round the banner is its margins. */
@@ -902,8 +947,9 @@
       container: slot / inline-size;
     }
   }
-  /* A phone's browser on its side, the address bar up: the banner closer. */
-  @media (orientation: landscape) and (max-height: 350px) and (min-width: 561px) {
+  /* A phone's browser on its side, the address bar up: the banner closer
+     (from where the lines round ChooseCategory's cards close up, 357px). */
+  @media (orientation: landscape) and (max-height: 357px) and (min-width: 561px) {
     .banner {
       margin: 0.15rem 0 0.2rem;
     }

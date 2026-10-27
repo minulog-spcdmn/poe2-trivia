@@ -9,6 +9,7 @@ import { freeze, installFreeze } from './freeze.ts';
 import { check, listen, outline } from './checks.ts';
 import { settle } from './settle.ts';
 import { handOnKeys, trackWebgl } from './boot.ts';
+import { maybe } from './optional.ts';
 import { isSizeKey, sizeOf } from '../sizes.ts';
 import { deskOrigin, isDeskMessage, type FrameMessage } from '../messages.ts';
 import { valuesOf, type PieceBench, type Values } from '../bench.ts';
@@ -52,7 +53,7 @@ export async function bootPiece(asked: URLSearchParams) {
   const bench = await pieceOf(asked.get('b'));
   if (!bench) throw new Error(`No bench called ${asked.get('b')}.`);
   await import('../../app.css');
-  const [{ mount }, { default: Host }, { piece, fire }, { default: View }, sound, spatial, fxUi, cursor, autoscroll, { switchedOff }] = await Promise.all([
+  const [{ mount }, { default: Host }, { piece, fire }, { default: View }, sound, spatial, fxUi, cursor, autoscroll, noMenu, { switchedOff }] = await Promise.all([
     import('svelte'),
     import('./PieceHost.svelte'),
     import('./pieceState.svelte.ts'),
@@ -62,6 +63,7 @@ export async function bootPiece(asked: URLSearchParams) {
     import('../../lib/fx/ui.ts'),
     import('../../lib/ownCursor.ts'),
     import('../../lib/autoscroll.ts'),
+    maybe('../../lib/noMenu.ts'),
     import('../../lib/switchedOff.ts'),
   ]);
   piece.values = valuesOf(bench.controls, Object.fromEntries([...asked].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v])));
@@ -70,6 +72,7 @@ export async function bootPiece(asked: URLSearchParams) {
   fxUi.installUiFx();
   if (!switchedOff('cursor')) cursor.installCursor();
   autoscroll.installAutoscroll();
+  noMenu?.installNoMenu();
 
   const slot = asked.get('frame') ?? '';
   const tell = (m: FrameMessage) => parent.postMessage(m, deskOrigin(asked));

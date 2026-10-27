@@ -34,6 +34,7 @@
   import RoomCodeGlyphs from './RoomCodeGlyphs.svelte';
   import { greyed, markOf, missingNote, notReady, type Mark, type Missing } from '../lib/presence';
   import StandingMark from './StandingMark.svelte';
+  import { backGuard } from '../lib/backGuard';
 
   const TARGETS = [5, 10, 15, 20];
   const MODES: { id: GameMode; name: string; isNew?: boolean }[] = [
@@ -246,6 +247,12 @@
   const race = $derived(s.settings.mode === 'race');
   const delve = $derived(s.settings.mode === 'delve');
   const difficulty = $derived(difficultyOf(s.settings.difficulty));
+  /** Host only: the custom difficulty's editor, open. */
+  const editorOpen = $derived(editing && isHost && difficulty === 'custom' && !delve);
+  // Open, the browser's back closes it, before it would ask to leave the room (lib/backGuard.ts).
+  $effect(() => {
+    if (editorOpen) return backGuard.layer(() => (editing = false));
+  });
   const lockout = $derived(rulesFor(s.settings).lockout);
   /** Online: each player's mark, when not simply ready (lib/presence.ts: away, idle, lagging or offline); those at the host's screen share the host's. */
   const marks = $derived(new Map<string, Mark | null>(s.players.map((p) => [p.id, local ? null : markOf(p.connected, session.standing[p.local ? (s.hostId ?? p.id) : p.id])])));
@@ -300,7 +307,7 @@
 <!-- The field a player at this screen is added by (on one device, or at a room host's screen). -->
 {#snippet adder(placeholder: string)}
   <form class="add" onsubmit={addLocal}>
-    <input class="field" class:shake={nameError} bind:value={newName} maxlength={MAX_NAME} autocomplete="off" spellcheck="false" {placeholder} aria-label={placeholder} />
+    <input class="field" class:shake={nameError} bind:value={newName} maxlength={MAX_NAME} autocomplete="off" spellcheck="false" autocorrect="off" {placeholder} aria-label={placeholder} />
     <button class="btn" type="submit" disabled={nameTooShort(newName)}>Add</button>
   </form>
 {/snippet}
@@ -656,7 +663,7 @@
 
 <svelte:window onkeydown={disarm} onpointerdown={disarmOutside} />
 
-{#if editing && isHost && difficulty === 'custom' && !delve}
+{#if editorOpen}
   <CustomDifficulty onclose={() => (editing = false)} />
 {/if}
 

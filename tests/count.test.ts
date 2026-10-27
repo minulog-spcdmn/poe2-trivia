@@ -12,6 +12,7 @@ import {
   countEvent,
   countReach,
   countScriptErrors,
+  countFailedImport,
   countTime,
   countVisit,
   countPage,
@@ -73,6 +74,7 @@ test('outside a browser nothing is counted, and nothing throws', () => {
     countReach('reach/codex');
     countTime();
     countScriptErrors();
+    countFailedImport();
   });
 });
 

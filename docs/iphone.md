@@ -212,6 +212,8 @@ with its numbers in the comments.
 
 Still open: Begin's worst frame, about 230 to 285 ms. About 70 ms of it is
 script mounting the game screen and about 140 ms its styles, layout and
-paint; a frame or two later `rumble()` (`src/lib/sound.ts`) makes its 6 s
-noise buffer in one go (about 75 ms), the cave-in sound's steps follow,
-and an item's details parse in about 60 ms.
+paint; a frame or two later the cave-in sound's steps follow, and an
+item's details parse in about 60 ms. The rumble's 6 s noise buffer, which
+took about 75 ms of that time in one go, is now worked out in a worker
+(`src/lib/rumbleWorker.ts`, its samples in `src/lib/rumbleNoise.ts`); a
+trace from the phone still has to show it gone from the main thread.

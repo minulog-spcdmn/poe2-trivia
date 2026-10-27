@@ -10,6 +10,7 @@ import type { AtRule, Node, Rule } from 'postcss';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { backdropsErrors, formatBackdrops, type Backdrops } from './src/lib/backdropData.ts';
 import { PROFILE_NAMES } from './src/lib/emberProfiles.ts';
+import { preloadedWith } from './src/lib/retriedPages.ts';
 import { glslMinify } from './glslMinify.ts';
 import { keyframesFirst } from './keyframesFirst.ts';
 import { polyfillsFirst, polyfillsScript } from './polyfillsFirst.ts';
@@ -339,6 +340,11 @@ export default defineConfig(({ command, mode }) => {
     // Module workers, so one (the plates', lib/plateWorker.ts) can load only what it's asked for.
     worker: { format: 'es' },
     build: {
+      // The codex's and the settings' chunks are linked ahead without their
+      // imports, so a dropped connection that fails them leaves those to be
+      // fetched once it's back (lib/retriedPages.ts). The codex is fetched ahead
+      // in the background, so it waits for them there, not as it opens.
+      modulePreload: { resolveDependencies: preloadedWith },
       rollupOptions: {
         // Legal pages are plain static pages that work without JavaScript; only the privacy page's opt-out switch needs it.
         input: {

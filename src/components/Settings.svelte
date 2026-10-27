@@ -298,6 +298,7 @@
             aria-label="Your name"
             autocomplete="off"
             spellcheck="false"
+            autocorrect="off"
             enterkeyhint="done"
           />
           <button class="btn" type="submit" disabled={draft.trim() === name}>Save</button>
@@ -396,11 +397,12 @@
 {/snippet}
 
 <style>
-  /* The lobby's stage: the start page's columns, at their sizes. */
+  /* The lobby's stage: the start page's columns, at their sizes, its sides
+     clear of a phone's notch on its side, as the lobby's are. */
   .settings {
     width: min(980px, 100%);
     margin: 0 auto;
-    padding: 1.5rem 1rem 3rem;
+    padding: 1.5rem max(1rem, env(safe-area-inset-right)) 3rem max(1rem, env(safe-area-inset-left));
   }
   /* In the sheet over a game: the sheet's width, its padding the only margin. */
   .settings.over {

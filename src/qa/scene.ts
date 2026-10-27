@@ -8,7 +8,9 @@ import type { Answer } from '../lib/codex.ts';
 import type { DelveRun } from '../lib/delveRecord.ts';
 import type { RoomInfo } from '../lib/roomInfo.ts';
 import type { PlateName } from '../lib/plates/index.ts';
+import type { RetriedPage } from '../lib/retriedPages.ts';
 import type { SizeKey } from './sizes.ts';
+import type { ToastKind, ToastOptions } from '../lib/toasts.svelte.ts';
 import type { Control, State, Values } from './bench.ts';
 
 /** Where in the game a scene is: the desk groups and orders them by it. */
@@ -37,12 +39,22 @@ export interface Seat {
 export type Step =
   /** Clicks the first element `selector` finds. */
   | { click: string }
+  /** Types `text` into the first field `fill` finds, as typing it would (its input event). */
+  | { fill: string; text: string }
   /** Waits (ms). */
   | { wait: number }
   /** The room turns this device out, as the host's word for it would (session.labFail). */
   | { fail: 'kicked' | 'closed' | 'replaced' }
+  /** Joining the room gives up, as each way a join can fail says so (session.labJoinFail). */
+  | { joinFail: 'missing' | 'blocked' | 'server' }
+  /** The room turns this device's join down with this message, as the host's error for it would (session.labRefuse), once the join is under way. */
+  | { refused: string }
   /** The app crashes, once or twice in a row (Root.svelte's recovery). */
   | { crash: 1 | 2 }
+  /** A notice arrives (lib/toasts.svelte.ts), worded as the game words it (an achievement earned, say: lib/achievementToasts.ts); it stays up, its fuse held, until closed. */
+  | { toast: string; kind?: ToastKind; opts?: ToastOptions }
+  /** The browser's back (Android's button, an iPhone's swipe), on the frame's history of its own (lib/backGuard.ts). */
+  | { back: true }
   /**
    * The room moves on to `state` (the scene's game played on: dynamite going
    * off, an answer given), its clock standing still at `at` (host clock, ms),
@@ -98,6 +110,8 @@ export interface Built {
   stored?: Record<string, string>;
   /** The circle behind the end screen, instead of the one the game falls to (components/gameCircles.svelte.ts). */
   circle?: PlateName | null;
+  /** A page whose chunk never comes, as with the Wi-Fi gone as it's fetched (lib/chunkRetry.ts): what a player gets then. */
+  lost?: RetriedPage;
   /** How this device's sync stands (lib/sync/link.svelte.ts: the frame never syncs, so this is all there is). Missing: not paired. */
   sync?: { code: string; met: boolean; status: 'connecting' | 'waiting' | 'linked' | 'offline'; linked?: number; lastAt?: number };
 }

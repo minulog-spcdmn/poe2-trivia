@@ -38,6 +38,7 @@ import { showAura } from './aura';
 import { light, pulseMood, setMood } from '../lights';
 import { CALM, embers as backdropEmbers } from '../backdropEmbers';
 import { burnsBlue } from './streaks';
+import { restingBox } from '../flyIn';
 import type { FindKind } from '../delve';
 import { WARD_BREAK } from '../inventoryArt';
 
@@ -1462,11 +1463,15 @@ export function connecting(at: Element, radius = 46): Handle {
   return portal(at, { radius });
 }
 
-/** A small celebratory twinkle (link copied, setting changed). */
+/**
+ * A small celebratory twinkle (link copied, setting changed). On something
+ * still flying in (a toast, as it arrives) it plays where that comes to rest.
+ */
 export function twinkle(at: Anchor, color: Vec3 = C.goldPale) {
-  if (!fxActive()) return;
-  glints(at, { count: 5, size: [4, 8], color, delay: [0, 0.3] });
-  sparks(at, { count: 10, area: 'edge', speed: [60, 200], gravity: 100, life: [0.3, 0.6] });
+  if (!fxActive() || detached(at)) return;
+  const box = at instanceof Element ? restingBox(at) : at;
+  glints(box, { count: 5, size: [4, 8], color, delay: [0, 0.3] });
+  sparks(box, { count: 10, area: 'edge', speed: [60, 200], gravity: 100, life: [0.3, 0.6] });
 }
 
 /** A rejected input: red sparks and a jolt. */

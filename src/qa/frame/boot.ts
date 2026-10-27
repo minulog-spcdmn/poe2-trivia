@@ -10,6 +10,7 @@ import { emulate } from './emulate.ts';
 import { freeze, installFreeze } from './freeze.ts';
 import { check, listen, outline } from './checks.ts';
 import { settle } from './settle.ts';
+import { maybe } from './optional.ts';
 import { isSizeKey, sizeOf } from '../sizes.ts';
 import { deskOrigin, isDeskMessage, type FrameMessage } from '../messages.ts';
 import { seatsIn, type Seat } from '../scene.ts';
@@ -81,8 +82,19 @@ export async function boot(asked: URLSearchParams) {
   if (!scene || !built || !seat) throw new Error(`No scene called ${key}${scene ? ` with a seat ${asked.get('seat')}` : ''}.`);
   if (built.query || built.hash) history.replaceState(null, '', `${location.pathname}?${asked}${built.query ? `&${built.query}` : ''}${built.hash ?? ''}`);
 
+  // The browser's back in a room (lib/backGuard.ts) on a history of the frame's own: its guard,
+  // and the steps the codex's item card puts up, never go into the desk's (whose back steps
+  // through the benches), and a scene's { back } goes back on it.
+  // (Looked up rather than imported, as are noMenu.ts and chunkRetry.ts below: ./optional.ts.)
+  const guard = await maybe('../../lib/backGuard.ts');
+  const steps = guard?.memorySteps();
+  if (guard && steps) {
+    guard.backGuard.use(steps);
+    guard.pageLayers.use(steps);
+  }
+
   await import('../../app.css');
-  const [{ mount }, { default: Root }, codex, records, daily, rooms, sound, spatial, fxUi, cursor, autoscroll, { switchedOff }, { toasts }, game, media] = await Promise.all([
+  const [{ mount }, { default: Root }, codex, records, daily, rooms, sound, spatial, fxUi, cursor, autoscroll, noMenu, { switchedOff }, { toasts }, game, media] = await Promise.all([
     import('svelte'),
     import('../../Root.svelte'),
     import('../../lib/codex.ts'),
@@ -94,6 +106,7 @@ export async function boot(asked: URLSearchParams) {
     import('../../lib/fx/ui.ts'),
     import('../../lib/ownCursor.ts'),
     import('../../lib/autoscroll.ts'),
+    maybe('../../lib/noMenu.ts'),
     import('../../lib/switchedOff.ts'),
     import('../../lib/toasts.svelte.ts'),
     import('../../lib/game.ts'),
@@ -133,6 +146,8 @@ export async function boot(asked: URLSearchParams) {
     const { sync } = await import('../../lib/sync/link.svelte.ts');
     Object.assign(sync, { linked: 0, ...built.sync });
   }
+  // A page that never comes (only where the scene says, as with sync's link).
+  if (built.lost) (await maybe('../../lib/chunkRetry.ts'))?.loseOnCue(built.lost);
   // The tip to play fullscreen is about the desk's own window, never the scene's (lib/fullscreenTip.ts): taken as read.
   storage.writeStored('fullscreenTip.shown', '3');
   // No network: the rooms the start page finds are the scene's. (Only where it has some, so the map of
@@ -168,6 +183,7 @@ export async function boot(asked: URLSearchParams) {
   fxUi.installUiFx();
   if (!switchedOff('cursor')) cursor.installCursor();
   autoscroll.installAutoscroll();
+  noMenu?.installNoMenu();
   const [{ default: Crash }, { crash }] = await Promise.all([import('./Crash.svelte'), import('./crashCue.svelte.ts')]);
   mount(Root, { target: document.getElementById('app')!, props: { qaInside: Crash } });
   // The pointers bench's seats: this one's pointer to the bench, or another's from it (./pointerRelay.ts).
@@ -191,6 +207,25 @@ export async function boot(asked: URLSearchParams) {
   for (const step of built.steps ?? []) {
     if ('wait' in step) await new Promise((r) => setTimeout(r, step.wait));
     else if ('fail' in step) session.labFail(step.fail);
+    else if ('joinFail' in step) {
+      // While the join is under way, as the refused step below waits for it.
+      for (let i = 0; i < 500 && session.status !== 'connecting'; i++) await new Promise((r) => setTimeout(r));
+      session.labJoinFail(step.joinFail);
+    }
+    else if ('fill' in step) {
+      const field = (await found(step.fill)) as HTMLInputElement | null;
+      if (field) {
+        field.value = step.text;
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+    else if ('refused' in step) {
+      // While the join is under way, as the host's answer comes (an invite's starts itself as the page shows).
+      // Looked for every turn of the event loop: once PeerJS is in, the frame's want of WebRTC (above) fails
+      // the join for no connection, a toast the room's answer would only clear.
+      for (let i = 0; i < 500 && session.status !== 'connecting'; i++) await new Promise((r) => setTimeout(r));
+      session.labRefuse(step.refused);
+    }
     else if ('then' in step) {
       // The room moves on: a new question's pictures first, as the host sends them before it.
       if (step.then.question?.askedAt !== session.state?.question?.askedAt) await pictures(step.then);
@@ -208,6 +243,9 @@ export async function boot(asked: URLSearchParams) {
         crash.left = 1;
       }
     }
+    else if ('toast' in step) toasts.hold(toasts.show(step.toast, step.kind, step.opts));
+    // (In a tree before the back guard there's no Back of the game's to show: the tab's own history is the desk's.)
+    else if ('back' in step) steps?.back();
     else (await found(step.click))?.click();
   }
 

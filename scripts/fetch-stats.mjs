@@ -2,9 +2,9 @@
 // Fetches each item's tooltip from poe2db.tw (its properties, requirements,
 // mods and flavour text) for the items in src/data/items.json (and for each
 // of an item's variants, by the variant's id), and writes
-// them to src/data/itemStats.json. The game loads that file only when a
-// player opens an item's details (ItemDetails.svelte). npm run fetch-data
-// runs this at its end.
+// them to src/data/itemStats.json. The game fetches that file ahead in an
+// idle moment and reads it only when a player first opens an item's details
+// (ItemDetails.svelte). npm run fetch-data runs this at its end.
 //
 // Usage: npm run fetch-stats
 // Behind a proxy on Node 22+: NODE_USE_ENV_PROXY=1 npm run fetch-stats

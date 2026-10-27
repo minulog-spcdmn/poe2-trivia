@@ -38,7 +38,7 @@ export async function seat() {
   const desk = deskOk(kept) ? kept : null;
 
   await import('../../app.css');
-  const [{ mount }, { default: Root }, { session, engine }, sound, spatial, fxUi, cursor, autoscroll, { switchedOff }] = await Promise.all([
+  const [{ mount }, { default: Root }, { session, engine }, sound, spatial, fxUi, cursor, autoscroll, noMenu, { switchedOff }] = await Promise.all([
     import('svelte'),
     import('../../Root.svelte'),
     import('../../lib/session.svelte.ts'),
@@ -47,6 +47,7 @@ export async function seat() {
     import('../../lib/fx/ui.ts'),
     import('../../lib/ownCursor.ts'),
     import('../../lib/autoscroll.ts'),
+    import('../../lib/noMenu.ts'),
     import('../../lib/switchedOff.ts'),
   ]);
   sound.installUiSounds();
@@ -54,6 +55,7 @@ export async function seat() {
   fxUi.installUiFx();
   if (!switchedOff('cursor')) cursor.installCursor();
   autoscroll.installAutoscroll();
+  noMenu.installNoMenu();
   mount(Root, { target: document.getElementById('app')! });
   // Development only, as the game's own page has it (src/main.ts): the session, for scripts that drive a seat.
   if (import.meta.env.DEV) Object.assign(window, { __s: session });

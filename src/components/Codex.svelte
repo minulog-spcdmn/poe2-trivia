@@ -10,6 +10,7 @@
   import { categoryGlyph, itemSrcset, itemThumb } from '../lib/ui';
   import { DIFFICULTY_NAMES } from '../lib/difficultyText';
   import { closeCodex, codexRoute } from '../lib/codexRoute.svelte';
+  import { pageLayers } from '../lib/backGuard';
   import { backdropShadow } from '../lib/backdropShadow';
   import { dialogBackdrop } from '../lib/behindDialog';
   import { dialogIn, dialogOut } from '../lib/dialogIn';
@@ -285,6 +286,12 @@
   ]);
 
   let open = $state<Item | null>(null);
+  // Open, the browser's back closes it and leaves the codex as it was, scrolled where it was
+  // (lib/backGuard.ts PageLayers); one step however many items are opened from it in turn.
+  const itemOpen = $derived(!!open);
+  $effect(() => {
+    if (itemOpen) return pageLayers.layer(() => (open = null));
+  });
   let confirmReset = $state(false);
   function reset() {
     // Synced, the other devices' progress would come straight back: this browser stops syncing, and theirs stays theirs.
@@ -631,7 +638,7 @@
       <div class="bar">
         <h2>Collection</h2>
         <div class="controls">
-          <input class="field search" type="search" autocomplete="off" bind:value={search} placeholder="Search names" aria-label="Search names" spellcheck="false" />
+          <input class="field search" type="search" autocomplete="off" bind:value={search} placeholder="Search names" aria-label="Search names" spellcheck="false" autocorrect="off" />
           <CodexFilter bind:value={only} options={filterOptions} label="Category" />
           <div class="seg" role="group" aria-label="View">
             <button class:on={view === 'grid'} aria-pressed={view === 'grid'} onclick={() => (view = 'grid')}>Grid</button>
@@ -774,10 +781,11 @@
 {/if}
 
 <style>
+  /* Its sides clear of a phone's notch on its side, as the lobby's are. */
   .codex {
     width: min(1080px, 100%);
     margin: 0 auto;
-    padding: 1.4rem 1rem 2.5rem;
+    padding: 1.4rem max(1rem, env(safe-area-inset-right)) 2.5rem max(1rem, env(safe-area-inset-left));
     display: flex;
     flex-direction: column;
     gap: 1.4rem;

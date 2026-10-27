@@ -19,6 +19,7 @@
   import { fxUserOn, onFxChange, shakeTarget } from './lib/fx/core';
   import { IMPRINT_URL, PRIVACY_URL } from './lib/site';
   import { openPrivacy } from './lib/legalSheet.svelte';
+  import { backGuard } from './lib/backGuard';
   import LegalSheet from './components/LegalSheet.svelte';
   import { dialogBackdrop } from './lib/behindDialog';
   import { dialogIn, dialogOut } from './lib/dialogIn';
@@ -34,6 +35,8 @@
   import { closeCodex, codexRoute } from './lib/codexRoute.svelte';
   import { closeSettings, openSettings, settingsRoute } from './lib/settingsRoute.svelte';
   import { whenIdle } from './lib/idle';
+  import { countFailedImport } from './lib/count';
+  import { retried } from './lib/chunkRetry';
   import { loadFonts, loadFontsAhead } from './lib/fontsAhead';
   import { shellHeightsRead } from './lib/shellHeights.svelte';
   import { toasts } from './lib/toasts.svelte';
@@ -48,12 +51,16 @@
   import { playerColor } from './lib/ui';
   import { flat, fullRoom } from './lib/layout';
   import { landing } from './lib/sync/boot.svelte';
+  import { CopyPress } from './lib/copyPress.svelte';
+  import CopyNote from './components/CopyNote.svelte';
 
   /** Shown again after a crash (Root.svelte). */
   let { recovered = false }: { recovered?: boolean } = $props();
 
   // Beta and dev only: ?record keeps how this player plays, for the room bots (lib/recorder.ts).
   let recording = $state(wantsRecording());
+  /** The room code in the header, copied as every code a player passes on is (one shows at a time). */
+  const codePress = new CopyPress(() => session.code ?? '', 'Room code copied');
   let confirmLeave = $state(false);
   let fxOn = $state(fxUserOn());
   // With a seat in an online room, lobby included, this device's own pointer takes its
@@ -365,14 +372,28 @@
   // Its fonts and the tooltips' too (lib/fontsAhead.ts), from the first idle
   // moment, so they don't lay the codex out again as it opens; opened before
   // they're in, it waits for them a moment (at most a quarter of a second).
-  let codexChunk: Promise<typeof import('./components/Codex.svelte')> | null = null;
-  const fetchCodexPage = () => (codexChunk ??= import('./components/Codex.svelte'));
+  // A fetch that fails says the page couldn't be loaded (pageLost), and
+  // opening the codex again fetches it again (a dropped connection may be
+  // back): not by the same import, which the browser keeps failed, but under
+  // an address of its own (lib/chunkRetry.ts). Each failure is counted all
+  // the same (countFailedImport), as it would be uncaught: most often a page
+  // left open across a deploy, which no fetch brings back; the Reload does.
+  const fetchCodexPage = retried(() => import('./components/Codex.svelte'), countFailedImport, 'Codex');
   let codexPage: Promise<typeof import('./components/Codex.svelte')> | null = null;
   const loadCodexPage = () =>
-    (codexPage ??= Promise.all([fetchCodexPage(), Promise.race([loadFonts(), new Promise((r) => setTimeout(r, 250))])]).then(([page]) => page));
+    (codexPage ??= Promise.all([fetchCodexPage(), Promise.race([loadFonts(), new Promise((r) => setTimeout(r, 250))])]).then(
+      ([page]) => page,
+      (e) => {
+        codexPage = null;
+        throw e;
+      },
+    ));
   onMount(loadFontsAhead);
+  // The settings page, a chunk of its own too: fetched again and counted as the codex's is.
+  const loadSettingsPage = retried(() => import('./components/Settings.svelte'), countFailedImport, 'Settings');
   onMount(() => {
-    const t = setTimeout(fetchCodexPage, 2000);
+    // Only ahead of time: a failure here (counted in fetchCodexPage) waits for the codex to be opened.
+    const t = setTimeout(() => void fetchCodexPage().catch(() => {}), 2000);
     return () => clearTimeout(t);
   });
 
@@ -481,6 +502,23 @@
     else confirmLeave = true;
   }
 
+  // The browser's back in a room (lib/backGuard.ts): it closes what's open
+  // over the game first, and with nothing open asks before leaving, as the
+  // header's leave does (or, still joining, gives the join up). The guard
+  // goes up as the tap that opens the room sets the session's mode (this runs
+  // before that tap's event is done), and only once a page over the start
+  // page (the codex, the settings) has gone back to it.
+  // Never over the settings' own entry (a room resumed on a reload with them
+  // open, as an iPhone reloads a tab left in the background): it goes up
+  // under them, opened again over it, so the tap that puts it up loses
+  // nothing under it and Back from the guard can't open them under the game.
+  backGuard.liftPage = (guard) => settingsRoute.lift(guard);
+  $effect(() => backGuard.want(!!session.mode && !page));
+  onMount(() => backGuard.asked(() => (codexAllowed ? session.leave() : askLeave())));
+  $effect(() => {
+    if (confirmLeave) return backGuard.layer(() => (confirmLeave = false));
+  });
+
   /**
    * The legal links keep their place under a game and its result but don't
    * show there. Asking to leave shows them, above the dialog's darkening,
@@ -557,7 +595,7 @@
           {#if folded}
             <!-- (Folded: no room code, the depth and zone alone.) -->
           {:else if session.code && !session.hideCode}
-            <span>Room <b class="code">{session.code}</b></span>
+            <span>Room <b class="code" data-copy {@attach codePress.attach}>{session.code}</b></span>
           {:else}
             <span>Delve</span>
           {/if}
@@ -581,7 +619,7 @@
           {/key}
         {:else if gs && screen === 'game'}
           {#if session.code && !session.hideCode && !folded}
-            <span>Room <b class="code">{session.code}</b></span>
+            <span>Room <b class="code" data-copy {@attach codePress.attach}>{session.code}</b></span>
             <span class="dot">•</span>
           {/if}
           {#if session.spectating}
@@ -600,9 +638,10 @@
         {:else if session.mode === 'local' || session.hereOnly}
           <span>On this device</span>
         {:else if session.code && screen !== 'lobby'}
-          <!-- The lobby shows the code in big letters. -->
-          <span>Room <b class:code={!session.hideCode}>{session.hideCode ? '••••••' : session.code}</b></span>
+          <!-- The lobby shows the code in big letters. (Hidden for streaming, a copy still gives it.) -->
+          <span>Room <b class="code" data-copy {@attach codePress.attach}>{session.hideCode ? '••••••' : session.code}</b></span>
         {/if}
+        <CopyNote press={codePress} />
       </div>
       <div class="tools">
         {#if headerPage}
@@ -660,11 +699,15 @@
           <!-- Loaded when first opened: most visits never do. -->
           {#await loadCodexPage() then { default: Codex }}
             <Codex />
+          {:catch}
+            {@render pageLost()}
           {/await}
         {:else if shown === 'settings'}
           <!-- Loaded when first opened, as the codex is. -->
-          {#await import('./components/Settings.svelte') then { default: Settings }}
+          {#await loadSettingsPage() then { default: Settings }}
             <Settings />
+          {:catch}
+            {@render pageLost()}
           {/await}
         {:else if shown && GameOver}
           <GameOver />
@@ -685,13 +728,21 @@
 
 <!-- The game's screens still on their way (loadGamePages), or lost. -->
 {#snippet gamePagesWait()}
-  <div class="pages-wait">
-    {#if gamePagesLost}
-      <p>Part of the game couldn’t be loaded.</p>
-      <button class="btn primary" onclick={() => location.reload()}>Reload</button>
-    {:else}
+  {#if gamePagesLost}
+    {@render pageLost()}
+  {:else}
+    <div class="pages-wait">
       <span class="spinner" aria-label="Loading"></span>
-    {/if}
+    </div>
+  {/if}
+{/snippet}
+
+<!-- A page's chunk that didn't come (the game's screens, the codex, the settings): a reload brings it. (The codex and
+     the settings are fetched again as they're opened again, too: lib/chunkRetry.ts.) -->
+{#snippet pageLost()}
+  <div class="pages-wait">
+    <p>Part of the game couldn’t be loaded.</p>
+    <button class="btn primary" onclick={() => location.reload()}>Reload</button>
   </div>
 {/snippet}
 
@@ -737,8 +788,10 @@
           <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
         </button>
       </div>
-      {#await import('./components/Settings.svelte') then { default: Settings }}
+      {#await loadSettingsPage() then { default: Settings }}
         <Settings over />
+      {:catch}
+        {@render pageLost()}
       {/await}
     </div>
   </div>
@@ -785,11 +838,9 @@
 {/if}
 
 <style>
-  /* The room code stays selectable (the rest of the game isn't): a tap or
-     double-click takes the whole code, to share it. */
+  /* The room code: a click or a tap copies it, as every code a player passes
+     on (lib/copyPress.svelte.ts). */
   .code {
-    -webkit-user-select: all;
-    user-select: all;
     cursor: text;
   }
   /* Scaled up on large windows (lib/stage.ts): the window's height in its zoomed pixels. */

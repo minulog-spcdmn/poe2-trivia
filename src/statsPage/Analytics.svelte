@@ -38,8 +38,7 @@
   import { addDays, dayIn, hoursIn, midnight } from './zone';
   import { CHANNEL } from '../lib/channel';
   import { demoSlices, demoUpdate } from './demo';
-
-  type WakeLock = { release(): Promise<void>; addEventListener(type: 'release', f: () => void): void };
+  import { keepAwake } from '../lib/wakeLock';
 
   /** A period is read again once it's this old. */
   const FRESH_MS = 5 * 60_000;
@@ -520,23 +519,7 @@
   $effect(() => {
     if (!board) return;
     // The screen stays on while it's in view, where the browser lets a page ask.
-    let lock: WakeLock | null = null;
-    let gone = false;
-    const wake = async () => {
-      if (gone || lock || document.visibilityState !== 'visible') return;
-      try {
-        const got = await (navigator as Navigator & { wakeLock?: { request(type: 'screen'): Promise<WakeLock> } }).wakeLock?.request('screen');
-        if (!got) return;
-        if (gone) return void got.release();
-        lock = got;
-        // The browser lets go of it whenever the tab is hidden; it's asked again on coming back.
-        got.addEventListener('release', () => (lock = null));
-      } catch {
-        // Refused (a battery saving, a hidden tab): the screen sleeps as it would.
-      }
-    };
-    void wake();
-    document.addEventListener('visibilitychange', wake);
+    const sleep = keepAwake();
     // The pointer hides after a few still seconds, so it never sits on a figure.
     let still = 0;
     const moved = () => {
@@ -547,9 +530,7 @@
     moved();
     document.addEventListener('pointermove', moved);
     return () => {
-      gone = true;
-      void lock?.release();
-      document.removeEventListener('visibilitychange', wake);
+      sleep();
       document.removeEventListener('pointermove', moved);
       clearTimeout(still);
       idle = false;

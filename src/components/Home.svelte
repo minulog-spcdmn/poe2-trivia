@@ -30,6 +30,7 @@
   import { warmPlate } from '../lib/plateStore.svelte';
   import { circleAtPlace } from '../lib/circlePlaces';
   import { cameFromThisSite, countArrival, type JoinVia } from '../lib/count';
+  import { withoutInvite } from '../lib/inviteAddress';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
   const cleanCode = (v: string) => v.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, CODE_LENGTH);
@@ -126,7 +127,11 @@
 
   // ---- names ----
 
-  /** A name fit to play under (saved, and the greeting's from now on), or null after saying what's wrong with it. */
+  /**
+   * A name fit to play under, or null after saying what's wrong with it. Not
+   * saved yet: a join's is saved once the room takes it (lib/joinName.ts), as
+   * the room can still turn it down, and its field stays out until then.
+   */
   function checkName(raw: string, field: HTMLInputElement | undefined): string | null {
     const n = raw.trim();
     const refusal = nameRefusal(n);
@@ -135,6 +140,11 @@
       refuseName(field ?? null, n ? refusal : { reason: null }, () => {});
       return null;
     }
+    return n;
+  }
+  /** A name checked and kept at once (saved, and the greeting's from now on): one renamed, or a room's own host's. */
+  function keepName(n: string | null): string | null {
+    if (!n) return null;
     saveName(n);
     known = n;
     return n;
@@ -166,7 +176,7 @@
   }
   function saveRename(e?: Event) {
     e?.preventDefault();
-    if (checkName(draft, renameField)) renaming = false;
+    if (keepName(checkName(draft, renameField))) renaming = false;
   }
   function renameKeys(e: KeyboardEvent) {
     if (e.key === 'Escape') {
@@ -285,7 +295,7 @@
 
   function host(e?: Event) {
     e?.preventDefault();
-    const n = knownName() ?? checkName(nameInput, nameField);
+    const n = knownName() ?? keepName(checkName(nameInput, nameField));
     if (!n) return;
     busy = 'create';
     session.host(n);
@@ -293,6 +303,7 @@
 
   function join(e?: Event) {
     e?.preventDefault();
+    // A name typed here stays in its field, unsaved, until the room takes it: turned down, it's there to change.
     const n = knownName() ?? checkName(nameInput, nameField);
     if (!n) {
       // A saved name just let go: the row now asks for one.
@@ -381,9 +392,14 @@
   }
 
   // A join that ends back here without a room (no such room, no answer):
-  // its code is the one to check, and the toast (session.fail) says why. Not
-  // one tapped in the Open rooms list in its own place: nobody typed that code,
-  // and Join's field is out of sight up the page.
+  // its code is the one to check, and the toast (session.fail) says why. One
+  // that failed for another reason (the room turned it down: a name, a full
+  // room; or the connection, the network or the page let it down) may have
+  // had the code right: the code isn't marked (session.codeDoubted); and if
+  // it was the name it turned down, a name typed for it, the thing to change,
+  // takes the focus back (a saved name is changed at the greeting's quill).
+  // Not one tapped in the Open rooms list in its own place: nobody typed that
+  // code, and Join's field is out of sight up the page.
   let joining: { code: string; via: JoinVia } | null = null;
   /** The join that failed last, its code left in Join a room's field. */
   let left: { code: string; via: JoinVia } | null = null;
@@ -399,8 +415,9 @@
     if (joining && !session.state && busy !== 'rooms') {
       code = joining.code;
       left = joining;
-      codeError = true;
+      codeError = session.codeDoubted;
       if (!invite) open = 'join';
+      if (session.nameRefused) void tick().then(() => (invite ? inviteField : nameField)?.focus());
     }
     joining = null;
     busy = null;
@@ -487,17 +504,22 @@
   let inviteField = $state<HTMLInputElement>();
   function joinInvite(e?: Event) {
     e?.preventDefault();
+    // (Saved once the room takes it, as Join a room's.)
     const n = checkName(inviteName, inviteField);
     if (!n) return;
+    // Out of the address first: the guard Back meets in the room (lib/backGuard.ts)
+    // goes up in this tap over this entry, and leaving the room goes back to it,
+    // which mustn't be the invite again, to join it once more. (The screen stays
+    // for a join that fails.)
+    clearInviteAddress();
     startJoin(invite, n, 'join', inviteVia);
   }
+  /** The address without the invite (its room, and what older links and the beta's first look add). */
+  function clearInviteAddress() {
+    history.replaceState(history.state, '', withoutInvite(location.href));
+  }
   function leaveInvite() {
-    const url = new URL(location.href);
-    url.searchParams.delete('room');
-    // Older invite links named their host (?by=): the room says that now.
-    url.searchParams.delete('by');
-    url.searchParams.delete('first');
-    history.replaceState(history.state, '', url);
+    clearInviteAddress();
     invite = '';
   }
   // Joined: the link has done its job (a reload shouldn't ask again).
@@ -581,7 +603,7 @@
     {:else}
       <form class="slot row" class:join={act} onsubmit={joinInvite} aria-labelledby={act ? 'invite-label' : undefined} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
         <!-- svelte-ignore a11y_autofocus -->
-        <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" enterkeyhint={act ? 'go' : undefined} autofocus />
+        <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" enterkeyhint={act ? 'go' : undefined} autofocus />
         <button class="btn primary" type="submit">Join</button>
       </form>
     {/if}
@@ -603,7 +625,9 @@
     <div class="greeting" in:fade|global={calm({ duration: 600, delay: 350 })}>
       {#if renaming}
         <form class="row" onsubmit={saveRename}>
-          <!-- No autofill on the name fields: its list is the browser's own and drops the game's cursor; the game remembers the name itself. -->
+          <!-- No autofill on the name fields: its list is the browser's own and drops the game's cursor; the game remembers the name itself.
+               No autocorrect either (tests/nameFields.test.ts): a gamer tag is seldom a word, and Gboard and iOS would make it one (Wolfsberg went in as Wolfsburg).
+               The first letter is still capitalised as the keyboard likes: that only sets the shift key, and a name typed lower case stays so. -->
           <input
             class="field name"
             bind:this={renameField}
@@ -613,6 +637,7 @@
             aria-label="Your name"
             autocomplete="off"
             spellcheck="false"
+            autocorrect="off"
             onkeydown={renameKeys}
           />
           <button class="btn" type="submit">Save</button>
@@ -676,7 +701,7 @@
           <div class="under">
             {#if open === 'create' && !connecting}
               <form class="slot row tall" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
-                <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" enterkeyhint="go" />
+                <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" enterkeyhint="go" />
                 <button class="btn" class:primary={!joinReady || open === 'create'} type="submit">Start</button>
               </form>
             {:else}
@@ -696,7 +721,7 @@
           <div class="act-top">
             <h2 class="act-head" id="join-label">Join a room</h2>
             <!-- Open rooms sit below Today's unique: when there are any, this says so from up here. -->
-            {#if asking}
+            {#if asking && !connecting}
               <button class="to-rooms" onclick={backToCode} aria-label="Change the code, {code}" in:fade={{ duration: 300 }}>Code <span class="shown-code">{code}</span> • change</button>
             {:else if roomCount && !connecting}
               <button class="to-rooms" onclick={toRooms} in:fade={{ duration: 300 }}>
@@ -711,7 +736,7 @@
               <!-- The code, or on a first visit once it's whole, the name in its place: one field, where the last one was. -->
               <form class="slot row join" onsubmit={phoneJoin} aria-labelledby="join-label" in:fly={SWAP_IN} out:fade={SWAP_OUT}>
                 {#if asking}
-                  <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" enterkeyhint="go" />
+                  <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" enterkeyhint="go" />
                 {:else}
                   {@render codeInput(false)}
                 {/if}
@@ -754,13 +779,13 @@
                 <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
               {:else if isOpen && e === 'create'}
                 <form class="slot row" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
-                  <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" />
+                  <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" />
                   <button class="btn primary" type="submit">Start</button>
                 </form>
               {:else if isOpen && e === 'join'}
                 <form class="slot row" onsubmit={join} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
                   {#if !known}
-                    <input class="field name short" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" />
+                    <input class="field name short" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" />
                   {/if}
                   {@render codeInput(!known)}
                   <button class="btn primary" type="submit">Join</button>
@@ -796,7 +821,8 @@
   /* One stage, at most 1440 px wide and centred: two columns (the menu,
      Today's unique) at their own sizes, 1200 px across in all, then the open
      rooms across it, then the footer. Narrower windows give up side padding
-     (down to 32 px) before anything else, then stack in one column.
+     (down to 32 px, or a phone's notch on its side if that is wider) before
+     anything else, then stack in one column.
      Columns and rooms sit in the middle of the window's height, the footer at
      its bottom. On large windows the whole app is scaled up (lib/stage.ts,
      App.svelte's shell).
@@ -827,7 +853,8 @@
       'foot foot';
     justify-content: space-between;
     column-gap: 40px;
-    padding: 26px max(32px, (min(100%, 1440px) - 1200px) / 2) 22px;
+    padding: 26px max(32px, (min(100%, 1440px) - 1200px) / 2, env(safe-area-inset-right)) 22px
+      max(32px, (min(100%, 1440px) - 1200px) / 2, env(safe-area-inset-left));
   }
   .intro {
     /* The title's size; the kicker under it is fitted to it. */
@@ -1314,7 +1341,6 @@
     background: none;
     border: 0;
     cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
   }
   /* A hairline between the two, fading out at both ends as the footer's rule does. */
   .pair-pick + .pair-pick {
@@ -1457,7 +1483,7 @@
   /* Phones: tighter gutters and a smaller title (the column stays at most 560 px); no cursor. */
   @media (max-width: 640px) {
     .home {
-      padding: 28px 16px 20px;
+      padding: 28px max(16px, env(safe-area-inset-right)) 20px max(16px, env(safe-area-inset-left));
     }
     .intro {
       --title-size: 54px;

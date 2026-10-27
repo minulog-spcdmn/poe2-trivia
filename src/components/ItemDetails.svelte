@@ -1,5 +1,8 @@
 <script lang="ts" module>
   import { singular, type DrawnItem } from '../lib/game';
+  import { whenIdle } from '../lib/idle';
+  import { savingData } from '../lib/saveData';
+  import statsUrl from '../data/itemStats.json?url';
 
   /**
    * A tooltip line, as scripts/fetch-stats.mjs writes it: its kind (a
@@ -12,8 +15,24 @@
   type Line = [kind: Kind, text: string];
   type Stats = Record<string, Line[][]>;
 
-  // Loaded the first time an item's details are opened: most games never do.
+  // Fetched ahead in an idle moment once this module is here (it comes with
+  // the game's pages and the codex's), so the first item a player opens isn't
+  // a tap that does nothing while 248 KB come down: only fetched, as text,
+  // so the idle moment is never a long one. Read (JSON.parse, a few ms) the
+  // first time an item's details are opened: most games never do. Not with
+  // Save-Data on; then it's all fetched at that first opening, as it was.
+  // Ahead, at low priority, so it never holds up what the start page itself
+  // is loading; at a tap, at the default, since the player waits on it.
+  const fetchText = (low = false) =>
+    fetch(statsUrl, low ? { priority: 'low' } : {}).then((r) =>
+      r.ok ? r.text() : Promise.reject(new Error(`itemStats: ${r.status}`)),
+    );
+  /** The fetch made ahead, if one was: its text, or nothing should it have failed (fetched again when wanted). */
+  let ahead: Promise<string | null> | undefined;
   let stats: Promise<Stats> | undefined;
+  // (Not once an item was opened first: that tap fetched them already.)
+  if (typeof window !== 'undefined' && !savingData())
+    whenIdle(() => void (stats || (ahead ??= fetchText(true).catch(() => null))), { timeout: 4000, fallback: 1500 });
   /** The tooltips once they're here: a tooltip drawn after that is drawn whole at once, never a moment of "…" first. */
   let loaded: Stats | null = null;
   /** Whether the tooltips are here already. */
@@ -22,12 +41,30 @@
   const fonts = () =>
     Promise.all(['1rem "Fontin SmallCaps"', 'italic 1rem "Fontin"'].map((f) => document.fonts?.load(f).catch(() => {})));
   /**
+   * The last load failed and a tooltip has said so: the next item opened
+   * tries again. (Not as soon as it fails: ItemWindow waits for the load
+   * before it comes in, and its tooltip, in that same opening, says it
+   * failed rather than trying again.)
+   */
+  let told = false;
+  /**
    * The tooltips, loaded once, with their font. ItemWindow waits for them
    * before it unrolls, so what it unrolls is the whole tooltip, not the line
-   * that waits for it.
+   * that waits for it. Failed (the Wi-Fi gone, or a hotel's sign-in page in
+   * their place), they're fetched again as another item is opened.
    */
-  export const loadStats = () =>
-    (stats ??= Promise.all([import('../data/itemStats.json'), fonts()]).then(([m]) => (loaded = m.default as unknown as Stats)));
+  export const loadStats = () => {
+    if (told) {
+      told = false;
+      stats = undefined;
+    }
+    return (stats ??= Promise.all([(ahead ?? Promise.resolve(null)).then((text) => text ?? fetchText()), fonts()])
+      .then(([text]) => (loaded = JSON.parse(text) as Stats))
+      // The text, once read (or found no use), isn't kept beside what it was read into.
+      .finally(() => (ahead = undefined)));
+  };
+  /** A tooltip said the load failed. */
+  const tell = () => (told = true);
 
   /** A value's colour, by its letter: the game's white, its augmented blue, and each damage type's own. */
   const COLOURS: Record<string, string> = { w: 'white', a: 'aug', p: 'white', f: 'fire', c: 'cold', l: 'lightning', h: 'chaos' };
@@ -79,7 +116,14 @@
 
   let all = $state<Stats | null>(loaded);
   let failed = $state(false);
-  if (!loaded) loadStats().then((s) => (all = s), () => (failed = true));
+  if (!loaded)
+    loadStats().then(
+      (s) => (all = s),
+      () => {
+        failed = true;
+        tell();
+      },
+    );
   const sections = $derived(all ? sectionsOf(item, all) : null);
 </script>
 

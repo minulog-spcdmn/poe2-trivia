@@ -17,6 +17,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
+import { readFileSync } from 'node:fs';
 
 // The app's own imports leave out the extension (Vite finds the file).
 registerHooks({
@@ -116,7 +117,8 @@ function fakeGl(parallel = true, floats = true) {
   const draws: { kind: string; into: string; texel: boolean; idle: boolean }[] = [];
   /** What was let go: programs by kind, targets by name. */
   const deleted: string[] = [];
-  const state = { done: false, fails: new Set<string>() };
+  /** (`letGo`: how often the context was given back with WEBGL_lose_context; `atlas`: how often the drop shadows' sharp atlas was uploaded, the one texImage2D from a canvas.) */
+  const state = { done: false, fails: new Set<string>(), letGo: 0, atlas: 0 };
   const consts = new Map<string, number>();
   const K = (name: string) => {
     if (!consts.has(name)) consts.set(name, consts.size + 1);
@@ -133,7 +135,7 @@ function fakeGl(parallel = true, floats = true) {
     getShaderPrecisionFormat: () => ({ precision: 23 }),
     getSupportedExtensions: () => (floats ? ['EXT_color_buffer_float'] : []),
     getExtension: (name: string) =>
-      name === 'KHR_parallel_shader_compile' ? (parallel ? { COMPLETION_STATUS_KHR: K('COMPLETION_STATUS_KHR') } : null) : name === 'WEBGL_lose_context' ? { loseContext() {} } : {},
+      name === 'KHR_parallel_shader_compile' ? (parallel ? { COMPLETION_STATUS_KHR: K('COMPLETION_STATUS_KHR') } : null) : name === 'WEBGL_lose_context' ? { loseContext: () => void state.letGo++ } : {},
     getParameter: (p: number) => (p === K('MAX_FRAGMENT_UNIFORM_VECTORS') ? 1024 : 'fake'),
     checkFramebufferStatus: () => K('FRAMEBUFFER_COMPLETE'),
     getSyncParameter: () => K('SIGNALED'),
@@ -163,6 +165,7 @@ function fakeGl(parallel = true, floats = true) {
     framebufferTexture2D: (_a: number, _b: number, _c: number, t: { unit: number }) => (bound!.name = TARGETS[t.unit] ?? `unit ${t.unit}`),
     framebufferRenderbuffer: () => (bound!.name = 'texel'),
     deleteProgram: (p: Prog) => deleted.push(p.kind ?? '?'),
+    texImage2D: (...args: unknown[]) => void (args.length === 6 && state.atlas++),
     viewport: (_x: number, _y: number, w: number, h: number) => (texel = w === 1 && h === 1),
     drawArrays: () => draws.push({ kind: current?.kind ?? '?', into: bound?.name ?? 'canvas', texel, idle: inIdle }),
   };
@@ -194,8 +197,13 @@ function fakeCanvas(gl: object) {
     getContext: (_: string, options: WebGLContextAttributes) => ((asked.options = options), gl),
     toggleAttribute: (name: string, on: boolean) => void (on ? attrs.add(name) : attrs.delete(name)),
     removeAttribute: (name: string) => void attrs.delete(name),
-    addEventListener() {},
-    removeEventListener() {},
+    listeners: new Map<string, (e: Event) => void>(),
+    addEventListener(type: string, f: (e: Event) => void) {
+      this.listeners.set(type, f);
+    },
+    removeEventListener(type: string, f: (e: Event) => void) {
+      if (this.listeners.get(type) === f) this.listeners.delete(type);
+    },
   };
 }
 
@@ -206,10 +214,16 @@ function start(parallel = true, fails: string[] = [], floats = true, done = fals
   state.done = done;
   const canvas = fakeCanvas(gl);
   let lost = false;
+  let restorable: boolean | null = null;
+  let drawn = 0;
   queued = new Map();
   idleQueued = new Map();
-  const stop = startBackdrop(canvas as unknown as HTMLCanvasElement, () => (lost = true));
-  return { log, state, canvas, stop, draws, deleted, lost: () => lost };
+  const stop = startBackdrop(
+    canvas as unknown as HTMLCanvasElement,
+    (r) => ((lost = true), (restorable = r)),
+    () => drawn++,
+  );
+  return { log, state, canvas, stop, draws, deleted, lost: () => lost, restorable: () => restorable, drawn: () => drawn };
 }
 /** A few frames, done or not. */
 const frames = () => {
@@ -351,10 +365,75 @@ test('one failing to build leaves the page to the CSS backdrop', () => {
     assert.ok(later.stop);
     frame();
     assert.ok(later.lost());
+    assert.equal(later.restorable(), false, 'for good');
+    assert.equal(later.drawn(), 0);
     later.stop!();
   } finally {
     console.warn = warn;
   }
+});
+
+test('the context lost (a phone with the page in the background): the browser is asked for it back, nothing more is drawn, and it is not let go', () => {
+  const b = start();
+  frame();
+  assert.equal(b.drawn(), 1, 'the first frame drawn');
+  let asked = false;
+  b.canvas.listeners.get('webglcontextlost')!({ preventDefault: () => void (asked = true) } as unknown as Event);
+  assert.ok(asked, 'preventDefault, so the browser restores it');
+  assert.ok(b.lost());
+  assert.equal(b.restorable(), true, 'until it is given back');
+  assert.ok(!b.canvas.listeners.has('webglcontextlost'), 'torn down');
+  const drawnThen = b.draws.length;
+  settle();
+  assert.equal(b.draws.length, drawnThen, 'nothing drawn into the dead context');
+  // Given back: the caller (Background.svelte) starts the backdrop afresh on the same canvas and context.
+  let drawnAgain = 0;
+  const again = startBackdrop(
+    b.canvas as unknown as HTMLCanvasElement,
+    () => assert.fail('not lost'),
+    () => drawnAgain++,
+  );
+  assert.ok(again, 'started again');
+  const listener = b.canvas.listeners.get('webglcontextlost');
+  assert.ok(listener, 'listening for the next loss');
+  frame();
+  assert.equal(drawnAgain, 1, 'its first frame drawn');
+  assert.ok(b.draws.length > drawnThen, 'drawing again');
+  // The first backdrop's late stop: nothing more (the context is the new one's now).
+  b.stop!();
+  assert.equal(b.state.letGo, 0, 'not lost for good by letGo');
+  assert.equal(b.canvas.listeners.get('webglcontextlost'), listener, 'the new one still listens');
+  again!();
+  assert.equal(b.state.letGo, 1, 'the new one gives it back as it stops');
+});
+
+test('a backdrop started after another stopped uploads the drop shadows again, into its own new textures', () => {
+  const b = start();
+  frame();
+  assert.equal(b.state.atlas, 1, 'uploaded once');
+  frames();
+  assert.equal(b.state.atlas, 1, 'nothing changed, nothing uploaded');
+  b.stop!();
+  const later = start();
+  frame();
+  assert.equal(later.state.atlas, 1, 'uploaded again, though no mask changed');
+  later.stop!();
+});
+
+test('Background.svelte starts the backdrop again only for a context given back while away, and lets go of one given back after it is gone', () => {
+  const src = readFileSync(new URL('../src/components/Background.svelte', import.meta.url), 'utf8');
+  assert.match(src, /const restored = \(\) => \{\s*if \(away && !failed\) start\(\);\s*\};/);
+  assert.match(src, /addEventListener\('webglcontextrestored', restored\)/);
+  const cleanup = src.slice(src.indexOf("canvas.removeEventListener('webglcontextrestored', restored);"));
+  assert.match(cleanup, /if \(away\)\s*canvas\.addEventListener\(\s*'webglcontextrestored',[^;]*loseContext\(\)[^;]*once: true/s);
+});
+
+test('stopped by its caller, the context is given back at once, once', () => {
+  const b = start();
+  frame();
+  b.stop!();
+  b.stop!();
+  assert.equal(b.state.letGo, 1);
 });
 
 test('the merged pass failing to build keeps the two passes', () => {

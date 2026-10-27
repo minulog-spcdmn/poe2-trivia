@@ -5,7 +5,9 @@
 // vein's dig.
 
 import { MAX_PLAYERS, PRESETS, TALL_ART_GROUPS, type Knobs, type Settings } from '../../lib/game.ts';
-import { WAY_OUT } from '../../lib/delve.ts';
+import { DELVE_IDLE_ROUNDS, WAY_OUT } from '../../lib/delve.ts';
+import { ACHIEVEMENTS } from '../../lib/achievements.ts';
+import { DELVE_FLAMES } from '../../lib/fx/streaks.ts';
 import type { Control, Values } from '../bench.ts';
 import { longestNamed, longestWord } from '../build/engine.ts';
 import { pid } from '../build/people.ts';
@@ -139,8 +141,22 @@ export function gameScenes(): Scene[] {
   const manyAsked = { controls: [players(3, 3), ...ANSWERS] };
   const crowdAsked = { controls: [players(3, 5), ...ANSWERS] };
   return [
-    scene('turns-choosing', 'Take turns', 'Picking a category', turnsSeats, turns, many),
-    scene('turns-question', 'Take turns', 'A question, its clock running', turnsSeats, (v) => turns(v).pick(), manyAsked),
+    scene('turns-choosing', 'Take turns', 'Picking a category', turnsSeats, turns, {
+      ...many,
+      states: [
+        { label: 'Picking a category', values: {} },
+        // Names of 19 to 20 characters, near MAX_NAME: Doryani's (19) turn on the banner, seen from Kalguur's seat, shrunk to fit an upright phone.
+        { label: 'Long names', values: { names: 'long' } },
+      ],
+    }),
+    // The longest names too, the most three rows of them have to fit (a phone's browser on its side, its bars up), so the sweep sees them.
+    scene('turns-question', 'Take turns', 'A question, its clock running', turnsSeats, (v) => turns(v).pick(), {
+      ...manyAsked,
+      states: [
+        { label: 'A question, its clock running', values: {} },
+        { label: 'Six of the longest names', values: { asked: 'longest' } },
+      ],
+    }),
     scene(
       'turns-right',
       'Take turns',
@@ -150,7 +166,15 @@ export function gameScenes(): Scene[] {
         const t = turns(v).pick();
         return t.answer(t.turn, true);
       },
-      manyAsked,
+      {
+        ...manyAsked,
+        states: [
+          { label: 'Answered right', values: {} },
+          { label: 'Six of the longest names', values: { asked: 'longest' } },
+          { label: 'Eight of the longest names', values: { answers: '8', asked: 'longest' } },
+          { label: 'Ten of the longest names', values: { answers: '10', asked: 'longest' } },
+        ],
+      },
     ),
     scene(
       'turns-wrong',
@@ -226,15 +250,49 @@ export function gameScenes(): Scene[] {
         .playTo((s) => !!s.deathmatch?.eliminated.length && s.phase === 'choosing', (name) => name !== 'Una of the Vaal'),
     ),
     scene('delve-cards', 'Delve alone', 'The cards dealt', [ALONE], delveAlone),
-    scene('delve-finds', 'Delve alone', 'The cards dealt: an Azurite Vein and a Flare Cache among them', [ALONE], () => {
-      const t = delveAlone();
-      const [vein, , flare] = t.s.offered;
-      t.s.delve!.finds = [
-        { category: vein, kind: 'azurite' },
-        { category: flare, kind: 'flare' },
-      ];
-      return t;
-    }),
+    // Which cards hold a find: a vein on the first and a flare on the last,
+    // or one of them alone, its note on its card's side (where a phone's
+    // browser on its side gives the lock rule the other); and dynamite in
+    // the pack, for the line on what stays unused on them.
+    scene(
+      'delve-finds',
+      'Delve alone',
+      'The cards dealt, finds among them',
+      [ALONE],
+      (v) => {
+        const t = delveAlone();
+        const [vein, , flare] = t.s.offered;
+        const on = v.finds ?? 'both';
+        t.s.delve!.finds = [
+          ...(on === 'flare' ? [] : [{ category: vein, kind: 'azurite' as const }]),
+          ...(on === 'vein' ? [] : [{ category: flare, kind: 'flare' as const }]),
+        ];
+        if (v.held) t.s.delve!.inventory = { [pid('Kalguur')]: { wards: 0, flares: 0, dynamite: 1 } };
+        return t;
+      },
+      {
+        controls: [
+          {
+            kind: 'choice',
+            key: 'finds',
+            label: 'Finds',
+            default: 'both',
+            options: [
+              { value: 'both', label: 'A vein and a flare' },
+              { value: 'vein', label: 'A vein, first card' },
+              { value: 'flare', label: 'A flare, last card' },
+            ],
+          },
+          { kind: 'toggle', key: 'held', label: 'Dynamite in the pack', default: false },
+        ],
+        states: [
+          { label: 'An Azurite Vein and a Flare Cache', values: {} },
+          { label: 'Both, with dynamite in the pack', values: { held: true } },
+          { label: 'An Azurite Vein alone, on the first card', values: { finds: 'vein' } },
+          { label: 'A Flare Cache alone, on the last card', values: { finds: 'flare' } },
+        ],
+      },
+    ),
     scene('delve-dig', 'Delve alone', 'A vein struck once: dig deeper, or the way out', [ALONE], () => {
       const t = delveAlone();
       const vein = t.s.offered[0];
@@ -273,6 +331,28 @@ export function gameScenes(): Scene[] {
     scene('delve-deep', 'Delve alone', 'Deep down', [ALONE], (v) => delveAlone().playTo((s) => s.round >= Number(v.depth ?? 30) && s.phase === 'choosing'), {
       controls: [{ kind: 'range', key: 'depth', label: 'Depth', min: 2, max: 120, default: 30 }],
     }),
+    // An achievement's notice over a streak's fire. On a phone the notices
+    // stand across the top, on the player's entry, and the fire passes behind
+    // them as behind anything solid: their boxes alone hide it, and it burns
+    // on round their edges and in the gaps above and between them (two
+    // achievements at once come one by one, lib/achievementToasts.ts).
+    {
+      ...scene('delve-notice', 'Delve alone', 'On a streak, an achievement’s notice over the fire', [ALONE], delveAlone),
+      controls: [
+        { kind: 'range', key: 'streak', label: 'In a row', min: 3, max: 120, default: 80 },
+        { kind: 'range', key: 'notices', label: 'Achievements', min: 1, max: 2, default: 1 },
+      ],
+      states: [
+        ...DELVE_FLAMES.map((f) => ({ label: `${f.name[0].toUpperCase()}${f.name.slice(1)} fire (${f.from} in a row)`, values: { streak: f.from } })),
+        { label: 'Two achievements at once, on the hottest fire', values: { streak: DELVE_FLAMES.at(-1)!.from, notices: 2 } },
+      ],
+      build: (v = {}) => {
+        const t = delveAlone().playTo((s) => (s.players[0].streak ?? 0) >= Number(v.streak ?? 80) && s.phase === 'choosing');
+        const earned = ['saving-grace', 'streak-100'].slice(0, Number(v.notices ?? 1)).map((id) => ACHIEVEMENTS.find((a) => a.id === id)!);
+        const toasts = earned.map((a) => ({ toast: a.title, opts: { title: 'Achievement earned', seal: { sign: a.sign, tier: a.tier } } }));
+        return { state: t.s, act: t.room, at: t.clock.now, steps: [{ wait: 800 }, ...toasts] } satisfies Built;
+      },
+    },
     // The game's own arrival: the run moves on into the zone while the screen
     // watches, so the card plays over the header and the scoreboard, its bars
     // over them (the zone card bench plays it alone).
@@ -288,6 +368,12 @@ export function gameScenes(): Scene[] {
         return { state: shown, act: t.room, at, steps: [{ wait: 1200 }, { then: t.s, at: t.clock.now }] } satisfies Built;
       },
     },
+    // Finds among the team's cards too, as Delve alone deals them (its notes
+    // beside the cards with the vote's line, on a phone's browser on its
+    // side), and dynamite in Doryani's pack, for the line on what stays
+    // unused on them. And the vote before anyone has voted (its rule's
+    // sentence in the clock's place) or with Una idle (a line of its own
+    // under the wait): the most that line has to fit beside the cards.
     scene(
       'delve-together-cards',
       'Delve together',
@@ -295,9 +381,45 @@ export function gameScenes(): Scene[] {
       [host('Kalguur'), guest('Doryani'), WATCHER],
       (v) => {
         const t = delveTogether(v);
-        return t.act({ type: 'vote', category: t.s.offered[1] }, 'Doryani');
+        const [vein, , flare] = t.s.offered;
+        const on = v.finds ?? 'none';
+        t.s.delve!.finds = [
+          ...(on === 'both' || on === 'vein' ? [{ category: vein, kind: 'azurite' as const }] : []),
+          ...(on === 'both' || on === 'flare' ? [{ category: flare, kind: 'flare' as const }] : []),
+        ];
+        if (v.held) t.s.delve!.inventory = { [pid('Doryani')]: { wards: 0, flares: 0, dynamite: 1 } };
+        if (v.idle) t.s.delve!.missed = { [pid('Una of the Vaal')]: DELVE_IDLE_ROUNDS };
+        return v.voted === false ? t : t.act({ type: 'vote', category: t.s.offered[1] }, 'Doryani');
       },
-      { controls: [players(2, 3)] },
+      {
+        controls: [
+          players(2, 3),
+          {
+            kind: 'choice',
+            key: 'finds',
+            label: 'Finds',
+            default: 'none',
+            options: [
+              { value: 'none', label: 'None' },
+              { value: 'both', label: 'A vein and a flare' },
+              { value: 'vein', label: 'A vein, first card' },
+              { value: 'flare', label: 'A flare, last card' },
+            ],
+          },
+          { kind: 'toggle', key: 'held', label: 'Dynamite in a pack', default: false },
+          { kind: 'toggle', key: 'voted', label: 'Doryani has voted', default: true },
+          { kind: 'toggle', key: 'idle', label: 'Una idle', default: false },
+        ],
+        states: [
+          { label: 'The cards dealt, Doryani has voted', values: {} },
+          { label: 'An Azurite Vein and a Flare Cache', values: { finds: 'both' } },
+          { label: 'Both, with dynamite in a pack', values: { finds: 'both', held: true } },
+          { label: 'Before anyone votes, two finds held', values: { finds: 'both', held: true, voted: false } },
+          { label: 'Una idle, two finds held', values: { finds: 'both', held: true, idle: true } },
+          { label: 'An Azurite Vein alone, on the first card', values: { finds: 'vein' } },
+          { label: 'A Flare Cache alone, on the last card', values: { finds: 'flare' } },
+        ],
+      },
     ),
     scene(
       'delve-together-dig',

@@ -6,6 +6,7 @@ import type { RoomInfo } from '../../lib/roomInfo.ts';
 import { DELVE_RULESET } from '../../lib/delve.ts';
 import { PROTOCOL_VERSION } from '../../lib/protocol.ts';
 import type { DelveRun } from '../../lib/delveRecord.ts';
+import { nameProblem } from '../../lib/names.ts';
 import type { Control, Values } from '../bench.ts';
 import type { Built, Scene } from '../scene.ts';
 
@@ -71,6 +72,23 @@ const BACK: Control[] = [
   },
 ];
 
+/** A guest joining room KXR4QT. */
+const GUEST = { mode: 'client' as const, me: null };
+/** How a join gives up (session.svelte.ts' JOIN_FAILED), its sticky notice on the start page. */
+const JOIN_FAILED: Control[] = [
+  {
+    kind: 'choice',
+    key: 'why',
+    label: 'What it got to',
+    default: 'missing',
+    options: [
+      { value: 'missing', label: 'Room may be missing' },
+      { value: 'blocked', label: 'Found, no way through' },
+      { value: 'server', label: 'No server' },
+    ],
+  },
+];
+
 /** What an invite's room answers, and whether it's this device's first visit. */
 const INVITE: Control[] = [
   {
@@ -95,6 +113,38 @@ function invite(v: Values = {}): Built {
   return v.first ? { state: null, name: '', met: [], query, invite: answer } : returning({}, { query, invite: answer });
 }
 
+/**
+ * A join the room turns down for its name: the same name as a player's there, or one that only looks like it.
+ * A returning joiner comes by an invite with that name saved, their own from before, so the start page goes
+ * straight into the join (Home.svelte) and, turned down, leaves the code in Join a room's row with the room's
+ * own words for it, the code not marked (the room answered, so it was right); the name stays theirs, to change
+ * at the greeting's quill. On a first visit the name is typed on the invite and joined with: turned down, it
+ * stays in its field to change, with the focus, and isn't saved (lib/joinName.ts), so the page still says
+ * Welcome rather than Welcome back.
+ */
+const REFUSED: Control[] = [
+  {
+    kind: 'choice',
+    key: 'name',
+    label: 'The name',
+    default: 'same',
+    options: [
+      { value: 'same', label: 'The same as a player’s' },
+      { value: 'like', label: 'A look-alike' },
+    ],
+  },
+  { kind: 'toggle', key: 'first', label: 'A first visit', default: false },
+];
+function refused(v: Values = {}): Built {
+  // The name turned down, with the room's words for it, as nameProblem gives them to the host.
+  const joiner = v.name === 'like' ? 'Pixe1' : 'pixel';
+  const why = nameProblem(joiner, ['Doryani', 'Pixel'])!;
+  const invite = room(4, { code: 'KXR4QT', players: 3 });
+  if (v.first)
+    return { state: null, name: '', met: [], query: 'room=KXR4QT', invite, steps: [{ fill: '.field.name', text: joiner }, { click: 'form.slot button[type="submit"]' }, { refused: why }] };
+  return returning({}, { name: joiner, query: 'room=KXR4QT', invite, steps: [{ refused: why }] });
+}
+
 const home = (key: string, label: string, s: Omit<Scene, 'key' | 'label' | 'screen' | 'group' | 'seats'>, group = 'Start page'): Scene => ({ key: `home/${key}`, screen: 'home', group, label, seats: [ME], ...s });
 
 export function homeScenes(): Scene[] {
@@ -114,7 +164,33 @@ export function homeScenes(): Scene[] {
       ],
       build: (v) => returning(v),
     }),
+    // Join refused for a short code: the notice stays up, so on a phone a tap in a field brings the keyboard up under it (it keeps to the top of what shows).
+    home('code-short', 'Joining with a code too short: the notice', {
+      build: () => returning({}, { steps: [{ toast: 'Room codes have 6 letters and digits.', kind: 'error', opts: { title: 'Code too short' } }] }),
+    }),
     home('connecting', 'Joining a room: connecting', { build: () => returning({}, { status: 'connecting' }) }),
+    // A guest on its way: after 6 s it says it's still going, and why it may take a while.
+    home('joining', 'Joining a room: travelling, then still on the way', { build: () => returning({}, { status: 'connecting', seat: GUEST }) }),
+    // A code typed into Join a room and joined, as a player would (the wide layout opens the entry first; on a
+    // phone the field is out already): the start page takes the code back into its field, and marks it only
+    // when the code is what's in doubt (session.codeDoubted).
+    home('join-failed', 'Joining a room that never lets you in', {
+      controls: JOIN_FAILED,
+      states: [
+        { label: 'The server said the room may be missing: No answer, the code marked', values: {} },
+        { label: 'The room was found, the connection never came up: Couldn’t connect, the code left as typed', values: { why: 'blocked' } },
+        { label: 'The matchmaking server never answered: No connection, the code left as typed', values: { why: 'server' } },
+      ],
+      build: (v = {}) =>
+        returning({}, {
+          steps: [
+            { click: ':is(.entry:nth-child(2 of .entry) .pick, form.join .field.code)' },
+            { fill: '.field.code', text: 'KXR4QT' },
+            { click: 'form:has(> .field.code) button[type="submit"]' },
+            { joinFail: (v.why ?? 'missing') as 'missing' | 'blocked' | 'server' },
+          ],
+        }),
+    }),
     home(
       'invite',
       'An invite link',
@@ -129,6 +205,20 @@ export function homeScenes(): Scene[] {
           { label: "An invite to a room that doesn't answer", values: { room: 'silent' } },
         ],
         build: invite,
+      },
+      'Invites',
+    ),
+    home(
+      'refused',
+      'A join turned down for its name',
+      {
+        controls: REFUSED,
+        states: [
+          { label: 'Turned down: a player there has the same name', values: {} },
+          { label: 'Turned down: the name looks like a player’s there', values: { name: 'like' } },
+          { label: 'Turned down on a first visit: the name typed stays in its field, unsaved', values: { first: true } },
+        ],
+        build: refused,
       },
       'Invites',
     ),
