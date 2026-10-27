@@ -33,7 +33,7 @@ import {
   type Item,
   type Player,
 } from './game';
-import { PEER_OPTIONS, PEER_PREFIX, loadPeerJs, peerJsNow, type PeerJs } from './peer';
+import { PEER_PREFIX, loadPeerJs, peerJsNow, peerOptions, type PeerJs } from './peer';
 import { CODE_LENGTH, CODE_PATTERN, randomCode, randomToken } from './roomCode.ts';
 import { Beacon, ProbeDesk, answerProbes, type RoomInfo } from './rooms';
 import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
@@ -805,7 +805,7 @@ class Session {
       () => this.roomNotOpened(code, 'peerjs-load', !!resumeState),
     );
     if (!Peer) return;
-    const peer = new Peer(PEER_PREFIX + code, PEER_OPTIONS);
+    const peer = new Peer(PEER_PREFIX + code, peerOptions());
     this.peer = peer;
     // An invite link's screen asking whose room this is: told, apart from the
     // players' slots (nobody banned or blocked, though). Everyone else comes to play.
@@ -1973,7 +1973,7 @@ class Session {
     if (!Peer) return;
     this.peer?.destroy();
     this.cancelAttempts();
-    const peer = new Peer(PEER_OPTIONS);
+    const peer = new Peer(peerOptions());
     this.peer = peer;
     // 'open' fires again when the signalling server is reconnected: a live
     // link to the host doesn't need it, a lost one tries again right away.

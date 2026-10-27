@@ -17,7 +17,7 @@
 
 import type Peer from 'peerjs';
 import type { DataConnection } from 'peerjs';
-import { PEER_OPTIONS, PEER_PREFIX, loadPeerJs } from './peer';
+import { PEER_PREFIX, loadPeerJs, peerOptions } from './peer';
 import { randomToken } from './roomCode';
 import { frameFits, hookFrames, MAX_PROBE_BYTES } from './guard';
 import { isHeldName } from './names';
@@ -271,7 +271,7 @@ export function answerProbes(
 async function openPeer(id?: string): Promise<Peer> {
   const { default: Peer } = await loadPeerJs();
   return new Promise((resolve, reject) => {
-    const peer = id ? new Peer(id, PEER_OPTIONS) : new Peer(PEER_OPTIONS);
+    const peer = id ? new Peer(id, peerOptions()) : new Peer(peerOptions());
     // Listening from the start, so a ping that comes before anyone answers it isn't kept by PeerJS for good.
     signals(peer);
     const fail = (err: unknown) => {

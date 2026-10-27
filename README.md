@@ -138,6 +138,24 @@ To use your own [PeerJS server](https://github.com/peers/peerjs-server)
 instead of the public cloud, build with `VITE_PEER_HOST`, `VITE_PEER_PORT`,
 `VITE_PEER_PATH` and `VITE_PEER_SECURE`.
 
+### Relay
+
+Two devices that can't reach each other directly (some routers, phone
+carriers, venue Wi-Fi) meet through a relay: Cloudflare's TURN, free up to
+1,000 GB a month. A Worker (`relay/worker.js`) hands each page a login that
+lasts a day; the relay's key stays in the Worker. To set it up:
+
+1. In Cloudflare's dashboard: Realtime → TURN Server → Create, which gives a
+   key ID and an API token.
+2. In `relay/`: `npx wrangler login`, `npx wrangler deploy`, then
+   `npx wrangler secret put TURN_KEY_ID` and
+   `npx wrangler secret put TURN_KEY_API_TOKEN`, pasting each.
+3. Put the Worker's URL in `src/lib/relayUrl.ts` (`RELAY_URL`); the build lets
+   the page reach it.
+
+Without a login (no URL, or the Worker doesn't answer within 3 s) peers are made
+with Google's STUN only, and rooms meet wherever a direct link gets through.
+
 ## Deploying
 
 `.github/workflows/deploy.yml` builds and deploys to GitHub Pages on every push

@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { hostname, userInfo } from 'node:os';
 import { channelOf } from './src/lib/channel.ts';
 import { COUNTER_ORIGIN } from './src/lib/counter.ts';
+import { RELAY_URL } from './src/lib/relayUrl.ts';
 import type { AtRule, Node, Rule } from 'postcss';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { backdropsErrors, formatBackdrops, type Backdrops } from './src/lib/backdropData.ts';
@@ -38,7 +39,8 @@ function csp(env: Record<string, string>): Plugin {
     // The counts (lib/count.ts) go out as a beacon, or an image where a beacon can't.
     `img-src 'self' data: blob: ${COUNTER_ORIGIN}`,
     "font-src 'self'",
-    `connect-src 'self' ${signalling} ${COUNTER_ORIGIN}`,
+    // And the relay's logins (lib/relay.ts), once its Worker is there.
+    `connect-src 'self' ${signalling} ${COUNTER_ORIGIN}${RELAY_URL ? ` ${new URL(RELAY_URL).origin}` : ''}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
