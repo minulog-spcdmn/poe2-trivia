@@ -10,7 +10,7 @@ import type { DelveRun } from '../../lib/delveRecord.ts';
 import type { Control, Values } from '../bench.ts';
 import { id, pid } from '../build/people.ts';
 import { Table } from '../build/play.ts';
-import { NAME_TOO_SHORT } from '../../lib/names.ts';
+import { nameProblem } from '../../lib/names.ts';
 import type { Built, Scene, Seat } from '../scene.ts';
 
 const TWELVE = ['Kalguur', 'Doryani', 'Una of the Vaal', 'Hooded One', 'Rog', 'Zelina', 'Alva', 'Oswin', 'Dannig', 'Finn', 'Sekhema Asala', 'Renly'];
@@ -161,7 +161,8 @@ export function lobbyScenes(): Scene[] {
       group: 'Lobby',
       label: 'A name turned down at the host’s screen: the notice',
       seats: [host('Kalguur')],
-      build: () => ({ ...atScreen(['Kalguur', 'Doryani'], {}), steps: [{ toast: NAME_TOO_SHORT, kind: 'error' }] }),
+      // (One already playing here: a name too short can't be added at all, its Add greyed out.)
+      build: () => ({ ...atScreen(['Kalguur', 'Doryani'], {}), steps: [{ toast: nameProblem('Doryani', ['Kalguur', 'Doryani'])!, kind: 'error' }] }),
     },
     {
       key: 'lobby/here-only',

@@ -10,16 +10,17 @@
 // remembered instead: the tip is taken as read.
 //
 // An iPhone's or iPad's home-screen app keeps storage of its own, apart from
-// Safari's (lib/installedApp.ts), so it opens as a first visit would. To
-// whoever has nothing there to lose yet (no name saved, nothing in the codex)
-// that's nothing to mention; to whoever has, the tip says so, and how to bring
-// it over: pairing the two in Settings (lib/sync/), while this tab is still
-// open. Android's and a desktop's installed apps share their browser's
-// storage, so their tips need none of it.
+// Safari's (lib/installedApp.ts), so it opens as a first visit would. There,
+// once it is installed, the tip is a reminder to pair it with Safari in
+// Settings (lib/sync/) and bring over what was played there, until it is
+// paired: Safari's own tip only says how to install, as anything more there
+// is too much to read before the app is even on the home screen. Android's
+// and a desktop's installed apps share their browser's storage, so they need
+// none of it.
 
 import { browserEnv, fullscreenKeys, fullscreenNow, onFullscreenChange, type FullscreenState } from './fullscreen.ts';
-import { loadCodex, type Codex } from './codex.ts';
-import { NAME_STORED } from './names.ts';
+import { installedApp } from './installedApp.ts';
+import { loadPairing, type Pairing } from './sync/store.ts';
 import { readStored, writeStored } from './storage.ts';
 import { toasts, type ToastOptions } from './toasts.svelte';
 
@@ -35,33 +36,29 @@ const THIS_SESSION = 'fullscreenTip.session';
 
 const TITLE = 'Pro tip';
 
-/** What the tip says: the keys on a desktop, the way to the home screen on a phone or tablet. */
-export type TipFor = 'desktop' | 'android' | 'ios';
+/** What the tip says: the keys on a desktop, the way to the home screen on a phone or tablet, and in an iPhone's home-screen app the pairing. */
+export type TipFor = 'desktop' | 'android' | 'ios' | 'app';
 
-/** Whether the player has anything a fresh start would lose: a name saved, or anything in the codex. */
-export const hasProgress = (name: string, codex: Codex) => name !== '' || Object.keys(codex.items).length > 0 || codex.log.length > 0;
-
-/** Whether this browser's player has, as stored now. */
-export const progressHere = () => hasProgress(readStored(NAME_STORED) ?? '', loadCodex());
-
-const MESSAGE: Record<TipFor, (progress: boolean) => string> = {
+const MESSAGE: Record<TipFor, () => string> = {
   desktop: () => `Press ${fullscreenKeys(browserEnv())} to play in fullscreen.`,
   android: () => "Add PoE2.Quest to your home screen from the browser’s menu to play in fullscreen.",
-  ios: (progress) =>
-    progress
-      ? 'Tap Share, then Add to Home Screen, for fullscreen. It starts fresh: pair it with this tab in Settings to keep your progress.'
-      : 'Tap Share, then Add to Home Screen, to play in fullscreen.',
+  ios: () => 'Tap Share, then Add to Home Screen, to play in fullscreen.',
+  app: () => 'Played in Safari before? Pair this app with it in Settings to bring your progress.',
 };
 
-/** What the tip says, for the player's progress (only an iPhone's or iPad's tip minds it). */
-export const tipText = (tipFor: TipFor, progress: boolean) => MESSAGE[tipFor](progress);
+export const tipText = (tipFor: TipFor) => MESSAGE[tipFor]();
+
+/** An iPhone's or iPad's home-screen app not yet paired with another device: due the pairing's reminder. */
+export const appUnpaired = (installed = installedApp(), pairing: Pairing | null = loadPairing()) => installed && !pairing?.met;
+
+/** The tip this window would get. */
+const tipHere = (): TipFor => (installedApp() ? 'app' : (fullscreenNow().install ?? 'desktop'));
 
 /** Puts the tip up (the lab and the QA desk show each this way too, leaving the counts alone). */
-export const showTip = (tipFor: TipFor = fullscreenNow().install ?? 'desktop', progress = tipFor === 'ios' && progressHere(), opts: ToastOptions = {}) =>
-  toasts.show(tipText(tipFor, progress), 'info', { title: TITLE, ...opts });
+export const showTip = (tipFor: TipFor = tipHere(), opts: ToastOptions = {}) => toasts.show(tipText(tipFor), 'info', { title: TITLE, ...opts });
 
-/** Whether this window is due a tip at all, counts aside: a desktop not fullscreen, or a phone or tablet that could add the game to its home screen. */
-const wants = (s: FullscreenState) => (s.desktop ? !s.fullscreen : s.install !== null);
+/** Whether this window is due a tip at all, counts aside: a desktop not fullscreen, a phone or tablet that could add the game to its home screen, or an iPhone's home-screen app not yet paired. */
+const wants = (s: FullscreenState) => (s.desktop ? !s.fullscreen : s.install !== null || appUnpaired());
 
 /** Times seen so far; anything unreadable counts as none. */
 const shownCount = () => Number.parseInt(readStored(SHOWN) ?? '', 10) || 0;

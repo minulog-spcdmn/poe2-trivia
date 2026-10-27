@@ -13,7 +13,6 @@
   let { v, small }: PieceProps = $props();
 
   const tipFor = $derived(String(v.for) as TipFor);
-  const progress = $derived(v.progress === true);
   let shown = $state<number | null>(null);
   const up = $derived(shown !== null && toasts.list.some((t) => t.id === shown));
 
@@ -22,8 +21,7 @@
   $effect(() => {
     if (small) return;
     const f = tipFor;
-    const p = progress;
-    untrack(() => (shown = showTip(f, p)));
+    untrack(() => (shown = showTip(f)));
     return () => {
       const s = untrack(() => shown);
       if (s !== null) toasts.dismiss(s);
@@ -31,13 +29,13 @@
   });
   $effect(() => {
     if (small || up || shown === null) return;
-    const t = setTimeout(() => untrack(() => (shown = showTip(tipFor, progress))), 900);
+    const t = setTimeout(() => untrack(() => (shown = showTip(tipFor))), 900);
     return () => clearTimeout(t);
   });
 </script>
 
 {#if small}
-  <p class="still">{tipText(tipFor, progress)}</p>
+  <p class="still">{tipText(tipFor)}</p>
 {:else}
   <Toasts />
 {/if}

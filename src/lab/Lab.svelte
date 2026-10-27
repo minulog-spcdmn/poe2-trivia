@@ -43,8 +43,8 @@
     { label: 'Clock paused', show: () => toast('The host reloaded. The clock starts again with the time it had left once everyone is back.', 'info', { title: 'Clock paused' }) },
     { label: 'Fullscreen tip', show: () => showTip('desktop') },
     { label: 'Install tip (Android)', show: () => showTip('android') },
-    { label: 'Install tip (iOS)', show: () => showTip('ios', false) },
-    { label: 'Install tip (iOS, with progress)', show: () => showTip('ios', true) },
+    { label: 'Install tip (iOS)', show: () => showTip('ios') },
+    { label: 'Home-screen app tip (iOS)', show: () => showTip('app') },
     { label: 'Creator arrives', show: () => toast('has arrived', 'info', { title: CREATOR_TITLE, who: { name: CREATOR, hue: RUBY }, herald: true }) },
     ...TIERS.map((t) => ({
       label: `Achievement (${METALS[t].name.toLowerCase()})`,

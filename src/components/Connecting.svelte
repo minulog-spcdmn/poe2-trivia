@@ -26,8 +26,8 @@
 
 <div class="connecting" role="status" in:fade={{ duration: 200 }}>
   <span class="rune" use:portalOn aria-hidden="true"></span>
-  <span class="what">
-    {#if !joining}Opening a portal…{:else if slow}Still on the way…<span class="why" in:fade={{ duration: 200 }}>Some networks take a little longer.</span>{:else}Travelling to <span class="num">{session.code}</span>…{/if}
+  <span class="what" title={slow && joining ? 'Some networks take a little longer.' : undefined}>
+    {#if !joining}Opening a portal…{:else if slow}Still on the way…{:else}Travelling to <span class="num">{session.code}</span>…{/if}
   </span>
   <button class="btn small ghost" type="button" onclick={() => session.leave()}>Cancel</button>
 </div>
@@ -55,15 +55,6 @@
     font-size: 17px;
     color: var(--gold-hi);
     white-space: nowrap;
-  }
-  /* Why it's slow, under it: seen on a phone too, where a tooltip never shows. */
-  .why {
-    display: block;
-    font-family: var(--font-body);
-    font-size: 13px;
-    line-height: 1.2;
-    color: var(--muted);
-    white-space: normal;
   }
   .num {
     font-family: var(--font-cinzel);

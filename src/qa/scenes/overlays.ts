@@ -43,7 +43,7 @@ export function overlayScenes(): Scene[] {
     overlay('removed', 'Removed from the game by the host', [doryani], () => inGame([{ fail: 'kicked' }])),
     overlay('closed', 'The host closed the room', [doryani], () => inGame([{ fail: 'closed' }])),
     overlay('moved', 'The game moved to another tab', [doryani], () => inGame([{ fail: 'replaced' }])),
-    // A burst of news during a question: wide screens stack it bottom right, phones at the top, as many as they keep.
+    // A burst of news during a question: wide screens (and a phone on its side) stack it bottom right, upright phones at the top, as many as they keep.
     // Last the longest a guest gets mid-question (session.svelte.ts TOO_QUICK), two lines: the one a phone on its side shows.
     overlay('news', 'News during a question: a burst of notices', [doryani], () =>
       inGame([
