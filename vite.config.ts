@@ -173,7 +173,9 @@ function errorsFirst(): Plugin {
       };
       visit(entry.fileName);
       if (!order.includes(id)) throw new Error('errors-first: the game no longer imports lib/countErrors.ts statically, so its script errors go uncounted.');
-      const before = order.slice(0, order.indexOf(id)).filter((m) => !needs.has(m));
+      // The bundler's own modules (its runtime, the modulepreload polyfill; ids starting with \0) aren't the game's and may run first: with
+      // the beta's extra pages they land in a chunk shared ahead of this one.
+      const before = order.slice(0, order.indexOf(id)).filter((m) => !needs.has(m) && !m.startsWith('\0'));
       if (before.length) throw new Error(`errors-first: ${before.length} modules run before lib/countErrors.ts, so their errors go uncounted, among them ${before.slice(0, 5).map((m) => m.replace(/^.*?(?=(src|node_modules)\/)/, '')).join(', ')}.`);
     },
   };
