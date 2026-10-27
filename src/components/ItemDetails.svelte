@@ -51,6 +51,11 @@
         ahead = undefined; // the text, once read, isn't kept beside what it was read into
         return (loaded = JSON.parse(text) as Stats);
       },
+      (e) => {
+        // (Not come, the Wi-Fi gone: fetched again the next time an item is opened.)
+        ahead = stats = undefined;
+        throw e;
+      },
     ));
 
   /** A value's colour, by its letter: the game's white, its augmented blue, and each damage type's own. */

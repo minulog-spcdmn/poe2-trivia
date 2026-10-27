@@ -37,7 +37,7 @@ watchFullscreen();
 holdViewport();
 if (!switchedOff('cursor')) installCursor();
 installAutoscroll();
-// No browser menu on a right click, no image's ghost on a drag (a long press on a code keeps the phone's Copy).
+// No browser menu on a right click or a long press, no image's ghost on a drag (lib/noMenu.ts).
 installNoMenu();
 if (fpsMeterOn()) installFpsMeter();
 countVisit(lastPlayed, takeCampaign(), (f) => whenIdle(f, { timeout: 3_000 }));

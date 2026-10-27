@@ -44,6 +44,9 @@ g.removeEventListener = win.remove;
 const doc = listeners();
 g.document = { addEventListener: doc.add, removeEventListener: doc.remove, execCommand: () => false };
 g.HTMLImageElement = class {};
+/** Whether the screen has no hover (a phone's, a tablet's), where a code selects nothing (app.css). */
+let hoverNone = false;
+g.matchMedia = (query: string) => ({ matches: query === '(hover: none)' && hoverNone });
 
 /** The selection on the page: none, or one over the code (its text as it shows). */
 let selected: string | null = null;
@@ -233,6 +236,21 @@ test('a finger selects nothing; a mouse copies what its click or drag selected a
   assert.equal(win.on.pointerup?.length ?? 0, 0);
   await settle();
   assert.equal(clip.writes, 0);
+});
+
+test('a mouse on a screen with no hover, where a code selects nothing, copies it with its click all the same', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  hoverNone = true;
+  try {
+    const { press, send } = code();
+    send('pointerdown', { pointerType: 'mouse' });
+    win.send('pointerup', { pointerType: 'mouse' });
+    await settle();
+    assert.equal(clip.text, 'ABCDEF');
+    assert.equal(press.note?.text, 'Room code copied');
+  } finally {
+    hoverNone = false;
+  }
 });
 
 test('a copy by hand gives the code itself, hidden for streaming too', () => {

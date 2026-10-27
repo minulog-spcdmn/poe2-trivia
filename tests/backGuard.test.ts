@@ -223,25 +223,61 @@ test('the history it was moved off is no longer heard', async () => {
   assert.equal(asked, 1);
 });
 
-test('a room resumed on a page’s entry (a reload with #settings open) drops the page first: the guard goes over a plain entry', async () => {
+test('a room resumed on a page’s entry (a reload with #settings open) goes up under the page: the page stays open over it, its own entry made plain', async () => {
   const steps = memorySteps({ settings: true }, '#settings');
   const guard = new BackGuard(steps);
-  let dropped = 0;
-  guard.dropPage = () => {
-    dropped++;
+  let lifted = 0;
+  // As App's does (HashRoute.lift()): the page's entry made plain, the guard, the page again.
+  guard.liftPage = (up) => {
+    lifted++;
+    const state = steps.state();
     steps.replace(null);
+    up();
+    steps.page(state, '#settings');
   };
   const asked: string[] = [];
   guard.asked(() => asked.push('leave?'));
   guard.want(true);
-  assert.equal(dropped, 1);
-  assert.deepEqual(steps.entries, [null, { guard: true }]);
-  assert.deepEqual(steps.hashes, ['', '']);
-  // Back lands on the plain entry: it asks, and no page is opened under the game.
+  assert.equal(lifted, 1);
+  assert.deepEqual(steps.entries, [null, { guard: true }, { settings: true }]);
+  assert.deepEqual(steps.hashes, ['', '', '#settings']);
+  // Back from the page lands on the guard, the page's to close: nothing asked.
+  steps.back();
+  await settled();
+  assert.ok(guarded(steps.state()));
+  assert.deepEqual(asked, []);
+  // Back from the guard lands on the plain entry: it asks, and no page is opened under the game.
   steps.back();
   await settled();
   assert.deepEqual(asked, ['leave?']);
   assert.equal(steps.hashed(), false);
+});
+
+test('with nothing to open again, a page’s entry under the guard is made plain', () => {
+  const steps = memorySteps({ settings: true }, '#settings');
+  new BackGuard(steps).want(true);
+  assert.deepEqual(steps.entries, [null, { guard: true }]);
+  assert.deepEqual(steps.hashes, ['', '']);
+});
+
+test('a page over a room still joining, closed back onto the guard it left behind, gives nothing up', async () => {
+  const { steps, guard, asked } = room();
+  guard.want(true);
+  // Still joining, so the settings open as a page, and the guard stays behind under them.
+  steps.page({ settings: true }, '#settings');
+  guard.want(false);
+  // Closed (the header's back): onto the guard, heard before the room wants it again.
+  steps.back();
+  await Promise.resolve();
+  guard.want(true);
+  await settled();
+  assert.deepEqual(asked, []);
+  // It goes up again in the next tap, still the only one.
+  steps.tap();
+  assert.ok(guarded(steps.state()));
+  assert.equal(steps.entries.length, 2);
+  await settled();
+  assert.deepEqual(asked, []);
 });
 
 test('the guard itself never takes a page’s hash, and a page opened over it is gone back from to the guard', async () => {
@@ -255,14 +291,14 @@ test('the guard itself never takes a page’s hash, and a page opened over it is
   assert.deepEqual(asked, []);
 });
 
-test('the guard’s own drop of a page is only for one under it: in a room with the guard up, opening a page drops nothing', () => {
+test('the guard’s lift of a page is only for one under it: in a room with the guard up, opening a page lifts nothing', () => {
   const { steps, guard } = room();
-  let dropped = 0;
-  guard.dropPage = () => dropped++;
+  let lifted = 0;
+  guard.liftPage = () => lifted++;
   guard.want(true);
   steps.page({ settings: true }, '#settings');
   guard.want(true);
-  assert.equal(dropped, 0);
+  assert.equal(lifted, 0);
 });
 
 // ---- a page's layers: the codex's item card, out of a room ----

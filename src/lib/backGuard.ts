@@ -7,8 +7,9 @@
 // One history entry stands guard over the page while a room is open: the
 // same address, no hash, so the #codex and #settings pages
 // (lib/hashRoute.svelte.ts) never take it for theirs, and never over a page's
-// entry (a room resumed on a load of #settings drops the page first), so Back
-// from it never opens a page again under the game. Back takes it away; the
+// entry (a room resumed on a load of #settings goes up under the page's,
+// opened again over it), so Back from it never opens a page again under the
+// game. Back takes it away; the
 // page does what Back was for and puts it back in the next tap, so there's
 // only ever the one, put back on top of itself, never a step per screen. It
 // goes up only in a tap (the one that starts, makes or joins the room; after
@@ -75,10 +76,17 @@ export class BackGuard {
   topDialog: () => (() => void) | null = () => null;
   /**
    * A page's entry the guard would go up over (a room resumed on a load of
-   * #settings): dropped where it stands, a plain entry, the page closed (the
-   * header's gear opens it again). The page's own drop, in the browser (App).
+   * #settings, which then shows them over the game): the guard (`guard`)
+   * goes up under it instead, the page's entry made a plain step and the
+   * page opened again over the guard. So nothing goes from under the tap
+   * that puts it up (a slider in the sheet, the game beneath it), and Back
+   * from the guard never opens the page again under the game. The page's
+   * own, in the browser (App); here, the page closed (made a plain step).
    */
-  dropPage: () => void = () => this.steps.replace(null);
+  liftPage: (guard: () => void) => void = (guard) => {
+    this.steps.replace(null);
+    guard();
+  };
 
   constructor(steps: Steps) {
     this.use(steps);
@@ -130,8 +138,9 @@ export class BackGuard {
     if (!this.steps.inTap()) return this.again();
     this.placed = true;
     if (isGuard(this.steps.state())) return;
-    if (this.steps.hashed()) this.dropPage();
-    this.steps.push({ [KEY]: true });
+    const guard = () => this.steps.push({ [KEY]: true });
+    if (this.steps.hashed()) this.liftPage(guard);
+    else guard();
   }
 
   private remove() {
@@ -165,8 +174,14 @@ export class BackGuard {
       return;
     }
     if (!this.placed) {
-      // One left behind, with no room now: passed over.
-      if (isGuard(state) && !this.wanted) this.steps.back();
+      // One left behind, with no room now: passed over, gone back from as
+      // remove() goes. (A page over a room still joining, closed back onto
+      // it, is heard here before the room wants it again: that one goes up
+      // in the next tap, and this back isn't taken for the player's.)
+      if (isGuard(state) && !this.wanted) {
+        this.going = true;
+        this.steps.back();
+      }
       return;
     }
     // Back onto it, from a page over the game (#settings): the page's to close.
@@ -269,10 +284,13 @@ export function memorySteps(state: unknown = null, hash = '') {
       steps.entries[steps.at] = s;
       steps.hashes[steps.at] = '';
     },
+    /** (On the entry it was on till then, as a browser is till its popstate.) */
     back() {
-      if (steps.at === 0) return;
-      steps.at--;
-      queueMicrotask(() => heard.forEach((h) => h()));
+      queueMicrotask(() => {
+        if (steps.at === 0) return;
+        steps.at--;
+        heard.forEach((h) => h());
+      });
     },
     listen(h: () => void) {
       heard.push(h);

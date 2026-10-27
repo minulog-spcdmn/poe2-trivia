@@ -118,9 +118,13 @@ export class CopyPress {
     this.lit = false;
     this.#show(TAP_TO_COPY, { clientX: this.#down.x, clientY: this.#down.y });
   };
-  /** A mouse's: what its press selected, all of the code or some, is what is wanted either way. */
+  /**
+   * A mouse's: what its press selected, all of the code or some, is what is
+   * wanted either way. Where a code selects nothing (a mouse on a phone or a
+   * tablet, a screen with no hover: app.css), its click is all there is to go by.
+   */
   #released = (e: PointerEvent) => {
-    if (this.#selectionHere()) void this.#copy(e);
+    if (this.#selectionHere() || matchMedia('(hover: none)').matches) void this.#copy(e);
   };
   #tapped = (e: MouseEvent) => {
     clearTimeout(this.#clickTimer);
