@@ -13,14 +13,15 @@
 // for ever (descent.ts, waiting). It hands a stretch over every few dozen
 // ms on a phone; PREP_STALL_MS with none, it has stopped (START_MS before
 // its first: its script may be on its way over a slow link), and PING_MS
-// after a long while in the background.
+// after a long while in the background. One only frozen with the page a
+// while isn't let go as it thaws (stallWatch in lib/prepPool.ts).
 // The backdrop tool's drafts (setBackdrops) are worked out on the page: the
 // worker only has the file's backdrops.
 
 import { backdropsVersion, onBackdrops } from './backdrops';
 import { adoptLights, LIGHT_TABLE, lightsHere, workLightsAway } from './descent';
 import type { LightAnswer } from './lightWorker';
-import { HIDDEN_CHECK_MS, onShownAgain, PING_MS, PREP_STALL_MS, START_MS } from './prepPool';
+import { HIDDEN_CHECK_MS, onShownAgain, PING_MS, PREP_STALL_MS, stallWatch, START_MS } from './prepPool';
 
 /** The worker: undefined until it's wanted, null where it can't help (no worker, it failed, the backdrops are a draft). */
 let worker: Worker | null | undefined;
@@ -28,13 +29,13 @@ let worker: Worker | null | undefined;
 let done = false;
 /** Whether it has handed any of it over yet. */
 let heard = false;
-/** The wait for its next stretch, while the table isn't all here (see expect). */
-let quiet: ReturnType<typeof setTimeout> | undefined;
+/** The wait for its next stretch, while the table isn't all here (see expect): what cancels it. */
+let quiet: (() => void) | undefined;
 
 /** `w` has stopped short (failed to load, say, or fallen silent): the page works the rest out after all. */
 function fail(w: Worker) {
   if (worker !== w || done) return;
-  clearTimeout(quiet);
+  quiet?.();
   w.terminate();
   worker = null;
   lightsHere();
@@ -42,8 +43,8 @@ function fail(w: Worker) {
 
 /** Waits `ms` for `w`'s next stretch; with none, it has stopped. */
 function expect(w: Worker, ms: number) {
-  clearTimeout(quiet);
-  quiet = setTimeout(() => fail(w), ms);
+  quiet?.();
+  quiet = stallWatch(ms, () => fail(w));
 }
 
 /** Starts the light table being worked out in the worker, if it isn't yet; whether it is (or has been). */
@@ -62,7 +63,7 @@ function start(): boolean {
     adoptLights(data.table);
     if (data.table.settled >= LIGHT_TABLE) {
       done = true;
-      clearTimeout(quiet);
+      quiet?.();
       w.terminate();
     } else expect(w, PREP_STALL_MS);
   };
@@ -78,7 +79,7 @@ workLightsAway(start);
 
 // The backdrop tool's draft in place of the file's: the table is worked out again, on the page.
 onBackdrops(() => {
-  clearTimeout(quiet);
+  quiet?.();
   worker?.terminate();
   worker = null;
 });

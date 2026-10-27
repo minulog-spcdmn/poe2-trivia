@@ -58,7 +58,9 @@ test('the worker makes a shadow as it loads, a tile’s size, before any job', a
 
 test('asked whether it’s still there, it says so', async () => {
   const before = canvases.length;
+  const said = sent.length;
   await scope.onmessage!({ data: { ping: true } });
+  assert.equal(sent.length, said + 1, 'it answers');
   assert.deepEqual(sent.at(-1), { id: 0 });
   assert.equal(canvases.length, before, 'drawing nothing');
 });

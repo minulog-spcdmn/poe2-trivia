@@ -17,7 +17,7 @@
 
 import { Burn, type BurnSetup } from './burn';
 import { fxDensity, veilIgnites, veilSpark } from './fx/moments';
-import { HIDDEN_CHECK_MS, onShownAgain, PING_MS, PREP_STALL_MS } from './prepPool';
+import { HIDDEN_CHECK_MS, onShownAgain, PING_MS, PREP_STALL_MS, stallWatch } from './prepPool';
 import { zoomOf } from './stage';
 import type { BurnJob, BurnNews, Pixels } from './burnWorker';
 import type { PatchImage } from './veilCut';
@@ -85,7 +85,7 @@ interface Burner {
   /** Its burns going on, by id. */
   burns: Map<number, Burning>;
   /** The wait for its answer, asked whether it's still there. */
-  asked?: ReturnType<typeof setTimeout>;
+  asked?: () => void;
 }
 
 /** The worker new burns go to; null where there's none, or none can read a picture's pixels. */
@@ -120,7 +120,7 @@ const ready = () => (current?.here ? current : null);
 function hear(b: Burner, news: BurnNews) {
   if (news.t === 'here') {
     b.here = true;
-    clearTimeout(b.asked);
+    b.asked?.();
     return;
   }
   const back: [number, Pixels][] = [];
@@ -156,7 +156,7 @@ function hear(b: Burner, news: BurnNews) {
 function retire(b: Burner, next: null | undefined) {
   if (b !== current) return;
   current = next;
-  clearTimeout(b.asked);
+  b.asked?.();
   const lost = [...b.burns.values()];
   b.burns.clear();
   for (const l of lost) l.lost();
@@ -186,13 +186,10 @@ function watch() {
     if (hiddenMs < HIDDEN_CHECK_MS || !b?.here) return;
     b.here = false;
     b.worker.postMessage({ t: 'ping' } satisfies BurnJob);
-    b.asked = setTimeout(
-      () => {
-        retire(b, undefined);
-        burner();
-      },
-      b.burns.size ? PREP_STALL_MS : PING_MS,
-    );
+    b.asked = stallWatch(b.burns.size ? PREP_STALL_MS : PING_MS, () => {
+      retire(b, undefined);
+      burner();
+    });
   });
 }
 

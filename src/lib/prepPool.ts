@@ -9,6 +9,9 @@
 // script on its way, on a slow link) has START_MS. Back from a long while in
 // the background, each is asked whether it is still there, and one that
 // doesn't answer within PING_MS is replaced before anything waits on it.
+// A page only frozen a while (a phone switched to another app) has its
+// workers frozen with it, not stopped: those aren't let go as it thaws
+// (stallWatch).
 
 import type { PrepJob, Prepped } from './prepArt';
 import type { PrepAnswer, PrepRequest } from './prepWorker';
@@ -21,6 +24,27 @@ export const START_MS = 20_000;
 export const PING_MS = 1500;
 /** Back after this long in the background (ms), the workers are asked whether they are still there: the phone may have stopped them meanwhile. */
 export const HIDDEN_CHECK_MS = 30_000;
+/** A stall watch that fires later than this past its time (ms) was held up by the page being frozen, not by the worker's silence. */
+export const THAWED_MS = 1000;
+
+/**
+ * A worker's stall watch: calls `silent` once `ms` pass, unless the function
+ * it returns cancels it first (an answer came). Unless it fires late by far:
+ * then the page was frozen meanwhile (a phone switched to another app), the
+ * worker frozen with it, unable to answer, and it has `ms` again from now.
+ * As a page thaws, its overdue timers and its visibilitychange (onShownAgain)
+ * run in no set order, so a watch already out when it froze would otherwise
+ * let a worker go that was only frozen, its work then done again elsewhere.
+ */
+export function stallWatch(ms: number, silent: () => void, now = Date.now): () => void {
+  let timer: ReturnType<typeof setTimeout>;
+  const arm = () => {
+    const due = now() + ms;
+    timer = setTimeout(() => (now() - due > THAWED_MS ? arm() : silent()), ms);
+  };
+  arm();
+  return () => clearTimeout(timer);
+}
 
 /** A picture handed to a worker: its file and job (to hand it on), how many workers have had it, and what to do with its answer, or to prepare it on the page instead. */
 interface Job {
@@ -38,7 +62,7 @@ interface Preparer {
   started: boolean;
   jobs: Map<number, Job>;
   pinged: boolean;
-  stall?: ReturnType<typeof setTimeout>;
+  stall?: () => void;
 }
 
 /** How many workers a picture is handed to before the page prepares it itself. */
@@ -142,7 +166,7 @@ export class PrepPool {
     const at = this.all.indexOf(p);
     if (at < 0) return;
     this.all.splice(at, 1);
-    clearTimeout(p.stall);
+    p.stall?.();
     p.worker.onmessage = p.worker.onerror = null;
     p.worker.terminate();
     if (replace && this.all.length < this.size) this.add();
@@ -152,11 +176,11 @@ export class PrepPool {
 
   /** The stall watch, from now, while the worker owes an answer: longer while it hasn't said a word, shorter for a question an idle one should answer at once. */
   private rewatch(p: Preparer) {
-    clearTimeout(p.stall);
+    p.stall?.();
     delete p.stall;
     if (!p.jobs.size && !p.pinged) return;
     const ms = !p.started ? Math.max(START_MS, this.stallMs) : p.pinged && !p.jobs.size ? Math.min(PING_MS, this.stallMs) : this.stallMs;
-    p.stall = setTimeout(() => this.retire(p, true), ms);
+    p.stall = stallWatch(ms, () => this.retire(p, true));
   }
 }
 

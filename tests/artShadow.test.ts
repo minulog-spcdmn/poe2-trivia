@@ -262,3 +262,70 @@ test('back after a long while, an idle worker is asked whether it’s still ther
   assert.equal(fresh.jobs, 1, 'the fresh one makes it');
   assert.equal(madeHere, 0);
 });
+
+const { START_MS } = await import('../src/lib/prepPool.ts');
+
+test('a worker that never says a word: let go after START_MS, what it held made on the page, and no other made', async (t) => {
+  const { castFor } = await shadows('mute');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const before = workers.length;
+  madeHere = 0;
+  answer = () => {};
+  const casts = Array.from({ length: 2 }, () => castFor(picture, 120, 90));
+  await turn(t);
+  t.mock.timers.tick(START_MS - 10);
+  await turn(t);
+  assert.equal(madeHere, 0, 'its script may be on its way');
+  t.mock.timers.tick(10);
+  for (const cast of await Promise.all(casts)) assert.ok(cast, 'each made all the same');
+  assert.equal(madeHere, 2, 'on the page');
+  assert.ok(workers[before]!.terminated);
+  assert.ok(await castFor(picture, 120, 90));
+  assert.equal(workers.length, before + 1, 'none made after it: it won’t start');
+  assert.equal(madeHere, 3);
+});
+
+test('one that says it’s there as it loads, then answers nothing: PREP_STALL_MS from its word, and a fresh one takes its place', async (t) => {
+  const { castFor } = await shadows('hello');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const before = workers.length;
+  madeHere = 0;
+  answer = () => {};
+  const cast = castFor(picture, 120, 90);
+  await turn(t);
+  const w = workers[before]!;
+  // (Its word as it loads, after the job was sent.)
+  w.reply({ id: 0 });
+  t.mock.timers.tick(PREP_STALL_MS - 10);
+  await turn(t);
+  assert.equal(madeHere, 0, 'waited on');
+  t.mock.timers.tick(10);
+  assert.ok(await cast);
+  assert.equal(madeHere, 1, 'made on the page');
+  assert.ok(w.terminated);
+  assert.equal(workers.length, before + 2, 'it had started: a fresh one');
+});
+
+test('frozen with the page a while, its watch coming due as the page thaws, a worker is waited on again, not let go', async (t) => {
+  const { castFor } = await shadows('frozen');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const before = workers.length;
+  madeHere = 0;
+  answer = fromWorker;
+  const first = castFor(picture, 120, 90);
+  await turn(t);
+  assert.ok(await first);
+  const w = workers[before]!;
+  /** Jobs it holds, answered once the page thaws. */
+  const held: { id: number }[] = [];
+  answer = (_w, job) => void held.push(job);
+  const casts = Array.from({ length: 3 }, () => castFor(picture, 120, 90));
+  await turn(t);
+  // (A minute frozen: the wall clock runs on; the watch comes due as the page thaws, before it hears it's shown again.)
+  away += 60_000;
+  t.mock.timers.tick(PREP_STALL_MS);
+  assert.ok(!w.terminated, 'not let go');
+  for (const job of held) fromWorker(w, job);
+  for (const cast of await Promise.all(casts)) assert.ok(cast);
+  assert.equal(madeHere, 0, 'all made in the worker');
+});

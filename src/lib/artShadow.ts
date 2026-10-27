@@ -27,11 +27,13 @@
 // be on its way over a slow link). What it held is made here, and a fresh
 // one takes its place. Back after HIDDEN_CHECK_MS, an idle one is asked
 // whether it's still there, and replaced if it doesn't answer within
-// PING_MS, before a picture waits on it.
+// PING_MS, before a picture waits on it; one with jobs in hand has
+// PREP_STALL_MS again from then. One only frozen with the page a while
+// isn't let go as it thaws (stallWatch).
 
 import { castBox, shadowOf } from './castShadow';
 import type { CastAnswer, CastJob, CastPing } from './artShadowWorker';
-import { HIDDEN_CHECK_MS, onShownAgain, PING_MS, PREP_STALL_MS, START_MS } from './prepPool';
+import { HIDDEN_CHECK_MS, onShownAgain, PING_MS, PREP_STALL_MS, stallWatch, START_MS } from './prepPool';
 
 /** A picture's shadow, for it drawn `w` x `h` (CSS px): an <img>, decoded, `cw` x `ch` CSS px, the picture `pad` in from its top and left. */
 export type Cast = { image: HTMLImageElement; w: number; h: number; pad: number; cw: number; ch: number };
@@ -39,8 +41,8 @@ export type Cast = { image: HTMLImageElement; w: number; h: number; pad: number;
 let worker: Worker | null | undefined;
 /** Whether the worker has said a word: it does as it loads, and with each answer. */
 let heard = false;
-/** The wait for the worker's next word, while it owes one (see expect). */
-let watch: ReturnType<typeof setTimeout> | undefined;
+/** The wait for the worker's next word, while it owes one (see expect): what cancels it. */
+let watch: (() => void) | undefined;
 let lastJob = 0;
 /** What each job sent to the worker does with its answer. */
 const answers = new Map<number, (a: CastAnswer) => void>();
@@ -62,13 +64,13 @@ function stop(w: Worker) {
 
 /** Waits `ms` for a word from `w`, which owes one; with none, it has stalled. */
 function expect(w: Worker, ms: number) {
-  clearTimeout(watch);
-  watch = setTimeout(() => stalled(w), ms);
+  watch?.();
+  watch = stallWatch(ms, () => stalled(w));
 }
 
 /** Nothing owed. */
 function rest() {
-  clearTimeout(watch);
+  watch?.();
   watch = undefined;
 }
 
@@ -86,12 +88,17 @@ function stalled(w: Worker) {
   castWorker();
 }
 
-/** Back after a long while in the background, an idle worker is asked whether it's still there (one with jobs in hand is waited on already). */
+/**
+ * Back after a long while in the background, the worker is asked whether
+ * it's still there: within PING_MS, or PREP_STALL_MS from now with jobs in
+ * hand (it answers between them). One that hasn't said a word yet is waited
+ * on as it was.
+ */
 function cameBack(hiddenMs: number) {
   const w = worker;
-  if (hiddenMs < HIDDEN_CHECK_MS || !w || !heard || watch !== undefined) return;
+  if (hiddenMs < HIDDEN_CHECK_MS || !w || !heard) return;
   w.postMessage({ ping: true } satisfies CastPing);
-  expect(w, PING_MS);
+  expect(w, answers.size ? PREP_STALL_MS : PING_MS);
 }
 let watching = false;
 

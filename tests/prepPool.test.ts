@@ -3,10 +3,11 @@
 // its place and what it had goes on to another (then to the page); one whose
 // script is still on its way is given longer; back from a long while hidden,
 // each is asked whether it is still there and only the silent ones replaced;
-// one that won't start isn't replaced.
+// one that won't start isn't replaced. A stall watch that comes due only as
+// a frozen page thaws waits again rather than let a worker go.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PrepPool, HIDDEN_CHECK_MS, onShownAgain } from '../src/lib/prepPool.ts';
+import { PrepPool, HIDDEN_CHECK_MS, onShownAgain, stallWatch } from '../src/lib/prepPool.ts';
 import type { PrepJob, Prepped } from '../src/lib/prepArt.ts';
 
 /** A worker that keeps what it is sent, answers when told, and notes being let go. */
@@ -211,4 +212,35 @@ test('the page shown again says how long it was hidden, once for each time', () 
   t += 2000;
   flip(false);
   assert.deepEqual(backs, [45_000, 2000]);
+});
+
+test('a stall watch: silent once its time is up; late by far (the page was frozen meanwhile), it waits as long again', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  let clock = 0;
+  const now = () => clock;
+  let silent = 0;
+  const pass = (ms: number) => {
+    clock += ms;
+    t.mock.timers.tick(ms);
+  };
+  stallWatch(5000, () => silent++, now);
+  pass(5000);
+  assert.equal(silent, 1, 'on time');
+
+  stallWatch(5000, () => silent++, now);
+  // (Frozen a minute: the wall clock runs on, and the timer comes due as the page thaws.)
+  clock += 60_000;
+  t.mock.timers.tick(5000);
+  assert.equal(silent, 1, 'waited on again');
+  pass(4999);
+  assert.equal(silent, 1);
+  pass(1);
+  assert.equal(silent, 2, 'silent all that while after');
+
+  const answered = stallWatch(5000, () => silent++, now);
+  clock += 60_000;
+  t.mock.timers.tick(5000);
+  answered();
+  pass(5000);
+  assert.equal(silent, 2, 'an answer cancels it, waiting again or not');
 });
