@@ -9,16 +9,17 @@
 // (lib/hashRoute.svelte.ts) never take it for theirs, and never over a page's
 // entry (a room resumed on a load of #settings drops the page first), so Back
 // from it never opens a page again under the game. Back takes it away; the
-// page puts it back at once and does what Back was for, so there's only ever
-// the one, put back on top of itself, never a step per screen. It goes up in
-// the tap that starts, makes or joins the room: an entry a page makes with
-// nobody touching it, Chrome's back button and iOS's swipe both pass over.
-// Leaving, it's gone back from (as HashRoute.close() goes), so a room left
-// leaves no steps behind.
+// page does what Back was for and puts it back in the next tap, so there's
+// only ever the one, put back on top of itself, never a step per screen. It
+// goes up in a tap (the one that starts, makes or joins the room, then the
+// next one after each Back): an entry a page makes with nobody touching it,
+// Chrome's back button and iOS's swipe both pass over. Leaving, it's gone back
+// from (as HashRoute.close() goes), so a room left leaves no steps behind.
 //
-// (Put back from Back itself, it has no fresh tap behind it, so a second Back
-// at once may pass over it and really leave: the way out for whoever means
-// it. The next tap on the page makes it hold again.)
+// (Not put back from Back itself, which is no tap: iOS's swipe passes over an
+// entry made then, and the one under it, however often the page is tapped
+// after, so every later swipe would leave. Until the next tap a second Back
+// leaves: the way out for whoever means it.)
 //
 // Out of a room, on a page over the start page (the codex), what's open over
 // the page is closed first too, each a step of its own (PageLayers, below).
@@ -45,6 +46,8 @@ export interface Steps {
   back(): void;
   /** `heard` is called whenever the page goes back or forward to another of its entries. */
   listen(heard: () => void): void;
+  /** `run` is called once, within the next tap or key press on the page. */
+  nextTap(run: () => void): void;
 }
 
 /** What the guard's entry is marked with. */
@@ -59,6 +62,8 @@ export class BackGuard {
   private placed = false;
   /** Gone back from it, until the browser says it's done. */
   private going = false;
+  /** To go up again in the next tap. */
+  private tapping = false;
   /** What's open over the game, the last opened on top. */
   private layers: (() => void)[] = [];
   /** With nothing open: App's ask before leaving. */
@@ -135,13 +140,24 @@ export class BackGuard {
     this.steps.back();
   }
 
+  /** It goes up again in the next tap on the page (any: a Stay, an answer), not now (the head of this file says why). */
+  private again() {
+    if (this.tapping) return;
+    this.tapping = true;
+    const steps = this.steps;
+    steps.nextTap(() => {
+      this.tapping = false;
+      if (this.steps === steps) this.place();
+    });
+  }
+
   /** The page went back (or forward) to another of its entries. */
   private heard() {
     const state = this.steps.state();
     if (this.going) {
       this.going = false;
-      // (A room opened again meanwhile.)
-      this.place();
+      // (A room opened again meanwhile: its guard goes up in the next tap, as after a Back.)
+      if (this.wanted) this.again();
       return;
     }
     if (!this.placed) {
@@ -151,9 +167,9 @@ export class BackGuard {
     }
     // Back onto it, from a page over the game (#settings): the page's to close.
     if (isGuard(state)) return;
-    // Back took it: it goes up again, and Back does what it's for.
+    // Back took it: Back does what it's for, and it goes up again in the next tap.
     this.placed = false;
-    this.place();
+    this.again();
     const close = this.topDialog() ?? this.layers.at(-1);
     if (close) close();
     else this.onBack();
@@ -257,8 +273,29 @@ export function memorySteps(state: unknown = null, hash = '') {
     listen(h: () => void) {
       heard.push(h);
     },
+    /** Waiting for the next tap. */
+    taps: [] as (() => void)[],
+    nextTap(run: () => void) {
+      steps.taps.push(run);
+      // (In a page, the QA desk's frames: its own taps.)
+      if (typeof window !== 'undefined') onNextTap(() => steps.tap());
+    },
+    /** A tap on the page. */
+    tap() {
+      for (const run of steps.taps.splice(0)) run();
+    },
   };
   return steps satisfies Steps;
+}
+
+/** `run` once, in the next tap or key press on the page (touchend too: on iOS a tap on nothing clickable fires no click). */
+function onNextTap(run: () => void) {
+  const types = ['touchend', 'click', 'keydown'];
+  const once = () => {
+    for (const t of types) removeEventListener(t, once, true);
+    run();
+  };
+  for (const t of types) addEventListener(t, once, true);
 }
 
 function browserSteps(): Steps {
@@ -271,6 +308,7 @@ function browserSteps(): Steps {
     replace: (s) => history.replaceState(s, '', here()),
     back: () => history.back(),
     listen: (heard) => addEventListener('popstate', heard),
+    nextTap: onNextTap,
   };
 }
 

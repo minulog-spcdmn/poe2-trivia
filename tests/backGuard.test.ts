@@ -29,21 +29,48 @@ test('a room puts up one guard, however often it is asked for', () => {
   assert.ok(guarded(steps.state()));
 });
 
-test('Back with nothing open asks before leaving, and the guard is back on top, still the only one', async () => {
+test('Back with nothing open asks before leaving, and the guard is back on top in the next tap, still the only one', async () => {
   const { steps, guard, asked, back } = room();
   guard.want(true);
   await back();
   assert.deepEqual(asked, ['leave?']);
+  // Not from Back itself, which is no tap: iOS's swipe would pass over it from then on.
+  assert.equal(steps.at, 0);
+  steps.tap();
   assert.equal(steps.at, 1);
   assert.equal(steps.entries.length, 2);
   assert.ok(guarded(steps.state()));
   await back();
   assert.deepEqual(asked, ['leave?', 'leave?']);
+  steps.tap();
   assert.equal(steps.entries.length, 2);
 });
 
+test('until that tap a second Back is the browser’s: it really leaves', async () => {
+  const { steps, guard, asked, back } = room();
+  guard.want(true);
+  await back();
+  await back();
+  assert.deepEqual(asked, ['leave?']);
+  // Several taps, one guard.
+  steps.tap();
+  steps.tap();
+  assert.equal(steps.entries.length, 2);
+  assert.equal(steps.at, 1);
+});
+
+test('a room gone before the tap puts no guard up', async () => {
+  const { steps, guard, back } = room();
+  guard.want(true);
+  await back();
+  guard.want(false);
+  steps.tap();
+  assert.equal(steps.at, 0);
+  assert.equal(steps.state(), null);
+});
+
 test('Back closes the topmost layer first, one per Back, then asks', async () => {
-  const { guard, asked, back } = room();
+  const { steps, guard, asked, back } = room();
   const closed: string[] = [];
   guard.want(true);
   const off: Record<string, () => void> = {};
@@ -57,15 +84,17 @@ test('Back closes the topmost layer first, one per Back, then asks', async () =>
   });
   await back();
   assert.deepEqual(closed, ['leave']);
+  steps.tap();
   await back();
   assert.deepEqual(closed, ['leave', 'item']);
   assert.deepEqual(asked, []);
+  steps.tap();
   await back();
   assert.deepEqual(asked, ['leave?']);
 });
 
 test('a modal dialog the browser left open is closed before any layer', async () => {
-  const { guard, asked, back } = room();
+  const { steps, guard, asked, back } = room();
   const closed: string[] = [];
   guard.want(true);
   guard.layer(() => closed.push('item'));
@@ -73,6 +102,7 @@ test('a modal dialog the browser left open is closed before any layer', async ()
   guard.topDialog = () => (open ? () => ((open = false), closed.push('privacy')) : null);
   await back();
   assert.deepEqual(closed, ['privacy']);
+  steps.tap();
   await back();
   assert.deepEqual(closed, ['privacy', 'item']);
   assert.deepEqual(asked, []);
@@ -102,12 +132,14 @@ test('leaving goes back off the guard, without asking, and leaves no step behind
   assert.equal(steps.entries.length, 2);
 });
 
-test('a room opened while the last one’s guard is still being gone back from gets one guard, once that’s done', async () => {
+test('a room opened while the last one’s guard is still being gone back from gets one guard, in the next tap once that’s done', async () => {
   const { steps, guard, asked } = room();
   guard.want(true);
   guard.want(false);
   guard.want(true);
   await settled();
+  assert.equal(steps.at, 0);
+  steps.tap();
   assert.equal(steps.at, 1);
   assert.equal(steps.entries.length, 2);
   assert.ok(guarded(steps.state()));
