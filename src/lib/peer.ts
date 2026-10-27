@@ -4,7 +4,8 @@ import { CHANNEL, LOCAL, roomPrefix } from './channel';
 import { QA_ROOM } from './storage';
 import { whenSettled } from './settled';
 import { QA_PEER_PATH, QA_PEER_PORT } from '../qa/live/signal';
-import { loadRelay, relayServers } from './relay';
+import { Relay } from './relay';
+import { RELAY_URL } from './relayUrl';
 
 // Bump when the protocol or item data changes so old tabs can't join new rooms.
 const PROTOCOL = 'v5';
@@ -31,15 +32,27 @@ const SIGNALLING: PeerOptions = QA_LOCAL
     : {};
 /** Google's STUN server, for a peer without the relay (whose own login brings Cloudflare's). */
 const STUN: RTCIceServer = { urls: 'stun:stun.l.google.com:19302' };
+/** The relay's logins (lib/relay.ts). None on the QA desk's local server, nor in tests (a live build, as tests/asVite.ts makes them), which would reach the real Worker. */
+const relay = new Relay(QA_LOCAL || env.MODE === 'test' ? '' : RELAY_URL);
 
 /**
  * A new peer's options: the signalling server, and the relay (lib/relay.ts)
  * when a login is held. PeerJS's own default lists its relays, which are gone.
+ * PeerJS hands `config` to each RTCPeerConnection a peer makes, which reads
+ * its servers then: a room's host or a device waiting to sync for hours gives
+ * each connection the login held at the time, not the one it was made with.
  */
 export function peerOptions(): PeerOptions {
   if (QA_LOCAL) return { ...SIGNALLING, config: { iceServers: [] } };
-  const relay = relayServers();
-  return { ...SIGNALLING, config: { iceServers: relay.length ? relay : [STUN] } };
+  return {
+    ...SIGNALLING,
+    config: {
+      get iceServers() {
+        const servers = relay.iceServers();
+        return servers.length ? servers : [STUN];
+      },
+    },
+  };
 }
 
 export type PeerJs = typeof PeerJsModule;
@@ -47,26 +60,36 @@ let peerJs: PeerJs | null = null;
 let loading: Promise<PeerJs> | null = null;
 
 /**
- * PeerJS, loaded the first time a peer is made (or once the start page has
- * settled, after the lobby's screens: preloadPeerJs, queued by App.svelte):
- * the start page doesn't wait for it. A load that fails (offline) is tried
- * again on the next call. The relay's login comes with it (loadRelay, which
- * never fails), so the first peer has it; a later call fetches a fresh one
- * once the login held runs low.
+ * PeerJS's code, loaded once (a load that fails, offline, is tried again on
+ * the next call), with the relay's login asked for on the side but not
+ * waited for: what only gets PeerJS ahead (preloadPeerJs, App.svelte)
+ * isn't held up by a slow Worker.
  */
-export function loadPeerJs(): Promise<PeerJs> {
-  const relay = QA_LOCAL ? Promise.resolve() : loadRelay();
-  loading ??= import('peerjs').catch((err) => {
-    loading = null;
-    throw err;
-  });
-  return Promise.all([loading, relay]).then(([m]) => (peerJs = m));
+export function loadPeerJsCode(): Promise<PeerJs> {
+  void relay.load();
+  return (loading ??= import('peerjs').then(
+    (m) => (peerJs = m),
+    (err) => {
+      loading = null;
+      throw err;
+    },
+  ));
 }
 
-/** PeerJS when it is loaded already, so a peer can be made right away. */
-export const peerJsNow = (): PeerJs | null => peerJs;
+/**
+ * PeerJS, ready for a peer: loaded the first time one is made (or ahead,
+ * preloadPeerJs), with the relay's login (Relay.load, which never fails and
+ * waits 3 s at most). A call when the login held runs low, has run out or
+ * couldn't be had a while ago fetches a fresh one.
+ */
+export function loadPeerJs(): Promise<PeerJs> {
+  return Promise.all([loadPeerJsCode(), relay.load()]).then(([m]) => m);
+}
+
+/** PeerJS when it is loaded already and the relay's login isn't worth waiting for, so a peer can be made right away (else loadPeerJs first). */
+export const peerJsNow = (): PeerJs | null => (relay.wanted() ? null : peerJs);
 
 /** Loads PeerJS once the page has settled (lib/settled.ts: not over the start page's entrance), so hosting or joining doesn't wait for it; returns what takes that back if it hasn't run. */
 export function preloadPeerJs(): () => void {
-  return whenSettled(() => loadPeerJs().catch(() => {}));
+  return whenSettled(() => loadPeerJsCode().catch(() => {}));
 }

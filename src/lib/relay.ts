@@ -6,16 +6,19 @@
 // "Relay"). A login that can't be had leaves the peer without a relay: rooms
 // still meet wherever a direct link gets through.
 
-import { RELAY_URL } from './relayUrl.ts';
-
 /** How long a page waits for a login before making its peer without one. */
 const WAIT_MS = 3000;
-/** A login this close to running out is fetched anew before the next peer is made. */
-const MARGIN_MS = 3_600_000;
-
-let servers: RTCIceServer[] = [];
-let until = 0;
-let fetching: Promise<void> | null = null;
+/** A fetch that hasn't answered by then is given up, so another can go. */
+const GIVE_UP_MS = 15000;
+/** After a login that couldn't be had, how long until the next try. */
+const RETRY_MS = 30000;
+/**
+ * A login with less left than this (or past half of a shorter one) is
+ * fetched anew before the next peer is made. A peer reads the servers again
+ * for each connection it makes (peer.ts), so this only keeps a fresh login
+ * ready ahead of need.
+ */
+const MARGIN_MS = 12 * 3_600_000;
 
 const iceUrl = (u: unknown) => typeof u === 'string' && /^(stun|turns?):/.test(u);
 
@@ -36,30 +39,75 @@ export function parseRelay(raw: unknown): { iceServers: RTCIceServer[]; ttl: num
   return { iceServers: out, ttl };
 }
 
-/**
- * Fetches a login unless the one held lasts a while yet. Never fails and
- * never waits past WAIT_MS: a slow or missing answer leaves the peer to be
- * made without the relay, and one that comes later is kept for the next.
- */
-export function loadRelay(): Promise<void> {
-  if (!RELAY_URL || Date.now() < until - MARGIN_MS) return Promise.resolve();
-  fetching ??= fetch(RELAY_URL, { cache: 'no-store' })
-    .then((r) => (r.ok ? r.json() : null))
-    .then((raw) => {
-      const got = parseRelay(raw);
-      if (!got) return;
-      servers = got.iceServers;
-      until = Date.now() + got.ttl * 1000;
-    })
-    .catch(() => {})
-    .finally(() => (fetching = null));
-  return Promise.race([fetching, new Promise<void>((r) => setTimeout(r, WAIT_MS))]);
-}
+/** The logins of the Worker at a URL (none when it's empty). */
+export class Relay {
+  private readonly url: string;
+  private readonly get: typeof fetch;
+  private servers: RTCIceServer[] = [];
+  private until = 0;
+  /** When the login held is fetched anew: half a day before it runs out, or halfway through a shorter one. */
+  private refreshAt = 0;
+  private retryAt = 0;
+  private fetching: Promise<void> | null = null;
+  /** Until when a peer waits for the fetch on the way (WAIT_MS from its start, whoever asks). */
+  private waitUntil = 0;
 
-/** The relay's servers while their login holds (none once it has run out). */
-export function relayServers(): RTCIceServer[] {
-  if (Date.now() >= until) return [];
-  // Running low: the next peer gets a fresh one.
-  if (Date.now() >= until - MARGIN_MS) void loadRelay();
-  return servers;
+  constructor(url: string, get: typeof fetch = (...a) => fetch(...a)) {
+    this.url = url;
+    this.get = get;
+  }
+
+  /** Whether a login should be fetched before the next peer is made: none held or it's running low, none on the way, and the last try not just failed. */
+  due(): boolean {
+    return !!this.url && !this.fetching && Date.now() >= Math.max(this.retryAt, this.refreshAt);
+  }
+
+  /** Whether the next peer should wait: a login is due, or one is on the way, nothing usable is held, and its wait isn't over. */
+  wanted(): boolean {
+    return this.due() || (!!this.fetching && !this.iceServers().length && Date.now() < this.waitUntil);
+  }
+
+  /**
+   * Fetches a login when one is due, and waits for the one on the way. Never
+   * fails, and never waits past WAIT_MS from the fetch's start: a slow answer
+   * leaves the peer to be made without the relay, and is kept for the next
+   * when it comes.
+   */
+  load(): Promise<void> {
+    if (this.due()) {
+      const abort = new AbortController();
+      const giveUp = setTimeout(() => abort.abort(), GIVE_UP_MS);
+      this.waitUntil = Date.now() + WAIT_MS;
+      this.fetching = this.get(this.url, { cache: 'no-store', signal: abort.signal })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((raw) => {
+          const got = parseRelay(raw);
+          if (!got) throw new Error('No relay login');
+          const now = Date.now();
+          this.servers = got.iceServers;
+          this.until = now + got.ttl * 1000;
+          this.refreshAt = this.until - Math.min(MARGIN_MS, (got.ttl * 1000) / 2);
+        })
+        .catch(() => void (this.retryAt = Date.now() + RETRY_MS))
+        .finally(() => {
+          clearTimeout(giveUp);
+          this.fetching = null;
+        });
+    }
+    const on = this.fetching;
+    const left = this.waitUntil - Date.now();
+    if (!on || left <= 0) return Promise.resolve();
+    return new Promise((done) => {
+      const t = setTimeout(done, left);
+      void on.then(() => {
+        clearTimeout(t);
+        done();
+      });
+    });
+  }
+
+  /** The relay's servers while their login holds (none once it has run out). */
+  iceServers(): RTCIceServer[] {
+    return Date.now() < this.until ? this.servers : [];
+  }
 }

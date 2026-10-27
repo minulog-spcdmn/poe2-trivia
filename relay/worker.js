@@ -21,15 +21,22 @@ export default {
     if (origin !== LIVE && !LOCAL.test(origin)) return new Response(null, { status: 403 });
     const headers = { 'Access-Control-Allow-Origin': origin, Vary: 'Origin', 'Cache-Control': 'no-store' };
     if (request.method !== 'GET') return new Response(null, { status: 405, headers });
-    const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${env.TURN_KEY_API_TOKEN}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ttl: TTL }),
-    });
-    if (!r.ok) return new Response(null, { status: 502, headers });
-    const { iceServers } = await r.json();
-    // Browsers block port 53, so a URL on it only waits out its timeout.
-    const servers = iceServers.map((s) => ({ ...s, urls: [s.urls].flat().filter((u) => !/:53(\?|$)/.test(u)) }));
+    let servers;
+    try {
+      const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${env.TURN_KEY_API_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ttl: TTL }),
+      });
+      const { iceServers } = r.ok ? await r.json() : {};
+      if (!Array.isArray(iceServers)) throw new Error(`No ICE servers from Cloudflare (${r.status})`);
+      // Browsers block port 53, so a URL on it only waits out its timeout.
+      servers = iceServers.map((s) => ({ ...s, urls: [s.urls].flat().filter((u) => !/:53(\?|$)/.test(u)) })).filter((s) => s.urls.length);
+    } catch (err) {
+      // An answer the page can read (CORS), not Cloudflare's error page: it tries again later.
+      console.error(err);
+      return new Response(null, { status: 502, headers });
+    }
     return Response.json({ iceServers: servers, ttl: TTL }, { headers });
   },
 };
