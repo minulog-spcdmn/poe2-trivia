@@ -58,14 +58,15 @@ export class HashRoute {
   /**
    * Opened again over what `under` puts up (the room's guard, lib/backGuard.ts
    * liftPage), its entry where it stands made a plain step: open all along,
-   * so nothing on the screen changes. (Not open, the address just loses its
-   * hash under it.)
+   * so nothing on the screen changes. (Not open, the hash is no page's, such
+   * as the beta's switches, #?off= (lib/switchedOff.ts): kept where it is.)
    */
   lift(under: () => void) {
+    if (!this.open) return under();
     const hash = location.hash;
     history.replaceState(null, '', location.pathname + location.search);
     under();
-    if (this.open) history.pushState({ [this.key]: true }, '', hash);
+    history.pushState({ [this.key]: true }, '', hash);
   }
 
   /** Gone where it stands, the address losing its hash: for when what it was over has gone (a room it was opened in, ended). */

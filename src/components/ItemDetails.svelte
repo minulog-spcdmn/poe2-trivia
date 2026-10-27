@@ -41,22 +41,30 @@
   const fonts = () =>
     Promise.all(['1rem "Fontin SmallCaps"', 'italic 1rem "Fontin"'].map((f) => document.fonts?.load(f).catch(() => {})));
   /**
+   * The last load failed and a tooltip has said so: the next item opened
+   * tries again. (Not as soon as it fails: ItemWindow waits for the load
+   * before it comes in, and its tooltip, in that same opening, says it
+   * failed rather than trying again.)
+   */
+  let told = false;
+  /**
    * The tooltips, loaded once, with their font. ItemWindow waits for them
    * before it unrolls, so what it unrolls is the whole tooltip, not the line
-   * that waits for it.
+   * that waits for it. Failed (the Wi-Fi gone, or a hotel's sign-in page in
+   * their place), they're fetched again as another item is opened.
    */
-  export const loadStats = () =>
-    (stats ??= Promise.all([(ahead ?? Promise.resolve(null)).then((text) => text ?? fetchText()), fonts()]).then(
-      ([text]) => {
-        ahead = undefined; // the text, once read, isn't kept beside what it was read into
-        return (loaded = JSON.parse(text) as Stats);
-      },
-      (e) => {
-        // (Not come, the Wi-Fi gone: fetched again the next time an item is opened.)
-        ahead = stats = undefined;
-        throw e;
-      },
-    ));
+  export const loadStats = () => {
+    if (told) {
+      told = false;
+      stats = undefined;
+    }
+    return (stats ??= Promise.all([(ahead ?? Promise.resolve(null)).then((text) => text ?? fetchText()), fonts()])
+      .then(([text]) => (loaded = JSON.parse(text) as Stats))
+      // The text, once read (or found no use), isn't kept beside what it was read into.
+      .finally(() => (ahead = undefined)));
+  };
+  /** A tooltip said the load failed. */
+  const tell = () => (told = true);
 
   /** A value's colour, by its letter: the game's white, its augmented blue, and each damage type's own. */
   const COLOURS: Record<string, string> = { w: 'white', a: 'aug', p: 'white', f: 'fire', c: 'cold', l: 'lightning', h: 'chaos' };
@@ -108,7 +116,14 @@
 
   let all = $state<Stats | null>(loaded);
   let failed = $state(false);
-  if (!loaded) loadStats().then((s) => (all = s), () => (failed = true));
+  if (!loaded)
+    loadStats().then(
+      (s) => (all = s),
+      () => {
+        failed = true;
+        tell();
+      },
+    );
   const sections = $derived(all ? sectionsOf(item, all) : null);
 </script>
 
