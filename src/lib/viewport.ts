@@ -40,6 +40,16 @@ export function holdViewport() {
     root.setProperty('--screen-h', `${screenHeight(tallest, w, h, screen.width, screen.height)}px`);
     root.setProperty('--view-h', `${h}px`);
     root.setProperty('--app-h', `${h}px`);
+    // Turned with a dialog open, WebKit can leave the page scrolled past its
+    // end, by the height it had for a moment as it turned (59px on the
+    // owner's iPhone, a page 793 tall with nothing to scroll), and nothing
+    // scrolls it back. What's fixed to the screen is drawn where it was but
+    // answers taps that far up: the settings' every tap landed under its button.
+    const page = document.scrollingElement;
+    if (page) {
+      const end = Math.max(0, page.scrollHeight - page.clientHeight);
+      if (page.scrollTop > end) page.scrollTop = end;
+    }
   };
   /** Measured now, after the next frame and once more as WebKit settles (it can report the old size at first). */
   let late = 0;
