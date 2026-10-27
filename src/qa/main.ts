@@ -4,11 +4,13 @@
 // scene's, or with &b= a piece's) and each seat of a live room (qa.html?live).
 // Either way it first marks the page for storage (src/lib/storage.ts' QA),
 // before anything that reads storage loads: so nothing is imported here but
-// the channel, and the rest comes in after. Dev server and beta only.
+// the channel, and the rest comes in after. Dev server and beta only, and
+// the builds of the dev server's channel (the iPhone's, with
+// scripts/iphone/build.mjs --qa).
 
 import { BETA, LOCAL } from '../lib/channel.ts';
 
-if (!(import.meta.env.DEV || BETA)) throw new Error('The QA desk only runs on the dev server and the beta.');
+if (!(import.meta.env.DEV || BETA || LOCAL)) throw new Error('The QA desk only runs on the dev server and the beta.');
 
 const asked = new URLSearchParams(location.search);
 const slot = asked.get('frame');

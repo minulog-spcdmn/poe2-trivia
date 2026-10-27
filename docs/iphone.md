@@ -10,6 +10,7 @@ owner to try a build and say how it feels.
 Nothing on this PC stands in for it. WebKit in Playwright runs the codex at
 about 7 fps here, slow or not, and an iPhone's costs (its compositor, its
 layers, a main thread several times slower) don't show in desktop Chrome.
+(Android Chrome does have a stand-in here, emulators: docs/android.md.)
 
 ## What's set up
 
@@ -32,9 +33,33 @@ app, and has no Safari):
 
 - Chrome: **⋯ → Settings → Content Settings → Web Inspector** on.
 - This PC trusted (**Trust** and the passcode, the first time it's plugged in).
-- Not done yet: the home-screen app goes by the iOS setting (Settings → Apps
-  → Safari → Advanced → Web Inspector), which isn't there without Safari.
-  Only Chrome can be driven so far.
+- The home-screen app can be driven too, while it's in front (iOS holds a
+  background app's scripts), though Safari's own setting (Settings → Apps →
+  Safari → Advanced → Web Inspector) isn't there without Safari. The phone
+  lists Chrome's pages and the app's together, in no set order: the scripts
+  take Chrome's (`CriOS` in its user agent), `IPHONE_APP=app` the app's,
+  `IPHONE_APP=any` the first listed. Before that, a whole day of runs (26
+  October 2026) drove the app's page taking it for Chrome's.
+
+What each reads (that day: iOS 27.0.1, Chrome 155):
+
+- **Chrome's tab**: `navigator.standalone` false, display-mode browser, 393 x
+  665 with its bars up, 100lvh 773. The game takes a browser's path.
+- **The home-screen app**, opened fresh at poe2.quest: Safari's user agent,
+  `standalone` true, display-mode fullscreen, 393 x 793, 100svh 793 but
+  100lvh 852. The game takes the app's path. The PC's builds are out of its
+  scope, so the app itself can only be read on the live site.
+- **The app sent to the PC's address**, out of its scope: iOS shows the page
+  in the app's in-app browser view, bars like Safari's, 393 x 663, still
+  `standalone` true and fullscreen, so the game takes the app's path under
+  a browser's bars. That's neither a player's Chrome nor their app: speed
+  measured there is still WebKit on this phone (Safari's and Chrome's
+  engine on iOS), but nothing that hangs on being installed
+  (`installedApp()`, `standalone`, display-mode, the heights) is.
+
+Chrome turns an address typed without `http://` into `https://`, which the
+PC's builds don't serve (`ERR_SSL_PROTOCOL_ERROR`): type it in full, or send
+the tab there from the PC.
 
 ## Every time
 
@@ -93,7 +118,10 @@ repo) in the local channel, so the `?off=` switches (`src/lib/switchedOff.ts`)
 and `?fps` work and its rooms are this machine's alone, with source maps kept
 for `profile.mjs`. Its first visit fills the phone's codex as a long-time
 player's would be (every item seen, 2000 answers; `--empty` leaves it
-empty), so the codex has its full weight. `serve.mjs` serves builds on the
+empty), so the codex has its full weight. With `--qa` it has the QA desk
+too (`docs/qa.md`), for a scene on the phone on its own:
+`qa.html?frame&s=<scene key>`, its controls as `&k.<key>=<value>`.
+`serve.mjs` serves builds on the
 home network until stopped, each on a port of its own: `http://192.168.178.88:4403/`.
 
 To set a change against what it changes, build both (check out the commit
@@ -112,7 +140,7 @@ owner can use it.
 | `goto.mjs <url>` | Sends the tab to an address, a build for the owner to try, say. |
 | `shot.mjs <out.png>` | A screenshot of the tab, at the phone's pixels. |
 | `codex.mjs <url> <label>` | The codex as a thumb goes through it: opened, down to the items, scrolled through them and back, two items opened and closed. Each phase's frames, and the page's CPU. |
-| `game.mjs <url> <label>` | A game (`MODE=delve`, `turns` or `race`; `ROUNDS=4`): New game, a mode, Begin, then cards, question, answer and reveal, each click timed in parts. Each phase's frames. |
+| `game.mjs <url> <label>` | A game (`MODE=delve`, `turns` or `race`; `ROUNDS=4`): New game, a mode, Begin, then cards, question, answer and reveal, each click timed in parts. Each phase's frames. It answers right (`ANSWER=right`, so a Delve run lives on), or always the first option (`ANSWER=first`). |
 | `layers.mjs [--do "<js>"]` | The tab's compositing layers: what, how many, why. With `--do`, which painted while that ran. |
 | `profile.mjs <label.prof.json>` | What ran in each phase of a `game.mjs` run with `PROFILE=1`, by file and line in `src/`. |
 | `timeline.mjs <a> [b]` | What a run's timeline (`TIMELINE=1`) recorded in each phase: styles, layouts and paints, and who forced them. |
