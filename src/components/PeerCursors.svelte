@@ -20,6 +20,7 @@
   import { playerColor } from '../lib/ui';
   import { portalToPage } from '../lib/portal';
   import { anchorAt, clickableAt, keyTap, onKeyTap, screenHeight } from '../lib/pointerAnchor';
+  import { GONE } from '../lib/leaving';
   import { scrollFollow } from '../lib/scrollFollow';
   import { HAND, HAND_PRESSED, PAD_X, PAD_Y, POINTER, PRESS_SINK, SIZE, WEIGHT } from '../lib/pointerArt';
 
@@ -308,7 +309,7 @@
     const name = anchorName(code);
     let found: Found | null = null;
     for (const n of name ? document.querySelectorAll<HTMLElement>(`[data-cursor="${name}"]`) : []) {
-      if (n.closest('[inert]')) continue;
+      if (n.closest(GONE)) continue;
       const r = n.getBoundingClientRect();
       if (r.width && r.height) {
         found = { box: r, el: n, leaf: !n.querySelector('[data-cursor]') };

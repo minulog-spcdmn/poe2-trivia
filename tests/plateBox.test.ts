@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { WHOLE, boxOf, placed, union, type Box } from '../src/lib/plateBox.ts';
+import { WHOLE, boxOf, insideOut, placed, reachOf, union, type Box } from '../src/lib/plateBox.ts';
 import { PLATES } from '../src/lib/plates/index.ts';
 import type { StageLayer } from '../src/lib/engraver.ts';
 
@@ -181,4 +181,20 @@ test("the eye's box holds the eye and its glance", async () => {
     }
   }
   assert.equal(build(true).eyeBox, undefined);
+});
+
+test('rings are gone through from the centre out, those reaching as far in their own order', () => {
+  assert.equal(reachOf([-30, -10, 20, 40]), 40);
+  assert.equal(reachOf(WHOLE), 100);
+  assert.deepEqual(insideOut([WHOLE, [-20, -20, 20, 20], [-60, -50, 60, 50], [-20, -15, 15, 20]]), [1, 3, 2, 0]);
+  assert.deepEqual(insideOut([]), []);
+});
+
+test("the eye takes an answer's colour from its glory out to its band", async () => {
+  // As ArcaneStage goes through its rings (each outermost layer, and those beside it under one mask, as one).
+  const { layers } = (await PLATES.eye(false)) as { layers: StageLayer[] };
+  const rings = layers.filter((l) => !l.within);
+  const order = insideOut(rings.map((l) => l.box ?? WHOLE)).map((i) => rings[i].name);
+  assert.equal(order.at(-1), 'band');
+  assert.ok(order.indexOf('glory0') < order.indexOf('star') && order.indexOf('heart') < order.indexOf('band'), order.join(', '));
 });

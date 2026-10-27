@@ -13,6 +13,7 @@
 import { isRelayMessage, type RelayMessage } from '../messages.ts';
 import { POINTER, PAD_X, PAD_Y, SIZE, WEIGHT } from '../../lib/pointerArt.ts';
 import type { CursorAt } from '../../lib/cursors.ts';
+import { GONE } from '../../lib/leaving.ts';
 
 /** The mouse over the screen (or the other side's, before and after) takes the hand from its tour for this long after it last moved (ms). */
 const YOURS_MS = 1500;
@@ -111,7 +112,7 @@ export async function relayPointers(asked: URLSearchParams, { session }: Relayed
 function stops(): [number, number][] {
   const out: { x: number; y: number }[] = [];
   for (const el of document.querySelectorAll<HTMLElement>('[data-cursor]')) {
-    if (el.querySelector('[data-cursor]') || el.closest('[inert]')) continue;
+    if (el.querySelector('[data-cursor]') || el.closest(GONE)) continue;
     const r = el.getBoundingClientRect();
     if (r.width < 8 || r.height < 8 || r.bottom < 0 || r.right < 0 || r.top > innerHeight || r.left > innerWidth) continue;
     out.push({ x: Math.min(innerWidth - 4, r.left + Math.min(r.width * 0.4, 160)), y: Math.min(innerHeight - 4, r.top + r.height * 0.55) });

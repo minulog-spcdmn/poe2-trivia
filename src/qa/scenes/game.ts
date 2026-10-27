@@ -70,6 +70,8 @@ const asked = (v: Values): Partial<Settings> => {
 const INTO = 3000;
 /** How long a scene played on from a question shows it before it moves on (ms). */
 const BLOW_AFTER = 1200;
+/** How long a scene played on through an answer shows it before Next (ms). */
+const REVEAL_FOR = 2400;
 const BLOWS: Control = {
   kind: 'choice',
   key: 'blow',
@@ -306,6 +308,28 @@ export function gameScenes(): Scene[] {
       const t = delveAlone().pick();
       return t.answer(null, false);
     }),
+    // The taps of a run as they play out, each moment from the one before:
+    // the answer shown (the circle taking its colour ring by ring, the line
+    // over the art giving way to what happened without anything under it
+    // moving) and Next, the question's stage fading out under the next
+    // depth's cards.
+    {
+      ...scene('delve-answer', 'Delve alone', 'Answered right as it happens, then on to the next depth', [ALONE], delveAlone),
+      build: () => {
+        const t = delveAlone().pick();
+        const shown = t.s;
+        const at = t.clock.now + INTO;
+        const answered = t.answer(null, true, INTO + BLOW_AFTER).s;
+        const answeredAt = t.clock.now;
+        t.wait(REVEAL_FOR).next();
+        return {
+          state: shown,
+          act: t.room,
+          at,
+          steps: [{ wait: BLOW_AFTER }, { then: answered, at: answeredAt }, { wait: REVEAL_FOR }, { then: t.s, at: t.clock.now }],
+        } satisfies Built;
+      },
+    },
     {
       ...scene('delve-blow', 'Delve alone', 'Played on from a question: dynamite going off, a miss, or a ward taking it', [ALONE], delveAlone),
       controls: [BLOWS],
