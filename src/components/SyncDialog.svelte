@@ -508,6 +508,7 @@
     color: var(--gold-hi);
     -webkit-user-select: all;
     user-select: all;
+    -webkit-touch-callout: default;
   }
   .how {
     margin: 0;

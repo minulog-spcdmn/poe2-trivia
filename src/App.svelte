@@ -838,6 +838,7 @@
   .code {
     -webkit-user-select: all;
     user-select: all;
+    -webkit-touch-callout: default;
     cursor: text;
   }
   /* Scaled up on large windows (lib/stage.ts): the window's height in its zoomed pixels. */

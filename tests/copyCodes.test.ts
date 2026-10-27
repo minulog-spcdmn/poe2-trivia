@@ -108,21 +108,11 @@ test('every code a player copies is marked data-copy', () => {
 test('every code a player copies is selectable on WebKit too', () => {
   // WebKit (every iPhone browser) goes by -webkit-user-select, which
   // inherits: without it a code stays under body's none, with no selection
-  // to copy.
+  // to copy and no callout over it.
   for (const [file, cls] of CODES) {
     const rule = new RegExp(`\\n  \\.${cls} \\{\\r?\\n([^}]*)\\}`).exec(readFileSync(file, 'utf8'))?.[1] ?? '';
     assert.match(rule, /(^|\s)-webkit-user-select: all;/, `${file} .${cls}`);
     assert.match(rule, /(^|\s)user-select: all;/, `${file} .${cls}`);
+    assert.match(rule, /(^|\s)-webkit-touch-callout: default;/, `${file} .${cls}`);
   }
-});
-
-test('iOS keeps its Copy over a held code: only the pictures turn its menu off, never the page', () => {
-  // Set on the page, -webkit-touch-callout: none takes the Copy away from a
-  // selection anywhere in it, whatever the code under the finger sets for
-  // itself (seen on an iPhone): only the pictures, whose Save, Copy and
-  // Share menu is the one kept off the game, set it.
-  const css = readFileSync('src/app.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-  const none = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([, , body]) => /-webkit-touch-callout:\s*none/.test(body)).map(([, sel]) => sel.trim());
-  assert.deepEqual(none, ['img']);
-  for (const [file] of CODES) assert.doesNotMatch(readFileSync(file, 'utf8'), /-webkit-touch-callout:\s*none/, file);
 });
