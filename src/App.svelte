@@ -1188,6 +1188,14 @@
        doesn't show through, and a flat fill has no levels to band. */
     background: rgb(20, 16, 12);
   }
+  /* A touch screen has no keys to set (Settings.svelte's `keyboard`), only the
+     sound and the screen: as wide as those two side by side need, not the keys'
+     width across a phone on its side. */
+  @media not all and (any-pointer: fine) {
+    .sheet {
+      width: min(640px, 100%);
+    }
+  }
   /* The sheet's name, centred over a hairline as a dialog's is; the close at the right. */
   .sheet-head {
     display: grid;

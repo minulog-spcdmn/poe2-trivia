@@ -17,6 +17,7 @@
   import { NAME_KEY, session, savedName, saveName } from '../lib/session.svelte';
   import { MAX_NAME, nameRefusal } from '../lib/names';
   import { refuseName } from '../lib/nameField';
+  import { fingerSlide } from '../lib/fingerSlide';
   import { backdropShadow } from '../lib/backdropShadow';
   import { ACTIONS, OPTIONS, SLOTS, actionDoes, actionName, bindable, keyName, type Action } from '../lib/keys';
   import { clearKey, keybinds, readLayout, resetKeys, setKey } from '../lib/keybinds.svelte';
@@ -142,7 +143,7 @@
 
   // ---- keys ----
 
-  /** Only where there's a keyboard to speak of: anything with a mouse or the like. */
+  /** Only where there's a keyboard to speak of: anything with a mouse or the like (App's sheet is narrower without). */
   const keyboard = new MediaQuery('(any-pointer: fine)');
   onMount(readLayout);
 
@@ -227,14 +228,14 @@
         <div class="row">
           <label class="label" for="set-volume">Volume</label>
           <div class="slide">
-            <input id="set-volume" type="range" min="0" max="1" step="0.05" value={shownVolume} oninput={slideVolume} onchange={() => sfx('click')} style:--level={shownVolume} />
+            <input id="set-volume" use:fingerSlide type="range" min="0" max="1" step="0.05" value={shownVolume} oninput={slideVolume} onchange={() => sfx('click')} style:--level={shownVolume} />
             <span class="num">{Math.round(shownVolume * 100)}</span>
           </div>
         </div>
         <div class="row">
           <label class="label" for="set-ambience">Ambience</label>
           <div class="slide">
-            <input id="set-ambience" type="range" min="0" max="1" step="0.05" value={ambience} oninput={(e) => setAmbience(e.currentTarget.valueAsNumber)} disabled={muted} style:--level={ambience} />
+            <input id="set-ambience" use:fingerSlide type="range" min="0" max="1" step="0.05" value={ambience} oninput={(e) => setAmbience(e.currentTarget.valueAsNumber)} disabled={muted} style:--level={ambience} />
             <span class="num">{Math.round(ambience * 100)}</span>
           </div>
         </div>
@@ -449,6 +450,10 @@
       gap: 0 2.5rem;
       align-items: start;
     }
+    /* (The sheet is narrower there, App.svelte: the sliders as short as a narrow phone's, beside their names.) */
+    .cols.over.one .slide input {
+      --len: 140px;
+    }
   }
   @media (max-height: 500px) {
     .settings.over {
@@ -560,14 +565,27 @@
     font-size: 0.86rem;
     color: var(--gold-hi);
   }
+  /* The thumb is drawn --thumb wide and taken hold of --grip wide, a
+     finger's on a touch screen: the slider reaches past its track by the
+     difference on either side, into the gap beside it, so it stands where a
+     mouse's does and its track is as long (--len). A finger anywhere on it
+     takes the thumb there (lib/fingerSlide.ts). */
   .slide input {
     --thumb: 12px;
-    width: 180px;
-    height: 24px;
-    margin: 0;
+    --grip: var(--thumb);
+    --len: 180px;
+    --pad: calc((var(--grip) - var(--thumb)) / 2);
+    width: calc(var(--len) + 2 * var(--pad));
+    height: max(24px, var(--grip));
+    margin: calc((24px - max(24px, var(--grip))) / 2) calc(-1 * var(--pad));
     appearance: none;
     background: none;
     cursor: pointer;
+  }
+  @media (pointer: coarse) {
+    .slide input {
+      --grip: 36px;
+    }
   }
   .slide input:disabled {
     opacity: 0.4;
@@ -576,37 +594,63 @@
   .slide input::-webkit-slider-runnable-track {
     height: 4px;
     border-radius: 2px;
-    /* Gold up to the thumb's middle, which runs from half a thumb in at either end. */
-    --fill: calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--level, 0));
-    background: linear-gradient(90deg, var(--gold) var(--fill), var(--line) var(--fill));
+    /* Gold up to the thumb's middle, which runs from half a grip in at either
+       end; nothing drawn past the track, in the grip's reach beyond it. */
+    --fill: calc(var(--grip) / 2 + (100% - var(--grip)) * var(--level, 0));
+    background: linear-gradient(
+      90deg,
+      transparent var(--pad),
+      var(--gold) var(--pad) var(--fill),
+      var(--line) var(--fill) calc(100% - var(--pad)),
+      transparent calc(100% - var(--pad))
+    );
   }
   .slide input::-moz-range-track {
     height: 4px;
     border-radius: 2px;
-    background: var(--line);
+    background: linear-gradient(90deg, transparent var(--pad), var(--line) var(--pad) calc(100% - var(--pad)), transparent calc(100% - var(--pad)));
   }
   .slide input::-moz-range-progress {
     height: 4px;
     border-radius: 2px;
-    background: var(--gold);
+    background: linear-gradient(90deg, transparent var(--pad), var(--gold) var(--pad));
   }
   .slide input::-webkit-slider-thumb {
     appearance: none;
-    width: var(--thumb);
-    height: var(--thumb);
+    width: var(--grip);
+    height: var(--grip);
     /* Centred on the 4px track. */
-    margin-top: calc((4px - var(--thumb)) / 2);
+    margin-top: calc((4px - var(--grip)) / 2);
     border-radius: 50%;
     background: var(--gold-hi);
     box-shadow: 0 0 8px rgba(241, 217, 155, 0.6);
   }
   .slide input::-moz-range-thumb {
-    width: var(--thumb);
-    height: var(--thumb);
+    width: var(--grip);
+    height: var(--grip);
     border: 0;
     border-radius: 50%;
     background: var(--gold-hi);
     box-shadow: 0 0 8px rgba(241, 217, 155, 0.6);
+  }
+  /* A grip wider than the thumb: the thumb and its glow drawn in its middle, the rest of it clear. */
+  @media (pointer: coarse) {
+    .slide input {
+      --dot: radial-gradient(
+        circle closest-side,
+        var(--gold-hi) calc(var(--thumb) / 2 - 0.5px),
+        rgba(241, 217, 155, 0.45) calc(var(--thumb) / 2 + 0.5px),
+        transparent calc(var(--thumb) / 2 + 7px)
+      );
+    }
+    .slide input::-webkit-slider-thumb {
+      background: var(--dot);
+      box-shadow: none;
+    }
+    .slide input::-moz-range-thumb {
+      background: var(--dot);
+      box-shadow: none;
+    }
   }
 
   /* The name and its Save, as the start page asks for a name. */
@@ -911,7 +955,7 @@
   }
   @media (max-width: 420px) {
     .slide input {
-      width: 140px;
+      --len: 140px;
     }
   }
   /* Desktop: the lobby's stage, straight on the backdrop, the columns in the middle of the window's height. */
