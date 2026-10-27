@@ -2677,6 +2677,7 @@
       }
       .choose:not(.duel) > .line .prompt {
         padding-inline: 0;
+        text-align: right;
       }
       .choose:not(.duel) > .line .clock {
         /* (Half the task line's one line, as 50% of the line was.) */
