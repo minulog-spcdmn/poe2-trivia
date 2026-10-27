@@ -159,8 +159,7 @@ export interface Counts {
   visitors: { total: number; perDay: number[] };
   games: { started: number; finished: number; perDay: number[]; finishedPerDay: number[]; rows: ModeRow[] };
   /** Delve runs by where they ended: every ten depths from 0 up to the deepest reached, as players see them. */
-  /** `leftOut`: days whose depths didn't add up with the runs that ended, left out of them. */
-  delve: { total: number; ranges: { from: number; count: number }[]; leftOut: string[] };
+  delve: { total: number; ranges: { from: number; count: number }[] };
   /** Today's unique's answers, named and missed, by the game's (UTC) days when the hours were there to sort them (utcPerDay). */
   daily: { right: number; wrong: number; rightPerDay: number[]; wrongPerDay: number[] };
   links: { invite: number; delve: number };
@@ -398,19 +397,13 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
     if (row.started || row.finished) rows.push(row);
   }
 
-  // A run's end and its depth go out together, so a day with more depths than Delve's ends had some counted twice (an early build, Oct 17 2026): its depths are left out.
-  const depthPaths = paths.flatMap((p) => {
-    const m = /^delve\/depth-(\d+)-\d+$/.exec(p.path);
-    return m ? [{ from: Number(m[1]), p }] : [];
-  });
-  const depthsOn = (d: string) => depthPaths.reduce((n, { p }) => n + (p.days[d] ?? 0), 0);
-  const endsOn = (d: string) => byPath.get('end/delve')?.days[d] ?? 0;
-  // (The depth goes a moment after the end: a run that ended just before midnight has it the day after, made up for by the day before's ends without one.)
-  const leftOut = days.filter((d) => depthsOn(d) > endsOn(d) + Math.max(0, endsOn(addDays(d, -1)) - depthsOn(addDays(d, -1))));
+  // Every depth counted stands, even on a day with more depths than ends: before events went without a session (Oct 16 2026), a player's runs in one evening counted end/delve once but each range they ended in once.
   const ranges = new Map<number, number>();
-  for (const { from, p } of depthPaths) {
-    const n = days.reduce((k, d) => k + (leftOut.includes(d) ? 0 : (p.days[d] ?? 0)), 0);
-    if (n > 0) ranges.set(from, (ranges.get(from) ?? 0) + n);
+  for (const p of paths) {
+    const m = /^delve\/depth-(\d+)-\d+$/.exec(p.path);
+    if (!m || p.count <= 0) continue;
+    const from = Number(m[1]);
+    ranges.set(from, (ranges.get(from) ?? 0) + p.count);
   }
   const deepest = Math.max(-1, ...ranges.keys());
   const delveRanges = deepest < 0 ? [] : Array.from({ length: deepest / 10 + 1 }, (_, i) => ({ from: i * 10, count: ranges.get(i * 10) ?? 0 }));
@@ -435,7 +428,7 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
       finishedPerDay: perDay((p) => p.startsWith('end/') && played.has(`play/${p.slice('end/'.length)}`)),
       rows,
     },
-    delve: { total: delveRanges.reduce((n, r) => n + r.count, 0), ranges: delveRanges, leftOut },
+    delve: { total: delveRanges.reduce((n, r) => n + r.count, 0), ranges: delveRanges },
     daily: (() => {
       const rightPerDay = utcPerDay(byPath.get('daily/right'), days, zone);
       const wrongPerDay = utcPerDay(byPath.get('daily/wrong'), days, zone);

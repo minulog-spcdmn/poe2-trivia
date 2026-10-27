@@ -3,7 +3,7 @@
   // Delve's runs get. A game is counted once, on the device that runs it
   // (the host's), games once counted online and hot-seat apart as one
   // (model.ts currentName).
-  import { average, fmt, shortDay } from './chart';
+  import { average, fmt } from './chart';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
   import { MODES, MODE_NAMES, finishedShare, modesOf, percent, seatsOf, sizeName, sizesOf, dayAverages } from './model';
@@ -30,6 +30,8 @@
   const ranges = $derived(sizes.some((s) => s.from !== s.to));
   /** Delve's runs started: those left mid-run (the tab closed) never say how deep they got, so the depths are of the runs that ended. */
   const delveStarted = $derived(modes.find((m) => m.mode === 'delve')?.started ?? 0);
+  /** The first day every build counted each event (no session): before it, a path counted once a player in eight hours. */
+  const SESSIONLESS_FROM = '2026-10-18';
   /** Players a game, one decimal, of the games whose size is known. */
   const perGame = (rows: typeof L.games.rows) => {
     const { seats, games } = seatsOf(rows);
@@ -144,7 +146,7 @@
       "Shared a screen: games with a player seated at the host's own screen (before that was counted, the hot-seat games).",
       'Players a game: seats taken, or in Delve those who set out.',
       'A Delve run left mid-run (the tab closed) never says how deep it got, so the depths are of the runs that ended.',
-      L.delve.leftOut.length > 0 && `The depths leave out ${L.delve.leftOut.map(shortDay).join(', ')}, when an early build counted some depths twice.`,
+      L.days[0] < SESSIONLESS_FROM && "Until Oct 17, one player's Delve runs in an evening counted as one run ended but once in each ten depths they ended in, so the depths can count a few more runs than ended.",
     ]}
   />
 </div>
