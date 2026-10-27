@@ -497,6 +497,8 @@ class Session {
   private joinedAt = 0;
   /** Client: attempts to reach the host that haven't opened yet (and when they started), oldest first. */
   private attempts: { conn: DataConnection; at: number }[] = [];
+  /** Client, joining: when its first attempt went out (0: none yet). Only one out longer than the server holds an offer is known to have reached the room. */
+  private firstAttemptAt = 0;
   /** Client, joining: the next attempt to reach the host. */
   private nextAttempt: ReturnType<typeof setTimeout> | null = null;
   /** Client, joining: a fresh peer after the signalling server turned the last one away. */
@@ -1984,10 +1986,12 @@ class Session {
     this.connectTimer = setTimeout(() => {
       if (this.mode !== 'client' || this.status !== 'connecting') return;
       // On the server, but no way through to the room. Unless the server has
-      // said the room may be missing (roomUnavailable), the code was right and
+      // said the room may be missing (roomUnavailable), or was reached too late
+      // for an attempt to have outlived its offer, the code was right and
       // it's the connection between the two devices that never came up: some
       // networks (venue Wi-Fi, some carriers) don't let it through.
-      if (this.peer?.open) this.joinFailed(this.unavailableUntil ? 'missing' : 'blocked', 'join-no-answer');
+      const reached = this.firstAttemptAt > 0 && Date.now() - this.firstAttemptAt >= EXPIRE_MS;
+      if (this.peer?.open) this.joinFailed(this.unavailableUntil || !reached ? 'missing' : 'blocked', 'join-no-answer');
       else this.joinFailed('server', 'join-no-connection');
     }, wait);
   }
@@ -2106,6 +2110,7 @@ class Session {
     this.pruneAttempts();
     while (this.attempts.length >= MAX_PENDING_PER_PEER) this.attempts.shift()!.conn.close();
     this.attempts.push({ conn, at: Date.now() });
+    this.firstAttemptAt ||= Date.now();
     this.planAttempt();
     conn.on('error', () => {
       // Its negotiation failed: the next one comes soon.
@@ -3425,6 +3430,7 @@ class Session {
     this.joinedAt = 0;
     this.busyUntil = 0;
     this.unavailableUntil = 0;
+    this.firstAttemptAt = 0;
     this.silentCloses = 0;
     if (this.peerTimer) clearTimeout(this.peerTimer);
     this.peerTimer = null;
