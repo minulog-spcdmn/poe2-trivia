@@ -51,12 +51,16 @@
   import { playerColor } from './lib/ui';
   import { flat, fullRoom } from './lib/layout';
   import { landing } from './lib/sync/boot.svelte';
+  import { CopyPress } from './lib/copyPress.svelte';
+  import CopyNote from './components/CopyNote.svelte';
 
   /** Shown again after a crash (Root.svelte). */
   let { recovered = false }: { recovered?: boolean } = $props();
 
   // Beta and dev only: ?record keeps how this player plays, for the room bots (lib/recorder.ts).
   let recording = $state(wantsRecording());
+  /** The room code in the header, copied as every code a player passes on is (one shows at a time). */
+  const codePress = new CopyPress(() => session.code ?? '', 'Room code copied');
   let confirmLeave = $state(false);
   let fxOn = $state(fxUserOn());
   // With a seat in an online room, lobby included, this device's own pointer takes its
@@ -590,7 +594,7 @@
           {#if folded}
             <!-- (Folded: no room code, the depth and zone alone.) -->
           {:else if session.code && !session.hideCode}
-            <span>Room <b class="code" data-copy>{session.code}</b></span>
+            <span>Room <b class="code" data-copy {@attach codePress.attach}>{session.code}</b></span>
           {:else}
             <span>Delve</span>
           {/if}
@@ -614,7 +618,7 @@
           {/key}
         {:else if gs && screen === 'game'}
           {#if session.code && !session.hideCode && !folded}
-            <span>Room <b class="code" data-copy>{session.code}</b></span>
+            <span>Room <b class="code" data-copy {@attach codePress.attach}>{session.code}</b></span>
             <span class="dot">•</span>
           {/if}
           {#if session.spectating}
@@ -633,9 +637,10 @@
         {:else if session.mode === 'local' || session.hereOnly}
           <span>On this device</span>
         {:else if session.code && screen !== 'lobby'}
-          <!-- The lobby shows the code in big letters. -->
-          <span>Room <b class:code={!session.hideCode}>{session.hideCode ? '••••••' : session.code}</b></span>
+          <!-- The lobby shows the code in big letters. (Hidden for streaming, a copy still gives it.) -->
+          <span>Room <b class="code" data-copy {@attach codePress.attach}>{session.hideCode ? '••••••' : session.code}</b></span>
         {/if}
+        <CopyNote press={codePress} />
       </div>
       <div class="tools">
         {#if headerPage}
@@ -832,13 +837,9 @@
 {/if}
 
 <style>
-  /* The room code stays selectable (the rest of the game isn't): a
-     double-click or a long press takes the whole code, to share it, and the
-     long press keeps the phone's own Copy (data-copy, lib/noMenu.ts). */
+  /* The room code: a click or a tap copies it, as every code a player passes
+     on (lib/copyPress.svelte.ts). */
   .code {
-    -webkit-user-select: all;
-    user-select: all;
-    -webkit-touch-callout: default;
     cursor: text;
   }
   /* Scaled up on large windows (lib/stage.ts): the window's height in its zoomed pixels. */

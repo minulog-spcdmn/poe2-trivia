@@ -19,6 +19,7 @@ const root = join(import.meta.dirname, '..');
 /** Overlays light may pass over, by file and class (or tag, unclassed), and why. */
 const LIGHT_PASSES: Record<string, string> = {
   'components/Background.svelte .bg': 'the backdrop, behind everything',
+  'components/CopyNote.svelte .note': 'drawn over the effects layer (z-index 96)',
   'components/Darkness.svelte .edge': 'a soft vignette at the screen’s edge, see-through',
   'components/FxLayer.svelte .fx': 'the effects layer itself',
   'components/GameOver.svelte .sparks': 'light of its own, a canvas of sparks',
@@ -27,7 +28,6 @@ const LIGHT_PASSES: Record<string, string> = {
   'components/ItemWindow.svelte .window': 'hides the light from its script (hideLightIn)',
   'components/PeerCursors.svelte .cursors': 'other players’ pointers, small and moving',
   'components/Recorder.svelte .recorder': 'a dev tool for recording',
-  'components/RoomCodeGlyphs.svelte .note': 'drawn over the effects layer (z-index 96)',
 };
 
 function* svelteFiles(dir: string): Generator<string> {

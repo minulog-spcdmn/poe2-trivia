@@ -260,13 +260,11 @@ body {
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
   /* A game, not a document: taps and drags never select its text. What a
-     player types stays selectable, and anything meant to be copied says so
-     (user-select: text or all where it is set, which also sets
-     -webkit-touch-callout back to default, so the Copy bar shows). */
+     player types stays selectable. */
   -webkit-user-select: none;
   user-select: none;
-  /* Nor does holding a finger on an item picture or a control bring up iOS's
-     image menu (Save, Copy, Share) over the game. */
+  /* Nor does holding a finger on an item picture, a control or a code bring
+     up iOS's menu (Save, Copy, Share) over the game. */
   -webkit-touch-callout: none;
 }
 input,
@@ -275,8 +273,20 @@ textarea,
   -webkit-user-select: text;
   user-select: text;
 }
-/* Text a player types, and links, keep the system's callout; so does any text
-   set to user-select: text or all (the room and sync codes, where it is set). */
+/* A code a player passes on (the room and sync codes): a mouse's click selects
+   all of it, which copies it (lib/copyPress.svelte.ts). A finger or a pen
+   selects nothing: a tap copies it outright, with no selection and no menu. */
+[data-copy] {
+  -webkit-user-select: all;
+  user-select: all;
+}
+@media (hover: none) {
+  [data-copy] {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+/* Text a player types, and links, keep the system's callout. */
 input,
 textarea,
 [contenteditable],

@@ -26,6 +26,8 @@
   import { SYNC_HERE } from '../lib/sync/store';
   import { canScan, scan } from '../lib/sync/scan';
   import SyncSeal from './SyncSeal.svelte';
+  import CopyNote from './CopyNote.svelte';
+  import { CopyPress } from '../lib/copyPress.svelte';
 
   type View = 'show' | 'scan' | 'type' | 'joined' | 'offered';
   let {
@@ -53,6 +55,8 @@
   /** The code shown: the one paired with, or one made for this dialog (and, once it moves to the others' code, theirs). */
   let made = $state<string | null>(null);
   const code = $derived(sync.code ?? made);
+  /** The code shown, copied as every code a player passes on is (as it shows, in its four groups: a code is read either way). */
+  const codePress = new CopyPress(() => shownCode((view === 'offered' ? offered : code) ?? ''), 'Sync code copied');
   function show() {
     endScan();
     made = offerCode();
@@ -275,7 +279,8 @@
       {:else if view === 'scan'}
         <p class="how">Point the camera at your other device’s code.</p>
       {:else if code || offered}
-        <p class="code" aria-label="Sync code" data-copy>{shownCode((view === 'offered' ? offered : code)!)}</p>
+        <p class="code" aria-label="Sync code" data-copy {@attach codePress.attach}>{shownCode((view === 'offered' ? offered : code)!)}</p>
+        <CopyNote press={codePress} />
       {/if}
     </div>
 
@@ -506,9 +511,6 @@
     font-size: 1.1rem;
     letter-spacing: 0.12em;
     color: var(--gold-hi);
-    -webkit-user-select: all;
-    user-select: all;
-    -webkit-touch-callout: default;
   }
   .how {
     margin: 0;
