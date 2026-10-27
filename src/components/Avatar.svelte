@@ -176,13 +176,11 @@
   .worn svg {
     position: relative;
   }
-  .sigil,
-  .sigil > span {
+  .sigil {
     position: absolute;
     inset: 0;
     border-radius: 50%;
-  }
-  .sigil {
+    overflow: hidden;
     background-image:
       radial-gradient(ellipse 70% 55% at 35% 22%, rgba(255, 244, 225, 0.16), transparent 70%),
       radial-gradient(circle at 40% 35%, color-mix(in srgb, var(--c), black 58%), color-mix(in srgb, var(--c), black 86%) 75%);
@@ -196,12 +194,19 @@
       inset 0 2px 0 rgba(255, 244, 225, 0.08),
       inset 0 -2px 3px rgba(0, 0, 0, 0.55);
   }
-  /* Each glyph fitted to the token by its own bounds (SIGIL_FITS). */
+  /* Each glyph fitted to the token by its own bounds (SIGIL_FITS), in
+     fractions of the token as it is drawn, so a token a page shrinks (the
+     scoreboard on a phone) takes its sigil with it; the token's round edge
+     trims what reaches past it. */
   .sigil > span {
+    position: absolute;
+    left: calc(var(--fx) * 100%);
+    top: calc(var(--fy) * 100%);
+    width: calc(var(--fw) * 100%);
+    height: calc(var(--fh) * 100%);
     background: color-mix(in srgb, var(--c), white 8%);
     mask: var(--sigil) no-repeat;
-    mask-size: calc(var(--s) * var(--fw)) calc(var(--s) * var(--fh));
-    mask-position: calc(var(--s) * var(--fx)) calc(var(--s) * var(--fy));
+    mask-size: 100% 100%;
     opacity: 0.6;
   }
   .worn text {
