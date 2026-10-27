@@ -44,7 +44,6 @@
     { label: 'Fullscreen tip', show: () => showTip('desktop') },
     { label: 'Install tip (Android)', show: () => showTip('android') },
     { label: 'Install tip (iOS)', show: () => showTip('ios') },
-    { label: 'Home-screen app tip (iOS)', show: () => showTip('app') },
     { label: 'Creator arrives', show: () => toast('has arrived', 'info', { title: CREATOR_TITLE, who: { name: CREATOR, hue: RUBY }, herald: true }) },
     ...TIERS.map((t) => ({
       label: `Achievement (${METALS[t].name.toLowerCase()})`,
