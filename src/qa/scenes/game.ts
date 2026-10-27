@@ -333,9 +333,9 @@ export function gameScenes(): Scene[] {
     }),
     // An achievement's notice over a streak's fire. On a phone the notices
     // stand across the top, on the player's entry, and the fire passes behind
-    // them: none of it burns along an edge, in the gap above the first or in
-    // the one between two (two achievements at once come one by one,
-    // lib/achievementToasts.ts).
+    // them as behind anything solid: their boxes alone hide it, and it burns
+    // on round their edges and in the gaps above and between them (two
+    // achievements at once come one by one, lib/achievementToasts.ts).
     {
       ...scene('delve-notice', 'Delve alone', 'On a streak, an achievement’s notice over the fire', [ALONE], delveAlone),
       controls: [
