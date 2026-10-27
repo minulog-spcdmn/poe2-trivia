@@ -29,3 +29,32 @@ test("the rumble's worker answers with both channels, the loop's length, right h
   assert.ok(transfer.includes(left.buffer as ArrayBuffer), "left's buffer transferred");
   assert.ok(transfer.includes(right.buffer as ArrayBuffer), "right's buffer transferred");
 });
+
+test('a rumble worker that never answers is let go, and the page works it out', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  await import('./asVite.ts');
+  const { rumbleThere, RUMBLE_WAIT_MS } = await import('../src/lib/sound.ts');
+  let ended = false;
+  /** A worker that loads and is asked, and says nothing. */
+  (globalThis as { Worker?: unknown }).Worker = class {
+    onmessage = null;
+    onerror = null;
+    onmessageerror = null;
+    postMessage() {}
+    terminate() {
+      ended = true;
+    }
+  };
+  const channels: Float32Array[] = [];
+  const ac = { sampleRate: 8000, createBuffer: (n: number, len: number) => ({ getChannelData: (i: number) => (channels[i] ??= new Float32Array(len)), length: len, numberOfChannels: n }) };
+  let buf: unknown = null;
+  void rumbleThere(ac as never).then((b) => (buf = b));
+  t.mock.timers.tick(RUMBLE_WAIT_MS - 1);
+  await Promise.resolve();
+  assert.equal(buf, null, 'still waiting');
+  t.mock.timers.tick(1);
+  await new Promise((r) => setImmediate(r));
+  assert.ok(buf, 'worked out on the page');
+  assert.equal(ended, true, 'the worker let go');
+  delete (globalThis as { Worker?: unknown }).Worker;
+});

@@ -572,15 +572,22 @@ export function rumble(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>
   return buf;
 }
 
+/** How long the rumble's worker has to answer, its script fetched on first use (ms): past that the page works it out, never leaving the dig silent. */
+export const RUMBLE_WAIT_MS = 2000;
+
 /**
  * The rumble worked out in a worker of its own (lib/rumbleWorker.ts), which
- * then stops; here, as rumble, where there's none or it fails. On an iPhone
- * it held the page for about 75 ms here, just after Begin.
+ * then stops; here, as rumble, where there's none, it fails, or it hasn't
+ * answered in RUMBLE_WAIT_MS. On an iPhone it held the page for about 75 ms
+ * here, just after Begin. (Exported for the tests.)
  */
-function rumbleThere(ac: AudioContext): Promise<AudioBuffer> {
+export function rumbleThere(ac: Pick<BaseAudioContext, 'sampleRate' | 'createBuffer'>): Promise<AudioBuffer> {
   if (typeof Worker === 'undefined') return Promise.resolve(rumble(ac));
   return new Promise((resolve, reject) => {
+    let done = false;
     const here = () => {
+      if (done) return;
+      done = true;
       try {
         resolve(rumble(ac));
       } catch (e) {
@@ -594,8 +601,18 @@ function rumbleThere(ac: AudioContext): Promise<AudioBuffer> {
       here();
       return;
     }
-    w.onmessage = ({ data }: MessageEvent<RumbleAnswer>) => {
+    // (Failed to load, say, or no answer in time: worked out here instead.)
+    const instead = () => {
+      clearTimeout(late);
       w.terminate();
+      here();
+    };
+    const late = setTimeout(instead, RUMBLE_WAIT_MS);
+    w.onmessage = ({ data }: MessageEvent<RumbleAnswer>) => {
+      clearTimeout(late);
+      w.terminate();
+      if (done) return;
+      done = true;
       try {
         const buf = ac.createBuffer(2, data.left.length, ac.sampleRate);
         buf.getChannelData(0).set(data.left);
@@ -604,11 +621,6 @@ function rumbleThere(ac: AudioContext): Promise<AudioBuffer> {
       } catch (e) {
         reject(e);
       }
-    };
-    // (Failed to load, say: worked out here instead.)
-    const instead = () => {
-      w.terminate();
-      here();
     };
     w.onerror = instead;
     w.onmessageerror = instead;
