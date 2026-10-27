@@ -7,11 +7,19 @@
 // mist with a few sparks twinkling in it. Sparks fly off the front, leaning
 // the way it moves. Transparent pixels are never touched, so the magic keeps
 // to the item's own shape.
+//
+// The burn's arithmetic (burn.ts) runs in a worker (burnWorker.ts), the page
+// doing no more than put the box that changed on the patch's canvas and fly
+// its sparks, a frame at a time: the worker sends the next once the page has
+// put the last. All of it runs on the page where there's no worker, or none
+// that can read a picture's pixels (no OffscreenCanvas), and until one has
+// said it's there.
 
-import { BURN_COOL, BURN_LINE, BURN_RIM, valueNoise } from './patches';
+import { Burn, type BurnSetup } from './burn';
 import { fxDensity, veilIgnites, veilSpark } from './fx/moments';
-import { rankAscending } from './rank';
+import { HIDDEN_CHECK_MS, onShownAgain, PING_MS, PREP_STALL_MS } from './prepPool';
 import { zoomOf } from './stage';
+import type { BurnJob, BurnNews, Pixels } from './burnWorker';
 import type { PatchImage } from './veilCut';
 
 /** How long the rest of the picture takes to come in once the answer is out, per patch (ms). */
@@ -38,66 +46,11 @@ export function fxWidth(canvas: HTMLElement, artW: number): number {
   return Math.min(cw * zoomOf(canvas) * (window.devicePixelRatio || 1), artW * FX_SCALE);
 }
 
-/**
- * As fractions of the burn: the mist ahead of the front, the twinkling ahead
- * of that, how long each grain glints, and how long its light takes to cool
- * (in patches.ts, where the host paces the veil by them: burntShare).
- */
-const RIM = BURN_RIM;
-const AHEAD = 0.14;
-const LINE = BURN_LINE;
-const COOL = BURN_COOL;
-/** How ragged the front is, in art pixels either way. */
-const ROUGH = 5;
-/** How far single grains stray from the front, in art pixels either way: the fizzle. */
-const GRAIN = 4;
-/** Share of the pixels ahead of the front that twinkle. */
-const SPARKLY = 0.08;
-/** Sparks off the front per second, at most. */
-const SPARKS = 130;
 /** Burns at once; past this (a picture arriving with many patches in) patches just fade in. */
 const MAX_BURNING = 14;
 
-const HOT = [255, 250, 232];
-/** The mist the item gathers out of. */
-const MIST = [255, 190, 100];
-/** The inner light, added to the art: pale gold while hot, cooling to amber. */
-const LIGHT_HOT = [235, 200, 130];
-const LIGHT_COOL = [150, 75, 15];
-
 const reduce = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 let burning = 0;
-
-/** Distance (in pixels) from the nearest zero, in place: two chamfer passes. */
-function chamfer(d: Float32Array, W: number, H: number) {
-  const D = Math.SQRT2;
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const i = y * W + x;
-      let v = d[i];
-      if (x > 0) v = Math.min(v, d[i - 1] + 1);
-      if (y > 0) {
-        v = Math.min(v, d[i - W] + 1);
-        if (x > 0) v = Math.min(v, d[i - W - 1] + D);
-        if (x < W - 1) v = Math.min(v, d[i - W + 1] + D);
-      }
-      d[i] = v;
-    }
-  }
-  for (let y = H - 1; y >= 0; y--) {
-    for (let x = W - 1; x >= 0; x--) {
-      const i = y * W + x;
-      let v = d[i];
-      if (x < W - 1) v = Math.min(v, d[i + 1] + 1);
-      if (y < H - 1) {
-        v = Math.min(v, d[i + W] + 1);
-        if (x < W - 1) v = Math.min(v, d[i + W + 1] + D);
-        if (x > 0) v = Math.min(v, d[i + W - 1] + D);
-      }
-      d[i] = v;
-    }
-  }
-}
 
 export interface BurnParams {
   /** The patch's own picture (veilCut.ts patchPicture). */
@@ -115,6 +68,134 @@ export interface BurnParams {
   quick?: boolean;
 }
 
+/** What the page does with a worker's news of a burn going on there, and if the worker is given no more before it's done. */
+interface Burning {
+  begun: (px: Pixels, at: [number, number] | null) => void;
+  box: (box: [number, number, number, number], px: Pixels) => void;
+  sparks: (s: number[]) => void;
+  done: () => void;
+  lost: () => void;
+}
+
+/** A worker the burns are worked out in. */
+interface Burner {
+  worker: Worker;
+  /** It has said it's there: since it started, or since it was last asked. */
+  here: boolean;
+  /** Its burns going on, by id. */
+  burns: Map<number, Burning>;
+  /** The wait for its answer, asked whether it's still there. */
+  asked?: ReturnType<typeof setTimeout>;
+}
+
+/** The worker new burns go to; null where there's none, or none can read a picture's pixels. */
+let current: Burner | null | undefined;
+let lastBurn = 0;
+
+/** The worker new burns go to, started on first use. */
+function burner(): Burner | null {
+  if (current !== undefined) return current;
+  current = null;
+  if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined' || typeof createImageBitmap === 'undefined') return null;
+  try {
+    const worker = new Worker(new URL('./burnWorker.ts', import.meta.url), { type: 'module' });
+    const b: Burner = { worker, here: false, burns: new Map() };
+    worker.onmessage = ({ data }: MessageEvent<BurnNews>) => hear(b, data);
+    // (Failed to load, say, or broke: the burns are drawn here from now on.)
+    worker.onerror = () => retire(b, null);
+    current = b;
+    watch();
+  } catch {
+    current = null;
+  }
+  return current;
+}
+
+/** Starts the worker ahead of the first patch (a veiled picture on its way), so that one burns there too. */
+export const warmBurns = () => void burner();
+
+/** The worker new burns go to, once it has said it's there: a burn sent to one that never runs would never come in. */
+const ready = () => (current?.here ? current : null);
+
+function hear(b: Burner, news: BurnNews) {
+  if (news.t === 'here') {
+    b.here = true;
+    clearTimeout(b.asked);
+    return;
+  }
+  const back: [number, Pixels][] = [];
+  try {
+    for (const [id, px, at] of news.begun) {
+      back.push([id, px]);
+      b.burns.get(id)?.begun(px, at);
+    }
+    for (const [id, box, px] of news.boxes) {
+      back.push([id, px]);
+      b.burns.get(id)?.box(box, px);
+    }
+    for (const [id, s] of news.sparks) b.burns.get(id)?.sparks(s);
+    for (const id of news.done) b.burns.get(id)?.done();
+  } finally {
+    // Put: the next frame can come, in the same pixels, once this one is on
+    // the screen (the page's next frame), so the page puts at most one a
+    // frame of its own whatever its rate: one whose main thread is idle and
+    // its frames slow heard several between two of them, each put over the
+    // last unseen. With none of its burns left here there's nothing to keep
+    // pace with, and the next to begin comes at once. (Whatever happened
+    // here: unanswered, the worker would send no more.)
+    const put = () => b.worker.postMessage({ t: 'put', back } satisfies BurnJob, back.map(([, px]) => px.buffer));
+    if (b.burns.size) requestAnimationFrame(put);
+    else put();
+  }
+}
+
+/**
+ * `b` is given no more burns, `next` taking its place, and let go. Those it
+ * hasn't finished are lost, drawn whole on the page instead.
+ */
+function retire(b: Burner, next: null | undefined) {
+  if (b !== current) return;
+  current = next;
+  clearTimeout(b.asked);
+  const lost = [...b.burns.values()];
+  b.burns.clear();
+  for (const l of lost) l.lost();
+  b.worker.onmessage = b.worker.onerror = null;
+  b.worker.terminate();
+}
+
+/** Burn `id`'s canvas is gone: `b`, if it's still burning it there, burns it no more. */
+function letGo(b: Burner, id: number) {
+  if (b.burns.delete(id)) b.worker.postMessage({ t: 'stop', id } satisfies BurnJob);
+}
+
+/**
+ * A phone that keeps a page in the background a long while may stop its
+ * workers without a word (prepPool.ts). Back after HIDDEN_CHECK_MS, the
+ * worker is asked whether it's still there, the burns drawn here until it
+ * answers. One that doesn't within PING_MS (PREP_STALL_MS with burns in
+ * hand, as it answers only between their frames) is given no more, and a
+ * fresh one takes its place.
+ */
+let watching = false;
+function watch() {
+  if (watching || typeof document === 'undefined') return;
+  watching = true;
+  onShownAgain(document, (hiddenMs) => {
+    const b = current;
+    if (hiddenMs < HIDDEN_CHECK_MS || !b?.here) return;
+    b.here = false;
+    b.worker.postMessage({ t: 'ping' } satisfies BurnJob);
+    b.asked = setTimeout(
+      () => {
+        retire(b, undefined);
+        burner();
+      },
+      b.burns.size ? PREP_STALL_MS : PING_MS,
+    );
+  });
+}
+
 /**
  * Svelte action for a veiled patch's <canvas>, sized and placed by CSS: draws
  * the patch and burns it in, at the screen's resolution (FX_SCALE at most),
@@ -124,224 +205,127 @@ export interface BurnParams {
 export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
   let W = 0;
   let H = 0;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
-
   let stopped = false;
   let counted = false;
   let raf = 0;
+  /** Tells the worker its burn is over, the canvas gone. */
+  let leave: (() => void) | null = null;
+  /** The burn is over: done, or its canvas gone. */
   const stop = () => {
     if (stopped) return;
     stopped = true;
     cancelAnimationFrame(raf);
     if (counted) burning--;
   };
+  /** The canvas is gone: so is its burn in the worker. */
+  const destroy = () => {
+    stop();
+    leave?.();
+    leave = null;
+  };
 
-  const burn = (sx: number, sy: number) => {
+  /** Where a spot on the canvas (its px) is on the page. */
+  const onPage = (x: number, y: number, r: DOMRect) => ({ x: r.left + x * (r.width / W), y: r.top + y * (r.width / W) });
+  const ignite = ([x, y]: [number, number]) => {
+    const r = canvas.getBoundingClientRect();
+    veilIgnites(onPage(x, y, r), r.width);
+  };
+  /**
+   * Sparks fly off the front (BurnFrame's sparks). (The worker's news of
+   * them comes between the page's frames, when it's laid out already: the
+   * canvas's place is read for nothing then, where in a frame it made the
+   * page lay itself out an extra time, frontier.ts.)
+   */
+  const fly = (sparks: number[]) => {
+    const r = canvas.getBoundingClientRect();
+    for (let k = 0; k + 3 < sparks.length; k += 4) veilSpark(onPage(sparks[k], sparks[k + 1], r), { x: sparks[k + 2], y: sparks[k + 3] }, 1);
+  };
+
+  /** The patch's canvas, W × H. */
+  const context = () => {
+    canvas.width = W;
+    canvas.height = H;
+    return canvas.getContext('2d', { willReadFrequently: true })!;
+  };
+  /** Draws the picture on the canvas. */
+  const draw = (img: PatchImage) => {
+    const ctx = context();
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, W, H);
+    return ctx;
+  };
+  /**
+   * The burn in the worker is over without its pixels: lost there (retire),
+   * stopped part way or not yet begun, or it couldn't begin. The patch's
+   * picture goes whole on its canvas, as a burn ends.
+   */
+  const whole = (img: PatchImage) => {
+    try {
+      draw(img);
+    } catch {
+      // (A question already over has let its pictures go: the patch is on its way out.)
+    }
+  };
+
+  /** Burns on the page, on its frames. */
+  const burnHere = (img: PatchImage, setup: BurnSetup) => {
+    const ctx = draw(img);
     const art = ctx.getImageData(0, 0, W, H);
-    const src = art.data.slice();
-    const px = art.data;
-    let n = 0;
-    for (let i = 0; i < W * H; i++) if (src[i * 4 + 3] > 0) n++;
-    if (!n) return stop();
-    const vis = new Uint32Array(n);
-    for (let i = 0, j = 0; i < W * H; i++) if (src[i * 4 + 3] > 0) vis[j++] = i;
-
-    // The magic starts where this patch meets what's already there.
-    const dist = new Float32Array(W * H).fill(Infinity);
-    const before = new Set(params.before);
-    const e = params.edges;
-    let seeded = false;
-    for (let j = 0; j + 2 < e.length; j += 3) {
-      if (!before.has(e[j + 2])) continue;
-      const x0 = Math.floor(e[j] * sx);
-      const y0 = Math.floor(e[j + 1] * sy);
-      const x1 = Math.min(W, Math.ceil((e[j] + 1) * sx));
-      const y1 = Math.min(H, Math.ceil((e[j + 1] + 1) * sy));
-      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) dist[y * W + x] = 0;
-      seeded = true;
-    }
-    // Nothing there yet: it catches near the middle of the patch.
-    let origin = -1;
-    if (!seeded) {
-      let cx = 0;
-      let cy = 0;
-      for (const i of vis) {
-        cx += i % W;
-        cy += (i / W) | 0;
-      }
-      cx = cx / vis.length + (Math.random() - 0.5) * W * 0.3;
-      cy = cy / vis.length + (Math.random() - 0.5) * H * 0.3;
-      let best = Infinity;
-      for (const i of vis) {
-        const d = ((i % W) - cx) ** 2 + (((i / W) | 0) - cy) ** 2;
-        if (d < best) {
-          best = d;
-          origin = i;
-        }
-      }
-      dist[origin] = 0;
-    }
-    chamfer(dist, W, H);
-
-    // When each pixel comes in: its distance from where the magic started,
-    // made ragged with noise so the front licks forward unevenly, and each
-    // grain nudged on its own so the front fizzles.
-    const seed = (Math.random() * 2 ** 31) | 0;
-    const when = new Float32Array(vis.length);
-    let lo = Infinity;
-    let hi = -Infinity;
-    vis.forEach((i, j) => {
-      const ax = (i % W) / sx;
-      const ay = ((i / W) | 0) / sy;
-      const rough = valueNoise(ax / 5, ay / 5, seed) * 0.65 + valueNoise(ax / 2, ay / 2, seed + 1) * 0.35;
-      const v = dist[i] / sx + (rough - 0.5) * 2 * ROUGH + (Math.random() - 0.5) * 2 * GRAIN;
-      when[j] = v;
-      if (v < lo) lo = v;
-      if (v > hi) hi = v;
-    });
-    // Sorted by when they burn in, so each frame only visits the pixels that
-    // are changing: those settled are done, those far ahead stay clear.
-    // (A radix sort: a patch has tens of thousands of them.)
-    const rank = rankAscending(when);
-    const span = hi - lo || 1;
-    const lit = new Uint32Array(vis.length);
-    const order = new Float32Array(vis.length);
-    for (let r = 0; r < n; r++) {
-      const j = rank[r];
-      lit[r] = vis[j];
-      order[r] = (when[j] - lo) / span;
-    }
-    const spark = new Uint8Array(lit.length);
-    for (let j = 0; j < lit.length; j++) if (Math.random() < SPARKLY) spark[j] = 1 + Math.floor(Math.random() * 255);
-    for (const i of lit) px[i * 4 + 3] = 0;
+    const burn = new Burn(art.data, setup);
+    if (burn.empty) return stop();
     ctx.putImageData(art, 0, 0);
-
-    /** Which way the front is moving at pixel i, as a sideways push (screen px/s) for its sparks. */
-    const lean = (i: number) => {
-      const x = i % W;
-      const y = (i / W) | 0;
-      const gx = (x < W - 1 ? dist[i + 1] : dist[i]) - (x > 0 ? dist[i - 1] : dist[i]);
-      const gy = (y < H - 1 ? dist[i + W] : dist[i]) - (y > 0 ? dist[i - W] : dist[i]);
-      const len = Math.hypot(gx, gy);
-      if (!isFinite(len) || len === 0) return { x: 0, y: 0 };
-      return { x: (gx / len) * 30, y: (gy / len) * 30 };
-    };
-
-    const duration = params.quick ? FINALE_MS : params.burn;
-    const from = -RIM;
-    const to = 1 + LINE + COOL;
-    let settled = 0;
-    let line = 0;
-    let shown = 0;
-    let rim = 0;
-    let ahead = 0;
-    let start = 0;
-    let last = 0;
-    let sparks = 0;
-    const density = fxDensity();
-
     const frame = (now: number) => {
       if (stopped) return;
       if (!canvas.isConnected) return stop();
-      if (!start) start = last = now;
-      const p = Math.min(1, (now - start) / duration);
-      const t = from + (to - from) * p;
-      const was = settled;
-      while (settled < lit.length && t - order[settled] >= LINE + COOL) {
-        const o = lit[settled++] * 4;
-        px[o] = src[o];
-        px[o + 1] = src[o + 1];
-        px[o + 2] = src[o + 2];
-        px[o + 3] = src[o + 3];
-      }
-      while (line < lit.length && t - order[line] >= LINE) line++;
-      while (shown < lit.length && order[shown] <= t) shown++;
-      while (rim < lit.length && order[rim] <= t + RIM) rim++;
-      while (ahead < lit.length && order[ahead] <= t + RIM + AHEAD) ahead++;
-
-      // Far ahead: sparks twinkle in and out.
-      for (let j = rim; j < ahead; j++) {
-        if (!spark[j]) continue;
-        const o = lit[j] * 4;
-        const near = 1 - (order[j] - t - RIM) / AHEAD;
-        px[o] = HOT[0];
-        px[o + 1] = HOT[1];
-        px[o + 2] = HOT[2];
-        px[o + 3] = src[o + 3] * near * (0.5 + 0.5 * Math.sin(now / 38 + spark[j]));
-      }
-      // Just ahead: a faint golden mist gathers in the item's shape, the
-      // twinkling sparks brighter in it.
-      for (let j = shown; j < rim; j++) {
-        const o = lit[j] * 4;
-        const k = 1 - (order[j] - t) / RIM;
-        if (spark[j]) {
-          px[o] = HOT[0];
-          px[o + 1] = HOT[1];
-          px[o + 2] = HOT[2];
-          px[o + 3] = src[o + 3] * (0.5 + 0.5 * k) * (0.5 + 0.5 * Math.sin(now / 38 + spark[j]));
-        } else {
-          px[o] = MIST[0];
-          px[o + 1] = MIST[1];
-          px[o + 2] = MIST[2];
-          px[o + 3] = src[o + 3] * 0.4 * k * k;
-        }
-      }
-      // The front: each grain flares up as a hot glint and settles into the lit picture.
-      for (let j = line; j < shown; j++) {
-        const o = lit[j] * 4;
-        const u = (t - order[j]) / LINE;
-        for (let c = 0; c < 3; c++) px[o + c] = HOT[c] + (src[o + c] + LIGHT_HOT[c] - HOT[c]) * u;
-        px[o + 3] = src[o + 3] * (0.45 + 0.55 * u);
-      }
-      // Behind it: the art, lit from within, the light cooling and fading.
-      for (let j = settled; j < line; j++) {
-        const o = lit[j] * 4;
-        const g = 1 - (t - order[j] - LINE) / COOL;
-        const k = g * g;
-        for (let c = 0; c < 3; c++) px[o + c] = src[o + c] + (LIGHT_COOL[c] + (LIGHT_HOT[c] - LIGHT_COOL[c]) * g) * k;
-        px[o + 3] = src[o + 3];
-      }
-      // Only the box this frame changes goes to the canvas: round the pixels
-      // from the first one settling to the last one sparkling ahead.
-      let x0 = W;
-      let y0 = H;
-      let x1 = -1;
-      let y1 = -1;
-      for (let j = was; j < ahead; j++) {
-        const i = lit[j];
-        const y = (i / W) | 0;
-        const x = i - y * W;
-        if (x < x0) x0 = x;
-        if (x > x1) x1 = x;
-        if (y < y0) y0 = y;
-        if (y > y1) y1 = y;
-      }
-      if (y1 >= 0) ctx.putImageData(art, 0, 0, x0, y0, x1 - x0 + 1, y1 - y0 + 1);
-
-      // Sparks fly off the front, more the longer it is.
-      const front = shown - line;
-      if (front > 0) {
-        const r = canvas.getBoundingClientRect();
-        const scale = r.width / W;
-        const rate = Math.min(SPARKS, 16 + (front / (sx * sy)) * 1.6) * density;
-        sparks = Math.min(6, sparks + ((now - last) / 1000) * rate);
-        for (; sparks >= 1; sparks--) {
-          const i = lit[line + Math.floor(Math.random() * front)];
-          veilSpark({ x: r.left + (i % W) * scale, y: r.top + ((i / W) | 0) * scale }, lean(i), 1);
-        }
-      }
-      last = now;
-
-      if (p >= 1) return stop();
+      const f = burn.frame(now);
+      if (f.box) ctx.putImageData(art, 0, 0, ...f.box);
+      if (f.sparks.length) fly(f.sparks);
+      if (f.done) return stop();
       raf = requestAnimationFrame(frame);
     };
-
-    if (origin >= 0) {
-      const r = canvas.getBoundingClientRect();
-      const scale = r.width / W;
-      veilIgnites({ x: r.left + (origin % W) * scale, y: r.top + ((origin / W) | 0) * scale }, r.width);
-    }
+    if (burn.origin) ignite(burn.origin);
     raf = requestAnimationFrame(frame);
+  };
+
+  /** Burns in the worker, each frame's box put on the canvas as it comes (the canvas's pixels, only the box of them filled). */
+  const burnThere = async (b: Burner, img: ImageBitmap, setup: BurnSetup) => {
+    // A copy goes: the question keeps its own till it's over (media.svelte.ts),
+    // and with it the patch's picture, should the burn there be lost.
+    let picture: ImageBitmap;
+    try {
+      picture = await createImageBitmap(img);
+    } catch {
+      return stop();
+    }
+    if (stopped || ready() !== b) {
+      picture.close();
+      // (The worker was given no more meanwhile, or asked whether it's still there: it burns here.)
+      if (!stopped) burnHere(img, setup);
+      return;
+    }
+    const ctx = context();
+    const id = ++lastBurn;
+    let begun = false;
+    b.burns.set(id, {
+      begun: (px, at) => {
+        begun = true;
+        ctx.putImageData(new ImageData(px, W, H), 0, 0);
+        if (at) ignite(at);
+      },
+      box: (box, px) => ctx.putImageData(new ImageData(px, W, H), 0, 0, ...box),
+      sparks: (s) => (canvas.isConnected ? fly(s) : destroy()),
+      done: () => {
+        b.burns.delete(id);
+        stop();
+        if (!begun) whole(img);
+      },
+      lost: () => {
+        stop();
+        whole(img);
+      },
+    });
+    leave = () => letGo(b, id);
+    b.worker.postMessage({ t: 'burn', id, picture, setup } satisfies BurnJob, [picture]);
   };
 
   const begin = (img: PatchImage) => {
@@ -355,19 +339,29 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     const screen = fxWidth(canvas, aw);
     W = Math.max(1, Math.round(screen && !params.quick ? screen : Math.min(screen || Infinity, img.width)));
     H = Math.max(1, Math.round((W * ah) / aw));
-    canvas.width = W;
-    canvas.height = H;
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(img, 0, 0, W, H);
     if (reduce?.matches || burning >= MAX_BURNING) {
+      draw(img);
       canvas.animate([{ opacity: 0 }, { opacity: 1 }], { duration: reduce?.matches ? 300 : 450, easing: 'ease-out' });
       return;
     }
     burning++;
     counted = true;
-    burn(W / aw, H / ah);
+    const setup: BurnSetup = {
+      W,
+      H,
+      sx: W / aw,
+      sy: H / ah,
+      edges: params.edges,
+      before: params.before,
+      duration: params.quick ? FINALE_MS : params.burn,
+      density: fxDensity(),
+    };
+    // (A picture cut on the page is a canvas: there's no worker for burns either, then.)
+    const b = ready();
+    if (b && typeof ImageBitmap !== 'undefined' && img instanceof ImageBitmap) void burnThere(b, img, setup);
+    else burnHere(img, setup);
   };
   params.picture().then(begin, () => {});
 
-  return { destroy: stop };
+  return { destroy };
 }

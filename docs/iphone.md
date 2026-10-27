@@ -223,7 +223,26 @@ with its numbers in the comments.
   pixels is the same: finding where the item sits in the full art at the
   reveal (`getImageData`) cost every answer a frame of 50 to 68 ms, though
   only a veiled picture needs it. It's done for those alone now, in the
-  veil's worker (`visibleBoxOf` in `src/lib/veilCutter.ts`).
+  veil's worker (`visibleBoxOf` in `src/lib/veilCutter.ts`). The veil's
+  burns were the same (`src/lib/materialize.ts`): each patch's start (its
+  pixels read, a distance transform, noise for every pixel and a sort) and
+  every frame of its fizzle ran on the page, most of a race question's
+  time on the phone (486 of 851 samples in one), the question screens at
+  50 to 54 fps with frames of 60 to 120 ms. Their arithmetic (`burn.ts`)
+  runs in `burnWorker.ts` now, which sends the box of each patch that
+  changed, its pixels as they now are; the page puts them on the patch's
+  canvas, a copy. Only one frame is with the page at a time, answered on
+  the page's next frame: the burns tick at the display's rate whatever the
+  page does, so while the page hasn't put the last, the worker gathers what
+  changed and sends it as one once it has. Otherwise a page slower than the
+  display (a busy reveal, Low Power Mode) puts frames back to back that are
+  never shown: on the Android emulator, whose page drew about a third of
+  the display's frames, 46% of those it heard in a race.
+  Each patch's pixels go back and forth in one buffer. The worker doesn't
+  draw on the canvases itself (`transferControlToOffscreen`): on Chrome on
+  Android (an emulator's, Chrome 133) a canvas drawn from a worker showed
+  nothing, or a white block, for as long as the patch was there, where the
+  same pixels put on the page showed.
 - **Safari has no `requestIdleCallback`.** `whenIdle` (`src/lib/idle.ts`)
   waits 300 ms there instead, and each step still runs as one task: a step
   over a frame's time drops a frame on the phone however idle the page

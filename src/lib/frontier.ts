@@ -227,6 +227,27 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
     return { seam: pick.seam, x: pts[j] + 0.5, y: pts[j + 1] + 0.5 };
   };
 
+  /**
+   * The sparks picked in a frame, (x, y, out x, out y) in art pixels, fly
+   * once it's drawn. Placing them reads where the canvas is; read in the
+   * frame, that laid the page out there and then, only for the frame to lay
+   * it out again as it drew (on an iPhone the seams' sparks forced that in
+   * many of a race question's frames). Once a frame is drawn the page is
+   * laid out already, and the read costs nothing.
+   */
+  let flying: number[] = [];
+  let flyAt: ReturnType<typeof setTimeout> | undefined;
+  const fly = () => {
+    flyAt = undefined;
+    const these = flying;
+    flying = [];
+    if (stopped || !canvas.isConnected) return;
+    const r = canvas.getBoundingClientRect();
+    for (let j = 0; j + 3 < these.length; j += 4) {
+      veilSpark({ x: r.left + (these[j] / cur.w) * r.width, y: r.top + (these[j + 1] / cur.h) * r.height }, { x: these[j + 2] * 25, y: these[j + 3] * 25 }, 0.75);
+    }
+  };
+
   const frame = (now: number) => {
     raf = 0;
     if (stopped || !canvas.isConnected) return;
@@ -324,13 +345,9 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
       sparks = Math.min(4, sparks + dt * rate);
       for (; sparks >= 1; sparks--) {
         const p = pickPoint(live, glowing);
-        const r = canvas.getBoundingClientRect();
-        veilSpark(
-          { x: r.left + (p.x / cur.w) * r.width, y: r.top + (p.y / cur.h) * r.height },
-          { x: p.seam.out.x * 25, y: p.seam.out.y * 25 },
-          0.75,
-        );
+        flying.push(p.x, p.y, p.seam.out.x, p.seam.out.y);
       }
+      if (flying.length && !flyAt) flyAt = setTimeout(fly, 0);
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
@@ -359,6 +376,7 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
     destroy() {
       stopped = true;
       cancelAnimationFrame(raf);
+      clearTimeout(flyAt);
     },
   };
 }
