@@ -13,8 +13,8 @@
 // for ever (descent.ts, waiting). It hands a stretch over every few dozen
 // ms on a phone; PREP_STALL_MS with none, it has stopped (START_MS before
 // its first: its script may be on its way over a slow link), and PING_MS
-// after a long while in the background. One only frozen with the page a
-// while isn't let go as it thaws (stallWatch in lib/prepPool.ts).
+// after a long while in the background. Time the page spends hidden
+// doesn't count (stallWatch in lib/prepPool.ts): the worker is frozen with it.
 // The backdrop tool's drafts (setBackdrops) are worked out on the page: the
 // worker only has the file's backdrops.
 

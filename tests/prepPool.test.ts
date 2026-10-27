@@ -3,8 +3,8 @@
 // its place and what it had goes on to another (then to the page); one whose
 // script is still on its way is given longer; back from a long while hidden,
 // each is asked whether it is still there and only the silent ones replaced;
-// one that won't start isn't replaced. A stall watch that comes due only as
-// a frozen page thaws waits again rather than let a worker go.
+// one that won't start isn't replaced. A stall watch counts only time the
+// page is shown: one that saw it hidden starts over.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PrepPool, HIDDEN_CHECK_MS, onShownAgain, stallWatch } from '../src/lib/prepPool.ts';
@@ -214,33 +214,49 @@ test('the page shown again says how long it was hidden, once for each time', () 
   assert.deepEqual(backs, [45_000, 2000]);
 });
 
-test('a stall watch: silent once its time is up; late by far (the page was frozen meanwhile), it waits as long again', (t) => {
+test('a stall watch: silent once its time is up with the page shown throughout; one that saw it hidden starts over', (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  let clock = 0;
-  const now = () => clock;
-  let silent = 0;
-  const pass = (ms: number) => {
-    clock += ms;
-    t.mock.timers.tick(ms);
+  const listeners: (() => void)[] = [];
+  const doc = { hidden: false, addEventListener: (_: string, f: () => void) => listeners.push(f) };
+  (globalThis as { document?: unknown }).document = doc;
+  const flip = (hidden: boolean) => {
+    doc.hidden = hidden;
+    for (const f of listeners) f();
   };
-  stallWatch(5000, () => silent++, now);
-  pass(5000);
-  assert.equal(silent, 1, 'on time');
-
-  stallWatch(5000, () => silent++, now);
-  // (Frozen a minute: the wall clock runs on, and the timer comes due as the page thaws.)
-  clock += 60_000;
+  let silent = 0;
+  stallWatch(5000, () => silent++);
   t.mock.timers.tick(5000);
-  assert.equal(silent, 1, 'waited on again');
-  pass(4999);
+  assert.equal(silent, 1, 'shown throughout');
+
+  // (A phone switched to another app for a moment, the worker frozen with the page.)
+  stallWatch(5000, () => silent++);
+  t.mock.timers.tick(3000);
+  flip(true);
+  flip(false);
+  t.mock.timers.tick(2000);
+  assert.equal(silent, 1, 'starts over');
+  t.mock.timers.tick(4999);
   assert.equal(silent, 1);
-  pass(1);
-  assert.equal(silent, 2, 'silent all that while after');
+  t.mock.timers.tick(1);
+  assert.equal(silent, 2, 'silent a whole while shown after');
 
-  const answered = stallWatch(5000, () => silent++, now);
-  clock += 60_000;
+  // (Coming due as the page thaws, before it hears it is shown again.)
+  stallWatch(5000, () => silent++);
+  flip(true);
+  t.mock.timers.tick(65_000);
+  assert.equal(silent, 2, 'hidden, it waits, however long');
+  flip(false);
   t.mock.timers.tick(5000);
+  assert.equal(silent, 2, 'its whole time again, shown');
+  t.mock.timers.tick(5000);
+  assert.equal(silent, 3);
+
+  const answered = stallWatch(5000, () => silent++);
+  flip(true);
+  t.mock.timers.tick(5000);
+  flip(false);
   answered();
-  pass(5000);
-  assert.equal(silent, 2, 'an answer cancels it, waiting again or not');
+  t.mock.timers.tick(20_000);
+  assert.equal(silent, 3, 'an answer cancels it, started over or not');
+  delete (globalThis as { document?: unknown }).document;
 });

@@ -9,8 +9,8 @@
 // script on its way, on a slow link) has START_MS. Back from a long while in
 // the background, each is asked whether it is still there, and one that
 // doesn't answer within PING_MS is replaced before anything waits on it.
-// A page only frozen a while (a phone switched to another app) has its
-// workers frozen with it, not stopped: those aren't let go as it thaws
+// A page hidden a while (a phone switched to another app) has its workers
+// frozen with it, not stopped, and a watch counts none of that time
 // (stallWatch).
 
 import type { PrepJob, Prepped } from './prepArt';
@@ -24,23 +24,44 @@ export const START_MS = 20_000;
 export const PING_MS = 1500;
 /** Back after this long in the background (ms), the workers are asked whether they are still there: the phone may have stopped them meanwhile. */
 export const HIDDEN_CHECK_MS = 30_000;
-/** A stall watch that fires later than this past its time (ms) was held up by the page being frozen, not by the worker's silence. */
-export const THAWED_MS = 1000;
+/** Whether the page is hidden, and how many times that has changed: a stall watch that saw a change starts over (stallWatch). */
+let hidden = false;
+let flips = 0;
+/**
+ * Notes whether `doc` is hidden now, each change counted once however many
+ * listeners note it: onShownAgain's do too, before theirs, so a watch one
+ * starts as the page is shown again (a worker asked whether it's still
+ * there) counts from after the change, whichever listener runs first.
+ */
+function note(doc: Pick<Document, 'hidden'>) {
+  if (doc.hidden === hidden) return;
+  hidden = doc.hidden;
+  flips++;
+}
+let tracking = false;
+function track() {
+  if (tracking || typeof document === 'undefined') return;
+  tracking = true;
+  note(document);
+  document.addEventListener('visibilitychange', () => note(document));
+}
 
 /**
- * A worker's stall watch: calls `silent` once `ms` pass, unless the function
- * it returns cancels it first (an answer came). Unless it fires late by far:
- * then the page was frozen meanwhile (a phone switched to another app), the
- * worker frozen with it, unable to answer, and it has `ms` again from now.
- * As a page thaws, its overdue timers and its visibilitychange (onShownAgain)
- * run in no set order, so a watch already out when it froze would otherwise
- * let a worker go that was only frozen, its work then done again elsewhere.
+ * A worker's stall watch: calls `silent` once `ms` pass with the page shown
+ * throughout, unless the function it returns cancels it first (an answer
+ * came). One that saw the page hidden starts over: a phone that switched to
+ * another app froze the worker with the page, however briefly, and as the
+ * page thaws its overdue timers and its visibilitychange run in no set order.
+ * Counted otherwise, a worker only frozen would be let go, its work done
+ * again elsewhere (and one still loading given up on for good). A hidden
+ * page's watch waits, then, till it's shown: nothing on it is seen meanwhile.
  */
-export function stallWatch(ms: number, silent: () => void, now = Date.now): () => void {
+export function stallWatch(ms: number, silent: () => void): () => void {
+  track();
   let timer: ReturnType<typeof setTimeout>;
   const arm = () => {
-    const due = now() + ms;
-    timer = setTimeout(() => (now() - due > THAWED_MS ? arm() : silent()), ms);
+    const seen = flips;
+    timer = setTimeout(() => (hidden || flips !== seen ? arm() : silent()), ms);
   };
   arm();
   return () => clearTimeout(timer);
@@ -191,6 +212,7 @@ export class PrepPool {
 export function onShownAgain(doc: Pick<Document, 'hidden' | 'addEventListener'>, back: (hiddenMs: number) => void, now = Date.now) {
   let hiddenAt: number | null = null;
   doc.addEventListener('visibilitychange', () => {
+    note(doc);
     if (doc.hidden) hiddenAt = now();
     else if (hiddenAt !== null) {
       back(now() - hiddenAt);

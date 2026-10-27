@@ -28,8 +28,8 @@
 // one takes its place. Back after HIDDEN_CHECK_MS, an idle one is asked
 // whether it's still there, and replaced if it doesn't answer within
 // PING_MS, before a picture waits on it; one with jobs in hand has
-// PREP_STALL_MS again from then. One only frozen with the page a while
-// isn't let go as it thaws (stallWatch).
+// PREP_STALL_MS again from then. Time the page spends hidden doesn't count
+// (stallWatch): the worker is frozen with it.
 
 import { castBox, shadowOf } from './castShadow';
 import type { CastAnswer, CastJob, CastPing } from './artShadowWorker';

@@ -58,13 +58,15 @@ const doc = { hidden: false, createElement: canvas, addEventListener: (_: string
 let away = 0;
 const wallClock = Date.now;
 Date.now = () => wallClock() + away;
+const flip = (hidden: boolean) => {
+  doc.hidden = hidden;
+  for (const f of listeners) f();
+};
 /** The page hidden for `ms` by the wall clock, and shown again. */
 function hideFor(ms: number) {
-  doc.hidden = true;
-  for (const f of listeners) f();
+  flip(true);
   away += ms;
-  doc.hidden = false;
-  for (const f of listeners) f();
+  flip(false);
 }
 Object.assign(globalThis, {
   Worker: FakeWorker,
@@ -306,7 +308,7 @@ test('one that says it’s there as it loads, then answers nothing: PREP_STALL_M
   assert.equal(workers.length, before + 2, 'it had started: a fresh one');
 });
 
-test('frozen with the page a while, its watch coming due as the page thaws, a worker is waited on again, not let go', async (t) => {
+test('frozen with the page, however briefly, its watch coming due as the page thaws, a worker is waited on again, not let go', async (t) => {
   const { castFor } = await shadows('frozen');
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const before = workers.length;
@@ -321,11 +323,44 @@ test('frozen with the page a while, its watch coming due as the page thaws, a wo
   answer = (_w, job) => void held.push(job);
   const casts = Array.from({ length: 3 }, () => castFor(picture, 120, 90));
   await turn(t);
-  // (A minute frozen: the wall clock runs on; the watch comes due as the page thaws, before it hears it's shown again.)
-  away += 60_000;
+  // (A switch to another app: the watch comes due as the page thaws, before it hears it's shown again.)
+  flip(true);
   t.mock.timers.tick(PREP_STALL_MS);
+  flip(false);
   assert.ok(!w.terminated, 'not let go');
+  t.mock.timers.tick(PREP_STALL_MS);
+  assert.ok(!w.terminated, 'its whole time again, shown');
   for (const job of held) fromWorker(w, job);
   for (const cast of await Promise.all(casts)) assert.ok(cast);
   assert.equal(madeHere, 0, 'all made in the worker');
+});
+
+test('back after a long while with jobs in hand, it is asked whether it’s still there, and has PREP_STALL_MS from then', async (t) => {
+  const { castFor } = await shadows('asked-busy');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const before = workers.length;
+  madeHere = 0;
+  answer = fromWorker;
+  const first = castFor(picture, 120, 90);
+  await turn(t);
+  assert.ok(await first);
+  const w = workers[before]!;
+  const pinged: unknown[] = [];
+  // (It answers nothing now; the other tests' workers answer as before.)
+  answer = (x, job) => {
+    if (x === w) return void ('ping' in job && pinged.push(job));
+    if ('ping' in job) x.reply({ id: 0 });
+    else fromWorker(x, job);
+  };
+  const casts = Array.from({ length: 2 }, () => castFor(picture, 120, 90));
+  await turn(t);
+  hideFor(HIDDEN_CHECK_MS);
+  await turn(t);
+  assert.equal(pinged.length, 1, 'asked');
+  t.mock.timers.tick(PING_MS);
+  assert.ok(!w.terminated, 'with jobs in hand it has longer');
+  t.mock.timers.tick(PREP_STALL_MS - PING_MS);
+  for (const cast of await Promise.all(casts)) assert.ok(cast, 'each made all the same');
+  assert.ok(w.terminated, 'silent, let go');
+  assert.equal(madeHere, 2, 'on the page');
 });

@@ -3,15 +3,12 @@
 // silent before the table is all here, as one a phone stopped in the
 // background does, without a word. Silent for START_MS before its first
 // stretch, PREP_STALL_MS after one, or PING_MS back from a long while in
-// the background, it is let go; but not as the page thaws after being only
-// frozen a while, the worker frozen with it. Run here against stand-ins for
-// the browser's Worker and document.
+// the background, it is let go. Time the page spends hidden doesn't count:
+// the worker is frozen with it. Run here against stand-ins for the browser's
+// Worker and document.
 import './asVite.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-
-const { HIDDEN_CHECK_MS, PING_MS, PREP_STALL_MS, START_MS } = await import('../src/lib/prepPool.ts');
-const { LIGHT_TABLE } = await import('../src/lib/descent.ts');
 
 /** Workers made; each says only what the test has it say. */
 const workers: FakeWorker[] = [];
@@ -41,14 +38,18 @@ const doc = { hidden: false, addEventListener: (_: string, f: () => void) => lis
 let away = 0;
 const wallClock = Date.now;
 Date.now = () => wallClock() + away;
+const flip = (hidden: boolean) => {
+  doc.hidden = hidden;
+  for (const f of listeners) f();
+};
 function hideFor(ms: number) {
-  doc.hidden = true;
-  for (const f of listeners) f();
+  flip(true);
   away += ms;
-  doc.hidden = false;
-  for (const f of listeners) f();
+  flip(false);
 }
 Object.assign(globalThis, { Worker: FakeWorker, document: doc });
+const { HIDDEN_CHECK_MS, PING_MS, PREP_STALL_MS, START_MS } = await import('../src/lib/prepPool.ts');
+const { LIGHT_TABLE } = await import('../src/lib/descent.ts');
 
 /** lib/lightsAhead.ts loaded afresh (the query makes it a module of its own), its worker not made yet; and that worker, made. */
 async function started(fresh: string) {
@@ -103,15 +104,17 @@ test('back after a long while with the table not all here, it has PING_MS to han
   assert.ok(w.terminated, 'stopped meanwhile, let go');
 });
 
-test('frozen with the page a while, the wait for its next stretch coming due as it thaws, it is waited on again, not let go', async (t) => {
+test('frozen with the page, however briefly, the wait for its next stretch coming due as it thaws, it is waited on again, not let go', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const { w } = await started('frozen');
   w.stretch(100);
-  // (A minute frozen: the wall clock runs on; the timer comes due as the page thaws, before it hears it's shown again.)
-  away += 60_000;
+  // (A switch to another app: the timer comes due as the page thaws, before it hears it's shown again.)
+  flip(true);
   t.mock.timers.tick(PREP_STALL_MS);
+  flip(false);
   assert.ok(!w.terminated, 'waited on again');
-  w.stretch(200);
   t.mock.timers.tick(PREP_STALL_MS);
-  assert.ok(w.terminated, 'silent after that, let go');
+  assert.ok(!w.terminated, 'its whole time again, shown');
+  t.mock.timers.tick(PREP_STALL_MS);
+  assert.ok(w.terminated, 'silent all that while, let go');
 });
