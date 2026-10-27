@@ -234,6 +234,12 @@
   let busy = $state<Entry | 'rooms' | null>(null);
   /** The entry whose row shows the connection under way (the one that set it off, or the one a resumed connection belongs to). */
   const busyEntry = $derived<Entry | 'rooms' | null>(connecting ? (busy ?? (session.mode === 'host' ? 'create' : 'join')) : null);
+  // The cursor, lit while connecting, sits on the row that shows it, wherever
+  // the join set off from (the field's Enter with the mouse over another entry,
+  // the Open rooms list, a connection resumed); an invite's join is its first entry.
+  $effect(() => {
+    if (busyEntry && busyEntry !== 'rooms') cursor = invite ? 0 : ENTRIES.indexOf(busyEntry);
+  });
 
   function choose(e: Entry) {
     if (connecting) return;
