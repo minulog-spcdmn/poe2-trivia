@@ -264,7 +264,9 @@ body {
   -webkit-user-select: none;
   user-select: none;
   /* Nor does holding a finger on an item picture, a control or a code bring
-     up iOS's menu (Save, Copy, Share) over the game. */
+     up iOS's menu (Save, Copy, Share) over the game. (Without a menu to
+     offer, a long press on a code ends in a click as it lets go, which
+     copies it: lib/copyPress.svelte.ts.) */
   -webkit-touch-callout: none;
 }
 input,

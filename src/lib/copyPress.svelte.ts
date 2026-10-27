@@ -5,10 +5,13 @@
 // or a pen selects nothing and brings up no menu: a tap copies it, on the
 // tap's click, which still has the tap's activation for the clipboard; a long
 // press copies it too, while still held, where the browser lets a page copy
-// then (Chrome, which asks for no tap). An iPhone lets a page copy in a tap
-// and nowhere else: not as the finger comes down, nor while it is held, nor
-// as it lets go of a long press, even with the press taken over (tried on
-// one). There a long press lights the code and says to tap it. A note by the
+// then (Chrome, which asks for no tap). An iPhone lets a page copy in a tap's
+// click and nowhere else: not as the finger comes down, nor while it is held
+// (tried on one, even with the press taken over). But a long press there
+// still ends in a click as the finger lets go, as long as nothing on the
+// code offers iOS's own menu (app.css keeps -webkit-touch-callout none): so
+// the code lights up as the hold becomes a long press and is copied as it
+// lets go. Should no click come, the note says to tap it. A note by the
 // pointer says what came of it (CopyNote.svelte), for as long as the finger
 // holds and a moment after. Each element is attached with {@attach}, marked
 // data-copy (selectable by a mouse alone, app.css).
@@ -22,13 +25,15 @@ export const STILL_PX = 10;
 /** How long a copied code stays lit, and the note shows once the pointer is up (ms). */
 export const LIT_MS = 700;
 export const NOTE_MS = 1300;
-/** What the note says over a long press where only a tap may copy. */
+/** How long after a held finger lets go its click may come (ms; an iPhone's comes within some 50). */
+export const CLICK_MS = 400;
+/** What the note says once a long press has let go without a copy. */
 export const TAP_TO_COPY = 'Tap to copy';
 
 export class CopyPress {
   /** The note by the pointer: what it says, where the press was, and whether a finger or a pen made it (it goes above those). */
   note = $state<{ text: string; at: At; touch: boolean } | null>(null);
-  /** Lit as just copied, for LIT_MS (on a phone a tap leaves no selection to light it), and while a long press that can't copy is held. */
+  /** Lit as just copied, for LIT_MS (on a phone a tap leaves no selection to light it), and over a long press that copies as it lets go. */
   lit = $state(false);
   /** The element copied from, while attached: the note keeps by it. */
   el: HTMLElement | undefined;
@@ -36,9 +41,10 @@ export class CopyPress {
   #copied: string;
   /** Whether the last press was a finger's or a pen's (not a mouse's). */
   #touched = false;
-  /** The finger's or pen's press: where it came down, whether it is still down, held long, and has copied. */
-  #down = { x: 0, y: 0, holding: false, long: false, copied: false, menu: false };
+  /** The finger's or pen's press: where it came down, whether it is still down, held long, refused a copy while held (an iPhone's), and has copied. */
+  #down = { x: 0, y: 0, holding: false, long: false, refused: false, copied: false, menu: false };
   #holdTimer: ReturnType<typeof setTimeout> | undefined;
+  #clickTimer: ReturnType<typeof setTimeout> | undefined;
   #litTimer: ReturnType<typeof setTimeout> | undefined;
   #noteTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -71,6 +77,7 @@ export class CopyPress {
       document.removeEventListener('copy', this.#byHand);
       removeEventListener('pointerup', this.#released);
       clearTimeout(this.#holdTimer);
+      clearTimeout(this.#clickTimer);
       clearTimeout(this.#litTimer);
       clearTimeout(this.#noteTimer);
       if (this.el === node) this.el = undefined;
@@ -81,30 +88,42 @@ export class CopyPress {
     if (e.button !== 0) return;
     this.#touched = e.pointerType !== 'mouse';
     if (!this.#touched) return addEventListener('pointerup', this.#released, { once: true });
-    this.#down = { x: e.clientX, y: e.clientY, holding: true, long: false, copied: false, menu: false };
+    this.#down = { x: e.clientX, y: e.clientY, holding: true, long: false, refused: false, copied: false, menu: false };
     clearTimeout(this.#holdTimer);
+    clearTimeout(this.#clickTimer);
     this.#holdTimer = setTimeout(this.#long, LONG_MS);
   };
   /** A press that moves is a scroll or a drag, no long press. */
   #moved = (e: PointerEvent) => {
     if (this.#down.holding && Math.hypot(e.clientX - this.#down.x, e.clientY - this.#down.y) > STILL_PX) clearTimeout(this.#holdTimer);
   };
-  #lifted = () => {
+  /** The finger let go (`scrolled`: a scroll took it, and no click comes). */
+  #lifted = (scrolled: unknown = false) => {
     if (!this.#down.holding) return;
     this.#down.holding = false;
     clearTimeout(this.#holdTimer);
-    if (this.lit && !this.#down.copied) this.lit = false;
+    if (this.#down.refused && !this.#down.copied) {
+      // Lit on till the click the lift brings copies it (an iPhone's); none, and it says to tap.
+      if (scrolled === true) this.lit = false;
+      else this.#clickTimer = setTimeout(this.#noClick, CLICK_MS);
+    }
     if (this.note) this.#noteGoes();
   };
   /** A scroll took the press, or (on Android) its long press did: that finger lets go later, as its touchend. */
   #cancelled = (e: PointerEvent) => {
-    if (!(this.#down.menu && e.pointerType === 'touch')) this.#lifted();
+    if (!(this.#down.menu && e.pointerType === 'touch')) this.#lifted(true);
+  };
+  #noClick = () => {
+    if (this.#down.copied) return;
+    this.lit = false;
+    this.#show(TAP_TO_COPY, { clientX: this.#down.x, clientY: this.#down.y });
   };
   /** A mouse's: what its press selected, all of the code or some, is what is wanted either way. */
   #released = (e: PointerEvent) => {
     if (this.#selectionHere()) void this.#copy(e);
   };
   #tapped = (e: MouseEvent) => {
+    clearTimeout(this.#clickTimer);
     if (this.#touched && !this.#down.copied) void this.#copy(e);
   };
   /** A finger's or a pen's long press on Android (a mouse's right click brings no menu either, lib/noMenu.ts). */
@@ -114,15 +133,14 @@ export class CopyPress {
     this.#down.menu = true;
     this.#long();
   };
-  /** A long press, held still: copied while still held where the browser allows it, else the note says to tap. */
+  /** A long press, held still: copied while still held where the browser allows it, else lit till it lets go. */
   #long = async () => {
     clearTimeout(this.#holdTimer);
     if (this.#down.long || this.#down.copied) return;
     this.#down.long = true;
-    const at = { clientX: this.#down.x, clientY: this.#down.y };
-    if (await this.#write()) return this.#done(at);
+    if (await this.#write()) return this.#done({ clientX: this.#down.x, clientY: this.#down.y });
     if (this.#down.copied || !this.#down.holding) return;
-    this.#show(TAP_TO_COPY, at);
+    this.#down.refused = true;
     this.lit = true;
   };
 

@@ -71,7 +71,7 @@ Object.defineProperty(globalThis, 'navigator', {
 
 const { installNoMenu } = await import('../src/lib/noMenu.ts');
 installNoMenu();
-const { CopyPress, LONG_MS, STILL_PX, LIT_MS, NOTE_MS, TAP_TO_COPY } = await import('../src/lib/copyPress.svelte.ts');
+const { CopyPress, LONG_MS, STILL_PX, LIT_MS, NOTE_MS, CLICK_MS, TAP_TO_COPY } = await import('../src/lib/copyPress.svelte.ts');
 
 /** Every promise of the press settled (the clipboard's answer). */
 const settle = () => new Promise((r) => setImmediate(r));
@@ -82,16 +82,20 @@ function code(shows = 'ABCDEF', needsTap = false) {
   const el = listeners();
   const press = new CopyPress(() => 'ABCDEF', 'Room code copied');
   press.attach({ textContent: shows, addEventListener: el.add, removeEventListener: el.remove } as unknown as HTMLElement);
-  /** A tap, as a browser sends it: the click last, with the tap's activation. */
-  const tap = () => {
-    el.send('pointerdown');
+  /** A finger letting go, as a browser sends it: the click last (`click`), with a tap's activation. */
+  const lift = (click = true) => {
     el.send('pointerup');
     el.send('touchend');
+    if (!click) return;
     clip.inTap = true;
     el.send('click');
     clip.inTap = false;
   };
-  return { press, send: el.send, tap };
+  const tap = () => {
+    el.send('pointerdown');
+    lift();
+  };
+  return { press, send: el.send, tap, lift };
 }
 
 test('a tap copies the code, and the note over it says so a moment', async (t) => {
@@ -141,18 +145,34 @@ test('a long press Android sends before the hold is up copies there and then', a
   assert.equal(press.note?.text, 'Room code copied');
 });
 
-test('where only a tap may copy (an iPhone), a long press lights the code and says to tap, and a tap copies', async (t) => {
+test('where only a tap may copy (an iPhone), a long press lights the code and copies as it lets go', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { press, send, tap } = code('ABCDEF', true);
+  const { press, send, lift } = code('ABCDEF', true);
   send('pointerdown');
   t.mock.timers.tick(LONG_MS);
   await settle();
   assert.equal(clip.text, '', 'refused while held');
-  assert.equal(press.note?.text, TAP_TO_COPY);
+  assert.equal(press.note, null, 'no note while held');
   assert.equal(press.lit, true);
-  // Let go (no click comes after a long press): the light goes, the note a moment later.
+  // Let go: lit on to the click, which copies it.
   send('pointerup');
   send('touchend');
+  assert.equal(press.lit, true);
+  lift();
+  await settle();
+  assert.equal(clip.text, 'ABCDEF');
+  // (Read afresh: the assertion above narrowed it to null.)
+  assert.equal((press as { note: { text: string } | null }).note?.text, 'Room code copied');
+});
+
+test('a long press there whose lift brings no click says to tap, and a tap copies', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { press, send, tap, lift } = code('ABCDEF', true);
+  send('pointerdown');
+  t.mock.timers.tick(LONG_MS);
+  await settle();
+  lift(false);
+  t.mock.timers.tick(CLICK_MS);
   assert.equal(press.lit, false);
   assert.equal(press.note?.text, TAP_TO_COPY);
   t.mock.timers.tick(NOTE_MS);
@@ -160,8 +180,20 @@ test('where only a tap may copy (an iPhone), a long press lights the code and sa
   tap();
   await settle();
   assert.equal(clip.text, 'ABCDEF');
-  // (Read afresh: the assertion above narrowed it to null.)
   assert.equal((press as { note: { text: string } | null }).note?.text, 'Room code copied');
+});
+
+test('a long press there that turns into a scroll goes dark, saying nothing', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { press, send } = code('ABCDEF', true);
+  send('pointerdown');
+  t.mock.timers.tick(LONG_MS);
+  await settle();
+  send('pointercancel');
+  t.mock.timers.tick(CLICK_MS + NOTE_MS);
+  assert.equal(press.lit, false);
+  assert.equal(press.note, null);
+  assert.equal(clip.text, '');
 });
 
 test('a press that moves is a scroll, not a long press', async (t) => {
