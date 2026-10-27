@@ -1,12 +1,12 @@
 <script lang="ts">
   // A room code's letters, each in its own box, as the lobby shows them (and
-  // the invite screen, the room it leads to). A click, a drag across it or a
-  // tap copies the whole code, and a small note by the pointer (above a
-  // finger) says so; the letters light up while selected or just copied, in
-  // place of the browser's highlight, and go back to rest after. A long
-  // press selects it and leaves the copy to the phone's own Copy (data-copy
-  // keeps it, lib/noMenu.ts). A copy by hand gives just the letters too, and
-  // the selection can't be dragged off as a picture. `hidden` shows dots
+  // the invite screen, the room it leads to). A click, a drag across it, a
+  // tap or a long press copies the whole code, and a small note by the
+  // pointer (above a finger) says so; the letters light up while selected or
+  // just copied, in place of the browser's highlight, and go back to rest
+  // after. A finger or a pen selects nothing and brings up no menu: the code
+  // is copied for them. A copy by hand gives just the letters too, and the
+  // selection can't be dragged off as a picture. `hidden` shows dots
   // (for streaming; a copy still gives the code), `sparks` makes each letter
   // spark as it lands, `delay` holds back their drop (ms).
   import { flushSync, onDestroy } from 'svelte';
@@ -45,13 +45,15 @@
   let lit = $state(false);
   let litTimer: ReturnType<typeof setTimeout> | undefined;
   let noteTimer: ReturnType<typeof setTimeout> | undefined;
-  const place = (e: MouseEvent) => {
+  /** Where on the screen a copy was made: a mouse's or a finger's. */
+  type At = { clientX: number; clientY: number };
+  const place = (e: At) => {
     if (!note) return;
     // In the note's own px: the page (and the note with it) may be zoomed (lib/stage.ts), the window isn't.
     const z = zoomOf(glyphs ?? document.body);
     note = { ...note, ...noteSpot({ x: e.clientX / z, y: e.clientY / z }, noteSize, { w: innerWidth / z, h: innerHeight / z }, noteByTouch) };
   };
-  function show(e: MouseEvent, text: string) {
+  function show(e: At, text: string) {
     note = { x: 0, y: 0, text };
     noteByTouch = touched;
     // Drawn at once, still before the frame is painted, to be measured; once, not on every move after.
@@ -71,36 +73,64 @@
    * clipboard: Android Chrome runs a stylus through the same gestures as a
    * finger, and only selects the code after their pointerup, and a long
    * press there often ends in a pointercancel, with no pointerup at all
-   * (that one is left to the phone's own Copy over the selection). A pen's
-   * drag that ends off the code leaves just its selection, for Ctrl+C.
+   * (that one is copied from its contextmenu, below). A long press copies
+   * too: on Android its contextmenu, its menu kept shut; on iOS as the
+   * finger lets go, which iOS counts as a tap for the clipboard (it sends
+   * no click after one). Either way once a press, and nothing is selected.
    */
   let touched = false;
+  /** Where and when a finger or a pen came down on the code (a long press is one held still), and whether that press has copied it yet. */
+  let down = { at: 0, x: 0, y: 0, copied: false };
+  /** How long a press is held to be a long press (ms), and how far it may move (px). */
+  const LONG_MS = 400;
+  const STILL_PX = 10;
   function press(e: PointerEvent) {
     if (e.button !== 0) return;
     touched = e.pointerType !== 'mouse';
     if (!touched) addEventListener('pointerup', release, { once: true });
+    else down = { at: e.timeStamp, x: e.clientX, y: e.clientY, copied: false };
   }
   function release(e: PointerEvent) {
     // A click selects the whole code (user-select: all), a drag some or all of it: the code is what is wanted either way.
     if (selectionHere()) void copy(e);
   }
-  function tapped(e: MouseEvent) {
-    if (touched) void copy(e);
+  /** A finger's or a pen's copy, once a press however many of its events come. */
+  function copyOnce(at: At) {
+    if (down.copied) return;
+    down.copied = true;
+    void copy(at);
   }
-  async function copy(e: MouseEvent) {
+  function tapped(e: MouseEvent) {
+    if (touched) copyOnce(e);
+  }
+  function held(e: TouchEvent) {
+    const t = e.changedTouches[0];
+    if (touched && t && e.timeStamp - down.at >= LONG_MS && Math.hypot(t.clientX - down.x, t.clientY - down.y) <= STILL_PX) copyOnce(t);
+  }
+  function menu(e: MouseEvent) {
+    if (!touched) return;
+    e.preventDefault();
+    copyOnce(e);
+  }
+  async function copy(e: At) {
     let copied = false;
     try {
       await navigator.clipboard.writeText(code);
       copied = true;
     } catch {
-      // Older browsers and some app views: the code, selected here (a tap's
-      // own selection may not be there yet) and copied the old way (copyCode
-      // below cleans it).
-      if (glyphs && !selectionHere()) getSelection()?.selectAllChildren(glyphs);
+      // Older browsers and some app views: copied the old way, the code put
+      // in the copy itself (nothing need be selected, and a finger selects
+      // nothing).
+      const put = (c: ClipboardEvent) => {
+        c.clipboardData?.setData('text/plain', code);
+        c.preventDefault();
+      };
+      document.addEventListener('copy', put);
       copied = document.execCommand?.('copy') ?? false;
+      document.removeEventListener('copy', put);
     }
-    // Copying by hand: a key on a keyboard, a long press on a touch screen (or a pen).
-    show(e, copied ? 'Room code copied' : touched ? 'Hold the code to copy it' : 'Press Ctrl+C to copy it');
+    // Copying by hand: a key on a keyboard (a finger has no other way, and a long press is the same copy).
+    show(e, copied ? 'Room code copied' : touched ? 'Couldn’t copy it here' : 'Press Ctrl+C to copy it');
     if (!copied) return;
     lit = true;
     clearTimeout(litTimer);
@@ -143,7 +173,7 @@
 <svelte:window onpointermove={place} />
 
 <!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events (the pointer handlers copy what a press selected, a tap the code; the dragstart only stops a drag of the selection; by keyboard the code is copied as any text is) -->
-<span class="glyphs" class:hidden class:selected={selected || lit} data-copy bind:this={glyphs} oncopy={copyCode} ondragstart={(e) => e.preventDefault()} onpointerdown={press} onclick={tapped}>
+<span class="glyphs" class:hidden class:selected={selected || lit} data-copy bind:this={glyphs} oncopy={copyCode} ondragstart={(e) => e.preventDefault()} onselectstart={(e) => touched && e.preventDefault()} onpointerdown={press} onclick={tapped} ontouchend={held} oncontextmenu={menu}>
   {#each code.split('') as ch, i (i)}
     <!-- The letter in gold; its gleam is drawn from data-ch (a pseudo-element), so a copy gives each letter once. -->
     <span class="glyph" use:landing={i} use:backdropShadow={{ fill: 'linear' }} style:animation-delay="{delay + i * 80}ms" style:--i={i} data-ch={hidden ? '•' : ch}><span class="ch">{hidden ? '•' : ch}</span></span>
@@ -166,6 +196,15 @@
     -webkit-user-select: all;
     user-select: all;
     -webkit-touch-callout: default;
+  }
+  /* A finger or a pen selects nothing: a tap or a long press copies the code
+     itself. (A phone's, here; a touch screen with a mouse too stops the
+     finger's selection as it starts, onselectstart.) */
+  @media (hover: none) {
+    .glyphs {
+      -webkit-user-select: none;
+      user-select: none;
+    }
   }
   /* Selected, the letters light up in place of the browser's highlight. */
   .glyphs ::selection,

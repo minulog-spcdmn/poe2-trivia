@@ -4,7 +4,8 @@
 // stops a right click's menu would take away the Copy Android Chrome shows
 // over the selection. A mouse's right click on them stays without a menu, as
 // everywhere else in the game. And a tap on the room code copies it there and
-// then, not on a selection Chrome makes only after the finger is up. The
+// then, not on a selection Chrome makes only after the finger is up, as a
+// long press on it does, its menu kept shut and nothing selected. The
 // handler against fake events, the rest read from the source.
 import './asVite.ts';
 import { test } from 'node:test';
@@ -75,7 +76,7 @@ test('the game and every QA frame install it, the game no handler of its own', (
   assert.match(readFileSync('src/qa/frame/optional.ts', 'utf8'), /import\.meta\.glob\(\[[^\]]*'\.\.\/\.\.\/lib\/noMenu\.ts'/);
 });
 
-test('a tap on the room code copies it on its click, not on a selection after', () => {
+test('a tap or a long press on the room code copies it, with nothing selected and no menu', () => {
   const src = readFileSync('src/components/RoomCodeGlyphs.svelte', 'utf8');
   /** A function's body in the component's script, up to its closing brace. */
   const body = (name: string) => {
@@ -90,12 +91,22 @@ test('a tap on the room code copies it on its click, not on a selection after', 
   assert.match(press, /touched = e\.pointerType !== 'mouse';/);
   assert.match(press, /if \(!touched\) addEventListener\('pointerup', release/);
   assert.equal(src.match(/addEventListener\('pointerup'/g)?.length, 1, 'no other wait for a pointerup');
-  // and a tap copies at once, without looking for a selection first.
+  // and a tap copies at once, without looking for a selection first;
   const tapped = body('tapped');
-  assert.match(tapped, /if \(touched\) void copy\(e\);/);
+  assert.match(tapped, /if \(touched\) copyOnce\(e\);/);
   assert.doesNotMatch(tapped, /selectionHere|return/);
   const copy = body('copy');
   assert.doesNotMatch(copy.slice(0, copy.indexOf('navigator.clipboard.writeText(code)')), /selectionHere|return/);
+  // a long press copies as well: Android's as its contextmenu, kept shut; iOS's as the finger lets go,
+  assert.match(src, /<span class="glyphs"[^\n]*\soncontextmenu=\{menu\}/);
+  assert.match(src, /<span class="glyphs"[^\n]*\sontouchend=\{held\}/);
+  assert.match(body('menu'), /e\.preventDefault\(\);\s*copyOnce\(e\);/);
+  assert.match(body('held'), /copyOnce\(t\)/);
+  // once a press, whichever of its events come;
+  assert.match(body('copyOnce'), /if \(down\.copied\) return;\s*down\.copied = true;/);
+  // and a finger selects nothing: a phone's never, another's stopped as it starts.
+  assert.match(src, /@media \(hover: none\) \{\s*\.glyphs \{\s*-webkit-user-select: none;\s*user-select: none;/);
+  assert.match(src, /<span class="glyphs"[^\n]*\sonselectstart=\{\(e\) => touched && e\.preventDefault\(\)\}/);
 });
 
 test('every code a player copies is marked data-copy', () => {
