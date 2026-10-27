@@ -3570,10 +3570,16 @@
       font-size: 1.1rem;
       line-height: 1.3;
     }
-    /* The reveal's sentence in the task's place, the size it has beside the verdict. */
+    /* The reveal's sentence in the task's place, the size it has beside the
+       verdict, on lines as tall as the task's (1.1rem at 1.3, above), and
+       the +1's bigger figure inside them: the art under it gave up 5px as
+       the sentence came in, which shook the circle behind it. */
     .task-text.outcome {
       font-size: 1rem;
-      line-height: 1.25;
+      line-height: calc(1.1rem * 1.3);
+    }
+    .task-text.outcome b.good {
+      line-height: 0;
     }
     .stage {
       flex: 1;
