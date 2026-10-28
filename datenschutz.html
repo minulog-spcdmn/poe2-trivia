@@ -76,7 +76,7 @@
           <strong>Relay-Server (TURN):</strong> Ist keine direkte Verbindung möglich, wird die Verbindung über den
           Relay-Dienst von Cloudflare (turn.cloudflare.com; Cloudflare, Inc., USA) geleitet. Dabei laufen die Spieldaten
           und Ihre IP-Adresse über diese Server. Die Zugangsdaten dafür, die zwölf Stunden gelten, holt die Seite, sobald Sie online spielen (einen Raum
-          eröffnen oder ihm beitreten) oder Ihre Geräte abgleichen, und, solange sie damit spielt, vor deren Ablauf erneut von einem Cloudflare Worker des Spiels (workers.dev).
+          eröffnen oder ihm beitreten) oder Ihre Geräte abgleichen, und, solange die Seite danach geöffnet bleibt, vor deren Ablauf erneut von einem Cloudflare Worker des Spiels (workers.dev).
           Er verarbeitet dabei Ihre IP-Adresse und zählt, um massenhafte Abrufe zu bremsen, je Adresse die Abrufe der
           letzten Minute; gespeichert wird sie darüber hinaus nicht. Mit diesen
           Zugangsdaten fragt Ihr Browser Ihre öffentliche IP-Adresse beim STUN-Server von Cloudflare
@@ -285,7 +285,7 @@
           </li>
           <li>
             <strong>Online play and the open rooms list:</strong> the PeerJS matchmaking server (0.peerjs.com) and Cloudflare
-            (Cloudflare, Inc., USA: a small Worker of the game’s that hands the page a relay login lasting twelve hours, asked once you play online or sync your devices and renewed while you do, counting each address’s asks over the last minute to slow bulk use, its STUN server and, if needed, its
+            (Cloudflare, Inc., USA: a small Worker of the game’s that hands the page a relay login lasting twelve hours, asked once you open or join a room or sync your devices and renewed while the page stays open, counting each address’s asks over the last minute to slow bulk use, its STUN server and, if needed, its
             relay servers (TURN), through which the game’s data then runs) and Google’s STUN server (stun.l.google.com) process your IP address to connect players.
             Guests connect directly to the host, so <strong>the host can see your IP address</strong> and you can see
             the host’s, even when the connection ends up running through a relay, as both sides swap addresses while

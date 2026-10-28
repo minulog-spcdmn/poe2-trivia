@@ -189,11 +189,16 @@ through; the page asks again later, and connections after that get the relay.
 The QA desk and the tests never ask.
 
 To turn it off: delete the TURN key in Cloudflare's dashboard (Realtime → TURN
-Server). That ends the logins pages already hold, and the Worker hands out no
-more; pages then play as without a relay. Emptying `RELAY_URL` (or reverting)
-only changes pages loaded after the deploy: tabs already open keep asking the
-Worker. A new key brings it back for tabs opened since; one open all along
-picks it up when its login is next renewed, within six hours.
+Server). The Worker then hands out no logins (its check fails on the missing
+key, every ten minutes, until a new one is set up), and pages play as
+without a relay. Cloudflare doesn't say what becomes of the logins pages
+already hold: whatever they still relay ends with them, in twelve hours at
+most. Emptying `RELAY_URL` (or reverting)
+only changes pages loaded after the deploy, and leaves the Worker handing
+out logins to tabs already open (and to anyone sending the game's Origin):
+a full rollback is reverting and deleting the key. A new key brings it back
+for tabs opened since; one open all along picks it up when its login is next
+renewed, within six hours.
 
 ## Deploying
 
