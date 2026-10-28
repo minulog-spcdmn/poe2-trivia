@@ -341,8 +341,10 @@ export const countPage = () => countReach('reach/page');
  * ("reach/create"), a room asked for under a name that passed
  * ("reach/host", session host), that room's lobby, online or on this device
  * ("reach/room"), a run alone begun ("reach/solo", session startDelve), the
- * Daily answered ("reach/daily", countDaily) and a practice question
- * ("reach/practice"). The ones that aren't "reach/…" are a newcomer's only:
+ * Daily answered ("reach/daily", countDaily), a practice question
+ * ("reach/practice") and a run begun from the Daily's IDENTIFY MORE
+ * ("reach/identify", counted as it calls session startDelve, so it's a
+ * "reach/solo" too). The ones that aren't "reach/…" are a newcomer's only:
  * the first press of a control ("new/acted", countActed) and how long the
  * page took to become usable ("load/ready-2s", countReady).
  */
@@ -356,6 +358,7 @@ const NEWCOMER_STEPS = new Set([
   'reach/solo',
   'reach/daily',
   'reach/practice',
+  'reach/identify',
   'new/acted',
   'load/ready-2s',
   'load/ready-5s',

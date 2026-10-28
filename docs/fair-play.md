@@ -120,7 +120,8 @@ load; `reach/codex`, `reach/achievements`; the start page's
 `reach/create` (New game tapped), `reach/host` (a room asked for under a
 name that passed), `reach/room` (its lobby, online or on this device),
 `reach/solo` (a run alone begun, `session.startDelve`), `reach/daily` and
-`reach/practice` (one answered); and `new/…` for each of these and
+`reach/practice` (one answered), `reach/identify` (a run begun from the
+Daily's IDENTIFY MORE, a `reach/solo` too); and `new/…` for each of these and
 `new/lobby|played|finished` on a load whose visit had no save (or one begun
 within eight hours), with `new/acted` (its first press of a control, no
 `reach/` twin) and `load/ready-2s|5s|10s|later` (how long the page took to

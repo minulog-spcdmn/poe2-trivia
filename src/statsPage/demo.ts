@@ -134,6 +134,7 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
       add('new/solo', h, ofThem(acted, 0.15, rnd));
       add('new/daily', h, daily);
       add('new/practice', h, ofThem(daily, 0.4, rnd));
+      add('new/identify', h, ofThem(daily, 0.3, rnd));
       // How far they got.
       const lobby = ofThem(came, 0.56, rnd);
       const played = ofThem(lobby, 0.8, rnd);

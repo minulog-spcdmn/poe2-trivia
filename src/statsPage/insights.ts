@@ -220,6 +220,7 @@ export const FIRST_JOURNEY: readonly { step: First; name: string }[] = [
   { step: 'solo', name: 'Began a run alone' },
   { step: 'daily', name: "Answered Today's unique" },
   { step: 'practice', name: 'Answered a practice question' },
+  { step: 'identify', name: 'Began a run from the Daily (Identify more)' },
   { step: 'lobby', name: 'Entered a game' },
   { step: 'played', name: 'Started a game' },
   { step: 'finished', name: 'Saw one to its end' },
@@ -231,15 +232,19 @@ export interface FirstSteps {
   /** Visits with no save on the device ("visit/new"). */
   visits: number;
   counts: Record<First, number>;
-  /** Each step's own reading: the day it's counted from (LATER_FIRSTS from the day they were first counted) and the visits with no save since. */
+  /** Each step's own reading: the day it's counted from (LATER_FIRSTS from the day their group was first counted) and the visits with no save since. */
   steps: Record<First, { from: string | null; visits: number }>;
 }
 
 /** Read from the first day "visit/new" was counted, which came with the first steps' own ("new/…"): not from the day one first happened. */
 export function firstStepsOf(c: Counts): FirstSteps {
   const first = firstDay(c.days, (i) => (c.visits.new[i] ?? 0) > 0);
-  const later = firstDay(c.days, (i) => LATER_FIRSTS.some((s) => (c.firsts[s][i] ?? 0) > 0));
-  const fromOf = (s: First) => (first < 0 ? -1 : LATER_FIRSTS.includes(s) ? (later < 0 ? -1 : Math.max(first, later)) : first);
+  const groupFrom = (g: readonly First[]) => firstDay(c.days, (i) => g.some((s) => (c.firsts[s][i] ?? 0) > 0));
+  const later = new Map(LATER_FIRSTS.flatMap((g) => g.map((s) => [s, groupFrom(g)] as const)));
+  const fromOf = (s: First) => {
+    const from = later.get(s);
+    return first < 0 || from === -1 ? -1 : from === undefined ? first : Math.max(first, from);
+  };
   const counts = Object.fromEntries(FIRSTS.map((s) => [s, fromOf(s) < 0 ? 0 : sumFrom(c.firsts[s], fromOf(s))])) as Record<First, number>;
   // (Entered, as reachedOf: never fewer than started.)
   counts.lobby = Math.max(counts.lobby, counts.played);
