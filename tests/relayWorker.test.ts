@@ -109,9 +109,10 @@ test("the check notes the month's traffic, and at the cap deletes the key, endin
     const e = env(null);
     await check({ scheduledTime: at }, e);
     assert.deepEqual(JSON.parse(asked[0].body).variables, { account: 'account', from: '2026-12-01', to: '2026-12-31' });
-    assert.deepEqual(JSON.parse(e.kv.get('state')!), { checkedAt: at, used, ...(capped ? { capped: true } : {}) });
-    const deleted = asked.filter((a) => a.method === 'DELETE').map((a) => a.url);
-    assert.deepEqual(deleted, capped ? ['https://api.cloudflare.com/client/v4/accounts/account/calls/turn_keys/key'] : []);
+    assert.deepEqual(JSON.parse(e.kv.get('state')!), { checkedAt: at, used, ...(capped ? { capped: true, key: 'key' } : {}) });
+    // Below the cap the key is only looked at (the token can reach it); at the cap it's deleted.
+    const key = asked.filter((a) => a.url.includes('turn_keys')).map((a) => `${a.method} ${a.url}`);
+    assert.deepEqual(key, [`${capped ? 'DELETE' : 'GET'} https://api.cloudflare.com/client/v4/accounts/account/calls/turn_keys/key`]);
   }
 });
 
@@ -122,13 +123,24 @@ test('capped, logins stop even when the key cannot be deleted, and the check say
   assert.equal(JSON.parse(e.kv.get('state')!).capped, true);
 });
 
-test('once capped, the check leaves it be', async (t) => {
-  const asked = cloudflare(t, { graphql: usage(0) });
-  const state = JSON.stringify({ checkedAt: NOW - 1, used: 6e11, capped: true });
-  const e = env(state);
-  await check({ scheduledTime: NOW }, e);
-  assert.equal(e.kv.get('state'), state);
-  assert.equal(asked.length, 0);
+test('once capped, the relay stays off until a new key in a new month', async (t) => {
+  const state = JSON.stringify({ checkedAt: NOW, used: 6e11, capped: true, key: 'key' });
+  const nextMonth = Date.UTC(2026, 10, 1, 0, 10);
+  for (const [key, at, resumes] of [['key', NOW + 60_000, false], ['new', NOW + 60_000, false], ['key', nextMonth, false], ['new', nextMonth, true]] as const) {
+    const asked = cloudflare(t, { graphql: usage(0), 'turn_keys/new': 200 });
+    const e = { ...env(state), TURN_KEY_ID: key };
+    await check({ scheduledTime: at }, e);
+    assert.deepEqual(JSON.parse(e.kv.get('state')!), resumes ? { checkedAt: at, used: 0 } : JSON.parse(state), `${key} ${at}`);
+    assert.equal(asked.length, resumes ? 2 : 0);
+    t.mock.restoreAll();
+  }
+});
+
+test("a token that can't reach the key fails the check, and the last state goes stale", async (t) => {
+  cloudflare(t, { graphql: usage(1e9), 'turn_keys/key': 403 });
+  const e = env(FRESH);
+  await assert.rejects(check({ scheduledTime: NOW }, e), /can't reach the TURN key/);
+  assert.equal(e.kv.get('state'), FRESH);
 });
 
 test("a check that can't read this account's numbers fails loudly and leaves the last state to go stale", async (t) => {

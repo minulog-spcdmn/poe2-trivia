@@ -39,7 +39,7 @@ const API = 'https://api.cloudflare.com/client/v4';
  *   RELAY_STATE: { get(key: string): Promise<string | null>, put(key: string, value: string): Promise<void> },
  * }} Env
  * What the usage check last found.
- * @typedef {{ checkedAt: number, used: number, capped?: boolean }} State
+ * @typedef {{ checkedAt: number, used: number, capped?: boolean, key?: string }} State
  */
 
 /**
@@ -92,24 +92,37 @@ export async function answer(request, env, now = Date.now()) {
 }
 
 /**
- * Every ten minutes: the month's relay traffic. At the cap the TURN key is
- * deleted, ending every login out, and none go out until the owner makes a
- * new one. A check that fails throws, and the state it leaves goes stale,
- * which stops logins within the hour.
+ * Every ten minutes: the month's relay traffic, and that the token can still
+ * reach the TURN key (so it could delete it). At the cap the key is deleted,
+ * ending every login out, and none go out until the owner makes a new one
+ * (README); a new key in a new month starts the relay again by itself. A
+ * check that fails throws, and the state it leaves goes stale, which stops
+ * logins within the hour.
  * @param {{ scheduledTime: number }} event @param {Env} env
  */
 export async function check(event, env) {
   const now = new Date(event.scheduledTime);
-  const prev = await env.RELAY_STATE.get(STATE);
-  if (prev && JSON.parse(prev).capped) return;
+  const raw = await env.RELAY_STATE.get(STATE);
+  /** @type {State | null} */
+  const prev = raw ? JSON.parse(raw) : null;
+  // Capped stays capped: in the same month (a new key would be capped again
+  // at once) and with the deleted key (nothing to hand out).
+  if (prev?.capped && (env.TURN_KEY_ID === prev.key || monthOf(now) === monthOf(new Date(prev.checkedAt)))) return;
   const used = await trafficThisMonth(env, now);
+  const key = `${API}/accounts/${env.ACCOUNT_ID}/calls/turn_keys/${env.TURN_KEY_ID}`;
+  const auth = { Authorization: `Bearer ${env.ANALYTICS_TOKEN}` };
   /** @type {State} */
   const state = { checkedAt: now.getTime(), used };
-  if (used >= CAP_BYTES) {
+  if (used < CAP_BYTES) {
+    // The cap's way out, tried each time rather than first when it's needed.
+    const r = await fetch(key, { headers: auth });
+    if (!r.ok) throw new Error(`The token can't reach the TURN key, so the cap couldn't end its logins: ${r.status} ${await r.text()}`);
+  } else {
     state.capped = true;
+    state.key = env.TURN_KEY_ID;
     // Written first: logins stop at once, even if the key can't be deleted.
     await env.RELAY_STATE.put(STATE, JSON.stringify(state));
-    const r = await fetch(`${API}/accounts/${env.ACCOUNT_ID}/calls/turn_keys/${env.TURN_KEY_ID}`, { method: 'DELETE', headers: { Authorization: `Bearer ${env.ANALYTICS_TOKEN}` } });
+    const r = await fetch(key, { method: 'DELETE', headers: auth });
     if (!r.ok) throw new Error(`Relay capped at ${(used / 1e9).toFixed(1)} GB, but its key couldn't be deleted: ${r.status} ${await r.text()}`);
     console.log(`Relay capped at ${(used / 1e9).toFixed(1)} GB: its key is deleted`);
     return;
@@ -126,6 +139,8 @@ export default {
 
 /** @param {Date} now */
 const nextMonth = (now) => Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+/** @param {Date} d */
+const monthOf = (d) => d.toISOString().slice(0, 7);
 
 /**
  * Bytes the account's TURN relay sent to clients this month (UTC), from Cloudflare's analytics.

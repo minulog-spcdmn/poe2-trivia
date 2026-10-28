@@ -149,9 +149,13 @@ it half a day ahead); the relay's key stays in the Worker. So that nobody can
 run up a bill with it:
 
 - Every ten minutes the Worker reads the month's relay traffic from
-  Cloudflare's analytics. At 500 GB it **deletes the TURN key**, which ends
-  every login already out, and gives none until a new key is set up (step 1
-  and its two secrets again). Rooms then meet without the relay.
+  Cloudflare's analytics, and makes sure its token can still reach the TURN
+  key. At 500 GB it **deletes the TURN key**, which ends every login already
+  out. Rooms then meet without the relay (as they would with none at all).
+  It comes back once a new key is set up (step 1 and its two secrets again)
+  in a new month; a new key in the same month stays off. Half the free
+  allowance, because the check sees traffic up to ten minutes late and a
+  burst can be large.
 - Logins go out only while that check has run in the last hour, so a token
   gone wrong stops them instead of leaving the cap unwatched.
 - An address (an IPv6 one's /64) gets 60 logins a minute.
