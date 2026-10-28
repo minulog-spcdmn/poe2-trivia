@@ -17,6 +17,7 @@
   import { BETA, LOCAL } from '../lib/channel';
   import { CODEX_NAMES, DELVE_RECORD_KEY, deepestShown, loadRecords } from '../lib/delveRecord';
   import { onStoredElsewhere, storeKey } from '../lib/storage';
+  import { STARTED_KEY, hasStarted } from '../lib/started';
   import { shownDepth } from '../lib/delve';
   import { ENTRIES, codexLine, codexLines, cursorKey, lastEntry, rememberEntry, type Entry } from '../lib/startMenu';
   import GameTitle from './GameTitle.svelte';
@@ -88,22 +89,40 @@
   const total = engine.items.length;
   /** Null until the codex is read. */
   let discovered = $state<number | null>(null);
+  /** Whether any game here has had an answer of this player's (the Daily and its practice give none); null until the codex is read. A game from before lib/started.ts says so by it. */
+  let answered = $state<boolean | null>(null);
   const readDiscovered = () =>
     import('../lib/codex').then(({ loadCodex }) => {
-      const seen = loadCodex().items;
+      const codex = loadCodex();
+      const seen = codex.items;
       discovered = engine.items.filter((it) => seen[it.id]).length;
+      answered = Object.keys(codex.byDifficulty).length > 0;
     });
   void readDiscovered();
   /** Your deepest as players see depths, as the codex's Delve tab has it. */
   const readDeepest = () => shownDepth(deepestShown(loadRecords()));
   let deepest = $state(readDeepest());
+  /** Whether a game has started here (lib/started.ts), or before that was kept, a Delve run was played. */
+  const readStarted = () => hasStarted() || loadRecords().runs.length > 0;
+  let started = $state(readStarted());
+  /**
+   * A newcomer's browser: one that has started no game here (lib/started.ts,
+   * with what paired devices pass on, so a player new only to this device
+   * isn't one; and for games from before it was kept, no Delve run and no
+   * answer in a game). Null until that's known.
+   */
+  const newcomer = $derived(started ? false : answered === null ? null : !answered);
   // A game in another tab may add to both meanwhile (the codex by the name
   // lib/codex.ts writes, read raw so it stays out of the first download),
   // and the name may change there or come from another device (lib/sync).
   $effect(() =>
     onStoredElsewhere({
       [storeKey(CODEX_NAMES[0])]: () => void readDiscovered(),
-      [DELVE_RECORD_KEY]: () => (deepest = readDeepest()),
+      [DELVE_RECORD_KEY]: () => {
+        deepest = readDeepest();
+        started = readStarted();
+      },
+      [STARTED_KEY]: () => (started = readStarted()),
       [NAME_KEY]: () => {
         if (!firstLook) known = savedName().trim();
       },
@@ -335,27 +354,12 @@
     session.host(n);
   }
 
-  /**
-   * A run alone straight away, no room, portal or lobby (New game's line,
-   * its open row, Today's unique once answered): under the saved name, or
-   * one typed in a row (kept, as Start keeps it), or with neither as Exile,
-   * which is never saved. A typed name that can't be played under is
-   * refused in New game's row, opened for it if the click closed the row
-   * it was typed in (Join's, say).
-   */
+  /** A run alone straight away, no room, portal or lobby (a newcomer's Identify more): under the saved name, or without one as Exile, which is never saved. */
   function delveAlone() {
     if (connecting) return;
-    let n = knownName();
-    if (!n && nameInput.trim()) {
-      if (open !== 'create' && nameRefusal(nameInput.trim())) {
-        open = 'create';
-        flushSync();
-      }
-      n = keepName(checkName(nameInput, nameField));
-      if (!n) return;
-    }
+    // TODO(#310): count the newcomer's Identify more here, with the call PR #310 adds for it.
     renaming = false;
-    session.startDelve(n ?? NAMELESS);
+    session.startDelve(knownName() ?? NAMELESS);
   }
 
   function join(e?: Event) {
@@ -542,9 +546,7 @@
   let rowFocus = $state(false);
   function focusIn(e: FocusEvent) {
     const t = e.target as HTMLElement;
-    // (New game's link into a run alone, inside its line, is its entry's as the title is.)
-    keyFocus = t.matches('.pick:focus-visible, .link.inline:focus-visible');
-    if (keyFocus && t.matches('.link') && !connecting) cursor = ENTRIES.indexOf('create');
+    keyFocus = t.matches('.pick:focus-visible');
     rowFocus = !!t.closest('.slot');
   }
   function focusOut() {
@@ -616,8 +618,8 @@
     codex: 'Codex',
     settings: 'Settings',
   };
-  /** Each entry's line (New game's, with its link, is createLine). */
-  const about = $derived<Record<Exclude<Entry, 'create'>, string>>({
+  const about = $derived<Record<Entry, string>>({
+    create: 'Host your party online or at one screen, or play alone.',
     join: 'With the code a friend sent you.',
     codex: codexLine(discovered, total, deepest),
     settings: 'Sound, keys, your name, colour and class sigil.',
@@ -657,11 +659,6 @@
   />
 {/snippet}
 
-<!-- New game's line, in either layout: its first words a way into a run alone. -->
-{#snippet createLine()}
-  <p class="about"><button class="link inline" type="button" onclick={delveAlone}>Delve alone now</button>, or host your party online or at one screen.</p>
-{/snippet}
-
 <!-- An invite's name and Join, in either layout (in the actions layout under its heading, as Join's row is set). -->
 {#snippet inviteJoin(act: boolean)}
   <div class="under">
@@ -685,7 +682,7 @@
     </div>
     <p class="kicker" in:fade|global={calm({ duration: 700, delay: 200 })}>Unique item trivia</p>
     <p class="blurb" in:fade|global={calm({ duration: 700, delay: 300 })}>
-      Name the item from its art, alone or with <span class="wide">up to eleven</span> friends.
+      Path of Exile 2 item trivia, alone or with <span class="wide">up to eleven</span> friends.
     </p>
 
     <!-- The greeting: the name is asked once, then greeted (and changed here). -->
@@ -779,7 +776,7 @@
             {#if busyEntry === 'create'}
               <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
             {:else}
-              <div in:fly={SWAP_IN} out:fade={SWAP_OUT}>{@render createLine()}</div>
+              <p class="about" in:fly={SWAP_IN} out:fade={SWAP_OUT}>{about.create}</p>
             {/if}
           </div>
         </div>
@@ -845,11 +842,9 @@
               {#if isBusy}
                 <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
               {:else if isOpen && e === 'create'}
-                <!-- The line's way into a run alone comes along, beside Start (a button of its own type, so Enter still means Start). -->
                 <form class="slot row" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
-                  <input class="field name short" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" />
+                  <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" />
                   <button class="btn primary" type="submit">Start</button>
-                  <button class="link" type="button" onclick={delveAlone}>or delve alone</button>
                 </form>
               {:else if isOpen && e === 'join'}
                 <form class="slot row" onsubmit={join} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
@@ -859,8 +854,6 @@
                   {@render codeInput(!known)}
                   <button class="btn primary" type="submit">Join</button>
                 </form>
-              {:else if e === 'create'}
-                <div in:fly={SWAP_IN} out:fade={SWAP_OUT}>{@render createLine()}</div>
               {:else}
                 <p class="about" in:fly={SWAP_IN} out:fade={SWAP_OUT}>{about[e]}</p>
               {/if}
@@ -875,8 +868,8 @@
     {#if invite}
       <InviteRoom code={invite} info={inviteInfo} name={inviteName} />
     {:else}
-      <!-- Delve deeper holds the gold only while nothing else on the page does: on a phone New game has it, on a wide window an open row's Start or Join, or a join on its way. -->
-      <DailyUnique disabled={connecting} onDelve={delveAlone} lead={!compact.current && !open && !connecting} />
+      <!-- A newcomer's way on from it holds the gold only while nothing else on the page does: on a phone New game has it, on a wide window an open row's Start or Join, or a join on its way. -->
+      <DailyUnique disabled={connecting} {newcomer} onIdentify={delveAlone} lead={!compact.current && !open && !connecting} />
     {/if}
   </div>
 
@@ -1163,23 +1156,6 @@
     text-underline-offset: 3px;
   }
   .link:hover {
-    color: var(--gold-hi);
-  }
-  /* New game's way into a run alone, inside its line: the line's own size,
-     above the slot's click (.pick::after), lit by itself on hover. A tap
-     target a little taller than the line, 4 px up into the gap over it
-     (a phone's gold New game sits 8 px above). */
-  .link.inline {
-    position: relative;
-    z-index: 1;
-    min-height: 0;
-    margin: -4px 0 -8px;
-    padding: 4px 0 8px;
-    font-size: inherit;
-    line-height: inherit;
-    color: #c9b48a;
-  }
-  .link.inline:hover {
     color: var(--gold-hi);
   }
 

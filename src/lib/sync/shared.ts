@@ -4,8 +4,9 @@
 //   apart and read with their own (the codex, the Delve records, practice);
 // - the rest, which is the same wherever it was made and is taken into this
 //   device's own: the achievements, the best run of wins, the class sigils
-//   and the one worn, today's unique, and the name and colour the player
-//   chose last (lib/sync/chosen.ts).
+//   and the one worn, today's unique, whether a game has been started
+//   (lib/started.ts), and the name and colour the player chose last
+//   (lib/sync/chosen.ts).
 
 import { absorbAchievements, absorbWins, ownAchievementsRaw, ownWinsRaw } from '../achievements.ts';
 import { ownCodexRaw, ownPracticeRaw } from '../codex.ts';
@@ -13,6 +14,7 @@ import { absorbDaily, absorbDays, ownDaysRaw, utcDay } from '../daily.ts';
 import { clock } from '../clock.ts';
 import { ownRecordsRaw } from '../delveRecord.ts';
 import { absorbSigils, ownSigilsRaw } from '../sigils.ts';
+import { STARTED, absorbStarted, ownStartedRaw } from '../started.ts';
 import { readStored, writeStored } from '../storage.ts';
 import { chosenNow, takeChosen } from './chosen.ts';
 import { COLOUR_NAME } from '../colour.ts';
@@ -46,6 +48,7 @@ const TAKEN: Record<string, { own: () => string | null; take: (raw: string) => b
   // own, whose clock may have been set since the server said, so no real day is taken for one to come.)
   dailyDays: { own: ownDaysRaw, take: (raw) => absorbDays(raw, dayNow()), name: 'daily.days' },
   daily: { own: () => null, take: (raw) => absorbDaily(raw, dayNow()), name: 'daily' },
+  started: { own: ownStartedRaw, take: absorbStarted, name: STARTED },
   name: { own: () => chosenNow('name'), take: (raw) => takeChosen('name', raw), name: NAME_STORED },
   colour: { own: () => chosenNow('colour'), take: (raw) => takeChosen('colour', raw), name: COLOUR_NAME },
 };

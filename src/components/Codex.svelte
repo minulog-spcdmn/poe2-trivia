@@ -3,7 +3,7 @@
   import { SvelteSet } from 'svelte/reactivity';
   import { fade } from 'svelte/transition';
   import { engine, savedName, session } from '../lib/session.svelte';
-  import { NAMELESS, nameUsable } from '../lib/names';
+  import { nameUsable } from '../lib/names';
   import { CODEX_KEY, PRACTICE_KEY, RECENT, loadCodex, loadPractice, resetCodex, type Tally } from '../lib/codex';
   import { accuracy, storedCodexStats, tallyOf } from '../lib/codexStats';
   import { shownDepth } from '../lib/delve';
@@ -471,13 +471,15 @@
 
   /**
    * "Begin the descent": a run alone straight away under the name this
-   * browser plays as, or without one as Exile (never saved), as the start
-   * page's Delve alone does.
+   * browser plays as; without one, the start page with Delve chosen for the
+   * game it opens.
    */
   function beginDelve() {
-    const saved = savedName().trim();
-    const name = nameUsable(saved) ? saved : NAMELESS;
+    const name = savedName().trim();
+    const known = nameUsable(name);
+    if (!known) session.delveLink = true;
     closeCodex();
+    if (!known) return;
     // Once the codex is closed: a game starting under it would close it a second time (App), going back twice.
     const go = () => {
       if (codexRoute.open) return;

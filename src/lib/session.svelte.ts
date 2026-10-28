@@ -97,6 +97,7 @@ import { sawLine, START_LINES } from './delveStart';
 import { seenLines } from './delveStartSeen';
 import { keepAwake } from './wakeLock';
 import { AWAY_AFTER_MS, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
+import { markStarted } from './started';
 
 /** The room is told how its players stand at most this often (Session.updateStandingPaced). */
 const STANDING_GAP_MS = 250;
@@ -3097,6 +3098,8 @@ class Session {
       });
     // Delve: dynamite's fuse hisses on every screen over the clock's last seconds, until it goes off.
     this.hissFuse(next);
+    // A game past its lobby (joined into one under way, too): no newcomer here any more (lib/started.ts).
+    if (next.phase !== 'lobby') markStarted();
     if (!prev) return;
     // Back in the lobby: the sigil worn now, if another was picked while the game went on.
     if (prev.phase !== 'lobby' && next.phase === 'lobby') queueMicrotask(() => this.wearSigil());

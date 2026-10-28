@@ -477,3 +477,15 @@ test("with the browser out of room, the other devices' copies go before anything
     (globalThis as { localStorage?: unknown }).localStorage = was;
   }
 });
+
+test('a game started on one device starts it on the others (lib/started.ts): once, and never unstarted', async () => {
+  const { hasStarted, markStarted } = await import('../src/lib/started.ts');
+  assert.deepEqual(Object.keys(takenNow()), []);
+  assert.deepEqual(takeIn({ started: '0' }), []);
+  assert.deepEqual(takeIn({ started: '1' }), ['started']);
+  assert.ok(hasStarted());
+  assert.deepEqual(takeIn({ started: '1' }), []);
+  assert.deepEqual(Object.keys(takenNow()), ['started']);
+  markStarted();
+  assert.deepEqual(Object.keys(takenNow()), ['started']);
+});

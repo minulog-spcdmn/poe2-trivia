@@ -146,13 +146,15 @@ function refused(v: Values = {}): Built {
 }
 
 /**
- * The ways into a run alone, with no room, portal or lobby: New game's line (its first words a link), New game's
- * row open on a first visit (Start, then the link beside it), and Delve deeper beside Practice more once Today's
- * unique is answered. One gold button at a time: on a phone New game's, on a wide window Delve deeper's until a
- * row opens (Start or Join takes it) or a join is on its way (none then).
+ * After Today's unique: a newcomer (no game started here, lib/started.ts) is offered Identify more, a run alone,
+ * in place of Practice more, its line beside it in the row (under it on a phone, the room kept from the start);
+ * a returning player keeps Practice more. One gold
+ * button at a time: on a phone New game's; on a wide window Identify more's until a row opens (Start or Join
+ * takes it) or a join is on its way (none then).
  */
-const DOORS: Control[] = [
-  { kind: 'toggle', key: 'first', label: 'A first visit', default: true },
+const AFTER_DAILY: Control[] = [
+  { kind: 'toggle', key: 'newcomer', label: 'A newcomer', default: true },
+  { kind: 'toggle', key: 'answered', label: "Today's unique answered", default: true },
   {
     kind: 'choice',
     key: 'row',
@@ -160,18 +162,17 @@ const DOORS: Control[] = [
     default: 'none',
     options: [
       { value: 'none', label: 'Nothing open' },
-      { value: 'create', label: 'New game’s row open (a first visit’s)' },
+      { value: 'create', label: 'New game’s row open (a newcomer’s)' },
       { value: 'join', label: 'Join a room’s row open' },
       { value: 'connecting', label: 'Joining, on its way' },
     ],
   },
-  { kind: 'toggle', key: 'answered', label: "Today's unique answered", default: true },
 ];
-function doors(v: Values = {}): Built {
+function afterDaily(v: Values = {}): Built {
   // (New game's row opens only without a name: with one, New game hosts straight away.)
-  const first = v.first !== false || v.row === 'create';
-  const daily = v.answered === false ? today(first ? 0 : 7, 'waiting') : today(first ? 1 : 7, 'right');
-  const base: Built = first ? { state: null, name: '', met: [], rooms: [], daily } : returning({}, { daily });
+  const newcomer = v.newcomer !== false || v.row === 'create';
+  const daily = v.answered === false ? today(newcomer ? 0 : 7, 'waiting') : today(newcomer ? 1 : 7, 'right');
+  const base: Built = newcomer ? { state: null, name: '', met: [], rooms: [], daily } : returning({}, { daily });
   if (v.row === 'connecting') return { ...base, status: 'connecting' };
   if (v.row === 'create') return { ...base, steps: [{ click: ':is(.entry:nth-child(1 of .entry) .pick, .act .btn.big)' }] };
   if (v.row === 'join') return { ...base, steps: [{ click: ':is(.entry:nth-child(2 of .entry) .pick, form.join .field.code)' }] };
@@ -197,18 +198,17 @@ export function homeScenes(): Scene[] {
       ],
       build: (v) => returning(v),
     }),
-    home('delve-alone', 'Into a run alone: Delve alone now, Delve deeper', {
-      controls: DOORS,
+    home('after-daily', 'After Today’s unique: a newcomer’s Identify more, a returning player’s Practice more', {
+      controls: AFTER_DAILY,
       states: [
-        { label: 'A first visit, Today’s unique answered: Delve alone now in New game’s line, Delve deeper beside Practice more', values: {} },
-        { label: 'A first visit, New game’s row open: Start, or delve alone', values: { row: 'create' } },
-        { label: 'A first visit, Join a room’s row open: Join holds the gold', values: { row: 'join' } },
-        { label: 'A first visit, Today’s unique not answered yet: no Delve deeper', values: { answered: false } },
-        { label: 'Back again, Today’s unique answered', values: { first: false } },
-        { label: 'Back again, Join a room’s row open', values: { first: false, row: 'join' } },
-        { label: 'Back again, joining a room: no gold, Delve deeper waits', values: { first: false, row: 'connecting' } },
+        { label: 'A newcomer, Today’s unique answered: Identify more, gold', values: {} },
+        { label: 'A newcomer, not answered yet', values: { answered: false } },
+        { label: 'A newcomer, New game’s row open: Start holds the gold', values: { row: 'create' } },
+        { label: 'A newcomer, Join a room’s row open: Join holds the gold', values: { row: 'join' } },
+        { label: 'A newcomer, joining a room: no gold, Identify more waits', values: { row: 'connecting' } },
+        { label: 'Back again, Today’s unique answered: Practice more, as before', values: { newcomer: false } },
       ],
-      build: doors,
+      build: afterDaily,
     }),
     // Join refused for a short code: the notice stays up, so on a phone a tap in a field brings the keyboard up under it (it keeps to the top of what shows).
     home('code-short', 'Joining with a code too short: the notice', {
