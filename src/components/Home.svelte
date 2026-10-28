@@ -373,12 +373,6 @@
     // TODO(#310): count the newcomer's Identify more here, with the call PR #310 adds for it.
     delveAlone();
   }
-  /**
-   * The words of New game's open row's way into a run alone, past the name
-   * field and the portal (a first visit's: the row asks the name only then).
-   * TODO: a placeholder of the expected length until the owner's wording panel settles them.
-   */
-  const ROW_DELVE = 'placeholder 14';
 
   function join(e?: Event) {
     e?.preventDefault();
@@ -795,7 +789,7 @@
               <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
             {:else if open === 'create'}
               <!-- The name row's way into a run alone, under it in its line's place. -->
-              <p class="about" in:fly={SWAP_IN} out:fade={SWAP_OUT}><button class="link inline" type="button" onclick={delveAlone}>{ROW_DELVE}</button></p>
+              <p class="about" in:fly={SWAP_IN} out:fade={SWAP_OUT}><button class="link inline" type="button" onclick={delveAlone}>Play solo</button></p>
             {:else}
               <p class="about" in:fly={SWAP_IN} out:fade={SWAP_OUT}>{about.create}</p>
             {/if}
@@ -867,7 +861,7 @@
                 <form class="slot row" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
                   <input class="field name short" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" />
                   <button class="btn primary" type="submit">Start</button>
-                  <button class="link" type="button" onclick={delveAlone}>{ROW_DELVE}</button>
+                  <button class="link" type="button" onclick={delveAlone}>or play solo</button>
                 </form>
               {:else if isOpen && e === 'join'}
                 <form class="slot row" onsubmit={join} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
