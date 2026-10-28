@@ -4,3 +4,25 @@ name = "poe2-trivia"
 main = "worker.js"
 compatibility_date = "2026-10-01"
 workers_dev = true
+
+[vars]
+ACCOUNT_ID = "fe9cb1cd1732a0c08dfd809a093244a8"
+
+# Logins a single address may take: a page asks once a visit and again every
+# couple of hours while it's open; this is for scripts minting them in bulk.
+[[ratelimits]]
+name = "PER_ADDRESS"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 20
+  period = 60
+
+# Whether the month's relay traffic has reached the cap (worker.js, scheduled).
+[[kv_namespaces]]
+binding = "RELAY_STATE"
+id = "fb6fe282e20947528cfce3676f194401"
+
+# The month's relay traffic, checked every hour.
+[triggers]
+crons = ["17 * * * *"]

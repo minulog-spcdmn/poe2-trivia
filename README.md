@@ -143,7 +143,10 @@ instead of the public cloud, build with `VITE_PEER_HOST`, `VITE_PEER_PORT`,
 Two devices that can't reach each other directly (some routers, phone
 carriers, venue Wi-Fi) meet through a relay: Cloudflare's TURN, free up to
 1,000 GB a month. A Worker (`relay/worker.js`) hands each page a login that
-lasts a day; the relay's key stays in the Worker. To set it up:
+lasts four hours; the relay's key stays in the Worker. So that nobody can run
+up a bill with it, an address gets only so many logins a minute, and once the
+month's relay traffic reaches 500 GB (read hourly from Cloudflare's
+analytics) no more are given until the next month. To set it up:
 
 1. In Cloudflare's dashboard: Realtime → TURN Server → Create, which gives a
    key ID and an API token.
@@ -152,8 +155,11 @@ lasts a day; the relay's key stays in the Worker. To set it up:
    secrets on a Worker of that name): `npx wrangler login`,
    `npx wrangler deploy` (the first time it asks for the account's
    workers.dev subdomain), then `npx wrangler secret put TURN_KEY_ID` and
-   `npx wrangler secret put TURN_KEY_API_TOKEN`, pasting each. The Worker is
-   `poe2-trivia` (`wrangler.toml`), at `poe2-trivia.poe2quest.workers.dev`.
+   `npx wrangler secret put TURN_KEY_API_TOKEN`, pasting each, and
+   `npx wrangler secret put ANALYTICS_TOKEN`: an API token (My Profile → API
+   Tokens → Create, custom) with Account → Account Analytics → Read. The
+   Worker is `poe2-trivia` (`wrangler.toml`, with its account ID, rate limit,
+   KV namespace and hourly check), at `poe2-trivia.poe2quest.workers.dev`.
 3. Put the Worker's URL in `src/lib/relayUrl.ts` (`RELAY_URL`); the build lets
    the page reach it.
 
