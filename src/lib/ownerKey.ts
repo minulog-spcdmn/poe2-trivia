@@ -79,7 +79,25 @@ export async function ownerPublicKey(words: string): Promise<string> {
 
 /** What the stored value was last read as, so the many names on screen don't each read it again. */
 let read: { raw: string | null; seed: Uint8Array | null } | null = null;
-if (typeof addEventListener === 'function') addEventListener('storage', (e) => e.key === STORED && (read = null));
+/** Who wants to know when the key this device keeps may have changed (onOwnerKey). */
+const watchers = new Set<() => void>();
+const changed = () => {
+  read = null;
+  // One that throws neither keeps the others from hearing nor undoes the key kept.
+  for (const f of watchers)
+    try {
+      f();
+    } catch (err) {
+      console.error(err);
+    }
+};
+if (typeof addEventListener === 'function') addEventListener('storage', (e) => e.key === STORED && changed());
+
+/** Calls `f` whenever the key this device keeps may have changed (kept here, by another tab, or from a paired device); returns what stops it. */
+export function onOwnerKey(f: () => void): () => void {
+  watchers.add(f);
+  return () => watchers.delete(f);
+}
 
 /** The seed this device keeps, when it is the owner's (with the public half it makes, checked when it was kept). */
 function storedSeed(key = OWNER_PUBLIC_KEY): Uint8Array | null {
@@ -102,8 +120,9 @@ export async function unlockOwner(words: string, key = OWNER_PUBLIC_KEY): Promis
   try {
     const seed = await seedOf(words);
     if (base64url(await (await ed25519()).getPublicKeyAsync(seed)) !== key) return false;
-    read = null;
-    return writeKey(STORED, `${key}.${base64url(seed)}`);
+    const kept = writeKey(STORED, `${key}.${base64url(seed)}`);
+    changed();
+    return kept;
   } catch {
     return false;
   }
@@ -123,8 +142,9 @@ export async function keepOwnerKey(raw: unknown, key = OWNER_PUBLIC_KEY): Promis
   } catch {
     return false;
   }
-  read = null;
-  return writeKey(STORED, `${key}.${seed}`);
+  const kept = writeKey(STORED, `${key}.${seed}`);
+  changed();
+  return kept;
 }
 
 async function sign(what: What, code: string, about: string, key: string): Promise<OwnerProof | null> {

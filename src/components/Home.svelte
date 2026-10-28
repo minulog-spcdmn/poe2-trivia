@@ -2,7 +2,8 @@
   import { flushSync, onDestroy, tick, untrack } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { fade, fly } from 'svelte/transition';
-  import { MAX_NAME, nameRefusal, nameUsable, unlockHeldName } from '../lib/names';
+  import { MAX_NAME, cleanName, isHeldName, nameRefusal, nameUsable, unlockHeldName } from '../lib/names';
+  import { onOwnerKey, ownerUnlocked } from '../lib/ownerKey';
   import { refuseName } from '../lib/nameField';
   import { calm, motion } from '../lib/motion.svelte';
   import { toasts } from '../lib/toasts.svelte';
@@ -43,6 +44,9 @@
   const inviteVia: JoinVia = cameFromThisSite ? 'open-rooms' : 'invite-link';
   // (Not counted on coming from this site, the Open rooms case: countArrival leaves that out.)
   if (linked) countArrival('open/invite-link');
+  /** Whether this device holds the owner key (ownerKey.ts): taken again whenever it may have changed (?owner below, another tab, a paired device). */
+  let ownerKey = $state(ownerUnlocked());
+  onDestroy(onOwnerKey(() => (ownerKey = ownerUnlocked())));
   if (params.has('owner')) {
     void unlockHeldName(params.get('owner') ?? '');
     // Out of the address bar and history either way; other params stay.
@@ -59,6 +63,8 @@
   const firstLook = (BETA || LOCAL) && !!params.get('room') && params.has('first');
   /** The name this browser plays under; empty on a first visit (it is asked once, then greeted). */
   let known = $state(firstLook ? '' : savedName().trim());
+  /** Joining as the owner (the held name, with the owner key here): the room list offers locked and full rooms too. */
+  const asOwner = $derived(ownerKey && isHeldName(cleanName(known)));
 
   // A delver's shared link (?delve): someone who has played here before (a
   // name is saved) goes straight into a run alone; anyone else finds Delve
@@ -398,7 +404,8 @@
    * is Join's. In the actions layout the list sits below Today's unique, out
    * of sight of Join's box, so the room tapped shows it in its own place.
    */
-  function joinListed(roomCode: string) {
+  /** `watch`: a room only the owner is let into, to watch (OpenRooms). */
+  function joinListed(roomCode: string, watch = false) {
     if (connecting) return;
     const n = knownName();
     const inPlace = !!n && compact.current;
@@ -416,7 +423,7 @@
       toasts.show('Name yourself first, then join.', 'info', { title: 'Your name' });
       return;
     }
-    startJoin(roomCode, n, inPlace ? 'rooms' : 'join', 'open-rooms');
+    startJoin(roomCode, n, inPlace ? 'rooms' : 'join', 'open-rooms', watch);
   }
 
   // A join that ends back here without a room (no such room, no answer):
@@ -432,10 +439,10 @@
   /** The join that failed last, its code left in Join a room's field. */
   let left: { code: string; via: JoinVia } | null = null;
   /** `via`: where the join started, for the counts (lib/count.ts). */
-  function startJoin(roomCode: string, n: string, from: 'join' | 'rooms', via: JoinVia) {
+  function startJoin(roomCode: string, n: string, from: 'join' | 'rooms', via: JoinVia, watch = false) {
     joining = { code: roomCode, via };
     busy = from;
-    session.join(roomCode, n, false, via);
+    session.join(roomCode, n, watch, via);
     // Turned down on the spot (a code that can't be one).
     if (!connecting) settle();
   }
@@ -840,7 +847,7 @@
 
   {#if !invite}
     <div class="rooms" class:dimmed={connecting && busyEntry !== 'rooms'} inert={connecting && busyEntry !== 'rooms'} in:fly|global={calm({ y: 20, duration: 600, delay: 450 })}>
-      <OpenRooms onJoin={joinListed} disabled={connecting} joining={busyEntry === 'rooms' ? session.code : null} bind:count={roomCount} bind:seats={roomSeats} />
+      <OpenRooms onJoin={joinListed} disabled={connecting} joining={busyEntry === 'rooms' ? session.code : null} bind:count={roomCount} bind:seats={roomSeats} owner={asOwner} />
     </div>
   {/if}
 

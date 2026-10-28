@@ -14,6 +14,9 @@ import { cleanSeen } from './delveStart.ts';
 /**
  * Bumped whenever a host and a guest on different versions would misread
  * each other. What each version changed, newest first:
+ * - 34: the owner (seated under the held name, GameState owner) can close
+ *   the room (close), everyone told so (closed's owner); the owner comes in
+ *   past a lock, a kick and a full room.
  * - 32: a question's pictures come down an art lane of their own
  *   (artLane.ts), the hello saying the guest opened it (lane); a question
  *   waits for its clock in every mode, as Delve's did (no deadline nor
@@ -60,7 +63,7 @@ import { cleanSeen } from './delveStart.ts';
  * - 14: dynamite lit at 0 (Question.fuse); 13: a question blasted away (the
  *   blast action); 12: the frozen Delve rules; 11: the co-op vote and revive.
  */
-export const PROTOCOL_VERSION = 33;
+export const PROTOCOL_VERSION = 34;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
@@ -105,7 +108,9 @@ export type ClientMsg =
   /** Where this player's pointer is (cursors.ts), or null when it left the page; when it was sent, on its clock (cursors.ts STAMP). */
   | { t: 'cursor'; at: CursorAt | null; ms?: number }
   /** Whether this player's game is on screen and in use (presence.ts), sent when it changes. */
-  | { t: 'presence'; p: Presence };
+  | { t: 'presence'; p: Presence }
+  /** The owner closes the room for everyone; the host heeds it only from the seat GameState owner names. */
+  | { t: 'close' };
 
 /** Host → guest. Media carries question art as image bytes. */
 export type HostMsg =
@@ -120,7 +125,8 @@ export type HostMsg =
   /** `version`: turned away for the versions (isVersionRefusal). */
   | { t: 'error'; message: string; askedAt?: number; version?: true }
   | { t: 'kicked' }
-  | { t: 'closed' }
+  /** The room is closed; `owner`: by the owner (the close message), not by the host. */
+  | { t: 'closed'; owner?: true }
   /** The same player connected again (another tab): this connection is dropped. */
   | { t: 'replaced' }
   /** Not now (too many joins): this connection is dropped, try again in a moment. */
@@ -209,6 +215,8 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
       if (at === undefined || (raw.ms !== undefined && !isInt(raw.ms, 0, STAMP - 1))) return null;
       return raw.ms === undefined ? { t: 'cursor', at } : { t: 'cursor', at, ms: raw.ms };
     }
+    case 'close':
+      return { t: 'close' };
     case 'presence':
       return raw.p === 'here' || raw.p === 'idle' || raw.p === 'away' ? { t: 'presence', p: raw.p } : null;
     case 'action': {
@@ -278,8 +286,9 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
         : null;
     case 'busy':
       return isStr(raw.message, 300) ? (raw as HostMsg) : null;
-    case 'kicked':
     case 'closed':
+      return raw.owner === true ? { t: 'closed', owner: true } : { t: 'closed' };
+    case 'kicked':
     case 'replaced':
       return raw as HostMsg;
     case 'ping':
