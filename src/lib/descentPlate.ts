@@ -554,18 +554,20 @@ const CALLOUT_GUESS = (W: number): CalloutShape => ({
  * before a first run) and a last run `lastRun` deep (null for none); `met`
  * are the finds you have met, with the depth each first turns up at;
  * `layout` says where the caption is, and either where the finds' headings
- * are beside it or how its callouts are shaped.
+ * are beside it or how its callouts are shaped. `seen` is the deepest you
+ * have been in any run, alone or together: the stars mark one kind's runs,
+ * but the zones you have seen stay charted (and the ouroboros lit) in both.
  */
-export function descentPlate(W: number, H: number, deepest: number | null, met: { kind: FindKind; from: number }[] = [], layout: Layout = {}, lastRun: number | null = null): Plate {
+export function descentPlate(W: number, H: number, deepest: number | null, met: { kind: FindKind; from: number }[] = [], layout: Layout = {}, lastRun: number | null = null, seen: number | null = null): Plate {
   const caption = layout.caption ?? null;
   const beside = layout.beside ?? null;
   const stacked = !beside;
   const best = deepest && deepest > 0 ? Math.floor(deepest) : null;
   const lastD = lastRun && lastRun > 0 ? Math.floor(lastRun) : null;
-  // The zones you have been to, in either run.
-  const been = Math.max(best ?? 0, lastD ?? 0);
+  // The zones you have been to, in any run.
+  const been = Math.max(best ?? 0, lastD ?? 0, seen && seen > 0 ? Math.floor(seen) : 0);
   const reached = ZONES.filter((z) => been >= z.from).length;
-  const past = best !== null && best > 100;
+  const past = been > 100;
   const shapes = Object.fromEntries(FINDS_IN_ORDER.map((x) => [x.kind, layout.callouts?.[x.kind] ?? CALLOUT_GUESS(W)])) as Record<FindKind, CalloutShape>;
   const found = [...met].sort((a, b) => a.from - b.from);
   // The plate is laid out as if every find were met (their lines and depths fitted in), so nothing moves as finds are met; only

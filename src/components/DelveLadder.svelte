@@ -25,7 +25,8 @@
   // both, drifting between gold and red, the last run's depth over it and
   // yours under it. A small legend left of the ouroboros says which is
   // which, and whose runs they are: alone (solo) or together (co-op,
-  // `together`). Each find you
+  // `together`). The zones are charted as deep as you have been in any run,
+  // alone or together (`seen`), since you have seen them. Each find you
   // have met (`met`) is tied to its heading by a fine gold line from the wall
   // where it first turns up, that depth written in the middle of it: to its
   // heading in the finds list (`finds`) when that stands beside the plate,
@@ -52,6 +53,7 @@
   let {
     deepest = null,
     last = null,
+    seen = null,
     together = false,
     met = [],
     caption = null,
@@ -61,6 +63,7 @@
   }: {
     deepest?: number | null;
     last?: number | null;
+    seen?: number | null;
     together?: boolean;
     met?: FindKind[];
     caption?: HTMLElement | null;
@@ -102,7 +105,7 @@
     if (!(measured && w > 0 && h > 0)) return;
     const layout = $state.snapshot({ caption: cap, beside, callouts: shapes, nameW, legendW });
     let wanted = true;
-    void drawDescent([w, h, deepest, $state.snapshot(metFinds), layout, last]).then((p) => {
+    void drawDescent([w, h, deepest, $state.snapshot(metFinds), layout, last, seen]).then((p) => {
       if (wanted) plate = p;
     });
     return () => {
@@ -146,7 +149,8 @@
   const FIND_NAME = { azurite: 'Azurite Veins', flare: 'Flare Caches', dynamite: 'Dynamite Caches' } as const;
   const best = $derived(deepest && deepest > 0 ? Math.floor(deepest) : null);
   const lastRun = $derived(last && last > 0 ? Math.floor(last) : null);
-  const reached = $derived(ZONES.filter((z) => Math.max(best ?? 0, lastRun ?? 0) >= z.from).length);
+  /** The zones reached, as the plate charts them (descentPlate's `reached`). */
+  const reached = $derived(ZONES.filter((z) => Math.max(best ?? 0, lastRun ?? 0, seen && seen > 0 ? Math.floor(seen) : 0) >= z.from).length);
   const sec = (s: number) => `${s.toFixed(3)}s`;
   /** The legend's small stars. */
   const keyStar = star8([0, 0], KEY_R).outline;

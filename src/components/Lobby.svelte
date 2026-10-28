@@ -7,7 +7,7 @@
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveRules from './DelveRules.svelte';
   import ModeIcon from './ModeIcon.svelte';
-  import { bestOf, findsMet, lastOf, loadRecords } from '../lib/delveRecord';
+  import { bestOf, deepestShown, findsMet, lastOf, loadRecords } from '../lib/delveRecord';
   import { MAX_NAME, nameRefusal, nameTooShort } from '../lib/names';
   import { creatorShown } from '../lib/creator';
   import { refuseName } from '../lib/nameField';
@@ -211,6 +211,8 @@
   const lastAlone = lastOf(records, true)?.depth ?? null;
   const lastTogether = lastOf(records, false)?.depth ?? null;
   const lastRun = $derived(together ? lastTogether : s.players.length < 2 ? lastAlone : null);
+  // Your deepest of any run, alone or together, as the start page says it: the zones it reached stay charted whichever way you play next, since you have seen them.
+  const seen = deepestShown(records) || null;
   // The finds this browser's player has met, alone or together: the drawing of the descent marks where each first turns up.
   const met = [...findsMet()];
 
@@ -570,7 +572,7 @@
         <!-- On a desktop the descent takes the height the panel has spare, at its own width:
              the gap to the finds is only what its leader lines need. -->
         <div class="delve-slot" data-cursor="descent">
-          <DelveRules {deepest} last={lastRun} {together} {met} />
+          <DelveRules {deepest} last={lastRun} {seen} {together} {met} />
         </div>
       {:else}
         <!-- One row per setting: its name, then its choices (a guest, who can't change them, reads the value). -->
