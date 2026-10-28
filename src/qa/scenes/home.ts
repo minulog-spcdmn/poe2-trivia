@@ -147,9 +147,9 @@ function refused(v: Values = {}): Built {
 
 /**
  * After Today's unique: a newcomer (no game started here, lib/started.ts) is offered Identify more, a run alone,
- * in Practice more's place; a returning player keeps Practice more. One gold
- * button at a time: on a phone New game's; on a wide window Identify more's until a row opens (Start or Join
- * takes it) or a join is on its way (none then).
+ * in Practice more's place; a returning player keeps Practice more. Identify more is gold, on a phone too (New
+ * game's gold is a scroll away up the page), until a row opens (Start or Join takes it) or a join is on its way
+ * (none then).
  */
 const AFTER_DAILY: Control[] = [
   { kind: 'toggle', key: 'newcomer', label: 'A newcomer', default: true },

@@ -868,8 +868,9 @@
     {#if invite}
       <InviteRoom code={invite} info={inviteInfo} name={inviteName} />
     {:else}
-      <!-- A newcomer's way on from it holds the gold only while nothing else on the page does: on a phone New game has it, on a wide window an open row's Start or Join, or a join on its way. -->
-      <DailyUnique disabled={connecting} {newcomer} onIdentify={delveAlone} lead={!compact.current && !open && !connecting} />
+      <!-- A newcomer's way on from it holds the gold while no row's Start or Join has it and no join is on its way.
+           (On a phone New game's gold is a scroll away up the page: the two are never on screen together.) -->
+      <DailyUnique disabled={connecting} {newcomer} onIdentify={delveAlone} lead={!open && !connecting} />
     {/if}
   </div>
 
