@@ -335,6 +335,21 @@
     session.host(n);
   }
 
+  /**
+   * A run alone straight away, no room, portal or lobby (New game's line,
+   * its open row, Today's unique once answered): under the saved name, or
+   * one typed in New game's open row (kept, as Start keeps it; refused if it
+   * can't be played under), or with neither as Exile, which is never saved.
+   */
+  function delveAlone() {
+    if (connecting) return;
+    const typed = open === 'create' && !!nameInput.trim();
+    const n = knownName() ?? (typed ? keepName(checkName(nameInput, nameField)) : 'Exile');
+    if (!n) return;
+    renaming = false;
+    session.startDelve(n);
+  }
+
   function join(e?: Event) {
     e?.preventDefault();
     // A name typed here stays in its field, unsaved, until the room takes it: turned down, it's there to change.
@@ -591,8 +606,8 @@
     codex: 'Codex',
     settings: 'Settings',
   };
-  const about = $derived<Record<Entry, string>>({
-    create: 'Host your party online or at one screen, or play alone.',
+  /** Each entry's line (New game's, with its link, is createLine). */
+  const about = $derived<Record<Exclude<Entry, 'create'>, string>>({
     join: 'With the code a friend sent you.',
     codex: codexLine(discovered, total, deepest),
     settings: 'Sound, keys, your name, colour and class sigil.',
@@ -632,6 +647,11 @@
   />
 {/snippet}
 
+<!-- New game's line, in either layout: its first words a way into a run alone. -->
+{#snippet createLine()}
+  <p class="about"><button class="link inline" type="button" onclick={delveAlone}>Delve alone now</button>, or host your party online or at one screen.</p>
+{/snippet}
+
 <!-- An invite's name and Join, in either layout (in the actions layout under its heading, as Join's row is set). -->
 {#snippet inviteJoin(act: boolean)}
   <div class="under">
@@ -655,7 +675,7 @@
     </div>
     <p class="kicker" in:fade|global={calm({ duration: 700, delay: 200 })}>Unique item trivia</p>
     <p class="blurb" in:fade|global={calm({ duration: 700, delay: 300 })}>
-      Path of Exile 2 item trivia, alone or with <span class="wide">up to eleven</span> friends.
+      Name the item from its art, alone or with <span class="wide">up to eleven</span> friends.
     </p>
 
     <!-- The greeting: the name is asked once, then greeted (and changed here). -->
@@ -749,7 +769,7 @@
             {#if busyEntry === 'create'}
               <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
             {:else}
-              <p class="about" in:fly={SWAP_IN} out:fade={SWAP_OUT}>{about.create}</p>
+              <div in:fly={SWAP_IN} out:fade={SWAP_OUT}>{@render createLine()}</div>
             {/if}
           </div>
         </div>
@@ -815,9 +835,11 @@
               {#if isBusy}
                 <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
               {:else if isOpen && e === 'create'}
+                <!-- The line's way into a run alone comes along, beside Start (a button of its own type, so Enter still means Start). -->
                 <form class="slot row" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
-                  <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" />
+                  <input class="field name short" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" />
                   <button class="btn primary" type="submit">Start</button>
+                  <button class="link" type="button" onclick={delveAlone}>or delve alone</button>
                 </form>
               {:else if isOpen && e === 'join'}
                 <form class="slot row" onsubmit={join} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
@@ -827,6 +849,8 @@
                   {@render codeInput(!known)}
                   <button class="btn primary" type="submit">Join</button>
                 </form>
+              {:else if e === 'create'}
+                <div in:fly={SWAP_IN} out:fade={SWAP_OUT}>{@render createLine()}</div>
               {:else}
                 <p class="about" in:fly={SWAP_IN} out:fade={SWAP_OUT}>{about[e]}</p>
               {/if}
@@ -841,7 +865,8 @@
     {#if invite}
       <InviteRoom code={invite} info={inviteInfo} name={inviteName} />
     {:else}
-      <DailyUnique disabled={connecting} />
+      <!-- Delve deeper holds the gold only while nothing else on the page does: on a phone New game has it, on a wide window an open row's Start or Join, or a join on its way. -->
+      <DailyUnique disabled={connecting} onDelve={delveAlone} lead={!compact.current && !open && !connecting} />
     {/if}
   </div>
 
@@ -1128,6 +1153,23 @@
     text-underline-offset: 3px;
   }
   .link:hover {
+    color: var(--gold-hi);
+  }
+  /* New game's way into a run alone, inside its line: the line's own size,
+     above the slot's click (.pick::after), lit by itself on hover. A tap
+     target a little taller than the line, 4 px up into the gap over it
+     (a phone's gold New game sits 8 px above). */
+  .link.inline {
+    position: relative;
+    z-index: 1;
+    min-height: 0;
+    margin: -4px 0 -8px;
+    padding: 4px 0 8px;
+    font-size: inherit;
+    line-height: inherit;
+    color: #c9b48a;
+  }
+  .link.inline:hover {
     color: var(--gold-hi);
   }
 

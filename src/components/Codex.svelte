@@ -471,15 +471,13 @@
 
   /**
    * "Begin the descent": a run alone straight away under the name this
-   * browser plays as; without one, the start page with Delve chosen for the
-   * game it opens.
+   * browser plays as, or without one as Exile (never saved), as the start
+   * page's Delve alone does.
    */
   function beginDelve() {
-    const name = savedName().trim();
-    const known = nameUsable(name);
-    if (!known) session.delveLink = true;
+    const saved = savedName().trim();
+    const name = nameUsable(saved) ? saved : 'Exile';
     closeCodex();
-    if (!known) return;
     // Once the codex is closed: a game starting under it would close it a second time (App), going back twice.
     const go = () => {
       if (codexRoute.open) return;

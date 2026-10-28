@@ -36,7 +36,12 @@
   import ArtImage from './ArtImage.svelte';
   import DailyStreak, { BADGE_IN_MS } from './DailyStreak.svelte';
 
-  let { disabled = false }: { disabled?: boolean } = $props();
+  /**
+   * `onDelve`: once answered, Delve deeper beside Practice more goes on into
+   * a run alone (the start page says under what name). `lead`: it holds the
+   * page's gold, while nothing else there does.
+   */
+  let { disabled = false, onDelve, lead = false }: { disabled?: boolean; onDelve?: () => void; lead?: boolean } = $props();
 
   // The clock moves on (the hours or minutes left, and past midnight UTC a new day):
   // just past each whole minute, when the minutes left go down, and at once
@@ -447,7 +452,10 @@
         {/if}
       </p>
       <!-- After the result, as in the game: what happened first, then the way on. -->
-      <button class="btn small" bind:this={practiceEl} onclick={practiceMore} {disabled} in:fade={{ duration: 250 }}>Practice more</button>
+      <span class="ways" in:fade={{ duration: 250 }}>
+        <button class="btn small" bind:this={practiceEl} onclick={practiceMore} {disabled}>Practice more</button>
+        {#if onDelve}<button class="btn small" class:primary={lead} onclick={onDelve} {disabled}>Delve deeper</button>{/if}
+      </span>
     {/if}
   </div>
 </section>
@@ -885,6 +893,12 @@
     font-style: italic;
     font-size: 17px;
     color: #a99c86;
+  }
+  /* The ways on, kept together on one line. */
+  .ways {
+    display: flex;
+    gap: 0.5rem;
+    white-space: nowrap;
   }
   .tally {
     display: flex;
