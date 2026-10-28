@@ -12,6 +12,10 @@ test("the Worker's answer: STUN and TURN servers with their login, and how long 
   });
 });
 
+test('a login is taken to last two days at most', () => {
+  assert.equal(parseRelay({ iceServers: [login], ttl: 1e12 })?.ttl, 48 * 3600);
+});
+
 test('an answer that is anything else gives no relay', () => {
   for (const raw of [
     null,
@@ -23,6 +27,13 @@ test('an answer that is anything else gives no relay', () => {
     { iceServers: [{ urls: 'https://example.com' }], ttl: 60 },
     { iceServers: [{ ...login, credential: 7 }], ttl: 60 },
     { iceServers: [null], ttl: 60 },
+    { iceServers: [], ttl: 60 },
+    // What a browser turns down, making every connection throw: a TURN server without its login, a STUN one with a query, a URL with a slash or another query.
+    { iceServers: [{ urls: login.urls }], ttl: 60 },
+    { iceServers: [{ urls: 'stun:stun.cloudflare.com:3478?transport=udp' }], ttl: 60 },
+    { iceServers: [{ ...login, urls: ['turn://turn.cloudflare.com:3478'] }], ttl: 60 },
+    { iceServers: [{ ...login, urls: ['turn:turn.cloudflare.com:3478?transport=udp&x=1'] }], ttl: 60 },
+    { iceServers: [{ ...login, credential: 'c'.repeat(510) }], ttl: 60 },
   ])
     assert.equal(parseRelay(raw), null, JSON.stringify(raw));
 });

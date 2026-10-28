@@ -15,10 +15,11 @@ const RETRY_MS = 30000;
 /** The longest a Worker's Retry-After is taken at: a page open for weeks still asks again now and then. */
 const RETRY_MAX_MS = 24 * 3_600_000;
 /**
- * A login with less left than this (or past half of a shorter one) is
- * fetched anew. A relayed connection ends when its login does, and a peer
- * reads the servers again for each connection it makes (peer.ts), so every
- * connection starts with half a day at least: longer than any game.
+ * A login with less left than this (or past half of a shorter one, as the
+ * Worker's half-day logins are) is fetched anew. A relayed connection ends
+ * when its login does, and a peer reads the servers again for each
+ * connection it makes (peer.ts), so every connection starts with half the
+ * login at least (six hours): longer than any game.
  */
 const MARGIN_MS = 12 * 3_600_000;
 
@@ -32,23 +33,35 @@ class Later extends Error {
   }
 }
 
-const iceUrl = (u: unknown) => typeof u === 'string' && /^(stun|turns?):/.test(u);
+/** The longest a login is taken to last, whatever the Worker says (Cloudflare's longest). */
+const TTL_MAX_S = 48 * 3600;
+/** A server's address as WebKit, the strictest, takes one; anything else makes the RTCPeerConnection throw. */
+const STUN_URL = /^stuns?:[^/?#][^?#]*$/;
+const TURN_URL = /^turns?:[^/?#][^?#]*(\?transport=(udp|tcp))?$/;
+/** WebKit's limit for a TURN login (bytes). */
+const LOGIN_MAX = 509;
+const loginPart = (v: unknown) => typeof v === 'string' && v.length > 0 && new TextEncoder().encode(v).length <= LOGIN_MAX;
 
-/** The Worker's answer, checked: only STUN and TURN servers with a login of strings. */
+/**
+ * The Worker's answer, checked as strictly as a browser checks it: STUN
+ * servers, and TURN servers with their login. Anything else gives no relay
+ * at all, as a server a browser turns down would make every connection fail.
+ */
 export function parseRelay(raw: unknown): { iceServers: RTCIceServer[]; ttl: number } | null {
   if (!raw || typeof raw !== 'object') return null;
   const { iceServers, ttl } = raw as { iceServers?: unknown; ttl?: unknown };
-  if (!Array.isArray(iceServers) || typeof ttl !== 'number' || !(ttl > 0)) return null;
+  if (!Array.isArray(iceServers) || !iceServers.length || typeof ttl !== 'number' || !(ttl > 0)) return null;
   const out: RTCIceServer[] = [];
   for (const s of iceServers) {
     if (!s || typeof s !== 'object') return null;
     const { urls, username, credential } = s as Record<string, unknown>;
     const list = Array.isArray(urls) ? urls : [urls];
-    if (!list.length || !list.every(iceUrl)) return null;
-    if ((username !== undefined && typeof username !== 'string') || (credential !== undefined && typeof credential !== 'string')) return null;
-    out.push({ urls: list as string[], ...(username !== undefined ? { username } : {}), ...(credential !== undefined ? { credential } : {}) });
+    if (!list.length || !list.every((u) => typeof u === 'string')) return null;
+    if (list.every((u) => STUN_URL.test(u))) out.push({ urls: list });
+    else if (list.every((u) => TURN_URL.test(u)) && loginPart(username) && loginPart(credential)) out.push({ urls: list, username: username as string, credential: credential as string });
+    else return null;
   }
-  return { iceServers: out, ttl };
+  return { iceServers: out, ttl: Math.min(ttl, TTL_MAX_S) };
 }
 
 /** The logins of the Worker at a URL (none when it's empty). */
@@ -57,7 +70,7 @@ export class Relay {
   private readonly get: typeof fetch;
   private servers: RTCIceServer[] = [];
   private until = 0;
-  /** When the login held is fetched anew: half a day before it runs out, or halfway through a shorter one. */
+  /** When the login held is fetched anew: MARGIN_MS before it runs out, or halfway through a shorter one. */
   private refreshAt = 0;
   private retryAt = 0;
   private fetching: Promise<void> | null = null;

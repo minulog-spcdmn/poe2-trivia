@@ -12,8 +12,8 @@ enabled = false
 [vars]
 ACCOUNT_ID = "fe9cb1cd1732a0c08dfd809a093244a8"
 
-# Logins a single address (an IPv6 one's /64) may take: a page asks once a
-# visit and again every day and a half while it plays; this slows a script
+# Logins a single address (an IPv6 one's /64) may take: a page asks as it
+# goes online and again every six hours while it plays; this slows a script
 # minting them in bulk, with room for a school or a carrier's shared address.
 [[ratelimits]]
 name = "PER_ADDRESS"

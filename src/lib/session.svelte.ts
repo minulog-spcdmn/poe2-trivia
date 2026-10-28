@@ -803,6 +803,7 @@ class Session {
     const Peer = this.peerClass(
       () => this.openRoom(code, attempt, resumeState),
       () => this.roomNotOpened(code, 'peerjs-load', !!resumeState),
+      false,
     );
     if (!Peer) return;
     const peer = new Peer(PEER_PREFIX + code, peerOptions());
@@ -3297,15 +3298,15 @@ class Session {
 
   /**
    * PeerJS's Peer, loaded (lib/peer.ts loadPeerJs). Null while it loads, or
-   * while the relay's login is worth waiting for (3 s at most): then `retry`
-   * runs once it has (or `failed`, when it can't), unless this session was
-   * reset meanwhile.
+   * while the relay's login is worth waiting for (3 s at most; a host, `wait`
+   * false, doesn't): then `retry` runs once it has (or `failed`, when it
+   * can't), unless this session was reset meanwhile.
    */
-  private peerClass(retry: () => void, failed: () => void): PeerJs['default'] | null {
-    const loaded = peerJsNow();
+  private peerClass(retry: () => void, failed: () => void, wait = true): PeerJs['default'] | null {
+    const loaded = peerJsNow(wait);
     if (loaded) return loaded.default;
     const epoch = this.peerEpoch;
-    loadPeerJs().then(
+    loadPeerJs(wait).then(
       () => epoch === this.peerEpoch && retry(),
       () => epoch === this.peerEpoch && this.status === 'connecting' && failed(),
     );
