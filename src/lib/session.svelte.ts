@@ -716,11 +716,12 @@ class Session {
   /** A Delve run alone on this device, straight from a shared link. Nothing changes for a name that can't be played under. */
   startDelve(name: string) {
     if (!nameUsable(name)) return;
-    // A run alone begun, from wherever (a shared link, the Codex, the start page): a step (count.ts).
-    countStep('reach/solo');
     this.delveLink = true;
     this.startLocal();
-    if (this.seatLocal(name)) this.dispatch({ type: 'start' });
+    if (!this.seatLocal(name)) return;
+    // A run alone begun, from wherever (a shared link, the Codex, the start page): a step (count.ts).
+    countStep('reach/solo');
+    this.dispatch({ type: 'start' });
   }
 
   /** Picks up a hot-seat game or a hosted room after a page refresh. */

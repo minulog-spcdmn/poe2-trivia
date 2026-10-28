@@ -41,7 +41,7 @@ test('a newcomer who taps New game and leaves within a second is still counted a
   countActed();
   mock.timers.tick(300);
   // New game, its name saved: the room is asked for in the same tap.
-  fire('click', { target: { closest: () => ({}) } });
+  fire('click', { isTrusted: true, target: { closest: () => ({}) } });
   countStep('reach/create');
   countStep('reach/host');
   mock.timers.tick(600);

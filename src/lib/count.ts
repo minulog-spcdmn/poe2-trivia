@@ -128,7 +128,8 @@ if (countsHere && typeof addEventListener !== 'undefined')
     if (drainTimer) clearTimeout(drainTimer);
     drainTimer = null;
     atHead = 0;
-    if (!notCounted()) for (const url of queue.splice(0)) beacon(url);
+    const left = queue.splice(0);
+    if (!notCounted()) for (const url of left) beacon(url);
   });
 
 /** Whether the page has been seen yet: until it is, counts wait, so a tab opened in the background and closed unseen counts nothing. */
@@ -226,10 +227,10 @@ export const cohortEvent = (played: Played | null) => (played ? `cohort/${isoWee
  * its cohort, so a week's cohort counted more than its visits back.
  */
 export function visitMarks(played: Played | null, now: number): string[] {
+  // ("visit/new" is a save's absence, which has no cohort.)
   const back = recencyEvent(played, now);
-  if (!back) return [];
-  const cohort = back.startsWith('visit/back-') ? cohortEvent(played) : null;
-  return cohort ? [back, cohort] : [back];
+  const cohort = cohortEvent(played);
+  return !back ? [] : cohort ? [back, cohort] : [back];
 }
 
 /** The tag of a link made to be counted apart (poe2.quest/?ref=reddit-oct), sent as its campaign; null for none or one that isn't a plain short word. */
@@ -408,6 +409,8 @@ const CONTROL =
 export function countActed() {
   if (!counting || typeof addEventListener === 'undefined') return;
   const onClick = (e: Event) => {
+    // (Not a click a script gave.)
+    if (!e.isTrusted) return;
     const t = e.target as { closest?: (s: string) => unknown } | null;
     if (!t?.closest?.(CONTROL)) return;
     removeEventListener('click', onClick, { capture: true });

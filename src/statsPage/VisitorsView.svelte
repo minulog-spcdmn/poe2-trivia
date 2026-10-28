@@ -56,6 +56,11 @@
   const journeyRows = $derived(rowsOf(JOURNEY, journey, journeyOf(B)));
   /** A first visit's steps, each a share of the visits that found no save. */
   const firsts = $derived(firstStepsOf(L));
+  /** " The start page's steps since Oct 28." where those (LATER_FIRSTS, each alike) were first counted inside the period, after the rest. */
+  const laterSince = $derived.by(() => {
+    const from = firsts.steps.acted.from;
+    return from && from !== firsts.from && from > read.from ? ` The start page's steps, pressing a control to a practice answer, since ${shortDay(from)}.` : '';
+  });
   const firstRows = $derived.by((): ShareRow[] => {
     const was = firstStepsOf(B);
     // Each step from the day it was counted (FirstSteps steps): the ones added later aren't a share of the days before them.
@@ -115,7 +120,7 @@
       {/if}
       {#if firsts.from}
         <h3>A first visit</h3>
-        <p class="hint">Visits that found no save: mostly first visits.{since(firsts)}</p>
+        <p class="hint">Visits that found no save: mostly first visits.{since(firsts)}{laterSince}</p>
         <Shares rows={firstRows} head="Step" label="First visits by how far they got" />
       {/if}
     </Section>
