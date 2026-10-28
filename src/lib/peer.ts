@@ -30,7 +30,7 @@ const SIGNALLING: PeerOptions = QA_LOCAL
         secure: (env.VITE_PEER_SECURE ?? 'true') === 'true',
       }
     : {};
-/** Google's STUN server, for a peer without the relay (whose own login brings Cloudflare's). */
+/** Google's STUN server, as before the relay: beside Cloudflare's (the relay's login), so a direct link gets through wherever it did. */
 const STUN: RTCIceServer = { urls: 'stun:stun.l.google.com:19302' };
 /**
  * The relay's logins (lib/relay.ts). None on the QA desk (its frames would
@@ -66,9 +66,13 @@ export function peerOptions(): PeerOptions {
     config: {
       get iceServers() {
         relay.start();
-        const servers = relay.iceServers();
-        return servers.length ? servers : [STUN];
+        return [...relay.iceServers(), STUN];
       },
+      // On Safari and every iOS browser, PeerJS's webrtc-adapter wraps
+      // RTCPeerConnection and writes the servers back onto the config
+      // (shimRTCIceServerUrls), which throws on a getter alone. What it
+      // writes is what it read, so it's let go of.
+      set iceServers(_: RTCIceServer[]) {},
     },
   };
 }

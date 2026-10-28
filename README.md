@@ -180,7 +180,7 @@ To set it up:
    the page reach it.
 
 Without a login (no URL, the Worker refuses, or it doesn't answer within 3 s)
-a connection gets Google's STUN only and meets wherever a direct link gets
+a connection gets Google's STUN only (with one, Google's beside Cloudflare's) and meets wherever a direct link gets
 through; the page asks again later, and connections after that get the relay.
 The QA desk and the tests never ask.
 

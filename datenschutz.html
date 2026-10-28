@@ -68,8 +68,8 @@
         </li>
         <li>
           <strong>STUN-Server von Google:</strong> Um eine direkte Verbindung zu ermöglichen, fragt Ihr Browser beim
-          STUN-Server stun.l.google.com (Google LLC, USA) Ihre öffentliche IP-Adresse ab, sofern keine Zugangsdaten
-          für den Relay-Dienst von Cloudflare vorliegen (siehe unten; sonst bei dessen STUN-Server). Dabei wird Ihre IP-Adresse an
+          STUN-Server stun.l.google.com (Google LLC, USA) Ihre öffentliche IP-Adresse ab (mit Zugangsdaten für den
+          Relay-Dienst von Cloudflare auch bei dessen STUN-Server, siehe unten). Dabei wird Ihre IP-Adresse an
           Google übermittelt. Google LLC ist nach dem EU-US Data Privacy Framework zertifiziert.
         </li>
         <li>
@@ -116,9 +116,10 @@
       </ul>
       <p>
         Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (Bereitstellung des von Ihnen gewählten Online-Spiels), für die
-        Liste offener Räume, die von selbst sucht, und das Abgleichen Ihrer Geräte lit. f DSGVO (berechtigtes Interesse
+        Liste offener Räume, die von selbst sucht, die Relay-Zugangsdaten, die die Seite schon beim Aufruf holt, und das
+        Abgleichen Ihrer Geräte lit. f DSGVO (berechtigtes Interesse
         an einem funktionierenden Mehrspielermodus). Bei den genannten Diensten kann eine Verarbeitung außerhalb der EU,
-        insbesondere in den USA, stattfinden. Die Verbindungsdaten speichere ich nicht; wie lange PeerJS und Google sie
+        insbesondere in den USA, stattfinden. Die Verbindungsdaten speichere ich nicht; wie lange PeerJS, Google und Cloudflare sie
         aufbewahren, liegt bei diesen. Auch wenn alle an einem Gerät
         spielen, öffnet die Gastgeberin oder der Gastgeber dafür einen Raum, der den Vermittlungsserver kontaktiert. Nur
         ein Spiel ohne Raum (etwa wenn sich keiner öffnen lässt) baut keine Verbindung auf; die Suche nach offenen Räumen
@@ -286,8 +287,7 @@
           <li>
             <strong>Online play and the open rooms list:</strong> the PeerJS matchmaking server (0.peerjs.com) and Cloudflare
             (Cloudflare, Inc., USA: a small Worker of the game’s that hands the page a relay login lasting two days, asked on each visit and renewed while it plays, counting each address’s asks over the last minute to slow bulk use, its STUN server and, if needed, its
-            relay servers (TURN), through which the game’s data then runs) process your IP address to connect players; without that login, Google’s STUN
-            server (stun.l.google.com) does in place of Cloudflare’s.
+            relay servers (TURN), through which the game’s data then runs) and Google’s STUN server (stun.l.google.com) process your IP address to connect players.
             Guests connect directly to the host, so <strong>the host can see your IP address</strong> and you can see
             the host’s, even when the connection ends up running through a relay, as both sides swap addresses while
             connecting. <strong>The start page asks on its own:</strong> to show the open rooms list, it asks every
