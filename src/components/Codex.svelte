@@ -3,7 +3,7 @@
   import { SvelteSet } from 'svelte/reactivity';
   import { fade } from 'svelte/transition';
   import { engine, savedName, session } from '../lib/session.svelte';
-  import { nameUsable } from '../lib/names';
+  import { NAMELESS, nameUsable } from '../lib/names';
   import { CODEX_KEY, PRACTICE_KEY, RECENT, loadCodex, loadPractice, resetCodex, type Tally } from '../lib/codex';
   import { accuracy, storedCodexStats, tallyOf } from '../lib/codexStats';
   import { shownDepth } from '../lib/delve';
@@ -476,7 +476,7 @@
    */
   function beginDelve() {
     const saved = savedName().trim();
-    const name = nameUsable(saved) ? saved : 'Exile';
+    const name = nameUsable(saved) ? saved : NAMELESS;
     closeCodex();
     // Once the codex is closed: a game starting under it would close it a second time (App), going back twice.
     const go = () => {

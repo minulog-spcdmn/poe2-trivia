@@ -168,12 +168,12 @@ const DOORS: Control[] = [
   { kind: 'toggle', key: 'answered', label: "Today's unique answered", default: true },
 ];
 function doors(v: Values = {}): Built {
-  const first = v.first !== false;
+  // (New game's row opens only without a name: with one, New game hosts straight away.)
+  const first = v.first !== false || v.row === 'create';
   const daily = v.answered === false ? today(first ? 0 : 7, 'waiting') : today(first ? 1 : 7, 'right');
   const base: Built = first ? { state: null, name: '', met: [], rooms: [], daily } : returning({}, { daily });
   if (v.row === 'connecting') return { ...base, status: 'connecting' };
-  // New game's row opens only without a name (with one, New game hosts straight away).
-  if (v.row === 'create' && first) return { ...base, steps: [{ click: ':is(.entry:nth-child(1 of .entry) .pick, .act .btn.big)' }] };
+  if (v.row === 'create') return { ...base, steps: [{ click: ':is(.entry:nth-child(1 of .entry) .pick, .act .btn.big)' }] };
   if (v.row === 'join') return { ...base, steps: [{ click: ':is(.entry:nth-child(2 of .entry) .pick, form.join .field.code)' }] };
   return base;
 }

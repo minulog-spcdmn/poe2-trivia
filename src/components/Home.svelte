@@ -2,7 +2,7 @@
   import { flushSync, onDestroy, tick, untrack } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { fade, fly } from 'svelte/transition';
-  import { MAX_NAME, cleanName, isHeldName, nameRefusal, nameUsable, unlockHeldName } from '../lib/names';
+  import { MAX_NAME, NAMELESS, cleanName, isHeldName, nameRefusal, nameUsable, unlockHeldName } from '../lib/names';
   import { onOwnerKey, ownerUnlocked } from '../lib/ownerKey';
   import { refuseName } from '../lib/nameField';
   import { calm, motion } from '../lib/motion.svelte';
@@ -338,16 +338,24 @@
   /**
    * A run alone straight away, no room, portal or lobby (New game's line,
    * its open row, Today's unique once answered): under the saved name, or
-   * one typed in New game's open row (kept, as Start keeps it; refused if it
-   * can't be played under), or with neither as Exile, which is never saved.
+   * one typed in a row (kept, as Start keeps it), or with neither as Exile,
+   * which is never saved. A typed name that can't be played under is
+   * refused in New game's row, opened for it if the click closed the row
+   * it was typed in (Join's, say).
    */
   function delveAlone() {
     if (connecting) return;
-    const typed = open === 'create' && !!nameInput.trim();
-    const n = knownName() ?? (typed ? keepName(checkName(nameInput, nameField)) : 'Exile');
-    if (!n) return;
+    let n = knownName();
+    if (!n && nameInput.trim()) {
+      if (open !== 'create' && nameRefusal(nameInput.trim())) {
+        open = 'create';
+        flushSync();
+      }
+      n = keepName(checkName(nameInput, nameField));
+      if (!n) return;
+    }
     renaming = false;
-    session.startDelve(n);
+    session.startDelve(n ?? NAMELESS);
   }
 
   function join(e?: Event) {
@@ -534,7 +542,9 @@
   let rowFocus = $state(false);
   function focusIn(e: FocusEvent) {
     const t = e.target as HTMLElement;
-    keyFocus = t.matches('.pick:focus-visible');
+    // (New game's link into a run alone, inside its line, is its entry's as the title is.)
+    keyFocus = t.matches('.pick:focus-visible, .link.inline:focus-visible');
+    if (keyFocus && t.matches('.link') && !connecting) cursor = ENTRIES.indexOf('create');
     rowFocus = !!t.closest('.slot');
   }
   function focusOut() {
@@ -705,11 +715,11 @@
           {known ? 'Welcome back,' : 'Welcome,'}
           {#if invite}
             <!-- An invite asks the name in its own row: the greeting only greets. -->
-            <span class="who">{known || 'Exile'}.</span>
+            <span class="who">{known || NAMELESS}.</span>
           {:else}
             <!-- The name and its quill keep together, the name giving way (an ellipsis) before the quill would leave the screen. -->
             <span class="you">
-              <button class="who" onclick={startRename} disabled={connecting} title="Change your name">{known || 'Exile'}.</button>
+              <button class="who" onclick={startRename} disabled={connecting} title="Change your name">{known || NAMELESS}.</button>
               <button class="quill" onclick={startRename} disabled={connecting} tabindex="-1" aria-hidden="true">
                 <span class="ring"><svg viewBox="0 0 24 24"><path d="M5 19l2.5-.6L18 7.9a1.9 1.9 0 0 0-2.7-2.7L4.8 15.7 4.2 18.2zM14 6.5l3.2 3.2" /></svg></span>
                 <i>Change your name</i>
