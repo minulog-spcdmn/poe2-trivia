@@ -19,6 +19,7 @@ import {
   countStep,
   countSaved,
   cohortEvent,
+  countDaily,
   failedImport,
   openedAsApp,
   ownScript,
@@ -27,8 +28,10 @@ import {
   delveEndEvent,
   gameEvents,
   reachEvents,
+  readyEvent,
   recencyEvent,
   referrerOf,
+  visitMarks,
   timeMarksPassed,
 } from '../src/lib/count.ts';
 import { LEGACY_VERSION_TEXT, PROTOCOL_VERSION, isVersionRefusal, parseHostMsg, versionProblem } from '../src/lib/protocol.ts';
@@ -67,6 +70,8 @@ test('outside a browser nothing is counted, and nothing throws', () => {
     countVisit(() => null, 'reddit');
     countPage();
     countStep('reach/played');
+    countStep('new/acted');
+    countDaily(true);
     countSaved();
     assert.equal(takeCampaign(), null);
     countEvent('play/race');
@@ -263,6 +268,18 @@ test('a device is followed by the ISO week it first played in', () => {
   assert.equal(isoWeek(Date.UTC(2026, 0, 5)), '2026-W02');
   assert.equal(cohortEvent(null), null);
   assert.equal(cohortEvent({ first: Date.UTC(2026, 9, 16), last: Date.UTC(2026, 9, 21) }), 'cohort/2026-W42');
+});
+
+test('a cohort goes only with a visit back, never with a page reopened within eight hours of the last play', () => {
+  const now = Date.UTC(2026, 10, 2, 12);
+  const first = Date.UTC(2026, 9, 21);
+  assert.deepEqual(visitMarks(null, now), ['visit/new']);
+  assert.deepEqual(visitMarks({ first, last: now - 3 * 86_400_000 }, now), ['visit/back-7d', 'cohort/2026-W43']);
+  assert.deepEqual(visitMarks({ first, last: now - 2 * 3_600_000 }, now), []);
+});
+
+test('how long a page took to become usable, in coarse marks', () => {
+  assert.deepEqual([1_200, 2_000, 4_800, 9_000, 10_000, 14_000].map(readyEvent), ['load/ready-2s', 'load/ready-2s', 'load/ready-5s', 'load/ready-10s', 'load/ready-10s', 'load/ready-later']);
 });
 
 test("the save's play is the first and last answers across this device's codex and its paired devices', leaving out a clock far ahead", () => {

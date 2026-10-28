@@ -52,8 +52,10 @@ export const VIA_NAMES: Record<Via, string> = { 'invite-link': 'Invite link', co
 export const REACHES = ['page', 'lobby', 'played', 'finished', 'games-2', 'games-5', 'time-2m', 'time-10m', 'time-30m', 'codex', 'achievements'] as const;
 export type Reach = (typeof REACHES)[number];
 /** The first steps again, counted only in a page load whose visit found no save on the device ("new/…"): how far a first visit gets. */
-export const FIRSTS = ['lobby', 'played', 'finished'] as const;
+export const FIRSTS = ['acted', 'create', 'host', 'room', 'solo', 'daily', 'practice', 'lobby', 'played', 'finished'] as const;
 export type First = (typeof FIRSTS)[number];
+/** The first steps counted from 2026-10-28 on (count.ts NEWCOMER_STEPS): each a share of the visits from the day they were, not from the first "visit/new". */
+export const LATER_FIRSTS: readonly First[] = ['acted', 'create', 'host', 'room', 'solo', 'daily', 'practice'];
 
 /**
  * How long since a visitor coming back last played on that device
@@ -85,6 +87,11 @@ export { isoWeekOfDay as isoWeek, weekMonday };
  * from a device whose save began that week): how many first played then
  * (their "new/played", where the period holds that whole week), and their
  * visits in each week since, the first week its own (index 0).
+ *
+ * From 2026-10-28 a cohort is sent only beside a "visit/back-…" (count.ts
+ * visitMarks); before, a page opened again within eight hours of the last
+ * play sent it too, so a week's visits back read higher. A first week (and
+ * any week) before that date doesn't compare with one after.
  */
 export interface Cohort {
   week: string;

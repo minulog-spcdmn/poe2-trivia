@@ -10,7 +10,7 @@
 
 import type { Named } from './api.ts';
 import { siteName } from './chart.ts';
-import { FIRSTS, RETURNS, VISIT_KINDS, answersPerDay, asked, type Cohort, type Counts, type First, type Reach, type Return } from './model.ts';
+import { FIRSTS, LATER_FIRSTS, RETURNS, VISIT_KINDS, answersPerDay, asked, type Cohort, type Counts, type First, type Reach, type Return } from './model.ts';
 
 /** Well beyond chance: a change of `d` on a count of `n` (twice its square root, and a few besides, so tiny counts never qualify). */
 const beyondChance = (d: number, n: number) => Math.abs(d) >= 2 * Math.sqrt(Math.max(n, 1)) + 3;
@@ -213,6 +213,13 @@ export const journeyOf = (c: Counts): Reached => reachedOf(c, JOURNEY.map((j) =>
 
 /** A first visit's steps (a visit that found no save on the device, "new/…"): entered a game (a room's lobby, or straight into a run), started one, saw one to its end. */
 export const FIRST_JOURNEY: readonly { step: First; name: string }[] = [
+  { step: 'acted', name: 'Pressed a control' },
+  { step: 'create', name: 'Tapped New game' },
+  { step: 'host', name: 'Asked for a room under a name' },
+  { step: 'room', name: 'Had the room open' },
+  { step: 'solo', name: 'Began a run alone' },
+  { step: 'daily', name: "Answered Today's unique" },
+  { step: 'practice', name: 'Answered a practice question' },
   { step: 'lobby', name: 'Entered a game' },
   { step: 'played', name: 'Started a game' },
   { step: 'finished', name: 'Saw one to its end' },
@@ -224,15 +231,20 @@ export interface FirstSteps {
   /** Visits with no save on the device ("visit/new"). */
   visits: number;
   counts: Record<First, number>;
+  /** Each step's own reading: the day it's counted from (LATER_FIRSTS from the day they were first counted) and the visits with no save since. */
+  steps: Record<First, { from: string | null; visits: number }>;
 }
 
 /** Read from the first day "visit/new" was counted, which came with the first steps' own ("new/…"): not from the day one first happened. */
 export function firstStepsOf(c: Counts): FirstSteps {
   const first = firstDay(c.days, (i) => (c.visits.new[i] ?? 0) > 0);
-  const counts = Object.fromEntries(FIRSTS.map((s) => [s, first < 0 ? 0 : sumFrom(c.firsts[s], first)])) as Record<First, number>;
+  const later = firstDay(c.days, (i) => LATER_FIRSTS.some((s) => (c.firsts[s][i] ?? 0) > 0));
+  const fromOf = (s: First) => (first < 0 ? -1 : LATER_FIRSTS.includes(s) ? (later < 0 ? -1 : Math.max(first, later)) : first);
+  const counts = Object.fromEntries(FIRSTS.map((s) => [s, fromOf(s) < 0 ? 0 : sumFrom(c.firsts[s], fromOf(s))])) as Record<First, number>;
   // (Entered, as reachedOf: never fewer than started.)
   counts.lobby = Math.max(counts.lobby, counts.played);
-  return { from: first < 0 ? null : c.days[first], visits: first < 0 ? 0 : sumFrom(c.visits.new, first), counts };
+  const steps = Object.fromEntries(FIRSTS.map((s) => [s, { from: fromOf(s) < 0 ? null : c.days[fromOf(s)], visits: fromOf(s) < 0 ? 0 : sumFrom(c.visits.new, fromOf(s)) }])) as FirstSteps['steps'];
+  return { from: first < 0 ? null : c.days[first], visits: first < 0 ? 0 : sumFrom(c.visits.new, first), counts, steps };
 }
 
 /** How long a visit kept the game on screen, in one page load: 2, 10 and 30 minutes. */

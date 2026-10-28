@@ -58,8 +58,15 @@
   const firsts = $derived(firstStepsOf(L));
   const firstRows = $derived.by((): ShareRow[] => {
     const was = firstStepsOf(B);
-    const of = (f: FirstSteps, step: (typeof FIRST_JOURNEY)[number]['step']) => (f.from ? shareOf(f.counts[step], f.visits) : null);
-    return FIRST_JOURNEY.map((s) => ({ name: s.name, count: firsts.from ? firsts.counts[s.step] : null, share: of(firsts, s.step), before: whole(was) ? of(was, s.step) : null, of: { now: firsts.visits, before: was.visits } }));
+    // Each step from the day it was counted (FirstSteps steps): the ones added later aren't a share of the days before them.
+    const of = (f: FirstSteps, step: (typeof FIRST_JOURNEY)[number]['step']) => (f.steps[step].from ? shareOf(f.counts[step], f.steps[step].visits) : null);
+    return FIRST_JOURNEY.map((s) => ({
+      name: s.name,
+      count: firsts.steps[s.step].from ? firsts.counts[s.step] : null,
+      share: of(firsts, s.step),
+      before: whole(was.steps[s.step]) ? of(was, s.step) : null,
+      of: { now: firsts.steps[s.step].visits, before: was.steps[s.step].visits },
+    }));
   });
   const stay = $derived(reachedOf(L, STAY.map((s) => s.step)));
   const stayRows = $derived(rowsOf(STAY, stay, reachedOf(B, STAY.map((s) => s.step))));

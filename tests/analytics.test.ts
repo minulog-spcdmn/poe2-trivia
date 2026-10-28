@@ -965,8 +965,14 @@ test("a first visit's steps, of the visits that found no save", () => {
   // From the first day visits with no save were counted, not the first day one got a step along.
   assert.equal(f.from, DAYS[0]);
   assert.equal(f.visits, 30);
-  assert.deepEqual(f.counts, { lobby: 14, played: 10, finished: 7 });
+  assert.deepEqual(f.counts, { acted: 0, create: 0, host: 0, room: 0, solo: 0, daily: 0, practice: 0, lobby: 14, played: 10, finished: 7 });
+  assert.equal(f.steps.host.from, null, 'not counted yet');
   assert.equal(firstStepsOf(countsOf([path('new/played', [5, 5, 5])], DAYS)).from, null);
+  // The steps counted later: each a share of the visits from the day they were, the first ones' reading as it was.
+  const later = firstStepsOf(countsOf([path('visit/new', [5, 10, 15]), path('new/played', [1, 2, 3]), path('new/host', [0, 4, 5]), path('new/acted', [0, 8, 12])], DAYS));
+  assert.deepEqual(later.steps.host, { from: DAYS[1], visits: 25 });
+  assert.deepEqual(later.steps.played, { from: DAYS[0], visits: 30 });
+  assert.deepEqual([later.counts.host, later.counts.acted, later.counts.played], [9, 20, 6]);
 });
 
 test('ISO weeks, and those who first played in one coming back the weeks after', () => {
