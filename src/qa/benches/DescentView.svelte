@@ -22,6 +22,8 @@
   // The records keep depths as they are; 0 is none.
   const deepest = $derived(Number(v.best) > 0 ? Number(v.best) : null);
   const last = $derived(Number(v.last) > 0 ? Number(v.last) : null);
+  /** The deepest of any run, as the lobby passes it: these and the other kind's. */
+  const seen = $derived(Math.max(Number(v.best), Number(v.other ?? 0)) || null);
   const met = $derived(FINDS_IN_ORDER.map((f) => f.kind).filter((k) => v[`met.${k}`]));
   let room = $state(1200);
   /** The cards that fit the frame (a card with its padding, and the frame's own): All three in a narrow frame leaves out what would run off its side. */
@@ -73,7 +75,7 @@
       {#if !small}<span class="size">{w.name}, card {w.px} px</span>{/if}
       <div class="panel card">
         <div style:width="{w.px}px">
-          <DelveRules {deepest} {last} together={!!v.together} {met} />
+          <DelveRules {deepest} {last} {seen} together={!!v.together} {met} />
         </div>
       </div>
     </div>

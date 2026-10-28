@@ -1,7 +1,8 @@
 // Delve's rules block (components/DelveRules.svelte: the descent drawn
 // beside the finds) in a rules card as the lobby shows it, at a phone's, a
 // tablet's and a desktop's card width side by side, for any deepest depth
-// and last run, alone or together, and the finds met. Walk down goes a
+// and last run, alone or together, the deepest of the other kind of run
+// (the zones it reached stay charted), and the finds met. Walk down goes a
 // depth deeper every 180 ms.
 
 import type { Control, PieceBench, Values } from '../bench.ts';
@@ -22,6 +23,7 @@ export const descent: PieceBench = {
   controls: [
     { kind: 'range', key: 'best', label: 'Deepest (0: no run yet)', min: 0, max: 300, default: 46 },
     { kind: 'range', key: 'last', label: 'Last run (0: none)', min: 0, max: 300, default: 20 },
+    { kind: 'range', key: 'other', label: 'Deepest the other way (0: none)', min: 0, max: 300, default: 0 },
     { kind: 'toggle', key: 'together', label: 'Runs together (co-op)', default: false },
     ...FINDS.map((k): Control => ({ kind: 'toggle', key: `met.${k}`, label: `Met ${FIND_TEXT[k].name}`, default: true })),
     {
@@ -56,6 +58,8 @@ export const descent: PieceBench = {
     { label: 'A best', values: { best: 38, last: 0, ...met('dynamite') } },
     { label: 'Best and last run', values: { best: 46, last: 21, ...ALL } },
     { label: 'Best and last run, together', values: { best: 46, last: 21, together: true, ...ALL } },
+    { label: 'Deeper alone, first time together', values: { best: 0, last: 0, other: 72, together: true, ...ALL } },
+    { label: 'Deeper together, playing alone', values: { best: 24, last: 11, other: 216, ...ALL } },
     { label: 'Last run at the best', values: { best: 46, last: 46, ...ALL } },
     { label: 'All ten zones', values: { best: 96, last: 62, ...ALL } },
     { label: 'Past 100', values: { best: 216, last: 0, ...ALL } },
