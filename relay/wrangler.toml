@@ -9,13 +9,14 @@ workers_dev = true
 ACCOUNT_ID = "fe9cb1cd1732a0c08dfd809a093244a8"
 
 # Logins a single address may take: a page asks once a visit and again every
-# couple of hours while it's open; this is for scripts minting them in bulk.
+# couple of hours while it's open; this is for scripts minting them in bulk,
+# with room for a school or a carrier's shared address full of players.
 [[ratelimits]]
 name = "PER_ADDRESS"
 namespace_id = "1001"
 
   [ratelimits.simple]
-  limit = 20
+  limit = 60
   period = 60
 
 # Whether the month's relay traffic has reached the cap (worker.js, scheduled).

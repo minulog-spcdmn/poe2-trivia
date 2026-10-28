@@ -33,7 +33,15 @@ const SIGNALLING: PeerOptions = QA_LOCAL
 /** Google's STUN server, for a peer without the relay (whose own login brings Cloudflare's). */
 const STUN: RTCIceServer = { urls: 'stun:stun.l.google.com:19302' };
 /** The relay's logins (lib/relay.ts). None on the QA desk's local server, nor in tests (a live build, as tests/asVite.ts makes them), which would reach the real Worker. */
-const relay = new Relay(QA_LOCAL || env.MODE === 'test' ? '' : RELAY_URL);
+const RELAY = QA_LOCAL || env.MODE === 'test' ? '' : RELAY_URL;
+const relay = new Relay(RELAY);
+/**
+ * How often a page looks whether its login runs low, so it's renewed even
+ * while nothing asks for one: a room's host waiting hours for a guest still
+ * has a valid login for the connection that guest brings.
+ */
+const RENEW_CHECK_MS = 10 * 60_000;
+if (RELAY) setInterval(() => relay.start(), RENEW_CHECK_MS);
 
 /**
  * A new peer's options: the signalling server, and the relay (lib/relay.ts)

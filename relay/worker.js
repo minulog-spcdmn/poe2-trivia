@@ -24,7 +24,17 @@ const LIVE = 'https://poe2.quest';
 /** The dev server, on this machine or another on the network (a phone trying a build). */
 const LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[\w-]+\.localhost|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$/;
 
+/**
+ * The Worker's bindings (wrangler.toml) and secrets.
+ * @typedef {{
+ *   TURN_KEY_ID: string, TURN_KEY_API_TOKEN: string, ANALYTICS_TOKEN: string, ACCOUNT_ID: string,
+ *   PER_ADDRESS: { limit(o: { key: string }): Promise<{ success: boolean }> },
+ *   RELAY_STATE: { get(key: string): Promise<string | null>, put(key: string, value: string, o?: { expiration?: number }): Promise<void> },
+ * }} Env
+ */
+
 export default {
+  /** @param {Request} request @param {Env} env */
   async fetch(request, env) {
     const origin = request.headers.get('Origin') ?? '';
     if (origin !== LIVE && !LOCAL.test(origin)) return new Response(null, { status: 403 });
@@ -33,6 +43,7 @@ export default {
     const { success } = await env.PER_ADDRESS.limit({ key: request.headers.get('CF-Connecting-IP') ?? '' });
     if (!success) return new Response(null, { status: 429, headers });
     if (await env.RELAY_STATE.get(CAPPED)) return new Response(null, { status: 503, headers });
+    /** @type {{ urls: string[] }[]} */
     let servers;
     try {
       const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`, {
@@ -43,7 +54,7 @@ export default {
       const { iceServers } = r.ok ? await r.json() : {};
       if (!Array.isArray(iceServers)) throw new Error(`No ICE servers from Cloudflare (${r.status})`);
       // Browsers block port 53, so a URL on it only waits out its timeout.
-      servers = iceServers.map((s) => ({ ...s, urls: [s.urls].flat().filter((u) => !/:53(\?|$)/.test(u)) })).filter((s) => s.urls.length);
+      servers = iceServers.map((/** @type {{ urls: string | string[] }} */ s) => ({ ...s, urls: [s.urls].flat().filter((/** @type {string} */ u) => !/:53(\?|$)/.test(u)) })).filter((s) => s.urls.length);
     } catch (err) {
       // An answer the page can read (CORS), not Cloudflare's error page: it tries again later.
       console.error(err);
@@ -52,7 +63,10 @@ export default {
     return Response.json({ iceServers: servers, ttl: TTL }, { headers });
   },
 
-  /** Every hour: the month's relay traffic, and the cap once it's reached (lifted by itself as the next month begins). */
+  /**
+   * Every hour: the month's relay traffic, and the cap once it's reached (lifted by itself as the next month begins).
+   * @param {{ scheduledTime: number }} event @param {Env} env
+   */
   async scheduled(event, env) {
     const now = new Date(event.scheduledTime);
     const used = await trafficThisMonth(env, now);
@@ -63,7 +77,10 @@ export default {
   },
 };
 
-/** Bytes the account's TURN relay sent to clients this month (UTC), from Cloudflare's analytics. */
+/**
+ * Bytes the account's TURN relay sent to clients this month (UTC), from Cloudflare's analytics.
+ * @param {Env} env @param {Date} now @returns {Promise<number>}
+ */
 async function trafficThisMonth(env, now) {
   const day = now.toISOString().slice(0, 10);
   const r = await fetch('https://api.cloudflare.com/client/v4/graphql', {
