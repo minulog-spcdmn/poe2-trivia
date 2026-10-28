@@ -400,6 +400,53 @@ see `scripts/bake-icons.mjs`):
 npm run bake-icons
 ```
 
+**A refresh and Today's unique.** A day's question never changes. Today's
+unique deals each day from the items standing that day (`FIRST_DAYS` in
+`src/lib/daily.ts`), so the items a refresh adds must carry the first day
+they stand on, in `src/data/firstDays.json` (by name, as `items.json` spells
+it: `{ "Some Unique": "2026-12-13" }`). An item not named there has stood
+from the start. `fetch-data` can't know when its build goes live, so it
+stamps nothing, and `tests/daily.test.ts` fails on any item that is neither
+standing from the start nor stamped. Games, practice and the codex use every
+item. For a big refresh (PoE2 1.0, the first one, on 2026-12-12 at the
+earliest, once poe2db has the art):
+
+- **Which items.** Only the uniques the patch notes name. Datamined ones wait
+  until they are seen dropping (listed on the trade site, or on poe.ninja's
+  PoE2 economy pages), for a later pass. `fetch-data` has no list to hold an
+  item back yet: if it brings in one the patch notes don't name, add one to
+  it rather than editing `items.json`. (An item poe2db lists without art, such
+  as the unreleased Gatecrasher, is left out already.) On 2026-10-28
+  poe2db's list gave Against the Darkness an empty tooltip, which stops the
+  tooltips' fetch (`scripts/fetch-stats.mjs`) after `items.json` is written;
+  the item's own page has it.
+- **Stamp the first day last.** In the PR's last commit, just before merging,
+  stamp every new item with the next UTC day after the merge, or the day
+  after that if the merge comes within two hours of 00:00 UTC. If the merge
+  slips past 00:00 of the stamped day, stamp again before merging. A tab
+  still on the old build into that day deals it the old way.
+- **Re-pin only from the first day on.** `tests/dailyDays.ts` holds each
+  day's question, in short, for the daily's first year; the failing test
+  lists each day that changed and its new hash. Rewrite only the entries from
+  the first day on: those days haven't been dealt yet. Every earlier entry
+  stays byte-identical, as the PR's diff shows. If one of them changes, the
+  refresh broke the rule: fix the code or the data, never the pin.
+- **What still moves a past day.** The draw also reads `fakes.json`, each
+  item's category and group, its art variants and `dailyArt.json`, so a
+  standing item reworked, recategorized or drawn anew can move a past day;
+  the per-day list shows it. A removed unique moves about half of all days,
+  past ones too (taking one jewel out moved 9 of the first 20), and so does
+  a renamed one, which is a new item (its id is its name's hash) and a
+  removed one. None has been removed so far (the dry run of 2026-10-28 found
+  the same 501 items), so there is no mark for a retired item yet; a refresh
+  that drops one builds it first, keeping the item in the days it stood.
+- **The codex.** Add “; N came with 1.0” to the wide codex line
+  (`codexLine` in `src/lib/startMenu.ts`), N the items stamped by the
+  refresh.
+- **Delve.** Don't bump `DELVE_RULESET`: which questions are dealt is a small
+  change (`src/lib/delve.ts`), and a bump would wipe every best as the most
+  players arrive.
+
 ## Deploying
 
 `.github/workflows/deploy.yml` builds and deploys on every push to `main`.
