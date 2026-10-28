@@ -357,8 +357,8 @@
   /** A run alone straight away, no room, portal or lobby (a newcomer's Identify more): under the saved name, or without one as Exile, which is never saved. */
   function delveAlone() {
     if (connecting) return;
-    // TODO(#310): count the newcomer's Identify more here, with the call PR #310 adds for it.
     renaming = false;
+    // TODO(#310): countStep('reach/identify') here (lib/count.ts, from PR #310), once it is in main.
     session.startDelve(knownName() ?? NAMELESS);
   }
 

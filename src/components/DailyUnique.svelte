@@ -38,13 +38,11 @@
 
   /**
    * `newcomer`: a browser that has started no game here (the start page
-   * tells; null until it has): once answered, it is offered a run alone
-   * (`onIdentify`) rather than practice. `lead`: that button holds the
-   * page's gold, while nothing else there does.
+   * tells; null until it has): once answered, Identify more takes Practice
+   * more's place, a run alone (`onIdentify`). `lead`: it holds the page's
+   * gold, while nothing else there does.
    */
   let { disabled = false, newcomer = false, onIdentify, lead = false }: { disabled?: boolean; newcomer?: boolean | null; onIdentify?: () => void; lead?: boolean } = $props();
-  /** Offered a run alone in place of practice. */
-  const identify = $derived(!!newcomer && !!onIdentify);
 
   // The clock moves on (the hours or minutes left, and past midnight UTC a new day):
   // just past each whole minute, when the minutes left go down, and at once
@@ -425,7 +423,7 @@
     {/each}
   </div>
 
-  <div class="after" class:first={identify} aria-live="polite">
+  <div class="after" aria-live="polite">
     {#if !answered}
       {#if practice}
         <!-- Practice is apart from the day's question: say so, and when the next one comes. -->
@@ -450,17 +448,14 @@
           {:else}
             <span>Missed today</span>
           {/if}
-          <!-- (A newcomer's on a wide window gives its room to Identify more's line.) -->
-          <span class="next"><span class="sep" aria-hidden="true">·</span><span aria-live="off">{nextIn(now)}</span></span>
+          <span class="sep" aria-hidden="true">·</span>
+          <span aria-live="off">{nextIn(now)}</span>
         {/if}
       </p>
-      <!-- After the result, as in the game: what happened first, then the way on.
-           A newcomer's is into the game itself, a run alone, rather than practice. -->
-      {#if identify}
-        <span class="way" in:fade={{ duration: 250 }}>
-          <button class="btn small" class:primary={lead} bind:this={practiceEl} onclick={onIdentify} {disabled}>Identify more</button>
-          <span class="caption">Endless and harder as you go.</span>
-        </span>
+      <!-- After the result, as in the game: what happened first, then the way on;
+           a newcomer's into the game itself, a run alone, rather than practice. -->
+      {#if newcomer && onIdentify}
+        <button class="btn small" class:primary={lead} bind:this={practiceEl} onclick={onIdentify} {disabled} in:fade={{ duration: 250 }}>Identify more</button>
       {:else if newcomer !== null}
         <button class="btn small" bind:this={practiceEl} onclick={practiceMore} {disabled} in:fade={{ duration: 250 }}>Practice more</button>
       {/if}
@@ -902,25 +897,6 @@
     font-size: 17px;
     color: #a99c86;
   }
-  /* A newcomer's way on: the button, and what it leads to beside it on a
-     wide window (under it on a phone), in the caption's italic. */
-  .way {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-  .way .caption {
-    order: -1;
-    width: auto;
-    white-space: nowrap;
-  }
-  /* Its parts are the tally's own, spaced by its gap. */
-  .next {
-    display: contents;
-  }
-  .after.first .next {
-    display: none;
-  }
   .tally {
     display: flex;
     align-items: baseline;
@@ -967,20 +943,6 @@
     }
     .caption {
       font-size: 15px;
-    }
-    /* A newcomer's: the result, then Identify more and its line under it, the room kept from the start. */
-    .after.first {
-      min-height: 85px;
-    }
-    .after.first .next {
-      display: contents;
-    }
-    .way {
-      flex-direction: column;
-      gap: 2px;
-    }
-    .way .caption {
-      order: 0;
     }
     .caption .more {
       display: none;

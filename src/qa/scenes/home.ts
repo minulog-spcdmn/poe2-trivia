@@ -147,8 +147,7 @@ function refused(v: Values = {}): Built {
 
 /**
  * After Today's unique: a newcomer (no game started here, lib/started.ts) is offered Identify more, a run alone,
- * in place of Practice more, its line beside it in the row (under it on a phone, the room kept from the start);
- * a returning player keeps Practice more. One gold
+ * in Practice more's place; a returning player keeps Practice more. One gold
  * button at a time: on a phone New game's; on a wide window Identify more's until a row opens (Start or Join
  * takes it) or a join is on its way (none then).
  */
@@ -201,7 +200,7 @@ export function homeScenes(): Scene[] {
     home('after-daily', 'After Today’s unique: a newcomer’s Identify more, a returning player’s Practice more', {
       controls: AFTER_DAILY,
       states: [
-        { label: 'A newcomer, Today’s unique answered: Identify more, gold', values: {} },
+        { label: 'A newcomer, Today’s unique answered: Identify more in Practice more’s place, gold', values: {} },
         { label: 'A newcomer, not answered yet', values: { answered: false } },
         { label: 'A newcomer, New game’s row open: Start holds the gold', values: { row: 'create' } },
         { label: 'A newcomer, Join a room’s row open: Join holds the gold', values: { row: 'join' } },
