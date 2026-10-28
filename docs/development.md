@@ -414,8 +414,8 @@ earliest, once poe2db has the art):
 - **Which items.** Only the uniques the patch notes name. Datamined ones wait
   until they are seen dropping (listed on the trade site, or on poe.ninja's
   PoE2 economy pages), for a later pass. `fetch-data` has no list to hold an
-  item back yet: if it brings in one the patch notes don't name, add one to
-  it rather than editing `items.json`. (An item poe2db lists without art, such
+  item back yet: if it brings in one the patch notes don't name, give it a
+  list of names to leave out rather than editing `items.json`. (An item poe2db lists without art, such
   as the unreleased Gatecrasher, is left out already.) On 2026-10-28
   poe2db's list gave Against the Darkness an empty tooltip, which stops the
   tooltips' fetch (`scripts/fetch-stats.mjs`) after `items.json` is written;
@@ -430,7 +430,9 @@ earliest, once poe2db has the art):
   lists each day that changed and its new hash. Rewrite only the entries from
   the first day on: those days haven't been dealt yet. Every earlier entry
   stays byte-identical, as the PR's diff shows. If one of them changes, the
-  refresh broke the rule: fix the code or the data, never the pin.
+  refresh broke the rule: fix the code or the data, never the pin. The list
+  ends on 2027-10-09; extend it (from the code as it deals then) before a
+  refresh after that, or nothing guards the days past it.
 - **What still moves a past day.** The draw also reads `fakes.json`, each
   item's category and group, its art variants and `dailyArt.json`, so a
   standing item reworked, recategorized or drawn anew can move a past day;

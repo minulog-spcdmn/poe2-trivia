@@ -2,9 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { Engine, TWINS, allArt, answerDrawn, isFake, type Question } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, FIRST_DAYS, GRACE_DAYS, standingOn, GRACE_SINCE, TOO_THIN, dailyEngine, graceOn, aTopic, answerDaily, answerLog, askOne, daysOf, dailyGame, answeredOn, dailyQuestion, hoursLeft, minutesLeft, nextIn, parseDaily, parseLog, replay, streakOn, untilNextMinute, upTo, utcDay, type DailyRecord } from '../src/lib/daily.ts';
+import { DAILY_LAUNCH, FIRST_DAYS, GRACE_DAYS, GRACE_SINCE, TOO_THIN, dailyEngine, graceOn, aTopic, answerDaily, answerLog, askOne, daysOf, dailyGame, answeredOn, dailyQuestion, hoursLeft, minutesLeft, nextIn, parseDaily, parseLog, replay, standingOn, streakOn, untilNextMinute, upTo, utcDay, type DailyRecord } from '../src/lib/daily.ts';
 import { fakes, items, seeded } from './helpers.ts';
 import { DAYS } from './dailyDays.ts';
+import firstDays from '../src/data/firstDays.json' with { type: 'json' };
 
 const HOUR = 3_600_000;
 const at = (iso: string) => Date.parse(iso);
@@ -77,11 +78,17 @@ test('an item the daily began without is stamped with its first day, or never de
   // renamed, unique) would enter every day ever dealt: stamp it in
   // src/data/firstDays.json (docs/development.md, "Refreshing item data").
   const unstamped = items.filter((it) => !FIRST_DAYS.has(it.name)).map((it) => it.id).sort();
-  assert.deepEqual([unstamped.length, createHash('sha256').update(unstamped.join()).digest('hex').slice(0, 16)], [501, '9ffb52e641916f06']);
+  assert.deepEqual(
+    [unstamped.length, createHash('sha256').update(unstamped.join()).digest('hex').slice(0, 16)],
+    [501, '9ffb52e641916f06'],
+    'an item came or went: stamp a new one in src/data/firstDays.json, never re-pin this (docs/development.md, "Refreshing item data")',
+  );
 });
 
 test('a first day names an item, after the daily began, and keeps its items out of the days before it', () => {
   const names = new Set(items.map((it) => it.name));
+  for (const [name, date] of Object.entries(firstDays as Record<string, string>))
+    assert.match(date, /^\d{4}-\d{2}-\d{2}$/, `${name}: a day as YYYY-MM-DD, which every browser reads alike`);
   for (const [name, day] of FIRST_DAYS) {
     assert.ok(names.has(name), `${name}: an item's name as items.json spells it`);
     assert.ok(Number.isInteger(day) && day > utcDay(DAILY_LAUNCH), `${name}: a day (YYYY-MM-DD) after the daily began`);
