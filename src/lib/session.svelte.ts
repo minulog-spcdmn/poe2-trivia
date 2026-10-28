@@ -33,7 +33,7 @@ import {
   type Item,
   type Player,
 } from './game';
-import { PEER_OPTIONS, PEER_PREFIX, loadPeerJs, peerJsNow, type PeerJs } from './peer';
+import { PEER_PREFIX, loadPeerJs, peerJsNow, peerOptions, type PeerJs } from './peer';
 import { CODE_LENGTH, CODE_PATTERN, randomCode, randomToken } from './roomCode.ts';
 import { Beacon, ProbeDesk, answerProbes, type RoomInfo } from './rooms';
 import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
@@ -803,9 +803,10 @@ class Session {
     const Peer = this.peerClass(
       () => this.openRoom(code, attempt, resumeState),
       () => this.roomNotOpened(code, 'peerjs-load', !!resumeState),
+      false,
     );
     if (!Peer) return;
-    const peer = new Peer(PEER_PREFIX + code, PEER_OPTIONS);
+    const peer = new Peer(PEER_PREFIX + code, peerOptions());
     this.peer = peer;
     // An invite link's screen asking whose room this is: told, apart from the
     // players' slots (nobody banned or blocked, though). Everyone else comes to play.
@@ -1973,7 +1974,7 @@ class Session {
     if (!Peer) return;
     this.peer?.destroy();
     this.cancelAttempts();
-    const peer = new Peer(PEER_OPTIONS);
+    const peer = new Peer(peerOptions());
     this.peer = peer;
     // 'open' fires again when the signalling server is reconnected: a live
     // link to the host doesn't need it, a lost one tries again right away.
@@ -3296,15 +3297,16 @@ class Session {
   }
 
   /**
-   * PeerJS's Peer, loaded (lib/peer.ts loadPeerJs). Null while it loads: then
-   * `retry` runs once it has (or `failed`, when it can't), unless this
-   * session was reset meanwhile.
+   * PeerJS's Peer, loaded (lib/peer.ts loadPeerJs). Null while it loads, or
+   * while the relay's login is worth waiting for (3 s at most; a host, `wait`
+   * false, doesn't): then `retry` runs once it has (or `failed`, when it
+   * can't), unless this session was reset meanwhile.
    */
-  private peerClass(retry: () => void, failed: () => void): PeerJs['default'] | null {
-    const loaded = peerJsNow();
+  private peerClass(retry: () => void, failed: () => void, wait = true): PeerJs['default'] | null {
+    const loaded = peerJsNow(wait);
     if (loaded) return loaded.default;
     const epoch = this.peerEpoch;
-    loadPeerJs().then(
+    loadPeerJs(wait).then(
       () => epoch === this.peerEpoch && retry(),
       () => epoch === this.peerEpoch && this.status === 'connecting' && failed(),
     );

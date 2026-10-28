@@ -28,7 +28,8 @@
 
       <h2>2. Überblick</h2>
       <p>
-        PoE2.Quest ist ein Browserspiel ohne eigenen Server, ohne Benutzerkonten und ohne Cookies. Die Nutzung wird
+        PoE2.Quest ist ein Browserspiel ohne eigenen Spielserver (nur ein kleiner Dienst für Relay-Zugangsdaten,
+        Abschnitt 4), ohne Benutzerkonten und ohne Cookies. Die Nutzung wird
         nur mit dem cookielosen Dienst GoatCounter gezählt, der keine IP-Adressen speichert und Besuche keiner Person
         zuordnet (Abschnitt 7). Schriftarten und Bilder werden von dieser Website selbst ausgeliefert, nicht von Drittanbietern.
         Spielstände werden nicht zentral gespeichert: Das Spiel läuft im Browser der Person, die einen Raum eröffnet
@@ -67,13 +68,19 @@
         </li>
         <li>
           <strong>STUN-Server von Google:</strong> Um eine direkte Verbindung zu ermöglichen, fragt Ihr Browser beim
-          STUN-Server stun.l.google.com (Google LLC, USA) Ihre öffentliche IP-Adresse ab. Dabei wird Ihre IP-Adresse an
+          STUN-Server stun.l.google.com (Google LLC, USA) Ihre öffentliche IP-Adresse ab (mit Zugangsdaten für den
+          Relay-Dienst von Cloudflare auch bei dessen STUN-Server, siehe unten). Dabei wird Ihre IP-Adresse an
           Google übermittelt. Google LLC ist nach dem EU-US Data Privacy Framework zertifiziert.
         </li>
         <li>
-          <strong>Relay-Server (TURN):</strong> Ist keine direkte Verbindung möglich, kann die Verbindung über
-          Relay-Server von PeerJS (eu-0.turn.peerjs.com bzw. us-0.turn.peerjs.com) geleitet werden. Dabei laufen die
-          Spieldaten und Ihre IP-Adresse über diese Server.
+          <strong>Relay-Server (TURN):</strong> Ist keine direkte Verbindung möglich, wird die Verbindung über den
+          Relay-Dienst von Cloudflare (turn.cloudflare.com; Cloudflare, Inc., USA) geleitet. Dabei laufen die Spieldaten
+          und Ihre IP-Adresse über diese Server. Die Zugangsdaten dafür, die zwölf Stunden gelten, holt die Seite, sobald Sie online spielen (einen Raum
+          eröffnen oder ihm beitreten) oder Ihre Geräte abgleichen, und, solange die Seite danach geöffnet bleibt, vor deren Ablauf erneut von einem Cloudflare Worker des Spiels (workers.dev).
+          Er verarbeitet dabei Ihre IP-Adresse und zählt, um massenhafte Abrufe zu bremsen, je Adresse die Abrufe der
+          letzten Minute; gespeichert wird sie darüber hinaus nicht. Mit diesen
+          Zugangsdaten fragt Ihr Browser Ihre öffentliche IP-Adresse beim STUN-Server von Cloudflare
+          (stun.cloudflare.com) ab. Cloudflare, Inc. ist nach dem EU-US Data Privacy Framework zertifiziert.
         </li>
         <li>
           <strong>Direkte Verbindung zum Host (WebRTC):</strong> Wer einem Raum beitritt, verbindet sich direkt mit dem
@@ -111,7 +118,7 @@
         Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (Bereitstellung des von Ihnen gewählten Online-Spiels), für die
         Liste offener Räume, die von selbst sucht, und das Abgleichen Ihrer Geräte lit. f DSGVO (berechtigtes Interesse
         an einem funktionierenden Mehrspielermodus). Bei den genannten Diensten kann eine Verarbeitung außerhalb der EU,
-        insbesondere in den USA, stattfinden. Die Verbindungsdaten speichere ich nicht; wie lange PeerJS und Google sie
+        insbesondere in den USA, stattfinden. Die Verbindungsdaten speichere ich nicht; wie lange PeerJS, Google und Cloudflare sie
         aufbewahren, liegt bei diesen. Auch wenn alle an einem Gerät
         spielen, öffnet die Gastgeberin oder der Gastgeber dafür einen Raum, der den Vermittlungsserver kontaktiert. Nur
         ein Spiel ohne Raum (etwa wenn sich keiner öffnen lässt) baut keine Verbindung auf; die Suche nach offenen Räumen
@@ -277,8 +284,9 @@
             to deliver the site.
           </li>
           <li>
-            <strong>Online play and the open rooms list:</strong> the PeerJS matchmaking server (0.peerjs.com), Google’s STUN server
-            (stun.l.google.com) and, if needed, PeerJS relay servers (TURN) process your IP address to connect players.
+            <strong>Online play and the open rooms list:</strong> the PeerJS matchmaking server (0.peerjs.com) and Cloudflare
+            (Cloudflare, Inc., USA: a small Worker of the game’s that hands the page a relay login lasting twelve hours, asked once you open or join a room or sync your devices and renewed while the page stays open, counting each address’s asks over the last minute to slow bulk use, its STUN server and, if needed, its
+            relay servers (TURN), through which the game’s data then runs) and Google’s STUN server (stun.l.google.com) process your IP address to connect players.
             Guests connect directly to the host, so <strong>the host can see your IP address</strong> and you can see
             the host’s, even when the connection ends up running through a relay, as both sides swap addresses while
             connecting. <strong>The start page asks on its own:</strong> to show the open rooms list, it asks every

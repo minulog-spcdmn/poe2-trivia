@@ -17,7 +17,7 @@
 
 import type Peer from 'peerjs';
 import type { DataConnection } from 'peerjs';
-import { PEER_OPTIONS, PEER_PREFIX, loadPeerJs } from './peer';
+import { PEER_PREFIX, loadPeerJsCode, peerOptions } from './peer';
 import { randomToken } from './roomCode';
 import { frameFits, hookFrames, MAX_PROBE_BYTES } from './guard';
 import { isHeldName } from './names';
@@ -269,9 +269,9 @@ export function answerProbes(
 }
 
 async function openPeer(id?: string): Promise<Peer> {
-  const { default: Peer } = await loadPeerJs();
+  const { default: Peer } = await loadPeerJsCode();
   return new Promise((resolve, reject) => {
-    const peer = id ? new Peer(id, PEER_OPTIONS) : new Peer(PEER_OPTIONS);
+    const peer = id ? new Peer(id, peerOptions()) : new Peer(peerOptions());
     // Listening from the start, so a ping that comes before anyone answers it isn't kept by PeerJS for good.
     signals(peer);
     const fail = (err: unknown) => {
@@ -354,7 +354,7 @@ export async function probeRoom(code: string): Promise<RoomInfo | 'gone' | null>
   // starts once PeerJS is loaded, so a slow first download doesn't use it up
   // (one that fails makes openPeer fail at once). A download that stalls is
   // given as long again, so the invite's screen isn't left asking for good.
-  await Promise.race([loadPeerJs().catch(() => {}), sleep(PROBE_OPEN_TIMEOUT_MS)]);
+  await Promise.race([loadPeerJsCode().catch(() => {}), sleep(PROBE_OPEN_TIMEOUT_MS)]);
   const opening = openPeer();
   const peer = await Promise.race([opening.catch(() => null), sleep(PROBE_OPEN_TIMEOUT_MS).then(() => null)]);
   if (!peer) {

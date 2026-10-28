@@ -37,7 +37,7 @@
   import { retried } from './lib/chunkRetry';
   import { whenSettled } from './lib/settled';
   import { loadFonts, loadFontsAhead, loadRoomFonts } from './lib/fontsAhead';
-  import { loadPeerJs, preloadPeerJs } from './lib/peer';
+  import { loadPeerJsCode, preloadPeerJs } from './lib/peer';
   import { preloadEd25519 } from './lib/ownerKey';
   import { shellHeightsRead } from './lib/shellHeights.svelte';
   import { toasts } from './lib/toasts.svelte';
@@ -471,7 +471,7 @@
       return;
     }
     const online = session.mode === 'host' || session.mode === 'client';
-    untrack(() => void Promise.all([loadLobby(), online && loadPeerJs().catch(() => {})]).then(loadGamePages));
+    untrack(() => void Promise.all([loadLobby(), online && loadPeerJsCode().catch(() => {})]).then(loadGamePages));
   });
 
   // Each screen starts at the top (a guest who scrolled down to the join

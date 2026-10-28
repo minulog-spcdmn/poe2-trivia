@@ -4,7 +4,8 @@
 
 A multiplayer Path of Exile 2 trivia game: name the unique item or lineage gem
 from its art. It runs entirely in the browser and is hosted as a static site on
-GitHub Pages. No server needed.
+GitHub Pages. No game server needed; only a small Worker hands out relay
+logins (see "Relay").
 
 ## How to play
 
@@ -137,6 +138,67 @@ until it does.
 To use your own [PeerJS server](https://github.com/peers/peerjs-server)
 instead of the public cloud, build with `VITE_PEER_HOST`, `VITE_PEER_PORT`,
 `VITE_PEER_PATH` and `VITE_PEER_SECURE`.
+
+### Relay
+
+Two devices that can't reach each other directly (some routers, phone
+carriers, venue Wi-Fi) meet through a relay: Cloudflare's TURN, free up to
+1,000 GB a month. A Worker (`relay/worker.js`) hands a page a login once it
+goes online (hosts, joins or syncs; the start page's room list needs none),
+lasting twelve hours: a relayed connection ends with its login, so the page
+renews it halfway and every connection starts with six hours at least. The
+relay's key stays in the Worker. So that nobody can run up a bill with it:
+
+- Every ten minutes the Worker reads the month's relay traffic from
+  Cloudflare's analytics, and makes sure its token can still change the TURN
+  key. At 500 GB it **deletes every TURN key on the account**, tried again
+  every ten minutes until they're gone, which ends every login already out.
+  Rooms then meet without the relay (as they would with none at all). It
+  comes back once a new key is set up (step 1 and its two secrets again) in
+  a new month; a new key in the same month stays off. Half the free
+  allowance, because the check sees traffic up to ten minutes late and a
+  burst can be large.
+- Cloudflare doesn't say that deleting a key ends the relaying already under
+  way; a login's end does, so whatever might go on stops within twelve hours.
+- Logins go out only while that check has run in the last hour, so a token
+  gone wrong stops them instead of leaving the cap unwatched.
+- An address (an IPv6 one's /64) gets 60 logins a minute.
+
+To set it up:
+
+1. In Cloudflare's dashboard: Realtime → TURN Server → Create, which gives a
+   key ID and an API token.
+2. An API token for the Worker's check (My Profile → API Tokens → Create,
+   custom) with Account → Account Analytics → Read and Account → Calls →
+   Edit.
+3. In `relay/` (not the project's root: there Wrangler sets the whole game up
+   as a Worker, rewriting `package.json` and `vite.config.ts`, and puts the
+   secrets on a Worker of that name): `npx wrangler login`,
+   `npx wrangler deploy` (the first time it asks for the account's
+   workers.dev subdomain), then `npx wrangler secret put` for
+   `TURN_KEY_ID` and `TURN_KEY_API_TOKEN` (step 1) and `ANALYTICS_TOKEN`
+   (step 2), pasting each. The Worker is `poe2-trivia` (`wrangler.toml`, with
+   its account ID, rate limit, KV namespace and check), at
+   `poe2-trivia.poe2quest.workers.dev`.
+4. Put the Worker's URL in `src/lib/relayUrl.ts` (`RELAY_URL`); the build lets
+   the page reach it.
+
+Without a login (no URL, the Worker refuses, or it doesn't answer within 3 s)
+a connection gets Google's STUN only (with one, Google's beside Cloudflare's) and meets wherever a direct link gets
+through; the page asks again later, and connections after that get the relay.
+The QA desk and the tests never ask.
+
+To turn it off: delete the TURN key in Cloudflare's dashboard (Realtime → TURN
+Server). The Worker then hands out no logins (its check fails on the missing
+key, every ten minutes, until a new one is set up), and pages play as
+without a relay. Cloudflare doesn't say what becomes of the logins pages
+already hold: whatever they still relay ends with them, in twelve hours at
+most. Emptying `RELAY_URL` (or reverting)
+only changes pages loaded after the deploy, and leaves the Worker handing
+out logins to tabs already open (and to anyone sending the game's Origin):
+a full rollback is reverting and deleting the key. A new key brings it back
+for tabs opened since; one open all along picks it up when its login is next
+renewed, within six hours.
 
 ## Deploying
 

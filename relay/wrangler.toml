@@ -1,0 +1,33 @@
+# The relay logins' Worker (worker.js); README, "Relay".
+# Named as the Worker its secrets were first put on.
+name = "poe2-trivia"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+# No request logs kept: they'd store each player's IP address (datenschutz.html).
+[observability]
+enabled = false
+
+[vars]
+ACCOUNT_ID = "fe9cb1cd1732a0c08dfd809a093244a8"
+
+# Logins a single address (an IPv6 one's /64) may take: a page asks as it
+# goes online and again every six hours while it plays; this slows a script
+# minting them in bulk, with room for a school or a carrier's shared address.
+[[ratelimits]]
+name = "PER_ADDRESS"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 60
+  period = 60
+
+# What the last usage check found: when, how much, and whether capped (worker.js, check).
+[[kv_namespaces]]
+binding = "RELAY_STATE"
+id = "fb6fe282e20947528cfce3676f194401"
+
+# The month's relay traffic, checked every ten minutes.
+[triggers]
+crons = ["*/10 * * * *"]

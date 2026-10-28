@@ -34,7 +34,7 @@
 
 import type { DataConnection, Peer } from 'peerjs';
 import { CHANNEL, roomPrefix } from '../channel.ts';
-import { PEER_OPTIONS, loadPeerJs } from '../peer.ts';
+import { loadPeerJs, peerOptions } from '../peer.ts';
 import { announceStored, onStoredHere, readStored, removeStored, storeKey, writeStored } from '../storage.ts';
 import { countEvent } from '../count.ts';
 import { parseCodex, parsePractice } from '../codex.ts';
@@ -356,7 +356,7 @@ class Run {
 
   private async newPeer(id?: string): Promise<Peer> {
     const { Peer } = await loadPeerJs();
-    return id ? new Peer(id, PEER_OPTIONS) : new Peer(PEER_OPTIONS);
+    return id ? new Peer(id, peerOptions()) : new Peer(peerOptions());
   }
 
   /** Takes the code's name and waits there, or (taken) joins whoever has it. */
