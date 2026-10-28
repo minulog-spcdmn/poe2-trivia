@@ -4,7 +4,8 @@
 
 A multiplayer Path of Exile 2 trivia game: name the unique item or lineage gem
 from its art. It runs entirely in the browser and is hosted as a static site on
-GitHub Pages. No server needed.
+GitHub Pages. No game server needed; only a small Worker hands out relay
+logins (see "Relay").
 
 ## How to play
 
@@ -143,28 +144,41 @@ instead of the public cloud, build with `VITE_PEER_HOST`, `VITE_PEER_PORT`,
 Two devices that can't reach each other directly (some routers, phone
 carriers, venue Wi-Fi) meet through a relay: Cloudflare's TURN, free up to
 1,000 GB a month. A Worker (`relay/worker.js`) hands each page a login that
-lasts four hours; the relay's key stays in the Worker. So that nobody can run
-up a bill with it, an address gets only so many logins a minute, and once the
-month's relay traffic reaches 500 GB (read hourly from Cloudflare's
-analytics) no more are given until the next month. To set it up:
+lasts two days (a relayed connection ends with its login, so the page renews
+it half a day ahead); the relay's key stays in the Worker. So that nobody can
+run up a bill with it:
+
+- Every ten minutes the Worker reads the month's relay traffic from
+  Cloudflare's analytics. At 500 GB it **deletes the TURN key**, which ends
+  every login already out, and gives none until a new key is set up (step 1
+  and its two secrets again). Rooms then meet without the relay.
+- Logins go out only while that check has run in the last hour, so a token
+  gone wrong stops them instead of leaving the cap unwatched.
+- An address (an IPv6 one's /64) gets 60 logins a minute.
+
+To set it up:
 
 1. In Cloudflare's dashboard: Realtime → TURN Server → Create, which gives a
    key ID and an API token.
-2. In `relay/` (not the project's root: there Wrangler sets the whole game up
+2. An API token for the Worker's check (My Profile → API Tokens → Create,
+   custom) with Account → Account Analytics → Read and Account → Calls →
+   Edit.
+3. In `relay/` (not the project's root: there Wrangler sets the whole game up
    as a Worker, rewriting `package.json` and `vite.config.ts`, and puts the
    secrets on a Worker of that name): `npx wrangler login`,
    `npx wrangler deploy` (the first time it asks for the account's
-   workers.dev subdomain), then `npx wrangler secret put TURN_KEY_ID` and
-   `npx wrangler secret put TURN_KEY_API_TOKEN`, pasting each, and
-   `npx wrangler secret put ANALYTICS_TOKEN`: an API token (My Profile → API
-   Tokens → Create, custom) with Account → Account Analytics → Read. The
-   Worker is `poe2-trivia` (`wrangler.toml`, with its account ID, rate limit,
-   KV namespace and hourly check), at `poe2-trivia.poe2quest.workers.dev`.
-3. Put the Worker's URL in `src/lib/relayUrl.ts` (`RELAY_URL`); the build lets
+   workers.dev subdomain), then `npx wrangler secret put` for
+   `TURN_KEY_ID` and `TURN_KEY_API_TOKEN` (step 1) and `ANALYTICS_TOKEN`
+   (step 2), pasting each. The Worker is `poe2-trivia` (`wrangler.toml`, with
+   its account ID, rate limit, KV namespace and check), at
+   `poe2-trivia.poe2quest.workers.dev`.
+4. Put the Worker's URL in `src/lib/relayUrl.ts` (`RELAY_URL`); the build lets
    the page reach it.
 
-Without a login (no URL, or the Worker doesn't answer within 3 s) peers are made
-with Google's STUN only, and rooms meet wherever a direct link gets through.
+Without a login (no URL, the Worker refuses, or it doesn't answer within 3 s)
+a connection gets Google's STUN only and meets wherever a direct link gets
+through; the page asks again later, and connections after that get the relay.
+The QA desk and the tests never ask.
 
 ## Deploying
 

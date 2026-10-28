@@ -147,3 +147,26 @@ test('a login running low is asked for anew without waiting, once, by whatever r
   await new Promise((done) => setImmediate(done));
   assert.equal(r.iceServers()[0].username, 'v');
 });
+
+test('a Worker that says when to ask again is believed, up to a day', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 0 });
+  let wait = '3600';
+  const calls: number[] = [];
+  const get = (async () => {
+    calls.push(Date.now());
+    return new Response(null, { status: 503, headers: { 'Retry-After': wait } });
+  }) as typeof fetch;
+  const r = new Relay('https://relay.test/', get);
+  await r.load();
+  t.mock.timers.tick(HOUR - 1);
+  assert.equal(r.due(), false);
+  t.mock.timers.tick(1);
+  assert.equal(r.due(), true);
+  wait = String(30 * 24 * 3600);
+  await r.load();
+  t.mock.timers.tick(24 * HOUR - 1);
+  assert.equal(r.due(), false);
+  t.mock.timers.tick(1);
+  assert.equal(r.due(), true);
+  assert.equal(calls.length, 2);
+});

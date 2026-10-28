@@ -28,7 +28,8 @@
 
       <h2>2. Überblick</h2>
       <p>
-        PoE2.Quest ist ein Browserspiel ohne eigenen Server, ohne Benutzerkonten und ohne Cookies. Die Nutzung wird
+        PoE2.Quest ist ein Browserspiel ohne eigenen Spielserver (nur ein kleiner Dienst für Relay-Zugangsdaten,
+        Abschnitt 4), ohne Benutzerkonten und ohne Cookies. Die Nutzung wird
         nur mit dem cookielosen Dienst GoatCounter gezählt, der keine IP-Adressen speichert und Besuche keiner Person
         zuordnet (Abschnitt 7). Schriftarten und Bilder werden von dieser Website selbst ausgeliefert, nicht von Drittanbietern.
         Spielstände werden nicht zentral gespeichert: Das Spiel läuft im Browser der Person, die einen Raum eröffnet
@@ -74,8 +75,10 @@
         <li>
           <strong>Relay-Server (TURN):</strong> Ist keine direkte Verbindung möglich, wird die Verbindung über den
           Relay-Dienst von Cloudflare (turn.cloudflare.com; Cloudflare, Inc., USA) geleitet. Dabei laufen die Spieldaten
-          und Ihre IP-Adresse über diese Server. Die Zugangsdaten dafür, die vier Stunden gelten, holt die Seite beim Aufruf
-          von einem Cloudflare Worker des Spiels (workers.dev), der dabei Ihre IP-Adresse verarbeitet. Mit diesen
+          und Ihre IP-Adresse über diese Server. Die Zugangsdaten dafür, die zwei Tage gelten, holt die Seite beim Aufruf
+          und, solange sie damit spielt, vor deren Ablauf erneut von einem Cloudflare Worker des Spiels (workers.dev).
+          Er verarbeitet dabei Ihre IP-Adresse und zählt, um massenhafte Abrufe zu bremsen, je Adresse die Abrufe der
+          letzten Minute; gespeichert wird sie darüber hinaus nicht. Mit diesen
           Zugangsdaten fragt Ihr Browser Ihre öffentliche IP-Adresse beim STUN-Server von Cloudflare
           (stun.cloudflare.com) ab. Cloudflare, Inc. ist nach dem EU-US Data Privacy Framework zertifiziert.
         </li>
@@ -282,7 +285,7 @@
           </li>
           <li>
             <strong>Online play and the open rooms list:</strong> the PeerJS matchmaking server (0.peerjs.com) and Cloudflare
-            (Cloudflare, Inc., USA: a small Worker of the game’s that hands the page a relay login lasting four hours, asked on each visit, its STUN server and, if needed, its
+            (Cloudflare, Inc., USA: a small Worker of the game’s that hands the page a relay login lasting two days, asked on each visit and renewed while it plays, counting each address’s asks over the last minute to slow bulk use, its STUN server and, if needed, its
             relay servers (TURN), through which the game’s data then runs) process your IP address to connect players; without that login, Google’s STUN
             server (stun.l.google.com) does in place of Cloudflare’s.
             Guests connect directly to the host, so <strong>the host can see your IP address</strong> and you can see

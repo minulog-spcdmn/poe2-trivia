@@ -8,9 +8,9 @@ workers_dev = true
 [vars]
 ACCOUNT_ID = "fe9cb1cd1732a0c08dfd809a093244a8"
 
-# Logins a single address may take: a page asks once a visit and again every
-# couple of hours while it's open; this is for scripts minting them in bulk,
-# with room for a school or a carrier's shared address full of players.
+# Logins a single address (an IPv6 one's /64) may take: a page asks once a
+# visit and again every day and a half while it plays; this slows a script
+# minting them in bulk, with room for a school or a carrier's shared address.
 [[ratelimits]]
 name = "PER_ADDRESS"
 namespace_id = "1001"
@@ -19,11 +19,11 @@ namespace_id = "1001"
   limit = 60
   period = 60
 
-# Whether the month's relay traffic has reached the cap (worker.js, scheduled).
+# What the last usage check found: when, how much, and whether capped (worker.js, check).
 [[kv_namespaces]]
 binding = "RELAY_STATE"
 id = "fb6fe282e20947528cfce3676f194401"
 
-# The month's relay traffic, checked every hour.
+# The month's relay traffic, checked every ten minutes.
 [triggers]
-crons = ["17 * * * *"]
+crons = ["*/10 * * * *"]

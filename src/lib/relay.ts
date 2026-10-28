@@ -10,15 +10,27 @@
 const WAIT_MS = 3000;
 /** A fetch that hasn't answered by then is given up, so another can go. */
 const GIVE_UP_MS = 15000;
-/** After a login that couldn't be had, how long until the next try. */
+/** After a login that couldn't be had, how long until the next try (unless the Worker says how long: Retry-After). */
 const RETRY_MS = 30000;
+/** The longest a Worker's Retry-After is taken at: a page open for weeks still asks again now and then. */
+const RETRY_MAX_MS = 24 * 3_600_000;
 /**
  * A login with less left than this (or past half of a shorter one) is
- * fetched anew before the next peer is made. A peer reads the servers again
- * for each connection it makes (peer.ts), so this only keeps a fresh login
- * ready ahead of need.
+ * fetched anew. A relayed connection ends when its login does, and a peer
+ * reads the servers again for each connection it makes (peer.ts), so every
+ * connection starts with half a day at least: longer than any game.
  */
 const MARGIN_MS = 12 * 3_600_000;
+
+/** The Worker turned the request down, saying when to ask again (Retry-After, seconds). */
+class Later extends Error {
+  readonly ms: number;
+  constructor(seconds: string | null) {
+    super('Relay login refused');
+    const s = Number(seconds);
+    this.ms = s > 0 ? Math.min(s * 1000, RETRY_MAX_MS) : RETRY_MS;
+  }
+}
 
 const iceUrl = (u: unknown) => typeof u === 'string' && /^(stun|turns?):/.test(u);
 
@@ -57,6 +69,11 @@ export class Relay {
     this.get = get;
   }
 
+  /** Whether there's a Worker to ask at all. */
+  get on(): boolean {
+    return !!this.url;
+  }
+
   /** Whether a login should be fetched before the next peer is made: none held or it's running low, none on the way, and the last try not just failed. */
   due(): boolean {
     return !!this.url && !this.fetching && Date.now() >= Math.max(this.retryAt, this.refreshAt);
@@ -78,7 +95,10 @@ export class Relay {
       const giveUp = setTimeout(() => abort.abort(), GIVE_UP_MS);
       this.waitUntil = Date.now() + WAIT_MS;
       this.fetching = this.get(this.url, { cache: 'no-store', signal: abort.signal })
-        .then((r) => (r.ok ? r.json() : null))
+        .then((r) => {
+          if (!r.ok) throw new Later(r.headers.get('Retry-After'));
+          return r.json();
+        })
         .then((raw) => {
           const got = parseRelay(raw);
           if (!got) throw new Error('No relay login');
@@ -87,7 +107,7 @@ export class Relay {
           this.until = now + got.ttl * 1000;
           this.refreshAt = this.until - Math.min(MARGIN_MS, (got.ttl * 1000) / 2);
         })
-        .catch(() => void (this.retryAt = Date.now() + RETRY_MS))
+        .catch((err) => void (this.retryAt = Date.now() + (err instanceof Later ? err.ms : RETRY_MS)))
         .finally(() => {
           clearTimeout(giveUp);
           this.fetching = null;
