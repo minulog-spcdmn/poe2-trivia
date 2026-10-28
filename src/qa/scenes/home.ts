@@ -203,7 +203,7 @@ export function homeScenes(): Scene[] {
       states: [
         { label: 'A newcomer, Today’s unique answered: Identify more, gold', values: {} },
         { label: 'A newcomer, not answered yet', values: { answered: false } },
-        { label: 'A newcomer, New game’s row open: Start holds the gold', values: { row: 'create' } },
+        { label: 'A newcomer, New game’s row open: Start holds the gold, a way into a run alone beside it (under it on a phone)', values: { row: 'create' } },
         { label: 'A newcomer, Join a room’s row open: Join holds the gold', values: { row: 'join' } },
         { label: 'A newcomer, joining a room: no gold, Identify more waits', values: { row: 'connecting' } },
         { label: 'Back again, Today’s unique answered: Practice more, as before', values: { newcomer: false } },

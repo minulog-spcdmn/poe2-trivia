@@ -354,13 +354,31 @@
     session.host(n);
   }
 
-  /** A run alone straight away, no room, portal or lobby (a newcomer's Identify more): under the saved name, or without one as Exile, which is never saved. */
+  /**
+   * A run alone straight away, no room, portal or lobby (a newcomer's
+   * Identify more, or the link in New game's open row): under the saved
+   * name, or one typed in that row (kept, as Start keeps it; refused if it
+   * can't be played under), or with neither as Exile, which is never saved.
+   */
   function delveAlone() {
     if (connecting) return;
-    // TODO(#310): count the newcomer's Identify more here, with the call PR #310 adds for it.
+    const typed = open === 'create' && !!nameInput.trim();
+    const n = knownName() ?? (typed ? keepName(checkName(nameInput, nameField)) : NAMELESS);
+    if (!n) return;
     renaming = false;
-    session.startDelve(knownName() ?? NAMELESS);
+    session.startDelve(n);
   }
+  /** Today's unique's way on for a newcomer. */
+  function identifyMore() {
+    // TODO(#310): count the newcomer's Identify more here, with the call PR #310 adds for it.
+    delveAlone();
+  }
+  /**
+   * The words of New game's open row's way into a run alone, past the name
+   * field and the portal (a first visit's: the row asks the name only then).
+   * TODO: a placeholder of the expected length until the owner's wording panel settles them.
+   */
+  const ROW_DELVE = 'placeholder 14';
 
   function join(e?: Event) {
     e?.preventDefault();
@@ -775,6 +793,9 @@
           <div class="under">
             {#if busyEntry === 'create'}
               <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
+            {:else if open === 'create'}
+              <!-- The name row's way into a run alone, under it in its line's place. -->
+              <p class="about" in:fly={SWAP_IN} out:fade={SWAP_OUT}><button class="link inline" type="button" onclick={delveAlone}>{ROW_DELVE}</button></p>
             {:else}
               <p class="about" in:fly={SWAP_IN} out:fade={SWAP_OUT}>{about.create}</p>
             {/if}
@@ -842,9 +863,11 @@
               {#if isBusy}
                 <div class="slot" in:fly={SWAP_IN} out:fade={SWAP_OUT}><Connecting /></div>
               {:else if isOpen && e === 'create'}
+                <!-- With a way into a run alone beside Start (a button of its own type, so Enter still means Start). -->
                 <form class="slot row" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
-                  <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" />
+                  <input class="field name short" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" />
                   <button class="btn primary" type="submit">Start</button>
+                  <button class="link" type="button" onclick={delveAlone}>{ROW_DELVE}</button>
                 </form>
               {:else if isOpen && e === 'join'}
                 <form class="slot row" onsubmit={join} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
@@ -869,7 +892,7 @@
       <InviteRoom code={invite} info={inviteInfo} name={inviteName} />
     {:else}
       <!-- A newcomer's way on from it holds the gold only while nothing else on the page does: on a phone New game has it, on a wide window an open row's Start or Join, or a join on its way. -->
-      <DailyUnique disabled={connecting} {newcomer} onIdentify={delveAlone} lead={!compact.current && !open && !connecting} />
+      <DailyUnique disabled={connecting} {newcomer} onIdentify={identifyMore} lead={!compact.current && !open && !connecting} />
     {/if}
   </div>
 
@@ -1157,6 +1180,15 @@
   }
   .link:hover {
     color: var(--gold-hi);
+  }
+  /* The name row's way on, in a phone's line under it: the line's own size,
+     its tap target 4 px up into the 8 px gap over it (the gold Start's). */
+  .link.inline {
+    min-height: 0;
+    margin: -4px 0 -8px;
+    padding: 4px 0 8px;
+    font-size: inherit;
+    line-height: inherit;
   }
 
   /* ---- the menu ---- */
