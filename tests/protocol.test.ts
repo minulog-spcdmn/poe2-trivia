@@ -183,7 +183,7 @@ test('an answer turned down names its question, so the guest can answer it again
 });
 
 test('the protocol version moves only on purpose (its note in protocol.ts says what each changed)', () => {
-  assert.equal(PROTOCOL_VERSION, 33);
+  assert.equal(PROTOCOL_VERSION, 34);
 });
 
 test("an option's picture comes with its size in art pixels", () => {
@@ -217,6 +217,13 @@ test('presence: a guest says only how it is, and the host lists only those not s
   assert.equal(parseHostMsg({ t: 'standing', s: { a1: 'here' } }), null);
   assert.equal(parseHostMsg({ t: 'standing', s: [] }), null);
   assert.equal(parseHostMsg({ t: 'standing', s: Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`p${i}`, 'away'])) }), null);
+});
+
+test('the owner closes a room: a bare close up, and closed down saying whether the owner did it', () => {
+  assert.deepEqual(parseClientMsg({ t: 'close', room: 'ABCD' }), { t: 'close' });
+  assert.deepEqual(parseHostMsg({ t: 'closed' }), { t: 'closed' });
+  assert.deepEqual(parseHostMsg({ t: 'closed', owner: true }), { t: 'closed', owner: true });
+  assert.deepEqual(parseHostMsg({ t: 'closed', owner: 'yes', why: 'x' }), { t: 'closed' });
 });
 
 test("a host's state with a clock that isn't a time is dropped", () => {

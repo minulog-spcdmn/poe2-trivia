@@ -360,6 +360,30 @@ test("the owner's place in the game goes only to whoever joins under the held na
   assert.deepEqual(engine.apply(s, { type: 'owner', playerId: 'p0' }, 'p0').owner, { id: 'p0' });
 });
 
+test('the owner comes in past a lock and a full room, and nobody else does by claiming it', () => {
+  let { engine, s } = lobby(['Ash', 'Bram']);
+  s = engine.apply(s, { type: 'settings', settings: { locked: true } }, 'p0');
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'x', name: 'Cass', owner: true }, 'x'), /locked/);
+  s = engine.apply(s, { type: 'join', playerId: 'z', name: 'Zoe Arcana', owner: true }, 'z');
+  assert.ok(s.players.some((p) => p.id === 'z'));
+  // A game under way with every spectator's place taken.
+  let t = lobby(['Ash', 'Bram']).s;
+  t = engine.apply(t, { type: 'start' }, 'p0');
+  for (let i = 0; i < MAX_SPECTATORS; i++) t = engine.apply(t, { type: 'join', playerId: `w${i}`, name: ['Ada', 'Bex', 'Cy', 'Dov', 'Eli', 'Fen', 'Gus', 'Hal'][i] }, `w${i}`);
+  assert.throws(() => engine.apply(t, { type: 'join', playerId: 'x', name: 'Cass' }, 'x'), /no room/);
+  t = engine.apply(t, { type: 'join', playerId: 'z', name: 'Zoe Arcana', owner: true }, 'z');
+  assert.ok(t.spectators!.some((o) => o.id === 'z'));
+  // A full lobby with every place to watch from taken: the owner asking to watch watches (and stays watching),
+  // taking nobody's place, so a player can still step aside for someone waiting.
+  const names = ['Ada', 'Bex', 'Cy', 'Dov', 'Eli', 'Fen', 'Gus', 'Hal', 'Ivo', 'Jem', 'Kit', 'Lux'];
+  let u = lobby(names).s;
+  for (let i = 0; i < MAX_SPECTATORS; i++) u = engine.apply(u, { type: 'join', playerId: `w${i}`, name: ['Mo', 'Ned', 'Oz', 'Pip', 'Quin', 'Rex', 'Sol', 'Tam'][i] }, `w${i}`);
+  u = engine.apply(u, { type: 'join', playerId: 'z', name: 'Zoe Arcana', owner: true, watch: true }, 'z');
+  assert.ok(u.spectators!.some((o) => o.id === 'z' && o.stay));
+  u = engine.apply(u, { type: 'watch', watch: true }, 'p3');
+  assert.ok(u.spectators!.some((o) => o.id === 'p3'));
+});
+
 test('a class sigil comes with a join, stays with a spectator who takes a seat, and changes as they come back', () => {
   let { engine, s } = lobby(['Ash']);
   s = engine.apply(s, { type: 'join', playerId: 'w', name: 'Wren', sigil: 'witch' }, 'w');

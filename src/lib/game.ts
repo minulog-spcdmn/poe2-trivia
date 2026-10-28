@@ -1529,19 +1529,21 @@ export class Engine {
         const name = cleanName(action.name);
         // Someone the host already knows may come back through the lock (a lobby
         // drops people who disconnect, so a refresh would otherwise shut them out).
-        if (s.settings.locked && !action.returning) throw new ActionError('The host has locked this room.');
+        // The owner too (signed for, action.owner): a lock or a full room keeps nobody out who could close it.
+        const owner = !!action.owner && isHeldName(name);
+        if (s.settings.locked && !action.returning && !owner) throw new ActionError('The host has locked this room.');
         const problem = nameProblem(name, namesIn(s));
         if (problem) throw new ActionError(problem);
         // (A join turned down below leaves the state as it was, this with it.)
         own(name);
         // Someone who'd rather watch does, while there's room (in the lobby, they take a seat otherwise).
-        if (action.watch && s.spectators.length < MAX_SPECTATORS) {
+        if (action.watch && (s.spectators.length < MAX_SPECTATORS || owner)) {
           s.spectators.push({ id: action.playerId, name, stay: true, ...looks });
           break;
         }
         if (s.phase !== 'lobby') {
           // Too late for this game: watch it and take a seat in the next one.
-          if (s.spectators.length >= MAX_SPECTATORS) throw new ActionError('That game has already started and has no room for more spectators.');
+          if (s.spectators.length >= MAX_SPECTATORS && !owner) throw new ActionError('That game has already started and has no room for more spectators.');
           s.spectators.push({ id: action.playerId, name, ...looks });
           break;
         }
@@ -1550,7 +1552,7 @@ export class Engine {
           // at the latest), as a game under way lets them watch for the next.
           // Not on one screen (hot-seat, from null): nobody there watches, and
           // the one being added is turned down instead.
-          if (from !== null && s.spectators.length < MAX_SPECTATORS) {
+          if (from !== null && (s.spectators.length < MAX_SPECTATORS || owner)) {
             s.spectators.push({ id: action.playerId, name, ...looks });
             break;
           }
@@ -1982,7 +1984,8 @@ export class Engine {
         // Their seat goes to whoever was waiting for one, which makes room to watch.
         fillSeats(s);
         placeLocals(s);
-        if (s.spectators.length > MAX_SPECTATORS) throw new ActionError('There is no room for more spectators.');
+        // (The owner, let in past the cap, takes nobody's place.)
+        if (s.spectators.filter((o) => o.id !== s.owner?.id).length > MAX_SPECTATORS) throw new ActionError('There is no room for more spectators.');
         break;
       }
       case 'sigil': {

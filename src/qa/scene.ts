@@ -43,8 +43,8 @@ export type Step =
   | { fill: string; text: string }
   /** Waits (ms). */
   | { wait: number }
-  /** The room turns this device out, as the host's word for it would (session.labFail). */
-  | { fail: 'kicked' | 'closed' | 'replaced' }
+  /** The room turns this device out, as the host's word for it would (session.labFail); `mine`, the owner's close went through. */
+  | { fail: 'kicked' | 'closed' | 'replaced' | 'shut' | 'mine' }
   /** Joining the room gives up, as each way a join can fail says so (session.labJoinFail). */
   | { joinFail: 'missing' | 'blocked' | 'server' }
   /** The room turns this device's join down with this message, as the host's error for it would (session.labRefuse), once the join is under way. */

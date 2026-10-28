@@ -148,6 +148,8 @@ const ROOM_BUSY = 'The room is busy right now. Trying again…';
 const BUSY_RETRY_MS = 5000;
 /** An open connection must introduce itself within this time. */
 const HELLO_TIMEOUT_MS = 6000;
+/** How long the owner's page waits for the host to say it closed the room (closeAsOwner) before saying it may still be open. */
+const CLOSE_ANSWER_MS = 8000;
 /**
  * A connection gets this long to open in the first place. Through a relay
  * (mobile data, strict routers) that can take several seconds, so it isn't
@@ -234,6 +236,7 @@ const TURNED_OUT = {
   kicked: ['You were removed from the game.', 'Removed'],
   closed: ['The host closed the room.', 'Room closed'],
   replaced: ['You joined this game from another tab or window, so it continues there.', 'Moved to another tab'],
+  shut: ['The site’s owner closed the room.', 'Room closed'],
 } as const satisfies Record<string, readonly [string, string]>;
 /**
  * A join that timed out, by what it got to: on the server, which said the room
@@ -298,6 +301,8 @@ interface Guest {
   lines?: number[];
   /** Its hello, under the held name, waits on the owner key's signature being checked. */
   checking?: boolean;
+  /** This link's hello carried the owner key's signature, checked (handleHello): only such a link may close the room. */
+  signed?: boolean;
   /** The challenge this link was sent as it opened (hi), for a hello under the held name to be signed over. */
   challenge: string;
   /** When the connection came in. */
@@ -1047,6 +1052,9 @@ class Session {
             guest.pingTimes.push(Date.now() - sent);
             if (guest.pingTimes.length > PING_SAMPLES) guest.pingTimes.shift();
           }
+        } else if (msg.t === 'close') {
+          // Only from the owner's seat, on a link that signed for it itself: a seat taken back with its token alone may not.
+          if (guest.signed && guest.playerId && guest.playerId === this.state.owner?.id) this.closeForOwner();
         } else if (msg.t === 'action') {
           if (!guest.playerId) return;
           if (msg.action.type === 'answer' && this.tooFast(guest, msg.action.askedAt)) {
@@ -1153,14 +1161,16 @@ class Session {
   /** `seal`: it can open sealed pictures (seal.ts). `owner`: under the held name, the owner key's signature over this link's challenge (hi), checked here. */
   private handleHello(conn: DataConnection, guest: Guest, secret: string, name: string, v: number, watch: boolean, seal: boolean, owner?: string) {
     const known = this.secretToPlayer.get(secret);
-    // A kicked player stays out, under their old token or (as a newcomer) their old name.
+    const held = isHeldName(cleanName(name));
+    // A kicked player stays out, under their old token or (as a newcomer) their old name; not the owner, whose
+    // signature is checked below (without it, the held name is turned down anyway).
     // Everything past the kick is paid for out of the join budgets, turned-down attempts included.
-    const refusal = helloRefusal(v, seal, this.priv.bannedSecrets.includes(secret), () => this.joins.admit(secret, !!known), NO_SEAL_GUEST);
+    const refusal = helloRefusal(v, seal, this.priv.bannedSecrets.includes(secret) && !held, () => this.joins.admit(secret, !!known), NO_SEAL_GUEST);
     if (refusal) {
       this.dismiss(conn, refusal);
       return;
     }
-    if (isHeldName(cleanName(name))) {
+    if (held) {
       // The held name only with the owner key's signature over this link's challenge (ownerKey.ts), checked first.
       guest.checking = true;
       void checkJoin(PEER_PREFIX + this.code, guest.challenge, owner).then((ok) => {
@@ -1187,7 +1197,7 @@ class Session {
     const playerId = known ?? newPlayerId();
     let next: GameState;
     try {
-      if (!known && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))
+      if (!known && !owner && this.priv.bannedNames.includes(nameSkeleton(cleanName(name))))
         throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
       next = engine.apply(
         this.state!,
@@ -1209,6 +1219,7 @@ class Session {
         else this.drop(c);
       }
     guest.playerId = playerId;
+    guest.signed = owner;
     this.send(conn, { t: 'welcome', playerId });
     // Even when nobody is marked: a guest coming back may still hold marks from before it dropped.
     this.send(conn, { t: 'standing', s: this.standing });
@@ -2264,8 +2275,11 @@ class Session {
             this.fail(versionRefusal(msg.message), "Couldn’t join", { failure: this.joinFailure(isVersionRefusal(msg) ? 'join-version-mismatch' : 'join-refused') });
           } else this.flash(msg.message, 'error');
           break;
-        case 'kicked':
         case 'closed':
+          if (msg.owner && this.ownerHere) this.closedMine();
+          else this.turnedOut(msg.owner ? 'shut' : 'closed');
+          break;
+        case 'kicked':
         case 'replaced':
           this.turnedOut(msg.t);
           break;
@@ -2314,6 +2328,8 @@ class Session {
   }
 
   private hostLost(conn: DataConnection) {
+    // The owner asked to close the room and the link went: it closed, its word lost on the way.
+    if (this.hostConn === conn && this.closeAsked) return this.closedMine();
     if (this.hostConn === conn && this.mode === 'client' && this.status === 'ready') {
       this.status = 'lost';
       this.retries = 0;
@@ -2489,21 +2505,79 @@ class Session {
 
   leave() {
     this.walkAway();
-    if (this.mode === 'host') {
-      // Tell everyone right away instead of leaving them to reconnect to nothing.
-      for (const [conn, g] of this.guests) if (g.playerId) this.send(conn, { t: 'closed' });
-      const conns = [...this.guests.keys()];
-      const peer = this.peer;
-      this.guests = new Map();
-      this.peer = null;
-      this.reset();
-      // Give the goodbye a moment to go out before the connections drop.
-      setTimeout(() => {
-        for (const c of conns) c.close();
-        peer?.destroy();
-      }, 400);
+    if (this.mode === 'host') this.closeRoom();
+    else this.reset();
+  }
+
+  /** Guest in the owner's seat (GameState owner, which only the host's check of its signature gives): it may close the room. */
+  get ownerHere() {
+    return this.mode === 'client' && !!this.myPlayerId && this.state?.owner?.id === this.myPlayerId;
+  }
+
+  /** The owner asked the host to close the room (closeAsOwner): the link dropping now means it did (hostLost). */
+  private closeAsked = false;
+
+  /**
+   * The owner, as a guest: asks the host to close the room for everyone; this
+   * page leaves it once the host says it has (closed), or its link goes. Not
+   * on a link the host hasn't welcomed (reconnecting): it would be dropped.
+   */
+  closeAsOwner() {
+    const link = this.hostConn;
+    if (!this.ownerHere || this.status !== 'ready' || !link?.open || this.welcomedOn !== link) {
+      this.flash('The host can’t be reached right now, so the room is still open. Try again once you’re back in.', 'error', { title: 'Room not closed' });
       return;
     }
+    link.send({ t: 'close' });
+    this.closeAsked = true;
+    const epoch = this.peerEpoch;
+    setTimeout(() => {
+      if (this.peerEpoch !== epoch || !this.closeAsked) return;
+      this.closeAsked = false;
+      this.flash('The host didn’t answer, so the room may still be open.', 'warn', { title: 'Room not closed' });
+    }, CLOSE_ANSWER_MS);
+  }
+
+  /** The owner's page: the room it asked to close is closed. Nobody walked away from anything. */
+  private closedMine() {
+    forgiveLeaving({ room: this.code });
+    this.reset();
+    this.flash('It is closed for everyone who was in it.', 'info', { title: 'Room closed' });
+  }
+
+  /**
+   * Host: the owner closed the room (closeAsOwner): everyone is told so, and
+   * this page leaves it, not walked away from. Out of the link's handler,
+   * whose catch would only answer the owner: a room left half closed by a
+   * throw goes the way of a crash instead (crashed), which leaves it whatever it takes.
+   */
+  private closeForOwner() {
+    setTimeout(() => {
+      if (this.mode !== 'host') return;
+      try {
+        forgiveLeaving({ room: this.code });
+        this.closeRoom(true);
+        this.flash(TURNED_OUT.shut[0], 'error', { title: TURNED_OUT.shut[1], sticky: true });
+      } catch (err) {
+        console.error(err);
+        this.crashed(true);
+      }
+    }, 0);
+  }
+
+  /** Host: closes the room; `owner`, the owner closed it (closeForOwner). */
+  private closeRoom(owner = false) {
+    // Tell everyone right away instead of leaving them to reconnect to nothing.
+    for (const [conn, g] of this.guests) if (g.playerId) this.send(conn, owner ? { t: 'closed', owner: true } : { t: 'closed' });
+    const conns = [...this.guests.keys()];
+    const peer = this.peer;
+    this.guests = new Map();
+    this.peer = null;
+    // Give the goodbye a moment to go out before the connections drop; set first, so a throw in reset can't skip it.
+    setTimeout(() => {
+      for (const c of conns) c.close();
+      peer?.destroy();
+    }, 400);
     this.reset();
   }
 
@@ -2540,9 +2614,10 @@ class Session {
   }
 
   /** Lab only: an action from a given player (null: the host's own timers), as the room would take it. An error's message, or null. */
-  /** The QA desk (src/qa): this device is turned out of its room as the host's word for it would. */
-  labFail(why: keyof typeof TURNED_OUT) {
-    this.turnedOut(why);
+  /** The QA desk (src/qa): this device is turned out of its room as the host's word for it would; `mine`, the owner's page whose close went through. */
+  labFail(why: keyof typeof TURNED_OUT | 'mine') {
+    if (why === 'mine') this.closedMine();
+    else this.turnedOut(why);
   }
 
   /** The QA desk (src/qa): joining this room gives up, as each way a join can fail says so. */
@@ -3378,6 +3453,7 @@ class Session {
 
   private reset() {
     this.peerEpoch++;
+    this.closeAsked = false;
     this.recordLeaving();
     // A join never let in leaves the saved name as it was (turned down, given up, left).
     this.nameToKeep.dropped();

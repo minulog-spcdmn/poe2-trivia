@@ -1,5 +1,6 @@
-// Over the game: being turned out of a room (removed, the room closed, the
-// game moved to another tab), the dialog before leaving one (the header's
+// Over the game: being turned out of a room (removed, the room closed by its
+// host or by the owner, the game moved to another tab), the dialog before
+// leaving one (the owner's with Close room too; the header's
 // leave, or the browser's back, which closes what's open first, the codex's
 // item card too), news arriving mid-question (where the stack stands on a
 // phone, either way up), and coming back from a crash (Root.svelte: a guest
@@ -13,9 +14,11 @@ import type { Settings } from '../../lib/game.ts';
 import type { Built, Scene, Seat, Step } from '../scene.ts';
 
 const THREE = ['Kalguur', 'Doryani', 'Una of the Vaal'];
-const inGame = (steps: Step[], answered = false): Built => {
+/** `owner`: whom the room has as the owner (GameState owner), as the host's check of their signature would name them. */
+const inGame = (steps: Step[], answered = false, owner?: string): Built => {
   const t = new Table(THREE).start().pick();
   if (answered) t.answer(t.turn, true);
+  if (owner) t.s.owner = { id: pid(owner) };
   // (Turned out, it lands on the start page: its room list finds nothing.)
   return { state: t.s, act: t.room, at: t.clock.now + 3000, steps, rooms: [] };
 };
@@ -42,6 +45,9 @@ export function overlayScenes(): Scene[] {
   return [
     overlay('removed', 'Removed from the game by the host', [doryani], () => inGame([{ fail: 'kicked' }])),
     overlay('closed', 'The host closed the room', [doryani], () => inGame([{ fail: 'closed' }])),
+    // The owner closed it (session.svelte.ts closeAsOwner): every guest and the host are told so alike.
+    overlay('closed-owner', 'The owner closed the room', [doryani, kalguur], () => inGame([{ fail: 'shut' }])),
+    overlay('closed-mine', 'The owner’s own page: the room it closed', [doryani], () => inGame([{ fail: 'mine' }], false, 'Doryani')),
     overlay('moved', 'The game moved to another tab', [doryani], () => inGame([{ fail: 'replaced' }])),
     // A burst of news during a question: wide screens (and a phone on its side) stack it bottom right, upright phones at the top, as many as they keep.
     // Last the longest a guest gets mid-question (session.svelte.ts TOO_QUICK), two lines: the one a phone on its side shows.
@@ -54,6 +60,8 @@ export function overlayScenes(): Scene[] {
       ]),
     ),
     overlay('leave', 'Leaving a game: the dialog', [kalguur, doryani], () => inGame([{ click: 'button[aria-label="Leave game"]' }])),
+    // The owner in someone else's room: the dialog offers to close it for everyone too.
+    overlay('leave-owner', 'Leaving as the owner: Close room too', [doryani], () => inGame([{ click: 'button[aria-label="Leave game"]' }], false, 'Doryani')),
     // The browser's back (lib/backGuard.ts): with nothing open it asks, as the header's leave does; with the item's window open, it closes that alone.
     overlay('back', 'Back in a game: asked before leaving', [kalguur, doryani], () => inGame([{ back: true }])),
     overlay('back-custom', 'Back in the lobby with the custom difficulty open: it closes, the room stays', [kalguur], () => editingCustom([{ back: true }])),

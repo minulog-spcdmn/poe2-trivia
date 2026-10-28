@@ -535,6 +535,12 @@
     session.leave();
   }
 
+  /** The owner, in someone else's room (session.ownerHere): closes it for everyone; the page leaves once the host says it has. */
+  function closeForAll() {
+    confirmLeave = false;
+    session.closeAsOwner();
+  }
+
   /** A host's: whoever else is in the room (connected players, then spectators). */
   const company = $derived(session.mode === 'host' && gs ? [...gs.players.filter((p) => p.id !== session.myPlayerId && p.connected), ...(gs.spectators ?? [])] : null);
   // A host with nobody else in the room closes it for no one, so there's nothing to confirm in the lobby.
@@ -878,11 +884,19 @@
         {:else}
           You can rejoin with the same code while the game is running.
         {/if}
+        {#if session.ownerHere}
+          As the site’s owner, you can also close the room for everyone in it.
+        {/if}
       </p>
       <div class="modal-actions">
         <button class="btn ghost" onclick={() => (confirmLeave = false)}>Stay</button>
         <button class="btn primary" onclick={leave}>Leave</button>
       </div>
+      {#if session.ownerHere}
+        <div class="modal-actions">
+          <button class="btn danger small" onclick={closeForAll}>Close room for everyone</button>
+        </div>
+      {/if}
     </div>
   </div>
 {/if}
