@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { Engine, TWINS, allArt, answerDrawn, isFake, type Question } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, GRACE_DAYS, GRACE_SINCE, TOO_THIN, dailyEngine, graceOn, aTopic, answerDaily, answerLog, askOne, daysOf, dailyGame, answeredOn, dailyQuestion, hoursLeft, minutesLeft, nextIn, parseDaily, parseLog, replay, streakOn, untilNextMinute, upTo, utcDay, type DailyRecord } from '../src/lib/daily.ts';
+import { DAILY_LAUNCH, FIRST_DAYS, GRACE_DAYS, standingOn, GRACE_SINCE, TOO_THIN, dailyEngine, graceOn, aTopic, answerDaily, answerLog, askOne, daysOf, dailyGame, answeredOn, dailyQuestion, hoursLeft, minutesLeft, nextIn, parseDaily, parseLog, replay, streakOn, untilNextMinute, upTo, utcDay, type DailyRecord } from '../src/lib/daily.ts';
 import { fakes, items, seeded } from './helpers.ts';
+import { DAYS } from './dailyDays.ts';
 
 const HOUR = 3_600_000;
 const at = (iso: string) => Date.parse(iso);
@@ -57,15 +58,44 @@ const dealt = (day: number) => {
 };
 
 test("a day's question never changes, twins and all", () => {
-  // The year from launch, each day as it was first dealt: a change to how
-  // questions are dealt (game.ts makeQuestion) must leave the daily's be,
-  // as twins (game.ts TWINS) do.
+  // The year from launch, each day as it was first dealt (tests/dailyDays.ts):
+  // a change to how questions are dealt (game.ts makeQuestion) must leave
+  // the daily's be, as twins (game.ts TWINS) do, and so must new items.
   const first = utcDay(DAILY_LAUNCH);
-  const year = createHash('sha256')
-    .update(Array.from({ length: 366 }, (_, i) => dealt(first + i)).join())
-    .digest('hex')
-    .slice(0, 16);
-  assert.equal(year, '1b1d51fb22411642');
+  const day = (d: number) => new Date(d * 86_400_000).toISOString().slice(0, 10);
+  assert.equal(DAYS.length, 366);
+  const changed = DAYS.flatMap((pinned, i) => {
+    const now = `${day(first + i)} ${dealt(first + i)}`;
+    return now === pinned ? [] : [`${pinned} is now ${now}`];
+  });
+  assert.deepEqual(changed, []);
+});
+
+test('an item the daily began without is stamped with its first day, or never dealt before then', () => {
+  // The items standing from the start, those without a first day (daily.ts
+  // FIRST_DAYS). An item that wasn't among them (a refresh's new, or
+  // renamed, unique) would enter every day ever dealt: stamp it in
+  // src/data/firstDays.json (docs/development.md, "Refreshing item data").
+  const unstamped = items.filter((it) => !FIRST_DAYS.has(it.name)).map((it) => it.id).sort();
+  assert.deepEqual([unstamped.length, createHash('sha256').update(unstamped.join()).digest('hex').slice(0, 16)], [501, '9ffb52e641916f06']);
+});
+
+test('a first day names an item, after the daily began, and keeps its items out of the days before it', () => {
+  const names = new Set(items.map((it) => it.name));
+  for (const [name, day] of FIRST_DAYS) {
+    assert.ok(names.has(name), `${name}: an item's name as items.json spells it`);
+    assert.ok(Number.isInteger(day) && day > utcDay(DAILY_LAUNCH), `${name}: a day (YYYY-MM-DD) after the daily began`);
+  }
+  // A pretend refresh: the items without one of them, then with it again,
+  // stamped. Every day before its first day is dealt as before; from then on
+  // it may be asked.
+  const first = utcDay(DAILY_LAUNCH) + 40;
+  const added = items.find((it) => it.id === dailyQuestion(items, fakes, first).itemId)!;
+  const before = items.filter((it) => it !== added);
+  const stamped = new Map([...FIRST_DAYS, [added.name, first]]);
+  assert.equal(standingOn(items, first - 1, stamped).length, before.length);
+  for (let d = first - 30; d < first; d++) assert.deepEqual(dailyQuestion(items, fakes, d, stamped), dailyQuestion(before, fakes, d), `day ${d}`);
+  assert.equal(dailyQuestion(items, fakes, first, stamped).itemId, added.id);
 });
 
 test('practice asks as the daily does: twins may meet', () => {

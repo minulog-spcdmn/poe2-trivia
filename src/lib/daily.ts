@@ -10,6 +10,7 @@ import { seededRandom } from './patches.ts';
 import { openStored } from './keepAside.ts';
 import { readStored, storeKey, writeStored } from './storage.ts';
 import dailyArt from '../data/dailyArt.json' with { type: 'json' };
+import firstDays from '../data/firstDays.json' with { type: 'json' };
 
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
@@ -120,10 +121,28 @@ export function askOne(engine: Engine, game = dailyGame(), rng: () => number = M
 export const dailyEngine = (items: Item[], fakes: Record<string, string[]>, opts: { rng?: () => number; now?: () => number } = {}) =>
   new Engine(items, { ...opts, fakes, twins: false });
 
-/** The day's question, the same everywhere for the same items, made-up names and day. */
-export function dailyQuestion(items: Item[], fakes: Record<string, string[]>, day: number): Question {
+/**
+ * The UTC day each item added since the daily began first stood on, by its
+ * name (src/data/firstDays.json, kept by hand: items.json is generated). An
+ * item not named there has stood from the start. A data refresh stamps its
+ * new items (docs/development.md, "Refreshing item data"), so no day dealt
+ * before them changes.
+ */
+export const FIRST_DAYS: ReadonlyMap<string, number> = new Map(
+  Object.entries(firstDays as Record<string, string>).map(([name, date]) => [name, utcDay(Date.parse(`${date}T00:00:00Z`))]),
+);
+
+/** The items standing on `day`: those whose first day (FIRST_DAYS) has come. */
+export const standingOn = (items: Item[], day: number, firstDays = FIRST_DAYS) => items.filter((it) => (firstDays.get(it.name) ?? -Infinity) <= day);
+
+/**
+ * The day's question, the same everywhere for the same items, made-up names
+ * and day. It is dealt from the items standing that day, asked and offered
+ * alike, so items added later never move a day already dealt.
+ */
+export function dailyQuestion(items: Item[], fakes: Record<string, string[]>, day: number, firstDays = FIRST_DAYS): Question {
   const rng = seededRandom(hash(`poe2.quest daily ${day}`));
-  return askOne(dailyEngine(items, fakes, { rng, now: () => day * DAY_MS }), dailyGame(), rng);
+  return askOne(dailyEngine(standingOn(items, day, firstDays), fakes, { rng, now: () => day * DAY_MS }), dailyGame(), rng);
 }
 
 // ---- this browser's answers ----------------------------------------------

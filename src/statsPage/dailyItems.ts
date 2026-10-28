@@ -1,5 +1,7 @@
 // Which item Today's unique asked on a day, worked out as the game does
-// (lib/daily.ts): the same everywhere for the same day. Loaded only when a
+// (lib/daily.ts): the same everywhere for the same day, from the items
+// standing that day, so items added since leave a past day named as it was
+// asked (daily.ts FIRST_DAYS). Loaded only when a
 // view asks, as it brings the game's engine and every item with it; which
 // days it asked at all is known without it (model.ts asked).
 
