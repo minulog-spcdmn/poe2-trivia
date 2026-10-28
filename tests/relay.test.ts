@@ -58,10 +58,11 @@ test('a login is fetched once, then held until it runs low, and given until it r
   assert.equal(r.due(), false);
   await r.load();
   assert.equal(w.calls.length, 1);
-  // Half a day left: still given, but the next peer waits for a fresh one.
+  // Half a day left: still given, and fetched anew, but no peer waits for it.
   t.mock.timers.tick(12 * HOUR);
   assert.deepEqual(r.iceServers(), [login]);
   assert.equal(r.due(), true);
+  assert.equal(r.wanted(), false);
   t.mock.timers.tick(12 * HOUR);
   assert.deepEqual(r.iceServers(), []);
   await r.load();
@@ -131,4 +132,18 @@ test('a slow login is waited for 3 s from when it was asked, by everyone togethe
   } finally {
     mock.timers.reset();
   }
+});
+
+test('a login running low is asked for anew without waiting, once, by whatever reads the servers', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 0 });
+  const w = worker({ iceServers: [login], ttl: 3600 }, { iceServers: [{ ...login, username: 'v' }], ttl: 3600 });
+  const r = new Relay('https://relay.test/', w.get);
+  await r.load();
+  t.mock.timers.tick(HOUR / 2);
+  r.start();
+  r.start();
+  assert.equal(w.calls.length, 2);
+  assert.deepEqual(r.iceServers(), [login]);
+  await new Promise((done) => setImmediate(done));
+  assert.equal(r.iceServers()[0].username, 'v');
 });

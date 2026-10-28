@@ -147,9 +147,13 @@ lasts a day; the relay's key stays in the Worker. To set it up:
 
 1. In Cloudflare's dashboard: Realtime → TURN Server → Create, which gives a
    key ID and an API token.
-2. In `relay/`: `npx wrangler login`, `npx wrangler deploy`, then
-   `npx wrangler secret put TURN_KEY_ID` and
-   `npx wrangler secret put TURN_KEY_API_TOKEN`, pasting each.
+2. In `relay/` (not the project's root: there Wrangler sets the whole game up
+   as a Worker, rewriting `package.json` and `vite.config.ts`, and puts the
+   secrets on a Worker of that name): `npx wrangler login`,
+   `npx wrangler deploy` (the first time it asks for the account's
+   workers.dev subdomain), then `npx wrangler secret put TURN_KEY_ID` and
+   `npx wrangler secret put TURN_KEY_API_TOKEN`, pasting each. The Worker is
+   `poe2-trivia` (`wrangler.toml`), at `poe2-trivia.poe2quest.workers.dev`.
 3. Put the Worker's URL in `src/lib/relayUrl.ts` (`RELAY_URL`); the build lets
    the page reach it.
 

@@ -3296,9 +3296,10 @@ class Session {
   }
 
   /**
-   * PeerJS's Peer, loaded (lib/peer.ts loadPeerJs). Null while it loads: then
-   * `retry` runs once it has (or `failed`, when it can't), unless this
-   * session was reset meanwhile.
+   * PeerJS's Peer, loaded (lib/peer.ts loadPeerJs). Null while it loads, or
+   * while the relay's login is worth waiting for (3 s at most): then `retry`
+   * runs once it has (or `failed`, when it can't), unless this session was
+   * reset meanwhile.
    */
   private peerClass(retry: () => void, failed: () => void): PeerJs['default'] | null {
     const loaded = peerJsNow();

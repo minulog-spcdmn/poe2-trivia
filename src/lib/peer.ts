@@ -40,14 +40,17 @@ const relay = new Relay(QA_LOCAL || env.MODE === 'test' ? '' : RELAY_URL);
  * when a login is held. PeerJS's own default lists its relays, which are gone.
  * PeerJS hands `config` to each RTCPeerConnection a peer makes, which reads
  * its servers then: a room's host or a device waiting to sync for hours gives
- * each connection the login held at the time, not the one it was made with.
+ * each connection the login held at the time, not the one it was made with,
+ * and asks for a fresh one when it runs low, for the connections after.
  */
 export function peerOptions(): PeerOptions {
   if (QA_LOCAL) return { ...SIGNALLING, config: { iceServers: [] } };
+  relay.start();
   return {
     ...SIGNALLING,
     config: {
       get iceServers() {
+        relay.start();
         const servers = relay.iceServers();
         return servers.length ? servers : [STUN];
       },
@@ -66,7 +69,7 @@ let loading: Promise<PeerJs> | null = null;
  * isn't held up by a slow Worker.
  */
 export function loadPeerJsCode(): Promise<PeerJs> {
-  void relay.load();
+  relay.start();
   return (loading ??= import('peerjs').then(
     (m) => (peerJs = m),
     (err) => {

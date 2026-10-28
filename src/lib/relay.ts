@@ -62,18 +62,17 @@ export class Relay {
     return !!this.url && !this.fetching && Date.now() >= Math.max(this.retryAt, this.refreshAt);
   }
 
-  /** Whether the next peer should wait: a login is due, or one is on the way, nothing usable is held, and its wait isn't over. */
+  /**
+   * Whether the next peer should wait for a login: nothing usable is held,
+   * and one is due or on the way with its wait not over. One running low
+   * still serves meanwhile (its peers read the fresh one once it's in).
+   */
   wanted(): boolean {
-    return this.due() || (!!this.fetching && !this.iceServers().length && Date.now() < this.waitUntil);
+    return !this.iceServers().length && (this.due() || (!!this.fetching && Date.now() < this.waitUntil));
   }
 
-  /**
-   * Fetches a login when one is due, and waits for the one on the way. Never
-   * fails, and never waits past WAIT_MS from the fetch's start: a slow answer
-   * leaves the peer to be made without the relay, and is kept for the next
-   * when it comes.
-   */
-  load(): Promise<void> {
+  /** Fetches a login when one is due, without waiting for it. */
+  start(): void {
     if (this.due()) {
       const abort = new AbortController();
       const giveUp = setTimeout(() => abort.abort(), GIVE_UP_MS);
@@ -94,6 +93,16 @@ export class Relay {
           this.fetching = null;
         });
     }
+  }
+
+  /**
+   * Fetches a login when one is due, and waits for the one on the way. Never
+   * fails, and never waits past WAIT_MS from the fetch's start: a slow answer
+   * leaves the peer to be made without the relay, and is kept for the next
+   * when it comes.
+   */
+  load(): Promise<void> {
+    this.start();
     const on = this.fetching;
     const left = this.waitUntil - Date.now();
     if (!on || left <= 0) return Promise.resolve();
