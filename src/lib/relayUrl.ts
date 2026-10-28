@@ -1,2 +1,2 @@
-/** The Worker that hands out relay logins (lib/relay.ts, relay/worker.js). Empty: no relay (until it is deployed). Apart, so vite.config.ts can let the page reach it (its CSP). */
-export const RELAY_URL = '';
+/** The Worker that hands out relay logins (lib/relay.ts, relay/worker.js). Apart, so vite.config.ts can let the page reach it (its CSP). */
+export const RELAY_URL = 'https://poe2-trivia.poe2quest.workers.dev/';

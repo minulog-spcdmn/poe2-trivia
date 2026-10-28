@@ -1,5 +1,6 @@
 # The relay logins' Worker (worker.js); README, "Relay".
-name = "poe2-relay"
+# Named as the Worker its secrets were first put on.
+name = "poe2-trivia"
 main = "worker.js"
 compatibility_date = "2026-10-01"
 workers_dev = true
