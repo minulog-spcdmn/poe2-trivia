@@ -17,8 +17,10 @@
     joining = null,
     count = $bindable(0),
     seats = $bindable(false),
+    owner = false,
   }: {
-    onJoin: (code: string) => void;
+    /** `watch`: join to watch (a room only the owner is let into). */
+    onJoin: (code: string, watch?: boolean) => void;
     disabled?: boolean;
     /** The code of a room tapped here that is being joined: it shows the connection in its place. */
     joining?: string | null;
@@ -26,6 +28,8 @@
     count?: number;
     /** Whether any of them has a seat to take (none: all are rooms to watch). */
     seats?: boolean;
+    /** This device joins as the owner (the held name, with the owner key): it is let into a locked or full room too, to watch it or close it. */
+    owner?: boolean;
   } = $props();
 
   const REFRESH_MS = 20000;
@@ -47,19 +51,21 @@
    * What the list shows for a room: what it offers, or, for a host on a newer
    * version, that this page has to reload first (only for a room that would
    * offer something then). An older host's rooms are left out: only the host
-   * reloading could open them, nothing anyone here can do.
+   * reloading could open them, nothing anyone here can do. The owner also
+   * gets the rooms on this version that offer nothing (`owner`: locked or
+   * full), let in anyway to watch (game.ts join): never counted as open.
    */
-  function door(r: RoomInfo): 'join' | 'watch' | 'ahead' | null {
+  function door(r: RoomInfo): 'join' | 'watch' | 'ahead' | 'owner' | null {
     const v = r.v ?? 0;
-    if (v === PROTOCOL_VERSION) return offer(r);
+    if (v === PROTOCOL_VERSION) return offer(r) ?? (owner ? 'owner' : null);
     return v > PROTOCOL_VERSION && offer({ ...r, v: PROTOCOL_VERSION }) ? 'ahead' : null;
   }
-  const RANK = { join: 0, watch: 1, ahead: 2 };
+  const RANK = { join: 0, watch: 1, ahead: 2, owner: 3 };
 
   /** Every room found, whatever it offers (what the scans merge). */
   let rooms = $state<RoomInfo[]>([]);
   /** The room tapped and what it offered, held so it stays listed while it's joined even if a scan stops finding it. */
-  let tapped = $state<{ room: RoomInfo; door: 'join' | 'watch' } | null>(null);
+  let tapped = $state<{ room: RoomInfo; door: 'join' | 'watch' | 'owner' } | null>(null);
   /**
    * The rooms the list shows: those that can be got into from here, to play
    * or to watch, and those this page's reload would open. Locked ones, ones
@@ -70,12 +76,14 @@
       const d = door(room);
       return d ? [{ room, door: d }] : [];
     });
+    // Kept in the order scanned within each door, which can change without a scan (the owner's key arriving).
+    list.sort((a, b) => RANK[a.door] - RANK[b.door]);
     if (joining && tapped?.room.code === joining && !list.some((s) => s.room.code === joining)) list.unshift(tapped);
     return list;
   });
 
-  /** How many rooms shown can be got into from here (not a newer host's, which wait on a reload). */
-  const enterable = $derived(shown.filter((s) => s.door !== 'ahead').length);
+  /** How many rooms shown can be got into from here (not a newer host's, which wait on a reload, nor one only the owner gets into). */
+  const enterable = $derived(shown.filter((s) => s.door === 'join' || s.door === 'watch').length);
   /** Whether any room shown has a seat to take. */
   const seatFree = $derived(shown.some((s) => s.door === 'join'));
   $effect(() => {
@@ -90,9 +98,9 @@
     location.assign(url);
   }
 
-  function tap(r: RoomInfo, d: 'join' | 'watch') {
+  function tap(r: RoomInfo, d: 'join' | 'watch' | 'owner') {
     tapped = { room: r, door: d };
-    onJoin(r.code);
+    onJoin(r.code, d === 'owner');
   }
 
   let scanning = $state(false);
@@ -232,6 +240,8 @@
                 <button class="btn small" {disabled} onclick={() => tap(r, 'join')}>Join</button>
               {:else if d === 'watch'}
                 <button class="btn small ghost" {disabled} onclick={() => tap(r, 'watch')} title={r.phase === 'lobby' ? 'Every seat is taken: watch, and take one once it is free' : 'Watch this game and play in the next one'}>Watch</button>
+              {:else if d === 'owner'}
+                <button class="btn small ghost" {disabled} onclick={() => tap(r, 'owner')} title={r.phase === 'locked' ? 'Locked: as the site’s owner, you can come in to watch' : 'Full: as the site’s owner, you can come in to watch'}>Watch</button>
               {:else}
                 <!-- Reloaded with the room's code in the address, so the newer version goes straight on into it. -->
                 {@const then = offer({ ...r, v: PROTOCOL_VERSION }) === 'join' ? 'join' : 'watch'}

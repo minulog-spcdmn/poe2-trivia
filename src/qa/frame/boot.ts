@@ -176,6 +176,7 @@ export async function boot(asked: URLSearchParams) {
   session.dispatch = (a) => said(a.type === 'restart' ? (a.play ? 'The next game would start now.' : 'Everyone would go back to the lobby.') : `Would send: ${a.type}`);
   session.watch = (on) => said(on ? 'You would just watch the next game.' : 'You would play in the next game.');
   session.leave = () => said('You would leave the room.');
+  session.closeAsOwner = () => said('The room would close for everyone in it.');
 
   if (built.circle !== undefined) (await import('../../components/gameCircles.svelte.ts')).putEndCircle(built.circle);
   sound.installUiSounds();
