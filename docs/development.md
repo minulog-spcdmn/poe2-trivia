@@ -195,6 +195,23 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   the PC (`docs/iphone.md`, with what it found: layers composited after an
   animation WebKit can't bound, filters redrawn under a dialog, work that
   belongs in a worker).
+- **Frame hitches from drawing in** (October 2026): about one question in
+  four began with a burst of dropped frames in Chrome at 4K, 240 Hz. An SVG
+  with a CSS animation anywhere in it is redrawn whole at the screen's rate,
+  however little moves: the question's name plate drew its lines in that
+  way, two SVGs as wide as the question, 240 times a second for two seconds
+  with every question. The pen draws it in now, as it does the rune circles,
+  each of a circle's SVGs on its own turn among the frames
+  (`docs/arcane-style.md`, "Keeping it light"). Likewise a gradient drawn
+  at the pointer redraws what it lies on at every move (the cards' glare,
+  `docs/category-cards.md`, rule 8). A hand's first draw still takes a
+  frame of 25 to 35 ms: each face's engraving (`CardEngraving`, strokes as
+  wide as the card) is drawn by Skia's software path renderer, a mask made
+  on the CPU for every path in every tile on `CrGpuMain`
+  (`skgpu::ganesh::Device::drawPath`, the masks' textures in
+  `GrGpu::createTexture`; the category `disabled-by-default-skia.gpu`
+  shows them), some 30 ms for the first card and 10 for each of the
+  others.
 - **The creator** (zoe_arcana, a name only an unlocked device can take; a
   deterrent, not proof) is marked out. Gold motes circle her avatar on a
   tilted orbit, passing behind it on the far side, in a ruby glow with
