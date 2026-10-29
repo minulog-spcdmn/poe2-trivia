@@ -211,8 +211,6 @@ export interface Allowed {
 export const ALLOWED: Allowed[] = [
   // (To go once the seal's glow has a layer of its own: PAINTED has its note.)
   { layer: /^div\.shell$/, scenes: /^settings\//, px: 800_000, why: 'The sync seal’s breathe, a box-shadow while sync is on or a key waits, draws the page round it again every frame: 756k px a frame on the GPU in settings/key. A cost to fix (Settings.svelte), not one to keep.' },
-  // (To go once GameOver's gleam and the seals' light have layers of their own: PAINTED has the gleam's note.)
-  { layer: /^div\.shell$/, scenes: /^over\//, px: 1_000_000, why: 'GameOver’s lights, its gleam (every 5 s) and the seals’ passing light (every 7 to 13 s, by metal), none on a layer of its own, draw the shell round them again for a second or two at a time. On a GPU that’s a few of the frames (over/n-won: 5% in 3 s); in software, where a frame can take seconds, they land on most (in CI, 75% in over/n-won and 83% in over/n-phone-twelve, up to 380k px a frame) and can land on nearly all. A cost to fix (GameOver.svelte, AchievementSeal.svelte), not one to keep.' },
 ];
 
 /**
@@ -268,7 +266,7 @@ export const PAINTED: Painted[] = [
   { file: 'src/components/Lobby.svelte', keyframes: ['mode-off', 'mode-on'], why: 'No time at all (0 s): the WebGL backdrop’s fill for a mode, set as it changes.' },
   // ---- for as long as it shows
   { file: 'src/components/DelveLadder.svelte', keyframes: ['comet', 'reveal', 'draw', 'blend-stroke', 'blend-fill', 'blend-halo', 'blend-glory'], why: 'The ladder draws itself once as it shows (the comet, the reveal, the stars’ lines); a star for two bests drifts from gold to red and back, 7 s each way, for as long as it shows: a star’s lines on the ladder.' },
-  { file: 'src/components/GameOver.svelte', keyframes: ['gleam', 'ignite'], why: 'The headline’s and the winner’s row’s light runs across them for a second and a quarter every 5 s (the winner’s edge kindles once). With no layer of its own it draws the shell round it again as it passes: in over/n-lost, in software, div.shell on two thirds of the frames, 500k px a frame. With the seals’ light, in ALLOWED until they have layers; the one to give a layer next.' },
+  { file: 'src/components/GameOver.svelte', keyframes: ['gleam', 'ignite'], why: 'The headline’s and the winner’s row’s light runs across them for a second and a quarter every 5 s (the winner’s edge kindles once). With no layer of its own it draws the shell round it again as it passes: in over/n-lost, in software, div.shell on two thirds of the frames, 500k px a frame. Not nearly every frame, so it passes; it’s the one to give a layer next.' },
   { file: 'src/components/Phial.svelte', keyframes: ['glint'], why: 'A phial’s glint runs along its edge now and then, for as long as it shows: a stroke 16 px long on a small svg.' },
   { file: 'src/components/QuestionView.svelte', keyframes: ['glow'], why: 'An option picked and waiting for the verdict glows, 1 s a breath, for the moment the verdict takes: the WebGL backdrop’s shadow under it (custom properties it reads), not drawn by Chrome.' },
   { file: 'src/components/Settings.svelte', keyframes: ['breathe'], why: 'The sync seal breathes while sync is on (or a key waits), 1.1 s a breath, for as long as the settings show. Its box-shadow has no layer of its own, so it draws the page round it again every frame: in settings/key, div.shell, 756k px a frame on the GPU at the desktop size. Allowed at rest (ALLOWED) until it gets one.' },

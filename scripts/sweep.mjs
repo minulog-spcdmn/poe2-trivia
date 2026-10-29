@@ -43,7 +43,7 @@ import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
 import { SIZES } from '../src/qa/sizes.ts';
 import { touched } from '../src/qa/change.ts';
-import { FEWEST_FRAMES, MOMENTS, atRest, kpx, overBaseline, readTrace, redraws } from '../src/qa/redraws.ts';
+import { FEWEST_FRAMES, MOMENTS, NEARLY_EVERY_FRAME, atRest, kpx, overBaseline, readTrace, redraws } from '../src/qa/redraws.ts';
 import { changedFiles } from '../qaServer.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -405,11 +405,18 @@ async function quiet({ still, most }) {
  * a transform or an opacity never draws again for anyone playing. (What's
  * timed in script keeps real time: timers, and what reads the time itself.)
  */
-async function watchFrames({ least, frames: fewest, most, still, played }) {
+async function watchFrames({ least, frames: fewest, most, still, played, nearly = 0.9 }) {
   const name = (el) => `${el.tagName.toLowerCase()}${[...el.classList].filter((c) => !c.startsWith('svelte-')).map((c) => `.${c}`).join('')}`;
+  let n = 0;
+  // (Each style or class written, and the frames it was written in.)
   const changed = new Map();
   const seen = new MutationObserver((list) => {
-    for (const m of list) if (m.target instanceof Element) changed.set(`${name(m.target)}’s ${m.attributeName}`, (changed.get(`${name(m.target)}’s ${m.attributeName}`) ?? 0) + 1);
+    for (const m of list) {
+      if (!(m.target instanceof Element)) continue;
+      const key = `${name(m.target)}’s ${m.attributeName}`;
+      if (!changed.has(key)) changed.set(key, new Set());
+      changed.get(key).add(n);
+    }
   });
   seen.observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
   const busy = () => document.getAnimations().some((a) => a.playState === 'running' && Number.isFinite(a.effect?.getComputedTiming().endTime ?? Infinity));
@@ -431,7 +438,6 @@ async function watchFrames({ least, frames: fewest, most, still, played }) {
   const t0 = performance.now();
   let last = t0;
   let ran = 0;
-  let n = 0;
   window.__framesWatched = 0;
   await new Promise((done) => {
     const frame = () => {
@@ -448,14 +454,21 @@ async function watchFrames({ least, frames: fewest, most, still, played }) {
   });
   seen.disconnect();
   const COMPOSITED = new Set(['offset', 'easing', 'composite', 'computedOffset', 'transform', 'opacity', 'translate', 'rotate', 'scale']);
-  const painted = document
-    .getAnimations()
-    .filter((a) => a.playState === 'running' && a.effect?.target)
-    .flatMap((a) => {
-      const props = [...new Set(a.effect.getKeyframes().flatMap((k) => Object.keys(k)))].filter((p) => !COMPOSITED.has(p));
-      return props.length ? [`${(a.animationName ?? a.id) || 'an animation'} on ${name(a.effect.target)} (${props.join(', ')})`.replace(/svelte-\w+-/, '')] : [];
-    });
-  return { frames: n, ms: Math.round(performance.now() - t0), played: Math.round(ran), changing: [...changed].filter(([, c]) => c >= n * 0.5).map(([k]) => k), painted: [...new Set(painted)] };
+  const painted = [];
+  const endless = [];
+  for (const a of document.getAnimations()) {
+    if (a.playState !== 'running' || !a.effect?.target) continue;
+    const keys = a.effect.getKeyframes();
+    const props = [...new Set(keys.flatMap((k) => Object.keys(k)))].filter((p) => !COMPOSITED.has(p));
+    if (!props.length) continue;
+    const what = `${(a.animationName ?? a.id) || 'an animation'} on ${name(a.effect.target)} (${props.join(', ')})`.replace(/svelte-\w+-/, '');
+    painted.push(what);
+    // (Endless and never still: no two keyframes in a row alike, as those of a light that waits between passes are.)
+    const waits = keys.some((k, i) => i > 0 && k.computedOffset > keys[i - 1].computedOffset && props.every((p) => k[p] !== undefined && k[p] === keys[i - 1][p]));
+    if (a.effect.getComputedTiming().iterations === Infinity && !waits) endless.push(what);
+  }
+  const writtenOn = (share) => [...changed].filter(([, f]) => f.size >= n * share).map(([k]) => k);
+  return { frames: n, ms: Math.round(performance.now() - t0), played: Math.round(ran), changing: writtenOn(0.5), everyFrame: writtenOn(nearly), painted: [...new Set(painted)], endless: [...new Set(endless)] };
 }
 
 /** `during` run with the browser tracing: what it returned, and the trace (for `redraws(readTrace(...))`). */
@@ -562,14 +575,19 @@ async function scenesAtRest(base, scenes, browsers) {
             // (In software, 8 s, for a light that sweeps every few seconds to show as the part of the time
             // it is, and at least 12 frames, however long they take: a frame can take seconds. On a GPU,
             // 3 s: 700 frames, a trace of 200 MB.)
-            const t = await traced(browser, page, () => page.evaluate(watchFrames, { least: software ? 8000 : 3000, frames: 12, most: 60000, still: false }));
+            const t = await traced(browser, page, () => page.evaluate(watchFrames, { least: software ? 8000 : 3000, frames: 12, most: 60000, still: false, nearly: NEARLY_EVERY_FRAME }));
             step(`${t.frames} frames in ${t.ms} ms, traced`);
             // (The page closed first, so that it isn't drawing while the trace is read.)
             await context.close();
             const r = drawnAgain(t);
             step(`read ${(t.trace.length / 1e6).toFixed(0)} MB`);
-            const problems = r.layers.map((l) => atRest(s.key, l, r.frames)).filter(Boolean);
-            out.push({ scene: s.key, frames: r.frames, ms: r.ms, problems, changing: r.changing, painted: r.painted, layers: r.layers.slice(0, 8) });
+            const found = r.layers.map((l) => atRest(s.key, l, r.frames)).filter(Boolean);
+            // (In software a frame can take seconds, and a light that passes every few seconds lands on nearly
+            // every one. So there a layer drawn again on nearly every frame fails only where something changes
+            // on nearly every frame at any pace: a style written each frame (a shake), or an endless animation
+            // of what's painted that never waits (a breathe). The rest is noted, not failed.)
+            const steady = !software || r.everyFrame.length > 0 || r.endless.length > 0;
+            out.push({ scene: s.key, frames: r.frames, ms: r.ms, problems: steady ? found : [], unjudged: steady ? [] : found, changing: r.changing, everyFrame: r.everyFrame, painted: r.painted, endless: r.endless, layers: r.layers.slice(0, 8) });
             if (!process.stdout.isTTY) console.log(`  ${s.key}: ${took.join(', ')}`);
             break;
           } catch (e) {
@@ -639,7 +657,8 @@ async function moments(base, browser) {
         const started = rate;
         const watched = async () => {
           await setOff[m.key]();
-          return keepClock(page, clock, rate, page.evaluate(watchFrames, { least: 1500, frames: 8, most: 240000, still: true, played: true }), PLAYED_FPS);
+          // (Six minutes at the most: in software a frame of the dig's can take 3 s.)
+          return keepClock(page, clock, rate, page.evaluate(watchFrames, { least: 1500, frames: 8, most: 360000, still: true, played: true }), PLAYED_FPS);
         };
         const r = i < 0 ? await watched() : drawnAgain(await traced(browser, page, watched));
         // (The next run's clock starts where this one's would have given it PLAYED_FPS frames to a second of its own.)
@@ -700,9 +719,16 @@ async function checkRedraws(base, scenes) {
     else if (s.frames < FEWEST_FRAMES) lines.push(`  ${s.scene}: only ${s.frames} frames in ${s.ms} ms, too few to tell`);
     for (const p of s.problems) lines.push(`  ${s.scene}: ${p}`);
     if (s.problems.length) {
-      if (s.changing.length) lines.push(`    changing every frame: ${s.changing.slice(0, 4).join(', ')}`);
-      if (s.painted.length) lines.push(`    animating what isn’t its transform or opacity: ${s.painted.slice(0, 4).join('; ')}`);
+      if (s.everyFrame.length) lines.push(`    changing every frame: ${s.everyFrame.slice(0, 4).join(', ')}`);
+      else if (s.changing.length) lines.push(`    changing on most frames: ${s.changing.slice(0, 4).join(', ')}`);
+      if (s.endless.length) lines.push(`    animating without end what isn’t its transform or opacity: ${s.endless.slice(0, 4).join('; ')}`);
+      else if (s.painted.length) lines.push(`    animating what isn’t its transform or opacity: ${s.painted.slice(0, 4).join('; ')}`);
     }
+  }
+  const unjudged = atRestFound.filter((s) => s.unjudged?.length);
+  if (unjudged.length) {
+    lines.push('  Not failed, drawn in software: nothing there changes on nearly every frame, so these are lights passing every few seconds, landing on frames seconds apart:');
+    for (const s of unjudged) for (const p of s.unjudged) lines.push(`    ${s.scene}: ${p}`);
   }
   if (atRestFound.length) console.log(`At rest: ${atRestFound.length} scenes, ${bad.length} with a layer drawn again on nearly every frame${bad.length ? ':' : '.'}`);
   for (const l of lines) console.log(l);
