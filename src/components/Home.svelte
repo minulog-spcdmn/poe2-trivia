@@ -742,7 +742,7 @@
             <span class="you">
               <button class="who" onclick={startRename} disabled={connecting}>{known || NAMELESS}.<span class="sr"> {rename}</span></button>
               <button class="quill" onclick={startRename} disabled={connecting}>
-                <span class="ring" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20.5 3.5c-6 .3-11.3 4.6-12.4 11.8 1.4 0 2.6-.4 3.6-1l-1-.7 2.4-.6c1.5-1.2 2.4-2.4 3-3.6l-1.4-.2 2.1-.9c1.2-1.6 2.3-3.3 3.7-4.8z" /><path d="M17 7C12.6 10.6 8.4 15.2 4 20.5" /></svg></span>
+                <span class="ring" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 19l2.5-.6L18 7.9a1.9 1.9 0 0 0-2.7-2.7L4.8 15.7 4.2 18.2zM14 6.5l3.2 3.2" /></svg></span>
                 <i>{rename}</i>
               </button>
             </span>
@@ -1695,12 +1695,17 @@
     .quill i {
       display: none;
     }
-    /* The name on a line of its own, after the comma, and the quill with its words beside it. */
+    /* The name on a line of its own, after the comma, and the quill with its words beside it. Its two lines
+       stand as far from what's above and below as the one-line greeting's does (centred in its 44 px). */
+    .hello.choose {
+      padding-block: calc((44px - 1lh) / 2);
+    }
     .choose .greet {
       flex: 0 0 100%;
     }
+    /* The ring 12 px from the name, as from its words (and as with a mouse), the 44 px target's padding past it; no taller than the name's line. */
     .choose .you .quill {
-      margin: -8px -8px -8px -0.3em;
+      margin: -10px -8px -10px calc(4px - 0.3em);
       padding: 8px;
     }
     .choose .quill i {
