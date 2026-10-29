@@ -357,6 +357,22 @@ with its numbers in the comments.
   something in it moves, though, the circle turning: weigh the calm
   question's and reveal's frames with `?off=group` (the stage resting at 1)
   against those without.
+- **A picture cursor restyles all an element holds.** WebKit makes an
+  element's picture cursor afresh each time the element is restyled, and
+  counts it as changed (a new one is still pending when compared), so it
+  restyles every element inside it too, each of which does the same with its
+  own. The app named one on every element (`cursor: var(--cursor-now)`, so a
+  pressed pointer stays on the element pressed), so a vein's tremor, a
+  translate written on `.shell` each frame, restyled the whole game and
+  repainted every card: 3.4 ms of styles a write, 1,223 paints (48 Mpx) in
+  2.5 s, 47.9 fps. That was the QA desk's `size=desktop`, which plays a
+  fine pointer and so draws the cursors; a phone draws none, but Safari on a
+  Mac with a mouse does. In WebKit every element inherits the cursor now
+  (`data-cursor-inherited`, `src/lib/ownCursor.ts` and `app.css`), an
+  inherited one being the parent's own, unchanged: 0.2 ms, 32 paints
+  (1.2 Mpx), 60.1 fps, as at `size=fit` with no cursors at all. A scene
+  measured on the phone at `size=desktop` has the cursors; `size=fit` has
+  none.
 
 Still open: Begin's three frames over 40 ms (41 to 64 ms, the worst 88 to
 93), as the lobby goes and the game comes in. Most of their time is outside

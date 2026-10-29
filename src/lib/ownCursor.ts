@@ -3,7 +3,7 @@
 // its player's colour. Drawn once per colour into images the browser shows as
 // the system cursor, so it moves with no lag at all.
 //
-// The CSS never names these images: vite.config.ts turns every
+// The CSS never names these images: the build (themedCursors.ts) turns every
 // `cursor: pointer`, `default`, `not-allowed`, `text`, `zoom-in`, `grab`
 // and `grabbing` into var(--cursor-pointer, pointer), var(--cursor,
 // default), var(--cursor-disabled, not-allowed), var(--cursor-text, text),
@@ -161,6 +161,14 @@ const forced = typeof matchMedia === 'function' ? matchMedia('(forced-colors: ac
 const VARS = ['--cursor', '--cursor-pointer', '--cursor-disabled', '--cursor-text', '--cursor-zoom', '--cursor-grab', '--cursor-grabbing'];
 
 /**
+ * Whether this is WebKit (Safari, and every browser on iOS), which makes a
+ * picture cursor afresh each time an element that names one is restyled and
+ * restyles all the element holds with it. There every element inherits the
+ * cursor (app.css, data-cursor-inherited), not just takes the one handed down.
+ */
+export const rebuildsCursorImages = (userAgent: string) => /AppleWebKit\//.test(userAgent) && !/Chrome\/|Chromium\//.test(userAgent);
+
+/**
  * Sets the pointer's looks in its colour. `soon`: only the two seen from the
  * start, the dart and the hand; the rest (each a picture at three
  * resolutions to draw) come with a later call, so the page's first paint
@@ -210,8 +218,10 @@ function pressedFor(el: Element): string | null {
 
 /**
  * Shows the pressed pointer on `target` (the element under it), and only
- * there: what it holds keeps the cursor handed down to it (vite.config.ts),
+ * there: what it holds keeps the cursor handed down to it (themedCursors.ts),
  * so a big one (bare page, a long list's ground) costs no more than a button.
+ * (Not in WebKit, where what it holds inherits it and is restyled with it,
+ * as it was anyway: see rebuildsCursorImages.)
  * Not on <html>: a change on the root restyles the whole page whatever it
  * is (pressed there, on the page's scrollbar say, the pointer stays as is).
  */
@@ -263,6 +273,8 @@ export function installCursor() {
   const show = () => {
     if (wanted) return;
     wanted = true;
+    // (With the variables, in the one restyle of the whole page they make.)
+    if (rebuildsCursorImages(navigator.userAgent)) document.documentElement.setAttribute('data-cursor-inherited', '');
     apply(true);
     whenIdle(() => apply(), { timeout: 1000 });
     // The pressed looks drawn ahead, so the first press doesn't wait on them.
