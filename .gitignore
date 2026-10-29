@@ -32,6 +32,9 @@ dist-ssr
 # The iPhone scripts' builds and runs (scripts/iphone, docs/iphone.md)
 .phone/
 
+# The PC trace scripts' runs and Chrome profile (scripts/pc, docs/development.md)
+.pc/
+
 # Python environment and model for scripts/upscale-art.py
 .venv-art/
 
