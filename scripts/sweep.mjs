@@ -358,7 +358,8 @@ const REDRAW_TRACE = ['cc', 'disabled-by-default-cc.debug'];
  * browser's). Without a GPU (CI) it all draws in SwiftShader, which Chrome
  * asks to be let in. The app comes to 2 or 3 frames a second there (a
  * plain page, 200), so what's counted is counted in frames, not in seconds.
- * Here it draws on the GPU (REDRAWS_SOFTWARE=1: in software, as CI does).
+ * On Windows here it draws on the GPU (REDRAWS_SOFTWARE=1: in software, as
+ * CI does); anywhere else in software, the GPU switches being ANGLE's d3d11.
  */
 const software = process.platform !== 'win32' || !!process.env.REDRAWS_SOFTWARE;
 const launchTraced = (soft) =>
@@ -419,13 +420,16 @@ async function watchFrames({ least, frames: fewest, most, still, played, nearly 
     }
   });
   seen.observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
-  const busy = () => document.getAnimations().some((a) => a.playState === 'running' && Number.isFinite(a.effect?.getComputedTiming().endTime ?? Infinity));
+  // (One list of the animations a frame, for both: each getAnimations() is a style flush.)
+  let all = null;
+  const animations = () => (all ??= document.getAnimations());
+  const busy = () => animations().some((a) => a.playState === 'running' && Number.isFinite(a.effect?.getComputedTiming().endTime ?? Infinity));
   const own = (window.__ownRates ??= new WeakMap());
   const keepTime = () => {
     const clock = window.__clock ?? 1;
     if (clock !== 1) window.__clocked = true;
     if (!window.__clocked) return;
-    for (const a of document.getAnimations()) {
+    for (const a of animations()) {
       const was = own.get(a);
       // (One the page has turned since, reversed say, keeps its turn.)
       const rate = was ? (a.playbackRate === was.set ? was.rate : a.playbackRate / was.clock) : a.playbackRate;
@@ -442,6 +446,7 @@ async function watchFrames({ least, frames: fewest, most, still, played, nearly 
   await new Promise((done) => {
     const frame = () => {
       window.__framesWatched = ++n;
+      all = null;
       const now = performance.now();
       ran += (now - last) * (played ? (window.__clock ?? 1) : 1);
       last = now;
@@ -486,15 +491,15 @@ const drawnAgain = ({ trace, ...r }) => ({ ...r, ...redraws(readTrace(trace.toSt
 
 /** The page's animations' clock: a function that sets how fast they run (watchFrames keeps them to it). */
 const clockOf = (page) => (rate) => page.evaluate((r) => (window.__clock = r), rate);
-const between = (r, fastest = 16) => Math.min(fastest, Math.max(0.002, r));
+const between = (r) => Math.min(16, Math.max(0.002, r));
 
 /**
  * Keeps the page's animations' clock (`clock`, now at `rate`) to its frames
  * as watchFrames counts them, until `watching` is over: `fps` frames to a
- * second of the animations' own time, `fastest` times real time at the
- * most. Set anew from every few frames, when it's off by a sixth or more.
+ * second of the animations' own time, 16 times real time at the most
+ * (between). Set anew from every few frames, when it's off by a sixth or more.
  */
-async function keepClock(page, clock, rate, watching, fps, fastest) {
+async function keepClock(page, clock, rate, watching, fps) {
   let over = false;
   watching.then(
     () => (over = true),
@@ -503,10 +508,12 @@ async function keepClock(page, clock, rate, watching, fps, fastest) {
   let n0 = 0;
   let t0 = Date.now();
   while (!over) {
-    await new Promise((r) => setTimeout(r, 500));
+    // (Over as soon as the watch is, so the trace doesn't run on past it.)
+    await Promise.race([new Promise((r) => setTimeout(r, 500)), watching.catch(() => {})]);
+    if (over) break;
     const n = await page.evaluate(() => window.__framesWatched ?? 0).catch(() => n0);
     if (over || n - n0 < 3) continue;
-    const next = between((n - n0) / ((Date.now() - t0) / 1000) / fps, fastest);
+    const next = between((n - n0) / ((Date.now() - t0) / 1000) / fps);
     if (Math.abs(Math.log(next / rate)) > Math.log(7 / 6)) {
       rate = next;
       await clock(rate).catch(() => {});
@@ -535,7 +542,8 @@ const EFFECTS_AT_REST = /^game\/delve/;
 /** Each scene's first state at rest, from its first seat: the layers drawn again on nearly every frame, and what changes meanwhile. */
 async function scenesAtRest(base, scenes, browsers) {
   // (With --shard i/n, every n-th scene from the i-th: each part gets some of each screen.)
-  const firsts = scenes.filter((s, i) => scenes.findIndex((t) => t.key === s.key) === i).filter((s, i) => !shard || i % shard[1] === shard[0] - 1);
+  const seen = new Set();
+  const firsts = scenes.filter((s) => !seen.has(s.key) && seen.add(s.key)).filter((s, i) => !shard || i % shard[1] === shard[0] - 1);
   const out = [];
   let next = 0;
   await Promise.all(
@@ -703,8 +711,10 @@ async function checkRedraws(base, scenes) {
   }
   const BASELINE = path.join(ROOT, 'src', 'qa', 'redrawBaselines.json');
   const baseline = existsSync(BASELINE) ? JSON.parse(readFileSync(BASELINE, 'utf8')) : {};
+  // (The baselines are of one size, CI's: at another there's nothing to hold a moment to.)
+  const sameSize = !baseline.size || baseline.size === REDRAW_SIZE;
   for (const m of momentsFound) {
-    m.baseline = baseline.moments?.[m.key];
+    m.baseline = sameSize ? baseline.moments?.[m.key] : undefined;
     m.problem = overBaseline(m.key, m.perFrame, m.baseline);
   }
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
@@ -741,7 +751,8 @@ async function checkRedraws(base, scenes) {
     }
   }
   const measured = { size: REDRAW_SIZE, moments: Object.fromEntries(momentsFound.map((m) => [m.key, m.perFrame])) };
-  if (values.baseline && momentsFound.length) {
+  if (values.baseline && momentsFound.length && !sameSize) console.log(`Not written into ${path.relative(ROOT, BASELINE)}: its baselines are at ${baseline.size}, CI's size, not ${REDRAW_SIZE}.`);
+  else if (values.baseline && momentsFound.length) {
     writeFileSync(BASELINE, `${JSON.stringify({ ...baseline, ...measured }, null, 2)}\n`);
     console.log(`Wrote the moments into ${path.relative(ROOT, BASELINE)}.`);
   }
