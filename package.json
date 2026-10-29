@@ -12,6 +12,7 @@
     "bot": "node scripts/room-bot.mjs",
     "fetch-data": "node scripts/fetch-data.mjs",
     "fetch-stats": "node scripts/fetch-stats.mjs",
+    "deal": "node --experimental-strip-types --no-warnings scripts/deal.mjs",
     "looks": "node scripts/looks.mjs",
     "bake-icons": "node scripts/bake-icons.mjs",
     "screens": "node scripts/capture-screens.mjs",

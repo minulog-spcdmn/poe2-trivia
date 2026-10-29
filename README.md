@@ -120,7 +120,29 @@ npm run fetch-data                           # src/data/items.json, itemStats.js
 npm run looks                                # look-alike table, src/data/looks.json (needs ffmpeg)
 .venv-art/bin/python scripts/daily-art.py    # items too thin for Today's unique, src/data/dailyArt.json
 npm run bake-icons                           # category card emblems (needs Chromium and ffmpeg)
+npm run deal                                 # Today's unique for the year ahead, src/data/dailies.json (last)
 ```
+
+Today's unique asks each day from its row in `src/data/dailies.json`, one
+day a line from the first day to a year past the last deal, so a refresh
+never changes a day already played. `npm run deal` keeps every row before
+the cutoff (tomorrow, or the day after in the last two hours of a UTC day:
+`cutoffDay` in `src/lib/daily.ts`) and deals the rest again from the item
+data as it is, so new items reach the days to come. Run it last, after
+`fakes.json` and `dailyArt.json` are up to date, and merge before the
+cutoff's midnight (UTC). `tests/dailies.test.ts` holds it to that:
+
+- The rows from the cutoff on must be what a deal from the current data and
+  code gives, so a forgotten deal, or a change to how the daily deals, fails
+  until `npm run deal` is run.
+- No row before the cutoff may differ from the live site's (the last
+  deployment's in CI, `origin/main`'s locally). A merge that slipped past
+  the cutoff's midnight fails the deploy, and the site stays as it was:
+  run `npm run deal` again and push. On a merge conflict in
+  `dailies.json`, take `main`'s and run `npm run deal`; never edit a row.
+- Every item a row names from yesterday on must still be an item: a
+  refresh that removes one today's or tomorrow's question names waits a
+  day.
 
 ### The dev hub
 

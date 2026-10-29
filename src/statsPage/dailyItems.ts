@@ -1,7 +1,7 @@
-// Which item Today's unique asked on a day, worked out as the game does
-// (lib/daily.ts): the same everywhere for the same day. Loaded only when a
-// view asks, as it brings the game's engine and every item with it; which
-// days it asked at all is known without it (model.ts asked).
+// Which item Today's unique asked on a day, read from its row
+// (lib/dailyRows.ts), under the name it had that day. Loaded only when a view
+// asks, as the rows are a year's questions; which days it asked at all is
+// known without them (model.ts asked).
 
 export interface DailyItem {
   name: string;
@@ -19,21 +19,17 @@ export function withDailyItems(got: (itemOf: (day: string) => DailyItem | null) 
     .catch(() => undefined);
 }
 
-/** A day's item ("2026-10-14", taken as the UTC day the game asks by), or null before Today's unique began. */
+/**
+ * A day's item ("2026-10-14", taken as the UTC day the game asks by), or
+ * null for a day with no row: before Today's unique began, or past the rows
+ * (they reach a year past the last deal).
+ */
 export function dailyItems(): Promise<(day: string) => DailyItem | null> {
-  loading ??= Promise.all([import('../lib/daily'), import('../data/items.json'), import('../data/fakes.json')]).then(([daily, items, fakes]) => {
-    const list = items.default as import('../lib/game').Item[];
-    const names = new Map(list.map((it) => [it.id, it.name]));
-    const known = new Map<string, DailyItem | null>();
-    return (day: string) => {
-      const had = known.get(day);
-      if (had !== undefined) return had;
-      const at = Date.parse(`${day}T00:00:00Z`);
-      const q = at < daily.DAILY_LAUNCH ? null : daily.dailyQuestion(list, fakes.default, Math.floor(at / DAY_MS));
-      const item = q ? { name: names.get(q.itemId) ?? q.itemId, mode: q.mode } : null;
-      known.set(day, item);
-      return item;
-    };
+  loading ??= import('../lib/dailyRows').then(({ dailyRow }) => (day: string) => {
+    const q = dailyRow(Date.parse(`${day}T00:00:00Z`) / DAY_MS);
+    if (!q) return null;
+    const name = q.mode === 'art' ? q.prompt : q.labels[q.options.indexOf(q.itemId)];
+    return { name: name ?? q.itemId, mode: q.mode };
   });
   // A load that failed (the connection dropped) is tried again next time.
   loading.catch(() => (loading = null));

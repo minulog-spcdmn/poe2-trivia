@@ -40,6 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      deployments: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,6 +52,30 @@ jobs:
       - run: npm ci
       # Types, which the build leaves unchecked.
       - run: npm run check
+      # Today's unique's rows as the live site has them, for the test that no
+      # day it may be asking changes (tests/dailies.test.ts): the last
+      # deployment's, not the commit before this one, which a late merge that
+      # failed to deploy would have let through. Empty when it had none.
+      - name: Find the live site's daily rows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=github-pages&per_page=1" --jq '.[0].sha // empty')
+          if [ -z "$sha" ]; then
+            echo "::error::Couldn't find the live site's deployment."
+            exit 1
+          fi
+          echo "Live commit: $sha"
+          live="$RUNNER_TEMP/live-dailies.json"
+          if ! gh api -H "Accept: application/vnd.github.raw" "repos/$GITHUB_REPOSITORY/contents/src/data/dailies.json?ref=$sha" > "$live" 2> "$RUNNER_TEMP/err"; then
+            if ! grep -q "HTTP 404" "$RUNNER_TEMP/err"; then
+              cat "$RUNNER_TEMP/err"
+              exit 1
+            fi
+            echo "The live commit has no daily rows yet."
+            : > "$live"
+          fi
+          echo "LIVE_DAILIES=$live" >> "$GITHUB_ENV"
       - run: npm test
       - run: npm run build
       - uses: actions/upload-artifact@v4
