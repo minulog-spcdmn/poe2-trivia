@@ -65,6 +65,9 @@
       return out;
     }, []);
 
+  /** How the layer named turns (none: it doesn't, or there's no such layer). */
+  const spinOf = (name: string | undefined) => (name ? layers.find((p) => p.name === name)?.spin : undefined);
+
   const due = (l: StageLayer) => {
     if (!l.lines || !l.glow) throw new Error(`ArcaneStage: layer "${l.name}" has no plate (is it named as its plate is?)`);
     return Math.max(0, Math.min(l.lines.start, l.glow.start) - AHEAD);
@@ -130,54 +133,84 @@
   // Answered, the circle takes its new colour (its mood's, below) a ring at
   // a time, from the centre out, one more each frame after the answer's own,
   // so the whole circle has it a few frames on, under the flare and the wave
-  // running out over it. Each ring takes it at once, never eased (see
-  // .arcane). A ring (one of `groups`) is a few compositing layers, its
-  // strokes in currentColor, and each layer takes a new colour by being
-  // drawn again: the whole circle in one frame was some forty layers on an
-  // iPhone, 15 to 20 ms of the answer's next frame. Until its turn a ring
+  // running out over it. Each ring takes it at once there (see .arcane). A
+  // ring (one of `groups`) is a few compositing layers, its strokes in
+  // currentColor, and each layer takes a new colour by being drawn again:
+  // the whole circle in one frame was some forty layers on an iPhone, 15 to
+  // 20 ms of the answer's next frame. Back at rest nothing covers the
+  // change, and a ring taking it at once showed as a jump: there it eases
+  // over in a few steps, the rings one after another over the time the
+  // circle's light takes to settle, so a frame draws a few rings again at
+  // most. The heart goes with the innermost ring. Until its turn a ring
   // keeps the colour before (`was`). A colour given (`color`) is the
   // circle's whatever its mood: nothing to hold.
   /** The rings in the order they take it: the centre's first. */
   const outward = insideOut(groups.map((g) => g[0].box ?? WHOLE));
   /** Each ring's place in that order. */
   const turnOf = new Map(outward.map((at, n) => [groups[at][0].name, n]));
+  /** Back at rest: how long the whole circle takes to come over (.arcane's opacity eases as long), each ring's share, and the steps it takes. */
+  const EASE_MS = 800;
+  const RING_MS = 360;
+  const STEPS = 6;
   /** The mood the rings not yet turned still show the colour of (null: none held). */
   let was = $state<'idle' | 'good' | 'bad' | null>(null);
-  /** How many rings have taken the colour. */
-  let turned = $state(0);
+  /** How far each ring (by its place in `outward`) has come over to the mood's own colour, 0 to 1 (always set whole). */
+  let over = $state.raw<number[]>([]);
   let moodSeen = untrack(() => mood);
   $effect.pre(() => {
     const now = mood;
-    if (now === moodSeen) return;
+    // (Back where it was before this ran, as a change and its undoing in one
+    // tick leave it: the way over cut off, nothing left held.)
+    if (now === moodSeen) return untrack(() => void (was = null));
     const before = moodSeen;
     moodSeen = now;
-    if (untrack(() => color)) return;
+    // (Nothing held under a colour given, not even what a change cut off left.)
+    if (untrack(() => color)) return untrack(() => void (was = null));
+    const rings = groups.length;
     untrack(() => {
       was = before;
-      turned = 0;
+      over = Array(rings).fill(0);
     });
+    const lag = (EASE_MS - RING_MS) / Math.max(1, rings - 1);
+    /** Each ring's way over, `frame` frames or `ms` since the change. */
+    const at = (frame: number, ms: number) =>
+      Array.from({ length: rings }, (_, n) => {
+        // (Answered: the answer's own frame first, every ring in the colour before, then one more a frame.)
+        if (now !== 'idle') return frame > n ? 1 : 0;
+        const t = Math.min(1, Math.max(0, (ms - n * lag) / RING_MS));
+        return Math.floor(t * t * (3 - 2 * t) * STEPS) / STEPS;
+      });
+    const start = performance.now();
     let frame = 0;
     const step = () => {
-      // (The answer's own frame first, every ring in the colour before.)
-      if (frame++ && ++turned >= groups.length) {
+      const next = at(frame++, performance.now() - start);
+      if (next.every((p) => p === 1)) {
         was = null;
         return;
       }
+      if (next.some((p, n) => p !== over[n])) over = next;
       raf = requestAnimationFrame(step);
     };
     let raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
   });
-  /** The colour a ring holds to until its turn (CSS, through the mood's own; none once it has turned). */
-  const heldInk = (ring: StageLayer[]) => (was && turnOf.get(ring[0].name)! >= turned ? `var(--ink-${was})` : undefined);
+  /** The colour the ring at `n` (its place in `outward`) holds to on its way over (CSS, through the moods' own; none once it is over). */
+  const inkAt = (n: number) => {
+    const p = was ? (over[n] ?? 0) : 1;
+    if (p >= 1) return undefined;
+    return p ? `color-mix(in srgb, var(--ink-${mood}) ${Math.round(p * 100)}%, var(--ink-${was}))` : `var(--ink-${was})`;
+  };
+  const heldInk = (ring: StageLayer[]) => inkAt(turnOf.get(ring[0].name)!);
+  /** The rings a wrong answer jars, by their first layer's name (those that turn, or carry a mask that does). */
+  const jarring = new Set(untrack(() => groups.filter((ring) => ring.some((l) => !!l.spin) || !!spinOf(ring[0].mask?.with)).map((ring) => ring[0].name)));
 </script>
 
 {#if !off}
-<div class="arcane {mood}" aria-hidden="true" style:--clear="{HOLLOW_CLEAR}%" style:--size={size} style:color={color} style:opacity={strength}>
+<div class="arcane {mood}" aria-hidden="true" style:--clear="{HOLLOW_CLEAR}%" style:--rest="{EASE_MS}ms" style:--size={size} style:color={color} style:opacity={strength}>
   <div class="summon" bind:this={summon}>
     <div class="bloom"></div>
     {#snippet plain(l: StageLayer, inside: Box)}
-      {@const parent = l.upright ? layers.find((p) => p.name === l.within)?.spin : undefined}
+      {@const parent = l.upright ? spinOf(l.within) : undefined}
       <!-- (A layer cut round the hollow keeps the whole plate: its mask is drawn to it.) -->
       {@const box = (!l.cut && l.box) || WHOLE}
       {@const at = placed(box, inside, l.pivot)}
@@ -187,6 +220,7 @@
         class:spin={!!l.spin && !l.within}
         class:turning={!!l.spin && !!l.within}
         class:upright={!!parent}
+        class:riding={!!parent}
         class:swaying={!!l.sway}
         class:breathing={!!l.breathe}
         class:fluttering={!!l.flutter}
@@ -222,7 +256,7 @@
          mask (a glory in sectors) share the one box, so the mask is drawn once. -->
     {#snippet masked(group: StageLayer[], inside: Box)}
       {@const m = group[0].mask}
-      {@const by = m && layers.find((p) => p.name === m.with)?.spin}
+      {@const by = spinOf(m?.with)}
       {#if m && by}
         <!-- (The whole plate, which its mask is drawn to, wherever it sits.) -->
         {@const at = placed(WHOLE, inside)}
@@ -254,20 +288,26 @@
     {#snippet layer(l: StageLayer, inside: Box)}
       {@render masked([l], inside)}
     {/snippet}
-    <!-- Each ring in a box of its own (the circle's size), which holds it to the colour before for its first frames after an answer. -->
+    <!-- Each ring in a box of its own (the circle's size), which holds it to the colour before on its way over, and jars it at a
+         wrong answer, so the ring's own turning and winding go on untouched. -->
     {#each groups as group (group[0].name)}
-      <div class="hold" style:color={heldInk(group)}>
+      <div class="hold" class:jars={jarring.has(group[0].name)} style:color={heldInk(group)}>
         {@render masked(group, WHOLE)}
       </div>
     {/each}
-    {@render heart?.()}
-    {#if point}
-      <!-- (Its layer only as large as it swells as it's set.) -->
-      {@const reach = point.r * 2.4 + 1.5}
-      {@const at = placed([-reach, -reach, reach, reach], WHOLE)}
-      <div class="layer point" style:left={at.left} style:top={at.top} style:width={at.width} style:height={at.height} style:--set="{point.delay}s">
-        <svg class="glow" viewBox={at.viewBox}><circle r={point.r} class="dot" /></svg>
-        <svg viewBox={at.viewBox}><circle r={point.r} class="dot" /></svg>
+    <!-- The heart and the point, with the innermost ring. -->
+    {#if heart || point}
+      <div class="hold" style:color={inkAt(0)}>
+        {@render heart?.()}
+        {#if point}
+          <!-- (Its layer only as large as it swells as it's set.) -->
+          {@const reach = point.r * 2.4 + 1.5}
+          {@const at = placed([-reach, -reach, reach, reach], WHOLE)}
+          <div class="layer point" style:left={at.left} style:top={at.top} style:width={at.width} style:height={at.height} style:--set="{point.delay}s">
+            <svg class="glow" viewBox={at.viewBox}><circle r={point.r} class="dot" /></svg>
+            <svg viewBox={at.viewBox}><circle r={point.r} class="dot" /></svg>
+          </div>
+        {/if}
       </div>
     {/if}
     <div class="wave"></div>
@@ -291,13 +331,15 @@
     --ink-good: #d8dfa0;
     --ink-bad: #d98a6e;
     color: var(--ink-idle);
-    /* Only the opacity eases (on the compositor). The colour changes at
-       once: every stroke of the circle takes it (currentColor), and easing
-       it restyled and repainted each of those hundreds of strokes every
-       frame for most of a second, right as a reveal's effects began, which
-       made them stutter. The reveal's flare covers the change, and its
-       rings take it one a frame (heldInk). */
-    transition: opacity 0.8s;
+    /* Only the opacity eases (on the compositor), as long as the rings take
+       to come back over at rest (EASE_MS). The colour changes at once here:
+       every stroke of the circle takes it (currentColor), and easing it
+       restyled and repainted each of those hundreds of strokes every frame
+       for most of a second, right as a reveal's effects began, which made
+       them stutter. Answered, the flare covers the change and the rings
+       take it one a frame; back at rest, each eases over in a few steps,
+       one after another (heldInk). */
+    transition: opacity var(--rest);
   }
   .arcane.good {
     opacity: 0.3;
@@ -358,22 +400,30 @@
       turn var(--turn) linear infinite var(--dir, normal),
       wind 2.6s var(--ease-out) both;
   }
-  .bad .upright {
-    animation:
-      turn var(--turn) linear infinite var(--dir, normal),
-      unfalter 0.7s var(--ease-out) both;
-  }
   .breathing {
     animation: swell var(--breath) var(--breath-delay) ease-in-out infinite alternate;
   }
   .fluttering {
     animation: flutter var(--flutter) var(--flutter-delay) ease-in-out infinite;
   }
-  /* A wrong answer jars the circle. */
-  .bad .spin {
+  /* A wrong answer jars the circle: each turning ring, in its box (.hold),
+     about the circle's centre. Not on the ring itself, whose animations a
+     mood never changes: one taken out (its winding in, by the jar) starts
+     over when it's back, and a ring cut off as it winds in jumps. */
+  .bad .jars {
+    animation: falter 0.7s var(--ease-out);
+  }
+  /* A layer riding the ring that keeps its way up keeps it through the jar,
+     turned back about its own pivot. Its turn and winding stay in the list
+     (by name), so they go on untouched. */
+  .bad .jars .riding {
     animation:
       turn var(--turn) linear infinite var(--dir, normal),
-      falter 0.7s var(--ease-out) both;
+      wind 2.6s var(--ease-out) both,
+      unfalter 0.7s var(--ease-out);
+    /* (Added to the winding's transform, not in place of it: a jar while it
+       still winds in would otherwise drop its turning back for 0.7 s.) */
+    animation-composition: replace, replace, add;
   }
 
   /* The lines are put on the page as markup (see lib/engraver), so their
@@ -509,8 +559,12 @@
     opacity: 0;
     animation: bloom 1.5s ease-out both;
   }
+  /* (The summoning's bloom kept in the list: taken out, it would bloom
+     again as the circle comes back to rest.) */
   .good .bloom {
-    animation: flare 1.6s ease-out both;
+    animation:
+      bloom 1.5s ease-out both,
+      flare 1.6s ease-out both;
   }
   .wave {
     border: 1.5px solid currentColor;
