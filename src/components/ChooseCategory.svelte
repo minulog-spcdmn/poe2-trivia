@@ -25,6 +25,7 @@
   import { C, embers, emitter, flare, glints, outline, puffs, ring, shards, sparks } from '../lib/fx/effects';
   import { light } from '../lib/lights';
   import CardEngraving from './CardEngraving.svelte';
+  import { MediaQuery } from 'svelte/reactivity';
   import Avatar from './Avatar.svelte';
   import { actionOf, typing } from '../lib/keybinds.svelte';
   import { optionIndex } from '../lib/keys';
@@ -562,6 +563,14 @@
   const flipAt = (i: number) => 0.62 + i * 0.12;
   /** Cards turn over their longer side: across when stacked as wide rows (narrow screens), else sideways. */
   const narrow = matchMedia(TURN.across);
+  const rows = new MediaQuery(TURN.across);
+  /**
+   * Whether the plates are shown as prints (lib/platePrint): where the faces
+   * are sharp, as Chrome rasters a card under its 3D transform at its
+   * laid-out size, which a print is drawn at pixel for pixel. A row's face
+   * takes flat transforms, which Chrome rasters larger as it grows.
+   */
+  const printed = $derived(sharp && !rows.current);
   /** When the deal began; null when the cards appeared without one (as after a refresh). */
   let dealtAt: number | null = null;
   /** Whether card i lies face up yet (it can't be picked or catch fire before). */
@@ -902,12 +911,12 @@
           <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
             <span class="back" aria-hidden="true">
               <span class="grain"></span>
-              <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
+              <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} />
               {@render filigree()}
             </span>
             <span class="frame" data-sharp={sharp || undefined} use:backdropShadow>
               <span class="grain"></span>
-              <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
+              <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} />
               <span class="glare"></span>
               <span class="sheen"></span>
               {@render filigree()}
