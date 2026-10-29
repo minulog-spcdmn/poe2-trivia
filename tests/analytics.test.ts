@@ -1239,9 +1239,9 @@ test("games' frames are read by kind of device, a day each, a stutter's moment o
     ],
     DAYS,
   );
-  assert.deepEqual(l.frames.ios, { games: [5, 5, 2], some: [2, 0, 2], many: [0, 1, 0], worst: { deal: 1, question: 0, reveal: 4 } });
+  assert.deepEqual(l.frames.ios, { games: [5, 5, 2], stuttered: [2, 1, 2], some: [2, 0, 2], many: [0, 1, 0], worst: { deal: 1, question: 0, reveal: 4 } });
   assert.deepEqual(l.frames['desktop-chrome'].games, [5, 5, 5]);
-  assert.deepEqual(l.frames.android, { games: [0, 0, 0], some: [0, 0, 0], many: [0, 0, 0], worst: { deal: 0, question: 0, reveal: 0 } });
+  assert.deepEqual(l.frames.android, { games: [0, 0, 0], stuttered: [0, 0, 0], some: [0, 0, 0], many: [0, 0, 0], worst: { deal: 0, question: 0, reveal: 0 } });
   // Nothing else reads them as games.
   assert.equal(l.games.started, 6);
 });

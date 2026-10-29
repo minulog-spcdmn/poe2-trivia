@@ -21,9 +21,8 @@
   /** A kind of device's games in a period, those that stuttered, a lot, and the moment most of them did. */
   const figures = (c: Counts, d: Device) => {
     const f = c.frames[d];
-    const stuttered = f.some.map((v, i) => v + f.many[i]);
     const [moment, most] = (Object.entries(f.worst) as [keyof typeof f.worst, number][]).reduce((a, b) => (b[1] > a[1] ? b : a));
-    return { f, stuttered, games: sum(f.games), part: sum(stuttered), many: sum(f.many), worst: most ? moment : null };
+    return { f, games: sum(f.games), part: sum(f.stuttered), many: sum(f.many), worst: most ? moment : null };
   };
   const devices = $derived(DEVICES.map((d) => ({ device: d, now: figures(L, d), before: figures(B, d) })));
   const games = $derived(devices.reduce((n, d) => n + d.now.games, 0));
@@ -42,7 +41,7 @@
               {#if d.now.games}<span class="soft"><b class="strong">{percent(d.now.part, d.now.games)}</b> of {fmt(d.now.games)}</span>{/if}
             </div>
             {#if d.now.games}
-              <ShareLine days={L.days} part={d.now.stuttered} many={d.now.f.many} whole={d.now.f.games} {weekly} {top} label={DEVICE_NAMES[d.device]} />
+              <ShareLine days={L.days} part={d.now.f.stuttered} many={d.now.f.many} whole={d.now.f.games} {weekly} {top} label={DEVICE_NAMES[d.device]} />
             {:else}
               <p class="soft none">No games counted in these days.</p>
             {/if}

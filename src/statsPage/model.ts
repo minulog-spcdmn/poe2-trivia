@@ -167,11 +167,13 @@ export const MOMENT_NAMES: Record<Moment, string> = { deal: 'the deal', question
 
 /**
  * A game's frames on one class of device (lib/stutter.ts, "frames/ios/some/reveal"),
- * counted on each device in it: the games a day, those that stuttered some
- * and many, and over the period the moment most of a stutter fell in.
+ * counted on each device in it: the games a day, those that stuttered (some
+ * and many together, and each), and over the period the moment most of a
+ * stutter fell in.
  */
 export interface DeviceFrames {
   games: number[];
+  stuttered: number[];
   some: number[];
   many: number[];
   worst: Record<Moment, number>;
@@ -185,7 +187,7 @@ export function stutterTop(rows: DeviceFrames[], days: string[], weekly: boolean
   let top = 10;
   for (const r of rows) {
     const whole = grouped(days, r.games, weekly ? 7 : 1).values;
-    const part = grouped(days, r.some.map((v, i) => v + r.many[i]), weekly ? 7 : 1).values;
+    const part = grouped(days, r.stuttered, weekly ? 7 : 1).values;
     whole.forEach((w, i) => {
       if (w >= FEW_GAMES) top = Math.max(top, (100 * part[i]) / w);
     });
@@ -195,7 +197,7 @@ export function stutterTop(rows: DeviceFrames[], days: string[], weekly: boolean
 
 function framesOf(paths: PathCount[], days: string[]): Record<Device, DeviceFrames> {
   const zeros = () => days.map(() => 0);
-  const out = Object.fromEntries(DEVICES.map((d) => [d, { games: zeros(), some: zeros(), many: zeros(), worst: { deal: 0, question: 0, reveal: 0 } }])) as Record<Device, DeviceFrames>;
+  const out = Object.fromEntries(DEVICES.map((d) => [d, { games: zeros(), stuttered: zeros(), some: zeros(), many: zeros(), worst: { deal: 0, question: 0, reveal: 0 } }])) as Record<Device, DeviceFrames>;
   for (const p of paths) {
     const f = readFramesPath(p.path);
     if (!f) continue;
@@ -203,7 +205,9 @@ function framesOf(paths: PathCount[], days: string[]): Record<Device, DeviceFram
     days.forEach((d, i) => {
       const n = p.days[d] ?? 0;
       row.games[i] += n;
-      if (f.bucket !== 'smooth') row[f.bucket][i] += n;
+      if (f.bucket === 'smooth') return;
+      row.stuttered[i] += n;
+      row[f.bucket][i] += n;
     });
     if (f.worst) row.worst[f.worst] += p.count;
   }
