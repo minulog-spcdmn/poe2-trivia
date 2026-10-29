@@ -1306,7 +1306,8 @@
     <div class="tooltip wide" data-cursor="item" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
       {@render rims()}
       <div class="head" data-cursor="plate" style:--plate-scale={plateScale}>
-        <NamePlate fit bind:scale={plateScale} />
+        <!-- Lit from the start; a right answer's glint runs over it (a wrong one's is quiet), as when naming the art. -->
+        <NamePlate fit bind:scale={plateScale} glint={!!(reveal && iWon)} />
         <div class="head-text">
           <span class="iname" class:veiled={waiting} use:oneLine>{waiting || !q.prompt ? '\u00a0' : q.prompt}</span>
           <!-- Name over base, as every tooltip: the category until the reveal names the base. -->
@@ -1418,8 +1419,8 @@
       <div class="tooltip" data-cursor="item" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
         {@render rims()}
         <div class="head" data-cursor="plate" style:--plate-scale={plateScale}>
-          <!-- The gems stay dark until the item is identified. -->
-          <NamePlate fit bind:scale={plateScale} lit={!!(reveal && item)} />
+          <!-- The gems stay dark until the item is identified; lit by a right answer, with its glint, by a wrong one quietly. -->
+          <NamePlate fit bind:scale={plateScale} lit={!!(reveal && item)} glint={!!(reveal && iWon)} />
           {#if reveal && item}
             <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
               <span class="iname" use:oneLine={flat.current || upright.current}>{item.name}</span>

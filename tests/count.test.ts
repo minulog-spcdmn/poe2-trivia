@@ -29,6 +29,7 @@ import {
   countsOn,
   delveEndEvent,
   gameEvents,
+  gameMoment,
   reachEvents,
   readyEvent,
   recencyEvent,
@@ -361,4 +362,11 @@ test('a week the game names is read back to its Monday, every day of five years,
   assert.equal(weekMonday('2025-W53'), null);
   assert.equal(weekMonday('2026-W53'), '2026-12-28');
   assert.equal(weekMonday('2026-W00'), null);
+});
+
+test("a Delve run's frames stop being measured as nobody stands in it, before its results", () => {
+  const run = delve(game('delve', 1, 'question'), ['p0'], { p0: [3, 5] });
+  const fell = delve(game('delve', 1, 'reveal'), ['p0'], { p0: [3, 5, 24] });
+  assert.equal(gameMoment(run), 'question');
+  assert.equal(gameMoment(fell), null);
 });
