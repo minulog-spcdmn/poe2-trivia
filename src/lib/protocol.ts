@@ -10,10 +10,15 @@ import { isChallenge, isOwnerProof, type OwnerProof } from './ownerKey.ts';
 import { isPlayerClass, type PlayerClass } from './classSigils.ts';
 import { isChoosableHue } from './palette.ts';
 import { cleanSeen } from './delveStart.ts';
+import { isFossilMask } from './fossils.ts';
 
 /**
  * Bumped whenever a host and a guest on different versions would misread
  * each other. What each version changed, newest first:
+ * - 35: Delve's fossils (fossils.ts): an offer may hold one on a card
+ *   (Delve fossil), its question carries it (Question fossil) and a right
+ *   answer gives it (Reveal fossil, Delve fossils); the hello says which
+ *   fossils the guest holds (fossils), for the host's deal.
  * - 34: the owner (seated under the held name, GameState owner) can close
  *   the room (close), everyone told so (closed's owner); the owner comes in
  *   past a lock, a kick and a full room.
@@ -63,7 +68,7 @@ import { cleanSeen } from './delveStart.ts';
  * - 14: dynamite lit at 0 (Question.fuse); 13: a question blasted away (the
  *   blast action); 12: the frozen Delve rules; 11: the co-op vote and revive.
  */
-export const PROTOCOL_VERSION = 34;
+export const PROTOCOL_VERSION = 35;
 
 /** What hosts before version 10 tell a guest on another version, whichever side is out of date. */
 export const LEGACY_VERSION_TEXT = 'Your game version is out of date. Please reload the page.';
@@ -101,8 +106,9 @@ export type ClientMsg =
    * `seal`: it can open sealed pictures (seal.ts, WebCrypto); the host lets in nobody who can't.
    * `owner`: the owner key's signature over the host's challenge (hi), to play under the held name (ownerKey.ts joinProof).
    * `lines`: the Delve start lines its device has shown, most recent first (delveStartSeen.ts), for the host's pick of a run's line.
+   * `fossils`: the Delve fossils its device holds, as a mask (fossils.ts fossilMask), for the host's deal.
    */
-  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean; owner?: OwnerProof; sigil?: PlayerClass; colour?: number; lines?: number[] }
+  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean; owner?: OwnerProof; sigil?: PlayerClass; colour?: number; lines?: number[]; fossils?: number }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number }
   /** Where this player's pointer is (cursors.ts), or null when it left the page; when it was sent, on its clock (cursors.ts STAMP). */
@@ -207,6 +213,8 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         ...(isChoosableHue(raw.colour) ? { colour: raw.colour } : {}),
         // Lines this build's pool doesn't have (a newer one's) are left out the same way.
         ...(Array.isArray(raw.lines) ? { lines: cleanSeen(raw.lines) } : {}),
+        // (One naming fossils this build doesn't know, a newer one's, comes in as holding none.)
+        ...(isFossilMask(raw.fossils) ? { fossils: raw.fossils } : {}),
       };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;

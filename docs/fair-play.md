@@ -108,7 +108,9 @@ used, so this is the game's version of its toggle.
 Game events count each time (`ns`, no session): `play/<mode>`,
 `size/<mode>-<n>p`, `screen/<mode>` (some at the host's screen) and
 `end/<mode>` from the device running the game (`-online`/`-hotseat` until
-October 2026), Delve's depth range, `share/delve` (Share run tapped), the
+October 2026), Delve's depth range, Delve's fossils from the device running
+the game (`fossil/common` and `fossil/rare`, one taken; `fossil/passed`, a
+fossil card passed up for a find on the same offer), `share/delve` (Share run tapped), the
 Daily's answers, links opened, joins, failures (`error/script` and
 `error/chunk`, a part that didn't load, among them)
 and `sync/paired`. Visits count
