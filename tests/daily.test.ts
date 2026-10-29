@@ -1,8 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
 import { Engine, TWINS, allArt, answerDrawn, isFake, type Question } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, GRACE_DAYS, GRACE_SINCE, TOO_THIN, dailyEngine, graceOn, aTopic, answerDaily, answerLog, askOne, daysOf, dailyGame, answeredOn, dailyQuestion, hoursLeft, minutesLeft, nextIn, parseDaily, parseLog, replay, streakOn, untilNextMinute, upTo, utcDay, type DailyRecord } from '../src/lib/daily.ts';
+import { DAILY_LAUNCH, GRACE_DAYS, GRACE_SINCE, TOO_THIN, dailyEngine, graceOn, aTopic, answerDaily, answerLog, askOne, daysOf, dailyGame, answeredOn, cutoffDay, dailyQuestion, dealLive, hoursLeft, minutesLeft, nextIn, parseDaily, parseLog, replay, streakOn, untilNextMinute, upTo, utcDay, type DailyRecord } from '../src/lib/daily.ts';
 import { fakes, items, seeded } from './helpers.ts';
 
 const HOUR = 3_600_000;
@@ -40,32 +39,14 @@ test('the countdown is ticked on just as a minute ends', () => {
   assert.equal(minutesLeft(t + untilNextMinute(t)), minutesLeft(t) - 1);
 });
 
-test("the day's question is the same every time it is dealt", () => {
+test("a day's question is dealt the same every time", () => {
   for (const day of [utcDay(DAILY_LAUNCH), utcDay(DAILY_LAUNCH) + 1, utcDay(DAILY_LAUNCH) + 213]) {
-    const a = dailyQuestion(items, fakes, day);
-    const b = dailyQuestion(items, fakes, day);
+    const a = dealLive(items, fakes, day);
+    const b = dealLive(items, fakes, day);
     assert.equal(a.itemId, b.itemId);
     assert.deepEqual(a.options, b.options);
     assert.deepEqual(a.labels, b.labels);
   }
-});
-
-/** A day's question, in short. */
-const dealt = (day: number) => {
-  const q = dailyQuestion(items, fakes, day);
-  return createHash('sha256').update(JSON.stringify([q.itemId, q.options, q.labels])).digest('hex').slice(0, 8);
-};
-
-test("a day's question never changes, twins and all", () => {
-  // The year from launch, each day as it was first dealt: a change to how
-  // questions are dealt (game.ts makeQuestion) must leave the daily's be,
-  // as twins (game.ts TWINS) do.
-  const first = utcDay(DAILY_LAUNCH);
-  const year = createHash('sha256')
-    .update(Array.from({ length: 366 }, (_, i) => dealt(first + i)).join())
-    .digest('hex')
-    .slice(0, 16);
-  assert.equal(year, '1b1d51fb22411642');
 });
 
 test('practice asks as the daily does: twins may meet', () => {
@@ -82,10 +63,11 @@ test('practice asks as the daily does: twins may meet', () => {
 });
 
 test('each day asks a named item among four names, one of them made up, never a gem', () => {
-  const start = utcDay(DAILY_LAUNCH);
+  // From yesterday on: a day gone by may name an item the game has since let go of.
+  const start = utcDay(Date.now()) - 1;
   const seen = new Set<string>();
   for (let d = start; d < start + 60; d++) {
-    const q = dailyQuestion(items, fakes, d);
+    const q = dailyQuestion(d);
     seen.add(q.itemId);
     const item = items.find((it) => it.id === q.itemId)!;
     assert.notEqual(item.kind, 'gem');
@@ -106,8 +88,9 @@ test('the pictures too thin for the start page are real items\' pictures, and ne
   assert.ok(TOO_THIN.size > 0);
   for (const id of TOO_THIN) assert.equal(byArt.get(id)?.kind, 'unique', `${id} is an item's picture`);
   const shown = (q: Question) => answerDrawn(byId.get(q.itemId)!, q).art;
-  const start = utcDay(DAILY_LAUNCH);
-  for (let d = start; d < start + 400; d++) assert.ok(!TOO_THIN.has(shown(dailyQuestion(items, fakes, d))), `day ${d}`);
+  // From the cutoff on: the days before it keep their rows, dealt before a picture was found thin.
+  const start = cutoffDay(Date.now());
+  for (let d = start; d < start + 400; d++) assert.ok(!TOO_THIN.has(shown(dailyQuestion(d))), `day ${d}`);
   const engine = new Engine(items, { autoClock: true, fakes, rng: seeded(3) });
   const game = dailyGame();
   const rng = seeded(4);

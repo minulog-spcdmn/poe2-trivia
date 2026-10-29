@@ -120,7 +120,33 @@ npm run fetch-data                           # src/data/items.json, itemStats.js
 npm run looks                                # look-alike table, src/data/looks.json (needs ffmpeg)
 .venv-art/bin/python scripts/daily-art.py    # items too thin for Today's unique, src/data/dailyArt.json
 npm run bake-icons                           # category card emblems (needs Chromium and ffmpeg)
+npm run deal                                 # Today's unique for the year ahead, src/data/dailies.json (last)
 ```
+
+Today's unique asks each day from its row in `src/data/dailies.json`, one
+day a line from the first day to a year past the last deal, so a refresh
+never changes a day already played. `npm run deal` keeps every row before
+the cutoff as the live site has them (a week ahead, or a week from tomorrow
+in the last two hours of a UTC day: `cutoffDay` in `src/lib/daily.ts`) and
+deals the rest again from the item data as it is, so new items reach the
+days to come. The live site's rows are those of the newest github-pages
+deployment that went up (`scripts/live-dailies.mjs`, through the GitHub
+CLI; `origin/main`'s when that can't be reached). Run it last, after
+`fakes.json` and `dailyArt.json` are up to date. `tests/dailies.test.ts`
+holds it to that:
+
+- The rows from the cutoff on must be what a deal from the current data and
+  code gives, so a forgotten deal, or a change to how the daily deals, fails
+  until `npm run deal` is run.
+- No row before the cutoff may differ from the live site's. A merge that
+  slipped past its cutoff fails the deploy, and the site stays as it was:
+  run `npm run deal` on `main`, which puts those days back as the live site
+  has them, and push. On a merge conflict in `dailies.json`, take either
+  side and run `npm run deal`; never edit a row. The beta's tests leave
+  this out, as a beta never goes live.
+- Every item a row names from yesterday on must still be an item: a
+  refresh that removes one a question before the cutoff names waits until
+  that day has gone by.
 
 ### The dev hub
 

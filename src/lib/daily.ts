@@ -1,6 +1,7 @@
 // Today's unique: one question a day, the same for every exile. No server:
-// the day (UTC) seeds the engine, so every browser on the same item data
-// deals the same item and the same four names in the same order. The days
+// each day's question is written down ahead (lib/dailyRows.ts), dealt with
+// the day (UTC) as the engine's seed; a day past the last row is dealt here
+// the same way, alike in every browser on the same item data. The days
 // answered, and the run of them answered right, stay in this browser and the
 // player's own devices paired to sync (lib/sync: absorbDays, absorbDaily).
 
@@ -10,6 +11,9 @@ import { seededRandom } from './patches.ts';
 import { openStored } from './keepAside.ts';
 import { readStored, storeKey, writeStored } from './storage.ts';
 import dailyArt from '../data/dailyArt.json' with { type: 'json' };
+import itemData from '../data/items.json' with { type: 'json' };
+import fakeData from '../data/fakes.json' with { type: 'json' };
+import { dailyRow } from './dailyRows.ts';
 
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
@@ -114,17 +118,32 @@ export function askOne(engine: Engine, game = dailyGame(), rng: () => number = M
 
 /**
  * An engine that asks as Today's unique does. Twins (game.ts TWINS) may meet
- * in it, as they could from its first day, so no day's question changes with
- * them (tests/daily.test.ts pins the days), and practice asks the same way.
+ * in it, as they could from its first day, and practice asks the same way.
  */
 export const dailyEngine = (items: Item[], fakes: Record<string, string[]>, opts: { rng?: () => number; now?: () => number } = {}) =>
   new Engine(items, { ...opts, fakes, twins: false });
 
-/** The day's question, the same everywhere for the same items, made-up names and day. */
-export function dailyQuestion(items: Item[], fakes: Record<string, string[]>, day: number): Question {
+/**
+ * A day's question dealt from these items and made-up names, the same
+ * everywhere for the same ones: how npm run deal writes the rows, and how a
+ * day past the last row is asked.
+ */
+export function dealLive(items: Item[], fakes: Record<string, string[]>, day: number): Question {
   const rng = seededRandom(hash(`poe2.quest daily ${day}`));
   return askOne(dailyEngine(items, fakes, { rng, now: () => day * DAY_MS }), dailyGame(), rng);
 }
+
+/** The day's question: its row, or past the last row dealt from the item data. */
+export const dailyQuestion = (day: number): Question => dailyRow(day) ?? dealLive(itemData as Item[], fakeData, day);
+
+/**
+ * The first day a deal may write again (scripts/deal.mjs): a week from
+ * today, or in the last two hours of a UTC day a week from tomorrow. Days
+ * before it may be played already, or will be in a tab loaded before a
+ * change merged now goes live (it asks from the rows it loaded with), or
+ * before a merge that slips a few days goes live.
+ */
+export const cutoffDay = (now: number) => utcDay(now + 2 * HOUR_MS) + 7;
 
 // ---- this browser's answers ----------------------------------------------
 

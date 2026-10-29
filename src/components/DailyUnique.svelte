@@ -120,7 +120,7 @@
       release();
     };
   });
-  const daily = $derived(dailyQuestion(itemData as Item[], fakeNames, today));
+  const daily = $derived(dailyQuestion(today));
 
   // The days answered, and the record they come to (lib/daily.ts: the run, its grace, today's answer).
   let log = $state.raw(loadLog());

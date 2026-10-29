@@ -40,6 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      deployments: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -51,6 +52,17 @@ jobs:
       - run: npm ci
       # Types, which the build leaves unchecked.
       - run: npm run check
+      # Today's unique's rows as the live site has them, for the test that no
+      # day it may be asking changes (tests/dailies.test.ts): the newest
+      # deployment that went up, not the commit before this one, which a late
+      # merge that failed to deploy would have let through.
+      - name: Find the live site's daily rows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          node scripts/live-dailies.mjs > "$RUNNER_TEMP/live-dailies.json"
+          echo "LIVE_DAILIES=$RUNNER_TEMP/live-dailies.json" >> "$GITHUB_ENV"
       - run: npm test
       - run: npm run build
       - uses: actions/upload-artifact@v4
@@ -128,7 +140,8 @@ jobs:
           # went up.
           if [ -n "$NEW" ]; then
             npm run check
-            npm test
+            # (No live rows to hold the daily's to: a beta never goes live, tests/dailies.test.ts.)
+            LIVE_DAILIES=/dev/null npm test
           fi
           VITE_CHANNEL=beta npm run build
       - name: List the files the beta changes, for the QA desk's "This change"
