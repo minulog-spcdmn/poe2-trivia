@@ -323,13 +323,36 @@ item's art, each as often (`Question.variant`, rolled with the mirroring);
 the answer is still just its name, and the codex shows them all. Other
 uniques have more than one version on their page too (each glove's Fists of
 Stone base, a league's changed mods), but they share one art, so they add
-nothing. A fetch that would leave noticeably fewer items than `items.json`
-has (a changed page layout, most likely) stops before it deletes any art;
-`npm run fetch-data -- --shrink` accepts it when poe2db really dropped them.
+nothing.
+
+Nothing is written until everything is fetched and checked, so a run that
+stops leaves `items.json`, `itemStats.json` and the art as they were. It
+stops when:
+
+- it would leave noticeably fewer items than `items.json` has (a changed page
+  layout, most likely); `npm run fetch-data -- --shrink` accepts it when
+  poe2db really dropped them;
+- an item in `items.json` is no longer on poe2db. It says which are gone and
+  which are new, and how to rerun: `--rename "Old=>New"` when it was renamed
+  (it keeps its old id, so players' codexes and achievements still know it,
+  and takes the new name; its art is fetched again, and the upscaled copies
+  go when it changed), or `--drop "Old"` when it's gone for good. Repeat
+  either for each item.
+
+A new item poe2db has no tooltip for is left out of this refresh rather than
+shipped without one. The run ends with a summary of what was added, renamed,
+dropped, changed and left out. `src/data/fakes.json` is by name: a new or
+renamed item needs its two fakes there (`tests/fakes.test.ts`).
 
 Each item's tooltip (properties, requirements, mods, flavour text) comes from
-poe2db too, into `src/data/itemStats.json`: `npm run fetch-data` ends by
-fetching them, and `npm run fetch-stats` fetches them alone. The game loads
+poe2db too, into `src/data/itemStats.json`: `npm run fetch-data` fetches
+them before it writes anything, and `npm run fetch-stats` fetches them alone.
+A tooltip comes from the item's hover on the list page. Where that hover is
+empty (in October 2026, 26 uniques' list links pointed at the hash of an
+empty string) or comes to no line, it comes from the item's box on its own
+page; the run counts those and names the ones that differ from the committed
+tooltip (the page boxes leave out some items' requirements line). Failing
+both, the committed tooltip is kept. The game loads
 that file only when a player opens an item's details (its art, clicked once a
 question is answered, or its card in the codex).
 
