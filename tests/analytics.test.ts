@@ -965,7 +965,7 @@ test("a first visit's steps, of the visits that found no save", () => {
   // From the first day visits with no save were counted, not the first day one got a step along.
   assert.equal(f.from, DAYS[0]);
   assert.equal(f.visits, 30);
-  assert.deepEqual(f.counts, { acted: 0, create: 0, host: 0, room: 0, solo: 0, daily: 0, practice: 0, identify: 0, lobby: 14, played: 10, finished: 7 });
+  assert.deepEqual(f.counts, { acted: 0, create: 0, host: 0, room: 0, solo: 0, daily: 0, practice: 0, identify: 0, lobby: 14, played: 10, finished: 7, 'games-2': 0, 'games-5': 0 });
   assert.equal(f.steps.host.from, null, 'not counted yet');
   assert.equal(firstStepsOf(countsOf([path('new/played', [5, 5, 5])], DAYS)).from, null);
   // The steps counted later: each a share of the visits from the day they were, the first ones' reading as it was.
@@ -977,6 +977,10 @@ test("a first visit's steps, of the visits that found no save", () => {
   const identify = firstStepsOf(countsOf([path('visit/new', [5, 10, 15]), path('new/acted', [0, 8, 12]), path('new/identify', [0, 0, 2])], DAYS));
   assert.deepEqual(identify.steps.identify, { from: DAYS[2], visits: 15 });
   assert.deepEqual(identify.steps.acted, { from: DAYS[1], visits: 25 });
+  // A second and fifth game, likewise from their own first day.
+  const games = firstStepsOf(countsOf([path('visit/new', [5, 10, 15]), path('new/acted', [0, 8, 12]), path('new/games-2', [0, 0, 3])], DAYS));
+  assert.deepEqual(games.steps['games-2'], { from: DAYS[2], visits: 15 });
+  assert.equal(games.counts['games-2'], 3);
 });
 
 test('ISO weeks, and those who first played in one coming back the weeks after', () => {

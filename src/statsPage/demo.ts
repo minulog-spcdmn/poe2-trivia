@@ -122,6 +122,9 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
       // Their save's first item: a game's, or Today's unique's alone.
       add('new/saved', h, firstPlayed + ofThem(fresh - firstIn, 0.2, rnd));
       add('new/finished', h, ofThem(firstPlayed, 0.74, rnd));
+      const firstSecond = ofThem(firstPlayed, 0.4, rnd);
+      add('new/games-2', h, firstSecond);
+      add('new/games-5', h, ofThem(firstSecond, 0.2, rnd));
       // The start page's steps before that: most press something, fewer get as far as a room.
       const acted = ofThem(fresh, 0.8, rnd);
       const create = ofThem(acted, 0.55, rnd);

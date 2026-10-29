@@ -52,15 +52,15 @@ export const VIA_NAMES: Record<Via, string> = { 'invite-link': 'Invite link', co
 export const REACHES = ['page', 'lobby', 'played', 'finished', 'games-2', 'games-5', 'time-2m', 'time-10m', 'time-30m', 'codex', 'achievements'] as const;
 export type Reach = (typeof REACHES)[number];
 /** The first steps again, counted only in a page load whose visit found no save on the device ("new/…"): how far a first visit gets. */
-export const FIRSTS = ['acted', 'create', 'host', 'room', 'solo', 'daily', 'practice', 'identify', 'lobby', 'played', 'finished'] as const;
+export const FIRSTS = ['acted', 'create', 'host', 'room', 'solo', 'daily', 'practice', 'identify', 'lobby', 'played', 'finished', 'games-2', 'games-5'] as const;
 export type First = (typeof FIRSTS)[number];
 /**
  * The first steps counted later than the rest (count.ts NEWCOMER_STEPS), in
  * the groups that came together: from 2026-10-28, then the Daily's IDENTIFY
- * MORE. Each group a share of the visits from the day it was first counted,
+ * MORE, then a second and fifth game. Each group a share of the visits from the day it was first counted,
  * not from the first "visit/new".
  */
-export const LATER_FIRSTS: readonly (readonly First[])[] = [['acted', 'create', 'host', 'room', 'solo', 'daily', 'practice'], ['identify']];
+export const LATER_FIRSTS: readonly (readonly First[])[] = [['acted', 'create', 'host', 'room', 'solo', 'daily', 'practice'], ['identify'], ['games-2', 'games-5']];
 
 /**
  * How long since a visitor coming back last played on that device
