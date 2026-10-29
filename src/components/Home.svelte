@@ -373,7 +373,7 @@
   function delveAlone() {
     if (connecting) return;
     renaming = false;
-    // TODO(#310): countStep('reach/identify') here (lib/count.ts, from PR #310), once it is in main.
+    countStep('reach/identify');
     session.startDelve(knownName() ?? NAMELESS);
   }
 
