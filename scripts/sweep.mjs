@@ -95,7 +95,8 @@ if (values.help) {
                          state at rest, and the card bench's moments; here only with --only (CI runs it all)
   --moments              with --redraws: the card bench's moments (alone, or with --only's scenes)
   --baseline             with --redraws: write the moments as measured into src/qa/redraws.json
-  --shard i/n            with --redraws: only the i-th of n parts of the scenes at rest, no moments (CI's jobs)`);
+  --shard i/n            with --redraws: only the i-th of n parts of the scenes at rest (no moments), or with
+                         --moments, of the moments (CI's jobs)`);
   process.exit(0);
 }
 if (values.baseline) values.moments = true;
@@ -354,8 +355,10 @@ const REDRAW_SIZE = SIZES.some((s) => s.key === values.sizes) ? values.sizes : '
 const REDRAW_TRACE = ['cc', 'disabled-by-default-cc.debug'];
 /**
  * A browser of its own for each page traced (a trace is the whole
- * browser's). Without a GPU (CI) WebGL draws in SwiftShader, which Chrome
+ * browser's). Without a GPU (CI) it all draws in SwiftShader, which Chrome
  * asks to be let in; REDRAWS_SOFTWARE=1 draws in it here too, as CI does.
+ * The app comes to 2 or 3 frames a second there (a plain page, 200), so
+ * what's counted is counted in frames, not in seconds.
  */
 const software = process.platform !== 'win32' || !!process.env.REDRAWS_SOFTWARE;
 const launchTraced = () =>
@@ -365,13 +368,14 @@ const launchTraced = () =>
   });
 
 /**
- * In the page: counts its frames until `least` ms and `frames` frames have
- * passed (with `still`, also until no animation with an end is running),
- * `most` ms at the most, noting meanwhile what changes on most frames (a
- * style or a class written) and, at the end, what animates other than its
- * transform or opacity.
+ * In the page: counts its frames until `least` ms (of the animations' own
+ * time, with `played`) and `frames` frames have passed (with `still`, also
+ * until no animation with an end is running), `most` ms at the most, noting
+ * meanwhile what changes on most frames (a style or a class written) and,
+ * at the end, what animates other than its transform or opacity. The count
+ * so far is window.__framesWatched.
  */
-async function watchFrames({ least, frames: fewest, most, still }) {
+async function watchFrames({ least, frames: fewest, most, still, played }) {
   const name = (el) => `${el.tagName.toLowerCase()}${[...el.classList].filter((c) => !c.startsWith('svelte-')).map((c) => `.${c}`).join('')}`;
   const changed = new Map();
   const seen = new MutationObserver((list) => {
@@ -380,12 +384,15 @@ async function watchFrames({ least, frames: fewest, most, still }) {
   seen.observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
   const busy = () => document.getAnimations().some((a) => a.playState === 'running' && Number.isFinite(a.effect?.getComputedTiming().endTime ?? Infinity));
   const t0 = performance.now();
+  const p0 = document.timeline.currentTime;
   let n = 0;
+  window.__framesWatched = 0;
   await new Promise((done) => {
     const frame = () => {
-      n++;
+      window.__framesWatched = ++n;
       const t = performance.now() - t0;
-      if ((t >= least && n >= fewest && !(still && busy())) || t >= most) done();
+      const ran = played ? document.timeline.currentTime - p0 : t;
+      if ((ran >= least && n >= fewest && !(still && busy())) || t >= most) done();
       else requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
@@ -399,10 +406,10 @@ async function watchFrames({ least, frames: fewest, most, still }) {
       const props = [...new Set(a.effect.getKeyframes().flatMap((k) => Object.keys(k)))].filter((p) => !COMPOSITED.has(p));
       return props.length ? [`${(a.animationName ?? a.id) || 'an animation'} on ${name(a.effect.target)} (${props.join(', ')})`.replace(/svelte-\w+-/, '')] : [];
     });
-  return { frames: n, ms: Math.round(performance.now() - t0), changing: [...changed].filter(([, c]) => c >= n * 0.5).map(([k]) => k), painted: [...new Set(painted)] };
+  return { frames: n, ms: Math.round(performance.now() - t0), played: Math.round(document.timeline.currentTime - p0), changing: [...changed].filter(([, c]) => c >= n * 0.5).map(([k]) => k), painted: [...new Set(painted)] };
 }
 
-/** `during` run with the browser tracing, and what was drawn again meanwhile. */
+/** `during` run with the browser tracing: what it returned, and the trace (for `redraws(readTrace(...))`). */
 async function traced(browser, page, during) {
   await browser.startTracing(page, { categories: REDRAW_TRACE });
   let r, trace;
@@ -411,8 +418,9 @@ async function traced(browser, page, during) {
   } finally {
     trace = await browser.stopTracing();
   }
-  return { ...r, ...redraws(readTrace(trace.toString())) };
+  return { ...r, trace };
 }
+const drawnAgain = ({ trace, ...r }) => ({ ...r, ...redraws(readTrace(trace.toString())) });
 
 const contextFor = (browser) => {
   const size = SIZES.find((s) => s.key === REDRAW_SIZE);
@@ -446,14 +454,19 @@ async function scenesAtRest(base, scenes, browsers) {
             for (const [k, v] of s.values ?? []) q.set(`k.${k}`, v);
             await page.goto(`${base}qa.html?${q}`, { waitUntil: 'load', timeout: 60000 });
             step('loaded');
-            await page.waitForFunction(() => window.__qa, null, { timeout: 90000 });
+            await page.waitForFunction(() => window.__qa, null, { timeout: 120000 });
             const r0 = await page.evaluate(() => window.__qa);
             if (r0.failed) throw new Error(r0.failed);
             step('at rest');
             // (What follows a scene's coming to rest, a toast, a sound's first beat, past.)
             await page.waitForTimeout(500);
-            const r = await traced(browser, page, () => page.evaluate(watchFrames, { least: 2000, frames: 20, most: 8000, still: false }));
-            step(`${r.frames} frames in ${r.ms} ms, traced and read`);
+            // (At least 12 frames, however long they take: in software, a frame can take half a second.)
+            const t = await traced(browser, page, () => page.evaluate(watchFrames, { least: 2000, frames: 12, most: 60000, still: false }));
+            step(`${t.frames} frames in ${t.ms} ms, traced`);
+            // (The page closed first, so that it isn't drawing while the trace is read.)
+            await context.close();
+            const r = drawnAgain(t);
+            step(`read ${(t.trace.length / 1e6).toFixed(0)} MB`);
             const problems = r.layers.map((l) => atRest(s.key, l, r.frames)).filter(Boolean);
             out.push({ scene: s.key, frames: r.frames, ms: r.ms, problems, changing: r.changing, painted: r.painted, layers: r.layers.slice(0, 8) });
             if (!process.stdout.isTTY) console.log(`  ${s.key}: ${took.join(', ')}`);
@@ -478,7 +491,17 @@ async function scenesAtRest(base, scenes, browsers) {
  * (cards.html?stage): each set off and watched until it's over, as the
  * pixels drawn again a frame. Each measured three times, the middle kept:
  * a frame's timing moves the rest a little.
+ *
+ * Drawn again a frame depends on how many frames a moment gets: a card
+ * drawn once more as it lands is a lot a frame at 2 frames a second and
+ * nothing at 240. So the moment's animations (CSS and element.animate) run
+ * on a clock kept to the frames as they come (CDP's
+ * Animation.setPlaybackRate, set every half second): PLAYED_FPS frames to
+ * a second of theirs on any machine, CI's in software as a fast GPU.
+ * (What's timed in script, the draw's light hopping, keeps its own time;
+ * it moves only opacity and transforms.)
  */
+const PLAYED_FPS = 30;
 async function moments(base, browser) {
   const context = await contextFor(browser);
   const page = await context.newPage();
@@ -486,8 +509,37 @@ async function moments(base, browser) {
   try {
     await page.goto(`${base}cards.html?stage`, { waitUntil: 'load', timeout: 60000 });
     await page.waitForFunction(() => window.__cb?.ready, null, { timeout: 90000 });
-    const rest = () => page.evaluate(watchFrames, { least: 1000, frames: 1, most: 10000, still: true });
-    await rest();
+    const cdp = await context.newCDPSession(page);
+    await cdp.send('Animation.enable');
+    const clock = (rate) => cdp.send('Animation.setPlaybackRate', { playbackRate: rate });
+    const rest = async () => {
+      await clock(1);
+      return page.evaluate(watchFrames, { least: 1000, frames: 1, most: 30000, still: true });
+    };
+    const still = await rest();
+    // (Where the clock starts: a moment's frames come slower than those at rest, and it's soon set right.)
+    let rate = Math.min(16, Math.max(0.005, still.frames / (still.ms / 1000) / PLAYED_FPS / 2));
+    /** Keeps the clock to the frames until `watching` is over. */
+    const keepClock = async (watching) => {
+      let over = false;
+      watching.then(
+        () => (over = true),
+        () => (over = true),
+      );
+      let n0 = 0;
+      let t0 = Date.now();
+      while (!over) {
+        await new Promise((r) => setTimeout(r, 500));
+        const n = await page.evaluate(() => window.__framesWatched ?? 0).catch(() => n0);
+        if (over || n <= n0) continue;
+        const fps = (n - n0) / ((Date.now() - t0) / 1000);
+        rate = Math.min(16, Math.max(0.005, (rate + fps / PLAYED_FPS) / 2));
+        await clock(rate).catch(() => {});
+        n0 = n;
+        t0 = Date.now();
+      }
+      return watching;
+    };
     // (The bench's items: every category by name, the dig's way out last.)
     const deal = () => page.evaluate(() => window.__cb.deal(window.__cb.items.slice(0, 3).map((i) => ({ category: i.value, kind: null }))));
     const setOff = {
@@ -495,7 +547,8 @@ async function moments(base, browser) {
       dig: () => page.evaluate(() => window.__cb.deal([{ category: window.__cb.items[0].value, kind: 'azurite' }, { category: window.__cb.items.at(-1).value, kind: null }])),
       pick: () => page.evaluate(() => window.__lab.ask()),
     };
-    for (const m of MOMENTS) {
+    // (With --shard i/n, the i-th of every n moments: CI gives each its own job.)
+    for (const m of MOMENTS.filter((m, i) => !shard || i % shard[1] === shard[0] - 1)) {
       const runs = [];
       for (let i = 0; i < 3; i++) {
         // (A pick is of cards dealt first, unwatched.)
@@ -503,17 +556,21 @@ async function moments(base, browser) {
           await deal();
           await rest();
         }
-        const r = await traced(browser, page, async () => {
-          await setOff[m.key]();
-          return page.evaluate(watchFrames, { least: 1500, frames: 8, most: 10000, still: true });
-        });
+        await clock(rate);
+        // (Watched until it's over, and for a second and a half of its own time at least.)
+        const r = drawnAgain(
+          await traced(browser, page, async () => {
+            await setOff[m.key]();
+            return keepClock(page.evaluate(watchFrames, { least: 1500, frames: 8, most: 240000, still: true, played: true }));
+          }),
+        );
         runs.push({ ...r, perFrame: r.again / Math.max(1, r.frames) });
-        if (!process.stdout.isTTY) console.log(`  ${m.key}, run ${i + 1}: ${r.frames} frames in ${r.ms} ms, ${kpx(runs.at(-1).perFrame)} drawn again a frame`);
+        if (!process.stdout.isTTY) console.log(`  ${m.key}, run ${i + 1}: ${r.frames} frames in ${r.ms} ms for ${r.played} ms of its own (the clock ending at ${rate.toFixed(3)}×), ${kpx(runs.at(-1).perFrame)} drawn again a frame`);
         await rest();
       }
       runs.sort((a, b) => a.perFrame - b.perFrame);
       const r = runs[1];
-      out.push({ key: m.key, label: m.label, perFrame: Math.round(r.perFrame), runs: runs.map((x) => Math.round(x.perFrame)), frames: r.frames, ms: r.ms, px: r.px, again: r.again, painted: r.painted, layers: r.layers.slice(0, 6) });
+      out.push({ key: m.key, label: m.label, perFrame: Math.round(r.perFrame), runs: runs.map((x) => Math.round(x.perFrame)), frames: r.frames, ms: r.ms, played: r.played, px: r.px, again: r.again, painted: r.painted, layers: r.layers.slice(0, 6) });
     }
   } finally {
     await context.close();
