@@ -229,6 +229,21 @@ export function atRest(scene: string, l: LayerRedraws, frames: number): string |
   return `${l.name} (${l.w}×${l.h}) drawn again on ${Math.round((Math.min(l.commits, frames) / frames) * 100)}% of the frames at rest, ${kpx(perFrame)} a frame`;
 }
 
+/**
+ * A scene at rest judged, from its layers over `frames` frames: what fails
+ * (atRest's), and what's only listed. In software (CI) a frame can take
+ * seconds, and a light that passes every few seconds lands on nearly every
+ * one. So there a layer drawn again on nearly every frame fails only where
+ * something changes on nearly every frame at any pace: a style or class
+ * written on nearly every frame (`everyFrame`, a shake), or an endless
+ * animation of what's painted that never waits (`endless`, a breathe).
+ */
+export function sceneAtRest(scene: string, layers: LayerRedraws[], frames: number, { software, everyFrame, endless }: { software: boolean; everyFrame: string[]; endless: string[] }): { problems: string[]; unjudged: string[] } {
+  const found = layers.map((l) => atRest(scene, l, frames)).filter((p): p is string => p !== null);
+  const steady = !software || everyFrame.length > 0 || endless.length > 0;
+  return steady ? { problems: found, unjudged: [] } : { problems: [], unjudged: found };
+}
+
 // ---- what's painted ---------------------------------------------------------
 
 /**

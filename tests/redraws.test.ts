@@ -3,7 +3,7 @@
 // what fails.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FLOOR, SLACK, atRest, layerName, overBaseline, readTrace, redraws, type TraceEvent } from '../src/qa/redraws.ts';
+import { FLOOR, SLACK, atRest, layerName, overBaseline, readTrace, redraws, sceneAtRest, type TraceEvent } from '../src/qa/redraws.ts';
 
 test('a layer is named by its element, Svelte’s classes left out', () => {
   assert.equal(layerName("LayoutFlexibleBox (relative positioned) DIV class='shell svelte-1n46o8q'"), 'div.shell');
@@ -82,6 +82,16 @@ test('at rest, a layer drawn again on nearly every frame fails', () => {
   assert.equal(atRest('home/returning', { ...l, name: 'svg.glow', w: 156, h: 108, px: 20 * 21_000, again: 19 * 21_000 }, 20), null, 'too small to feel');
   assert.equal(atRest('settings/key', { ...l, name: 'div.shell' }, 20), null, 'allowed there');
   assert.match(atRest('game/turns-question', { ...l, name: 'div.shell' }, 20) ?? '', /div\.shell/, 'but not elsewhere');
+});
+
+test('in software, a layer at rest fails only beside something that changes on nearly every frame', () => {
+  const layers = [{ id: 5, name: 'div.shell', w: 1425, h: 900, node: 1, commits: 10, px: 10 * 500_000, again: 9 * 500_000 }];
+  const none = { everyFrame: [], endless: [] };
+  assert.equal(sceneAtRest('over/n-lost', layers, 10, { software: false, ...none }).problems.length, 1, 'on a GPU, the share alone');
+  assert.deepEqual(sceneAtRest('over/n-lost', layers, 10, { software: true, ...none }).problems, [], 'a light passing every few seconds');
+  assert.equal(sceneAtRest('over/n-lost', layers, 10, { software: true, ...none }).unjudged.length, 1, 'listed, not failed');
+  assert.equal(sceneAtRest('game/delve-dig', layers, 10, { software: true, everyFrame: ['div.shell’s style'], endless: [] }).problems.length, 1, 'a shake');
+  assert.equal(sceneAtRest('game/turns-question', layers, 10, { software: true, everyFrame: [], endless: ['glow on span.seal (box-shadow)'] }).problems.length, 1, 'a breathe');
 });
 
 test('a moment fails past its baseline, taken as at least the floor', () => {

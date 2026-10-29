@@ -43,7 +43,7 @@ import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
 import { SIZES } from '../src/qa/sizes.ts';
 import { touched } from '../src/qa/change.ts';
-import { FEWEST_FRAMES, MOMENTS, NEARLY_EVERY_FRAME, atRest, kpx, overBaseline, readTrace, redraws } from '../src/qa/redraws.ts';
+import { FEWEST_FRAMES, MOMENTS, NEARLY_EVERY_FRAME, kpx, overBaseline, readTrace, redraws, sceneAtRest } from '../src/qa/redraws.ts';
 import { changedFiles } from '../qaServer.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -103,6 +103,14 @@ if (values.baseline) values.moments = true;
 const shard = values.shard?.match(/^(\d+)\/(\d+)$/)?.slice(1).map(Number);
 if (values.shard && !(shard && shard[0] >= 1 && shard[0] <= shard[1])) {
   console.error(`--shard takes i/n, the i-th of n parts (1/4), not "${values.shard}".`);
+  process.exit(1);
+}
+if (values.redraws && values.map) {
+  console.error('--redraws and --map are two runs of their own: one at a time.');
+  process.exit(1);
+}
+if (values.redraws && values.sizes !== 'walk' && !SIZES.some((s) => s.key === values.sizes)) {
+  console.error(`--redraws checks at one size (src/qa/sizes.ts has ${SIZES.map((s) => s.key).join(', ')}), not "${values.sizes}".`);
   process.exit(1);
 }
 if (values.redraws && !values.only && !values.moments && !process.env.CI) {
@@ -589,13 +597,8 @@ async function scenesAtRest(base, scenes, browsers) {
             await context.close();
             const r = drawnAgain(t);
             step(`read ${(t.trace.length / 1e6).toFixed(0)} MB`);
-            const found = r.layers.map((l) => atRest(s.key, l, r.frames)).filter(Boolean);
-            // (In software a frame can take seconds, and a light that passes every few seconds lands on nearly
-            // every one. So there a layer drawn again on nearly every frame fails only where something changes
-            // on nearly every frame at any pace: a style written each frame (a shake), or an endless animation
-            // of what's painted that never waits (a breathe). The rest is noted, not failed.)
-            const steady = !software || r.everyFrame.length > 0 || r.endless.length > 0;
-            out.push({ scene: s.key, frames: r.frames, ms: r.ms, problems: steady ? found : [], unjudged: steady ? [] : found, changing: r.changing, everyFrame: r.everyFrame, painted: r.painted, endless: r.endless, layers: r.layers.slice(0, 8) });
+            const { problems, unjudged } = sceneAtRest(s.key, r.layers, r.frames, { software, everyFrame: r.everyFrame, endless: r.endless });
+            out.push({ scene: s.key, frames: r.frames, ms: r.ms, problems, unjudged, changing: r.changing, everyFrame: r.everyFrame, painted: r.painted, endless: r.endless, layers: r.layers.slice(0, 8) });
             if (!process.stdout.isTTY) console.log(`  ${s.key}: ${took.join(', ')}`);
             break;
           } catch (e) {
@@ -743,7 +746,7 @@ async function checkRedraws(base, scenes) {
   if (atRestFound.length) console.log(`At rest: ${atRestFound.length} scenes, ${bad.length} with a layer drawn again on nearly every frame${bad.length ? ':' : '.'}`);
   for (const l of lines) console.log(l);
   for (const m of momentsFound) {
-    const of = m.baseline === undefined ? 'no baseline yet' : `baseline ${kpx(m.baseline)}`;
+    const of = m.baseline !== undefined ? `baseline ${kpx(m.baseline)}` : sameSize ? 'no baseline yet' : `no baseline at ${REDRAW_SIZE}`;
     console.log(`${m.label}: ${kpx(m.perFrame)} drawn again a frame (${m.runs.map(kpx).join(', ')}; ${m.frames} frames in ${m.ms} ms), ${of}${m.problem ? `\n  FAILS: ${m.problem}` : ''}`);
     if (m.problem) {
       for (const l of m.layers.slice(0, 4)) console.log(`    ${l.name} (${l.w}×${l.h}): drawn in ${l.commits} commits, ${kpx(l.again / Math.max(1, m.frames))} again a frame`);
@@ -753,7 +756,8 @@ async function checkRedraws(base, scenes) {
   const measured = { size: REDRAW_SIZE, moments: Object.fromEntries(momentsFound.map((m) => [m.key, m.perFrame])) };
   if (values.baseline && momentsFound.length && !sameSize) console.log(`Not written into ${path.relative(ROOT, BASELINE)}: its baselines are at ${baseline.size}, CI's size, not ${REDRAW_SIZE}.`);
   else if (values.baseline && momentsFound.length) {
-    writeFileSync(BASELINE, `${JSON.stringify({ ...baseline, ...measured }, null, 2)}\n`);
+    // (The moments not run this time, another shard's, kept.)
+    writeFileSync(BASELINE, `${JSON.stringify({ ...baseline, ...measured, moments: { ...baseline.moments, ...measured.moments } }, null, 2)}\n`);
     console.log(`Wrote the moments into ${path.relative(ROOT, BASELINE)}.`);
   }
   // In CI, the job's summary: what was found, and the moments as measured, to commit as the baseline when a change means them.
