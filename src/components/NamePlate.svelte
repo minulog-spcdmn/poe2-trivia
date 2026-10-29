@@ -200,6 +200,9 @@
   let linesEl = $state<SVGSVGElement>();
   let fieldEl = $state<HTMLElement>();
   $effect(() => {
+    // (Again when an end changes, as the bench's seals do: a sign put in
+    // after the pen was done would stay hidden. What's drawn shows at once.)
+    void [start, end];
     const svgs = [glowEl, linesEl];
     let pen: Pen | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -209,9 +212,12 @@
       pen = drawIn(start);
       for (const svg of svgs) if (svg) pen.add(svg);
     };
+    // (Moved on the page, as a dialog's backdrop is, the fade starts over and
+    // the old one's `ready` rejects: then it's timed from the new one.)
     const follow = () => {
+      if (stopped) return;
       const fade = fieldEl?.getAnimations()[0];
-      if (fade) fade.ready.then(() => draw(performance.now() - Number(fade.currentTime ?? 0)), () => draw(performance.now()));
+      if (fade) fade.ready.then(() => draw(performance.now() - Number(fade.currentTime ?? 0)), follow);
       else draw(performance.now());
     };
     const frame = requestAnimationFrame(() => (timer = setTimeout(follow)));
