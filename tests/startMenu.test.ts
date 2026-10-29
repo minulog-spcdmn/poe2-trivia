@@ -30,3 +30,14 @@ test('in one column the Codex says it shorter, a line each', () => {
   assert.deepEqual(codexLines(3, 501, 0), ['3 of 501 met.']);
   assert.deepEqual(codexLines(0, 501, 0), ['Kept as you play.']);
 });
+
+test('while items new with a release are still to meet, the Codex line says how many came with it', () => {
+  const fresh = { name: '1.0', count: 39 };
+  assert.equal(codexLine(462, 540, 12, fresh), 'Every unique you have met: 462 of 540; 39 came with 1.0. Deepest delve: 12.');
+  assert.equal(codexLine(462, 540, 0, fresh), 'Every unique you have met: 462 of 540; 39 came with 1.0.');
+  assert.deepEqual(codexLines(462, 540, 12, fresh), ['462 of 540 met.', '39 came with 1.0.', 'Deepest delve: 12.']);
+  assert.deepEqual(codexLines(462, 540, 0, fresh), ['462 of 540 met.', '39 came with 1.0.']);
+  // A newcomer's line says what the Codex is for, release or none.
+  assert.equal(codexLine(0, 540, 0, fresh), 'Every unique you meet in a game is kept here.');
+  assert.deepEqual(codexLines(null, 540, 0, fresh), ['Kept as you play.']);
+});

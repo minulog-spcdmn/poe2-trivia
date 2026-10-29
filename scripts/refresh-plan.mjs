@@ -160,6 +160,29 @@ export function artPlan(ids, files, renamedIds = new Set()) {
   };
 }
 
+/**
+ * Each item's first day, as the refreshes saw it: `added` in items.json, the
+ * UTC day (YYYY-MM-DD) of the run that first listed it. An item keeps the
+ * day it had, by id (so a renamed one keeps its own: it isn't new); one not
+ * in `before` takes `day`; one listed before the stamps began has none. The
+ * start page counts a release's new items by it (src/lib/releases.ts).
+ * Returns `out` with the days set, in place.
+ * @template {{ id: string, added?: string }} T
+ * @param {{ id: string, added?: string }[]} before
+ * @param {T[]} out
+ * @param {string} day
+ */
+export function firstSeen(before, out, day) {
+  const was = new Map(before.map((it) => [it.id, it]));
+  for (const it of out) {
+    const old = was.get(it.id);
+    const added = old ? old.added : day;
+    if (added) it.added = added;
+    else delete it.added;
+  }
+  return out;
+}
+
 /** The fields of items.json an item is compared by (its name aside: a rename says that). */
 const FIELDS = ['base', 'group', 'category', 'kind', 'w', 'h'];
 
@@ -211,9 +234,12 @@ export function withoutTooltip(before, items, added, missing) {
 
 /**
  * The run's last words: what came, went, was renamed, changed and was left out.
- * @param {{ added?: string[], renamed?: Rename[], dropped?: string[], changed?: { name: string, fields: string[] }[], leftOut?: string[], newArt?: string[] }} what
+ * An item added is stamped with the run's `day`: the start page counts it as
+ * new with the newest release in src/lib/releases.ts whose day it is on or
+ * after, so a new league's refresh adds that release first.
+ * @param {{ added?: string[], renamed?: Rename[], dropped?: string[], changed?: { name: string, fields: string[] }[], leftOut?: string[], newArt?: string[], day?: string }} what
  */
-export function summaryLines({ added = [], renamed = [], dropped = [], changed = [], leftOut = [], newArt = [] }) {
+export function summaryLines({ added = [], renamed = [], dropped = [], changed = [], leftOut = [], newArt = [], day = '' }) {
   const lines = ['Summary:'];
   /** @param {string} label @param {string[]} names */
   const list = (label, names) => lines.push(`  ${label} (${names.length})${names.length ? `: ${names.join(', ')}` : ''}`);
@@ -223,5 +249,7 @@ export function summaryLines({ added = [], renamed = [], dropped = [], changed =
   list('Changed', changed.map((c) => `${c.name} (${c.fields.join('; ')})`));
   list('New art for an item kept', newArt);
   list('Left out, no tooltip', leftOut);
+  if (added.length && day)
+    lines.push(`  The ${added.length} added are first seen ${day}: the start page counts them as the newest release's in src/lib/releases.ts, if it starts on or before that day (a new league's refresh adds its release there first).`);
   return lines;
 }
