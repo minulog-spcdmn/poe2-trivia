@@ -166,3 +166,21 @@ test("the deal puts .down on the card, and takes it off on the turn's own clock"
   assert.doesNotMatch(DEAL, /setTimeout\([^;]*'down'/, "a timer counted from the deal runs ahead of the turn; take .down off in the transition's tick");
   assert.match(DEAL, /tick: \([^)]*\) => \{[\s\S]*classList\.remove\('down'\)/, "the deal takes .down off in its tick, on the turn's own clock");
 });
+
+// ---- what follows the pointer -----------------------------------------------
+// The tilt and the glare follow the pointer by transforms alone. The glare
+// was a gradient drawn at the pointer (--gx, --gy), and Chrome drew the
+// whole sharp face again at every move: a third of the GPU's time while the
+// pointer moved over a card. Its light is drawn once and moved (glareAt).
+
+test('what follows the pointer over a card moves by its transform alone', () => {
+  const set = new Set([...SCRIPT.matchAll(/setProperty\('(--[\w-]+)'/g)].map((m) => m[1]!));
+  assert.ok(set.has('--tilt-x'), 'found what the script sets as the pointer moves (--tilt-x)');
+  CSS.walkDecls((d) => {
+    for (const [, name] of d.value.matchAll(/var\((--[\w-]+)/g))
+      if (set.has(name!)) assert.equal(d.prop, 'transform', `${(d.parent as Rule).selector} { ${d.prop} } reads ${name}, which follows the pointer: only a transform may, or Chrome draws the sharp face again at every move`);
+  });
+  const light = decls(CSS, /^will-change$/).find((d) => (d.parent as Rule).selector === '.glare > .light');
+  assert.ok(light && /transform/.test(light.value), "the glare's light is on a layer of its own (will-change: transform), moved by glareAt");
+  assert.match(SCRIPT, /light\.style\.transform = /, 'glareAt moves the light by its transform');
+});

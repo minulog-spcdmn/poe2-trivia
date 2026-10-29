@@ -745,10 +745,25 @@
     const x = (e.clientX - r.left) / r.width;
     const y = (e.clientY - r.top) / r.height;
     tiltTo(frame, (0.5 - y) * 20, (x - 0.5) * 24);
-    // (On the glare itself: set on the frame, every part of the card would be restyled with it.)
-    const glare = frame.querySelector<HTMLElement>('.glare');
-    glare?.style.setProperty('--gx', `${(x * 100).toFixed(1)}%`);
-    glare?.style.setProperty('--gy', `${(y * 100).toFixed(1)}%`);
+    const light = frame.querySelector<HTMLElement>('.glare > .light');
+    if (light) glareAt(light, x, y);
+  }
+  /** How far the glare reaches: it fades out this far towards the card's farthest corner from it. */
+  const GLARE_REACH = 0.45;
+  /**
+   * Moves the glare's light to `x`, `y` (across and down the card, 0 to 1)
+   * and sizes it as a radial gradient there would be, by its transform only:
+   * the face it lies on is never drawn again (see .glare).
+   */
+  function glareAt(light: HTMLElement, x: number, y: number) {
+    const box = light.parentElement!;
+    // (The card's height in its widths, the same whatever its zoom; the light's side in the card's widths.)
+    const k = box.offsetHeight / box.offsetWidth;
+    const side = 2 * GLARE_REACH * Math.hypot(1, k);
+    const width = `${(100 * side).toFixed(1)}%`;
+    if (light.style.width !== width) light.style.width = width;
+    const far = Math.hypot(Math.max(x, 1 - x), Math.max(y, 1 - y) * k);
+    light.style.transform = `translate(${((100 * x) / side - 50).toFixed(2)}%, ${((100 * y * k) / side - 50).toFixed(2)}%) scale(${(far / Math.hypot(1, k)).toFixed(4)})`;
   }
   $effect(() => () => {
     for (const t of tilts.values()) t.stop();
@@ -908,7 +923,7 @@
             <span class="frame" data-sharp={sharp || undefined} use:backdropShadow>
               <span class="grain"></span>
               <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
-              <span class="glare"></span>
+              <span class="glare"><span class="light"></span></span>
               <span class="sheen"></span>
               {@render filigree()}
               {#if kindOf(cat)}
@@ -1678,16 +1693,32 @@
     transform: none;
     filter: none;
   }
-  /* A soft highlight that follows the pointer across the card. */
+  /* A soft highlight that follows the pointer across the card: a light of
+     its own, drawn once and moved and sized by its transform (see glareAt),
+     as wide as a gradient at the pointer reaching to the card's farthest
+     corner. Its gradient was the face's, drawn again at every move, and
+     Chrome drew the whole face again with it (a third of the GPU's time
+     while the pointer moved over a card). Placed here at rest at the top's
+     middle, where the light stood before the pointer moved. */
   .glare {
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    background: radial-gradient(circle at var(--gx, 50%) var(--gy, 30%), rgba(255, 226, 170, 0.07), transparent 45%);
+    overflow: clip;
     mix-blend-mode: screen;
     opacity: 0;
     transition: opacity 0.35s;
     pointer-events: none;
+  }
+  .glare > .light {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 152.4%;
+    aspect-ratio: 1;
+    background: radial-gradient(circle closest-side, rgba(255, 226, 170, 0.07), transparent);
+    transform: translate(-17.2%, -23.1%) scale(0.637);
+    will-change: transform;
   }
   .card.mine:not(:global(.down)):hover .glare {
     opacity: 1;
