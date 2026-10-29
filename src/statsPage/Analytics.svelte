@@ -28,6 +28,7 @@
   import GamesView from './GamesView.svelte';
   import GroupsView from './GroupsView.svelte';
   import JoiningView from './JoiningView.svelte';
+  import StutterView from './StutterView.svelte';
   import KeyGate from './KeyGate.svelte';
   import { countedSpan, countsOf, daysBetween, firstCounted } from './model';
   import Overview from './Overview.svelte';
@@ -125,7 +126,7 @@
     if (had) return had;
     try {
       const r = JSON.parse(readStored(`analytics.read.${days}`, 'session') ?? 'null') as Read | null;
-      if (r?.v !== 10 || r.span !== days) return null;
+      if (r?.v !== 11 || r.span !== days) return null;
       cache.set(days, r);
       return r;
     } catch {
@@ -243,7 +244,7 @@
       if (added) writeStored(DAY_REFS_KEY, dayRefsToKeep(keptRefs, tz, addDays(today, -Math.max(...PERIODS.map((p) => p.value)))));
       if (ask !== asked) return;
       const r: Read = {
-        v: 10,
+        v: 11,
         span: days,
         from: start,
         to: today,
@@ -627,6 +628,8 @@
         <GamesView {read} {period} {weekly} />
       {:else if view === 'daily'}
         <DailyView {read} {period} {weekly} />
+      {:else if view === 'stutter'}
+        <StutterView {read} {period} {weekly} />
       {:else if view === 'groups'}
         <GroupsView
           {read}

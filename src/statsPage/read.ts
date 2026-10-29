@@ -8,7 +8,7 @@ import { addDays } from './zone';
 /** A period read: its days and the same many before, with what the start page's visitors came on and from. */
 export interface Read {
   /** The shape this was kept in: a read kept by an older build is read again. */
-  v: 10;
+  v: 11;
   /** The period's length; `from` is later where counting began inside it (counted). */
   span: number;
   from: string;
@@ -74,6 +74,7 @@ export const VIEWS = [
   { value: 'games', name: 'Games' },
   { value: 'daily', name: "Today's unique" },
   { value: 'joining', name: 'Joining' },
+  { value: 'stutter', name: 'Stutter' },
   { value: 'groups', name: 'Groups' },
 ] as const;
 export type View = (typeof VIEWS)[number]['value'];

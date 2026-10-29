@@ -6,8 +6,10 @@
 // slowly growing, Today's unique only from the day it began, how far a visit
 // got and who came back only from the day the game began counting them, and
 // games under their older names (online and hot-seat apart) before hot seat
-// went, as the real account has them.
+// went, as the real account has them, and each device's frames, with a few
+// days iPhones stuttered more, as a bad deploy would show.
 
+import { MOMENTS, framesEvent } from '../lib/stutter.ts';
 import type { Named } from './api.ts';
 import { keptChanges } from './changes.ts';
 import { sameSites, spikesOf, stepsOf } from './insights.ts';
@@ -68,6 +70,29 @@ const spikeOf = (day: string) => (stream(seedOf(`${day}/spike`))() < 0.06 ? 2.4 
 const REACH_FROM = '2026-09-01';
 /** The day the made-up game dropped hot seat: its games were counted online and hot-seat apart before ("play/race-online"), by mode alone since. */
 const MODES_FROM = '2026-10-14';
+/** The day the made-up game began counting how smoothly a game's frames came (count.ts countGameFrames). */
+const FRAMES_FROM = '2026-10-01';
+/** The devices games are played on, how often a game stutters some and many on each, and the moment it most often does. */
+const DEVICE_MIX = [
+  { device: 'desktop-chrome', share: 0.46, some: 0.08, many: 0.02, mostly: 'question' },
+  { device: 'desktop-other', share: 0.09, some: 0.12, many: 0.03, mostly: 'deal' },
+  { device: 'ios', share: 0.27, some: 0.2, many: 0.05, mostly: 'reveal' },
+  { device: 'android', share: 0.18, some: 0.28, many: 0.1, mostly: 'deal' },
+] as const;
+/** A made-up deploy that made iPhones stutter at the reveal, and the one that mended it: what a jump looks like. */
+const IOS_WORSE = ['2026-10-20', '2026-10-24'] as const;
+
+/** How one device's game went (stutter.ts framesEvent), from the day's own stream, so the rest of its numbers stay as they were. */
+function framesPath(day: string, rnd: () => number): string {
+  let pick = rnd();
+  const d = DEVICE_MIX.find((m) => (pick -= m.share) < 0) ?? DEVICE_MIX[0];
+  const worse = d.device === 'ios' && day >= IOS_WORSE[0] && day < IOS_WORSE[1];
+  const r = rnd() / (worse ? 2.4 : 1);
+  const bucket = r < d.many ? 'many' : r < d.many + d.some ? 'some' : 'smooth';
+  const worst = bucket === 'smooth' ? null : worse ? 'reveal' : rnd() < 0.5 ? d.mostly : MOMENTS[Math.floor(rnd() * 3)];
+  return framesEvent(d.device, { bucket, worst });
+}
+
 /** Of those coming back, how long since they last played: within a day, 2 to 7 days, 8 to 30, longer. */
 const BACK = [
   ['back-1d', 0.42],
@@ -79,6 +104,7 @@ const BACK = [
 /** One day's made-up counts, each path with its 24 hours (from the day's midnight in ZONE); `upTo`: the hours counted so far (today). */
 function dayCounts(day: string, upTo = 24): Map<string, number[]> {
   const rnd = stream(seedOf(day));
+  const frames = stream(seedOf(`${day}/frames`));
   const out = new Map<string, number[]>();
   const add = (path: string, h: number, n: number) => {
     if (!n || h >= upTo) return;
@@ -166,6 +192,8 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
         // Bigger parties are rarer.
         const size = g.sizes[Math.floor(rnd() ** 1.6 * g.sizes.length)];
         add(`size/${key}-${size}p`, h, 1);
+        // Each device in it counts its own frames: those at one screen are one device.
+        if (day >= FRAMES_FROM) for (let s = 0; s < (oneDevice ? 1 : size); s++) add(framesPath(day, frames), h, 1);
         if (rnd() >= 0.78) continue;
         add(`end/${key}`, h, 1);
         // Most runs end shallow, a few go far down.
@@ -282,7 +310,7 @@ export function demoRead(days: number, at = new Date()): Read {
   const now = countsOf(nowPaths, daysBetween(from, today), ZONE, until);
   const before = countsOf(pathsOf(daysBetween(fromBefore, toBefore), hoursSoFar), daysBetween(fromBefore, toBefore), ZONE, until);
   return {
-    v: 10,
+    v: 11,
     span: days,
     from,
     to: today,

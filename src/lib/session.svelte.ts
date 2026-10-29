@@ -55,7 +55,7 @@ import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
 import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, livesOf, pausedUsed, standingIds, type CardFind, type FindKind } from './delve';
-import { GameCounts, Steps, countEvent, countFailure, countStep, counting, markActive, type Failure, type JoinVia } from './count';
+import { GameCounts, Steps, countEvent, countFailure, countGameFrames, countStep, counting, markActive, type Failure, type JoinVia } from './count';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
@@ -2848,12 +2848,13 @@ class Session {
     for (const e of this.gameCounts.events(prev, next)) countEvent(e);
   }
 
-  /** What every device makes of a state change, host and guest alike: a Delve clock starting, records, sounds and notices, achievements. */
+  /** What every device makes of a state change, host and guest alike: a Delve clock starting, records, its own frames measured, sounds and notices, achievements. */
   private noteChange(prev: GameState | null, next: GameState) {
     // (Named in the beta's frame meter, so a slow frame can be placed in the game.)
     if (prev?.phase !== next.phase || prev?.question?.askedAt !== next.question?.askedAt) frameEvent(`game: ${next.phase}${next.reveal && !prev?.reveal ? (next.reveal.correct ? ' (right)' : ' (wrong)') : ''}`);
     this.noteClock(next);
     this.notePlay(prev, next);
+    countGameFrames(next);
     this.noteRun(prev, next);
     this.onNewState(prev, next);
     this.noteEncounter(prev, next);
@@ -3477,6 +3478,8 @@ class Session {
     this.peerEpoch++;
     this.closeAsked = false;
     this.recordLeaving();
+    // The game's frames, as far as they got, counted as it's left (count.ts).
+    countGameFrames(null);
     // A join never let in leaves the saved name as it was (turned down, given up, left).
     this.nameToKeep.dropped();
     // A new attempt (or leaving) makes the last one's errors moot.
