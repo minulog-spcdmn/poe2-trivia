@@ -114,7 +114,8 @@ async function inner(out) {
     load(id) {
       if (!id.startsWith(MISSING)) return null;
       const n = Number(id.slice(MISSING.length));
-      return `throw ${fail([...gone.keys()][n])};`;
+      // (Thrown from a function: code after a bare throw is dropped as unreachable, the exports put after it with it.)
+      return `(() => { throw ${fail([...gone.keys()][n])}; })();`;
     },
     transform: {
       order: 'post',
@@ -122,9 +123,10 @@ async function inner(out) {
         const names = unexported.get(slash(id));
         if (!names) return null;
         // Each a thing that throws once it's called, read or built: as the dev server's code before fails on it.
-        const lines = [...names].map((name) => {
+        // (Under a name of their own, exported as the one asked for: the module may have that name already, unexported.)
+        const lines = [...names].map((name, i) => {
           const value = `new Proxy(function () {}, { get() { throw ${fail(name)}; }, apply() { throw ${fail(name)}; }, construct() { throw ${fail(name)}; } })`;
-          return name === 'default' ? `export default ${value};` : `export const ${name} = ${value};`;
+          return `const __qaBeforeMissing${i} = ${value};\nexport { __qaBeforeMissing${i} as ${name} };`;
         });
         return { code: `${code}\n${lines.join('\n')}\n`, map: null };
       },

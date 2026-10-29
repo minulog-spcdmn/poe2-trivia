@@ -299,6 +299,8 @@
   let box = $state<{ w: number; h: number } | null>(null);
   /** Where the view before and now differ, once compared (for `key`: what was shot). */
   let compared = $state.raw<{ key: string; state: 'checking' | 'done' | 'failed'; got?: Compared; error?: string; cantShow?: 'before' | 'now' } | null>(null);
+  /** A side that couldn't show the view, and why: as its shot failed (the dev server's), or its frame said (the beta's). */
+  const cant = $derived(shots ? (compared?.cantShow ? { side: compared.cantShow, error: compared.error ?? '' } : null) : cantLive);
   /** The area looked at close up, and whether what differs is laid over the frame now (D). */
   let closeup = $state(-1);
   let layered = $state(false);
@@ -392,7 +394,7 @@
   function onframe(m: FrameMessage, i = -1) {
     // (What's wrong is the code now's to find: the frame before only shows how it was.)
     if (m.qa === 'checked' && comparing && i === 0) return;
-    if (m.qa === 'failed' && comparing && (i === 0 || i === 1)) cantLive ??= { side: i === 0 ? 'before' : 'now', error: m.error };
+    if (m.qa === 'failed' && comparing && !shots && (i === 0 || i === 1)) cantLive ??= { side: i === 0 ? 'before' : 'now', error: m.error };
     if (m.qa === 'checked') results = { ...results, [m.slot]: m.problems };
     else if (m.qa === 'ready') {
       // (What changed while it loaded, before it listened.)
@@ -557,13 +559,11 @@
         <p class="compare" role="status">
           {#if !before || before.state === 'preparing'}Getting the code before this change ready…
           {:else if before.state !== 'ready'}No code from before this change here{#if before.state === 'failed'}: <span class="example">{before.error}</span>{/if}
-          {:else if !before.shots && cantLive?.side === 'before'}<span class="differs">The code before can't show this</span><span class="sep">•</span>it's new in this change, or uses something that is:<span class="example">{cantLive.error}</span>
-          {:else if !before.shots && cantLive}<span class="differs">This can't show</span><span class="sep">•</span>the code now fails on it:<span class="example">{cantLive.error}</span>
+          {:else if cant?.side === 'before'}<span class="differs">The code before can't show this</span><span class="sep">•</span>it's new in this change, or uses something that is:<span class="example">{cant.error}</span>
+          {:else if cant}<span class="differs">This can't show</span><span class="sep">•</span>the code now fails on it:<span class="example">{cant.error}</span>
           {:else if piece?.moves}It moves on its own<span class="sep">•</span>watch the two side by side
           {:else if !before.shots}Both live, side by side<span class="sep">•</span>marking what differs takes the dev server (npm run qa)
           {:else if !compared || compared.state === 'checking'}Comparing…
-          {:else if compared.cantShow === 'before'}<span class="differs">The code before can't show this</span><span class="sep">•</span>it's new in this change, or uses something that is:<span class="example">{compared.error}</span>
-          {:else if compared.cantShow === 'now'}<span class="differs">This can't show</span><span class="sep">•</span>the code now fails on it:<span class="example">{compared.error}</span>
           {:else if compared.state === 'failed'}Couldn't compare: <span class="example">{compared.error}</span>
           {:else if !compared.got!.diff.areas.length}<span class="same">Looks the same</span>{#if compared.got!.diff.restless}<span class="sep">•</span>left out what moves on its own{/if}
           {:else}<span class="differs">Differs in {compared.got!.diff.areas.length} {compared.got!.diff.areas.length === 1 ? 'place' : 'places'}</span><span class="sep">•</span><span><span class="num">{(compared.got!.diff.share * 100).toFixed(compared.got!.diff.share < 0.01 ? 2 : 1)}%</span> of it</span>{#if compared.got!.diff.restless}<span class="sep">•</span>left out what moves on its own{/if}<span class="hint">click a mark to see it close up • <kbd>D</kbd> {layered ? 'hides' : 'lays'} what differs over now • <kbd>O</kbd> {outlines ? 'hides' : 'shows'} the marks</span>{/if}
