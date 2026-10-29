@@ -20,9 +20,17 @@
 // game's files each scene runs, for the desk's "This change"
 // (src/qa/change.ts). Run it when scenes or screens have changed much.
 //
+// --redraws instead checks what Chrome draws again (src/qa/redraws.ts,
+// docs/qa.md, "Redraws"): each scene's first state at rest, and the card
+// bench's moments (a deal, a dig's deal, a pick), traced with WebGL and full
+// motion on. It fails on a layer drawn again on most frames at rest, and on
+// a moment past its baseline (src/qa/redraws.json; --baseline writes it).
+// It runs in CI on every pull request; here only with --only.
+//
 //   npm run sweep -- [--sizes walk|full|phone,uhd,...] [--only <regex>] [--change] [--webgl] [--banding]
 //                 [--url URL] [--no-build] [--concurrency N]
 //   npm run sweep -- --map
+//   npm run sweep -- --redraws --only <regex> [--moments] [--baseline]
 //   (from PowerShell, where npm eats the flags: npm run sweep full webgl only=lobby)
 
 import { spawn, spawnSync } from 'node:child_process';
@@ -35,6 +43,7 @@ import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
 import { SIZES } from '../src/qa/sizes.ts';
 import { touched } from '../src/qa/change.ts';
+import { FEWEST_FRAMES, MOMENTS, atRest, kpx, overBaseline, readTrace, redraws } from '../src/qa/redraws.ts';
 import { changedFiles } from '../qaServer.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -50,6 +59,9 @@ const OPTIONS = {
   banding: { type: 'boolean', default: false },
   change: { type: 'boolean', default: false },
   map: { type: 'boolean', default: false },
+  redraws: { type: 'boolean', default: false },
+  moments: { type: 'boolean', default: false },
+  baseline: { type: 'boolean', default: false },
   concurrency: { type: 'string', default: String(Math.max(2, os.availableParallelism() - 2)) },
   help: { type: 'boolean', short: 'h', default: false },
 };
@@ -57,7 +69,7 @@ const { values, positionals } = parseArgs({ options: OPTIONS, allowPositionals: 
 // Bare words, for PowerShell (see capture-screens.mjs): full, webgl, banding, change, map, no-build, name=value.
 for (const word of positionals) {
   if (word === 'full' || word === 'walk') values.sizes = word;
-  else if (['webgl', 'banding', 'change', 'map', 'help'].includes(word)) values[word] = true;
+  else if (['webgl', 'banding', 'change', 'map', 'redraws', 'moments', 'baseline', 'help'].includes(word)) values[word] = true;
   else if (word === 'no-build') values.build = false;
   else if (word.includes('=')) values[word.split('=')[0]] = word.slice(word.indexOf('=') + 1);
   else {
@@ -77,8 +89,18 @@ if (values.help) {
   --url URL              shoot a running server (the dev server, the beta) instead of building one
   --no-build             serve screens/qa-build/ as the last sweep built it
   --concurrency N        pages at once (default: all threads but two, ${OPTIONS.concurrency.default})
-  --map                  write src/data/sceneFiles.json instead: the game's files each scene runs`);
+  --map                  write src/data/sceneFiles.json instead: the game's files each scene runs
+  --redraws              check what Chrome draws again instead (docs/qa.md, Redraws): every scene's first
+                         state at rest, and the card bench's moments; here only with --only (CI runs it all)
+  --moments              with --redraws: the card bench's moments (alone, or with --only's scenes)
+  --baseline             with --redraws: write the moments as measured into src/qa/redraws.json`);
   process.exit(0);
+}
+if (values.baseline) values.moments = true;
+if (values.redraws && !values.only && !values.moments && !process.env.CI) {
+  // Every scene in a browser drawing WebGL at full motion: CI's to run, not a machine others share.
+  console.error('The redraw check runs in CI on every pull request; here only a scene or two (--redraws --only <regex>) or the moments (--redraws --moments).');
+  process.exit(1);
 }
 if (values.banding) values.webgl = true;
 const concurrency = Math.max(1, Number(values.concurrency) || 1);
@@ -143,11 +165,11 @@ const launch = () =>
  * up waiting on, past about four of them.
  */
 const PER_BROWSER = 4;
-const browsers = await Promise.all(Array.from({ length: Math.ceil(concurrency / PER_BROWSER) }, launch));
-const browser = browsers[0];
+// (--redraws traces, which is a browser's own: it launches one a page.)
+const browsers = values.redraws ? [] : await Promise.all(Array.from({ length: Math.ceil(concurrency / PER_BROWSER) }, launch));
 
 /** Every state of every scene the desk at `base` has: its scene's key, its number there and controls, label, seats, the sizes it is walked at. */
-async function listScenes(base) {
+async function listScenes(base, browser = browsers[0]) {
   const desk = await browser.newPage();
   // (A dev server just started builds the desk's modules as it first asks for them: that can take a while.)
   await desk.goto(`${base}qa.html`, { timeout: 120000 });
@@ -317,6 +339,241 @@ if (values.map) {
   process.exit(0);
 }
 
+// ---- --redraws ----------------------------------------------------------------
+
+/** The size the redraws are checked at: a desktop's, where the cards stand tall and sharp (or the one size --sizes names). */
+const REDRAW_SIZE = SIZES.some((s) => s.key === values.sizes) ? values.sizes : 'desktop';
+/** The trace's categories: the raster tasks (cc) and the frame viewer's snapshots of the layer tree. */
+const REDRAW_TRACE = ['cc', 'disabled-by-default-cc.debug'];
+/**
+ * A browser of its own for each page traced (a trace is the whole
+ * browser's). Without a GPU (CI) WebGL draws in SwiftShader, which Chrome
+ * asks to be let in.
+ */
+const launchTraced = () =>
+  chromium.launch({
+    ...(process.env.CHROMIUM || process.env.BOT_CHROMIUM ? { executablePath: process.env.CHROMIUM || process.env.BOT_CHROMIUM } : { channel: 'chromium' }),
+    args: [...(process.platform === 'win32' ? ['--use-angle=d3d11'] : ['--enable-unsafe-swiftshader']), '--enable-gpu', '--ignore-gpu-blocklist'],
+  });
+
+/**
+ * In the page: counts its frames until `least` ms and `frames` frames have
+ * passed (with `still`, also until no animation with an end is running),
+ * `most` ms at the most, noting meanwhile what changes on most frames (a
+ * style or a class written) and, at the end, what animates other than its
+ * transform or opacity.
+ */
+async function watchFrames({ least, frames: fewest, most, still }) {
+  const name = (el) => `${el.tagName.toLowerCase()}${[...el.classList].filter((c) => !c.startsWith('svelte-')).map((c) => `.${c}`).join('')}`;
+  const changed = new Map();
+  const seen = new MutationObserver((list) => {
+    for (const m of list) if (m.target instanceof Element) changed.set(`${name(m.target)}’s ${m.attributeName}`, (changed.get(`${name(m.target)}’s ${m.attributeName}`) ?? 0) + 1);
+  });
+  seen.observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+  const busy = () => document.getAnimations().some((a) => a.playState === 'running' && Number.isFinite(a.effect?.getComputedTiming().endTime ?? Infinity));
+  const t0 = performance.now();
+  let n = 0;
+  await new Promise((done) => {
+    const frame = () => {
+      n++;
+      const t = performance.now() - t0;
+      if ((t >= least && n >= fewest && !(still && busy())) || t >= most) done();
+      else requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  });
+  seen.disconnect();
+  const COMPOSITED = new Set(['offset', 'easing', 'composite', 'computedOffset', 'transform', 'opacity', 'translate', 'rotate', 'scale']);
+  const painted = document
+    .getAnimations()
+    .filter((a) => a.playState === 'running' && a.effect?.target)
+    .flatMap((a) => {
+      const props = [...new Set(a.effect.getKeyframes().flatMap((k) => Object.keys(k)))].filter((p) => !COMPOSITED.has(p));
+      return props.length ? [`${(a.animationName ?? a.id) || 'an animation'} on ${name(a.effect.target)} (${props.join(', ')})`.replace(/svelte-\w+-/, '')] : [];
+    });
+  return { frames: n, ms: Math.round(performance.now() - t0), changing: [...changed].filter(([, c]) => c >= n * 0.5).map(([k]) => k), painted: [...new Set(painted)] };
+}
+
+/** `during` run with the browser tracing, and what was drawn again meanwhile. */
+async function traced(browser, page, during) {
+  await browser.startTracing(page, { categories: REDRAW_TRACE });
+  let r, trace;
+  try {
+    r = await during();
+  } finally {
+    trace = await browser.stopTracing();
+  }
+  return { ...r, ...redraws(readTrace(trace.toString())) };
+}
+
+const contextFor = (browser) => {
+  const size = SIZES.find((s) => s.key === REDRAW_SIZE);
+  return browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: size.dpr, reducedMotion: 'no-preference' });
+};
+
+/** Each scene's first state at rest, from its first seat: the layers drawn again on most frames, and what changes meanwhile. */
+async function scenesAtRest(base, scenes, browsers) {
+  const firsts = scenes.filter((s, i) => scenes.findIndex((t) => t.key === s.key) === i);
+  const out = [];
+  let next = 0;
+  await Promise.all(
+    browsers.map(async (browser) => {
+      while (next < firsts.length) {
+        const s = firsts[next++];
+        const context = await contextFor(browser);
+        const page = await context.newPage();
+        try {
+          const q = new URLSearchParams({ frame: `r${next}`, s: s.key, seat: '0', size: REDRAW_SIZE });
+          for (const [k, v] of s.values ?? []) q.set(`k.${k}`, v);
+          await page.goto(`${base}qa.html?${q}`, { waitUntil: 'load', timeout: 60000 });
+          await page.waitForFunction(() => window.__qa, null, { timeout: 90000 });
+          const r0 = await page.evaluate(() => window.__qa);
+          if (r0.failed) throw new Error(r0.failed);
+          // (What follows a scene's coming to rest, a toast, a sound's first beat, past.)
+          await page.waitForTimeout(500);
+          const r = await traced(browser, page, () => page.evaluate(watchFrames, { least: 2000, frames: 20, most: 8000, still: false }));
+          const problems = r.layers.map((l) => atRest(s.key, l, r.frames)).filter(Boolean);
+          out.push({ scene: s.key, frames: r.frames, ms: r.ms, problems, changing: r.changing, painted: r.painted, layers: r.layers.slice(0, 8) });
+        } catch (e) {
+          out.push({ scene: s.key, failed: e.message.split('\n')[0], problems: [] });
+        } finally {
+          await context.close();
+          if (process.stdout.isTTY) process.stdout.write(`\r${out.length}/${firsts.length}`);
+        }
+      }
+    }),
+  );
+  if (process.stdout.isTTY) process.stdout.write('\n');
+  return out.sort((a, b) => (a.scene < b.scene ? -1 : 1));
+}
+
+/**
+ * The card bench's moments (src/qa/redraws.ts MOMENTS), on its stage
+ * (cards.html?stage): each set off and watched until it's over, as the
+ * pixels drawn again a frame. Each measured three times, the middle kept:
+ * a frame's timing moves the rest a little.
+ */
+async function moments(base, browser) {
+  const context = await contextFor(browser);
+  const page = await context.newPage();
+  const out = [];
+  try {
+    await page.goto(`${base}cards.html?stage`, { waitUntil: 'load', timeout: 60000 });
+    await page.waitForFunction(() => window.__cb?.ready, null, { timeout: 90000 });
+    const rest = () => page.evaluate(watchFrames, { least: 1000, frames: 1, most: 10000, still: true });
+    await rest();
+    // (The bench's items: every category by name, the dig's way out last.)
+    const deal = () => page.evaluate(() => window.__cb.deal(window.__cb.items.slice(0, 3).map((i) => ({ category: i.value, kind: null }))));
+    const setOff = {
+      deal,
+      dig: () => page.evaluate(() => window.__cb.deal([{ category: window.__cb.items[0].value, kind: 'azurite' }, { category: window.__cb.items.at(-1).value, kind: null }])),
+      pick: () => page.evaluate(() => window.__lab.ask()),
+    };
+    for (const m of MOMENTS) {
+      const runs = [];
+      for (let i = 0; i < 3; i++) {
+        // (A pick is of cards dealt first, unwatched.)
+        if (m.key === 'pick') {
+          await deal();
+          await rest();
+        }
+        const r = await traced(browser, page, async () => {
+          await setOff[m.key]();
+          return page.evaluate(watchFrames, { least: 1500, frames: 8, most: 10000, still: true });
+        });
+        runs.push({ ...r, perFrame: r.again / Math.max(1, r.frames) });
+        await rest();
+      }
+      runs.sort((a, b) => a.perFrame - b.perFrame);
+      const r = runs[1];
+      out.push({ key: m.key, label: m.label, perFrame: Math.round(r.perFrame), runs: runs.map((x) => Math.round(x.perFrame)), frames: r.frames, ms: r.ms, px: r.px, again: r.again, painted: r.painted, layers: r.layers.slice(0, 6) });
+    }
+  } finally {
+    await context.close();
+  }
+  return out;
+}
+
+async function checkRedraws(base, scenes) {
+  const at = Math.max(1, Math.min(concurrency, values.only ? 2 : concurrency));
+  const traceBrowsers = await Promise.all(Array.from({ length: at }, launchTraced));
+  let atRestFound = [];
+  let momentsFound = [];
+  try {
+    if (values.only || !values.moments) {
+      console.log(`Redraws at rest: ${new Set(scenes.map((s) => s.key)).size} scenes, ${at} at once, at ${REDRAW_SIZE}, from ${base}`);
+      atRestFound = await scenesAtRest(base, scenes, traceBrowsers);
+    }
+    if (values.moments || !values.only) {
+      console.log('Redraws in the card bench’s moments…');
+      momentsFound = await moments(base, traceBrowsers[0]);
+    }
+  } finally {
+    await Promise.all(traceBrowsers.map((b) => b.close()));
+  }
+  const BASELINE = path.join(ROOT, 'src', 'qa', 'redraws.json');
+  const baseline = existsSync(BASELINE) ? JSON.parse(readFileSync(BASELINE, 'utf8')) : {};
+  for (const m of momentsFound) {
+    m.baseline = baseline.moments?.[m.key];
+    m.problem = overBaseline(m.key, m.perFrame, m.baseline);
+  }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const dir = path.join(SCREENS, `redraws-${stamp}`);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, 'report.json'), JSON.stringify({ at: new Date().toISOString(), head: git(ROOT, 'rev-parse', 'HEAD'), size: REDRAW_SIZE, atRest: atRestFound, moments: momentsFound }, null, 1));
+
+  const lines = [];
+  const bad = atRestFound.filter((s) => s.failed || s.problems.length);
+  for (const s of atRestFound) {
+    if (s.failed) lines.push(`  ${s.scene}: failed: ${s.failed}`);
+    else if (s.frames < FEWEST_FRAMES) lines.push(`  ${s.scene}: only ${s.frames} frames in ${s.ms} ms, too few to tell`);
+    for (const p of s.problems) lines.push(`  ${s.scene}: ${p}`);
+    if (s.problems.length) {
+      if (s.changing.length) lines.push(`    changing every frame: ${s.changing.slice(0, 4).join(', ')}`);
+      if (s.painted.length) lines.push(`    animating what isn’t its transform or opacity: ${s.painted.slice(0, 4).join('; ')}`);
+    }
+  }
+  if (atRestFound.length) console.log(`At rest: ${atRestFound.length} scenes, ${bad.length} with a layer drawn again on most frames${bad.length ? ':' : '.'}`);
+  for (const l of lines) console.log(l);
+  for (const m of momentsFound) {
+    const of = m.baseline === undefined ? 'no baseline yet' : `baseline ${kpx(m.baseline)}`;
+    console.log(`${m.label}: ${kpx(m.perFrame)} drawn again a frame (${m.runs.map(kpx).join(', ')}; ${m.frames} frames in ${m.ms} ms), ${of}${m.problem ? `\n  FAILS: ${m.problem}` : ''}`);
+    if (m.problem) {
+      for (const l of m.layers.slice(0, 4)) console.log(`    ${l.name} (${l.w}×${l.h}): drawn in ${l.commits} commits, ${kpx(l.again / Math.max(1, m.frames))} again a frame`);
+      if (m.painted.length) console.log(`    animating what isn’t its transform or opacity: ${m.painted.slice(0, 4).join('; ')}`);
+    }
+  }
+  const measured = { size: REDRAW_SIZE, moments: Object.fromEntries(momentsFound.map((m) => [m.key, m.perFrame])) };
+  if (values.baseline && momentsFound.length) {
+    writeFileSync(BASELINE, `${JSON.stringify({ ...baseline, ...measured }, null, 2)}\n`);
+    console.log(`Wrote the moments into ${path.relative(ROOT, BASELINE)}.`);
+  }
+  // In CI, the job's summary: what was found, and the moments as measured, to commit as the baseline when a change means them.
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    const md = [
+      '## Redraws',
+      '',
+      atRestFound.length ? `At rest: ${atRestFound.length} scenes, ${bad.length} with a layer drawn again on most frames.` : '',
+      '',
+      ...lines.map((l) => `    ${l}`),
+      '',
+      '| Moment | Drawn again a frame | Runs | Baseline |',
+      '| --- | --- | --- | --- |',
+      ...momentsFound.map((m) => `| ${m.label} | ${kpx(m.perFrame)}${m.problem ? ' (fails)' : ''} | ${m.runs.map(kpx).join(', ')} | ${m.baseline === undefined ? 'none' : kpx(m.baseline)} |`),
+      '',
+      'The moments as measured here, for `src/qa/redraws.json` when a change means them to cost more (or less):',
+      '',
+      '```json',
+      JSON.stringify(measured, null, 2),
+      '```',
+    ];
+    writeFileSync(process.env.GITHUB_STEP_SUMMARY, `${md.join('\n')}\n`, { flag: 'a' });
+  }
+  console.log(`Report: screens/redraws-${stamp}/report.json`);
+  const failed = bad.length + momentsFound.filter((m) => m.problem).length;
+  return failed ? 1 : 0;
+}
+
 // ---- the sweep ----------------------------------------------------------------
 
 const BUILD = path.join(SCREENS, 'qa-build');
@@ -325,6 +582,16 @@ if (values.url) served = { base: values.url.endsWith('/') ? values.url : `${valu
 else {
   if (values.build || !existsSync(path.join(BUILD, 'qa.html'))) buildBeta(ROOT, BUILD, 'this checkout (npm run sweep -- --no-build skips this next time)');
   served = await serveDir(BUILD);
+}
+if (values.redraws) {
+  const lister = await launch();
+  const every = await listScenes(served.base, lister).finally(() => lister.close());
+  const code = await checkRedraws(
+    served.base,
+    every.filter((s) => !only || only.test(s.key)),
+  );
+  served.close();
+  process.exit(code);
 }
 let scenes = (await listScenes(served.base)).filter((s) => !only || only.test(s.key));
 if (values.change) {

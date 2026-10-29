@@ -1,0 +1,55 @@
+name: Redraws
+run-name: "Redraws: ${{ github.event.pull_request.title || github.ref_name }}"
+
+# The redraw check (docs/qa.md, "Redraws"), on every pull request into main:
+# each QA scene at rest and the card bench's moments, traced in Chromium,
+# fail on a layer Chrome draws again on most frames at rest, or a moment past
+# its baseline (src/qa/redraws.json). Every stutter of October 2026 was one
+# of those, and how often a layer is drawn again doesn't depend on how fast
+# the runner is. It runs here, not on anyone's machine: every scene in a
+# browser drawing WebGL at full motion (in software: no GPU here).
+#
+# Run it by hand (Run workflow) on any branch, and the job's summary lists
+# what it found and the moments as measured, to commit as the baseline when
+# a change means them to cost more or less.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: redraws-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  redraws:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Chromium as playwright-core's version has it, kept between runs.
+      - id: playwright
+        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ steps.playwright.outputs.version }}
+      - run: npx playwright-core install --with-deps chromium
+      - run: npm run sweep -- --redraws
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: redraws
+          path: screens/redraws-*/report.json
+          retention-days: 14
