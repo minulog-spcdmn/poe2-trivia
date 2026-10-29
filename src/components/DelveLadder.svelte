@@ -149,16 +149,20 @@
    * or went), and on iOS it cut nothing. Each hole is carved in as its star
    * is stamped, and the gold one's travels down with it: the descent-hole
    * animations, from the first plate (as the star's own), on the svg itself.
+   * Each var() falls back to where the hole rests, for a browser that can't
+   * register them (no @property): its holes just appear.
    */
   const holes = (p: Plate, aa: number) =>
     [p.star, p.last]
       .flatMap((s, i) => {
         if (!s) return [];
-        const go = s.travel > 0;
-        const [mx, my] = s.mid ?? [0, 0];
-        const x = `calc(50% + ${f(s.c[0] - p.w / 2)}px${go ? ` + var(--hole-from) * ${f(s.from[0])}px + var(--hole-mid) * ${f(mx)}px` : ''})`;
-        const y = `calc(50% + ${f(s.c[1] - p.h / 2)}px${go ? ` + var(--hole-from) * ${f(s.from[1])}px + var(--hole-mid) * ${f(my)}px + var(--hole-dip) * 1px` : ''})`;
-        return [`radial-gradient(circle at ${x} ${y}, rgb(0 0 0 / calc(1 - var(--hole-${i}))) ${f(s.cut - aa)}px, #000 ${f(s.cut + aa)}px)`];
+        const along = (k: 0 | 1) =>
+          s.travel > 0
+            ? ` + var(--hole-from, 0) * ${f(s.from[k])}px${s.mid ? ` + var(--hole-mid, 0) * ${f(s.mid[k])}px` : ''}${k ? ' + var(--hole-dip, 0) * 1px' : ''}`
+            : '';
+        const x = `calc(50% + ${f(s.c[0] - p.w / 2)}px${along(0)})`;
+        const y = `calc(50% + ${f(s.c[1] - p.h / 2)}px${along(1)})`;
+        return [`radial-gradient(circle at ${x} ${y}, rgb(0 0 0 / calc(1 - var(--hole-${i}, 1))) ${f(s.cut - aa)}px, #000 ${f(s.cut + aa)}px)`];
       })
       .join(', ');
   /** The holes' animations, timed as their stars' are; held still, none, and each simply stands where its star does. */
@@ -344,7 +348,6 @@
          each star (holes, above), the gold one's hole travelling down with it. -->
     <svg
       class="glow"
-      class:cut={starsCut}
       viewBox="0 0 {f(p.w)} {f(p.h)}"
       aria-hidden="true"
       style:--holes={cuts?.motion}
@@ -361,7 +364,6 @@
 
     <svg
       class="plate"
-      class:cut={starsCut}
       viewBox="0 0 {f(p.w)} {f(p.h)}"
       aria-hidden="true"
       style:--holes={cuts?.motion}
@@ -664,15 +666,16 @@
   .plate {
     animation: var(--holes, none);
   }
-  /* Cut round the stars (holes, in the script): a gradient for each, its image reaching past the box, as the glow's blur and the
-     lines' ends do, and nothing clipped to the box. */
-  .cut {
+  /* Cut round the stars (holes, in the script, from starsCut): a gradient for each, its image reaching as far past the box as
+     the SVG mask's did, and nothing clipped to the box, as the glow's blur and the lines' ends go past it. */
+  .glow,
+  .plate {
     -webkit-mask-repeat: no-repeat;
     mask-repeat: no-repeat;
-    -webkit-mask-position: -40px -40px;
-    mask-position: -40px -40px;
-    -webkit-mask-size: calc(100% + 80px) calc(100% + 80px);
-    mask-size: calc(100% + 80px) calc(100% + 80px);
+    -webkit-mask-position: -200px -200px;
+    mask-position: -200px -200px;
+    -webkit-mask-size: calc(100% + 400px) calc(100% + 400px);
+    mask-size: calc(100% + 400px) calc(100% + 400px);
     mask-clip: no-clip;
     -webkit-mask-composite: source-in;
     mask-composite: intersect;
