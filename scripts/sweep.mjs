@@ -371,12 +371,21 @@ const launchTraced = (soft) =>
  * In the page: waits until `still` ms pass with no style or class written
  * (a rune circle's pen done drawing, which on a slow machine starts late),
  * `most` ms at the most (a shake that never stops is watched all the same).
+ * How long it took, and how many frames came meanwhile.
  */
 async function quiet({ still, most }) {
   const t0 = performance.now();
   let last = t0;
   const seen = new MutationObserver(() => (last = performance.now()));
   seen.observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+  let frames = 0;
+  let waiting = true;
+  const count = () => {
+    if (!waiting) return;
+    frames++;
+    requestAnimationFrame(count);
+  };
+  requestAnimationFrame(count);
   await new Promise((done) => {
     const check = () => {
       const now = performance.now();
@@ -385,8 +394,9 @@ async function quiet({ still, most }) {
     };
     check();
   });
+  waiting = false;
   seen.disconnect();
-  return Math.round(performance.now() - t0);
+  return { ms: Math.round(performance.now() - t0), frames };
 }
 
 /**
@@ -444,6 +454,43 @@ async function traced(browser, page, during) {
 }
 const drawnAgain = ({ trace, ...r }) => ({ ...r, ...redraws(readTrace(trace.toString())) });
 
+/** The page's animations' clock (CDP's Animation.setPlaybackRate): a function that sets how fast it runs. */
+async function animationClock(context, page) {
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Animation.enable');
+  return (rate) => cdp.send('Animation.setPlaybackRate', { playbackRate: rate });
+}
+const between = (r, fastest = 16) => Math.min(fastest, Math.max(0.002, r));
+
+/**
+ * Keeps the page's animations' clock (`clock`, now at `rate`) to its frames
+ * as watchFrames counts them, until `watching` is over: `fps` frames to a
+ * second of the animations' own time, `fastest` times real time at the
+ * most. Set anew from every few frames, when it's off by a sixth or more.
+ */
+async function keepClock(page, clock, rate, watching, fps, fastest) {
+  let over = false;
+  watching.then(
+    () => (over = true),
+    () => (over = true),
+  );
+  let n0 = 0;
+  let t0 = Date.now();
+  while (!over) {
+    await new Promise((r) => setTimeout(r, 500));
+    const n = await page.evaluate(() => window.__framesWatched ?? 0).catch(() => n0);
+    if (over || n - n0 < 3) continue;
+    const next = between((n - n0) / ((Date.now() - t0) / 1000) / fps, fastest);
+    if (Math.abs(Math.log(next / rate)) > Math.log(7 / 6)) {
+      rate = next;
+      await clock(rate).catch(() => {});
+    }
+    n0 = n;
+    t0 = Date.now();
+  }
+  return watching;
+}
+
 const contextFor = (browser) => {
   const size = SIZES.find((s) => s.key === REDRAW_SIZE);
   return browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: size.dpr, reducedMotion: 'no-preference' });
@@ -458,6 +505,16 @@ const contextFor = (browser) => {
  * redraws the page round them doing it, at random, as no GPU would.
  */
 const EFFECTS_AT_REST = /^game\/delve/;
+
+/**
+ * At rest, a frame is at most a third of a second of the animations' own
+ * time: where frames come slower (in software, one every few seconds), their
+ * clock is slowed to match (keepClock), never sped up. A light that sweeps a
+ * second and a half of every 7 s would otherwise have swept between nearly
+ * every two frames, and look drawn every frame; something written every frame
+ * from script (a shake) or animated all the time (a breathe) still is.
+ */
+const AT_REST_FPS = 3;
 
 /** Each scene's first state at rest, from its first seat: the layers drawn again on nearly every frame, and what changes meanwhile. */
 async function scenesAtRest(base, scenes, browsers) {
@@ -497,19 +554,24 @@ async function scenesAtRest(base, scenes, browsers) {
             step('at rest');
             // (What follows a scene's coming to rest past: a toast, a sound's first beat, a rune circle's pen.)
             await page.waitForTimeout(500);
-            await page.evaluate(quiet, { still: 1000, most: 15000 });
+            const calm = await page.evaluate(quiet, { still: 1000, most: 15000 });
             step('quiet');
-            // (In software, 8 s, for a light that sweeps every few seconds to show as the part of the time
-            // it is, and at least 12 frames, however long they take: a frame can take half a second. On a
-            // GPU, 3 s: 700 frames, a trace of 200 MB.)
-            const t = await traced(browser, page, () => page.evaluate(watchFrames, { least: software ? 8000 : 3000, frames: 12, most: 60000, still: false }));
-            step(`${t.frames} frames in ${t.ms} ms, traced`);
+            // (Its clock from the frames that came while it quietened, kept to them as it's watched.)
+            const clock = await animationClock(context, page);
+            const rate = between(Math.max(1, calm.frames) / (calm.ms / 1000) / AT_REST_FPS, 1);
+            await clock(rate);
+            // (In software, 4 s of the animations' own time, for a light that sweeps every few seconds to
+            // show as the part of the time it is, and at least 12 frames, however long they take: a frame
+            // can take seconds. On a GPU, 3 s: 700 frames, a trace of 200 MB.)
+            const watched = () => keepClock(page, clock, rate, page.evaluate(watchFrames, { least: software ? 4000 : 3000, frames: 12, most: 60000, still: false, played: true }), AT_REST_FPS, 1);
+            const t = await traced(browser, page, watched);
+            step(`${t.frames} frames in ${t.ms} ms for ${t.played} ms of its own (its clock from ${rate.toFixed(3)}×), traced`);
             // (The page closed first, so that it isn't drawing while the trace is read.)
             await context.close();
             const r = drawnAgain(t);
             step(`read ${(t.trace.length / 1e6).toFixed(0)} MB`);
             const problems = r.layers.map((l) => atRest(s.key, l, r.frames)).filter(Boolean);
-            out.push({ scene: s.key, frames: r.frames, ms: r.ms, problems, changing: r.changing, painted: r.painted, layers: r.layers.slice(0, 8) });
+            out.push({ scene: s.key, frames: r.frames, ms: r.ms, played: r.played, problems, changing: r.changing, painted: r.painted, layers: r.layers.slice(0, 8) });
             if (!process.stdout.isTTY) console.log(`  ${s.key}: ${took.join(', ')}`);
             break;
           } catch (e) {
@@ -550,39 +612,13 @@ async function moments(base, browser) {
   try {
     await page.goto(`${base}cards.html?stage`, { waitUntil: 'load', timeout: 60000 });
     await page.waitForFunction(() => window.__cb?.ready, null, { timeout: 90000 });
-    const cdp = await context.newCDPSession(page);
-    await cdp.send('Animation.enable');
-    const clock = (rate) => cdp.send('Animation.setPlaybackRate', { playbackRate: rate });
+    const clock = await animationClock(context, page);
     const rest = async () => {
       await clock(1);
       return page.evaluate(watchFrames, { least: 1000, frames: 1, most: 30000, still: true });
     };
     await rest();
-    const between = (r) => Math.min(16, Math.max(0.002, r));
     let rate = 1;
-    /** Keeps the clock to the frames until `watching` is over: set anew from every few frames, when it's off by a sixth or more. */
-    const keepClock = async (watching) => {
-      let over = false;
-      watching.then(
-        () => (over = true),
-        () => (over = true),
-      );
-      let n0 = 0;
-      let t0 = Date.now();
-      while (!over) {
-        await new Promise((r) => setTimeout(r, 500));
-        const n = await page.evaluate(() => window.__framesWatched ?? 0).catch(() => n0);
-        if (over || n - n0 < 3) continue;
-        const next = between((n - n0) / ((Date.now() - t0) / 1000) / PLAYED_FPS);
-        if (Math.abs(Math.log(next / rate)) > Math.log(7 / 6)) {
-          rate = next;
-          await clock(rate).catch(() => {});
-        }
-        n0 = n;
-        t0 = Date.now();
-      }
-      return watching;
-    };
     // (The bench's items: every category by name, the dig's way out last.)
     const deal = () => page.evaluate(() => window.__cb.deal(window.__cb.items.slice(0, 3).map((i) => ({ category: i.value, kind: null }))));
     const setOff = {
@@ -605,7 +641,7 @@ async function moments(base, browser) {
         const started = rate;
         const watched = async () => {
           await setOff[m.key]();
-          return keepClock(page.evaluate(watchFrames, { least: 1500, frames: 8, most: 240000, still: true, played: true }));
+          return keepClock(page, clock, rate, page.evaluate(watchFrames, { least: 1500, frames: 8, most: 240000, still: true, played: true }), PLAYED_FPS);
         };
         const r = i < 0 ? await watched() : drawnAgain(await traced(browser, page, watched));
         // (The next run's clock starts where this one's would have given it PLAYED_FPS frames to a second of its own.)
