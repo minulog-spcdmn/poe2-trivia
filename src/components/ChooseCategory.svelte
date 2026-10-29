@@ -1383,14 +1383,17 @@
      three cards' kindles, it held the GPU most of a deal, and every turn
      stuttered. Always, not while it kindles: a layer let go after it would
      redraw the face once more. Already filtered and placed absolutely, it
-     lays out the same. Not WebKit: see the kindle above.) */
-  .sharp .icon {
-    will-change: filter, opacity;
-  }
-  /* (The way out's, likewise: its gilt's kindle, the swell and the lamp's
-     breath, which goes on for as long as the card lies there.) */
-  .sharp .card.out :global(.engraving > :is(.window, .glow, .lines, .lamp, .gilt)) {
-    will-change: filter, opacity;
+     lays out the same. Not WebKit: see the kindle above. Only where the
+     faces are sharp, as the sharp block below: the rows never are.) */
+  @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
+    .sharp .icon {
+      will-change: filter, opacity;
+    }
+    /* (The way out's, likewise: its gilt's kindle, the swell and the lamp's
+       breath, which goes on for as long as the card lies there.) */
+    .sharp .card.out :global(.engraving > :is(.window, .glow, .lines, .lamp, .gilt)) {
+      will-change: filter, opacity;
+    }
   }
   .turn:global(.dealt) .sheen::before {
     animation: sheen 0.8s var(--ease-out) calc(var(--face, 0ms) + 80ms) backwards;

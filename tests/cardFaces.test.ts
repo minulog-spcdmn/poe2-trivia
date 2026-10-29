@@ -116,12 +116,20 @@ const targets = (s: string) => {
   return (is ? is[1]!.split(',') : [u.split(/[\s>+~]+/).pop()!]).map((p) => p.trim().match(/^\.([\w-]+)/)?.[1]).filter((c) => c !== undefined);
 };
 
-test('what kindles or swells on a sharp face is on a layer of its own', () => {
+/** The classes `root`'s animations of a filter, or of the kindle's numbers, run on. */
+const kindled = (root: postcss.Root) => {
   const painted = new Set<string>();
-  CSS.walkAtRules('keyframes', (k) => k.walkDecls((d) => void ((d.prop === 'filter' || d.prop.startsWith('--kindle-')) && painted.add(k.params))));
-  const animated = new Set<string>();
-  for (const d of decls(CSS, /^animation(-name)?$/))
-    if (painted.has(d.value.split(/\s+/)[0]!)) for (const s of (d.parent as Rule).selectors) for (const c of targets(s)) animated.add(c);
+  root.walkAtRules('keyframes', (k) => k.walkDecls((d) => void ((d.prop === 'filter' || d.prop.startsWith('--kindle-')) && painted.add(k.params))));
+  const out = new Set<string>();
+  for (const d of decls(root, /^animation(-name)?$/))
+    if (d.value.split(/[\s,]+/).some((t) => painted.has(t))) for (const s of (d.parent as Rule).selectors) for (const c of targets(s)) out.add(c);
+  return out;
+};
+const ENGRAVING = readFileSync('src/components/CardEngraving.svelte', 'utf8');
+
+test('what kindles or swells on a sharp face is on a layer of its own', () => {
+  const animated = kindled(CSS);
+  for (const c of kindled(postcss.parse(ENGRAVING.slice(ENGRAVING.indexOf('<style>') + '<style>'.length, ENGRAVING.lastIndexOf('</style>'))))) animated.add(c);
   const layered = new Set<string>();
   CSS.walkRules((r) => {
     const wc = r.nodes.find((n): n is Declaration => n.type === 'decl' && n.prop === 'will-change');
