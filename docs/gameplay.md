@@ -655,7 +655,8 @@ they're worth more sigils than are unlocked already. Kept in this browser (`src/
   everyone else sees the same state live. Only the free PeerJS cloud is used,
   to introduce the players to each other.
   - **Names:** a browser with no name gets one made for it on its first
-    load, two words in the game's manner ("Ashen Wanderer",
+    load in the game's manner, a quality and a calling ("Runed Emissary")
+    or, one time in twelve, a single word ("Cairnkeeper",
     `src/lib/madeName.ts`), saved as its name, so a newcomer is never asked
     for one: New game, a join by code and an open room go straight on. The
     start page greets it with "Welcome," and, until the first game, the
