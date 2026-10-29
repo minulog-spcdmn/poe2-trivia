@@ -137,7 +137,7 @@ body {
 }
 
 /* Reserve the scrollbar's space so screens that need one don't shift sideways.
-   The app's own pointer everywhere (lib/ownCursor.ts; vite.config.ts makes
+   The app's own pointer everywhere (lib/ownCursor.ts; themedCursors.ts makes
    `default` and `pointer` read it), links and text fields included, which
    the browser would otherwise give its own. */
 html {
@@ -181,10 +181,20 @@ html[data-fullscreen]::-webkit-scrollbar {
   display: none;
 }
 
-/* Every element takes the cursor handed down to it (vite.config.ts), rather
+/* Every element takes the cursor handed down to it (themedCursors.ts), rather
    than inheriting its parent's: one set on an element alone stays there. */
 :where(*) {
   cursor: var(--cursor-now, auto);
+}
+/* In WebKit (lib/ownCursor.ts marks it) every element inherits it instead.
+   WebKit makes a picture cursor afresh each time an element that names one is
+   restyled, and counts it changed, so everything the element holds is
+   restyled with it: with one named on every element, a vein's tremor (a
+   translate on .shell, every frame) restyled the whole game and repainted
+   every card, 46 Mpx in 2.5 s on an iPhone with a desktop's pointer. An
+   inherited one is the parent's own, unchanged. */
+:where(:root[data-cursor-inherited] *) {
+  cursor: inherit;
 }
 
 a:any-link {
@@ -210,6 +220,8 @@ a:any-link {
   stroke-miterlimit: 12;
   translate: -50% -50%;
   animation: seal-stamp 0.2s var(--ease-out) both;
+  /* (The cover's cursor over it too: it's the cover the pointer is over.) */
+  pointer-events: none;
 }
 @keyframes seal-stamp {
   from {

@@ -100,6 +100,45 @@ test("the cards' corners are --filigree's images, in its order and size", () => 
   for (const l of layers) assert.equal(l[2]!.trim(), corners('background-size'));
 });
 
+// ---- what kindles on a face -------------------------------------------------
+// Chrome draws a sharp face again, at twice its size through the filter, on
+// every frame anything painted on it changes, unless that thing has a layer
+// of its own: the emblems' kindle, a filter animated on the page's thread,
+// held the GPU most of a deal. What kindles or swells (a filter, or the
+// kindle's numbers it reads) has will-change under .sharp, always; so does
+// the way out's lamp (CardEngraving), which breathes beside its gilt.
+
+const unwrap = (s: string) => s.replace(/:global\(((?:[^()]|\([^()]*\))*)\)/g, '$1');
+/** The classes a selector styles: its last compound's, or those of a last :is(). */
+const targets = (s: string) => {
+  const u = unwrap(s).trim();
+  const is = u.match(/:is\(([^()]*)\)$/);
+  return (is ? is[1]!.split(',') : [u.split(/[\s>+~]+/).pop()!]).map((p) => p.trim().match(/^\.([\w-]+)/)?.[1]).filter((c) => c !== undefined);
+};
+
+/** The classes `root`'s animations of a filter, or of the kindle's numbers, run on. */
+const kindled = (root: postcss.Root) => {
+  const painted = new Set<string>();
+  root.walkAtRules('keyframes', (k) => k.walkDecls((d) => void ((d.prop === 'filter' || d.prop.startsWith('--kindle-')) && painted.add(k.params))));
+  const out = new Set<string>();
+  for (const d of decls(root, /^animation(-name)?$/))
+    if (d.value.split(/[\s,]+/).some((t) => painted.has(t))) for (const s of (d.parent as Rule).selectors) for (const c of targets(s)) out.add(c);
+  return out;
+};
+const ENGRAVING = readFileSync('src/components/CardEngraving.svelte', 'utf8');
+
+test('what kindles or swells on a sharp face is on a layer of its own', () => {
+  const animated = kindled(CSS);
+  for (const c of kindled(postcss.parse(ENGRAVING.slice(ENGRAVING.indexOf('<style>') + '<style>'.length, ENGRAVING.lastIndexOf('</style>'))))) animated.add(c);
+  const layered = new Set<string>();
+  CSS.walkRules((r) => {
+    const wc = r.nodes.find((n): n is Declaration => n.type === 'decl' && n.prop === 'will-change');
+    if (wc && /filter/.test(wc.value) && /opacity/.test(wc.value)) for (const s of r.selectors) if (s.startsWith('.sharp ')) for (const c of targets(s)) layered.add(c);
+  });
+  for (const c of ['icon', 'gilt', 'window']) assert.ok(animated.has(c), `found what kindles or swells (.${c})`);
+  for (const c of [...animated, 'lamp']) assert.ok(layered.has(c), `.${c} kindles, swells or breathes on the face; give it will-change: filter, opacity under .sharp, always, or Chrome redraws the whole sharp face every frame it changes`);
+});
+
 // ---- face down in the deal --------------------------------------------------
 // The CSS reads .down from the card itself, so the deal must put it there:
 // once the turn sat inside .sides, a class on the turn's parent landed on
@@ -134,4 +173,22 @@ test("the deal puts .down on the card, and takes it off on the turn's own clock"
   assert.ok(DEAL.includes(`const ${holder} = node.closest('.card');`), `the deal adds .down to ${holder}, which must be node.closest('.card'): the CSS reads it from the card, and the turn sits inside .sides`);
   assert.doesNotMatch(DEAL, /setTimeout\([^;]*'down'/, "a timer counted from the deal runs ahead of the turn; take .down off in the transition's tick");
   assert.match(DEAL, /tick: \([^)]*\) => \{[\s\S]*classList\.remove\('down'\)/, "the deal takes .down off in its tick, on the turn's own clock");
+});
+
+// ---- what follows the pointer -----------------------------------------------
+// The tilt and the glare follow the pointer by transforms alone. The glare
+// was a gradient drawn at the pointer (--gx, --gy), and Chrome drew the
+// whole sharp face again at every move: a third of the GPU's time while the
+// pointer moved over a card. Its light is drawn once and moved (glareAt).
+
+test('what follows the pointer over a card moves by its transform alone', () => {
+  const set = new Set([...SCRIPT.matchAll(/setProperty\('(--[\w-]+)'/g)].map((m) => m[1]!));
+  assert.ok(set.has('--tilt-x'), 'found what the script sets as the pointer moves (--tilt-x)');
+  CSS.walkDecls((d) => {
+    for (const [, name] of d.value.matchAll(/var\((--[\w-]+)/g))
+      if (set.has(name!)) assert.equal(d.prop, 'transform', `${(d.parent as Rule).selector} { ${d.prop} } reads ${name}, which follows the pointer: only a transform may, or Chrome draws the sharp face again at every move`);
+  });
+  const light = decls(CSS, /^will-change$/).find((d) => (d.parent as Rule).selector === '.glare > .light');
+  assert.ok(light && /transform/.test(light.value), "the glare's light is on a layer of its own (will-change: transform), moved by glareAt");
+  assert.match(SCRIPT, /light\.style\.transform = /, 'glareAt moves the light by its transform');
 });

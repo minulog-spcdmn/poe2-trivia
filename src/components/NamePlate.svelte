@@ -18,6 +18,7 @@
   //   the dark.
 
   import { LUNA, LUNA_HATCH, SOL_RAYS } from '../lib/alchemy';
+  import { drawIn, type Pen } from '../lib/drawIn';
   import { WEAVE_CLASS } from '../lib/weave';
   import 'virtual:plate-weave.css';
 
@@ -157,7 +158,9 @@
 
 <script lang="ts">
   // `lit` lights the seals' signs (an unidentified item keeps them dark
-  // until the reveal, when they flare); `end` is what the right seal holds:
+  // until the reveal); `glint`, as they light or later, flares their bloom
+  // and runs a spark along the rules (a right answer's; without it a
+  // wrong answer's lights them quietly); `end` is what the right seal holds:
   // Luna, or nothing, for a button to sit in it (the dialog's close; see
   // SOCKET_X); `start` the same for the left one: Sol, or nothing (the item
   // window's fold). The ends can be drawn smaller with `--end-scale`; with `fit`
@@ -167,11 +170,12 @@
   // sits on the plate can keep clear of the ends.
   let {
     lit = true,
+    glint = true,
     end = 'luna',
     start = 'sol',
     fit = false,
     scale: endScale = $bindable(),
-  }: { lit?: boolean; end?: 'luna' | 'empty'; start?: 'sol' | 'empty'; fit?: boolean; scale?: number } = $props();
+  }: { lit?: boolean; glint?: boolean; end?: 'luna' | 'empty'; start?: 'sol' | 'empty'; fit?: boolean; scale?: number } = $props();
   let plateEl = $state<HTMLElement>();
   $effect(() => {
     if (!fit || !plateEl) return;
@@ -185,6 +189,45 @@
 
   const uid = $props.id();
   const id = (n: string) => `${uid}-${n}`;
+
+  // The lines are drawn in as the circle's are, by its pen (lib/drawIn): an
+  // animation a line had Chrome paint both SVGs again on every frame, at
+  // 240Hz, for the two seconds they drew (a quarter of the GPU's time on a
+  // 4K screen, with every question). Timed on the plate's own clock (its
+  // field's fade), as the bloom's stamp is, asked for once the frame that
+  // shows the plate has worked out its styles (see ArcaneStage).
+  let glowEl = $state<SVGSVGElement>();
+  let linesEl = $state<SVGSVGElement>();
+  let fieldEl = $state<HTMLElement>();
+  $effect(() => {
+    // (Again when an end changes, as the bench's seals do: a sign put in
+    // after the pen was done would stay hidden. What's drawn shows at once.)
+    void [start, end];
+    const svgs = [glowEl, linesEl];
+    let pen: Pen | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
+    const draw = (start: number) => {
+      if (stopped) return;
+      pen = drawIn(start);
+      for (const svg of svgs) if (svg) pen.add(svg);
+    };
+    // (Moved on the page, as a dialog's backdrop is, the fade starts over and
+    // the old one's `ready` rejects: then it's timed from the new one.)
+    const follow = () => {
+      if (stopped) return;
+      const fade = fieldEl?.getAnimations()[0];
+      if (fade) fade.ready.then(() => draw(performance.now() - Number(fade.currentTime ?? 0)), follow);
+      else draw(performance.now());
+    };
+    const frame = requestAnimationFrame(() => (timer = setTimeout(follow)));
+    return () => {
+      stopped = true;
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+      pen?.stop();
+    };
+  });
 </script>
 
 <!-- A line of the tracery, drawn in one pen stroke across its gaps. -->
@@ -199,15 +242,15 @@
   <g class="end">
     <path d={GROUND} class="ground" />
     <path d={SPANDREL_GROUND} class="ground leaf" />
-    <path d={SPINE_PATHS} class="draw fine" style:--d="0.6s" pathLength="100" />
+    <path d={SPINE_PATHS} class="draw fine" style:--d="0.6s" style:--t="0.9s" pathLength="100" />
     <!-- The frame: the outer rule runs on from the spandrels, the inner from
          the flames, on past the middle (as long as before: 70% of the plate, so
          the pen keeps its pace) so they scale with the end; each end
          is clipped at the middle (see plate()), so the two ends' rules meet
          there instead of overlapping, which showed as a brighter stretch. -->
     {#each [-1, 1] as side (side)}
-      <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="140%" y2={side * 29.5} class="draw rule metal thin" style:--d="0.6s" pathLength="100" />
-      <line x1={f(INNER_RULE_X)} y1={side * 26.5} x2="140%" y2={side * 26.5} class="draw rule metal" style:--d="1.1s" pathLength="100" />
+      <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="140%" y2={side * 29.5} class="draw rule metal thin" style:--d="0.6s" style:--t="0.9s" pathLength="100" />
+      <line x1={f(INNER_RULE_X)} y1={side * 26.5} x2="140%" y2={side * 26.5} class="draw rule metal" style:--d="1.1s" style:--t="0.9s" pathLength="100" />
       <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="104%" y2={side * 29.5} class="spark" pathLength="100" />
     {/each}
     {@render moulding(END.spandrels)}
@@ -218,7 +261,7 @@
       <circle cx={SEAL[0]} cy={SEAL[1]} r={SEAL_R + 1} class="well" />
       {@render moulding(END.ring)}
       {#if sign !== 'empty'}
-        <g class="sign" style:--d="0.7s" transform="translate({pt(SEAL)}) scale({f(SIGN_SCALE)})">
+        <g class="sign fade" style:--d="0.7s" style:--t="0.6s" transform="translate({pt(SEAL)}) scale({f(SIGN_SCALE)})">
           {#if sign === 'sol'}
             <circle r="5" />
             <circle r="1.1" />
@@ -242,11 +285,11 @@
   <svg x="50%" width="50%" height="100%" overflow="hidden"><svg x="100%" y="50%" overflow="visible"><g transform="scale(-1 1)">{@render cap(end)}</g></svg></svg>
 {/snippet}
 
-<span class="plate" class:lit aria-hidden="true" bind:this={plateEl} style:--end-scale={endScale} style:--seal-x="{SOCKET_X}px" style:--bloom-r="{BLOOM_R}px">
-  <span class="field {WEAVE_CLASS}"></span>
+<span class="plate" class:lit class:glint aria-hidden="true" bind:this={plateEl} style:--end-scale={endScale} style:--seal-x="{SOCKET_X}px" style:--bloom-r="{BLOOM_R}px">
+  <span class="field {WEAVE_CLASS}" bind:this={fieldEl}></span>
   <!-- The lines twice, as on the circle: a soft, wide copy for the glow, and the lines. -->
-  <svg class="art glow" width="100%" height="100%">{@render plate()}</svg>
-  <svg class="art" width="100%" height="100%">{@render plate()}</svg>
+  <svg class="art glow" width="100%" height="100%" bind:this={glowEl}>{@render plate()}</svg>
+  <svg class="art" width="100%" height="100%" bind:this={linesEl}>{@render plate()}</svg>
   <!-- Each seal's bloom of light, over the seal: pressed in with it (.seal),
        flaring and breathing as the seals light (.bloom). -->
   {#each ['left', 'right'] as side (side)}
@@ -362,10 +405,8 @@
   }
 
   /* The signs, engraved as on the circle: dark until the item is known,
-     then lit, with a bloom of light behind that flares and breathes. */
-  .sign {
-    animation: fade 0.6s var(--d) ease-out both;
-  }
+     then lit, with a bloom of light behind that breathes (and flares first
+     with the glint). */
   .sign :global(*) {
     fill: none;
     stroke: #6a3a1e;
@@ -410,8 +451,12 @@
     transition: opacity 0.8s;
     will-change: opacity;
   }
+  /* Lit quietly, the bloom fades in and breathes; with the glint, it flares first. */
   .lit .bloom {
     opacity: 0.45;
+    animation: breathe 6s 0.8s ease-in-out infinite alternate;
+  }
+  .lit.glint .bloom {
     animation:
       flare 1.3s ease-out both,
       breathe 6s 1.3s ease-in-out infinite alternate;
@@ -420,25 +465,37 @@
      once and left the bloom drawn as it ended (0.22), half as bright as it
      rests (0.45), till something happened to paint it again. */
   @media (prefers-reduced-motion: reduce) {
-    .lit .bloom {
+    .lit .bloom,
+    .lit.glint .bloom {
       animation: none;
     }
   }
   .seal {
     transform-box: fill-box;
     transform-origin: center;
+  }
+  /* The bloom is stamped in with its seal by CSS, on a layer of its own. */
+  .bloom-at.seal {
     animation: stamp 0.55s var(--d) var(--ease-out) both;
   }
 
+  /* The pen (lib/drawIn, from the script) draws the lines in: each hidden
+     till it reaches it, its dash run out, a piece of a longer line at the
+     pen's pace (see stroke()), a whole one eased; the seals pressed in from
+     larger and the signs faded in, as they were by CSS. */
   .draw {
     stroke-dasharray: 100;
-    animation: draw var(--t, 0.9s) var(--d, 0s) cubic-bezier(0.55, 0, 0.25, 1) both;
+    stroke-dashoffset: 100;
+    visibility: hidden;
   }
-  /* A piece of a longer line keeps the pen's pace (see stroke()). */
-  .piece {
-    animation-timing-function: linear;
+  g.seal {
+    opacity: 0;
+    transform: scale(1.6);
   }
-  /* A spark that runs along the outer rules, from the ends to the middle, as the seals light. */
+  .fade {
+    opacity: 0;
+  }
+  /* The glint: a spark that runs along the outer rules, from the ends to the middle. */
   .spark {
     stroke: #fff0d6;
     stroke-width: 1.2;
@@ -446,15 +503,10 @@
     stroke-dashoffset: 7;
     opacity: 0;
   }
-  .lit .spark {
+  .lit.glint .spark {
     animation: spark 1.1s 0.15s cubic-bezier(0.45, 0, 0.3, 1) both;
   }
 
-  @keyframes draw {
-    from {
-      stroke-dashoffset: 100;
-    }
-  }
   @keyframes fade {
     from {
       opacity: 0;
