@@ -898,9 +898,9 @@ export interface Reveal {
   /** Delve: the item this right answer to a find earned. */
   gained?: ItemKind;
   /**
-   * Delve: the fossil this right answer to a fossil's card gave, and to whom
-   * (alone the player, together everyone standing who lacked it, under the
-   * run's cap). Missing when it gave none.
+   * Delve: the fossil this right answer to a fossil's card gave, and to whom:
+   * the one whose answer it was, alone or together, if they lacked it and
+   * could take one (Engine.giveFossil). Missing when it gave none.
    */
   fossil?: { id: FossilId; to: string[] };
   /**

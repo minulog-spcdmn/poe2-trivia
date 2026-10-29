@@ -29,7 +29,8 @@
   const kept = $derived(store ?? own);
   const found = $derived(kept.found);
   const count = $derived(FOSSILS.filter((f) => found[f.id]).length);
-  const today = $derived(foundToday(kept));
+  /** Today's found, and another left to find tomorrow. */
+  const today = $derived(foundToday(kept) && count < FOSSIL_COUNT);
 
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   /** The fossil chosen (the last a mouse rested on, or tapped); else the latest found. */

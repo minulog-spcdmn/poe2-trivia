@@ -162,5 +162,8 @@ export function flyFossil(from: Element | null, id: FossilId, count: number, tot
   return stop;
 }
 
+/** Stops a flight still under way, its tally with it (the game screen going: Game.svelte). */
+export const stopFossilFlight = () => current?.stop();
+
 /** The flight's timing, for the benches and tests (ms). */
 export const FOSSIL_FLIGHT = { RISE, HANG, FLIGHT, LANDS, TALLY_IN, TALLY_FOR, PIECE, SLOT } as const;

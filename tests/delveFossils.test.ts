@@ -460,6 +460,9 @@ test('the end screen names the run’s fossil, and that another can turn up tomo
   h.answer(true);
   const text = (me: string | null) => runFacts(h.s, me).map((l) => l.parts.map((p) => (typeof p === 'string' ? p : 'n' in p ? String(p.n) : '')).join(''));
   assert.ok(text('p0').includes('You found an Aberrant Fossil at depth 11. Another can turn up tomorrow.'), text('p0').join(' | '));
+  // The set complete: none can turn up tomorrow.
+  const all = runFacts(h.s, 'p0', true).map((l) => l.parts.map((p) => (typeof p === 'string' ? p : 'n' in p ? String(p.n) : '')).join(''));
+  assert.ok(all.includes('You found an Aberrant Fossil at depth 11.'), all.join(' | '));
 });
 
 test('the flight: the tally is in its place before the piece sets off for it, the piece lands, then the tally goes', () => {

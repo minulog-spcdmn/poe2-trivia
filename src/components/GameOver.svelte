@@ -58,7 +58,8 @@
   // Read as the screen comes in, not a moment after, so what they fill (your lives, what you earned) is there in its first
   // frame instead of pushing the column down. (The game has loaded both by its end anyway.)
   import { loadCodex } from '../lib/codex';
-  import { fossilArt, fossilById } from '../lib/fossils';
+  import { FOSSIL_COUNT, fossilArt, fossilById } from '../lib/fossils';
+  import { foundCount, loadFossils } from '../lib/fossilStore';
   import { achievementById, type Achievement } from '../lib/achievements';
   import { readsShellHeights } from '../lib/shellHeights.svelte';
   import { backGuard } from '../lib/backGuard';
@@ -187,10 +188,8 @@
   /** Achievements this device earned in this game (judged as it ends: they may come in a moment after the screen). */
   const earned = $derived<Achievement[]>(s.startedAt !== undefined && session.earned?.game === s.startedAt ? session.earned.ids.flatMap((id) => achievementById.get(id) ?? []) : []);
   /** This device's runs of the kind, for the chart, ending with this one; re-read once the run is recorded. */
-  const chart = $derived.by(() => {
-    if (!run || !self || !measured) return [];
-    return chartRuns(loadRecords().runs, run.startedAt, together, local ? null : self);
-  });
+  const kept = $derived(run && self && measured ? loadRecords().runs : []);
+  const chart = $derived(run && self && measured ? chartRuns(kept, run.startedAt, together, local ? null : self) : []);
   const lives = $derived(run && self && codex ? livesLost(s, local ? null : self, codex.log) : []);
   /**
    * Delve alone: how many uniques were met this run, and those met for the
@@ -235,10 +234,10 @@
    * The chart's usual depth, when this run lifted it (lib/recap.ts usualLifted): said once, under where it reached. A
    * drop is never said.
    */
-  const lifted = $derived(run && self && measured && chart.length >= 3 ? usualLifted(loadRecords().runs, run.startedAt, together, local ? null : self) : null);
+  const lifted = $derived(run && self && measured && chart.length >= 3 ? usualLifted(kept, run.startedAt, together, local ? null : self) : null);
   const facts = $derived.by(() => {
     if (!run) return [];
-    const out = runFacts(s, solo ? self : null);
+    const out = runFacts(s, solo ? self : null, foundCount(loadFossils()) >= FOSSIL_COUNT);
     if (lifted !== null) out.splice(1, 0, { icon: { usual: true }, parts: ['Your usual is now ', { n: lifted }, '.'] });
     return out;
   });
