@@ -155,9 +155,19 @@ const KEEP = 4;
 
 const keyOf = (layer: Layer, at: At, ink: string) => `${layer} ${at.W}x${at.H} ${at.cw}x${at.ch} ${at.z} ${ink}`;
 
+/** A plate's print by its key, kept as the newest (the size in use is the last let go). */
+function use(kept: Map<string, Print> | undefined, key: string): Print | undefined {
+  const print = kept?.get(key);
+  if (print) {
+    kept!.delete(key);
+    kept!.set(key, print);
+  }
+  return print;
+}
+
 /** The layer's print at this size and ink, if it's been pulled: ready to show. */
 export function pulled(plate: Engraved, layer: Layer, at: At, ink: string): Shown | null {
-  const print = prints.get(plate)?.get(keyOf(layer, at, ink));
+  const print = use(prints.get(plate), keyOf(layer, at, ink));
   return typeof print?.url === 'string' ? { url: print.url, left: print.left } : null;
 }
 
@@ -173,13 +183,8 @@ export function pull(plate: Engraved, layer: Layer, at: At, ink: string, svg: SV
   const key = keyOf(layer, at, ink);
   let kept = prints.get(plate);
   if (!kept) prints.set(plate, (kept = new Map()));
-  const was = kept.get(key);
-  if (was) {
-    // (Kept as the newest: the size in use is the last let go.)
-    kept.delete(key);
-    kept.set(key, was);
-    return was.made;
-  }
+  const was = use(kept, key);
+  if (was) return was.made;
   const place = placed(svg, at);
   const { paths, left } = pathsOf(svg, Math.min(place[0], place[1]));
   const print: Print = { left, made: Promise.resolve(null) };

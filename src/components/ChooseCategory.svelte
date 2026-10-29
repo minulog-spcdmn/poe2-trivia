@@ -565,8 +565,7 @@
   const FLIP = TURN.seconds;
   const dealAt = (i: number) => 0.15 + i * 0.07;
   const flipAt = (i: number) => 0.62 + i * 0.12;
-  /** Cards turn over their longer side: across when stacked as wide rows (narrow screens), else sideways. */
-  const narrow = matchMedia(TURN.across);
+  /** Whether the cards are stacked as wide rows (narrow screens), which turn over their longer side: across, else sideways. */
   const rows = new MediaQuery(TURN.across);
   /**
    * Whether the plates are shown as prints (lib/platePrint): where the faces
@@ -618,7 +617,7 @@
     const total = turn + FLIP;
     let down = true;
     const rot = (i - (n - 1) / 2) * 7;
-    const axis = narrow.matches ? 'X' : 'Y';
+    const axis = rows.current ? 'X' : 'Y';
     return {
       delay: Math.round(start * 1000),
       duration: Math.round(total * 1000),
