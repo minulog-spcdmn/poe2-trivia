@@ -294,6 +294,68 @@ the same thing for everyone.
   - Flares and dynamite never work on a find's own question: finds lie
     down dangerous routes, with thicker walls and a darkness nothing can
     hold back, so there is no Detonate button and nothing happens at 0. You carry up to three of each item.
+- **Fossils.** Delve's collection: 25 of PoE2's fossils, 17 common and 8
+  rare (`src/lib/fossils.ts`). Now and then one of the ordinary cards on
+  offer holds one: a tag on its card names it (never on a find's card, at
+  most one an offer, and no note under the cards; the tag says it). The
+  card's question is the depth's own (no harder question, no shorter
+  clock) and its category is locked out like any pick. Answer it right and
+  the fossil is yours at once (the reveal says so, its art beside the
+  line); a miss costs a life as usual and the fossil is gone. Only fossils
+  you lack are offered.
+  - Dealt as the finds are: one roll an offer against two slices in turn,
+    the rares' and then the commons'. A slice whose fossils its takers all
+    hold, or whose cap a run they have reached, finds nothing; it never
+    feeds the other slice. A run gives each player at most 2 commons and
+    1 rare (`FOSSIL_DEAL.caps`).
+  - **The first one:** until you hold a fossil, the first offer of every
+    depth from 5 holds a common, certain (one after a miss there rolls as
+    any other). Together, while anyone standing holds none.
+  - **Commons**, from depth 5: 4% of an offer, 0.2% more every depth, 10%
+    from depth 35 and holding. On an offer that holds a find (from 10) 40%,
+    so most fossil cards past 10 sit beside a find and taking one means
+    passing the find.
+  - **Rares**, none above depth 25: 2% there, 0.2% more every depth, 8%
+    from 55 and holding; four times that on an offer with a find.
+
+    | Depth (shown) | Common, plain offer | Common, beside a find | Rare, plain offer | Rare, beside a find |
+    |---|---|---|---|---|
+    | 0 to 4 | 0 | 0 | 0 | 0 |
+    | 5 | 4% (the first one: certain) | (no finds yet) | 0 | 0 |
+    | 10 | 5% | 40% | 0 | 0 |
+    | 20 | 7% | 40% | 0 | 0 |
+    | 25 | 8% | 40% | 2% | 8% |
+    | 35 | 10% | 40% | 4% | 16% |
+    | 55 and down | 10% | 40% | 8% | 32% |
+
+    What that comes to in a run, for players past the first one (a
+    simulation over the spread of the counted runs: of 95, 58 ended above
+    depth 10, 22 in 10 to 19, 12 in 20 to 29 and 3 at 30 or deeper, with
+    about 75% of answers right; it picks a fossil card four times in five,
+    three in five beside a find):
+
+    | Run ends at | Commons a run | Rares a run |
+    |---|---|---|
+    | 0 to 4 | 0.00 | 0.000 |
+    | 5 to 9 | 0.07 | 0.000 |
+    | 10 to 19 | 0.40 | 0.000 |
+    | 20 to 29 | 0.98 | 0.017 |
+    | 30 to 39 | 1.47 | 0.215 |
+    | 40 to 59 | 1.81 | 0.558 |
+    | 60+ | 1.99 | 0.930 |
+
+  - **Together:** a fossil is offered if any standing player's slice can
+    give one, but only the one whose right answer cleared it keeps it, and
+    only if they lack it and are under the run's cap. The host knows what
+    each guest holds from their hello (`fossils`, a mask).
+  - **Dynamite never fishes for them:** blasting a fossil's question loses
+    the fossil, and the new question is never one. A flare works on it as
+    on any ordinary question.
+  - Kept in this browser (its own key, `fossils`, `src/lib/fossilStore.ts`)
+    with when and how deep each was found, and synced between paired
+    devices as their union, the earlier find of one both have kept. Older
+    builds skip the key. The Codex's Delve page shows the set, and the end
+    screen names the run's.
 - **Alone**, you delve until your third life is gone; the depth where it went
   is your result. **Together**, the run goes on while anyone stands, and
   the depth where the last of the team perished is the team's result.
@@ -474,6 +536,11 @@ the same thing for everyone.
   lives lost, given and brought back ("Lost 2 lives, gave 1 life,
   was brought back once"). The warmth dies out of the rune circle and ash
   settles, to a slowed toll and an ember crackling out.
+- Among the run's facts, each fossil it gave, with its art ("You found a
+  Jagged Fossil at depth 9."; together, by whose answer). And when the run
+  lifts the runs chart's usual depth (its median, once the chart drew one
+  before this run), one line says so ("Your usual is now 12."); a usual
+  that holds or drops is never mentioned.
 - The share button copies (on a phone, shares) "I reached depth N in Delve.
   Can you beat me? poe2.quest/?delve"; together, any player of the run
   shares the team's depth: "We reached depth N in Delve together. Can you
@@ -584,6 +651,16 @@ and an end, once recorded, never changes. Records or a codex this build
 can't read are never written over: a newer build's are left alone, damaged
 ones kept aside. An item's page also shows its Delve answers. The runs are
 kept in this browser too (`src/lib/delveRecord.ts`).
+
+Under the last run, **Fossils** (`src/components/codex/DelveFossils.svelte`):
+the set of 25 five by five, commons first, with "N of 25". One found shows
+its art, the rest stand as silhouettes (the rare ones' cells edged in
+gold). Choosing one (a click, a tap, or the mouse resting on it) shows it
+under the grid as the game's tooltip would, in Fontin: its name, its
+crafting effect, and when and at what depth it was found (and whether
+together). The latest found shows until one is chosen. Erasing the codex
+erases the fossils too (they are part of what it collected); a device paired
+for sync brings back what it holds.
 
 ## Achievements
 
