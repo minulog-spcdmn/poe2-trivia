@@ -17,7 +17,8 @@
   import { activeRules, difficultyOf } from '../lib/game';
   import { FIND_TEXT, deathmatchText, digNote, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
   import { WAY_OUT_CARD as out } from '../lib/wayOut/lantern';
-  import { digOf, expectedVoters, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
+  import { digOf, expectedVoters, fossilOffer, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
+  import { fossilById, type CardFossil } from '../lib/fossils';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
   import { FIND_COLORS, cardHover, cardPicked, cardRevealed, raffleHop, voteCast } from '../lib/fx/moments';
@@ -336,6 +337,19 @@
   });
   /** What a card is: a find of some kind, or plain. */
   const kindOf = (cat: string): FindKind | null => findsShown[cat] ?? null;
+  /**
+   * Delve: the fossil on a card (lib/fossils.ts), as dealt, kept like the
+   * finds while the chosen card's moment plays. A tag on an ordinary card:
+   * its category stays, and no note goes under the cards (the tag says it).
+   */
+  let dealtFossil: CardFossil | null = null;
+  const fossilShown = $derived.by(() => {
+    if (s.phase === 'choosing') dealtFossil = fossilOffer(s);
+    else if (s.question?.fossil && !dealtFossil) dealtFossil = { category: s.question.category, id: s.question.fossil };
+    return dealtFossil;
+  });
+  /** The name of the fossil on a card, or null. */
+  const fossilAt = (cat: string): string | null => (fossilShown?.category === cat ? fossilById(fossilShown.id).name : null);
   const uid = $props.id();
   /**
    * Whether the faces are drawn sharp (.sharp, below): only in Chromium (it
@@ -874,10 +888,11 @@
         data-sfx="none"
         data-fx="none"
         class:dm={!!s.deathmatch}
-        class:special={!!kindOf(cat)}
+        class:special={!!kindOf(cat) || !!fossilAt(cat)}
         class:out={isWayOut(cat)}
         style={isWayOut(cat) ? outInk : undefined}
         data-find={kindOf(cat)}
+        data-fossil={fossilAt(cat) ? '' : undefined}
         aria-describedby={kindOf(cat) && !s.deathmatch ? `${uid}-note-${kindOf(cat)}` : undefined}
         class:mine
         class:dim={dimmed}
@@ -914,6 +929,8 @@
               {#if kindOf(cat)}
                 {@const kind = kindOf(cat)!}
                 <span class="find-tag" data-zoom>{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span>
+              {:else if fossilAt(cat)}
+                <span class="find-tag" data-zoom>{fossilAt(cat)}</span>
               {:else if isWayOut(cat)}
                 <span class="find-tag out-tag" data-zoom>{out.tag(haul)}</span>
               {/if}
@@ -939,7 +956,7 @@
               {/if}
               <span class="title" class:long={cardName(cat).length > 30} use:fitPlate
                 >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span
-                  >{:else if isWayOut(cat)}<span class="find-tag-row">{out.tag(haul)}</span>{/if}{cardName(cat)}</span
+                  >{:else if fossilAt(cat)}<span class="find-tag-row">{fossilAt(cat)}</span>{:else if isWayOut(cat)}<span class="find-tag-row">{out.tag(haul)}</span>{/if}{cardName(cat)}</span
               >
             </span>
             {#if coop}
@@ -1941,6 +1958,18 @@
     --f-pulse: rgba(255, 120, 40, 0.3);
     --f-glow: rgba(255, 120, 40, 0.2);
     --f-glyph: linear-gradient(180deg, #fbf3e6 0%, #c8b8a0 45%, #4a3a2a 100%);
+  }
+  /* A fossil (lib/fossils.ts): the amber of PoE's fossils, a resin's warm
+     honey, softer than dynamite's ember. Only its tag says which. */
+  .card[data-fossil] {
+    --ink: #c8a46c;
+    --warm: #b9772c;
+    --f: #e9c784;
+    --f-hi: #fcefd0;
+    --f-border: #8c6b3c;
+    --f-pulse: rgba(235, 170, 70, 0.3);
+    --f-glow: rgba(235, 170, 70, 0.2);
+    --f-glyph: linear-gradient(180deg, #fff6e2 0%, #e2b56c 45%, #5a3c16 100%);
   }
   .card.special .glyph {
     background: var(--f-glyph);

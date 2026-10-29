@@ -41,6 +41,7 @@
   import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, digOf, digRunsOn, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
   import { bankedText, blownText, buriedText, coopMissText, coopRevealText, flareText, inHandText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
+  import { fossilArt, fossilById, type FossilId } from '../lib/fossils';
   import AnswerMark from './AnswerMark.svelte';
   import VerdictSign from './VerdictSign.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
@@ -283,6 +284,18 @@
     if (got === 'wards') return { glyph: 'ward', text: `${who} dug out an Azurite Ward.` };
     if (got === 'flares') return { glyph: 'flare', text: `${who} found a flare.` };
     return { glyph: 'dynamite', text: `${who} found a stick of dynamite.` };
+  });
+
+  /**
+   * Delve: the fossil a right answer to a fossil's card gave (lib/fossils.ts),
+   * in words: whose it is now. Together, only the one who answered it gets it.
+   */
+  const fossilLine = $derived.by((): { id: FossilId; text: string } | null => {
+    const f = reveal?.correct ? reveal.fossil : undefined;
+    if (!s.delve || !f) return null;
+    const by = f.to[0];
+    const who = coop ? (by === me ? 'You' : nameOf(by)) : delveYou ? 'You' : active.name;
+    return { id: f.id, text: `${who} found a ${fossilById(f.id).name}.` };
   });
 
   // The verdict leads the result line at the reveal, beside Next.
@@ -1035,6 +1048,11 @@
   {#if streak >= 2 && !(chipHeat > 0)}<span class="streak-words">{' '}{streak} in a row.</span>{/if}
 {/snippet}
 
+<!-- A fossil the answer gave (lib/fossils.ts): its own small picture, then whose it is now. -->
+{#snippet fossilWords(f: { id: FossilId; text: string })}
+  <span class="found-fossil"><img src={fossilArt(f.id, 128)} alt="" aria-hidden="true" />{f.text}</span>
+{/snippet}
+
 <!-- What the reveal says happened: the sentence beside the verdict, or on a phone upright over the art (the task line). -->
 {#snippet outcome()}
   {#if reveal}
@@ -1083,6 +1101,7 @@
       {/if}
       <!-- Who cleared it, and what a find gave, in one sentence. -->
       {lines[0]}
+      {#if fossilLine}{@render fossilWords(fossilLine)}{/if}
       {@render streakWords()}
       {#if lines.length > 1}<span class="losses">{lines.slice(1).join(' ')}</span>{/if}
     {:else if s.delve}
@@ -1094,6 +1113,8 @@
         {#if gainLine}
           <!-- What the find earned, beside its engraving. -->
           <span class="found-glyph" aria-hidden="true"><ItemGlyph kind={gainLine.glyph} /></span>{gainLine.text}
+        {:else if fossilLine}
+          {@render fossilWords(fossilLine)}
         {:else}
           {who} {you ? 'delve' : 'delves'} on.
         {/if}
@@ -1982,6 +2003,28 @@
     }
   }
 
+  /* Delve: a fossil found, its picture standing on the line's baseline as a find's engraving does. */
+  .found-fossil img {
+    display: inline-block;
+    width: 1.3em;
+    height: 1.3em;
+    margin-right: 0.35em;
+    vertical-align: -0.3em;
+    object-fit: contain;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
+    animation: fossil-in 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.25) 0.6s both;
+  }
+  @keyframes fossil-in {
+    from {
+      opacity: 0;
+      scale: 0.2;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .found-fossil img {
+      animation: none;
+    }
+  }
   /* Delve: what a find earned, its engraving standing on the line's baseline. */
   .found-glyph {
     display: inline-block;

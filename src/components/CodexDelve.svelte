@@ -33,6 +33,7 @@
   import DelveRunLog from './codex/DelveRunLog.svelte';
   import CodexMedallion from './codex/CodexMedallion.svelte';
   import EmptyPlate from './codex/EmptyPlate.svelte';
+  import DelveFossils from './codex/DelveFossils.svelte';
   import { circleOf } from './circles';
 
   /** The circle behind it (lib/circlePlaces.ts). */
@@ -50,7 +51,13 @@
   // what kills you, the deadliest items, finds and wards (their notes say
   // so). Zones ahead are never named: they are a surprise.
   // codexStats.ts says what each number means.
-  let { codex, records, onopen, onbegin }: { codex: Codex; records: DelveRecords; onopen: (item: Item) => void; onbegin: () => void } = $props();
+  let {
+    codex,
+    records,
+    fossils = undefined,
+    onopen,
+    onbegin,
+  }: { codex: Codex; records: DelveRecords; fossils?: import('../lib/fossilStore').FossilStore; onopen: (item: Item) => void; onbegin: () => void } = $props();
 
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const fmt = (n: number) => n.toLocaleString();
@@ -301,6 +308,9 @@
         <DelveLastRun run={last} {story} median={lastOf.median} best={lastOf.best} {onopen} />
       {/if}
 
+      <!-- The set of 25 fossils Delve turns up (lib/fossils.ts). -->
+      <DelveFossils store={fossils} />
+
       {#if allRuns >= MIN_RUNS}
       <div class="split">
         <section class="panel by-cat" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="kill-h">
@@ -397,6 +407,7 @@
           <button class="btn primary" onclick={onbegin}>Begin the descent</button>
         </div>
       </EmptyPlate>
+      <DelveFossils store={fossils} />
     {/if}
 
     <DelveRunLog {runs} {others} {byRun} total={allRuns} {onopen} />

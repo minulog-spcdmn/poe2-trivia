@@ -303,6 +303,54 @@ export function gameScenes(): Scene[] {
       t.s.delve!.dig = { strikes: 1, haul: [t.s.players[0].id], light: 6, struck: [] };
       return t;
     }),
+    // A fossil on a card (lib/fossils.ts): its tag in a find's place, with
+    // the longest name of all (Bloodstained Fossil), alone or beside one or
+    // two finds; the first one, the hook, on the first offer at depth 5; and
+    // the answer shown with the fossil kept, its line under the art.
+    scene(
+      'delve-fossil',
+      'Delve alone',
+      'A fossil among the cards',
+      [ALONE],
+      (v) => {
+        const beside = String(v.beside ?? 'none');
+        const t = v.hook ? delveAlone().playTo((s) => s.round >= 6 && s.phase === 'choosing') : delveAlone();
+        const [first, middle, last] = t.s.offered;
+        t.s.delve!.finds = [
+          ...(beside === 'none' ? [] : [{ category: first, kind: 'azurite' as const }]),
+          ...(beside === 'two' ? [{ category: last, kind: 'flare' as const }] : []),
+        ];
+        t.s.delve!.fossil = { category: middle, id: v.hook ? 'jagged' : 'bloodstained' };
+        return t;
+      },
+      {
+        controls: [
+          {
+            kind: 'choice',
+            key: 'beside',
+            label: 'Finds beside it',
+            default: 'none',
+            options: [
+              { value: 'none', label: 'None' },
+              { value: 'one', label: 'A vein' },
+              { value: 'two', label: 'A vein and a flare' },
+            ],
+          },
+          { kind: 'toggle', key: 'hook', label: 'The first one, at depth 5', default: false },
+        ],
+        states: [
+          { label: 'A Bloodstained Fossil alone', values: {} },
+          { label: 'Beside an Azurite Vein', values: { beside: 'one' } },
+          { label: 'Beside a vein and a Flare Cache', values: { beside: 'two' } },
+          { label: 'The first fossil, at depth 5', values: { hook: true } },
+        ],
+      },
+    ),
+    scene('delve-fossil-found', 'Delve alone', 'A fossil’s question answered right: kept', [ALONE], () => {
+      const t = delveAlone();
+      t.s.delve!.fossil = { category: t.s.offered[0], id: 'bloodstained' };
+      return t.pick().answer(null, true);
+    }),
     scene('delve-question', 'Delve alone', 'A question', [ALONE], () => delveAlone().pick()),
     scene('delve-wrong', 'Delve alone', 'Answered wrong: a life lost', [ALONE], () => {
       const t = delveAlone().pick();
@@ -470,6 +518,46 @@ export function gameScenes(): Scene[] {
         for (const p of t.s.players) t.act({ type: 'vote', category: t.s.offered[0] }, p.name);
         // Every vote in: the room's own timer draws the card.
         return t.s.phase === 'choosing' ? t.act({ type: 'expire' }, null) : t;
+      },
+      { controls: [players(2, 3)] },
+    ),
+    // A fossil on the team's cards with Doryani already at the run's cap of
+    // two common ones (the card is for the others, and looks no different),
+    // and one cleared: only the one who named it keeps it.
+    scene(
+      'delve-together-fossil',
+      'Delve together',
+      'A fossil among the cards, Doryani at the cap',
+      [host('Kalguur'), guest('Doryani'), WATCHER],
+      (v) => {
+        const t = delveTogether(v);
+        // Down to depth 7, Doryani naming each one.
+        while (t.s.round < 8) {
+          for (const p of t.s.players) t.act({ type: 'vote', category: t.s.offered[0] }, p.name);
+          if (t.s.phase === 'choosing') t.act({ type: 'expire' }, null);
+          t.answer('Doryani', true).wait(1000).next();
+        }
+        const doryani = pid('Doryani');
+        t.s.delve!.fossils = [
+          { id: 'scorched', depth: 6, at: t.clock.now - 90_000, to: [doryani] },
+          { id: 'frigid', depth: 7, at: t.clock.now - 40_000, to: [doryani] },
+        ];
+        t.s.delve!.fossil = { category: t.s.offered[1], id: 'opulent' };
+        return t;
+      },
+      { controls: [players(2, 3)] },
+    ),
+    scene(
+      'delve-together-fossil-found',
+      'Delve together',
+      'A fossil’s question: Doryani named it first and keeps it',
+      [host('Kalguur'), guest('Doryani'), WATCHER],
+      (v) => {
+        const t = delveTogether(v);
+        t.s.delve!.fossil = { category: t.s.offered[0], id: 'bloodstained' };
+        for (const p of t.s.players) t.act({ type: 'vote', category: t.s.offered[0] }, p.name);
+        if (t.s.phase === 'choosing') t.act({ type: 'expire' }, null);
+        return t.answer('Doryani', true);
       },
       { controls: [players(2, 3)] },
     ),

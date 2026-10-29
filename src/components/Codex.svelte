@@ -28,6 +28,7 @@
   import CodexDelve from './CodexDelve.svelte';
   import { DELVE_RECORD_KEY, deepestShown, loadRecords, resetRecords } from '../lib/delveRecord';
   import { onStoredElsewhere } from '../lib/storage';
+  import { resetFossils } from '../lib/fossilStore';
   import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, WINS_KEY, checkAchievements, loadAchievements, loadWins, resetAchievements } from '../lib/achievements';
   import { announceAchievements } from '../lib/achievementToasts';
   import { countReach } from '../lib/count';
@@ -379,6 +380,8 @@
     resetCodex();
     resetRecords();
     resetAchievements();
+    // Delve's fossils are part of the codex: they go with it (and a device paired again brings back what it has).
+    resetFossils();
     codex = loadCodex();
     practice = loadPractice();
     delve = loadRecords();
@@ -881,7 +884,7 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="confirm panel" in:dialogIn out:dialogOut onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <h3>Erase your codex?</h3>
-      <p class="muted">Every item you have seen, every answer, every Delve run and every achievement recorded in this browser is lost. This can’t be undone.</p>
+      <p class="muted">Every item you have seen, every answer, every Delve run and fossil and every achievement recorded in this browser is lost. This can’t be undone.</p>
       {#if sync.code && sync.met}<p class="muted">This browser stops syncing too; your other devices keep theirs.</p>{/if}
       <div class="actions">
         <button class="btn ghost" onclick={() => (confirmReset = false)}>Keep it</button>

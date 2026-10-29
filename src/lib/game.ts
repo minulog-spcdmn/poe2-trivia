@@ -579,7 +579,7 @@ export interface Delve {
   leaving?: number;
 }
 
-/** A fossil a Delve run gave (fossils.ts): which, at which depth and when (host clock), and to whom (everyone standing who lacked it, under the run's cap). */
+/** A fossil a Delve run gave (fossils.ts): which, at which depth and when (host clock), and to whom (the one whose right answer it was, alone or together). */
 export interface RunFossil {
   id: FossilId;
   depth: number;
