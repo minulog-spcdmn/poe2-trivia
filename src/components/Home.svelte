@@ -18,6 +18,7 @@
   import { CODEX_NAMES, DELVE_RECORD_KEY, deepestShown, loadRecords } from '../lib/delveRecord';
   import { onStoredElsewhere, storeKey } from '../lib/storage';
   import { STARTED_KEY, hasStarted } from '../lib/started';
+  import { isMadeName } from '../lib/madeName';
   import { shownDepth } from '../lib/delve';
   import { ENTRIES, codexLine, codexLines, cursorKey, lastEntry, rememberEntry, type Entry } from '../lib/startMenu';
   import GameTitle from './GameTitle.svelte';
@@ -62,14 +63,14 @@
    * name is set aside (nothing saved changes, unless you join).
    */
   const firstLook = (BETA || LOCAL) && !!params.get('room') && params.has('first');
-  /** The name this browser plays under; empty on a first visit (it is asked once, then greeted). */
+  /** The name this browser plays under: a newcomer's made for it (lib/madeName.ts); empty only if it was let go (one that can't be played under here), when it is asked. */
   let known = $state(firstLook ? '' : savedName().trim());
   /** Joining as the owner (the held name, with the owner key here): the room list offers locked and full rooms too. */
   const asOwner = $derived(ownerKey && isHeldName(cleanName(known)));
 
-  // A delver's shared link (?delve): someone who has played here before (a
-  // name is saved) goes straight into a run alone; anyone else finds Delve
-  // chosen in the lobby they open. Not over a game that's being resumed:
+  // A delver's shared link (?delve): anyone with a name (a newcomer's made
+  // one too) goes straight into a run alone; one without finds Delve chosen
+  // in the lobby they open. Not over a game that's being resumed:
   // App resumes it on mount, after this, so look once that's had its turn.
   if (params.has(DELVE_LINK_PARAM)) {
     countArrival('open/delve-link');
@@ -112,6 +113,8 @@
    * answer in a game). Null until that's known.
    */
   const newcomer = $derived(started ? false : answered === null ? null : !answered);
+  /** Greeted as back again once a game has been started here; until that's known, by a name the player chose (not one made for them). */
+  const welcomeBack = $derived(!!known && (newcomer === false || (newcomer === null && !isMadeName(known))));
   // A game in another tab may add to both meanwhile (the codex by the name
   // lib/codex.ts writes, read raw so it stays out of the first download),
   // and the name may change there or come from another device (lib/sync).
@@ -354,7 +357,7 @@
     session.host(n);
   }
 
-  /** A run alone straight away, no room, portal or lobby (a newcomer's Identify more): under the saved name, or without one as Exile, which is never saved. */
+  /** A run alone straight away, no room, portal or lobby (a newcomer's Identify more): under the saved name (a newcomer's made one), or if it was let go, as Exile, which is never saved. */
   function delveAlone() {
     if (connecting) return;
     renaming = false;
@@ -709,7 +712,7 @@
         </form>
       {:else}
         <p class="hello" class:named={!!known}>
-          {known ? 'Welcome back,' : 'Welcome,'}
+          {welcomeBack ? 'Welcome back,' : 'Welcome,'}
           {#if invite}
             <!-- An invite asks the name in its own row: the greeting only greets. -->
             <span class="who">{known || NAMELESS}.</span>

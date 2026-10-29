@@ -489,3 +489,32 @@ test('a game started on one device starts it on the others (lib/started.ts): onc
   markStarted();
   assert.deepEqual(Object.keys(takenNow()), ['started']);
 });
+
+test('a name made for a newcomer is never sent, and a name chosen on another device replaces it', async () => {
+  const { ensureName } = await import('../src/lib/madeName.ts');
+  const stop = stampChoices();
+  try {
+    ensureName();
+    const made = readStored('name');
+    assert.ok(made);
+    assert.equal(chosenNow('name'), null, 'made, not chosen: nothing to send');
+    assert.equal(takeChosen('name', said('Desk', 0)), true, 'even one chosen before stamping replaces it');
+    assert.equal(readStored('name'), 'Desk');
+    assert.equal(JSON.parse(chosenNow('name')!).v, 'Desk');
+  } finally {
+    stop();
+  }
+});
+
+test('a name chosen here stands against another device that has only a made one, which never sends it', async () => {
+  const { ensureName } = await import('../src/lib/madeName.ts');
+  const stop = stampChoices();
+  try {
+    writeStored('name', 'Kalguur');
+    ensureName();
+    assert.equal(readStored('name'), 'Kalguur');
+    assert.equal(JSON.parse(chosenNow('name')!).v, 'Kalguur');
+  } finally {
+    stop();
+  }
+});

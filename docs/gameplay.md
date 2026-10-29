@@ -478,9 +478,9 @@ the same thing for everyone.
   Can you beat me? poe2.quest/?delve"; together, any player of the run
   shares the team's depth: "We reached depth N in Delve together. Can you
   beat us? poe2.quest/?delve". Someone watching has no share button.
-  Opening that link, someone who has played here before (a name is saved)
-  goes straight into a run alone; anyone else finds Delve chosen in the
-  lobby they open. A game being resumed is never replaced.
+  Opening that link goes straight into a run alone (a newcomer's under the
+  name made for them, see Multiplayer); a browser with no name saved finds
+  Delve chosen in the lobby it opens. A game being resumed is never replaced.
 - Your deepest run alone and together are kept in this browser (lobby, end
   screen and Codex, with your last runs). A run resumed by a build with
   other rules still shows, but never counts as a best.
@@ -654,9 +654,17 @@ they're worth more sigils than are unlocked already. Kept in this browser (`src/
   ([PeerJS](https://peerjs.com/)). The host's browser runs the game and
   everyone else sees the same state live. Only the free PeerJS cloud is used,
   to introduce the players to each other.
-  - An invite link (`?room=CODE`) carries only the room's code. Opened by
-    someone who has never played, the start page shows it with the choice
-    made: "Join <host>'s room" with a name field, and the room as the
+  - **Names:** a browser with no name gets one made for it on its first
+    load, two words in the game's manner ("Ashen Wanderer",
+    `src/lib/madeName.ts`), saved as its name, so a newcomer is never asked
+    for one: New game, a join and an invite go straight on. The start page
+    greets it with "Welcome," until a game has been started here
+    (`src/lib/started.ts`), then "Welcome back,"; its quill renames it.
+    Sync never sends a made name, and a name chosen on a paired device
+    replaces it.
+  - An invite link (`?room=CODE`) carries only the room's code. Opened
+    with no name saved (one let go, or `?first` on the beta), the start
+    page shows it with the choice made: "Join <host>'s room" with a name field, and the room as the
     lobby will show it (its code, the host's chip, theirs filling in as they
     type). Whose room it is, how many are in and whether it can be joined
     (locked, full, playing, gone, another version) the room says itself:

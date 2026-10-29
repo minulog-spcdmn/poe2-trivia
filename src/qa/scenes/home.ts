@@ -1,4 +1,4 @@
-// The start page: a first visit and a returning player, with any number of
+// The start page: a first visit (under a name made for it) and a returning player, with any number of
 // open rooms and Today's unique anywhere along its streak; joining a room;
 // and an invite in every state a room can answer in.
 
@@ -89,7 +89,7 @@ const JOIN_FAILED: Control[] = [
   },
 ];
 
-/** What an invite's room answers, and whether it's this device's first visit. */
+/** What an invite's room answers, and whether this device has no name saved (one let go; ?first on the beta): a first visit's made name joins straight away. */
 const INVITE: Control[] = [
   {
     kind: 'choice',
@@ -104,7 +104,7 @@ const INVITE: Control[] = [
       { value: 'silent', label: "Doesn't answer" },
     ],
   },
-  { kind: 'toggle', key: 'first', label: 'A first visit', default: false },
+  { kind: 'toggle', key: 'first', label: 'No name saved', default: false },
 ];
 function invite(v: Values = {}): Built {
   const asked = room(4, { code: 'KXR4QT', players: 3 });
@@ -118,7 +118,7 @@ function invite(v: Values = {}): Built {
  * A returning joiner comes by an invite with that name saved, their own from before, so the start page goes
  * straight into the join (Home.svelte) and, turned down, leaves the code in Join a room's row with the room's
  * own words for it, the code not marked (the room answered, so it was right); the name stays theirs, to change
- * at the greeting's quill. On a first visit the name is typed on the invite and joined with: turned down, it
+ * at the greeting's quill. With no name saved the name is typed on the invite and joined with: turned down, it
  * stays in its field to change, with the focus, and isn't saved (lib/joinName.ts), so the page still says
  * Welcome rather than Welcome back.
  */
@@ -133,7 +133,7 @@ const REFUSED: Control[] = [
       { value: 'like', label: 'A look-alike' },
     ],
   },
-  { kind: 'toggle', key: 'first', label: 'A first visit', default: false },
+  { kind: 'toggle', key: 'first', label: 'No name saved', default: false },
 ];
 function refused(v: Values = {}): Built {
   // The name turned down, with the room's words for it, as nameProblem gives them to the host.
@@ -161,28 +161,35 @@ const AFTER_DAILY: Control[] = [
     default: 'none',
     options: [
       { value: 'none', label: 'Nothing open' },
-      { value: 'create', label: 'New game’s row open (a newcomer’s)' },
+      { value: 'create', label: 'New game’s row open (no name saved)' },
       { value: 'join', label: 'Join a room’s row open' },
       { value: 'connecting', label: 'Joining, on its way' },
     ],
   },
 ];
 function afterDaily(v: Values = {}): Built {
-  // (New game's row opens only without a name: with one, New game hosts straight away.)
+  // (New game's row opens only without a name, one let go: with one, a made one too, New game hosts straight away.)
   const newcomer = v.newcomer !== false || v.row === 'create';
   const daily = v.answered === false ? today(newcomer ? 0 : 7, 'waiting') : today(newcomer ? 1 : 7, 'right');
-  const base: Built = newcomer ? { state: null, name: '', met: [], rooms: [], daily } : returning({}, { daily });
+  const base: Built = newcomer ? { ...firstVisit(), daily, ...(v.row === 'create' ? { name: '', stored: {} } : {}) } : returning({}, { daily });
   if (v.row === 'connecting') return { ...base, status: 'connecting' };
   if (v.row === 'create') return { ...base, steps: [{ click: ':is(.entry:nth-child(1 of .entry) .pick, .act .btn.big)' }] };
   if (v.row === 'join') return { ...base, steps: [{ click: ':is(.entry:nth-child(2 of .entry) .pick, form.join .field.code)' }] };
   return base;
 }
 
+/** A name made for a first visit (lib/madeName.ts), as a newcomer's browser has from its first load. */
+const MADE = 'Ashen Wanderer';
+/** A first visit: a name made for it, nothing played, no rooms open. */
+const firstVisit = (): Built => ({ state: null, name: MADE, stored: { 'name.made': MADE }, met: [], rooms: [] });
+
 const home = (key: string, label: string, s: Omit<Scene, 'key' | 'label' | 'screen' | 'group' | 'seats'>, group = 'Start page'): Scene => ({ key: `home/${key}`, screen: 'home', group, label, seats: [ME], ...s });
 
 export function homeScenes(): Scene[] {
   return [
-    home('first-visit', 'A first visit: no name yet, nothing played', { build: () => ({ state: null, name: '', met: [], rooms: [] }) }),
+    home('first-visit', 'A first visit: a name made for it (Welcome, not Welcome back), nothing played', { build: firstVisit }),
+    // A name let go (one this device can't play under) or never made: New game and Join a room ask for one.
+    home('no-name', 'No name saved: New game and Join a room ask for one', { build: () => ({ state: null, name: '', met: [], rooms: [] }) }),
     home('returning', 'Back again', {
       controls: BACK,
       states: [
@@ -202,7 +209,7 @@ export function homeScenes(): Scene[] {
       states: [
         { label: 'A newcomer, Today’s unique answered: Identify more in Practice more’s place, gold', values: {} },
         { label: 'A newcomer, not answered yet', values: { answered: false } },
-        { label: 'A newcomer, New game’s row open: Start holds the gold', values: { row: 'create' } },
+        { label: 'No name saved, New game’s row open: Start holds the gold', values: { row: 'create' } },
         { label: 'A newcomer, Join a room’s row open: Join holds the gold', values: { row: 'join' } },
         { label: 'A newcomer, joining a room: no gold, Identify more waits', values: { row: 'connecting' } },
         { label: 'Back again, Today’s unique answered: Practice more, as before', values: { newcomer: false } },
@@ -243,7 +250,7 @@ export function homeScenes(): Scene[] {
         controls: INVITE,
         states: [
           { label: 'An invite link to an open room', values: {} },
-          { label: 'An invite link on a first visit', values: { first: true } },
+          { label: 'An invite link with no name saved', values: { first: true } },
           { label: 'An invite to a full room', values: { room: 'full' } },
           { label: 'An invite to a room mid-game', values: { room: 'playing' } },
           { label: 'An invite to a room that has closed', values: { room: 'gone' } },
@@ -261,7 +268,7 @@ export function homeScenes(): Scene[] {
         states: [
           { label: 'Turned down: a player there has the same name', values: {} },
           { label: 'Turned down: the name looks like a player’s there', values: { name: 'like' } },
-          { label: 'Turned down on a first visit: the name typed stays in its field, unsaved', values: { first: true } },
+          { label: 'Turned down with no name saved: the name typed stays in its field, unsaved', values: { first: true } },
         ],
         build: refused,
       },
