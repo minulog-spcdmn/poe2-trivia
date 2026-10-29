@@ -54,7 +54,7 @@ import {
   SECOND_FIND,
   findOn,
   fossilOn,
-  fossilsOf,
+  runFossils,
   livesOf,
   standingIds,
   WAY_OUT,
@@ -69,7 +69,7 @@ import {
   type ItemKind,
 } from './delve.ts';
 import { pickLine, START_LINES } from './delveStart.ts';
-import { dealFossil, fossilById, fossilMask, lackedBy, type CardFossil, type FossilId, type FossilTaker } from './fossils.ts';
+import { NO_FOSSILS, dealFossil, fossilById, fossilDay, fossilMask, lackedBy, type CardFossil, type FossilId, type FossilTaker, type FossilsHeld } from './fossils.ts';
 
 export interface Item {
   id: string;
@@ -1433,7 +1433,7 @@ export class Engine {
   /** What each player's device has shown of Delve's start lines (see setStartLines). */
   private seenLines: ((ids: string[]) => number[][]) | null = null;
   /** The fossils each player's device holds, as masks (see setFossilsHeld). */
-  private heldFossils: ((ids: string[]) => number[]) | null = null;
+  private heldFossils: ((ids: string[]) => FossilsHeld[]) | null = null;
 
   /**
    * `fakes`: made-up names for items, by item name (src/data/fakes.json).
@@ -1486,27 +1486,29 @@ export class Engine {
 
   /**
    * Hands over where to ask which fossils each player's device holds (a
-   * mask each, fossils.ts fossilMask): the host's own codex for anyone
-   * playing at it, a guest's as its hello said. Without it (tests, tools,
-   * the bot) nobody holds any. Those a run gave are counted from the run.
+   * mask each, fossils.ts fossilMask, and the day of its latest find): the
+   * host's own codex for anyone playing at it, a guest's as its hello said.
+   * Without it (tests, tools, the bot) nobody holds any. Those a run gave
+   * are counted from the run.
    */
-  setFossilsHeld(held: ((ids: string[]) => number[]) | null) {
+  setFossilsHeld(held: ((ids: string[]) => FossilsHeld[]) | null) {
     this.heldFossils = held;
   }
 
-  /** What the fossil deal knows of each of `ids`: what they hold (the run's gifts with it) and what the run gave them by tier. */
+  /** What the fossil deal knows of each of `ids`: what they hold (the run's gifts with it), whether they found one today (UTC, on the host's clock), and how many the run gave them. */
   private fossilTakers(s: GameState, ids: string[]): FossilTaker[] {
     const held = this.heldFossils?.(ids) ?? [];
+    const today = fossilDay(this.now());
     return ids.map((id, i) => {
-      const run = fossilsOf(s, id);
-      const rare = run.filter((f) => fossilById(f).rare).length;
-      return { held: (held[i] ?? 0) | fossilMask(run), common: run.length - rare, rare };
+      const run = runFossils(s).filter((f) => f.to.includes(id));
+      const h = held[i] ?? NO_FOSSILS;
+      return { held: h.held | fossilMask(run.map((f) => f.id)), run: run.length, today: h.day === today || run.some((f) => fossilDay(f.at) === today) };
     });
   }
 
   /**
    * A right answer to a fossil's card (`q`), by `winner`: the fossil is
-   * theirs if they lack it and the run's cap for its tier isn't reached
+   * theirs if they lack it, found none today and the run gave them none
    * (fossils.ts lackedBy). Together, only the one whose answer it was gets
    * it. Says what it gave, for the reveal.
    */

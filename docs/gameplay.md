@@ -295,59 +295,88 @@ the same thing for everyone.
     down dangerous routes, with thicker walls and a darkness nothing can
     hold back, so there is no Detonate button and nothing happens at 0. You carry up to three of each item.
 - **Fossils.** Delve's collection: 25 of PoE2's fossils, 17 common and 8
-  rare (`src/lib/fossils.ts`). Now and then one of the ordinary cards on
-  offer holds one: a tag on its card names it (never on a find's card, at
-  most one an offer, and no note under the cards; the tag says it). The
-  card's question is the depth's own (no harder question, no shorter
-  clock) and its category is locked out like any pick. Answer it right and
-  the fossil is yours at once (the reveal says so, its art beside the
-  line); a miss costs a life as usual and the fossil is gone. Only fossils
-  you lack are offered.
+  rare (`src/lib/fossils.ts`). They do nothing in a run; they are kept in
+  the codex. Now and then one of the ordinary cards on offer holds one
+  (never a find's card, at most one an offer). The card's question is the
+  depth's own (no harder question, no shorter clock) and its category is
+  locked out like any pick. Answer it right and the fossil is yours at once
+  (the reveal says so, its art beside the line); a miss costs a life as
+  usual and the fossil is gone. Only fossils you lack are offered.
+  - **Its card** is a fossil's, not a find's or a plain card's: amber, the
+    resin a fossil is kept in, the engraving's corners an ammonite's spiral
+    and the earth's sign, and the fossil's own art on its amber glow at
+    the card's side, with its name in the tag. Under the cards a note says
+    what it is ("A fossil. A collectible for you; it doesn't change your
+    run."); beside two finds' notes it shortens to a line, so it fits a
+    phone upright or on its side.
+  - **Taken,** its piece rises out of the right answer as the card wore it,
+    hangs a beat, and flies along an arc to a tally under the header's
+    right end, where it lands on its count ("5 of 25";
+    `src/lib/fossilFlight.ts`). With reduced motion only the tally shows,
+    already counting it.
+  - **One a day, one a run.** A player finds at most one fossil a run, and
+    none on a day (UTC) they already found one, going by the found dates
+    kept with the set (which paired devices share, so they agree). The end
+    screen and the codex say so once today's is found: another can turn up
+    tomorrow. An offer only rolls for one while someone on it can still take
+    one.
   - Dealt as the finds are: one roll an offer against two slices in turn,
     the rares' and then the commons'. A slice whose fossils its takers all
-    hold, or whose cap a run they have reached, finds nothing; it never
-    feeds the other slice. A run gives each player at most 2 commons and
-    1 rare (`FOSSIL_DEAL.caps`).
+    hold finds nothing; it never feeds the other slice.
   - **The first one:** until you hold a fossil, the first offer of every
     depth from 5 holds a common, certain (one after a miss there rolls as
-    any other). Together, while anyone standing holds none.
-  - **Commons**, from depth 5: 4% of an offer, 0.2% more every depth, 10%
-    from depth 35 and holding. On an offer that holds a find (from 10) 40%,
+    any other). Together, while anyone standing holds none. It is that
+    day's.
+  - **Commons**, from depth 5: 1% of an offer, 0.2% more every depth, 6%
+    from depth 30 and holding. On an offer that holds a find (from 10) 30%,
     so most fossil cards past 10 sit beside a find and taking one means
     passing the find.
-  - **Rares**, none above depth 25: 2% there, 0.2% more every depth, 8%
-    from 55 and holding; four times that on an offer with a find.
+  - **Rares**, none above depth 25: 1% there, 0.1% more every depth, 4%
+    from 55 and holding; three times that on an offer with a find.
 
     | Depth (shown) | Common, plain offer | Common, beside a find | Rare, plain offer | Rare, beside a find |
     |---|---|---|---|---|
     | 0 to 4 | 0 | 0 | 0 | 0 |
-    | 5 | 4% (the first one: certain) | (no finds yet) | 0 | 0 |
-    | 10 | 5% | 40% | 0 | 0 |
-    | 20 | 7% | 40% | 0 | 0 |
-    | 25 | 8% | 40% | 2% | 8% |
-    | 35 | 10% | 40% | 4% | 16% |
-    | 55 and down | 10% | 40% | 8% | 32% |
+    | 5 | 1% (the first one: certain) | (no finds yet) | 0 | 0 |
+    | 10 | 2% | 30% | 0 | 0 |
+    | 20 | 4% | 30% | 0 | 0 |
+    | 25 | 5% | 30% | 1% | 3% |
+    | 30 | 6% | 30% | 1.5% | 4.5% |
+    | 45 | 6% | 30% | 3% | 9% |
+    | 55 and down | 6% | 30% | 4% | 12% |
 
-    What that comes to in a run, for players past the first one (a
-    simulation over the spread of the counted runs: of 95, 58 ended above
-    depth 10, 22 in 10 to 19, 12 in 20 to 29 and 3 at 30 or deeper, with
-    about 75% of answers right; it picks a fossil card four times in five,
-    three in five beside a find):
+    What that comes to (a simulation, `FOSSIL_DEAL`'s numbers, about 75%
+    of answers right, a fossil card picked four times in five and three in
+    five beside a find). In the day's first run, for a player past the
+    first one:
 
-    | Run ends at | Commons a run | Rares a run |
+    | Run ends at | A fossil in the run | Of them rare |
     |---|---|---|
-    | 0 to 4 | 0.00 | 0.000 |
-    | 5 to 9 | 0.07 | 0.000 |
-    | 10 to 19 | 0.40 | 0.000 |
-    | 20 to 29 | 0.98 | 0.017 |
-    | 30 to 39 | 1.47 | 0.215 |
-    | 40 to 59 | 1.81 | 0.558 |
-    | 60+ | 1.99 | 0.930 |
+    | 0 to 4 | 0% | 0% |
+    | 5 to 9 | 2% | 0% |
+    | 10 to 19 | 17% | 0% |
+    | 20 to 29 | 46% | 1% |
+    | 30 to 39 | 74% | 5% |
+    | 40 to 59 | 91% | 9% |
+    | 60+ | 100% | 9% |
+
+    And for a player who plays three runs a day, by where their runs
+    usually end:
+
+    | Runs end around | Days with a fossil (first two weeks) | Days to the 17 commons | Days to all 25 |
+    |---|---|---|---|
+    | 6 | 16% | 156 | (never: no rares above 25) |
+    | 12 | 45% | 40 | 879 |
+    | 16 | 61% | 28 | 236 |
+    | 21 | 79% | 22 | 93 |
+    | 28 | 90% | 19 | 49 |
 
   - **Together:** a fossil is offered if any standing player's slice can
     give one, but only the one whose right answer cleared it keeps it, and
-    only if they lack it and are under the run's cap. The host knows what
-    each guest holds from their hello (`fossils`, a mask).
+    only if they lack it and can still take one that run and day. The host
+    knows what each guest holds from their hello (`fossils`, a mask, and
+    `fossilDay`, the UTC day of their latest find), and keeps it for a
+    guest whose link drops.
   - **Dynamite never fishes for them:** blasting a fossil's question loses
     the fossil, and the new question is never one. A flare works on it as
     on any ordinary question.
@@ -536,8 +565,9 @@ the same thing for everyone.
   lives lost, given and brought back ("Lost 2 lives, gave 1 life,
   was brought back once"). The warmth dies out of the rune circle and ash
   settles, to a slowed toll and an ember crackling out.
-- Among the run's facts, each fossil it gave, with its art ("You found a
-  Jagged Fossil at depth 9."; together, by whose answer). And when the run
+- Among the run's facts, the fossil it gave, with its art ("You found a
+  Jagged Fossil at depth 9. Another can turn up tomorrow."; together, by
+  whose answer, and the tomorrow only for your own). And when the run
   lifts the runs chart's usual depth (its median, once the chart drew one
   before this run), one line says so ("Your usual is now 12."); a usual
   that holds or drops is never mentioned.
@@ -653,14 +683,20 @@ ones kept aside. An item's page also shows its Delve answers. The runs are
 kept in this browser too (`src/lib/delveRecord.ts`).
 
 Under the last run, **Fossils** (`src/components/codex/DelveFossils.svelte`):
-the set of 25 five by five, commons first, with "N of 25". One found shows
-its art, the rest stand as silhouettes (the rare ones' cells edged in
-gold). Choosing one (a click, a tap, or the mouse resting on it) shows it
-under the grid as the game's tooltip would, in Fontin: its name, its
-crafting effect, and when and at what depth it was found (and whether
-together). The latest found shows until one is chosen. Erasing the codex
-erases the fossils too (they are part of what it collected); a device paired
-for sync brings back what it holds.
+a line on what they are (collectibles a Delve card turns up now and then,
+nothing in a run, one a day at most; once today's is found, that another
+can turn up tomorrow), then the set of 25, commons first, with "N of 25":
+five across on a phone, as many as fit beside the tooltip on a wider
+screen. One found shows its art, the rest stand as silhouettes (the rare
+ones' cells edged in gold). The cells touch, their spacing inside them, so
+the mouse passing over the grid never falls between two: the cell it rests
+on shows until it enters another, as does one clicked or tapped (a tap
+only, never a drag or a scroll). The tooltip shows it as the game's would,
+in Fontin: its name, a rare one's mark, and when and at what depth it was
+found (and whether together), in a space that never changes height. The
+latest found shows until one is chosen. Erasing the codex erases the
+fossils too (they are part of what it collected); a device paired for sync
+brings back what it holds.
 
 ## Achievements
 

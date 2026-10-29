@@ -9,7 +9,7 @@
 // for the viewer), an item or a category.
 
 import { DELVE_LIVES, DELVE_RULESET, FLARE_MS, delveStandings, isGroupRun, runFossils, shownDepth, teamDepth, type FindKind } from './delve.ts';
-import { fossilById, type FossilId } from './fossils.ts';
+import { aFossil, fossilById, type FossilId } from './fossils.ts';
 import type { GameState, RecapItem } from './game.ts';
 import { stratumName } from './descent.ts';
 import { counts, isTogether, type DelveRun } from './delveRecord.ts';
@@ -351,11 +351,13 @@ export function runFacts(s: GameState, me: string | null): Line[] {
   const you = together ? '' : ' you';
   const at = (n: number): Part[] => [' at depth ', { n: shownDepth(n) }];
   // The fossils it gave first (lib/fossils.ts): alone yours, together whose each is.
+  // One of them yours is the day's (one a day): another can only turn up tomorrow.
   for (const f of runFossils(s)) {
     if (out.length >= 4) break;
     if (!together && me && !f.to.includes(me)) continue;
     const who = together ? (nameIn(s, f.to[0]) ?? 'Someone') : 'You';
-    out.push({ icon: { fossil: f.id }, parts: join(`${who} found a ${fossilById(f.id).name}`, ...at(f.depth), '.') });
+    const mine = !together || (!!me && f.to.includes(me));
+    out.push({ icon: { fossil: f.id }, parts: join(`${who} found ${aFossil(f.id)}`, ...at(f.depth), mine ? '. Another can turn up tomorrow.' : '.') });
   }
   for (let i = 0; i < items.length && out.length < 4; i++) {
     const x = items[i];

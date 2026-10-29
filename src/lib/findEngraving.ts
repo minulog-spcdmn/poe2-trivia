@@ -763,6 +763,73 @@ function variantOf(kind: FindKind): Variant {
   return v;
 }
 
+// ---- a fossil's card ------------------------------------------------------------
+
+/**
+ * An ammonite, `r` across, about `c`: its shell a logarithmic spiral turning
+ * in two and a half times (each whorl a little under half the one outside
+ * it), the chambers' walls (septa) across each whorl every 24 degrees, the
+ * chambers on the side turned from the light (the lower right) hatched, and
+ * the mouth closing the outer whorl. The plate stops short of it.
+ */
+export function ammonite(p: Plate, c: Pt, r: number) {
+  const b = Math.log(1 / 0.46) / 360;
+  const R = (deg: number) => r * Math.exp(-b * deg);
+  const P = (deg: number): Pt => at(c, deg + 200, R(deg));
+  const turns = 900;
+  let shell = '';
+  const pts: Pt[] = [];
+  for (let d = 0; d <= turns; d += 6) pts.push(P(d));
+  shell += `M${pts.map(pt).join('L')}`;
+  // The mouth: the outer whorl closed on the one inside it.
+  shell += line(P(0), P(360));
+  p.add(shell, 'thin');
+  let septa = '';
+  let shade = '';
+  for (let d = 12; d + 360 <= turns; d += 24) {
+    septa += line(P(d), P(d + 360));
+    const mid = (d + 12 + 200) % 360;
+    // Hatched on the side away from the light, as the rest of the plate is.
+    if (mid > 40 && mid < 220 && R(d) > 4) shade += hatchQuad(P(d), P(d + 24), P(d + 24 + 360), P(d + 360), 0.75);
+  }
+  p.add(septa, 'hair');
+  p.add(shade, 'hatch');
+  p.knockout += disc(c, r + 1.6);
+}
+
+/** Antimony, the earth's sign (fossils are of the earth), `r` from its centre to its ends: a ring under a cross, the ring shaded inside on its right. */
+function earthSign(p: Plate, c: Pt, r: number) {
+  const rr = r * 0.5;
+  const o: Pt = [c[0], c[1] + r - rr];
+  const top = c[1] - r;
+  p.add(arc(o, rr, 0, 360) + line([c[0], o[1] - rr], [c[0], top]) + line([c[0] - rr * 0.7, top + (o[1] - rr - top) * 0.45], [c[0] + rr * 0.7, top + (o[1] - rr - top) * 0.45]), 'sign');
+  let h = '';
+  for (let y = -rr + 0.9; y < rr - 0.6; y += 0.85) {
+    const x = Math.sqrt(rr * rr - y * y) - 0.6;
+    if (x > 1.4) h += line([o[0] + 0.9, o[1] + y], [o[0] + x, o[1] + y]);
+  }
+  p.add(h, 'hatch');
+}
+
+let fossilPlate: Variant | null = null;
+
+/**
+ * The plate of a fossil's card (ChooseCategory): an ammonite in Sol's
+ * place, the earth's sign in Luna's, and an ammonite at the heart of the
+ * back. The fossil itself, its art, is the card's mark (ChooseCategory's
+ * .fossil-mark), and its amber the card's ink.
+ */
+export function fossilVariant(): Variant {
+  return (fossilPlate ??= {
+    spandrels: (p, sol, luna, w) => {
+      const k = w / 218;
+      ammonite(p, sol.c, Math.min(sol.r * 0.92, 15 * k));
+      earthSign(p, luna.c, luna.r * 0.82);
+    },
+    back: (p, g) => ammonite(p, g.c, Math.min(g.room(0), g.row ? 18 : 30)),
+  });
+}
+
 // ---- the cave-in mark -----------------------------------------------------------
 
 /**

@@ -496,21 +496,19 @@ export function endScenes(): EndScene[] {
       log: [miss(10, 'Headhunter', 28), miss(20, 'Briarpatch', 39), miss(30, "Kaom's Heart", 45, { find: 'azurite', lives: 1, wards: 1 })],
       runs: runs([16, 24, 11, 18, 22, 13, 20, 21, 30], 45, false),
     },
-    // Two fossils kept in the run (lib/fossils.ts), named among its facts,
-    // and a run that lifts the chart's usual depth (its line, one only).
+    // The run's fossil (lib/fossils.ts, one a run and a day), named among its
+    // facts with another to come tomorrow, and a run that lifts the chart's
+    // usual depth (its line, one only).
     {
       key: 'd-fossils',
       group: 'Delve',
-      label: 'Alone: two fossils found, the usual lifted',
+      label: 'Alone: a fossil found, the usual lifted',
       view: D,
       mode: 'local',
       me: null,
       state: (() => {
         const s = solo();
-        s.delve!.fossils = [
-          { id: 'jagged', depth: 9, at: RUN + 9, to: [K] },
-          { id: 'bloodstained', depth: 22, at: RUN + 22, to: [K] },
-        ];
+        s.delve!.fossils = [{ id: 'bloodstained', depth: 22, at: RUN + 22, to: [K] }];
         return s;
       })(),
       delveResult: measured(23, 27, false),

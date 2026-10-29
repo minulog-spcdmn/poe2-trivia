@@ -305,8 +305,10 @@ export function gameScenes(): Scene[] {
     }),
     // A fossil on a card (lib/fossils.ts): its tag in a find's place, with
     // the longest name of all (Bloodstained Fossil), alone or beside one or
-    // two finds; the first one, the hook, on the first offer at depth 5; and
-    // the answer shown with the fossil kept, its line under the art.
+    // two finds (its note shortened to a line then), each card in its own
+    // look; the first one, the hook, on the first offer at depth 5; and the
+    // answer shown with the fossil kept, played as it happens: its piece
+    // rising from the answer and flying to its count (lib/fossilFlight.ts).
     scene(
       'delve-fossil',
       'Delve alone',
@@ -346,11 +348,18 @@ export function gameScenes(): Scene[] {
         ],
       },
     ),
-    scene('delve-fossil-found', 'Delve alone', 'A fossil’s question answered right: kept', [ALONE], () => {
-      const t = delveAlone();
-      t.s.delve!.fossil = { category: t.s.offered[0], id: 'bloodstained' };
-      return t.pick().answer(null, true);
-    }),
+    {
+      ...scene('delve-fossil-found', 'Delve alone', 'A fossil’s question answered right: kept, its piece flying to its count', [ALONE], delveAlone),
+      build: () => {
+        const t = delveAlone();
+        t.s.delve!.fossil = { category: t.s.offered[0], id: 'bloodstained' };
+        t.pick();
+        const shown = t.s;
+        const at = t.clock.now + INTO;
+        const answered = t.answer(null, true, INTO + BLOW_AFTER).s;
+        return { state: shown, act: t.room, at, steps: [{ wait: BLOW_AFTER }, { then: answered, at: t.clock.now }] } satisfies Built;
+      },
+    },
     scene('delve-question', 'Delve alone', 'A question', [ALONE], () => delveAlone().pick()),
     scene('delve-wrong', 'Delve alone', 'Answered wrong: a life lost', [ALONE], () => {
       const t = delveAlone().pick();
@@ -521,13 +530,14 @@ export function gameScenes(): Scene[] {
       },
       { controls: [players(2, 3)] },
     ),
-    // A fossil on the team's cards with Doryani already at the run's cap of
-    // two common ones (the card is for the others, and looks no different),
-    // and one cleared: only the one who named it keeps it.
+    // A fossil on the team's cards with Doryani's one for the run already
+    // found (the card is for the others, its note says so), and one cleared,
+    // played as it happens: only the one who named it keeps it, and its
+    // piece flies on their screen alone.
     scene(
       'delve-together-fossil',
       'Delve together',
-      'A fossil among the cards, Doryani at the cap',
+      'A fossil among the cards, Doryani’s found this run',
       [host('Kalguur'), guest('Doryani'), WATCHER],
       (v) => {
         const t = delveTogether(v);
@@ -538,29 +548,32 @@ export function gameScenes(): Scene[] {
           t.answer('Doryani', true).wait(1000).next();
         }
         const doryani = pid('Doryani');
-        t.s.delve!.fossils = [
-          { id: 'scorched', depth: 6, at: t.clock.now - 90_000, to: [doryani] },
-          { id: 'frigid', depth: 7, at: t.clock.now - 40_000, to: [doryani] },
-        ];
+        t.s.delve!.fossils = [{ id: 'scorched', depth: 6, at: t.clock.now - 90_000, to: [doryani] }];
         t.s.delve!.fossil = { category: t.s.offered[1], id: 'opulent' };
         return t;
       },
       { controls: [players(2, 3)] },
     ),
-    scene(
-      'delve-together-fossil-found',
-      'Delve together',
-      'A fossil’s question: Doryani named it first and keeps it',
-      [host('Kalguur'), guest('Doryani'), WATCHER],
-      (v) => {
+    {
+      ...scene(
+        'delve-together-fossil-found',
+        'Delve together',
+        'A fossil’s question: Doryani named it first and keeps it, its piece flying on their screen',
+        [host('Kalguur'), guest('Doryani'), WATCHER],
+        (v) => delveTogether(v),
+        { controls: [players(2, 3)] },
+      ),
+      build: (v = {}) => {
         const t = delveTogether(v);
         t.s.delve!.fossil = { category: t.s.offered[0], id: 'bloodstained' };
         for (const p of t.s.players) t.act({ type: 'vote', category: t.s.offered[0] }, p.name);
         if (t.s.phase === 'choosing') t.act({ type: 'expire' }, null);
-        return t.answer('Doryani', true);
+        const shown = t.s;
+        const at = t.clock.now + INTO;
+        const answered = t.answer('Doryani', true, INTO + BLOW_AFTER).s;
+        return { state: shown, act: t.room, at, steps: [{ wait: BLOW_AFTER }, { then: answered, at: t.clock.now }] } satisfies Built;
       },
-      { controls: [players(2, 3)] },
-    ),
+    },
     scene(
       'delve-together-cleared',
       'Delve together',

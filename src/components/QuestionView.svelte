@@ -17,7 +17,7 @@
   import { questionCircle } from './gameCircles.svelte';
   import { switchedOff } from '../lib/switchedOff';
   import NamePlate from './NamePlate.svelte';
-  import { untrack, type Snippet } from 'svelte';
+  import { tick, untrack, type Snippet } from 'svelte';
   import { keyTap } from '../lib/pointerAnchor';
   import { motion } from '../lib/motion.svelte';
   import {
@@ -41,7 +41,9 @@
   import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, digOf, digRunsOn, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
   import { bankedText, blownText, buriedText, coopMissText, coopRevealText, flareText, inHandText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
-  import { fossilArt, fossilById, type FossilId } from '../lib/fossils';
+  import { FOSSIL_COUNT, aFossil, fossilArt, type FossilId } from '../lib/fossils';
+  import { foundCount, loadFossils } from '../lib/fossilStore';
+  import { flyFossil } from '../lib/fossilFlight';
   import AnswerMark from './AnswerMark.svelte';
   import VerdictSign from './VerdictSign.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
@@ -295,7 +297,7 @@
     if (!s.delve || !f) return null;
     const by = f.to[0];
     const who = coop ? (by === me ? 'You' : nameOf(by)) : delveYou ? 'You' : active.name;
-    return { id: f.id, text: `${who} found a ${fossilById(f.id).name}.` };
+    return { id: f.id, text: `${who} found ${aFossil(f.id)}.` };
   });
 
   // The verdict leads the result line at the reveal, beside Next.
@@ -916,8 +918,19 @@
       if (iWon && pill && fill && fxActive()) setTimeout(() => sfx('fill', { from: { from: optionEls[r.correctIndex], to: pill, seconds: FILL_LEAD / 1000 } }), FILL_START * 1000 - FILL_LEAD);
       // (A vein's ward dug out makes no sound of gain here: it is only in hand. The pack hears it as the
       // haul goes in, at the way out or as the dig ends, where its sparks land: Scoreboard.svelte.)
+      // A fossil this device's player took: it rises out of the right answer and flies to the codex's
+      // tally (lib/fossilFlight.ts), once the answer is marked. Kept already (session's noteFossil), so
+      // the count holds it.
+      const fossil = r.correct ? r.fossil : undefined;
+      if (s.delve && fossil && (session.mode === 'local' || fossil.to.includes(me ?? ''))) {
+        const count = foundCount(loadFossils());
+        void tick().then(() => flyFossil(optionEls[r.correctIndex] ?? null, fossil.id, count, FOSSIL_COUNT, motion.still, FOSSIL_AT));
+      }
     });
   });
+
+  /** ms from the reveal until a fossil taken rises out of the answer: once the answer is marked, before a find's sparks would fly. */
+  const FOSSIL_AT = 450;
 
   /** Frees the options should the host's word on an answer never come. */
   let fallback: ReturnType<typeof setTimeout> | undefined;

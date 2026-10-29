@@ -1,10 +1,11 @@
-// Fossils: Path of Exile's 25 crafting fossils, as collectibles a Delve run
-// can turn up (docs/gameplay.md, Delve, "Fossils"). Now and then one of the
-// cards on offer is a fossil: picked and answered right, the fossil is the
-// player's, kept in the codex at once (lib/fossilStore.ts). It does nothing
-// in the run; taking it means passing up whatever else is on the offer, a
-// find among them. Only fossils a player lacks ever turn up, so the set can
-// be completed.
+// Fossils: Path of Exile's 25 fossils, as collectibles a Delve run can turn
+// up (docs/gameplay.md, Delve, "Fossils"). Now and then one of the cards on
+// offer is a fossil: picked and answered right, the fossil is the player's,
+// kept in the codex at once (lib/fossilStore.ts). It does nothing in the
+// run; taking it means passing up whatever else is on the offer, a find
+// among them. Only fossils a player lacks ever turn up, so the set can be
+// completed, and at most one a run and one a day (UTC), so it takes weeks
+// of coming back.
 //
 // Which offer holds one, and which, is dealt by dealFossil alone, every
 // number of it in FOSSIL_DEAL. Only types come from game.ts, so the engine
@@ -42,8 +43,6 @@ export interface Fossil {
   id: FossilId;
   /** As poedb's item page names it. */
   name: string;
-  /** Its crafting effect, a line each, as poedb's item page gives it. */
-  effect: string[];
   /** One of the eight that turn up only deeper down, and much more rarely (FOSSIL_DEAL). */
   rare: boolean;
 }
@@ -51,42 +50,37 @@ export interface Fossil {
 /**
  * All 25, the 17 common ones first, then the 8 rare ones, in PoE's own
  * pairs where they come in pairs (more fire, no cold; more cold, no fire).
- * Names and effects as poedb's item pages give them (poedb.tw/us/<Name>_Fossil).
+ * Names as poedb's item pages give them (poedb.tw/us/<Name>_Fossil).
  * The order is for good: a fossil's place in it is its bit in the masks a
  * player's device sends its host (fossilMask), so a new fossil only ever
  * goes at the end.
  */
 export const FOSSILS: readonly Fossil[] = [
-  { id: 'scorched', name: 'Scorched Fossil', effect: ['More Fire modifiers', 'No Cold modifiers'], rare: false },
-  { id: 'frigid', name: 'Frigid Fossil', effect: ['More Cold modifiers', 'No Fire modifiers'], rare: false },
-  { id: 'metallic', name: 'Metallic Fossil', effect: ['More Lightning modifiers', 'No Physical modifiers'], rare: false },
-  { id: 'jagged', name: 'Jagged Fossil', effect: ['More Physical modifiers', 'No Chaos modifiers'], rare: false },
-  { id: 'aberrant', name: 'Aberrant Fossil', effect: ['More Chaos modifiers', 'No Lightning modifiers'], rare: false },
-  { id: 'pristine', name: 'Pristine Fossil', effect: ['More Life modifiers', 'No Defence modifiers'], rare: false },
-  { id: 'dense', name: 'Dense Fossil', effect: ['More Defence modifiers', 'No Life Modifiers'], rare: false },
-  { id: 'corroded', name: 'Corroded Fossil', effect: ['More Physical Ailment or Chaos Ailment modifiers', 'No Elemental modifiers'], rare: false },
-  { id: 'prismatic', name: 'Prismatic Fossil', effect: ['More Elemental modifiers', 'No Physical Ailment or Chaos Ailment modifiers'], rare: false },
-  { id: 'aetheric', name: 'Aetheric Fossil', effect: ['More Caster modifiers', 'Fewer Attack modifiers'], rare: false },
-  { id: 'serrated', name: 'Serrated Fossil', effect: ['More Attack modifiers', 'Fewer Caster modifiers'], rare: false },
-  { id: 'lucent', name: 'Lucent Fossil', effect: ['More Mana modifiers', 'No Speed modifiers'], rare: false },
-  { id: 'shuddering', name: 'Shuddering Fossil', effect: ['More Speed modifiers', 'No Mana modifiers'], rare: false },
-  { id: 'bound', name: 'Bound Fossil', effect: ['More Minion, Aura or Curse modifiers'], rare: false },
-  { id: 'opulent', name: 'Opulent Fossil', effect: ['More Drop modifiers', 'No Tagless modifiers'], rare: false },
-  { id: 'deft', name: 'Deft Fossil', effect: ['More Critical modifiers', 'No Attribute modifiers'], rare: false },
-  { id: 'fundamental', name: 'Fundamental Fossil', effect: ['More Attribute modifiers', 'No Critical modifiers'], rare: false },
-  { id: 'faceted', name: 'Faceted Fossil', effect: ['More Gem modifiers'], rare: true },
-  { id: 'bloodstained', name: 'Bloodstained Fossil', effect: ['Corrupted', 'Has a Corrupted implicit modifier'], rare: true },
-  { id: 'hollow', name: 'Hollow Fossil', effect: ['Has an Abyssal socket'], rare: true },
-  { id: 'fractured', name: 'Fractured Fossil', effect: ['Fracture a random modifier', 'Cannot be used on Influenced or Fractured items'], rare: true },
-  { id: 'glyphic', name: 'Glyphic Fossil', effect: ['Has a Corrupt Essence modifier'], rare: true },
-  {
-    id: 'tangled',
-    name: 'Tangled Fossil',
-    effect: ['Makes a random modifier type much more likely and prevents another random modifier type', 'Effects revealed once resonator is fully socketed'],
-    rare: true,
-  },
-  { id: 'sanctified', name: 'Sanctified Fossil', effect: ['Numeric modifier values are lucky', 'High Level modifiers are more common'], rare: true },
-  { id: 'gilded', name: 'Gilded Fossil', effect: ['Item is overvalued by vendors'], rare: true },
+  { id: 'scorched', name: 'Scorched Fossil', rare: false },
+  { id: 'frigid', name: 'Frigid Fossil', rare: false },
+  { id: 'metallic', name: 'Metallic Fossil', rare: false },
+  { id: 'jagged', name: 'Jagged Fossil', rare: false },
+  { id: 'aberrant', name: 'Aberrant Fossil', rare: false },
+  { id: 'pristine', name: 'Pristine Fossil', rare: false },
+  { id: 'dense', name: 'Dense Fossil', rare: false },
+  { id: 'corroded', name: 'Corroded Fossil', rare: false },
+  { id: 'prismatic', name: 'Prismatic Fossil', rare: false },
+  { id: 'aetheric', name: 'Aetheric Fossil', rare: false },
+  { id: 'serrated', name: 'Serrated Fossil', rare: false },
+  { id: 'lucent', name: 'Lucent Fossil', rare: false },
+  { id: 'shuddering', name: 'Shuddering Fossil', rare: false },
+  { id: 'bound', name: 'Bound Fossil', rare: false },
+  { id: 'opulent', name: 'Opulent Fossil', rare: false },
+  { id: 'deft', name: 'Deft Fossil', rare: false },
+  { id: 'fundamental', name: 'Fundamental Fossil', rare: false },
+  { id: 'faceted', name: 'Faceted Fossil', rare: true },
+  { id: 'bloodstained', name: 'Bloodstained Fossil', rare: true },
+  { id: 'hollow', name: 'Hollow Fossil', rare: true },
+  { id: 'fractured', name: 'Fractured Fossil', rare: true },
+  { id: 'glyphic', name: 'Glyphic Fossil', rare: true },
+  { id: 'tangled', name: 'Tangled Fossil', rare: true },
+  { id: 'sanctified', name: 'Sanctified Fossil', rare: true },
+  { id: 'gilded', name: 'Gilded Fossil', rare: true },
 ];
 
 export const FOSSIL_COUNT = FOSSILS.length;
@@ -95,6 +89,12 @@ const BY_ID = new Map(FOSSILS.map((f) => [f.id as string, f]));
 
 export const isFossilId = (v: unknown): v is FossilId => typeof v === 'string' && BY_ID.has(v);
 export const fossilById = (id: FossilId): Fossil => BY_ID.get(id)!;
+
+/** A fossil's name with its article, as a sentence names it: an Aberrant Fossil, a Jagged Fossil. */
+export const aFossil = (id: FossilId) => {
+  const name = fossilById(id).name;
+  return `${/^[AEIOU]/.test(name) ? 'an' : 'a'} ${name}`;
+};
 
 /** A fossil's picture (public/fossils/, upscaled as the items' are: scripts/upscale-art.py --fossils), full size or its `size` px copy. */
 export const fossilArt = (id: FossilId, size?: 128 | 256) => `${import.meta.env.BASE_URL}fossils/${size ? `${size}/` : ''}${encodeURIComponent(id)}.avif`;
@@ -123,17 +123,35 @@ export const holds = (m: number, id: FossilId) => (m & bitOf(id)) !== 0;
 /** The fossils in mask `m`, in FOSSILS' order. */
 export const fossilsIn = (m: number): FossilId[] => FOSSIL_IDS.filter((id) => holds(m, id));
 
+/** A UTC day, as a number (days since 1970): the day a fossil was found, for the one a day. */
+export const fossilDay = (ms: number) => Math.floor(ms / 86_400_000);
+
+/**
+ * What a player's device holds, for the deal: its fossils as a mask, and the
+ * UTC day of its latest find (null for none), from the found dates it keeps
+ * (fossilStore.ts), so paired devices, which keep the earlier date of one
+ * both found, agree on it.
+ */
+export interface FossilsHeld {
+  held: number;
+  day: number | null;
+}
+export const NO_FOSSILS: FossilsHeld = { held: 0, day: null };
+
+/** Whether `v` reads as a UTC day a fossil could have been found on. */
+export const isFossilDay = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 1_000_000;
+
 /**
  * The host's answer to the deal's question of what each of `ids` holds
- * (Engine.setFossilsHeld): a guest's device's mask as its hello said (and
- * runs since gave), kept by player id past a dropped link, so a player away
- * from a run they still stand in is dealt as themselves; this device's own
+ * (Engine.setFossilsHeld): a guest's device's as its hello said (and runs
+ * since gave), kept by player id past a dropped link, so a player away from
+ * a run they still stand in is dealt as themselves; this device's own
  * (`here`) only for its own players (the host, those at its screen, `own`).
  * A player never heard from holds none.
  */
-export function heldFor(ids: readonly string[], known: ReadonlyMap<string, number>, own: (id: string) => boolean, here: () => number): number[] {
-  let mine: number | null = null;
-  return ids.map((id) => (own(id) ? (mine ??= here()) : (known.get(id) ?? 0)));
+export function heldFor(ids: readonly string[], known: ReadonlyMap<string, FossilsHeld>, own: (id: string) => boolean, here: () => FossilsHeld): FossilsHeld[] {
+  let mine: FossilsHeld | null = null;
+  return ids.map((id) => (own(id) ? (mine ??= here()) : (known.get(id) ?? NO_FOSSILS)));
 }
 
 // ---- the deal ------------------------------------------------------------------
@@ -145,35 +163,37 @@ export function heldFor(ids: readonly string[], known: ReadonlyMap<string, numbe
  * They are dealt as the finds are: one roll per offer against two slices in
  * turn, the rares' and then the commons', each with its own chance by depth.
  *
+ * - One a day and one a run, each player's own: one found today (UTC, by
+ *   the found dates), or given this run, and nothing more turns up for them
+ *   until tomorrow, or the next run.
  * - The first-fossil hook: until a player holds their first fossil, the
  *   first offer of every depth from `hookFrom` (shown 5) holds a common,
  *   certain, as a find is on its own first depth; one after a miss there
- *   rolls as any other. Together, while anyone standing holds none.
+ *   rolls as any other. That first one is the day's. Together, while anyone
+ *   standing holds none.
  * - Commons, from `common.from` (shown 5): `common.start` of plain offers,
- *   `common.step` more every depth, `common.cap` from shown 35 and holding;
- *   on an offer that holds a find (from shown 10) `common.withFind`, so most
- *   fossil cards past 10 sit beside a find, and taking one means passing it.
+ *   `common.step` more every depth, `common.cap` from shown 30 and holding;
+ *   on an offer that holds a find (from shown 10) `common.withFind`.
  * - Rares (the 8), none above `rare.from` (shown 25, the Azurite Vein's
  *   depth): `rare.start` there, `rare.step` more every depth, `rare.cap`
  *   from shown 55 and holding; `rare.findBoost` times that on an offer with
  *   a find.
- * - Caps a run, each player's own: `caps.common` commons and `caps.rare`
- *   rares. A slice whose cap a taker has reached, or whose fossils they all
- *   hold, finds nothing for them; once it does for every taker, its roll
- *   finds nothing at all and never feeds the other slice.
+ * - A slice whose fossils its takers all hold, or that can't give them one
+ *   today or this run, finds nothing; it never feeds the other slice.
  *
- * Tuned on 95 counted runs (58 ended before shown 10, 22 in 10 to 19, 12 in
- * 20 to 29, 3 at 30 or deeper; about 75% of answers right) and the design
- * review's simulation: a newcomer has their first fossil in their first run
- * or two that reach depth 5, the 17 commons take some fifty runs of a
- * regular (weeks), the 8 rares a hundred or more of a player who gets past
- * 25 to 30 (weeks to months). docs/gameplay.md, "Fossils", has the table.
+ * Tuned on the counted runs (of 95, 58 ended before shown 10, 22 in 10 to
+ * 19, 12 in 20 to 29, 3 at 30 or deeper; about 75% of answers right) by
+ * simulation, at three runs a day: a player whose runs end about 12 deep
+ * finds the day's fossil on about half the days, one whose runs end past 20
+ * on most; the whole set takes such a deep player about three months, one
+ * whose runs end near 30 about seven weeks. docs/gameplay.md, "Fossils",
+ * has the table.
  */
 export const FOSSIL_DEAL = {
   hookFrom: 6,
-  common: { from: 6, start: 0.04, step: 0.002, cap: 0.1, withFind: 0.4 },
-  rare: { from: 26, start: 0.02, step: 0.002, cap: 0.08, findBoost: 4 },
-  caps: { common: 2, rare: 1 },
+  common: { from: 6, start: 0.01, step: 0.002, cap: 0.06, withFind: 0.3 },
+  rare: { from: 26, start: 0.01, step: 0.001, cap: 0.04, findBoost: 3 },
+  perRun: 1,
 } as const;
 
 const depthOf = (d: number) => (Number.isFinite(d) ? Math.floor(d) : 0);
@@ -194,23 +214,26 @@ export function fossilChance(rare: boolean, d: number, withFind: boolean): numbe
 
 /**
  * One player an offer could hold a fossil for: the fossils they hold (a
- * mask, those given this run in it) and how many of each tier this run gave
- * them.
+ * mask, those given this run in it), how many this run gave them, and
+ * whether they found one today.
  */
 export interface FossilTaker {
   held: number;
-  common: number;
-  rare: number;
+  run: number;
+  today: boolean;
 }
 
-/** The fossils of a tier a slice could give `t`: those they lack, while the run's cap for it isn't reached. */
+/** Whether `t` can be given a fossil now: none found today, none given this run. */
+const open = (t: FossilTaker) => !t.today && t.run < FOSSIL_DEAL.perRun;
+
+/** The fossils of a tier a slice could give `t`: those they lack, while they found none today and the run gave them none. */
 export function lackedBy(t: FossilTaker, rare: boolean): FossilId[] {
-  if (t[rare ? 'rare' : 'common'] >= FOSSIL_DEAL.caps[rare ? 'rare' : 'common']) return [];
+  if (!open(t)) return [];
   return FOSSILS.filter((f) => f.rare === rare && !holds(t.held, f.id)).map((f) => f.id);
 }
 
 /** Whether the first-fossil hook holds for `t`: they hold none yet. */
-export const hooked = (t: FossilTaker) => t.held === 0;
+export const hooked = (t: FossilTaker) => t.held === 0 && open(t);
 
 /**
  * The fossil an offer at depth `d` holds, or null: the whole deal (see
@@ -224,6 +247,8 @@ export function dealFossil(d: number, takers: FossilTaker[], opts: { fresh: bool
   const draw = (ids: FossilId[]) => (ids.length ? ids[Math.min(ids.length - 1, Math.floor(rng() * ids.length))] : null);
   const hook = takers.filter(hooked);
   if (opts.fresh && depthOf(d) >= FOSSIL_DEAL.hookFrom && hook.length) return draw(pool(false, hook));
+  // Nobody it could go to (each found today's, or took this run's): no roll at all.
+  if (!takers.some(open)) return null;
   const rare = fossilChance(true, d, opts.withFind);
   const common = fossilChance(false, d, opts.withFind);
   if (rare + common <= 0) return null;

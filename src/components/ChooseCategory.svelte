@@ -18,7 +18,8 @@
   import { FIND_TEXT, deathmatchText, digNote, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
   import { WAY_OUT_CARD as out } from '../lib/wayOut/lantern';
   import { digOf, expectedVoters, fossilOffer, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
-  import { fossilById, type CardFossil } from '../lib/fossils';
+  import { fossilArt, fossilById, type CardFossil, type FossilId } from '../lib/fossils';
+  import { fossilVariant } from '../lib/findEngraving';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
   import { FIND_COLORS, cardHover, cardPicked, cardRevealed, raffleHop, voteCast } from '../lib/fx/moments';
@@ -315,8 +316,6 @@
    * the first card's on the left and the other's on the right; one alone on
    * its card's side, the middle card's on the left.
    */
-  /** The notes can stand beside the cards (CSS, on a phone on its side): a dig's two, or up to two finds'. */
-  const beside = $derived(!!dig || (finds.length > 0 && finds.length <= 2 && !s.deathmatch));
   function sideOf(i: number, all: number[]): 'left' | 'right' {
     if (all.length > 1) return i === Math.min(...all) ? 'left' : 'right';
     return 2 * i + 1 > s.offered.length ? 'right' : 'left';
@@ -350,6 +349,25 @@
   });
   /** The name of the fossil on a card, or null. */
   const fossilAt = (cat: string): string | null => (fossilShown?.category === cat ? fossilById(fossilShown.id).name : null);
+  /** The fossil on a card, or null. */
+  const fossilIdAt = (cat: string): FossilId | null => (fossilShown?.category === cat ? fossilShown.id : null);
+  /** The fossil's card on offer as dealt, while no dig or deathmatch hides the notes. */
+  const fossilCol = $derived(fossilShown && !s.deathmatch ? s.offered.indexOf(fossilShown.category) : -1);
+  /**
+   * A fossil's note (lib/fossils.ts: what a fossil is, that it changes
+   * nothing in the run): one of its own under (or beside) its card, as a
+   * find's, beside at most one find's; beside two finds, which take both
+   * sides of the cards, a short line in the line under them instead (with
+   * what stays unused on the finds), as that line takes the lock rule's
+   * place there.
+   */
+  const fossilNote = $derived(fossilCol < 0 || dig ? null : finds.length >= 2 ? 'line' : 'full');
+  /** The columns of the notes that stand in the cards' columns (or at their sides): the finds' and a fossil's own. */
+  const noteCols = $derived([...finds.map((f) => s.offered.indexOf(f.category)), ...(fossilNote === 'full' ? [fossilCol] : [])]);
+  /** The notes can stand beside the cards (CSS, on a phone on its side): a dig's two, or up to two finds' (or a find's and a fossil's). */
+  const beside = $derived(!!dig || (noteCols.length > 0 && noteCols.length <= 2 && !s.deathmatch));
+  /** What a fossil is, said once for its card: whose codex it goes to, and that the run is the same either way. */
+  const fossilWhose = $derived(coop ? 'the codex of whoever names it' : mine ? 'your codex' : `${active.name}’s codex`);
   const uid = $props.id();
   /**
    * Whether the faces are drawn sharp (.sharp, below): only in Chromium (it
@@ -845,6 +863,7 @@
   class:coop
   class:delve={!!s.delve}
   class:beside={beside}
+  class:fossil-line={fossilNote === 'line'}
   class:duel={!!s.deathmatch}
   class:sharp
   style:--n={s.offered.length}
@@ -893,7 +912,7 @@
         style={isWayOut(cat) ? outInk : undefined}
         data-find={kindOf(cat)}
         data-fossil={fossilAt(cat) ? '' : undefined}
-        aria-describedby={kindOf(cat) && !s.deathmatch ? `${uid}-note-${kindOf(cat)}` : undefined}
+        aria-describedby={kindOf(cat) && !s.deathmatch ? `${uid}-note-${kindOf(cat)}` : fossilAt(cat) && !s.deathmatch ? `${uid}-note-fossil` : undefined}
         class:mine
         class:dim={dimmed}
         class:chosen={picked === cat || (landed && lit === i)}
@@ -917,12 +936,12 @@
           <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
             <span class="back" aria-hidden="true">
               <span class="grain"></span>
-              <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
+              <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : fossilAt(cat) ? fossilVariant() : undefined} />
               {@render filigree()}
             </span>
             <span class="frame" data-sharp={sharp || undefined} use:backdropShadow>
               <span class="grain"></span>
-              <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
+              <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : fossilAt(cat) ? fossilVariant() : undefined} />
               <span class="glare"></span>
               <span class="sheen"></span>
               {@render filigree()}
@@ -950,6 +969,11 @@
                 {/if}
                 <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')" use:fineMask={maskOf(iconOf(cat))}></span></span>
               </span>
+              {#if fossilIdAt(cat)}
+                <!-- The fossil itself, its mark: lying on the window's floor in the corner (at a row's far end), on its amber light.
+                     What flies to the tally once it is taken (lib/fossilFlight.ts) wears the same. -->
+                <span class="fossil-mark" aria-hidden="true"><span class="amber"></span><img src={fossilArt(fossilIdAt(cat)!, 128)} alt="" draggable="false" /></span>
+              {/if}
               {#if kindOf(cat) === 'azurite'}
                 <!-- The vein's crystals in the corner stand in front of the item. -->
                 <CardEngraving side="face" find="azurite" front />
@@ -992,7 +1016,7 @@
         </p>
       {/each}
     </div>
-  {:else if finds.length && !s.deathmatch}
+  {:else if (finds.length || fossilNote) && !s.deathmatch}
     <!-- One short note per find, in its colour; what stays unused on them, once for both. -->
     {@const two = finds.length > 1}
     {@const team = coop && !!me && livesOf(s, me) > 0}
@@ -1006,17 +1030,21 @@
           data-find={f.kind}
           id="{uid}-note-{f.kind}"
           style:--col={s.offered.indexOf(f.category) + 1}
-          data-side={sideOf(
-            s.offered.indexOf(f.category),
-            finds.map((g) => s.offered.indexOf(g.category)),
-          )}
+          data-side={sideOf(s.offered.indexOf(f.category), noteCols)}
         >
           {#if team}<strong>{FIND_TEXT[f.kind].tag}.</strong> {teamFindNote(f.kind, itemsHeld && !two)}{:else if mine && !coop}<strong
               >{FIND_TEXT[f.kind].tag}.</strong
             > {findNote(f.kind, inventoryOf(s, active.id), !two)}{:else}{FIND_TEXT[f.kind].others}{/if}
         </p>
       {/each}
-      {#if two && held}<p class="note muted">{held.trim()}</p>{/if}
+      {#if fossilNote === 'full'}
+        <p class="note find-note" data-find="fossil" id="{uid}-note-fossil" style:--col={fossilCol + 1} data-side={sideOf(fossilCol, noteCols)}>
+          <strong>A fossil.</strong> A collectible for {fossilWhose}; it doesn’t change {coop || !mine ? 'the' : 'your'} run.
+        </p>
+      {:else if fossilNote === 'line'}
+        <p class="note muted fossil-line" id="{uid}-note-fossil">The fossil: a collectible for {coop ? 'whoever names it' : fossilWhose}, nothing in the run.{held ? ` ${held.trim()}` : ''}</p>
+      {/if}
+      {#if two && held && fossilNote !== 'line'}<p class="note muted">{held.trim()}</p>{/if}
     </div>
   {/if}
   {#if coop && !drawn && s.phase === 'choosing'}
@@ -1959,17 +1987,52 @@
     --f-glow: rgba(255, 120, 40, 0.2);
     --f-glyph: linear-gradient(180deg, #fbf3e6 0%, #c8b8a0 45%, #4a3a2a 100%);
   }
-  /* A fossil (lib/fossils.ts): the amber of PoE's fossils, a resin's warm
-     honey, softer than dynamite's ember. Only its tag says which. */
+  /* A fossil (lib/fossils.ts): amber, the resin fossils are kept in, lit
+     from inside: an orange honey, apart from a plain card's old gold and
+     dynamite's ash grey, its plate a resin brown. Its plate engraved with an
+     ammonite and the earth's sign (lib/findEngraving fossilVariant), and the
+     fossil itself lying in the window's corner, its mark (.fossil-mark). */
   .card[data-fossil] {
-    --ink: #c8a46c;
-    --warm: #b9772c;
-    --f: #e9c784;
-    --f-hi: #fcefd0;
-    --f-border: #8c6b3c;
-    --f-pulse: rgba(235, 170, 70, 0.3);
-    --f-glow: rgba(235, 170, 70, 0.2);
-    --f-glyph: linear-gradient(180deg, #fff6e2 0%, #e2b56c 45%, #5a3c16 100%);
+    --ink: #e8963a;
+    --warm: #d8761a;
+    --f: #f5b456;
+    --f-hi: #ffe7bf;
+    --f-border: #a0601e;
+    --f-pulse: rgba(255, 150, 40, 0.34);
+    --f-glow: rgba(255, 150, 40, 0.24);
+    --f-glyph: linear-gradient(180deg, #fff1d2 0%, #f0a040 45%, #6a2e06 100%);
+  }
+  .card[data-fossil] .frame {
+    background:
+      radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
+      linear-gradient(170deg, #2a1806, #0e0803 70%);
+  }
+  /* The fossil, lying on the window's floor in its right corner on the amber
+     light it is kept in; what flies to the tally once it is taken wears the
+     same (app.css .fossil-flight). */
+  .fossil-mark {
+    position: absolute;
+    right: 24px;
+    top: 186px;
+    width: 46px;
+    height: 46px;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+  }
+  .fossil-mark .amber {
+    position: absolute;
+    inset: -12px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255, 160, 50, 0.42), rgba(255, 140, 40, 0.12) 45%, transparent 70%);
+  }
+  .fossil-mark img {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    -webkit-user-select: none;
+    user-select: none;
   }
   .card.special .glyph {
     background: var(--f-glyph);
@@ -2075,6 +2138,9 @@
   }
   .find-note[data-find='flare'] {
     color: #f7a3b3;
+  }
+  .find-note[data-find='fossil'] {
+    color: #f2c47e;
   }
   .find-note[data-find='dynamite'] {
     color: #eebf96;
@@ -2263,6 +2329,12 @@
         radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
         linear-gradient(170deg, #211912, #0d0a07 70%);
     }
+    .card[data-fossil] .frame {
+      background:
+        radial-gradient(circle at 62px 50%, color-mix(in srgb, var(--warm) 28%, transparent), transparent 74px),
+        radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
+        linear-gradient(170deg, #2a1806, #0e0803 70%);
+    }
     .card[data-find='flare'] .frame {
       background:
         radial-gradient(circle at 62px 50%, color-mix(in srgb, var(--warm) 32%, transparent), transparent 74px),
@@ -2316,9 +2388,17 @@
       -webkit-mask-size: 20px 20px;
       mask-size: 20px 20px;
     }
-    /* The vein's crystals rise at the row's far end: the name keeps clear of them. */
-    .card[data-find='azurite'] .title {
+    /* The vein's crystals rise at the row's far end, and a fossil lies there: the name keeps clear of them. */
+    .card[data-find='azurite'] .title,
+    .card[data-fossil] .title {
       padding-right: 56px;
+    }
+    .fossil-mark {
+      top: 50%;
+      right: 16px;
+      width: 40px;
+      height: 40px;
+      translate: 0 -50%;
     }
     .find-tag {
       display: none;
@@ -2884,6 +2964,18 @@
     }
     .find-notes {
       gap: 0.25rem;
+    }
+    /* Two finds' notes and the fossil's line under the cards: the rows a
+       little closer and slimmer, the notes tighter, so all five lines fit a
+       small phone's browser (375 x 635) without a scroll. */
+    .choose.delve.fossil-line:not(.coop) .cards {
+      gap: 0.3rem;
+    }
+    .choose.delve.fossil-line .frame {
+      padding-block: 12px;
+    }
+    .choose.delve.fossil-line .find-notes {
+      gap: 0.1rem;
     }
     /* The team's vote: its line on one line however many it waits for
        (the clock, then whom), and the lock rule under it read as one block
