@@ -133,13 +133,18 @@
    * was built. The desk opens on the first when the address names none.
    */
   let change = $state<{ benches: { key: string; why: string }[]; uncovered: string[]; scenes: Set<string> } | null>(null);
-  /** On the dev server (it answered for This change): where before and after can run. */
-  let devServer = $state(false);
+  /**
+   * Where the code before this change is, for before and after: the dev
+   * server's to get ready (it answered for This change), built beside the
+   * beta (its list says where), or nowhere; null until known.
+   */
+  let beforeAt = $state.raw<'server' | { base: string; root: string } | 'none' | null>(null);
+  const hasBefore = $derived(!!beforeAt && beforeAt !== 'none');
   void (async () => {
     for (const url of ['./__qa/change', './qa-change.json']) {
       const got = await fetch(url).then((r) => (r.ok ? r.json() : null), () => null);
       if (!got?.files) continue;
-      devServer = url === './__qa/change';
+      beforeAt = url === './__qa/change' ? 'server' : typeof got.before === 'string' && typeof got.base === 'string' ? { base: got.base, root: new URL(got.before, location.href).href } : 'none';
       const hit = touched(got.files, sceneFiles, SCENES);
       change = { ...benchesTouched(got.files, hit, ALL), scenes: new Set(hit.scenes.map((s) => s.key)) };
       const opening = change.benches.map((t) => ALL.find((b) => b.key === t.key)).find(Boolean);
@@ -147,6 +152,7 @@
       if (!first && opening && moves === 0) open(opening, opening.kind === 'scenes' ? opening.states.findIndex((s) => change!.scenes.has(s.scene.key)) : undefined, false);
       return;
     }
+    beforeAt = 'none';
   })();
 
   /** Opens `b`, at its state `at` (a screen's first, by default). */
@@ -206,10 +212,19 @@
 
   /** What the frames shown found wrong, by frame, once checked: only those of the view up now. */
   let results = $state<Record<string, Problem[]>>({});
-  /** The code before this change, while before and after is on (asked again until it's ready). */
+  /** The code before this change, while before and after is on (the dev server's asked again until it's ready). */
   let before = $state<Before | null>(null);
   $effect(() => {
     if (!comparing) return;
+    const where = beforeAt;
+    if (where === null || where === 'none') {
+      before = where && { state: 'none' };
+      return;
+    }
+    if (where !== 'server') {
+      before = { state: 'ready', base: where.base, root: where.root, shots: false };
+      return;
+    }
     let stop = false;
     let t: ReturnType<typeof setTimeout> | undefined;
     let first = true;
@@ -227,15 +242,20 @@
       clearTimeout(t);
     };
   });
-  const beforeOrigin = $derived(comparing && before?.state === 'ready' ? before.origin : null);
+  const beforeRoot = $derived(comparing && before?.state === 'ready' ? before.root : null);
+  /** Whether the two sides are shot and compared (the dev server's), or (the beta's) only shown live. */
+  const shots = $derived(before?.state === 'ready' && before.shots);
+  /** Without shots: a side that couldn't show the view, and why, as its frame said. */
+  let cantLive = $state.raw<{ side: 'before' | 'now'; error: string } | null>(null);
 
   /** What the frames show, as one string: a change makes them afresh. A piece's controls aren't in it: they reach its frame as they move. */
   const showing = $derived(
-    (piece ? `${piece.key}|${size}|${all}|${reloads}` : `${scene?.key}|${size}|${seatShown}|${JSON.stringify(sceneQuery)}|${all}|${reloads}`) + (comparing ? `|before ${beforeOrigin}` : ''),
+    (piece ? `${piece.key}|${size}|${all}|${reloads}` : `${scene?.key}|${size}|${seatShown}|${JSON.stringify(sceneQuery)}|${all}|${reloads}`) + (comparing ? `|before ${beforeRoot}` : ''),
   );
   $effect(() => {
     void showing;
     results = {};
+    cantLive = null;
     frozen = false;
   });
   const problems = $derived.by(() => {
@@ -291,13 +311,13 @@
     const base = before && 'base' in before && before.base ? ` (main at ${before.base.slice(0, 7)})` : '';
     const note = !before || before.state === 'preparing' ? `Getting the code before this change ready${before?.state === 'preparing' && before.step ? `: ${before.step}` : ''}…` : before.state === 'ready' ? undefined : 'No code from before here';
     return [
-      { src: beforeOrigin ? beforeSrc(now.src, beforeOrigin, 'b0') : '', title: `Before${base}`, caption: `Before this change${base}`, note, marks: areas },
+      { src: beforeRoot ? beforeSrc(now.src, beforeRoot, 'b0') : '', title: `Before${base}`, caption: `Before this change${base}`, note, marks: areas },
       { ...now, caption: 'Now', marks: areas, layer: layered && compared?.state === 'done' ? compared.got!.layer : undefined },
     ];
   });
   // Shot and compared a moment after what's shown stops changing: the view, a piece's controls, the frames' size.
   // (The frame's address as shot, without its outlines: O doesn't call for new shots.)
-  const shotKey = $derived(comparing && beforeOrigin && box && own[0] && !piece?.moves ? `${showing}|${piece ? JSON.stringify(valuesQuery(piece.controls, v)) : ''}|${box.w}x${box.h}|${shotSrc(own[0].src)}` : '');
+  const shotKey = $derived(comparing && beforeRoot && shots && box && own[0] && !piece?.moves ? `${showing}|${piece ? JSON.stringify(valuesQuery(piece.controls, v)) : ''}|${box.w}x${box.h}|${shotSrc(own[0].src)}` : '');
   $effect(() => {
     const key = shotKey;
     closeup = -1;
@@ -307,12 +327,12 @@
     }
     const nowSrc = own[0].src;
     const { w, h } = box!;
-    const origin = beforeOrigin!;
+    const root = beforeRoot!;
     const stop = new AbortController();
     compared = { key, state: 'checking' };
     const t = setTimeout(async () => {
       try {
-        const got = await compareShots(shotSrc(nowSrc, origin), shotSrc(nowSrc), w, h, stop.signal);
+        const got = await compareShots(shotSrc(nowSrc, root), shotSrc(nowSrc), w, h, stop.signal);
         if (!stop.signal.aborted) compared = { key, state: 'done', got };
         else release(got);
       } catch (e) {
@@ -372,6 +392,7 @@
   function onframe(m: FrameMessage, i = -1) {
     // (What's wrong is the code now's to find: the frame before only shows how it was.)
     if (m.qa === 'checked' && comparing && i === 0) return;
+    if (m.qa === 'failed' && comparing && (i === 0 || i === 1)) cantLive ??= { side: i === 0 ? 'before' : 'now', error: m.error };
     if (m.qa === 'checked') results = { ...results, [m.slot]: m.problems };
     else if (m.qa === 'ready') {
       // (What changed while it loaded, before it listened.)
@@ -409,7 +430,7 @@
     else if (key === 'ArrowLeft') goBench(-1);
     else if (/^[1-9]$/.test(key)) goState(Number(key) - 1);
     else if (key === 'a' || key === 'A') showAll(!all);
-    else if ((key === 'b' || key === 'B') && devServer) compareOn(!comparing);
+    else if ((key === 'b' || key === 'B') && hasBefore) compareOn(!comparing);
     else if ((key === 'd' || key === 'D') && comparing) layered = !layered;
     else if (key === 'Escape' && closeup >= 0) closeup = -1;
     else if (key === 'r' || key === 'R') replay();
@@ -536,7 +557,10 @@
         <p class="compare" role="status">
           {#if !before || before.state === 'preparing'}Getting the code before this change ready…
           {:else if before.state !== 'ready'}No code from before this change here{#if before.state === 'failed'}: <span class="example">{before.error}</span>{/if}
+          {:else if !before.shots && cantLive?.side === 'before'}<span class="differs">The code before can't show this</span><span class="sep">•</span>it's new in this change, or uses something that is:<span class="example">{cantLive.error}</span>
+          {:else if !before.shots && cantLive}<span class="differs">This can't show</span><span class="sep">•</span>the code now fails on it:<span class="example">{cantLive.error}</span>
           {:else if piece?.moves}It moves on its own<span class="sep">•</span>watch the two side by side
+          {:else if !before.shots}Both live, side by side<span class="sep">•</span>marking what differs takes the dev server (npm run qa)
           {:else if !compared || compared.state === 'checking'}Comparing…
           {:else if compared.cantShow === 'before'}<span class="differs">The code before can't show this</span><span class="sep">•</span>it's new in this change, or uses something that is:<span class="example">{compared.error}</span>
           {:else if compared.cantShow === 'now'}<span class="differs">This can't show</span><span class="sep">•</span>the code now fails on it:<span class="example">{compared.error}</span>
@@ -553,7 +577,7 @@
         {zoomed}
         {panning}
         board={holding ? board : undefined}
-        origins={beforeOrigin ? [beforeOrigin] : []}
+        origins={beforeRoot ? [new URL(beforeRoot).origin] : []}
         picked={closeup}
         {onframe}
         onbox={(w, h) => (box = { w, h })}
@@ -591,7 +615,7 @@
     reason={change?.benches.find((t) => t.key === bench.key)?.why}
     onstate={goState}
     onall={() => showAll(!all)}
-    canCompare={devServer && !live && (comparing || !!change?.benches.some((t) => t.key === bench.key))}
+    canCompare={hasBefore && !live && (comparing || !!change?.benches.some((t) => t.key === bench.key))}
     {comparing}
     oncompare={() => compareOn(!comparing)}
     onvalue={setValue}
