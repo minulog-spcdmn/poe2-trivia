@@ -1,8 +1,12 @@
 <script module lang="ts">
+  import { warmPrints } from '../lib/platePrint.svelte';
   /** How a card turns over as it is dealt: seconds, its lift off the table and swell (px, share), its perspective (px), and the screens it turns across on (stacked as wide rows: narrow screens, but not a phone on its side, too short for three rows; always a phone's width, though, too narrow for three tall cards) rather than sideways. The card bench turns them the same way. */
   /** Whether this browser registers custom properties (@property, app.css): without, the kindle animates the emblem's filter and opacity themselves (see .plain below). */
   const registered = typeof CSS !== 'undefined' && 'registerProperty' in CSS;
   export const TURN = { seconds: 0.46, lift: 16, swell: 0.05, perspective: 1200, across: '(max-width: 560px), (max-width: 700px) and (orientation: portrait), (max-width: 700px) and (min-height: 501px)' };
+  // Where the plates are printed (the sharp faces, below), the workers that
+  // print them start as the game's screens are loaded ahead (App).
+  if (typeof navigator !== 'undefined' && 'userAgentData' in navigator && !matchMedia(TURN.across).matches) warmPrints();
 </script>
 
 <script lang="ts">
@@ -25,6 +29,7 @@
   import { C, embers, emitter, flare, glints, outline, puffs, ring, shards, sparks } from '../lib/fx/effects';
   import { light } from '../lib/lights';
   import CardEngraving from './CardEngraving.svelte';
+  import { MediaQuery } from 'svelte/reactivity';
   import Avatar from './Avatar.svelte';
   import { actionOf, typing } from '../lib/keybinds.svelte';
   import { optionIndex } from '../lib/keys';
@@ -560,10 +565,21 @@
   const FLIP = TURN.seconds;
   const dealAt = (i: number) => 0.15 + i * 0.07;
   const flipAt = (i: number) => 0.62 + i * 0.12;
-  /** Cards turn over their longer side: across when stacked as wide rows (narrow screens), else sideways. */
-  const narrow = matchMedia(TURN.across);
+  /** Whether the cards are stacked as wide rows (narrow screens), which turn over their longer side: across, else sideways. */
+  const rows = new MediaQuery(TURN.across);
+  /**
+   * Whether the plates are shown as prints (lib/platePrint): where the faces
+   * are sharp, as Chrome rasters a card under its 3D transform at its
+   * laid-out size, which a print is drawn at pixel for pixel. A row's face
+   * takes flat transforms, which Chrome rasters larger as it grows.
+   */
+  const printed = $derived(sharp && !rows.current);
+  /** How long card i's side lies unseen once it's dealt (ms), which its plate's prints may take without its strokes drawn: its back until it fades in, its face until it's turned halfway up. Held still, or shown without a deal (after a refresh), it's seen at once. */
+  const unseen = (i: number, side: 'back' | 'face') => (dealing ? Math.round((side === 'back' ? dealAt(i) : flipAt(i) + FLIP / 2) * 1000) : 0);
   /** When the deal began; null when the cards appeared without one (as after a refresh). */
   let dealtAt: number | null = null;
+  /** Whether the cards are dealt (not held still, nor shown without a deal): a card lies unseen at first only then. */
+  let dealing = $state(false);
   /** Whether card i lies face up yet (it can't be picked or catch fire before). */
   const faceUp = (i: number) => dealtAt === null || performance.now() - dealtAt >= (flipAt(i) + FLIP) * 1000;
 
@@ -578,6 +594,7 @@
   function deal(node: Element, { i, n }: { i: number; n: number }) {
     if (motion.still) return {};
     dealtAt ??= performance.now();
+    dealing = true;
     // The face's own entrance (see .dealt below) plays with the deal only;
     // the emblem reads the kindle's numbers while it kindles, and no longer.
     node.classList.add('dealt', 'kindling');
@@ -600,7 +617,7 @@
     const total = turn + FLIP;
     let down = true;
     const rot = (i - (n - 1) / 2) * 7;
-    const axis = narrow.matches ? 'X' : 'Y';
+    const axis = rows.current ? 'X' : 'Y';
     return {
       delay: Math.round(start * 1000),
       duration: Math.round(total * 1000),
@@ -917,12 +934,12 @@
           <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
             <span class="back" aria-hidden="true">
               <span class="grain"></span>
-              <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
+              <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} hold={unseen(i, 'back')} />
               {@render filigree()}
             </span>
             <span class="frame" data-sharp={sharp || undefined} use:backdropShadow>
               <span class="grain"></span>
-              <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} />
+              <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} hold={unseen(i, 'face')} />
               <span class="glare"><span class="light"></span></span>
               <span class="sheen"></span>
               {@render filigree()}

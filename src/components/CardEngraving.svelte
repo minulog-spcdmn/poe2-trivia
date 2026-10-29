@@ -1,15 +1,22 @@
 <script module lang="ts">
   // One observer for every engraving's size: its reports all read before any
-  // engraving is drawn (what they set is drawn once they're all in).
-  const reports = new Map<Element, (rect: DOMRectReadOnly) => void>();
+  // engraving is drawn (what they set is drawn once they're all in). Watched
+  // in device pixels where the browser can say them (not Safari), which a
+  // printed plate's prints are pulled at (lib/platePrint): the box as it's
+  // drawn, the screen's density and all.
+  const reports = new Map<Element, (rect: DOMRectReadOnly, px?: [number, number]) => void>();
   let observer: ResizeObserver | undefined;
-  /** Calls `report` with `node`'s content box as it's laid out and whenever that changes; returns what stops it. */
-  function sizes(node: Element, report: (rect: DOMRectReadOnly) => void) {
+  const inPx = typeof ResizeObserverEntry !== 'undefined' && 'devicePixelContentBoxSize' in ResizeObserverEntry.prototype;
+  /** Calls `report` with `node`'s content box as it's laid out and whenever that changes, and its size in device pixels if known; returns what stops it. */
+  function sizes(node: Element, report: (rect: DOMRectReadOnly, px?: [number, number]) => void) {
     observer ??= new ResizeObserver((entries) => {
-      for (const e of entries) reports.get(e.target)?.(e.contentRect);
+      for (const e of entries) {
+        const d = e.devicePixelContentBoxSize?.[0];
+        reports.get(e.target)?.(e.contentRect, d ? [d.inlineSize, d.blockSize] : undefined);
+      }
     });
     reports.set(node, report);
-    observer.observe(node);
+    observer.observe(node, inPx ? { box: 'device-pixel-content-box' } : undefined);
     return () => {
       reports.delete(node);
       observer?.unobserve(node);
@@ -28,17 +35,29 @@
   // or flares up in it: transform and opacity only. A gilded motif (the way
   // out's lantern, Plate.gilt) is filled as an item's emblem is instead, and
   // its light breathes round it in place of the glint.
+  //
+  // Printed (`print`, lib/platePrint): its glow and its lines are shown as
+  // images of themselves, pulled from their svgs once for each size, which
+  // Chrome draws for a fraction of what their strokes cost it.
   import { engrave } from '../lib/cardEngraving';
   import { findVariant } from '../lib/findEngraving';
+  import { leftKey, printing, pull, pulled, type At, type Layer } from '../lib/platePrint.svelte';
+  import { layoutZoomOf } from '../lib/stage';
   import type { FindKind } from '../lib/delve';
   import type { Variant } from '../lib/cardEngraving';
 
   // `front`: only what stands in front of the emblem (Plate.front), solid, laid over the category's item.
-  let { side, find = null, custom, front = false }: { side: 'face' | 'back'; find?: FindKind | null; custom?: Variant; front?: boolean } = $props();
+  // `print`: its still layers shown as prints of themselves (lib/platePrint), where Chrome rasters it at its laid-out size.
+  // `hold`: how long it lies unseen once it's mounted (ms; a dealt card fades in late): a printed layer's svg isn't drawn so long while its print is pulled.
+  let { side, find = null, custom, front = false, print = false, hold = 0 }: { side: 'face' | 'back'; find?: FindKind | null; custom?: Variant; front?: boolean; print?: boolean; hold?: number } = $props();
   let w = $state(0);
   let h = $state(0);
   /** Its exact size: the glint's copy of the motif is drawn at it, as the lines stretch to it (w and h are whole pixels). */
   let box = $state<DOMRectReadOnly>();
+  /** Its size in device pixels where the browser says it, the device pixels to its CSS px, and its ink: what a print is pulled at. */
+  let px = $state<[number, number]>();
+  let z = $state(1);
+  let ink = $state('');
   /**
    * Svelte action: its size, as the browser reports it (sizes, below), not
    * read at once as it mounts (bind:clientWidth does): read then, a hand of
@@ -48,10 +67,16 @@
    */
   function sized(node: HTMLElement) {
     return {
-      destroy: sizes(node, (rect) => {
+      destroy: sizes(node, (rect, size) => {
         w = node.clientWidth;
         h = node.clientHeight;
         box = rect;
+        px = size;
+        // (Its style is up to date here, after layout: no cost to read.)
+        if (!front) {
+          z = layoutZoomOf(node) * devicePixelRatio;
+          ink = getComputedStyle(node).color;
+        }
       }),
     };
   }
@@ -66,6 +91,49 @@
   /** Whether the glint's light travels across the card (the flare's and the dynamite's flare up in place). */
   const travels = $derived(find !== 'flare' && find !== 'dynamite');
   const uid = $props.id();
+
+  const LAYERS: Layer[] = ['glow', 'lines'];
+  /** The still layers' svgs, which their prints are pulled from. */
+  const svgs: Partial<Record<Layer, SVGSVGElement>> = $state({});
+  /** How it's drawn, if it's printed. */
+  const at = $derived<At | null>(print && printing.on && !front && plate && box && px && ink ? { w, h, cw: box.width, ch: box.height, z, W: px[0], H: px[1] } : null);
+  /** A print pulled since it last looked: look again. */
+  let pulls = $state(0);
+  /** Each still layer's print at this size, if it's been pulled: shown in place of its svg. */
+  const prints = $derived.by(() => {
+    void pulls;
+    const p = plate;
+    return at && p ? { glow: pulled(p, 'glow', at, ink), lines: pulled(p, 'lines', at, ink) } : null;
+  });
+  /** Whether its hold is over (or a print couldn't be pulled): its svgs are drawn from then on while their prints are pulled. */
+  let waited = $state(false);
+  $effect(() => {
+    if (!hold) return;
+    const over = setTimeout(() => (waited = true), hold);
+    return () => clearTimeout(over);
+  });
+  /** Whether its printed layers' svgs wait unseen for their prints: not drawn, which a plate seen for the first time would cost as much as before it was printed. */
+  const held = $derived(!!at && hold > 0 && !waited);
+  /** Whether it has pulled a print yet: after that, a new size is printed once it holds still. */
+  let pulledAny = false;
+  $effect(() => {
+    // A layer not printed at this size yet is pulled from its svg, as it's drawn.
+    if (!at || !plate || !prints) return;
+    const [p, now, inked] = [plate, at, ink];
+    const due = LAYERS.flatMap((layer) => (!prints[layer] && svgs[layer] ? [[layer, svgs[layer]] as const] : []));
+    if (!due.length) return;
+    const go = () => {
+      for (const [layer, svg] of due) void pull(p, layer, now, inked, svg).then((url) => (url === null ? (waited = true) : pulls++));
+    };
+    // (Not for every size a window passes through as it's resized.)
+    if (!pulledAny) {
+      pulledAny = true;
+      go();
+      return;
+    }
+    const later = setTimeout(go, 250);
+    return () => clearTimeout(later);
+  });
 </script>
 
 <!-- A glint: the motif again in pale light, seen through a band that runs
@@ -120,39 +188,50 @@
         <path d={plate.window} style:fill="url(#{uid}-warm)" />
       </svg>
     {/if}
-    {#each ['glow', 'lines'] as layer (layer)}
-      <svg class={layer} viewBox="0 0 {w} {h}">
-        {#if plate.fade}
-          <defs>
-            <radialGradient id="{uid}-{layer}-g" cx={plate.fade.c[0]} cy={plate.fade.c[1]} r={plate.fade.r} gradientUnits="userSpaceOnUse">
-              {#if plate.fade.from}<stop offset={plate.fade.from / plate.fade.r} stop-color="#000" />{/if}
-              <stop offset={Math.max(0.35, (plate.fade.from + 22) / plate.fade.r)} stop-color="#fff" />
-              <stop offset="1" stop-color="#000" />
-            </radialGradient>
-            <mask id="{uid}-{layer}-fade" maskUnits="userSpaceOnUse" x="0" y="0" width={w} height={h}>
-              <rect width={w} height={h} fill="url(#{uid}-{layer}-g)" />
-            </mask>
-          </defs>
+    {#each LAYERS as layer (layer)}
+      {@const shown = prints?.[layer]}
+      <!-- The layer, one element from the first: what moves on it (a find's breath, the way out's swell) and its
+           opacity are the print's and the svg's together, never started again as the print comes in. -->
+      <span class="layer {layer}">
+        {#if shown?.url}
+          <img src={shown.url} alt="" />
         {/if}
-        {#if knockout.length}
-          <defs>
-            <mask id="{uid}-{layer}-ko" maskUnits="userSpaceOnUse" x={-50} y={-50} width={w + 100} height={h + 100}>
-              <rect x={-50} y={-50} width={w + 100} height={h + 100} fill="#fff" />
-              {#each knockout as d, i (i)}<path {d} class="ko" />{/each}
-            </mask>
-          </defs>
+        <!-- (Printed, only the hairlines its print leaves to it.) -->
+        {#if !shown || shown.left.size}
+          <svg class:held={held && !shown} viewBox="0 0 {w} {h}" bind:this={svgs[layer]}>
+            {#if plate.fade}
+              <defs>
+                <radialGradient id="{uid}-{layer}-g" cx={plate.fade.c[0]} cy={plate.fade.c[1]} r={plate.fade.r} gradientUnits="userSpaceOnUse">
+                  {#if plate.fade.from}<stop offset={plate.fade.from / plate.fade.r} stop-color="#000" />{/if}
+                  <stop offset={Math.max(0.35, (plate.fade.from + 22) / plate.fade.r)} stop-color="#fff" />
+                  <stop offset="1" stop-color="#000" />
+                </radialGradient>
+                <mask id="{uid}-{layer}-fade" maskUnits="userSpaceOnUse" x="0" y="0" width={w} height={h}>
+                  <rect width={w} height={h} fill="url(#{uid}-{layer}-g)" />
+                </mask>
+              </defs>
+            {/if}
+            {#if knockout.length}
+              <defs>
+                <mask id="{uid}-{layer}-ko" maskUnits="userSpaceOnUse" x={-50} y={-50} width={w + 100} height={h + 100}>
+                  <rect x={-50} y={-50} width={w + 100} height={h + 100} fill="#fff" />
+                  {#each knockout as d, i (i)}<path {d} class="ko" />{/each}
+                </mask>
+              </defs>
+            {/if}
+            <g mask={knockout.length ? `url(#${uid}-${layer}-ko)` : undefined}>
+              {#each strokes.filter((s) => !s.motif && (!shown || shown.left.has(leftKey(s.cls, false)))) as { cls, d } (cls)}
+                <path {d} class={cls} mask={cls === 'ray' && plate.fade ? `url(#${uid}-${layer}-fade)` : undefined} />
+              {/each}
+            </g>
+            {#if !(plate.gilt && layer === 'lines')}
+              {#each motif.filter((s) => !shown || shown.left.has(leftKey(s.cls, true))) as { cls, d } (cls)}
+                <path {d} class={cls} />
+              {/each}
+            {/if}
+          </svg>
         {/if}
-        <g mask={knockout.length ? `url(#${uid}-${layer}-ko)` : undefined}>
-          {#each strokes.filter((s) => !s.motif) as { cls, d } (cls)}
-            <path {d} class={cls} mask={cls === 'ray' && plate.fade ? `url(#${uid}-${layer}-fade)` : undefined} />
-          {/each}
-        </g>
-        {#if !(plate.gilt && layer === 'lines')}
-          {#each motif as { cls, d } (cls)}
-            <path {d} class={cls} />
-          {/each}
-        {/if}
-      </svg>
+      </span>
     {/each}
     {#if plate.gilt}
       {@const g = plate.gilt}
@@ -205,12 +284,20 @@
     pointer-events: none;
     color: var(--ink);
   }
-  svg {
+  svg,
+  img,
+  .layer {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
+  }
+  svg {
     overflow: visible;
+  }
+  /* (Laid out and styled still, as its print is pulled from it; only not drawn.) */
+  .held {
+    visibility: hidden;
   }
   .warm {
     stop-color: var(--warm);
