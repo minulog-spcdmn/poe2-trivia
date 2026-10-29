@@ -98,7 +98,9 @@
       const seen = codex.items;
       discovered = engine.items.filter((it) => seen[it.id]).length;
       answered = Object.keys(codex.byDifficulty).length > 0;
-    });
+    })
+    // Not to be had (a download that failed): taken as no answer yet, so the Daily still offers a way on.
+    .catch(() => (answered ??= false));
   void readDiscovered();
   /** Your deepest as players see depths, as the codex's Delve tab has it. */
   const readDeepest = () => shownDepth(deepestShown(loadRecords()));
@@ -486,9 +488,10 @@
     if (!connecting) settle();
   }
   function settle() {
-    // A join turned away for a made name someone there had is tried again under another, saved (lib/madeName.ts remakeName).
+    // A join turned away for a made name someone there had is tried again under another, saved (lib/madeName.ts
+    // remakeName). Only that one is taken up here: a name let go (knownName) stays let go.
     const saved = firstLook ? known : savedName().trim();
-    if (saved !== known) {
+    if (saved !== known && isMadeName(saved)) {
       if (inviteName === known) inviteName = saved;
       known = saved;
     }
