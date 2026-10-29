@@ -4,7 +4,10 @@
 // of an item's variants, by the variant's id), and writes
 // them to src/data/itemStats.json. The game fetches that file ahead in an
 // idle moment and reads it only when a player first opens an item's details
-// (ItemDetails.svelte). npm run fetch-data runs this at its end.
+// (ItemDetails.svelte). npm run fetch-data collects them too (collectStats),
+// before it writes anything. A tooltip comes from the item's hover on the
+// list page; where that is empty or comes to no line, from its box on its
+// own page; failing both, the committed one is kept.
 //
 // Usage: npm run fetch-stats
 // Behind a proxy on Node 22+: NODE_USE_ENV_PROXY=1 npm run fetch-stats
@@ -162,7 +165,7 @@ export function pageBoxes(html) {
  */
 export const hashId = (s) => createHash('sha1').update(s).digest('hex').slice(0, 12);
 
-async function fetchRetry(url, tries = 6) {
+export async function fetchRetry(url, tries = 6) {
   for (let i = 0; ; i++) {
     try {
       const res = await fetch(url, { headers: { 'user-agent': 'poe2-trivia data fetcher', referer: 'https://poe2db.tw/' } });
@@ -176,82 +179,167 @@ async function fetchRetry(url, tries = 6) {
 }
 
 /**
- * `variantBoxes`: each variant's box on its item's page, by the variant's id,
- * as fetch-data has just read them (pageBoxes); without them (npm run
- * fetch-stats) the pages are fetched here.
+ * The hover poe2db links for a tooltip it has nothing in: the hovers are
+ * named by their content's SHA-256, and this is the empty string's. 26
+ * uniques' list links pointed at it in October 2026, all of them still on
+ * the list and their own pages.
  */
-export async function fetchStats(variantBoxes = null) {
-  const items = JSON.parse(await readFile(DATA_FILE, 'utf8'));
-  // Each item's tooltip, by its name: the first link to it on the list pages (and its page there).
+export const EMPTY_HOVER = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+export const isEmptyHover = (url) => url.endsWith(`/${EMPTY_HOVER}`);
+
+/**
+ * The links on a list page, by item name: its tooltip (the first link with
+ * one that isn't empty) and its own page (the first link's).
+ */
+export function listLinks(html, hovers = new Map(), pages = new Map()) {
+  // As in fetch-data: "Cultivated Uniques" repeats items with mutated mods.
+  const cut = html.indexOf('<div id="CultivatedUniques"');
+  if (cut > 0) html = html.slice(0, cut);
+  const link =
+    /<a class="(?:UniqueItem|gem_\w+)" data-hover="(https:\/\/cdn\.poe2db\.tw\/[^"]+)"[^>]*>(?:<span class="uniqueName">([^<]+)<\/span>|([^<]+)<\/a>)/g;
+  for (const m of html.matchAll(link)) {
+    const [, url, unique, gem] = m;
+    const name = decode(unique ?? gem).trim();
+    const slug = /href="\/us\/([^"]+)"/.exec(m[0])?.[1];
+    if (slug && !pages.has(name)) pages.set(name, `https://poe2db.tw/us/${slug}`);
+    if (!hovers.has(name) && !isEmptyHover(url)) hovers.set(name, url);
+  }
+  return { hovers, pages };
+}
+
+/**
+ * A tooltip's sections, as the game shows them, or null when the html has
+ * none: no content, or content that comes to no line at all. `unknown`
+ * collects the lines of a kind it leaves out.
+ */
+export function tooltipOf(html, it, unknown = new Set()) {
+  if (!html?.includes('<div class="content">')) return null;
+  const { sections, unknown: odd } = parse(html, it.name);
+  for (const c of odd) unknown.add(`${c} (${it.name})`);
+  // A unique's first line is poe2db's own grouping of its base ("Ezomyte Helmets"), not the game's.
+  const first = sections[0]?.[0];
+  if (it.kind === 'unique' && first?.[0] === 'p' && !first[1].includes(':')) sections[0].shift();
+  if (!sections[0]?.length) sections.shift();
+  return sections.some((s) => s.length) ? sections : null;
+}
+
+/**
+ * The box on a unique's own page that is the item itself, not one of its
+ * variants: the one with its art (`ownArt`, the path below Art/2DItems/),
+ * else the first. `boxes` are pageBoxes' for its name, with art.
+ */
+export const ownBox = (boxes, ownArt) => boxes.find((b) => b.art === ownArt) ?? boxes[0];
+
+/**
+ * Every item's tooltip, and each variant's, by id. Each comes from the
+ * first source that has one: its hover on the list page, then its box on
+ * its own page, then the tooltip committed before. Nothing is written.
+ * - `ownBoxes`: each unique's own box html by id, as fetch-data has read
+ *   them; without them its page is fetched when its hover fails.
+ * - `variantBoxes`: each variant's box html by the variant's id, likewise.
+ * - `committed`: the tooltips in itemStats.json, by id.
+ * - `fetchText`: a URL's body (the network, unless a test stands in).
+ * Returns the tooltips and where they didn't come from a hover: `fromPage`
+ * (with `differ`, those unlike the committed one), `kept` (the committed
+ * one) and `missing` (none at all, by id: a variant's id when it's the
+ * variant's).
+ */
+export async function collectStats(items, { ownBoxes = null, variantBoxes = null, committed = {}, fetchText = null, log = console.log } = {}) {
+  const get = fetchText ?? (async (url) => (await fetchRetry(url)).text());
   const hovers = new Map();
   const pages = new Map();
   for (const page of PAGES) {
-    console.log(`Fetching ${page}`);
-    let html = await (await fetchRetry(page)).text();
-    // As in fetch-data: "Cultivated Uniques" repeats items with mutated mods.
-    const cut = html.indexOf('<div id="CultivatedUniques"');
-    if (cut > 0) html = html.slice(0, cut);
-    const link =
-      /<a class="(?:UniqueItem|gem_\w+)" data-hover="(https:\/\/cdn\.poe2db\.tw\/[^"]+)"[^>]*>(?:<span class="uniqueName">([^<]+)<\/span>|([^<]+)<\/a>)/g;
-    for (const m of html.matchAll(link)) {
-      const [, url, unique, gem] = m;
-      const name = decode(unique ?? gem).trim();
-      if (hovers.has(name)) continue;
-      hovers.set(name, url);
-      const slug = /href="\/us\/([^"]+)"/.exec(m[0])?.[1];
-      if (slug) pages.set(name, `https://poe2db.tw/us/${slug}`);
-    }
+    log(`Fetching ${page}`);
+    listLinks(await get(page), hovers, pages);
   }
 
   const out = {};
-  const missing = [];
   const unknown = new Set();
-  /** A tooltip's sections, as the game shows them. */
-  const tooltip = (html, it) => {
-    const { sections, unknown: odd } = parse(html, it.name);
-    for (const c of odd) unknown.add(`${c} (${it.name})`);
-    // A unique's first line is poe2db's own grouping of its base ("Ezomyte Helmets"), not the game's.
-    const first = sections[0]?.[0];
-    if (it.kind === 'unique' && first?.[0] === 'p' && !first[1].includes(':')) sections[0].shift();
-    if (!sections[0]?.length) sections.shift();
-    return sections;
-  };
-  const queue = items.filter((it) => {
-    if (hovers.has(it.name)) return true;
-    missing.push(it.name);
-    return false;
-  });
+  const fromPage = [];
+  const differ = [];
+  const kept = [];
+  const missing = [];
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const queue = [...items];
   let done = 0;
   await Promise.all(
     Array.from({ length: 4 }, async () => {
       for (let it; (it = queue.shift()); ) {
-        out[it.id] = tooltip(await (await fetchRetry(hovers.get(it.name))).text(), it);
-        // Its other art (fetch-data: Item.variants), each with its own box on the item's page.
-        if (it.variants?.length) {
-          const page = !variantBoxes && pages.get(it.name);
-          const boxes = page ? pageBoxes(await (await fetchRetry(page)).text()) : [];
-          for (const v of it.variants) {
-            const html = variantBoxes ? variantBoxes.get(v.id) : boxes.find((b) => b.art && hashId(b.art) === v.id)?.html;
-            if (html) out[v.id] = tooltip(html, it);
-            else missing.push(`${it.name} (${v.base}, ${v.id})`);
+        // Its own page's boxes, once, when they are needed and weren't handed over.
+        let boxes;
+        const pageBoxesOf = async () => {
+          const page = pages.get(it.name);
+          boxes ??= page ? pageBoxes(await get(page)).filter((b) => b.name === it.name && b.art) : [];
+          return boxes;
+        };
+        const variantIds = new Set((it.variants ?? []).map((v) => v.id));
+        const hover = hovers.get(it.name);
+        let t = hover ? tooltipOf(await get(hover), it, unknown) : null;
+        if (!t && it.kind === 'unique') {
+          const html = ownBoxes ? ownBoxes.get(it.id) : (await pageBoxesOf()).find((b) => !variantIds.has(hashId(b.art)))?.html;
+          t = tooltipOf(html, it, unknown);
+          if (t) {
+            fromPage.push(it.name);
+            if (committed[it.id] && !same(t, committed[it.id])) differ.push(it.name);
           }
         }
-        if (++done % 50 === 0) console.log(`${done} tooltips`);
+        if (!t && committed[it.id]) {
+          t = committed[it.id];
+          kept.push(it.name);
+        }
+        if (t) out[it.id] = t;
+        else missing.push(it.id);
+        // Its other art (fetch-data: Item.variants), each with its own box on the item's page.
+        for (const v of it.variants ?? []) {
+          const html = variantBoxes ? variantBoxes.get(v.id) : (await pageBoxesOf()).find((b) => hashId(b.art) === v.id)?.html;
+          let vt = tooltipOf(html, it, unknown);
+          if (!vt && committed[v.id]) {
+            vt = committed[v.id];
+            kept.push(`${it.name} (${v.base})`);
+          }
+          if (vt) out[v.id] = vt;
+          else missing.push(v.id);
+        }
+        if (++done % 50 === 0) log(`${done} tooltips`);
       }
     }),
   );
+  return { stats: out, fromPage, differ, kept, missing, unknown };
+}
 
+/** itemStats.json's text: the tooltips of `items` and their variants, in their order. */
+export function statsFile(items, stats) {
   const ids = items.flatMap((it) => [it.id, ...(it.variants ?? []).map((v) => v.id)]);
-  const sorted = Object.fromEntries(ids.flatMap((id) => (out[id] ? [[id, out[id]]] : [])));
-  await writeFile(STATS_FILE, JSON.stringify(sorted) + '\n');
-  console.log(`${Object.keys(sorted).length} of ${ids.length} items and variants have their tooltip`);
-  if (missing.length) console.warn(`No tooltip found for:\n  ${missing.join('\n  ')}`);
-  if (unknown.size) console.warn(`Lines of an unknown kind, left out: ${[...unknown].join(', ')}`);
-  if (unknownColours.size) console.warn(`Values in a colour of an unknown kind, shown plain: ${[...unknownColours].join(', ')}`);
+  return JSON.stringify(Object.fromEntries(ids.flatMap((id) => (stats[id] ? [[id, stats[id]]] : [])))) + '\n';
+}
+
+/** What collectStats found, said. */
+export function statsReport(items, { stats, fromPage, differ, kept, missing, unknown }) {
+  const names = new Map(items.flatMap((it) => [[it.id, it.name], ...(it.variants ?? []).map((v) => [v.id, `${it.name} (${v.base})`])]));
+  const ids = [...names.keys()];
+  const lines = [`${ids.filter((id) => stats[id]).length} of ${ids.length} items and variants have their tooltip`];
+  if (fromPage.length)
+    lines.push(`${fromPage.length} tooltips from their item pages (their hover was empty or failed); ${differ.length} differ from the committed ones${differ.length ? `: ${differ.join(', ')}` : ''}`);
+  if (kept.length) lines.push(`Kept the committed tooltip (poe2db had none): ${kept.join(', ')}`);
+  if (missing.length) lines.push(`No tooltip found for:\n  ${missing.map((id) => names.get(id) ?? id).join('\n  ')}`);
+  if (unknown.size) lines.push(`Lines of an unknown kind, left out: ${[...unknown].join(', ')}`);
+  if (unknownColours.size) lines.push(`Values in a colour of an unknown kind, shown plain: ${[...unknownColours].join(', ')}`);
+  return lines;
+}
+
+export const readCommitted = () => readFile(STATS_FILE, 'utf8').then((t) => JSON.parse(t), () => ({}));
+export const writeStats = (items, stats) => writeFile(STATS_FILE, statsFile(items, stats));
+
+/** npm run fetch-stats: the tooltips of the items in items.json, fetched and written. */
+async function main() {
+  const items = JSON.parse(await readFile(DATA_FILE, 'utf8'));
+  const found = await collectStats(items, { committed: await readCommitted() });
+  await writeStats(items, found.stats);
+  for (const line of statsReport(items, found)) console.log(line);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url))
-  fetchStats().catch((err) => {
+  main().catch((err) => {
     console.error(err);
     process.exit(1);
   });

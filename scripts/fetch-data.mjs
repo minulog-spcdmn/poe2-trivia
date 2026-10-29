@@ -9,12 +9,33 @@
 // scripts/upscale-art.py afterwards for any new items (it says how),
 // npm run looks and npm run bake-icons.
 //
-// Usage: npm run fetch-data (-- --shrink: see below)
+// Nothing is written until everything is fetched and checked: a run that
+// stops leaves items.json, itemStats.json and the art as they were. An item
+// that is no longer on poe2db stops it, unless the run says what became of
+// it (scripts/refresh-plan.mjs): renamed, keeping its id, or dropped. It
+// ends by saying what was added, renamed, dropped, changed and left out.
+//
+// Usage: npm run fetch-data
+//   -- --rename "Old=>New"  Old is now called New: it keeps Old's id (codexes
+//                           and achievements hold ids) and takes the new name
+//   -- --drop "Name"        Name is gone for good
+//   -- --shrink             accept noticeably fewer items (see below)
 // Behind a proxy on Node 22+: NODE_USE_ENV_PROXY=1 npm run fetch-data
 
 import { mkdir, writeFile, readdir, unlink, access, readFile } from 'node:fs/promises';
 import { webpSize } from './webp-size.mjs';
-import { decode as decodeText, fetchStats, hashId, pageBoxes } from './fetch-stats.mjs';
+import {
+  collectStats,
+  decode as decodeText,
+  fetchRetry,
+  hashId,
+  ownBox,
+  pageBoxes,
+  readCommitted,
+  statsReport,
+  writeStats,
+} from './fetch-stats.mjs';
+import { artPlan, changedItems, reconcile, refreshArgs, summaryLines, withoutTooltip } from './refresh-plan.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -86,22 +107,10 @@ const categorize = (img) => {
   return rule ? { group: rule[1], category: rule[2] } : null;
 };
 
-async function fetchRetry(url, tries = 6) {
-  for (let i = 0; ; i++) {
-    try {
-      const res = await fetch(url, { headers: { 'user-agent': 'poe2-trivia data fetcher', referer: 'https://poe2db.tw/' } });
-      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
-      return res;
-    } catch (err) {
-      if (i >= tries - 1) throw new Error(`${url}: ${err.message}`);
-      await new Promise((r) => setTimeout(r, 1000 * 2 ** i));
-    }
-  }
-}
-
 const exists = (p) => access(p).then(() => true, () => false);
 
 async function main() {
+  const args = refreshArgs(process.argv.slice(2));
   console.log(`Fetching ${SOURCE}`);
   const html = await (await fetchRetry(SOURCE)).text();
 
@@ -197,49 +206,69 @@ async function main() {
   }
   const withVariants = quiz.filter((it) => it.variants);
   if (withVariants.length) console.log(`Drawn more than one way: ${withVariants.map((it) => `${it.name} (${it.variants.length + 1})`).join(', ')}`);
-  /** Every picture to keep: each item's own, and its variants'. */
-  const arts = quiz.flatMap((it) => [it, ...(it.variants ?? [])]);
 
   // Nor when the items would shrink a lot: art and data deleted by a broken
   // fetch is worse than none (--shrink, when poe2db really dropped them).
-  const before = await readFile(DATA_FILE, 'utf8').then((t) => JSON.parse(t).length, () => 0);
-  if (quiz.length < before * 0.9 && !process.argv.includes('--shrink'))
-    throw new Error(`${quiz.length} items, ${before} before: page layout changed? (--shrink keeps the fewer)`);
+  const beforeItems = await readFile(DATA_FILE, 'utf8').then((t) => JSON.parse(t), () => []);
+  if (quiz.length < beforeItems.length * 0.9 && !args.shrink)
+    throw new Error(`${quiz.length} items, ${beforeItems.length} before: page layout changed? (--shrink keeps the fewer)`);
+  // Each item gone explained (--rename, --drop), or the run stops here. A renamed item takes its old id.
+  const plan = reconcile(beforeItems, quiz, args);
 
-  await mkdir(IMG_DIR, { recursive: true });
-  let downloaded = 0;
-  const downloads = [...arts];
+  // Nothing is written until everything is fetched and checked, so a run
+  // that fails leaves the data and art as they were. First the tooltips:
+  // each unique's own box is its page's box with its art (the list's empty
+  // hovers fall back to it).
+  const ownBoxes = new Map(quiz.flatMap((it) => (it.boxes?.length ? [[it.id, ownBox(it.boxes, it.src.slice(ART.length)).html]] : [])));
+  const variantBoxes = new Map(quiz.flatMap((it) => (it.variants ?? []).map((v) => [v.id, v.html])));
+  const found = await collectStats(quiz, { ownBoxes, variantBoxes, committed: await readCommitted() });
+  // A new item, or a new variant, with no tooltip waits for a refresh that has one.
+  const bare = withoutTooltip(beforeItems, quiz, plan.added, found.missing);
+  const leftOut = [...bare.items];
+  for (const it of quiz)
+    if (it.variants) {
+      for (const v of it.variants) if (bare.variants.includes(v.id)) leftOut.push(`${it.name} (${v.base})`);
+      it.variants = it.variants.filter((v) => !bare.variants.includes(v.id));
+      if (!it.variants.length) delete it.variants;
+    }
+  const listed = quiz.filter((it) => !bare.items.includes(it.name));
+  const added = plan.added.filter((name) => !bare.items.includes(name));
+  /** Every picture to keep: each item's own, and its variants'. */
+  const arts = listed.flatMap((it) => [it, ...(it.variants ?? [])]);
+
+  // Then the art, held here: a picture not on disk yet, and a renamed item's,
+  // whose art may have changed with its name (its file is its old id's).
+  const onDisk = await readdir(IMG_DIR).catch(() => []);
+  const artToDo = artPlan(
+    arts.map((it) => it.id),
+    onDisk,
+    new Set(plan.renamed.map((r) => r.id)),
+  );
+  const fresh = new Map();
+  const newArt = [];
+  const downloads = arts.filter((it) => artToDo.fetch.includes(it.id));
   await Promise.all(
     Array.from({ length: 3 }, async () => {
       for (let it; (it = downloads.shift()); ) {
         const file = path.join(IMG_DIR, `${it.id}.webp`);
-        if (await exists(file)) continue;
+        const had = onDisk.includes(`${it.id}.webp`);
         const buf = Buffer.from(await (await fetchRetry(it.src)).arrayBuffer());
         webpSize(buf, it.src); // only a whole WebP file is kept
-        await writeFile(file, buf);
-        downloaded++;
+        if (had) {
+          if (buf.equals(await readFile(file))) continue;
+          newArt.push(it.name);
+        }
+        fresh.set(it.id, buf);
       }
     }),
   );
 
-  // The site's copies: AVIF, full size and in each THUMBS folder (scripts/upscale-art.py).
-  const keepArt = new Set(arts.map((it) => `${it.id}.webp`));
-  const keepSite = new Set(arts.map((it) => `${it.id}.avif`));
-  const siteDirs = [SITE_DIR, ...THUMBS.map((t) => path.join(SITE_DIR, String(t)))];
-  for (const dir of siteDirs) await mkdir(dir, { recursive: true });
-  for (const f of await readdir(IMG_DIR)) if (!keepArt.has(f)) await unlink(path.join(IMG_DIR, f));
-  for (const dir of siteDirs)
-    for (const f of await readdir(dir, { withFileTypes: true })) if (f.isFile() && !keepSite.has(f.name)) await unlink(path.join(dir, f.name));
-  const missing = [];
-  for (const it of arts) if (!(await Promise.all(siteDirs.map((d) => exists(path.join(d, `${it.id}.avif`))))).every(Boolean)) missing.push(it.id);
-
-  quiz.sort((a, b) => a.name.localeCompare(b.name));
-  await mkdir(path.dirname(DATA_FILE), { recursive: true });
+  listed.sort((a, b) => a.name.localeCompare(b.name));
   // Each item's art size (px of the original art): the site's pictures are
   // a whole number of times larger (artScale in src/lib/ui-paths.ts).
-  const size = async (id) => webpSize(await readFile(path.join(IMG_DIR, `${id}.webp`)), `${id}.webp`);
+  const size = async (id) => webpSize(fresh.get(id) ?? (await readFile(path.join(IMG_DIR, `${id}.webp`))), `${id}.webp`);
   const out = [];
-  for (const { id, name, base, group, category, kind, variants } of quiz) {
+  for (const { id, name, base, group, category, kind, variants } of listed) {
     const [w, h] = await size(id);
     const more = [];
     for (const v of variants ?? []) {
@@ -248,18 +277,38 @@ async function main() {
     }
     out.push({ id, name, base, group, category, kind, w, h, ...(more.length ? { variants: more } : {}) });
   }
+
+  // Now the writing: the art, then the items and their tooltips.
+  await mkdir(IMG_DIR, { recursive: true });
+  for (const [id, buf] of fresh) await writeFile(path.join(IMG_DIR, `${id}.webp`), buf);
+  // The site's copies: AVIF, full size and in each THUMBS folder (scripts/upscale-art.py).
+  // A kept item's that are of its old art go, so they are made again.
+  const siteDirs = [SITE_DIR, ...THUMBS.map((t) => path.join(SITE_DIR, String(t)))];
+  for (const dir of siteDirs) await mkdir(dir, { recursive: true });
+  const redo = new Set(listed.filter((it) => newArt.includes(it.name)).map((it) => `${it.id}.avif`));
+  const keepSite = new Set(arts.map((it) => `${it.id}.avif`).filter((f) => !redo.has(f)));
+  for (const f of artToDo.prune) await unlink(path.join(IMG_DIR, f));
+  for (const dir of siteDirs)
+    for (const f of await readdir(dir, { withFileTypes: true })) if (f.isFile() && !keepSite.has(f.name)) await unlink(path.join(dir, f.name));
+  const missing = [];
+  for (const it of arts) if (!(await Promise.all(siteDirs.map((d) => exists(path.join(d, `${it.id}.avif`))))).every(Boolean)) missing.push(it.id);
+
+  await mkdir(path.dirname(DATA_FILE), { recursive: true });
   await writeFile(DATA_FILE, JSON.stringify(out, null, 1) + '\n');
+  await writeStats(listed, found.stats);
 
   const perCat = {};
-  for (const it of quiz) perCat[it.category] = (perCat[it.category] ?? 0) + 1;
-  console.log(`${quiz.length} items (${downloaded} new images)`);
+  for (const it of listed) perCat[it.category] = (perCat[it.category] ?? 0) + 1;
+  console.log(`${listed.length} items (${fresh.size} new images)`);
   console.table(perCat);
+  for (const line of statsReport(listed, found)) console.log(line);
   if (missing.length) console.warn(`${missing.length} items have no upscaled art yet: run scripts/upscale-art.py (see its header).`);
-  // Each variant's tooltip, from the box read above.
-  await fetchStats(new Map(quiz.flatMap((it) => (it.variants ?? []).map((v) => [v.id, v.html]))));
+  for (const line of summaryLines({ added, renamed: plan.renamed, dropped: plan.dropped, changed: changedItems(beforeItems, out), leftOut, newArt }))
+    console.log(line);
+  if (plan.renamed.length || added.length) console.log('src/data/fakes.json is by name: a new or renamed item needs its two fakes (tests/fakes.test.ts).');
 }
 
 main().catch((err) => {
-  console.error(err);
+  console.error(err.stop ? err.message : err);
   process.exit(1);
 });
