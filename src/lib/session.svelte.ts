@@ -54,7 +54,7 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, livesOf, pausedUsed, standingIds, type CardFind, type FindKind } from './delve';
+import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, runFossils, livesOf, pausedUsed, standingIds, type CardFind, type FindKind } from './delve';
 import { GameCounts, Steps, countEvent, countFailure, countStep, counting, markActive, type Failure, type JoinVia } from './count';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
@@ -96,6 +96,8 @@ import type { PlayerClass } from './classSigils';
 import { helloRefusal, noPrivate, parseSaved, privateFrom, rememberSecret, soloHotSeat, takesState, tooFast, type HostPrivate, type Saved } from './sessionRules';
 import { sawLine, START_LINES } from './delveStart';
 import { seenLines } from './delveStartSeen';
+import { heldMask, heldOf, keepRunFossils, lastFoundDay, loadFossils } from './fossilStore';
+import { fossilDay, fossilMask, heldFor, type FossilsHeld } from './fossils';
 import { keepAwake } from './wakeLock';
 import { AWAY_AFTER_MS, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
 import { markStarted } from './started';
@@ -301,6 +303,9 @@ interface Guest {
   colour?: number;
   /** The Delve start lines its hello says its device has shown, most recent first, kept up as runs start (delveStartSeen.ts). */
   lines?: number[];
+  /** The Delve fossils its hello says its device holds (a mask, fossils.ts), kept up as runs give it more, and the UTC day of its latest find. */
+  fossils?: number;
+  fossilDay?: number;
   /** Its hello, under the held name, waits on the owner key's signature being checked. */
   checking?: boolean;
   /** This link's hello carried the owner key's signature, checked (handleHello): only such a link may close the room. */
@@ -351,6 +356,13 @@ interface AheadArt extends Ahead {
   ready: Promise<PreparedArt>;
   stop: AbortController;
   sent: Map<Guest, LaneSpan | null>;
+}
+
+/** What a hello says of this device's Delve fossils, for the host's deal: which it holds, and the UTC day of its latest find. */
+function fossilsHello(): { fossils: number; fossilDay?: number } {
+  const store = loadFossils();
+  const day = lastFoundDay(store);
+  return { fossils: heldMask(store), ...(day !== null ? { fossilDay: day } : {}) };
 }
 
 class Session {
@@ -1050,6 +1062,8 @@ class Session {
           guest.sigil = msg.sigil;
           guest.colour = msg.colour;
           guest.lines = msg.lines;
+          guest.fossils = msg.fossils;
+          guest.fossilDay = msg.fossilDay;
           clearTimeout(helloTimer);
           this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch, !!msg.seal, msg.owner);
         } else if (msg.t === 'pong') {
@@ -2343,7 +2357,7 @@ class Session {
     const secret = await this.helloSecret;
     const owner = isHeldName(cleanName(this.joinName)) ? await this.signHello(conn) : null;
     if (secret && this.hostConn === conn && conn.open)
-      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}), ...wornSigil(), ...likedColour(), lines: seenLines() });
+      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}), ...wornSigil(), ...likedColour(), lines: seenLines(), ...fossilsHello() });
     this.watchOwnPresence();
   }
 
@@ -2692,6 +2706,19 @@ class Session {
     });
   }
 
+  /**
+   * Delve: which fossils each of `ids`' devices holds, as masks (Engine.setFossilsHeld):
+   * a guest's as its hello said and runs since gave, this device's for anyone playing at it.
+   */
+  fossilsHeld(ids: string[]): FossilsHeld[] {
+    for (const g of this.guests.values()) if (g.playerId && g.fossils !== undefined) this.guestFossils.set(g.playerId, { held: g.fossils, day: g.fossilDay ?? null });
+    const players = this.state?.players ?? [];
+    const own = (id: string) => this.mode === 'local' || id === this.myPlayerId || !!players.find((p) => p.id === id)?.local;
+    return heldFor(ids, this.guestFossils, own, () => heldOf(loadFossils()));
+  }
+  /** Host: the fossils each guest's device holds by player id (fossilsHeld), kept past a dropped link. */
+  private guestFossils = new Map<string, FossilsHeld>();
+
   /** The grayscale a question's art is prepared with: the rules', or as rolled for it in Delve (the lab may force one). */
   private grayscaleOf(s: GameState): Grayscale {
     return this.labGrayscale ?? grayscaleFor(s);
@@ -2713,6 +2740,20 @@ class Session {
     if (this.isHost && next.delve?.line && next.delve.startedAt !== prev?.delve?.startedAt) {
       const line = START_LINES.indexOf(next.delve.line);
       if (line >= 0) for (const g of this.guests.values()) if (g.playerId) g.lines = sawLine(g.lines ?? [], line);
+    }
+    // A fossil a run gave a guest is theirs from now, for the next run's deal too (their hello isn't sent again).
+    const gave = next.reveal?.fossil;
+    if (this.isHost && gave && prev?.reveal?.fossil !== gave) {
+      const day = fossilDay(this.hostNow());
+      for (const g of this.guests.values())
+        if (g.playerId && gave.to.includes(g.playerId)) {
+          g.fossils = (g.fossils ?? 0) | fossilMask([gave.id]);
+          g.fossilDay = day;
+        }
+      for (const id of gave.to) {
+        const was = this.guestFossils.get(id);
+        if (was) this.guestFossils.set(id, { held: was.held | fossilMask([gave.id]), day });
+      }
     }
     // The art's workers are ready before the first question wants them (media.svelte.ts; once is enough).
     if (this.isHost && next.phase !== 'lobby') warmMedia();
@@ -2823,6 +2864,20 @@ class Session {
     this.delveResult = { id: run.id, depth: run.depth, previousBest: was ? was.previousBest : r.previousBest, best: was ? was.best : r.best };
   }
 
+  /**
+   * The fossils a run gave this device's player (fossils.ts) go into this
+   * browser's (fossilStore.ts keepRunFossils), with their depths; on one
+   * device, whoever played. Read from the run's state as it comes, not from
+   * the reveal, so a dropped link or a reload never loses one; only when the
+   * run has given more than the last state said (or this is the first).
+   */
+  private noteFossil(prev: GameState | null, next: GameState) {
+    const given = runFossils(next);
+    if (!given.length) return;
+    if (prev && prev.delve?.startedAt === next.delve?.startedAt && runFossils(prev).length === given.length) return;
+    keepRunFossils(given, this.myPlayerId, this.mode === 'local', isGroupRun(next));
+  }
+
   private gameCounts = new GameCounts();
   private steps = new Steps();
   /**
@@ -2855,6 +2910,7 @@ class Session {
     this.noteClock(next);
     this.notePlay(prev, next);
     this.noteRun(prev, next);
+    this.noteFossil(prev, next);
     this.onNewState(prev, next);
     this.noteEncounter(prev, next);
     this.noteMoments(prev, next);
@@ -3664,6 +3720,7 @@ function writeSaved(saved: Saved | null) {
 
 export const session = new Session();
 engine.setStartLines((ids) => session.startLinesSeen(ids));
+engine.setFossilsHeld((ids) => session.fossilsHeld(ids));
 // The screen kept on in a room online, and let go of out of it, whatever moves the session there.
 $effect.root(() => {
   $effect(() => session.stayAwake());

@@ -9,7 +9,8 @@
 // team votes for a card, everyone standing answers the one question, and a
 // teammate with lives to spare can bring back one who perished.
 
-import type { DifficultyRules, Dig, GameState, Player, Preset, Question } from './game.ts';
+import type { DifficultyRules, Dig, GameState, Player, Preset, Question, RunFossil } from './game.ts';
+import { isFossilId, type CardFossil, type FossilId } from './fossils.ts';
 import { veilSpan, type VeilPlan } from './patches.ts';
 
 export const DELVE_LIVES = 3;
@@ -818,6 +819,36 @@ export function findOffers(s: GameState): CardFind[] {
 
 /** The find on a card on offer, or null for an ordinary card. */
 export const findOn = (s: GameState, category: string): FindKind | null => findOffers(s).find((f) => f.category === category)?.kind ?? null;
+
+// ---- fossils (fossils.ts) ------------------------------------------------------
+
+/**
+ * The fossil on a card on offer, as far as it reads sane (none outside a
+ * vote or a pick, on a find's card, on a card not on offer, in a dig or in
+ * older saves).
+ */
+export function fossilOffer(s: GameState): CardFossil | null {
+  const f = s.delve?.fossil;
+  if (!f || s.phase !== 'choosing' || typeof f !== 'object' || !isFossilId(f.id) || typeof f.category !== 'string') return null;
+  if (!s.offered.includes(f.category) || isWayOut(f.category) || findOffers(s).some((o) => o.category === f.category)) return null;
+  return { category: f.category, id: f.id };
+}
+
+/** The fossil on a card on offer, or null for any other card. */
+export const fossilOn = (s: GameState, category: string): FossilId | null => {
+  const f = fossilOffer(s);
+  return f?.category === category ? f.id : null;
+};
+
+/** The fossils the run gave so far, oldest first, as far as they read sane (none outside Delve and in older saves). */
+export function runFossils(s: GameState): RunFossil[] {
+  const all = s.delve?.fossils;
+  if (!Array.isArray(all)) return [];
+  return all.filter((f): f is RunFossil => !!f && typeof f === 'object' && isFossilId(f.id) && Array.isArray(f.to) && Number.isFinite(f.depth) && Number.isFinite(f.at));
+}
+
+/** The fossils `id` was given this run, oldest first. */
+export const fossilsOf = (s: GameState, id: string): FossilId[] => runFossils(s).filter((f) => f.to.includes(id)).map((f) => f.id);
 
 /**
  * Seconds the question in play started with: a find's or the depth's (a

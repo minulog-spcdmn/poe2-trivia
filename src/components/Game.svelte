@@ -39,6 +39,7 @@
   import { backdropDropShadow } from '../lib/backdropDropShadow';
   import { outWithoutInert } from '../lib/leaving';
   import { switchedOff } from '../lib/switchedOff';
+  import { stopFossilFlight } from '../lib/fossilFlight';
 
   const s = $derived(session.state!);
   // The circles behind the coming question and at the game's end, built ahead away from the page.
@@ -127,6 +128,8 @@
       if (introTimer) clearTimeout(introTimer);
       deathmatchMood(false);
       fireAmbience(false);
+      // A fossil's tally (lib/fossilFlight.ts) hangs on the page, not the game: it goes with the game.
+      stopFossilFlight();
     };
   });
 

@@ -13,7 +13,8 @@
 // onCountToggle below reads it instead.
 
 import { CHANNEL, type Channel } from './channel.ts';
-import { nobodyStands, shownDepth, teamDepth } from './delve.ts';
+import { findOffers, fossilOffer, nobodyStands, shownDepth, teamDepth } from './delve.ts';
+import { fossilById } from './fossils.ts';
 import type { GameState } from './game.ts';
 import { COUNTER_ORIGIN } from './counter.ts';
 import { isoWeek } from './isoWeek.ts';
@@ -639,11 +640,31 @@ export class Steps {
   }
 }
 
-/** gameEvents for one device's games, a Delve run's end counted once whatever becomes of who stands after. */
+/**
+ * Delve's fossils (fossils.ts), on the device that runs the game: one taken
+ * ("fossil/common", "fossil/rare": a right answer that gave it), and a fossil
+ * card passed up for a find on the same offer ("fossil/passed": the card
+ * picked, or drawn by the team's vote, was a find's). Whether the trade
+ * the fossils are for is ever made.
+ */
+export function fossilEvents(prev: GameState | null, next: GameState): string[] {
+  if (!prev?.delve || !next.delve) return [];
+  if (next.phase === 'reveal' && next.reveal?.fossil && (prev.phase !== 'reveal' || prev.question?.askedAt !== next.question?.askedAt))
+    return [fossilById(next.reveal.fossil.id).rare ? 'fossil/rare' : 'fossil/common'];
+  if (prev.phase === 'choosing' && next.phase === 'question' && next.question?.find && fossilOffer(prev) && findOffers(prev).some((f) => f.category === next.question!.category))
+    return ['fossil/passed'];
+  return [];
+}
+
+/** gameEvents for one device's games, a Delve run's end counted once whatever becomes of who stands after; its fossils (fossilEvents) beside them. */
 export class GameCounts {
   private ended: number | null = null;
 
   events(prev: GameState | null, next: GameState): string[] {
+    return [...fossilEvents(prev, next), ...this.ends(prev, next)];
+  }
+
+  private ends(prev: GameState | null, next: GameState): string[] {
     const out = gameEvents(prev, next);
     const run = next.delve?.startedAt;
     if (run === undefined || !out.some((e) => e.startsWith('end/'))) return out;

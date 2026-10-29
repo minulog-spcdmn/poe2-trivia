@@ -17,17 +17,18 @@ logins (see "Relay").
   right answer scores +1; a wrong one costs −1.
 - **Delve** (alone or together): no settings, the same rules for everyone. Each
   question cleared goes one depth deeper, every depth a little harder, with
-  three lives, finds that give items (wards, flares, dynamite) and a new zone
+  three lives, finds that give items (wards, flares, dynamite), fossils to
+  collect (25 of PoE2's, a card's question answered right) and a new zone
   every ten depths. How deep can you go?
 - **Difficulty:** Cruel (4 options), Merciless (6, the default), Eternal (8),
   or Custom, where the host sets each knob.
 - **Codex and achievements:** every item you have seen, your accuracy, your
-  Delve runs and 36 achievements, kept in this browser.
+  Delve runs and fossils, and 36 achievements, kept in this browser.
 - **Sync:** pair your devices in the settings (Sync, under You): a computer
   shows a QR code, and a phone opens straight to its camera to scan it
   (from the game itself, which an iPhone's home-screen game needs), or the
   code is typed in. Whenever two of
-  them are on the site at once they keep the codex, Delve runs, achievements,
+  them are on the site at once they keep the codex, Delve runs, fossils, achievements,
   sigils and the daily answers the same. Progress only goes up: what each
   device counted is kept apart on the others and added up, never counted
   twice. A device already synced that scans a new one's code brings it into

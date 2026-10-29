@@ -48,6 +48,7 @@
     score,
     scoreLine,
     soloHighlights,
+    usualLifted,
     yourGame,
     zoneOf,
     type Icon,
@@ -57,6 +58,8 @@
   // Read as the screen comes in, not a moment after, so what they fill (your lives, what you earned) is there in its first
   // frame instead of pushing the column down. (The game has loaded both by its end anyway.)
   import { loadCodex } from '../lib/codex';
+  import { FOSSIL_COUNT, fossilArt, fossilById } from '../lib/fossils';
+  import { foundCount, loadFossils } from '../lib/fossilStore';
   import { achievementById, type Achievement } from '../lib/achievements';
   import { readsShellHeights } from '../lib/shellHeights.svelte';
   import { backGuard } from '../lib/backGuard';
@@ -185,10 +188,8 @@
   /** Achievements this device earned in this game (judged as it ends: they may come in a moment after the screen). */
   const earned = $derived<Achievement[]>(s.startedAt !== undefined && session.earned?.game === s.startedAt ? session.earned.ids.flatMap((id) => achievementById.get(id) ?? []) : []);
   /** This device's runs of the kind, for the chart, ending with this one; re-read once the run is recorded. */
-  const chart = $derived.by(() => {
-    if (!run || !self || !measured) return [];
-    return chartRuns(loadRecords().runs, run.startedAt, together, local ? null : self);
-  });
+  const kept = $derived(run && self && measured ? loadRecords().runs : []);
+  const chart = $derived(run && self && measured ? chartRuns(kept, run.startedAt, together, local ? null : self) : []);
   const lives = $derived(run && self && codex ? livesLost(s, local ? null : self, codex.log) : []);
   /**
    * Delve alone: how many uniques were met this run, and those met for the
@@ -229,7 +230,17 @@
     if (place && !button) place.tabIndex = -1;
     (button ?? place)?.focus();
   }
-  const facts = $derived(run ? runFacts(s, solo ? self : null) : []);
+  /**
+   * The chart's usual depth, when this run lifted it (lib/recap.ts usualLifted): said once, under where it reached. A
+   * drop is never said.
+   */
+  const lifted = $derived(run && self && measured && chart.length >= 3 ? usualLifted(kept, run.startedAt, together, local ? null : self) : null);
+  const facts = $derived.by(() => {
+    if (!run) return [];
+    const out = runFacts(s, solo ? self : null, foundCount(loadFossils()) >= FOSSIL_COUNT);
+    if (lifted !== null) out.splice(1, 0, { icon: { usual: true }, parts: ['Your usual is now ', { n: lifted }, '.'] });
+    return out;
+  });
   const lines = $derived<Line[]>(!run ? highlights(s) : solo && self ? soloHighlights(s, self, first) : partyHighlights(s));
 
   // ---- the start row ---------------------------------------------------------
@@ -688,6 +699,11 @@
           >
         {:else if 'cat' in ic}
           <span class="cat-ic" style:--src="url('{categoryGlyph(ic.cat)}')"></span>
+        {:else if 'fossil' in ic}
+          <img class="fossil-ic" src={fossilArt(ic.fossil, 128)} alt="" title={fossilById(ic.fossil).name} />
+        {:else if 'usual' in ic}
+          <!-- The chart's dotted level, raised. -->
+          <svg class="usual-ic" viewBox="-11 -11 22 22"><path d="M-9 4H9" stroke-dasharray="2 2.4" /><path d="M0 1V-7M-3.5 -3.5 0 -7 3.5 -3.5" /></svg>
         {/if}
       </span>
     {/if}
@@ -1933,6 +1949,23 @@
     font-size: max(11px, calc(var(--mini) * 0.32));
   }
   /* The finds, as the lobby lists them. */
+  /* A fossil found (lib/fossils.ts): its own picture in the line's medallion. */
+  .fossil-ic {
+    width: 78%;
+    height: 78%;
+    object-fit: contain;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
+  }
+  /* The usual depth raised: the chart's dotted level, an arrow up from it, in its gold. */
+  .usual-ic {
+    width: 62%;
+    height: 62%;
+    fill: none;
+    stroke: var(--gold);
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
   .finds li[data-find='azurite'] {
     --find: #a9cdf5;
   }

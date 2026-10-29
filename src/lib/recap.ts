@@ -8,7 +8,8 @@
 // items in their own type: plain text, a number, a player (marked "(you)"
 // for the viewer), an item or a category.
 
-import { DELVE_LIVES, DELVE_RULESET, FLARE_MS, delveStandings, isGroupRun, shownDepth, teamDepth, type FindKind } from './delve.ts';
+import { DELVE_LIVES, DELVE_RULESET, FLARE_MS, delveStandings, isGroupRun, runFossils, shownDepth, teamDepth, type FindKind } from './delve.ts';
+import { aFossil, fossilById, type FossilId } from './fossils.ts';
 import type { GameState, RecapItem } from './game.ts';
 import { stratumName } from './descent.ts';
 import { counts, isTogether, type DelveRun } from './delveRecord.ts';
@@ -22,7 +23,7 @@ export type Part = string | { n: string | number } | { who: string } | { item: s
  * depth, as the game counts it) or a category's. (Never the gold diamond:
  * in the game it says "you are here".)
  */
-export type Icon = { avatar: string } | { item: string } | { glyph: 'ward' | 'flare' | 'dynamite' } | { heart: true } | { zone: number } | { cat: string };
+export type Icon = { avatar: string } | { item: string } | { glyph: 'ward' | 'flare' | 'dynamite' } | { heart: true } | { zone: number } | { cat: string } | { fossil: FossilId } | { usual: true };
 export interface Line {
   icon: Icon;
   parts: Part[];
@@ -340,15 +341,25 @@ export function livesLost(s: GameState, me: string | null, log: readonly Answer[
 /**
  * What the run's finds gave and what came of it, oldest first: alone (and
  * `me`) this player's, together the party's. First the zone it reached (by
- * name: the descent never ends, so there is no "of ten").
+ * name: the descent never ends, so there is no "of ten"). `allFossils`: this
+ * device's player now holds every fossil, so none can turn up tomorrow.
  */
-export function runFacts(s: GameState, me: string | null): Line[] {
+export function runFacts(s: GameState, me: string | null, allFossils = false): Line[] {
   const together = isGroupRun(s);
   const depth = teamDepth(s);
   const out: Line[] = [{ icon: { zone: depth }, parts: [`Reached ${zoneOf(depth).the}.`] }];
   const items = (s.recap?.items ?? []).filter((x) => together || !me || x.by === me);
   const you = together ? '' : ' you';
   const at = (n: number): Part[] => [' at depth ', { n: shownDepth(n) }];
+  // The fossils it gave first (lib/fossils.ts): alone yours, together whose each is.
+  // One of them yours is the day's (one a day): another can only turn up tomorrow, while any is left.
+  for (const f of runFossils(s)) {
+    if (out.length >= 4) break;
+    if (!together && me && !f.to.includes(me)) continue;
+    const who = together ? (nameIn(s, f.to[0]) ?? 'Someone') : 'You';
+    const mine = !allFossils && (!together || (!!me && f.to.includes(me)));
+    out.push({ icon: { fossil: f.id }, parts: join(`${who} found ${aFossil(f.id)}`, ...at(f.depth), mine ? '. Another can turn up tomorrow.' : '.') });
+  }
   for (let i = 0; i < items.length && out.length < 4; i++) {
     const x = items[i];
     if (x.kind === 'wards') {
@@ -360,6 +371,9 @@ export function runFacts(s: GameState, me: string | null): Line[] {
   }
   return out;
 }
+
+/** A player's name as the run knew it: seated, or as the recap kept it for one gone since. */
+const nameIn = (s: GameState, id: string | undefined): string | undefined => (id ? (s.players.find((p) => p.id === id)?.name ?? s.recap?.people?.[id]?.name) : undefined);
 
 function itemFact(x: RecapItem, you: string, at: (n: number) => Part[]): Part[] {
   const won: Part[] = x.kind === 'dynamite' ? join(`Dynamite${you} won`, ...at(x.at)) : join(`A flare${you} won`, ...at(x.at));
@@ -381,15 +395,38 @@ export const FIND_BRIEF: Record<FindKind, string> = {
 export const CHART_RUNS = 12;
 export const CHART_W = 180;
 
+/** This device's counted runs of a kind (`who` its player online), oldest first: what the chart draws from. */
+const chartKind = (runs: readonly DelveRun[], together: boolean, who: string | null) =>
+  runs.filter((r) => counts(r) && r.ruleset === DELVE_RULESET && isTogether(r) === together && (!who || !r.who || r.who === who));
+
 /**
  * This device's counted runs of the run's kind, oldest first, ending with
  * this run (`id` its start; `who` its player online), at most CHART_RUNS.
  * Empty when this run isn't among them.
  */
 export function chartRuns(runs: readonly DelveRun[], id: number, together: boolean, who: string | null): DelveRun[] {
-  const kind = runs.filter((r) => counts(r) && r.ruleset === DELVE_RULESET && isTogether(r) === together && (!who || !r.who || r.who === who));
+  const kind = chartKind(runs, together, who);
   const i = kind.findIndex((r) => r.id === id);
   return i < 0 ? [] : kind.slice(Math.max(0, i + 1 - CHART_RUNS), i + 1);
+}
+
+/**
+ * The chart's usual depth (the median it draws, as players see depths) once
+ * this run (`id`) has lifted it, or null when it didn't: kept the same, or
+ * dropped, which is never announced. Only where the chart drew a usual
+ * before this run too (two runs or more), over the CHART_RUNS it showed then
+ * and shows now (chartRuns).
+ */
+export function usualLifted(runs: readonly DelveRun[], id: number, together: boolean, who: string | null): number | null {
+  const now = chartRuns(runs, id, together, who);
+  if (now.length < 3) return null;
+  const kind = chartKind(runs, together, who);
+  const i = kind.findIndex((r) => r.id === id);
+  const before = kind.slice(Math.max(0, i - CHART_RUNS), i);
+  const usual = (list: readonly DelveRun[]) => median(list.map((r) => shownDepth(r.depth)));
+  const was = usual(before);
+  const is = usual(now);
+  return is > was ? is : null;
 }
 
 /** Column width and gap for `n` runs across CHART_W. */
