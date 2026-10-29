@@ -4,7 +4,7 @@ run-name: "Redraws: ${{ github.event.pull_request.title || github.ref_name }}"
 # The redraw check (docs/qa.md, "Redraws"), on every pull request into main:
 # each QA scene at rest and the card bench's moments, traced in Chromium,
 # fail on a layer Chrome draws again on nearly every frame at rest, or a moment past
-# its baseline (src/qa/redraws.json). Every stutter of October 2026 was one
+# its baseline (src/qa/redrawBaselines.json). Every stutter of October 2026 was one
 # of those. It runs here, not on anyone's machine: every scene in a browser
 # at full motion. There's no GPU here, so it all draws in
 # software, at 2 or 3 frames a second (some scenes, a frame every few

@@ -243,7 +243,7 @@ export const PAINTED: Painted[] = [
   { file: 'src/app.css', keyframes: ['filigree-in', 'edge-light'], why: 'Once, as a panel rises (0.5 s, its corner filigree drawn out) or a dialog opens (0.9 s, the light along its edge): a pseudo-element on the panel, nothing under it moving.' },
   { file: 'src/components/codex/CodexMedallion.svelte', keyframes: ['fill-arc'], why: 'Once, 1.6 s, as a medallion’s arc fills in the codex: a ring of a few dozen px.' },
   { file: 'src/components/DailyStreak.svelte', keyframes: ['warm'], why: 'Once, 0.45 s, as the streak warms on the start page: the streak’s own small box.' },
-  { file: 'src/components/NamePlate.svelte', keyframes: ['draw', 'spark'], why: 'Once, about a second, as a name plate’s lines draw themselves and its spark runs: thin strokes of a small svg.' },
+  { file: 'src/components/NamePlate.svelte', keyframes: ['spark'], why: 'Once, about a second, as a right answer’s spark runs along a name plate’s rules: thin strokes of a small svg.' },
   { file: 'src/components/Inventory.svelte', keyframes: ['lit', 'crumble'], why: 'Once, about a second, as a find in the pack lights up or crumbles: its count’s small icon.' },
   { file: 'src/components/RunsChart.svelte', keyframes: ['sink'], why: 'Once, as the chart’s shafts sink in on the end screen: each shaft its own clip.' },
   { file: 'src/components/Scoreboard.svelte', keyframes: ['down', 'bump'], why: 'Once, 0.7 s, as a score changes: one number’s colour and glow.' },
@@ -273,7 +273,7 @@ export const PAINTED: Painted[] = [
  * The moments that should cost a known amount, on the card bench's stage
  * (cards.html?stage): each is measured from when it's set off until it's
  * over, as the pixels drawn again a frame (`again` over the frames), and
- * fails past SLACK times its baseline (src/qa/redraws.json).
+ * fails past SLACK times its baseline (src/qa/redrawBaselines.json).
  */
 export const MOMENTS = [
   { key: 'deal', label: 'A deal of three cards' },
@@ -291,7 +291,7 @@ export const FLOOR = 50_000;
 export function overBaseline(key: string, perFrame: number, baseline: number | undefined): string | null {
   if (baseline === undefined) return null;
   const limit = SLACK * Math.max(baseline, FLOOR);
-  return perFrame > limit ? `${kpx(perFrame)} drawn again a frame, past ${SLACK}× its baseline of ${kpx(baseline)} (src/qa/redraws.json, “${key}”)` : null;
+  return perFrame > limit ? `${kpx(perFrame)} drawn again a frame, past ${SLACK}× its baseline of ${kpx(baseline)} (src/qa/redrawBaselines.json, “${key}”)` : null;
 }
 
 /** Pixels, short: 1.2M px, 34k px. */

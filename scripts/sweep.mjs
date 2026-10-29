@@ -24,7 +24,7 @@
 // docs/qa.md, "Redraws"): each scene's first state at rest, and the card
 // bench's moments (a deal, a dig's deal, a pick), traced with WebGL and full
 // motion on. It fails on a layer drawn again on nearly every frame at rest, and on
-// a moment past its baseline (src/qa/redraws.json; --baseline writes it).
+// a moment past its baseline (src/qa/redrawBaselines.json; --baseline writes it).
 // It runs in CI on every pull request; here only with --only.
 //
 //   npm run sweep -- [--sizes walk|full|phone,uhd,...] [--only <regex>] [--change] [--webgl] [--banding]
@@ -94,7 +94,7 @@ if (values.help) {
   --redraws              check what Chrome draws again instead (docs/qa.md, Redraws): every scene's first
                          state at rest, and the card bench's moments; here only with --only (CI runs it all)
   --moments              with --redraws: the card bench's moments (alone, or with --only's scenes)
-  --baseline             with --redraws: write the moments as measured into src/qa/redraws.json
+  --baseline             with --redraws: write the moments as measured into src/qa/redrawBaselines.json
   --shard i/n            with --redraws: only the i-th of n parts of the scenes at rest (no moments), or with
                          --moments, of the moments (CI's jobs)`);
   process.exit(0);
@@ -684,7 +684,7 @@ async function checkRedraws(base, scenes) {
   } finally {
     await Promise.all(traceBrowsers.map((b) => b.close()));
   }
-  const BASELINE = path.join(ROOT, 'src', 'qa', 'redraws.json');
+  const BASELINE = path.join(ROOT, 'src', 'qa', 'redrawBaselines.json');
   const baseline = existsSync(BASELINE) ? JSON.parse(readFileSync(BASELINE, 'utf8')) : {};
   for (const m of momentsFound) {
     m.baseline = baseline.moments?.[m.key];
@@ -733,7 +733,7 @@ async function checkRedraws(base, scenes) {
             '| --- | --- | --- | --- |',
             ...momentsFound.map((m) => `| ${m.label} | ${kpx(m.perFrame)}${m.problem ? ' (fails)' : ''} | ${m.runs.map(kpx).join(', ')} | ${m.baseline === undefined ? 'none' : kpx(m.baseline)} |`),
             '',
-            'The moments as measured here, for `src/qa/redraws.json` when a change means them to cost more (or less):',
+            'The moments as measured here, for `src/qa/redrawBaselines.json` when a change means them to cost more (or less):',
             '',
             '```json',
             JSON.stringify(measured, null, 2),
