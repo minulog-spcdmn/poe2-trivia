@@ -352,6 +352,8 @@ const NEWCOMER_STEPS = new Set([
   'reach/lobby',
   'reach/played',
   'reach/finished',
+  'reach/games-2',
+  'reach/games-5',
   'reach/create',
   'reach/host',
   'reach/room',
