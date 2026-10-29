@@ -209,7 +209,10 @@ export interface Allowed {
   why: string;
 }
 
-export const ALLOWED: Allowed[] = [];
+export const ALLOWED: Allowed[] = [
+  // (To go once the seal's glow has a layer of its own: PAINTED has its note.)
+  { layer: /^div\.shell$/, scenes: /^settings\//, px: 800_000, why: 'The sync seal’s breathe, a box-shadow while sync is on or a key waits, draws the page round it again every frame: 756k px a frame on the GPU in settings/key. A cost to fix (Settings.svelte), not one to keep.' },
+];
 
 /** A layer drawn again on nearly every one of `frames` frames at rest, unless allowed: what's wrong, else null. */
 export function atRest(scene: string, l: LayerRedraws, frames: number): string | null {
@@ -260,7 +263,7 @@ export const PAINTED: Painted[] = [
   { file: 'src/components/GameOver.svelte', keyframes: ['gleam', 'ignite'], why: 'The headline’s and the winner’s row’s light runs across them for a second and a quarter every 5 s (the winner’s edge kindles once). With no layer of its own it draws the shell round it again as it passes: in over/n-lost, in software, div.shell on two thirds of the frames, 500k px a frame. Not nearly every frame, so it passes; it’s the one to give a layer next.' },
   { file: 'src/components/Phial.svelte', keyframes: ['glint'], why: 'A phial’s glint runs along its edge now and then, for as long as it shows: a stroke 16 px long on a small svg.' },
   { file: 'src/components/QuestionView.svelte', keyframes: ['glow'], why: 'An option picked and waiting for the verdict glows, 1 s a breath, for the moment the verdict takes: the WebGL backdrop’s shadow under it (custom properties it reads), not drawn by Chrome.' },
-  { file: 'src/components/Settings.svelte', keyframes: ['breathe'], why: 'The sync seal breathes while sync is on, 1.1 s a breath, for as long as the settings show: the seal’s own glow, a few dozen px.' },
+  { file: 'src/components/Settings.svelte', keyframes: ['breathe'], why: 'The sync seal breathes while sync is on (or a key waits), 1.1 s a breath, for as long as the settings show. Its box-shadow has no layer of its own, so it draws the page round it again every frame: in settings/key, div.shell, 756k px a frame on the GPU at the desktop size. Allowed at rest (ALLOWED) until it gets one.' },
   { file: 'src/components/TimerRing.svelte', keyframes: ['lamp'], why: 'A vein’s lamp, the clock’s ring, flickers for as long as the clock runs: measured at rest in game/delve-dig, Chrome gives its circle a layer while the filter runs (56 × 56, a filter it animates by itself), and nothing is drawn again on most frames.' },
 ];
 

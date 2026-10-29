@@ -451,6 +451,16 @@ const contextFor = (browser) => {
   return browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: size.dpr, reducedMotion: 'no-preference' });
 };
 
+/**
+ * The scenes watched at rest with WebGL, the effects drawing: those where
+ * the effects move the page (a vein's shake, src/lib/fx/core.ts). The rest
+ * have WebGL hidden, so the effects and the backdrop's shadows are off and
+ * CSS paints those: in software (CI) the GPU budget (src/lib/fx/gpuBudget.ts)
+ * hands the backdrop's shadows to CSS and back as frames come slow, and
+ * redraws the page round them doing it, at random, as no GPU would.
+ */
+const EFFECTS_AT_REST = /^game\/delve/;
+
 /** Each scene's first state at rest, from its first seat: the layers drawn again on nearly every frame, and what changes meanwhile. */
 async function scenesAtRest(base, scenes, browsers) {
   // (With --shard i/n, every n-th scene from the i-th: each part gets some of each screen.)
@@ -465,6 +475,11 @@ async function scenesAtRest(base, scenes, browsers) {
         // (A frame that didn't load, a page timing out on a busy runner, is tried once more before it counts.)
         for (let attempt = 0; attempt < 2; attempt++) {
           const context = await contextFor(browser);
+          if (!EFFECTS_AT_REST.test(s.key))
+            await context.addInitScript(() => {
+              delete window.WebGL2RenderingContext;
+              delete window.WebGLRenderingContext;
+            });
           const page = await context.newPage();
           // (Where the time goes, for CI's log: a runner drawing in software is slow at every step.)
           const took = [];
