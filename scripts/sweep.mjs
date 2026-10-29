@@ -434,27 +434,38 @@ async function scenesAtRest(base, scenes, browsers) {
         for (let attempt = 0; attempt < 2; attempt++) {
           const context = await contextFor(browser);
           const page = await context.newPage();
+          // (Where the time goes, for CI's log: a runner drawing in software is slow at every step.)
+          const took = [];
+          let since = Date.now();
+          const step = (what) => {
+            took.push(`${what} ${((Date.now() - since) / 1000).toFixed(1)} s`);
+            since = Date.now();
+          };
           try {
             const q = new URLSearchParams({ frame: `r${n}`, s: s.key, seat: '0', size: REDRAW_SIZE });
             for (const [k, v] of s.values ?? []) q.set(`k.${k}`, v);
             await page.goto(`${base}qa.html?${q}`, { waitUntil: 'load', timeout: 60000 });
+            step('loaded');
             await page.waitForFunction(() => window.__qa, null, { timeout: 90000 });
             const r0 = await page.evaluate(() => window.__qa);
             if (r0.failed) throw new Error(r0.failed);
+            step('at rest');
             // (What follows a scene's coming to rest, a toast, a sound's first beat, past.)
             await page.waitForTimeout(500);
             const r = await traced(browser, page, () => page.evaluate(watchFrames, { least: 2000, frames: 20, most: 8000, still: false }));
+            step(`${r.frames} frames in ${r.ms} ms, traced and read`);
             const problems = r.layers.map((l) => atRest(s.key, l, r.frames)).filter(Boolean);
             out.push({ scene: s.key, frames: r.frames, ms: r.ms, problems, changing: r.changing, painted: r.painted, layers: r.layers.slice(0, 8) });
+            if (!process.stdout.isTTY) console.log(`  ${s.key}: ${took.join(', ')}`);
             break;
           } catch (e) {
+            if (!process.stdout.isTTY) console.log(`  ${s.key}: ${[...took, `then ${e.message.split('\n')[0]}`].join(', ')}`);
             if (attempt === 1) out.push({ scene: s.key, failed: e.message.split('\n')[0], problems: [] });
           } finally {
             await context.close();
           }
         }
         if (process.stdout.isTTY) process.stdout.write(`\r${out.length}/${firsts.length}`);
-        else if (out.length % 10 === 0) console.log(`  ${out.length}/${firsts.length} in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
       }
     }),
   );
@@ -497,6 +508,7 @@ async function moments(base, browser) {
           return page.evaluate(watchFrames, { least: 1500, frames: 8, most: 10000, still: true });
         });
         runs.push({ ...r, perFrame: r.again / Math.max(1, r.frames) });
+        if (!process.stdout.isTTY) console.log(`  ${m.key}, run ${i + 1}: ${r.frames} frames in ${r.ms} ms, ${kpx(runs.at(-1).perFrame)} drawn again a frame`);
         await rest();
       }
       runs.sort((a, b) => a.perFrame - b.perFrame);
