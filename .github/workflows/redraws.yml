@@ -7,7 +7,8 @@ run-name: "Redraws: ${{ github.event.pull_request.title || github.ref_name }}"
 # its baseline (src/qa/redraws.json). Every stutter of October 2026 was one
 # of those, and how often a layer is drawn again doesn't depend on how fast
 # the runner is. It runs here, not on anyone's machine: every scene in a
-# browser drawing WebGL at full motion (in software: no GPU here).
+# browser drawing WebGL at full motion (in software: no GPU here), so slow
+# that the scenes are split over four jobs, and the moments have their own.
 #
 # Run it by hand (Run workflow) on any branch, and the job's summary lists
 # what it found and the moments as measured, to commit as the baseline when
@@ -27,8 +28,18 @@ concurrency:
 
 jobs:
   redraws:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Moments, args: '--moments' }
+          - { name: 'At rest, 1 of 4', args: '--shard 1/4' }
+          - { name: 'At rest, 2 of 4', args: '--shard 2/4' }
+          - { name: 'At rest, 3 of 4', args: '--shard 3/4' }
+          - { name: 'At rest, 4 of 4', args: '--shard 4/4' }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,10 +57,10 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ steps.playwright.outputs.version }}
       - run: npx playwright-core install --with-deps chromium
-      - run: npm run sweep -- --redraws
+      - run: npm run sweep -- --redraws ${{ matrix.args }}
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
-          name: redraws
+          name: redraws-${{ strategy.job-index }}
           path: screens/redraws-*/report.json
           retention-days: 14

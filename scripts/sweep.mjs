@@ -30,7 +30,7 @@
 //   npm run sweep -- [--sizes walk|full|phone,uhd,...] [--only <regex>] [--change] [--webgl] [--banding]
 //                 [--url URL] [--no-build] [--concurrency N]
 //   npm run sweep -- --map
-//   npm run sweep -- --redraws --only <regex> [--moments] [--baseline]
+//   npm run sweep -- --redraws --only <regex> [--moments] [--baseline] [--shard i/n]
 //   (from PowerShell, where npm eats the flags: npm run sweep full webgl only=lobby)
 
 import { spawn, spawnSync } from 'node:child_process';
@@ -62,6 +62,7 @@ const OPTIONS = {
   redraws: { type: 'boolean', default: false },
   moments: { type: 'boolean', default: false },
   baseline: { type: 'boolean', default: false },
+  shard: { type: 'string' },
   concurrency: { type: 'string', default: String(Math.max(2, os.availableParallelism() - 2)) },
   help: { type: 'boolean', short: 'h', default: false },
 };
@@ -93,10 +94,16 @@ if (values.help) {
   --redraws              check what Chrome draws again instead (docs/qa.md, Redraws): every scene's first
                          state at rest, and the card bench's moments; here only with --only (CI runs it all)
   --moments              with --redraws: the card bench's moments (alone, or with --only's scenes)
-  --baseline             with --redraws: write the moments as measured into src/qa/redraws.json`);
+  --baseline             with --redraws: write the moments as measured into src/qa/redraws.json
+  --shard i/n            with --redraws: only the i-th of n parts of the scenes at rest, no moments (CI's jobs)`);
   process.exit(0);
 }
 if (values.baseline) values.moments = true;
+const shard = values.shard?.match(/^(\d+)\/(\d+)$/)?.slice(1).map(Number);
+if (values.shard && !(shard && shard[0] >= 1 && shard[0] <= shard[1])) {
+  console.error(`--shard takes i/n, the i-th of n parts (1/4), not "${values.shard}".`);
+  process.exit(1);
+}
 if (values.redraws && !values.only && !values.moments && !process.env.CI) {
   // Every scene in a browser drawing WebGL at full motion: CI's to run, not a machine others share.
   console.error('The redraw check runs in CI on every pull request; here only a scene or two (--redraws --only <regex>) or the moments (--redraws --moments).');
@@ -348,12 +355,13 @@ const REDRAW_TRACE = ['cc', 'disabled-by-default-cc.debug'];
 /**
  * A browser of its own for each page traced (a trace is the whole
  * browser's). Without a GPU (CI) WebGL draws in SwiftShader, which Chrome
- * asks to be let in.
+ * asks to be let in; REDRAWS_SOFTWARE=1 draws in it here too, as CI does.
  */
+const software = process.platform !== 'win32' || !!process.env.REDRAWS_SOFTWARE;
 const launchTraced = () =>
   chromium.launch({
     ...(process.env.CHROMIUM || process.env.BOT_CHROMIUM ? { executablePath: process.env.CHROMIUM || process.env.BOT_CHROMIUM } : { channel: 'chromium' }),
-    args: [...(process.platform === 'win32' ? ['--use-angle=d3d11'] : ['--enable-unsafe-swiftshader']), '--enable-gpu', '--ignore-gpu-blocklist'],
+    args: [...(software ? ['--enable-unsafe-swiftshader', ...(process.platform === 'win32' ? ['--use-angle=swiftshader'] : [])] : ['--use-angle=d3d11']), '--enable-gpu', '--ignore-gpu-blocklist'],
   });
 
 /**
@@ -413,7 +421,8 @@ const contextFor = (browser) => {
 
 /** Each scene's first state at rest, from its first seat: the layers drawn again on most frames, and what changes meanwhile. */
 async function scenesAtRest(base, scenes, browsers) {
-  const firsts = scenes.filter((s, i) => scenes.findIndex((t) => t.key === s.key) === i);
+  // (With --shard i/n, every n-th scene from the i-th: each part gets some of each screen.)
+  const firsts = scenes.filter((s, i) => scenes.findIndex((t) => t.key === s.key) === i).filter((s, i) => !shard || i % shard[1] === shard[0] - 1);
   const out = [];
   let next = 0;
   await Promise.all(
@@ -507,10 +516,11 @@ async function checkRedraws(base, scenes) {
   let momentsFound = [];
   try {
     if (values.only || !values.moments) {
-      console.log(`Redraws at rest: ${new Set(scenes.map((s) => s.key)).size} scenes, ${at} at once, at ${REDRAW_SIZE}, from ${base}`);
+      const of = new Set(scenes.map((s) => s.key)).size;
+      console.log(`Redraws at rest: ${shard ? `part ${shard[0]} of ${shard[1]} of ${of}` : of} scenes, ${at} at once, at ${REDRAW_SIZE}, from ${base}`);
       atRestFound = await scenesAtRest(base, scenes, traceBrowsers);
     }
-    if (values.moments || !values.only) {
+    if (values.moments || (!values.only && !shard)) {
       console.log('Redraws in the card bench’s moments…');
       momentsFound = await moments(base, traceBrowsers[0]);
     }
@@ -557,21 +567,22 @@ async function checkRedraws(base, scenes) {
   // In CI, the job's summary: what was found, and the moments as measured, to commit as the baseline when a change means them.
   if (process.env.GITHUB_STEP_SUMMARY) {
     const md = [
-      '## Redraws',
+      shard ? `## Redraws at rest, part ${shard[0]} of ${shard[1]}` : '## Redraws',
       '',
-      atRestFound.length ? `At rest: ${atRestFound.length} scenes, ${bad.length} with a layer drawn again on most frames.` : '',
-      '',
-      ...lines.map((l) => `    ${l}`),
-      '',
-      '| Moment | Drawn again a frame | Runs | Baseline |',
-      '| --- | --- | --- | --- |',
-      ...momentsFound.map((m) => `| ${m.label} | ${kpx(m.perFrame)}${m.problem ? ' (fails)' : ''} | ${m.runs.map(kpx).join(', ')} | ${m.baseline === undefined ? 'none' : kpx(m.baseline)} |`),
-      '',
-      'The moments as measured here, for `src/qa/redraws.json` when a change means them to cost more (or less):',
-      '',
-      '```json',
-      JSON.stringify(measured, null, 2),
-      '```',
+      ...(atRestFound.length ? [`At rest: ${atRestFound.length} scenes, ${bad.length} with a layer drawn again on most frames.`, '', ...lines.map((l) => `    ${l}`), ''] : []),
+      ...(momentsFound.length
+        ? [
+            '| Moment | Drawn again a frame | Runs | Baseline |',
+            '| --- | --- | --- | --- |',
+            ...momentsFound.map((m) => `| ${m.label} | ${kpx(m.perFrame)}${m.problem ? ' (fails)' : ''} | ${m.runs.map(kpx).join(', ')} | ${m.baseline === undefined ? 'none' : kpx(m.baseline)} |`),
+            '',
+            'The moments as measured here, for `src/qa/redraws.json` when a change means them to cost more (or less):',
+            '',
+            '```json',
+            JSON.stringify(measured, null, 2),
+            '```',
+          ]
+        : []),
     ];
     writeFileSync(process.env.GITHUB_STEP_SUMMARY, `${md.join('\n')}\n`, { flag: 'a' });
   }
