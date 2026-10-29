@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { changedItems, reconcile, refreshArgs, summaryLines, withoutTooltip } from '../scripts/refresh-plan.mjs';
+import { artPlan, changedItems, reconcile, refreshArgs, summaryLines, withoutTooltip } from '../scripts/refresh-plan.mjs';
 
 // A refresh (npm run fetch-data) on made-up lists, before and after: what it
 // calls added, renamed, dropped and changed, and when it stops.
@@ -127,4 +127,36 @@ test('the summary names what came, went, was renamed, changed and was left out',
     ],
   );
   assert.deepEqual(summaryLines({}).slice(1), ['  Added (0)', '  Renamed (0)', '  Dropped (0)', '  Changed (0)', '  New art for an item kept (0)', '  Left out, no tooltip (0)']);
+});
+
+test('a renamed item keeps its old id on every later run too, and its art is neither fetched again nor deleted', () => {
+  // Each run fetches ids as the names' hashes: here, the name with a #.
+  const fetched = (names: string[]) => names.map((name) => item(`#${name}`, name));
+  const run1 = fetched(['Ventor’s Gamble', 'Andvarius', 'Black Heart']);
+  reconcile(before(), run1, { renames: [['Blackheart', 'Black Heart']] });
+  assert.deepEqual(run1.map((it) => it.id), ['aaa', 'bbb', 'ccc']);
+  // The next refresh, with no options: items.json is run 1's.
+  const run2 = fetched(['Ventor’s Gamble', 'Andvarius', 'Black Heart', 'Kalandra’s Touch']);
+  assert.deepEqual(reconcile(run1, run2), { added: ['Kalandra’s Touch'], renamed: [], dropped: [] });
+  assert.deepEqual(run2.map((it) => it.id), ['aaa', 'bbb', 'ccc', '#Kalandra’s Touch']);
+  // Only the new item's art is fetched, and none is deleted.
+  assert.deepEqual(artPlan(run2.map((it) => it.id), ['aaa.webp', 'bbb.webp', 'ccc.webp']), { fetch: ['#Kalandra’s Touch'], prune: [] });
+});
+
+test('the art: fetched when not on disk or renamed, deleted when no item has it', () => {
+  assert.deepEqual(artPlan(['aaa', 'ccc', 'ddd'], ['aaa.webp', 'bbb.webp', 'ccc.webp'], new Set(['ccc'])), { fetch: ['ccc', 'ddd'], prune: ['bbb.webp'] });
+});
+
+test('a new item that would take a renamed one’s id stops the run', () => {
+  const was = [item('#Blackheart', 'Black Heart')];
+  assert.throws(() => reconcile(was, [item('#Blackheart', 'Black Heart'), item('#Blackheart', 'Blackheart')]), /Black Heart and Blackheart would both have the id #Blackheart/);
+});
+
+test('the example rerun renames only a gone item to the one new item like it, never by position', () => {
+  const was = [item('z', 'Zealot Oath', { base: 'Amulet', group: 'Amulets' }), item('k', 'Keep')];
+  const now = [item('k', 'Keep'), item('a', 'Abyssal Tide', { base: 'Spear', group: 'Spears' }), item('o', 'Zealot’s Oath', { base: 'Amulet', group: 'Amulets' })];
+  assert.throws(() => reconcile(was, now), (err: Error) => err.message.includes('npm run fetch-data -- --rename "Zealot Oath=>Zealot’s Oath"') && !err.message.includes('Abyssal Tide"'));
+  // Two new items like it: no guess.
+  const two = [...now, item('p', 'Zealot’s Vow', { base: 'Amulet', group: 'Amulets' })];
+  assert.throws(() => reconcile(was, two), /npm run fetch-data -- --drop "Zealot Oath"$/m);
 });

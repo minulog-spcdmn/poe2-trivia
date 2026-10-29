@@ -44,11 +44,13 @@ const quote = (s) => `"${s.replace(/"/g, '\\"')}"`;
 
 /**
  * Matches the items fetched (`after`) to those before (`before`, items.json),
- * by name. A renamed item takes the old one's id, so codexes and
- * achievements, which keep ids, still know it: `after` is changed to say so.
- * An item that is gone with no --rename or --drop to explain it, or an
- * option that doesn't fit the lists, throws before anything is written,
- * saying how to rerun.
+ * by name. Each item there was before keeps its id from items.json, and a
+ * renamed item takes the old one's, so codexes and achievements, which keep
+ * ids, still know them; only a new item keeps the id it was fetched with
+ * (its name's hash). `after` is changed to say so. An item that is gone with
+ * no --rename or --drop to explain it, two items with one id, or an option
+ * that doesn't fit the lists, throws before anything is written, saying how
+ * to rerun.
  * @param {Item[]} before
  * @param {Item[]} after
  * @param {{ renames?: [string, string][], drops?: string[] }} [opts]
@@ -63,6 +65,11 @@ export function reconcile(before, after, { renames = [], drops = [] } = {}) {
   const renamed = [];
   const explained = new Set();
   const arrived = new Set();
+  // An id is the name's hash only when the item is first fetched: a renamed one keeps its first name's from then on.
+  for (const it of after) {
+    const old = was.get(it.name);
+    if (old) it.id = old.id;
+  }
   for (const [from, to] of renames) {
     const old = was.get(from);
     const it = now.get(to);
@@ -98,15 +105,59 @@ export function reconcile(before, after, { renames = [], drops = [] } = {}) {
       'Nothing was written. Rerun with one of these for each gone item:',
       '  --rename "Old=>New"  it was renamed: it keeps its id, so codexes and achievements keep it, and takes the new name',
       '  --drop "Old"         it is really gone',
-      `For example: npm run fetch-data -- ${gone
-        .map((name, i) => (added[i] ? `--rename ${quote(`${name}=>${added[i]}`)}` : `--drop ${quote(name)}`))
+      `For example (check each before you run it): npm run fetch-data -- ${gone
+        .map((name) => {
+          const to = likelyRename(was.get(name), gone.map((n) => was.get(n)), added.map((n) => now.get(n)));
+          return to ? `--rename ${quote(`${name}=>${to}`)}` : `--drop ${quote(name)}`;
+        })
         .join(' ')}`,
     );
     errors.push(lines.join('\n'));
   }
+  // A new item named as a renamed one once was would take its id.
+  const ids = new Map();
+  for (const it of after) {
+    const other = ids.get(it.id);
+    if (other) errors.push(`${other} and ${it.name} would both have the id ${it.id}`);
+    else ids.set(it.id, it.name);
+  }
   // `stop`: a refusal to go on, said in full, not a fault (fetch-data prints no stack for it).
   if (errors.length) throw Object.assign(new Error(errors.join('\n')), { stop: true });
   return { added, renamed, dropped };
+}
+
+/**
+ * The new item a gone one was most likely renamed to: the one new item of its
+ * kind, group and base, when no other gone item is of those too. Else none:
+ * a guess that pairs it with an unrelated item would give that item its
+ * codex history.
+ * @param {Item | undefined} old
+ * @param {(Item | undefined)[]} gone
+ * @param {(Item | undefined)[]} added
+ */
+function likelyRename(old, gone, added) {
+  if (!old) return null;
+  /** @param {Item | undefined} it */
+  const like = (it) => !!it && it.kind === old.kind && it.group === old.group && it.base === old.base;
+  const to = added.filter(like);
+  return to.length === 1 && gone.filter(like).length === 1 ? (to[0]?.name ?? null) : null;
+}
+
+/**
+ * Which pictures (art-source/items/<id>.webp) to fetch and which to delete:
+ * one not on disk yet is fetched, and a renamed item's (`renamedIds`), whose
+ * art may have changed with its name; a file no item or variant has goes.
+ * @param {string[]} ids every item's and variant's id
+ * @param {string[]} files the files there now
+ * @param {Set<string>} renamedIds
+ */
+export function artPlan(ids, files, renamedIds = new Set()) {
+  const there = new Set(files);
+  const keep = new Set(ids.map((id) => `${id}.webp`));
+  return {
+    fetch: ids.filter((id) => !there.has(`${id}.webp`) || renamedIds.has(id)),
+    prune: files.filter((f) => !keep.has(f)),
+  };
 }
 
 /** The fields of items.json an item is compared by (its name aside: a rename says that). */

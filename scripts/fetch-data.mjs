@@ -35,7 +35,7 @@ import {
   statsReport,
   writeStats,
 } from './fetch-stats.mjs';
-import { changedItems, reconcile, refreshArgs, summaryLines, withoutTooltip } from './refresh-plan.mjs';
+import { artPlan, changedItems, reconcile, refreshArgs, summaryLines, withoutTooltip } from './refresh-plan.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -238,16 +238,20 @@ async function main() {
 
   // Then the art, held here: a picture not on disk yet, and a renamed item's,
   // whose art may have changed with its name (its file is its old id's).
-  const renamedIds = new Set(plan.renamed.map((r) => r.id));
+  const onDisk = await readdir(IMG_DIR).catch(() => []);
+  const artToDo = artPlan(
+    arts.map((it) => it.id),
+    onDisk,
+    new Set(plan.renamed.map((r) => r.id)),
+  );
   const fresh = new Map();
   const newArt = [];
-  const downloads = [...arts];
+  const downloads = arts.filter((it) => artToDo.fetch.includes(it.id));
   await Promise.all(
     Array.from({ length: 3 }, async () => {
       for (let it; (it = downloads.shift()); ) {
         const file = path.join(IMG_DIR, `${it.id}.webp`);
-        const had = await exists(file);
-        if (had && !renamedIds.has(it.id)) continue;
+        const had = onDisk.includes(`${it.id}.webp`);
         const buf = Buffer.from(await (await fetchRetry(it.src)).arrayBuffer());
         webpSize(buf, it.src); // only a whole WebP file is kept
         if (had) {
@@ -282,9 +286,8 @@ async function main() {
   const siteDirs = [SITE_DIR, ...THUMBS.map((t) => path.join(SITE_DIR, String(t)))];
   for (const dir of siteDirs) await mkdir(dir, { recursive: true });
   const redo = new Set(listed.filter((it) => newArt.includes(it.name)).map((it) => `${it.id}.avif`));
-  const keepArt = new Set(arts.map((it) => `${it.id}.webp`));
   const keepSite = new Set(arts.map((it) => `${it.id}.avif`).filter((f) => !redo.has(f)));
-  for (const f of await readdir(IMG_DIR)) if (!keepArt.has(f)) await unlink(path.join(IMG_DIR, f));
+  for (const f of artToDo.prune) await unlink(path.join(IMG_DIR, f));
   for (const dir of siteDirs)
     for (const f of await readdir(dir, { withFileTypes: true })) if (f.isFile() && !keepSite.has(f.name)) await unlink(path.join(dir, f.name));
   const missing = [];
