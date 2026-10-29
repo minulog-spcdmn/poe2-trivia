@@ -116,13 +116,12 @@
     if (plate) natural = plate.natural;
   });
   /**
-   * Whether the plate and its glow are masked round the stars yet: from when
-   * the first star's cutout starts to show (at once while still, or with
-   * reduced motion, even should either come mid-entrance), as until then
-   * the mask hides nothing. A masked plate is painted through its mask
-   * whenever any of it changes, and on an iPhone, as the plate inked itself
-   * in, that held the lobby to 24 to 35 fps (60 unmasked). Once on, the mask stays: taken off again, an iPhone still
-   * paid for it. The cutouts' delays count from the first plate: one drawn
+   * Whether the plate and its glow are masked round the stars yet (holes,
+   * below): from when the first star's cutout starts to show (at once while
+   * still, or with reduced motion, even should either come mid-entrance), as
+   * until then the mask hides nothing. Masked as the plate inked itself in,
+   * when it was an SVG mask, it held an iPhone's lobby to 24 to 35 fps (60
+   * unmasked). The cutouts' delays count from the first plate: one drawn
    * again keeps their animations running.
    */
   let starsCut = $state(false);
@@ -141,6 +140,42 @@
     const timer = setTimeout(() => (starsCut = true), wait);
     return () => clearTimeout(timer);
   });
+  /**
+   * The stars' cutouts: a CSS mask on the plate and on its glow, a hole round
+   * each star, soft for `aa` px at its rim (the glow's as soft as its blur
+   * left it when the mask was inside it). They were an SVG mask once, but
+   * WebKit paints what an SVG mask covers through it again whenever a restyle
+   * or a layout reaches it (on an iPhone, the long frames as each screen came
+   * or went), and on iOS it cut nothing. Each hole is carved in as its star
+   * is stamped, and the gold one's travels down with it: the descent-hole
+   * animations, from the first plate (as the star's own), on the svg itself.
+   */
+  const holes = (p: Plate, aa: number) =>
+    [p.star, p.last]
+      .flatMap((s, i) => {
+        if (!s) return [];
+        const go = s.travel > 0;
+        const [mx, my] = s.mid ?? [0, 0];
+        const x = `calc(50% + ${f(s.c[0] - p.w / 2)}px${go ? ` + var(--hole-from) * ${f(s.from[0])}px + var(--hole-mid) * ${f(mx)}px` : ''})`;
+        const y = `calc(50% + ${f(s.c[1] - p.h / 2)}px${go ? ` + var(--hole-from) * ${f(s.from[1])}px + var(--hole-mid) * ${f(my)}px + var(--hole-dip) * 1px` : ''})`;
+        return [`radial-gradient(circle at ${x} ${y}, rgb(0 0 0 / calc(1 - var(--hole-${i}))) ${f(s.cut - aa)}px, #000 ${f(s.cut + aa)}px)`];
+      })
+      .join(', ');
+  /** The holes' animations, timed as their stars' are; held still, none, and each simply stands where its star does. */
+  const holesMotion = (p: Plate) =>
+    motion.still
+      ? 'none'
+      : [p.star, p.last]
+          .flatMap((s, i) =>
+            !s
+              ? []
+              : [
+                  `descent-hole-${i} 0.5s ${sec(s.delay)} var(--ease-out) backwards`,
+                  ...(s.travel > 0 ? [`descent-hole-${s.mid ? 'into' : 'go'} ${sec(s.travel)} ${sec(s.delay + 0.25)} linear backwards`] : []),
+                ],
+          )
+          .join(', ');
+  const cuts = $derived(plate && { plate: holes(plate, 0.5 / devicePixelRatio), glow: holes(plate, 1), motion: holesMotion(plate) });
   $effect(() => {
     stacked = !beside;
   });
@@ -277,31 +312,8 @@
   {#if plate}
     {@const p = plate}
     {@const ou = p.endless.ouro}
-    <!-- The stars' cutouts: the plate and its glow are masked round each star, the gold one's cutout travelling down with it.
-         The ouroboros' reveal: a band round its ring that sweeps on from its snout, so it coils in head first. -->
+    <!-- The ouroboros' reveal: a band round its ring that sweeps on from its snout, so it coils in head first. -->
     <svg class="defs" aria-hidden="true">
-      <mask id="{uid}-cut" maskUnits="userSpaceOnUse" x="-200" y="-200" width={f(p.w + 400)} height={f(p.h + 400)}>
-        <rect x="-200" y="-200" width={f(p.w + 400)} height={f(p.h + 400)} fill="#fff" />
-        {#each [p.star, p.last] as s, i (i)}
-          {#if s}
-            <g transform="translate({f(s.c[0])} {f(s.c[1])})">
-              <circle
-                class="cutout"
-                class:travel={s.travel > 0}
-                class:into={!!s.mid}
-                r={f(s.cut)}
-                style:--fx="{f(s.from[0])}px"
-                style:--fy="{f(s.from[1])}px"
-                style:--mx="{f(s.mid?.[0] ?? 0)}px"
-                style:--my="{f(s.mid?.[1] ?? 0)}px"
-                style:--d={sec(s.delay)}
-                style:--go={sec(s.delay + 0.25)}
-                style:--t={sec(s.travel)}
-              />
-            </g>
-          {/if}
-        {/each}
-      </mask>
       <!-- The two snakes draw in at once, each from where its body meets the other's head round to its own head (half a turn); each
            mask starts empty (inline, before any style), and once round it is whole, so no seam is left. -->
       {#each [0, 180] as turn, i (i)}
@@ -328,60 +340,76 @@
       </radialGradient>
     </svg>
 
-    <!-- The glow: the lit lines again, whole, wide and soft, under the plate. It breathes. -->
-    <svg class="glow" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
-      <g mask={starsCut ? `url(#${uid}-cut)` : null}>
-        {#each p.parts as part, i (i)}
-          {#each part.glow as g, j (j)}<path d={g.d} class="{g.kind} {part.tone}" style:--c={part.color} />{/each}
-        {/each}
-        {#each p.seals as s (s.k)}
-          {#if s.known}<circle class="light" cx={s.c[0]} cy={s.c[1]} r={s.r} style:--c={s.color} />{/if}
-        {/each}
-      </g>
+    <!-- The glow: the lit lines again, whole, wide and soft, under the plate. It breathes. The plate and the glow are cut round
+         each star (holes, above), the gold one's hole travelling down with it. -->
+    <svg
+      class="glow"
+      class:cut={starsCut}
+      viewBox="0 0 {f(p.w)} {f(p.h)}"
+      aria-hidden="true"
+      style:--holes={cuts?.motion}
+      style:mask-image={starsCut ? cuts?.glow : null}
+      style:-webkit-mask-image={starsCut ? cuts?.glow : null}
+    >
+      {#each p.parts as part, i (i)}
+        {#each part.glow as g, j (j)}<path d={g.d} class="{g.kind} {part.tone}" style:--c={part.color} />{/each}
+      {/each}
+      {#each p.seals as s (s.k)}
+        {#if s.known}<circle class="light" cx={s.c[0]} cy={s.c[1]} r={s.r} style:--c={s.color} />{/if}
+      {/each}
     </svg>
 
-    <svg class="plate" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
-      <g mask={starsCut ? `url(#${uid}-cut)` : null}>
-        {#each p.shades as s, i (i)}
-          <path class="shade draw {s.tone}" d={s.d} style:--c={s.color} style:--d={sec(s.delay)} style:--t={sec(s.t)} style:--o={s.o} pathLength="100" />
-        {/each}
-        {#each p.parts as part, i (i)}
-          <g class={part.tone} style:--c={part.color}>
-            {#each part.strokes as s, j (j)}
-              <path d={s.d} class="draw {s.kind}" style:--d={sec(s.delay)} style:--t={sec(s.t)} style:opacity={s.o} pathLength="100" />
-            {/each}
-          </g>
-        {/each}
+    <svg
+      class="plate"
+      class:cut={starsCut}
+      viewBox="0 0 {f(p.w)} {f(p.h)}"
+      aria-hidden="true"
+      style:--holes={cuts?.motion}
+      style:mask-image={starsCut ? cuts?.plate : null}
+      style:-webkit-mask-image={starsCut ? cuts?.plate : null}
+    >
+      {#each p.shades as s, i (i)}
+        <path class="shade draw {s.tone}" d={s.d} style:--c={s.color} style:--d={sec(s.delay)} style:--t={sec(s.t)} style:--o={s.o} pathLength="100" />
+      {/each}
+      {#each p.parts as part, i (i)}
+        <g class={part.tone} style:--c={part.color}>
+          {#each part.strokes as s, j (j)}
+            <path d={s.d} class="draw {s.kind}" style:--d={sec(s.delay)} style:--t={sec(s.t)} style:opacity={s.o} pathLength="100" />
+          {/each}
+        </g>
+      {/each}
 
-        <!-- The seals: a reached zone's sigil, struck in its colour; an empty hollow for one not reached. -->
-        {#each p.seals as s (s.k)}
-          <g class="stamp" style:--d={sec(s.delay)}>
-            {#if s.sigil}
-              <g class="sigil" style:--c={s.color} transform="translate({f(s.c[0])} {f(s.c[1])}) scale({f((s.r - 2.4) / 10)})">
-                {#if s.sigil.shade}<path class="s-shade" d={s.sigil.shade} />{/if}
-                <path class="s-fine" d={s.sigil.fine} />
-                <path d={s.sigil.lines} />
-              </g>
-            {:else}
-              <path class="hollow" d={s.hollow} />
-            {/if}
-          </g>
-        {/each}
-        {#each p.names as n (n.text)}
-          <text class="name" x={f(n.x)} y={f(n.y)} style:--c={n.color} style:--d={sec(n.delay)}>{n.text}</text>
-        {/each}
-        <!-- The zones not reached yet, held in a brace beside the wall, its beak on the word. -->
-        {#if p.uncharted}
-          {@const u = p.uncharted}
-          <g class="uncharted" style:--d={sec(u.delay)}>
-            <path class="brace draw" d={u.upper} pathLength="100" />
-            <path class="brace draw" d={u.lower} pathLength="100" />
-            {#each u.balls as b, i (i)}<circle class="ball" cx={f(b[0])} cy={f(b[1])} r="0.75" />{/each}
-            <text class="word" x={f(u.x)} y={f(u.y)}>uncharted</text>
-          </g>
-        {/if}
-      </g>
+      <!-- The seals: a reached zone's sigil, struck in its colour; an empty hollow for one not reached. -->
+      {#each p.seals as s (s.k)}
+        <g class="stamp" style:--d={sec(s.delay)}>
+          {#if s.sigil}
+            <g class="sigil" style:--c={s.color} transform="translate({f(s.c[0])} {f(s.c[1])}) scale({f((s.r - 2.4) / 10)})">
+              {#if s.sigil.shade}<path class="s-shade" d={s.sigil.shade} />{/if}
+              <path class="s-fine" d={s.sigil.fine} />
+              <path d={s.sigil.lines} />
+            </g>
+          {:else}
+            <path class="hollow" d={s.hollow} />
+          {/if}
+        </g>
+      {/each}
+      {#each p.names as n (n.text)}
+        <text class="name" x={f(n.x)} y={f(n.y)} style:--c={n.color} style:--d={sec(n.delay)}>{n.text}</text>
+      {/each}
+      <!-- The zones not reached yet, held in a brace beside the wall, its beak on the word. -->
+      {#if p.uncharted}
+        {@const u = p.uncharted}
+        <g class="uncharted" style:--d={sec(u.delay)}>
+          <path class="brace draw" d={u.upper} pathLength="100" />
+          <path class="brace draw" d={u.lower} pathLength="100" />
+          {#each u.balls as b, i (i)}<circle class="ball" cx={f(b[0])} cy={f(b[1])} r="0.75" />{/each}
+          <text class="word" x={f(u.x)} y={f(u.y)}>uncharted</text>
+        </g>
+      {/if}
+    </svg>
 
+    <!-- On the plate, but never cut round the stars. -->
+    <svg class="marks" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
       <!-- Which star is which, left of the ouroboros, half its radius from it. -->
       <g class="legend" style:--d={sec(p.legend.delay)}>
         {#each p.legend.rows as r (r.kind)}
@@ -630,7 +658,24 @@
     filter: blur(0.5px);
     animation:
       glow-in 1.1s 0.8s ease-out both,
-      breathe 6s 1.9s ease-in-out infinite alternate;
+      breathe 6s 1.9s ease-in-out infinite alternate,
+      var(--holes, none);
+  }
+  .plate {
+    animation: var(--holes, none);
+  }
+  /* Cut round the stars (holes, in the script): a gradient for each, its image reaching past the box, as the glow's blur and the
+     lines' ends do, and nothing clipped to the box. */
+  .cut {
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: -40px -40px;
+    mask-position: -40px -40px;
+    -webkit-mask-size: calc(100% + 80px) calc(100% + 80px);
+    mask-size: calc(100% + 80px) calc(100% + 80px);
+    mask-clip: no-clip;
+    -webkit-mask-composite: source-in;
+    mask-composite: intersect;
   }
   .glow path {
     stroke-width: 2.2;
@@ -1088,21 +1133,86 @@
       transform: translate(0, 0);
     }
   }
-  /* Until its carve starts, the plate and glow go unmasked (starsCut waits as long), so a carve made to start sooner must start starsCut sooner too. */
-  .cutout {
-    fill: #000;
-    stroke: none;
-    animation: carve 0.5s var(--d) var(--ease-out) both;
+  /* The stars' holes in the plate and its glow (holes, in the script): each carved in, --hole-0 for the gold star and --hole-1
+     for the red going from 0 to 1, as the star is stamped; the gold one's travelling as the star does (travel and travel-into
+     above, the same keyframes and easings), its place weighed between where it starts (--hole-from), the foot of the pit
+     (--hole-mid) and its dip, in px (--hole-dip). Until a carve starts, the plate and glow go unmasked (starsCut waits as long),
+     so a carve made to start sooner must start starsCut sooner too. */
+  @property --hole-0 {
+    syntax: '<number>';
+    inherits: false;
+    initial-value: 1;
   }
-  .cutout.travel {
-    animation:
-      carve 0.5s var(--d) var(--ease-out) both,
-      travel var(--t) var(--go) linear both;
+  @property --hole-1 {
+    syntax: '<number>';
+    inherits: false;
+    initial-value: 1;
   }
-  .cutout.travel.into {
-    animation:
-      carve 0.5s var(--d) var(--ease-out) both,
-      travel-into var(--t) var(--go) linear both;
+  @property --hole-from {
+    syntax: '<number>';
+    inherits: false;
+    initial-value: 0;
+  }
+  @property --hole-mid {
+    syntax: '<number>';
+    inherits: false;
+    initial-value: 0;
+  }
+  @property --hole-dip {
+    syntax: '<number>';
+    inherits: false;
+    initial-value: 0;
+  }
+  @keyframes -global-descent-hole-0 {
+    from {
+      --hole-0: 0;
+    }
+  }
+  @keyframes -global-descent-hole-1 {
+    from {
+      --hole-1: 0;
+    }
+  }
+  @keyframes -global-descent-hole-go {
+    from {
+      --hole-from: 1;
+      --hole-dip: 0;
+      animation-timing-function: cubic-bezier(0.6, 0, 0.3, 1);
+    }
+    88% {
+      --hole-from: 0;
+      --hole-dip: 1.4;
+      animation-timing-function: cubic-bezier(0.4, 0, 0.5, 1);
+    }
+    to {
+      --hole-from: 0;
+      --hole-dip: 0;
+    }
+  }
+  @keyframes -global-descent-hole-into {
+    from {
+      --hole-from: 1;
+      --hole-mid: 0;
+      --hole-dip: 0;
+      animation-timing-function: cubic-bezier(0.6, 0, 0.8, 0.6);
+    }
+    62% {
+      --hole-from: 0;
+      --hole-mid: 1;
+      --hole-dip: 0;
+      animation-timing-function: cubic-bezier(0.2, 0.45, 0.3, 1);
+    }
+    92% {
+      --hole-from: 0;
+      --hole-mid: 0;
+      --hole-dip: 1;
+      animation-timing-function: ease-in-out;
+    }
+    to {
+      --hole-from: 0;
+      --hole-mid: 0;
+      --hole-dip: 0;
+    }
   }
   /* The glint as the gold star lands: a ring of light running out from it, and a brief flare. */
   .land {
@@ -1230,7 +1340,7 @@
   }
   .both-star .glory {
     animation:
-      draw var(--t) var(--d) linear both,
+      draw var(--t) var(--d) linear backwards,
       blend-glory 7s var(--b) ease-in-out infinite alternate;
   }
   .both-star .star-ground {
@@ -1275,10 +1385,10 @@
     }
   }
 
-  /* Lines draw themselves (each piece in its turn: see lib/descentPlate's pen()); seals and the star are stamped in. */
+  /* Lines draw themselves (each piece in its turn: see lib/descentPlate's pen()); seals and the star are stamped in. A line is
+     dashed only while it draws: left dashed, all of them were dashed again at each repaint. */
   .draw {
-    stroke-dasharray: 100;
-    animation: draw var(--t, 1s) var(--d, 0s) linear both;
+    animation: draw var(--t, 1s) var(--d, 0s) linear backwards;
   }
   .shade.draw {
     animation-timing-function: ease-out;
@@ -1290,7 +1400,12 @@
   }
   @keyframes draw {
     from {
+      stroke-dasharray: 100;
       stroke-dashoffset: 100;
+    }
+    to {
+      stroke-dasharray: 100;
+      stroke-dashoffset: 0;
     }
   }
   @keyframes carve {
@@ -1384,9 +1499,6 @@
   :global(html[data-still]) .descent .travel {
     animation: none;
   }
-  :global(html[data-still]) .descent .cutout {
-    animation: none;
-  }
   :global(html[data-still]) .descent .twinkle {
     animation: none;
     opacity: 0;
@@ -1406,7 +1518,6 @@
       animation-delay: 0s !important;
     }
     .travel,
-    .cutout,
     .coil.turning,
     .coil-in,
     .turn,
