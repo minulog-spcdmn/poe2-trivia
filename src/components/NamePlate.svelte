@@ -158,7 +158,9 @@
 
 <script lang="ts">
   // `lit` lights the seals' signs (an unidentified item keeps them dark
-  // until the reveal, when they flare); `end` is what the right seal holds:
+  // until the reveal); `glint`, as they light or later, flares their bloom
+  // and runs a spark along the rules (a right answer's; without it a
+  // wrong answer's lights them quietly); `end` is what the right seal holds:
   // Luna, or nothing, for a button to sit in it (the dialog's close; see
   // SOCKET_X); `start` the same for the left one: Sol, or nothing (the item
   // window's fold). The ends can be drawn smaller with `--end-scale`; with `fit`
@@ -168,11 +170,12 @@
   // sits on the plate can keep clear of the ends.
   let {
     lit = true,
+    glint = true,
     end = 'luna',
     start = 'sol',
     fit = false,
     scale: endScale = $bindable(),
-  }: { lit?: boolean; end?: 'luna' | 'empty'; start?: 'sol' | 'empty'; fit?: boolean; scale?: number } = $props();
+  }: { lit?: boolean; glint?: boolean; end?: 'luna' | 'empty'; start?: 'sol' | 'empty'; fit?: boolean; scale?: number } = $props();
   let plateEl = $state<HTMLElement>();
   $effect(() => {
     if (!fit || !plateEl) return;
@@ -276,7 +279,7 @@
   <svg x="50%" width="50%" height="100%" overflow="hidden"><svg x="100%" y="50%" overflow="visible"><g transform="scale(-1 1)">{@render cap(end)}</g></svg></svg>
 {/snippet}
 
-<span class="plate" class:lit aria-hidden="true" bind:this={plateEl} style:--end-scale={endScale} style:--seal-x="{SOCKET_X}px" style:--bloom-r="{BLOOM_R}px">
+<span class="plate" class:lit class:glint aria-hidden="true" bind:this={plateEl} style:--end-scale={endScale} style:--seal-x="{SOCKET_X}px" style:--bloom-r="{BLOOM_R}px">
   <span class="field {WEAVE_CLASS}" bind:this={fieldEl}></span>
   <!-- The lines twice, as on the circle: a soft, wide copy for the glow, and the lines. -->
   <svg class="art glow" width="100%" height="100%" bind:this={glowEl}>{@render plate()}</svg>
@@ -396,7 +399,8 @@
   }
 
   /* The signs, engraved as on the circle: dark until the item is known,
-     then lit, with a bloom of light behind that flares and breathes. */
+     then lit, with a bloom of light behind that breathes (and flares first
+     with the glint). */
   .sign :global(*) {
     fill: none;
     stroke: #6a3a1e;
@@ -441,8 +445,12 @@
     transition: opacity 0.8s;
     will-change: opacity;
   }
+  /* Lit quietly, the bloom fades in and breathes; with the glint, it flares first. */
   .lit .bloom {
     opacity: 0.45;
+    animation: breathe 6s 0.8s ease-in-out infinite alternate;
+  }
+  .lit.glint .bloom {
     animation:
       flare 1.3s ease-out both,
       breathe 6s 1.3s ease-in-out infinite alternate;
@@ -451,7 +459,8 @@
      once and left the bloom drawn as it ended (0.22), half as bright as it
      rests (0.45), till something happened to paint it again. */
   @media (prefers-reduced-motion: reduce) {
-    .lit .bloom {
+    .lit .bloom,
+    .lit.glint .bloom {
       animation: none;
     }
   }
@@ -480,7 +489,7 @@
   .fade {
     opacity: 0;
   }
-  /* A spark that runs along the outer rules, from the ends to the middle, as the seals light. */
+  /* The glint: a spark that runs along the outer rules, from the ends to the middle. */
   .spark {
     stroke: #fff0d6;
     stroke-width: 1.2;
@@ -488,7 +497,7 @@
     stroke-dashoffset: 7;
     opacity: 0;
   }
-  .lit .spark {
+  .lit.glint .spark {
     animation: spark 1.1s 0.15s cubic-bezier(0.45, 0, 0.3, 1) both;
   }
 
