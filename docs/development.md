@@ -330,6 +330,72 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   devices that can't keep up. Without WebGL2 the site falls back
   to its CSS look.
 
+## Finding a stutter
+
+Where to start when the game stutters or lags, in this order. Never answer
+it by drawing less well (a lower resolution, fewer frames, a plainer
+effect): find what holds the frame up.
+
+1. **Whether players feel it, and where.** The stats' Stutter view
+   (`stats.html#stutter`, `docs/fair-play.md`) has the share of games that
+   stuttered by kind of device and day, and the phase most of it fell in
+   (deal, question, reveal). A jump the day after a deploy points at that
+   deploy. Android shows up only here: its emulators' frame rates say
+   nothing (`docs/android.md`).
+2. **On the PC, a trace.** `scripts/pc/` runs Chrome on this PC's screen,
+   headed (headless Chrome has no real GPU), and traces it:
+
+   ```bash
+   node scripts/pc/game.mjs http://localhost:5173/ before 4
+   python scripts/pc/read.py .pc/runs/before.json
+   ```
+
+   `game.mjs` plays a solo Take-turns game of that many turns. `cards.mjs
+   <url> <label> [deals] [finds|way-out|plain]` deals a hand on the card
+   bench's stage (`cards.html?stage`) again and again, for a deal and the
+   hand at rest. `read.py` lists each step with:
+   - its frames over 25 and 50 ms;
+   - the GPU's raster time (`CrGpuMain` running the renderer's raster
+     command buffer) and its longest task;
+   - the raster in its last second, what the screen costs at rest;
+   - its long animation frames, naming the script that took most of the
+     longest.
+
+   Run them against the dev server: the local channel counts nothing, and
+   the live site would count the run as a player's game. Run one at a time:
+   it takes the screen and slows every other session. The first run on the
+   fresh profile (`.pc/profile`) has a cold shader cache, so run each
+   variant twice. Parts come away without editing code through `CSS=` (a
+   style sheet added), `INIT=` (a script run first) and the `?off=`
+   switches (`src/lib/switchedOff.ts`). `CATS=` sets the trace's
+   categories; the defaults are `toplevel,gpu,blink.user_timing,devtools.timeline`.
+   `cc` and `disabled-by-default-devtools.timeline.invalidationTracking`
+   say which layer was redrawn and why, and
+   `disabled-by-default-skia.gpu` shows Skia's path masks.
+
+   What a trace showed before:
+   - **Raster at rest.** The screen hardly changes, but the GPU keeps
+     drawing its tiles. Something animated on the page's thread, with no
+     layer of its own, has Chrome redraw the layer round it every frame.
+     Give it a layer (`will-change`), or animate a transform or opacity
+     instead ("Frame hitches from redrawing" above;
+     `docs/category-cards.md`, rules 7 and 8).
+   - **A burst of long frames as something draws in.** An SVG with a CSS
+     animation is redrawn whole at the screen's rate ("Frame hitches from
+     drawing in").
+   - **Long tasks on `CrGpuMain` that aren't raster.** The GPU process was
+     held up around the draws (`SharedImageStub::OnCreateSharedImage`,
+     "Frame hitches").
+   - **Long animation frames.** Script, style or layout on the page's
+     thread.
+3. **On the iPhone**, the same questions through its Web Inspector:
+   `docs/iphone.md`. A scene on its own is `qa.html?frame&s=<scene
+   key>&size=fit` in a `--qa` build. Without `&size=fit` the desk plays a
+   desktop, with a fine pointer, and shows what only Safari with a mouse
+   would.
+4. **Whether it still looks the same**: the QA desk's before and after
+   (B, on the dev server; `docs/qa.md`).
+
 ## Refreshing item data
 
 Item names and art are scraped from poe2db.tw
