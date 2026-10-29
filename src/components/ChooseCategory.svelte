@@ -575,10 +575,12 @@
    * takes flat transforms, which Chrome rasters larger as it grows.
    */
   const printed = $derived(sharp && !rows.current);
-  /** How long card i's side lies unseen once it's dealt (ms), which its plate's prints may take without its strokes drawn: its back until it fades in, its face until it's turned halfway up. Held still, it's seen at once. */
-  const unseen = (i: number, side: 'back' | 'face') => (motion.still ? 0 : Math.round((side === 'back' ? dealAt(i) : flipAt(i) + FLIP / 2) * 1000));
+  /** How long card i's side lies unseen once it's dealt (ms), which its plate's prints may take without its strokes drawn: its back until it fades in, its face until it's turned halfway up. Held still, or shown without a deal (after a refresh), it's seen at once. */
+  const unseen = (i: number, side: 'back' | 'face') => (dealing ? Math.round((side === 'back' ? dealAt(i) : flipAt(i) + FLIP / 2) * 1000) : 0);
   /** When the deal began; null when the cards appeared without one (as after a refresh). */
   let dealtAt: number | null = null;
+  /** Whether the cards are dealt (not held still, nor shown without a deal): a card lies unseen at first only then. */
+  let dealing = $state(false);
   /** Whether card i lies face up yet (it can't be picked or catch fire before). */
   const faceUp = (i: number) => dealtAt === null || performance.now() - dealtAt >= (flipAt(i) + FLIP) * 1000;
 
@@ -593,6 +595,7 @@
   function deal(node: Element, { i, n }: { i: number; n: number }) {
     if (motion.still) return {};
     dealtAt ??= performance.now();
+    dealing = true;
     // The face's own entrance (see .dealt below) plays with the deal only;
     // the emblem reads the kindle's numbers while it kindles, and no longer.
     node.classList.add('dealt', 'kindling');

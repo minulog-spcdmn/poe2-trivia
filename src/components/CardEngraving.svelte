@@ -73,7 +73,7 @@
         box = rect;
         px = size;
         // (Its style is up to date here, after layout: no cost to read.)
-        if (print && !front) {
+        if (!front) {
           z = layoutZoomOf(node) * devicePixelRatio;
           ink = getComputedStyle(node).color;
         }
@@ -93,12 +93,6 @@
   const uid = $props.id();
 
   const LAYERS: Layer[] = ['glow', 'lines'];
-  /** When its glow's svg was last drawn in, a find's glow breathing from then: its print takes the breath up where the svg had it. (Read as the print comes in, not watched.) */
-  const breath = { from: 0 };
-  /** Svelte action, on a layer's svg: notes when the glow's came in. */
-  function breathes(_svg: SVGSVGElement, layer: Layer) {
-    if (layer === 'glow') breath.from = performance.now();
-  }
   /** The still layers' svgs, which their prints are pulled from. */
   const svgs: Partial<Record<Layer, SVGSVGElement>> = $state({});
   /** How it's drawn, if it's printed. */
@@ -196,44 +190,48 @@
     {/if}
     {#each LAYERS as layer (layer)}
       {@const shown = prints?.[layer]}
-      {#if shown?.url}
-        <img class={layer} src={shown.url} alt="" style:animation-delay={layer === 'glow' ? `${Math.round(breath.from - performance.now())}ms` : undefined} />
-      {/if}
-      <!-- (Printed, only the hairlines its print leaves to it.) -->
-      {#if !shown || shown.left.size}
-        <svg class={layer} class:held={held && !shown} viewBox="0 0 {w} {h}" bind:this={svgs[layer]} use:breathes={layer}>
-          {#if plate.fade}
-            <defs>
-              <radialGradient id="{uid}-{layer}-g" cx={plate.fade.c[0]} cy={plate.fade.c[1]} r={plate.fade.r} gradientUnits="userSpaceOnUse">
-                {#if plate.fade.from}<stop offset={plate.fade.from / plate.fade.r} stop-color="#000" />{/if}
-                <stop offset={Math.max(0.35, (plate.fade.from + 22) / plate.fade.r)} stop-color="#fff" />
-                <stop offset="1" stop-color="#000" />
-              </radialGradient>
-              <mask id="{uid}-{layer}-fade" maskUnits="userSpaceOnUse" x="0" y="0" width={w} height={h}>
-                <rect width={w} height={h} fill="url(#{uid}-{layer}-g)" />
-              </mask>
-            </defs>
-          {/if}
-          {#if knockout.length}
-            <defs>
-              <mask id="{uid}-{layer}-ko" maskUnits="userSpaceOnUse" x={-50} y={-50} width={w + 100} height={h + 100}>
-                <rect x={-50} y={-50} width={w + 100} height={h + 100} fill="#fff" />
-                {#each knockout as d, i (i)}<path {d} class="ko" />{/each}
-              </mask>
-            </defs>
-          {/if}
-          <g mask={knockout.length ? `url(#${uid}-${layer}-ko)` : undefined}>
-            {#each strokes.filter((s) => !s.motif && (!shown || shown.left.has(leftKey(s.cls, false)))) as { cls, d } (cls)}
-              <path {d} class={cls} mask={cls === 'ray' && plate.fade ? `url(#${uid}-${layer}-fade)` : undefined} />
-            {/each}
-          </g>
-          {#if !(plate.gilt && layer === 'lines')}
-            {#each motif.filter((s) => !shown || shown.left.has(leftKey(s.cls, true))) as { cls, d } (cls)}
-              <path {d} class={cls} />
-            {/each}
-          {/if}
-        </svg>
-      {/if}
+      <!-- The layer, one element from the first: what moves on it (a find's breath, the way out's swell) and its
+           opacity are the print's and the svg's together, never started again as the print comes in. -->
+      <span class="layer {layer}">
+        {#if shown?.url}
+          <img src={shown.url} alt="" />
+        {/if}
+        <!-- (Printed, only the hairlines its print leaves to it.) -->
+        {#if !shown || shown.left.size}
+          <svg class:held={held && !shown} viewBox="0 0 {w} {h}" bind:this={svgs[layer]}>
+            {#if plate.fade}
+              <defs>
+                <radialGradient id="{uid}-{layer}-g" cx={plate.fade.c[0]} cy={plate.fade.c[1]} r={plate.fade.r} gradientUnits="userSpaceOnUse">
+                  {#if plate.fade.from}<stop offset={plate.fade.from / plate.fade.r} stop-color="#000" />{/if}
+                  <stop offset={Math.max(0.35, (plate.fade.from + 22) / plate.fade.r)} stop-color="#fff" />
+                  <stop offset="1" stop-color="#000" />
+                </radialGradient>
+                <mask id="{uid}-{layer}-fade" maskUnits="userSpaceOnUse" x="0" y="0" width={w} height={h}>
+                  <rect width={w} height={h} fill="url(#{uid}-{layer}-g)" />
+                </mask>
+              </defs>
+            {/if}
+            {#if knockout.length}
+              <defs>
+                <mask id="{uid}-{layer}-ko" maskUnits="userSpaceOnUse" x={-50} y={-50} width={w + 100} height={h + 100}>
+                  <rect x={-50} y={-50} width={w + 100} height={h + 100} fill="#fff" />
+                  {#each knockout as d, i (i)}<path {d} class="ko" />{/each}
+                </mask>
+              </defs>
+            {/if}
+            <g mask={knockout.length ? `url(#${uid}-${layer}-ko)` : undefined}>
+              {#each strokes.filter((s) => !s.motif && (!shown || shown.left.has(leftKey(s.cls, false)))) as { cls, d } (cls)}
+                <path {d} class={cls} mask={cls === 'ray' && plate.fade ? `url(#${uid}-${layer}-fade)` : undefined} />
+              {/each}
+            </g>
+            {#if !(plate.gilt && layer === 'lines')}
+              {#each motif.filter((s) => !shown || shown.left.has(leftKey(s.cls, true))) as { cls, d } (cls)}
+                <path {d} class={cls} />
+              {/each}
+            {/if}
+          </svg>
+        {/if}
+      </span>
     {/each}
     {#if plate.gilt}
       {@const g = plate.gilt}
@@ -287,7 +285,8 @@
     color: var(--ink);
   }
   svg,
-  img {
+  img,
+  .layer {
     position: absolute;
     inset: 0;
     width: 100%;

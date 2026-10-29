@@ -1,7 +1,7 @@
 // Prints of the category cards' engraved plates (lib/cardEngraving): each
 // still layer of a side (its glow, its lines) drawn once into an image, at
 // the size it's drawn at, and shown in place of its svg (CardEngraving),
-// which keeps only the lines' hairlines, cheap for Chrome to draw (pathsOf).
+// which keeps only its hairlines, cheap for Chrome to draw (pathsOf).
 //
 // Chrome draws a card's svg strokes on the GPU process's main thread, and as
 // wide as the card they are, its software path renderer makes a mask on the
@@ -65,7 +65,7 @@ export const printing = $state({ on: true });
  * the pixel it's drawn from (read from the paint commands: a stretch to
  * the whole pixels was a third of a pixel out at the foot of a face).
  */
-export function placing({ w, h, cw, ch, z }: At): [number, number, number, number] {
+function placing({ w, h, cw, ch, z }: At): [number, number, number, number] {
   const s = Math.min(cw / w, ch / h) * z;
   return [s, s, (cw * z - w * s) / 2, (ch * z - h * s) / 2];
 }
@@ -174,10 +174,14 @@ export function pull(plate: Engraved, layer: Layer, at: At, ink: string, svg: SV
   let kept = prints.get(plate);
   if (!kept) prints.set(plate, (kept = new Map()));
   const was = kept.get(key);
-  if (was) return was.made;
+  if (was) {
+    // (Kept as the newest: the size in use is the last let go.)
+    kept.delete(key);
+    kept.set(key, was);
+    return was.made;
+  }
   const place = placed(svg, at);
-  // (Only the lines' hairlines: the glow's strokes are wider than a pixel at any density, and it breathes, which an image and an svg apart would do out of step.)
-  const { paths, left } = pathsOf(svg, layer === 'lines' ? Math.min(place[0], place[1]) : 0);
+  const { paths, left } = pathsOf(svg, Math.min(place[0], place[1]));
   const print: Print = { left, made: Promise.resolve(null) };
   print.made = (paths.length ? ask({ size: [at.W, at.H], view: [at.w, at.h], at: place, paths, fade: plate.fade, knockout: plate.knockout?.split(/(?<=Z)(?=M)/) ?? [] }) : Promise.resolve(null))
     .then(async (png) => {
@@ -203,11 +207,12 @@ export function pull(plate: Engraved, layer: Layer, at: At, ink: string, svg: SV
 /**
  * The svg's paths in its order, each as it's styled: the plate's own (in its
  * group, under the knockout's mask), then the motif's. But for its
- * hairlines, at `scale` (device px to its units; 0 for none): strokes under
- * a device pixel wide, which Chrome draws on the GPU as hairlines, cheaply,
- * and a canvas a shade dimmer; those are left to the svg (`left`, by
- * leftKey), so the print and they look as the strokes did. (They're all in
- * one ink, so drawn apart they come out as drawn together.)
+ * hairlines, at `scale` (device px to its units): strokes under a device
+ * pixel wide, which Chrome draws on the GPU as hairlines, cheaply, and a
+ * canvas a shade dimmer; those are left to the svg (`left`, by leftKey), so
+ * the print and they look as the strokes did. (They're all in one ink, so
+ * drawn apart they come out as drawn together; and the layer's opacity is
+ * on the element round both, CardEngraving's .layer, as it was on the svg.)
  */
 function pathsOf(svg: SVGSVGElement, scale: number): { paths: PrintPath[]; left: Set<string> } {
   const out: PrintPath[] = [];
@@ -225,7 +230,7 @@ function pathsOf(svg: SVGSVGElement, scale: number): { paths: PrintPath[]; left:
       join: cs.strokeLinejoin as CanvasLineJoin,
       miter: parseFloat(cs.strokeMiterlimit) || 4,
     };
-    if (scale && !path.fill && path.stroke && path.width * scale <= 1) return void left.add(leftKey(p.classList[0] ?? '', motif));
+    if (!path.fill && path.stroke && path.width * scale <= 1) return void left.add(leftKey(p.classList[0] ?? '', motif));
     if (p.hasAttribute('mask')) path.fade = true;
     if (motif) path.motif = true;
     out.push(path);
