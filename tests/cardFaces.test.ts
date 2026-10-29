@@ -100,6 +100,37 @@ test("the cards' corners are --filigree's images, in its order and size", () => 
   for (const l of layers) assert.equal(l[2]!.trim(), corners('background-size'));
 });
 
+// ---- what kindles on a face -------------------------------------------------
+// Chrome draws a sharp face again, at twice its size through the filter, on
+// every frame anything painted on it changes, unless that thing has a layer
+// of its own: the emblems' kindle, a filter animated on the page's thread,
+// held the GPU most of a deal. What kindles or swells (a filter, or the
+// kindle's numbers it reads) has will-change under .sharp, always; so does
+// the way out's lamp (CardEngraving), which breathes beside its gilt.
+
+const unwrap = (s: string) => s.replace(/:global\(((?:[^()]|\([^()]*\))*)\)/g, '$1');
+/** The classes a selector styles: its last compound's, or those of a last :is(). */
+const targets = (s: string) => {
+  const u = unwrap(s).trim();
+  const is = u.match(/:is\(([^()]*)\)$/);
+  return (is ? is[1]!.split(',') : [u.split(/[\s>+~]+/).pop()!]).map((p) => p.trim().match(/^\.([\w-]+)/)?.[1]).filter((c) => c !== undefined);
+};
+
+test('what kindles or swells on a sharp face is on a layer of its own', () => {
+  const painted = new Set<string>();
+  CSS.walkAtRules('keyframes', (k) => k.walkDecls((d) => void ((d.prop === 'filter' || d.prop.startsWith('--kindle-')) && painted.add(k.params))));
+  const animated = new Set<string>();
+  for (const d of decls(CSS, /^animation(-name)?$/))
+    if (painted.has(d.value.split(/\s+/)[0]!)) for (const s of (d.parent as Rule).selectors) for (const c of targets(s)) animated.add(c);
+  const layered = new Set<string>();
+  CSS.walkRules((r) => {
+    const wc = r.nodes.find((n): n is Declaration => n.type === 'decl' && n.prop === 'will-change');
+    if (wc && /filter/.test(wc.value) && /opacity/.test(wc.value)) for (const s of r.selectors) if (s.startsWith('.sharp ')) for (const c of targets(s)) layered.add(c);
+  });
+  for (const c of ['icon', 'gilt', 'window']) assert.ok(animated.has(c), `found what kindles or swells (.${c})`);
+  for (const c of [...animated, 'lamp']) assert.ok(layered.has(c), `.${c} kindles, swells or breathes on the face; give it will-change: filter, opacity under .sharp, always, or Chrome redraws the whole sharp face every frame it changes`);
+});
+
 // ---- face down in the deal --------------------------------------------------
 // The CSS reads .down from the card itself, so the deal must put it there:
 // once the turn sat inside .sides, a class on the turn's parent landed on

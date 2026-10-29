@@ -177,6 +177,20 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   embers, a calm streak's fire) every frame at the display's refresh, down
   to 30fps only where the GPU can't keep up; find what really holds the
   frame up.
+- **Frame hitches from redrawing** (October 2026): every turn stuttered in
+  Chrome at 4K, and Delve's veins all the time. The trace showed `CrGpuMain`
+  busy drawing the page's tiles (the renderer's raster command buffer,
+  `DoRasterCHROMIUM`) for a page that hardly changed: something animated on
+  the page's thread, with no layer of its own, had Chrome redraw the layer
+  round it every frame. The emblems' kindle redrew each card's sharp face
+  (`docs/category-cards.md`, rule 7); the camera shake, a `translate` on
+  `.shell`, redrew the whole page, and a vein's tremor shakes it now and
+  then for as long as you stand in one (a quarter of the GPU's time at
+  rest). The shake now puts `.shell` on a layer while it may move
+  (`applyShake` in `src/lib/fx/core.ts`). To find the next one, sum the
+  raster tasks per frame; the categories `cc` and
+  `disabled-by-default-devtools.timeline.invalidationTracking` add which
+  layer was redrawn and what invalidated it.
 - **Frame hitches on iOS** are measured on the owner's iPhone, driven from
   the PC (`docs/iphone.md`, with what it found: layers composited after an
   animation WebKit can't bound, filters redrawn under a dialog, work that

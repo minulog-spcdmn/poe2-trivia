@@ -1377,6 +1377,21 @@
   .turn:global(.kindling.plain) .icon {
     animation-name: kindle-plain;
   }
+  /* (Chromium: the emblem on a layer of its own, always, so the kindle's
+     filter, changed every frame, never redraws the face round it. A sharp
+     face is drawn at twice its size through a filter; redrawn each frame of
+     three cards' kindles, it held the GPU most of a deal, and every turn
+     stuttered. Always, not while it kindles: a layer let go after it would
+     redraw the face once more. Already filtered and placed absolutely, it
+     lays out the same. Not WebKit: see the kindle above.) */
+  .sharp .icon {
+    will-change: filter, opacity;
+  }
+  /* (The way out's, likewise: its gilt's kindle, the swell and the lamp's
+     breath, which goes on for as long as the card lies there.) */
+  .sharp .card.out :global(.engraving > :is(.window, .glow, .lines, .lamp, .gilt)) {
+    will-change: filter, opacity;
+  }
   .turn:global(.dealt) .sheen::before {
     animation: sheen 0.8s var(--ease-out) calc(var(--face, 0ms) + 80ms) backwards;
   }
