@@ -56,10 +56,22 @@
   const journeyRows = $derived(rowsOf(JOURNEY, journey, journeyOf(B)));
   /** A first visit's steps, each a share of the visits that found no save. */
   const firsts = $derived(firstStepsOf(L));
+  /** " The start page's steps since Oct 28." where those (LATER_FIRSTS' first group) were first counted inside the period, after the rest. */
+  const laterSince = $derived.by(() => {
+    const from = firsts.steps.acted.from;
+    return from && from !== firsts.from && from > read.from ? ` The start page's steps, pressing a control to a practice answer, since ${shortDay(from)}.` : '';
+  });
   const firstRows = $derived.by((): ShareRow[] => {
     const was = firstStepsOf(B);
-    const of = (f: FirstSteps, step: (typeof FIRST_JOURNEY)[number]['step']) => (f.from ? shareOf(f.counts[step], f.visits) : null);
-    return FIRST_JOURNEY.map((s) => ({ name: s.name, count: firsts.from ? firsts.counts[s.step] : null, share: of(firsts, s.step), before: whole(was) ? of(was, s.step) : null, of: { now: firsts.visits, before: was.visits } }));
+    // Each step from the day it was counted (FirstSteps steps): the ones added later aren't a share of the days before them.
+    const of = (f: FirstSteps, step: (typeof FIRST_JOURNEY)[number]['step']) => (f.steps[step].from ? shareOf(f.counts[step], f.steps[step].visits) : null);
+    return FIRST_JOURNEY.map((s) => ({
+      name: s.name,
+      count: firsts.steps[s.step].from ? firsts.counts[s.step] : null,
+      share: of(firsts, s.step),
+      before: whole(was.steps[s.step]) ? of(was, s.step) : null,
+      of: { now: firsts.steps[s.step].visits, before: was.steps[s.step].visits },
+    }));
   });
   const stay = $derived(reachedOf(L, STAY.map((s) => s.step)));
   const stayRows = $derived(rowsOf(STAY, stay, reachedOf(B, STAY.map((s) => s.step))));
@@ -108,7 +120,7 @@
       {/if}
       {#if firsts.from}
         <h3>A first visit</h3>
-        <p class="hint">Visits that found no save: mostly first visits.{since(firsts)}</p>
+        <p class="hint">Visits that found no save: mostly first visits.{since(firsts)}{laterSince}</p>
         <Shares rows={firstRows} head="Step" label="First visits by how far they got" />
       {/if}
     </Section>

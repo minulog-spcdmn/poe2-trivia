@@ -718,7 +718,10 @@ class Session {
     if (!nameUsable(name)) return;
     this.delveLink = true;
     this.startLocal();
-    if (this.seatLocal(name)) this.dispatch({ type: 'start' });
+    if (!this.seatLocal(name)) return;
+    // A run alone begun, from wherever (a shared link, the Codex, the start page): a step (count.ts).
+    countStep('reach/solo');
+    this.dispatch({ type: 'start' });
   }
 
   /** Picks up a hot-seat game or a hosted room after a page refresh. */
@@ -782,6 +785,8 @@ class Session {
   // ---- hosting ----------------------------------------------------------
 
   host(name: string) {
+    // Its name passed (saved, typed or set in Settings): a step, a newcomer's at the queue's head (count.ts).
+    countStep('reach/host');
     this.reset();
     this.mode = 'host';
     this.status = 'connecting';
@@ -854,6 +859,7 @@ class Session {
         const s = this.newRoomGame('host-room-not-opened');
         if (!s) return;
         this.setState(s);
+        countStep('reach/room');
       }
       this.signOwnRoom(code);
       this.startPings();
@@ -940,6 +946,7 @@ class Session {
     const s = resume ?? this.newRoomGame();
     if (!s) return;
     this.setState(s);
+    if (!resume) countStep('reach/room');
     if (why) this.flash(`${why} You can still play here, on this device.`, 'info', { title: 'Playing on this device' });
   }
 

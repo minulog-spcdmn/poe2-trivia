@@ -95,22 +95,30 @@ function beacon(url: string) {
  * time, GAP_MS apart, the first after a random wait (JITTER_MS): a game's
  * start sends several at once, on every device at one router at the same
  * moment. The visit goes at once. What waits goes all at once as the page
- * is left: better a few turned away than all of them lost.
+ * is left: better a few turned away than all of them lost. A newcomer's
+ * first steps (HEAD_STEPS) wait at the head, behind the visit, so one who
+ * leaves within a second of pressing New game is still counted.
  */
 const GAP_MS = 600;
 const JITTER_MS = 2_000;
 const queue: string[] = [];
+/** How many at the queue's front went to its head (release `head`), so the next one waits behind them, not ahead. */
+let atHead = 0;
 let drainTimer: ReturnType<typeof setTimeout> | null = null;
 function drain() {
   drainTimer = null;
   const url = queue.shift();
+  if (atHead) atHead--;
   // Not if the privacy page was used to opt out meanwhile.
   if (url && !notCounted()) beacon(url);
   if (queue.length) drainTimer = setTimeout(drain, GAP_MS);
 }
-function release(url: string, now: boolean) {
+function release(url: string, now: boolean, head = false) {
   if (now && !queue.length && !drainTimer) return beacon(url);
-  if (now) queue.unshift(url);
+  if (now) {
+    queue.unshift(url);
+    atHead++;
+  } else if (head) queue.splice(atHead++, 0, url);
   else queue.push(url);
   drainTimer ??= setTimeout(drain, Math.random() * JITTER_MS);
 }
@@ -119,12 +127,14 @@ if (countsHere && typeof addEventListener !== 'undefined')
   addEventListener('pagehide', () => {
     if (drainTimer) clearTimeout(drainTimer);
     drainTimer = null;
-    if (!notCounted()) for (const url of queue.splice(0)) beacon(url);
+    atHead = 0;
+    const left = queue.splice(0);
+    if (!notCounted()) for (const url of left) beacon(url);
   });
 
 /** Whether the page has been seen yet: until it is, counts wait, so a tab opened in the background and closed unseen counts nothing. */
 let seen = typeof document === 'undefined' || document.visibilityState === 'visible';
-const waiting: { url: string; now: boolean }[] = [];
+const waiting: { url: string; now: boolean; head: boolean }[] = [];
 if (countsHere && !seen) {
   const look = () => {
     if (document.visibilityState !== 'visible') return;
@@ -132,19 +142,19 @@ if (countsHere && !seen) {
     seen = true;
     const held = waiting.splice(0);
     // Not if the privacy page was used to opt out while this page waited unseen.
-    if (!notCounted()) for (const w of held) release(w.url, w.now);
+    if (!notCounted()) for (const w of held) release(w.url, w.now, w.head);
   };
   document.addEventListener('visibilitychange', look);
 }
 
-/** Sends a count: in turn (release), or `now`, the visit, ahead of the rest. */
-function send(params: Record<string, string>, now = false) {
+/** Sends a count: in turn (release), or `now`, the visit, ahead of the rest, or at the `head`, behind the visit. */
+function send(params: Record<string, string>, now = false, head = false) {
   // Asked each time: the privacy page can set it while this page waits in the back-forward cache.
   // (Nor the load that switched counting: it counts nothing either way.)
   if (!counting || toggledOnLoad || notCounted()) return;
   const url = `${COUNTER_ORIGIN}/count?${new URLSearchParams({ ...params, rnd: Math.random().toString(36).slice(2) })}`;
-  if (seen) release(url, now);
-  else waiting.push({ url, now });
+  if (seen) release(url, now, head);
+  else waiting.push({ url, now, head });
 }
 
 const sameSite = (referrer: string, here: string) => {
@@ -209,6 +219,19 @@ export function recencyEvent(played: Played | null, now: number): string | null 
 
 /** The week this device first played in ("cohort/2026-W43"), so the visitors of each week can be followed; none for no save. */
 export const cohortEvent = (played: Played | null) => (played ? `cohort/${isoWeek(played.first)}` : null);
+
+/**
+ * What a visit is marked with from the save: its recency (recencyEvent) and,
+ * only beside a "visit/back-…", its cohort. A page opened again within
+ * VISIT_MS of the last play marks neither: until 2026-10-28 it still sent
+ * its cohort, so a week's cohort counted more than its visits back.
+ */
+export function visitMarks(played: Played | null, now: number): string[] {
+  // ("visit/new" is a save's absence, which has no cohort.)
+  const back = recencyEvent(played, now);
+  const cohort = cohortEvent(played);
+  return !back ? [] : cohort ? [back, cohort] : [back];
+}
 
 /** The tag of a link made to be counted apart (poe2.quest/?ref=reddit-oct), sent as its campaign; null for none or one that isn't a plain short word. */
 export function campaignOf(search: string): string | null {
@@ -281,7 +304,7 @@ export function countVisit(save: () => Played | null, campaign: string | null, i
     const p = playedHere();
     newcomer = firstVisit(p, Date.now());
     if (back) return;
-    for (const e of [recencyEvent(p, Date.now()), cohortEvent(p)]) if (e) countReach(e);
+    for (const e of visitMarks(p, Date.now())) countReach(e);
     if (asApp()) countReach('visit/app');
   });
 }
@@ -303,24 +326,126 @@ const reached = new Set<string>();
  * page loads ("reach/page", countPage) it says what share got that far. Sent
  * once a page load.
  */
-export function countReach(name: string) {
+export function countReach(name: string, head = false) {
   if (reached.has(name) || !counting) return;
   reached.add(name);
-  send({ p: name, t: name, e: 'true' });
+  send({ p: name, t: name, e: 'true' }, false, head);
 }
 
 /** A page load that counts, reloads and coming back too: what the steps are set against, as they're counted on every load as well. */
 export const countPage = () => countReach('reach/page');
 
-/** The steps a newcomer's are counted apart too ("new/played"). */
-const NEWCOMER_STEPS = new Set(['reach/lobby', 'reach/played', 'reach/finished']);
-/** A step reached in a game (Steps), and for a visit whose device had no save, as a newcomer's too. */
-export function countStep(name: string) {
-  countReach(name);
-  if (!NEWCOMER_STEPS.has(name) || !counting || notCounted()) return;
-  // (A first step before the idle moment reads the save now: nothing played here has written to it yet.)
+/**
+ * The steps a newcomer's are counted apart too ("new/played"): a game's
+ * (Steps), and the start page's way into one: New game tapped
+ * ("reach/create"), a room asked for under a name that passed
+ * ("reach/host", session host), that room's lobby, online or on this device
+ * ("reach/room"), a run alone begun ("reach/solo", session startDelve), the
+ * Daily answered ("reach/daily", countDaily), a practice question
+ * ("reach/practice") and a run begun from the Daily's IDENTIFY MORE
+ * ("reach/identify", counted as it calls session startDelve, so it's a
+ * "reach/solo" too). The ones that aren't "reach/…" are a newcomer's only:
+ * the first press of a control ("new/acted", countActed) and how long the
+ * page took to become usable ("load/ready-2s", countReady).
+ */
+const NEWCOMER_STEPS = new Set([
+  'reach/lobby',
+  'reach/played',
+  'reach/finished',
+  'reach/create',
+  'reach/host',
+  'reach/room',
+  'reach/solo',
+  'reach/daily',
+  'reach/practice',
+  'reach/identify',
+  'new/acted',
+  'load/ready-2s',
+  'load/ready-5s',
+  'load/ready-10s',
+  'load/ready-later',
+]);
+/** A newcomer's steps that go to the queue's head (release): one who leaves at the portal pressed these within a second or so. */
+const HEAD_STEPS = new Set(['new/acted', 'new/create', 'new/host']);
+
+/**
+ * Whether this load is a newcomer's (firstVisit), the save read now if the
+ * visit's idle moment hasn't read it yet: kept, so it's read once a load,
+ * and only while counting (readPlayed is set only then). Asked before what's
+ * being counted writes to the save: a game's step, or the Daily's answer
+ * (the codex records it after).
+ */
+function isNewcomer(): boolean {
   if (readPlayed && played === undefined) newcomer = firstVisit(playedHere(), Date.now());
-  if (newcomer) countReach(name.replace('reach/', 'new/'));
+  return newcomer;
+}
+
+/** A step reached (NEWCOMER_STEPS' "reach/…" ones), and for a visit whose device had no save, as a newcomer's too; a newcomer's own ones for theirs alone. */
+export function countStep(name: string) {
+  if (name.startsWith('reach/')) countReach(name);
+  if (!NEWCOMER_STEPS.has(name) || !counting || notCounted() || !isNewcomer()) return;
+  const step = name.replace('reach/', 'new/');
+  countReach(step, HEAD_STEPS.has(step));
+}
+
+/**
+ * Today's unique answered ("daily/right", "daily/wrong", each time): as a
+ * step, a newcomer's too ("new/daily"), and from a load that isn't a
+ * newcomer's, "daily/back", so it says whether those who come back use it.
+ */
+export function countDaily(good: boolean) {
+  countEvent(good ? 'daily/right' : 'daily/wrong');
+  countStep('reach/daily');
+  if (counting && readPlayed && !notCounted() && !isNewcomer()) countReach('daily/back');
+}
+
+/** What a press is on that counts as acting: a control, not the page around it. */
+const CONTROL =
+  'button, a[href], input, select, textarea, summary, label, [role="button"], [role="tab"], [role="option"], [role="menuitem"], [role="checkbox"], [role="switch"], [tabindex]:not([tabindex="-1"])';
+
+/**
+ * A newcomer's first press of a control ("new/acted"): a click on one,
+ * which a tap, a mouse's press or a key gives, never a touch that scrolls
+ * or one on the page around them. Heard first (capture), before the control
+ * acts, so it goes out ahead of what it starts.
+ */
+export function countActed() {
+  if (!counting || typeof addEventListener === 'undefined') return;
+  const onClick = (e: Event) => {
+    // (Not a click a script gave.)
+    if (!e.isTrusted) return;
+    const t = e.target as { closest?: (s: string) => unknown } | null;
+    if (!t?.closest?.(CONTROL)) return;
+    removeEventListener('click', onClick, { capture: true });
+    countStep('new/acted');
+  };
+  addEventListener('click', onClick, { capture: true });
+}
+
+/** How long a page took to become usable (countReady), in coarse marks: within 2 s, 5 s, 10 s, or later. */
+export const readyEvent = (ms: number) => (ms <= 2_000 ? 'load/ready-2s' : ms <= 5_000 ? 'load/ready-5s' : ms <= 10_000 ? 'load/ready-10s' : 'load/ready-later');
+
+/**
+ * How long a newcomer's page took to become usable ("load/ready-5s"), from
+ * the start of its navigation: the app mounted (the start menu, on a first
+ * visit) and a frame drawn with its fonts loaded. Called once the app is
+ * mounted (main.ts). Nothing for a page that went unseen meanwhile: its
+ * frames wait for it.
+ */
+export function countReady() {
+  if (!counting || typeof document === 'undefined' || typeof requestAnimationFrame === 'undefined') return;
+  let hidden = document.visibilityState !== 'visible';
+  const onHide = () => void (hidden ||= document.visibilityState !== 'visible');
+  document.addEventListener('visibilitychange', onHide);
+  const frame = () => new Promise<void>((r) => requestAnimationFrame(() => r()));
+  // A frame first, so the fonts the start menu uses have begun loading before they're waited for.
+  void frame()
+    .then(() => document.fonts?.ready)
+    .then(frame)
+    .then(() => {
+      document.removeEventListener('visibilitychange', onHide);
+      if (!hidden) countStep(readyEvent(performance.now()));
+    });
 }
 
 /**
