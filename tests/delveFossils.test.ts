@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   ALL_FOSSILS,
   FOSSILS,
@@ -10,13 +11,14 @@ import {
   fossilChance,
   fossilMask,
   fossilsIn,
+  heldFor,
   holds,
   isFossilMask,
   lackedBy,
   type FossilId,
   type FossilTaker,
 } from '../src/lib/fossils.ts';
-import { FOSSILS_KEY, FOSSILS_VERSION, emptyFossils, heldMask, keepFossils, loadFossils, mergeFossils, parseFossils, serializeFossils, type FossilStore } from '../src/lib/fossilStore.ts';
+import { FOSSILS_KEY, FOSSILS_VERSION, emptyFossils, heldMask, keepFossils, keepRunFossils, loadFossils, mergeFossils, parseFossils, resetFossils, serializeFossils, type FossilStore } from '../src/lib/fossilStore.ts';
 import { DELVE_RULESET, findOn, fossilOffer, fossilOn, fossilsOf, isWayOut, itemsWorkOn, livesOf, runFossils, shownDepth } from '../src/lib/delve.ts';
 import type { DelveRun } from '../src/lib/delveRecord.ts';
 import type { GameState } from '../src/lib/game.ts';
@@ -427,4 +429,48 @@ test('a run’s fossils are read sanely from its state, and by whom', () => {
   assert.deepEqual(runFossils(s).map((f) => f.id), ['jagged', 'dense']);
   assert.deepEqual(fossilsOf(s, 'p1'), ['dense']);
   assert.deepEqual(runFossils({} as GameState), []);
+});
+
+// ---- the code review's fixes ------------------------------------------------------------
+
+test('a run’s fossils are kept from its state: a guest that missed the reveal (a dropped link, a reload) still keeps theirs, once', () => {
+  store.clear();
+  const given = [
+    { id: 'jagged' as const, depth: 9, at: 1000, to: ['p1'] },
+    { id: 'dense' as const, depth: 12, at: 2000, to: ['p0'] },
+  ];
+  assert.deepEqual(keepRunFossils(given, 'p1', false, true), ['jagged']);
+  assert.deepEqual(keepRunFossils(given, 'p1', false, true), [], 'the next state keeps nothing twice');
+  assert.deepEqual(loadFossils(), { found: { jagged: { at: 1000, depth: 9, together: true } } });
+  assert.deepEqual(keepRunFossils(given, null, false, true), [], 'a device with no player in the run');
+  store.clear();
+  assert.deepEqual(keepRunFossils(given, null, true, false), ['jagged', 'dense'], 'on one device, whoever played');
+  store.clear();
+});
+
+test('the deal reads an away guest’s own fossils, not the host’s; the host’s only for its own players', () => {
+  const known = new Map([['p1', fossilMask(['dense'])]]);
+  let reads = 0;
+  const here = () => (reads++, fossilMask(['jagged', 'gilded']));
+  const own = (id: string) => id === 'p0' || id === 'p3';
+  // p1 away (their link dropped, still standing): their last mask; p2 never heard from: none; p0 and p3 at the host's screen.
+  assert.deepEqual(heldFor(['p0', 'p1', 'p2', 'p3'], known, own, here), [fossilMask(['jagged', 'gilded']), fossilMask(['dense']), 0, fossilMask(['jagged', 'gilded'])]);
+  assert.equal(reads, 1, 'this device’s store read once');
+});
+
+test('erasing the codex erases the fossils, what was kept aside of them, and the Delve page shows it at once', () => {
+  store.clear();
+  // A damaged entry, kept aside as the next write comes.
+  store.set(FOSSILS_KEY, '{"v":1,"found":');
+  keepFossils(['jagged'], 9, false, 1000);
+  assert.ok([...store.keys()].some((k) => k.startsWith(`${FOSSILS_KEY}.`)), 'kept aside');
+  resetFossils();
+  assert.deepEqual([...store.keys()].filter((k) => k.startsWith(FOSSILS_KEY)), []);
+  assert.deepEqual(loadFossils(), emptyFossils());
+  // The page's grid reads the codex's own store, loaded again as it erases (Codex.svelte reset), not only on another tab's change.
+  const codex = readFileSync(new URL('../src/components/Codex.svelte', import.meta.url), 'utf8');
+  const reset = codex.slice(codex.indexOf('function reset()'), codex.indexOf('confirmReset = false;'));
+  assert.match(reset, /resetFossils\(\);[\s\S]*fossils = loadFossils\(\);/);
+  assert.match(codex, /<CodexDelve [^>]*\{fossils\}/);
+  store.clear();
 });

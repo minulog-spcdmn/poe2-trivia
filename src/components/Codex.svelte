@@ -28,7 +28,7 @@
   import CodexDelve from './CodexDelve.svelte';
   import { DELVE_RECORD_KEY, deepestShown, loadRecords, resetRecords } from '../lib/delveRecord';
   import { onStoredElsewhere } from '../lib/storage';
-  import { resetFossils } from '../lib/fossilStore';
+  import { FOSSILS_KEY, loadFossils, resetFossils } from '../lib/fossilStore';
   import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, WINS_KEY, checkAchievements, loadAchievements, loadWins, resetAchievements } from '../lib/achievements';
   import { announceAchievements } from '../lib/achievementToasts';
   import { countReach } from '../lib/count';
@@ -38,6 +38,7 @@
   let codex = $state.raw(loadCodex());
   let practice = $state.raw(loadPractice());
   let delve = $state.raw(loadRecords());
+  let fossils = $state.raw(loadFossils());
   // Brought up to date with the codex first (it is read the same way), so
   // the page never shows one done but not earned.
   announceAchievements(checkAchievements(engine.items), 'codex');
@@ -55,6 +56,7 @@
       [CODEX_KEY]: () => (codex = loadCodex()),
       [PRACTICE_KEY]: () => (practice = loadPractice()),
       [DELVE_RECORD_KEY]: () => (delve = loadRecords()),
+      [FOSSILS_KEY]: () => (fossils = loadFossils()),
       [ACHIEVEMENTS_KEY]: () => (achievements = loadAchievements()),
       [WINS_KEY]: () => (wins = loadWins()),
     }),
@@ -385,6 +387,7 @@
     codex = loadCodex();
     practice = loadPractice();
     delve = loadRecords();
+    fossils = loadFossils();
     achievements = loadAchievements();
     wins = loadWins();
     confirmReset = false;
@@ -575,7 +578,7 @@
 
   <div class="page" class:turned id="codex-page" role={kept ? 'tabpanel' : undefined} aria-labelledby={kept ? `codex-tab-${tab}` : undefined}>
   {#if tab === 'delve' && kept}
-    <CodexDelve {codex} records={delve} onopen={(it) => (open = it)} onbegin={beginDelve} />
+    <CodexDelve {codex} records={delve} {fossils} onopen={(it) => (open = it)} onbegin={beginDelve} />
   {:else if tab === 'feats' && kept}
     <CodexAchievements {codex} records={delve} store={achievements} {wins} items={engine.items} />
   {:else}
@@ -863,9 +866,9 @@
   {#if kept}
     <footer class="end">
       {#if sync.code && sync.met}
-        <p>Your codex, your Delve runs and your achievements live in this browser and on the devices it syncs with; clearing the site’s data erases them here.</p>
+        <p>Your codex, your Delve runs and fossils and your achievements live in this browser and on the devices it syncs with; clearing the site’s data erases them here.</p>
       {:else}
-        <p>Your codex, your Delve runs and your achievements live in this browser only; clearing the site’s data erases them.</p>
+        <p>Your codex, your Delve runs and fossils and your achievements live in this browser only; clearing the site’s data erases them.</p>
       {/if}
       <button class="btn danger small" onclick={() => (confirmReset = true)}>Erase codex</button>
     </footer>

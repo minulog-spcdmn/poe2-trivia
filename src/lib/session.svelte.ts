@@ -54,7 +54,7 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, livesOf, pausedUsed, standingIds, type CardFind, type FindKind } from './delve';
+import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, runFossils, livesOf, pausedUsed, standingIds, type CardFind, type FindKind } from './delve';
 import { GameCounts, Steps, countEvent, countFailure, countStep, counting, markActive, type Failure, type JoinVia } from './count';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
@@ -96,8 +96,8 @@ import type { PlayerClass } from './classSigils';
 import { helloRefusal, noPrivate, parseSaved, privateFrom, rememberSecret, soloHotSeat, takesState, tooFast, type HostPrivate, type Saved } from './sessionRules';
 import { sawLine, START_LINES } from './delveStart';
 import { seenLines } from './delveStartSeen';
-import { heldMask, keepFossils, loadFossils } from './fossilStore';
-import { fossilMask } from './fossils';
+import { heldMask, keepRunFossils, loadFossils } from './fossilStore';
+import { fossilMask, heldFor } from './fossils';
 import { keepAwake } from './wakeLock';
 import { AWAY_AFTER_MS, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
 import { markStarted } from './started';
@@ -2702,13 +2702,13 @@ class Session {
    * a guest's as its hello said and runs since gave, this device's for anyone playing at it.
    */
   fossilsHeld(ids: string[]): number[] {
-    const guests = [...this.guests.values()];
-    let here: number | null = null;
-    return ids.map((id) => {
-      const guest = guests.find((g) => g.playerId === id);
-      return guest ? (guest.fossils ?? 0) : (here ??= heldMask(loadFossils()));
-    });
+    for (const g of this.guests.values()) if (g.playerId && g.fossils !== undefined) this.guestFossils.set(g.playerId, g.fossils);
+    const players = this.state?.players ?? [];
+    const own = (id: string) => this.mode === 'local' || id === this.myPlayerId || !!players.find((p) => p.id === id)?.local;
+    return heldFor(ids, this.guestFossils, own, () => heldMask(loadFossils()));
   }
+  /** Host: the fossils each guest's device holds by player id (fossilsHeld), kept past a dropped link. */
+  private guestFossils = new Map<string, number>();
 
   /** The grayscale a question's art is prepared with: the rules', or as rolled for it in Delve (the lab may force one). */
   private grayscaleOf(s: GameState): Grayscale {
@@ -2734,7 +2734,10 @@ class Session {
     }
     // A fossil a run gave a guest is theirs from now, for the next run's deal too (their hello isn't sent again).
     const gave = next.reveal?.fossil;
-    if (this.isHost && gave && prev?.reveal?.fossil !== gave) for (const g of this.guests.values()) if (g.playerId && gave.to.includes(g.playerId)) g.fossils = (g.fossils ?? 0) | fossilMask([gave.id]);
+    if (this.isHost && gave && prev?.reveal?.fossil !== gave) {
+      for (const g of this.guests.values()) if (g.playerId && gave.to.includes(g.playerId)) g.fossils = (g.fossils ?? 0) | fossilMask([gave.id]);
+      for (const id of gave.to) if (this.guestFossils.has(id)) this.guestFossils.set(id, this.guestFossils.get(id)! | fossilMask([gave.id]));
+    }
     // The art's workers are ready before the first question wants them (media.svelte.ts; once is enough).
     if (this.isHost && next.phase !== 'lobby') warmMedia();
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
@@ -2845,16 +2848,17 @@ class Session {
   }
 
   /**
-   * A fossil the reveal gave this device's player (fossils.ts) goes into
-   * this browser's at once (fossilStore.ts), with its depth; on one device,
-   * whoever played. Not after a refresh into the reveal: it was kept before.
+   * The fossils a run gave this device's player (fossils.ts) go into this
+   * browser's (fossilStore.ts keepRunFossils), with their depths; on one
+   * device, whoever played. Read from the run's state as it comes, not from
+   * the reveal, so a dropped link or a reload never loses one; only when the
+   * run has given more than the last state said (or this is the first).
    */
   private noteFossil(prev: GameState | null, next: GameState) {
-    const gave = next.reveal?.fossil;
-    if (!prev || !gave || !next.delve || next.phase !== 'reveal') return;
-    if (prev.phase === 'reveal' && prev.question?.askedAt === next.question?.askedAt) return;
-    if (this.mode !== 'local' && !gave.to.includes(this.myPlayerId ?? '')) return;
-    keepFossils([gave.id], next.round, isGroupRun(next));
+    const given = runFossils(next);
+    if (!given.length) return;
+    if (prev && prev.delve?.startedAt === next.delve?.startedAt && runFossils(prev).length === given.length) return;
+    keepRunFossils(given, this.myPlayerId, this.mode === 'local', isGroupRun(next));
   }
 
   private gameCounts = new GameCounts();

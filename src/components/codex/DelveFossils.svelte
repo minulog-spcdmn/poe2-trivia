@@ -4,8 +4,8 @@
   // its art; the rest stand as silhouettes. Choosing one (a click, a tap, a
   // key, or the pointer resting on it) shows it under the grid as the game's
   // own tooltip would: its name and its crafting effect in Fontin, and when
-  // and how deep it was found. Its box keeps its height whichever is shown,
-  // so nothing below jumps. Kept in this browser (lib/fossilStore.ts), and on
+  // and how deep it was found. Its box is as tall as the tallest it can
+  // show, so nothing below jumps. Kept in this browser (lib/fossilStore.ts), and on
   // the devices it syncs with.
   import { FOSSILS, FOSSIL_COUNT, FOSSIL_DEAL, fossilArt, type Fossil, type FossilId } from '../../lib/fossils';
   import { FOSSILS_KEY, loadFossils, type FossilStore } from '../../lib/fossilStore';
@@ -59,18 +59,27 @@
         </li>
       {/each}
     </ul>
+    <!-- Every tooltip the grid can show, stacked in one place with only the chosen one seen: the box is as tall as
+         the tallest of them, no taller, so nothing below moves as the choice changes. -->
     <div class="tip" id="{uid}-tip" aria-live="polite">
-      {#if shown && found[shown.id]}
-        {@const got = found[shown.id]!}
-        <p class="name">{shown.name}</p>
-        {#each shown.effect as line, i (i)}<p class="effect">{line}</p>{/each}
-        <p class="when">Found {date(got.at)} at depth <span class="n">{shownDepth(got.depth)}</span>{got.together ? ' in a run together' : ''}.{shown.rare ? ' One of the eight rare ones.' : ''}</p>
-      {:else if shown}
-        <p class="name unknown">Not found yet</p>
-        <p class="when">{shown.rare ? `A rare one: none above depth ${rareFrom}, and more often the deeper you go.` : `A common one: it can turn up from depth ${commonFrom}, and more often beside a find.`}</p>
-      {:else}
-        <p class="name unknown">None found yet</p>
-        <p class="when">Now and then a card on a Delve offer holds a fossil. Pick it and answer right, and it is yours.</p>
+      {#each FOSSILS as f (f.id)}
+        {@const got = found[f.id]}
+        <div class="face" class:shown={shown?.id === f.id} aria-hidden={shown?.id !== f.id}>
+          {#if got}
+            <p class="name">{f.name}</p>
+            {#each f.effect as line, i (i)}<p class="effect">{line}</p>{/each}
+            <p class="when">Found {date(got.at)} at depth <span class="n">{shownDepth(got.depth)}</span>{got.together ? ' in a run together' : ''}.{f.rare ? ' One of the eight rare ones.' : ''}</p>
+          {:else}
+            <p class="name unknown">Not found yet</p>
+            <p class="when">{f.rare ? `A rare one: none above depth ${rareFrom}, and more often the deeper you go.` : `A common one: it can turn up from depth ${commonFrom}, and more often beside a find.`}</p>
+          {/if}
+        </div>
+      {/each}
+      {#if !count}
+        <div class="face" class:shown={!shown} aria-hidden={!!shown}>
+          <p class="name unknown">None found yet</p>
+          <p class="when">Now and then a card on a Delve offer holds a fossil. Pick it and answer right, and it is yours.</p>
+        </div>
       {/if}
     </div>
   </div>
@@ -147,9 +156,16 @@
   .cell.rare {
     border-color: color-mix(in srgb, var(--gold) 45%, var(--line));
   }
-  .cell:hover,
-  .cell.on {
+  .cell:hover {
     border-color: var(--gold);
+  }
+  /* The one shown below: its own bright ring and a warmer plate, plainly apart from the rare ones' gold edges. */
+  .cell.on {
+    border-color: var(--gold-hi);
+    box-shadow:
+      0 0 0 1px var(--gold-hi),
+      0 0 8px rgba(252, 220, 150, 0.45);
+    background: radial-gradient(circle at 50% 45%, rgba(255, 220, 160, 0.2), transparent 75%), #1a140c;
   }
   .cell:focus-visible {
     outline: 2px solid var(--gold-hi);
@@ -174,10 +190,17 @@
 
   /* The game's tooltip: the name in its currency colour, the effect in its blue (ItemDetails.svelte). */
   .tip {
-    min-height: 7.6rem;
+    display: grid;
     text-align: center;
     font-family: var(--font-tooltip);
     font-variant-numeric: lining-nums;
+  }
+  .face {
+    grid-area: 1 / 1;
+    visibility: hidden;
+  }
+  .face.shown {
+    visibility: visible;
   }
   .tip p {
     margin: 0;

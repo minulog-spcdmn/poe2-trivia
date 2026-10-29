@@ -7,8 +7,9 @@
 // it leaves them be; one with a newer format (a higher version) is never
 // written over (keepAside.ts).
 
-import { openStored } from './keepAside.ts';
+import { clearAside, openStored } from './keepAside.ts';
 import { FOSSIL_IDS, fossilMask, isFossilId, type FossilId } from './fossils.ts';
+import type { RunFossil } from './game.ts';
 import { removeStored, storeKey, tryReadStored, writeStored } from './storage.ts';
 
 /** One fossil found: when first (ms since 1970, this device's clock or the one it came from), and at which depth (the engine's: delve.ts shownDepth shows it). */
@@ -126,5 +127,22 @@ export function absorbFossils(raw: string): boolean {
   return next !== was && writeStored(NAME, serializeFossils(next));
 }
 
-/** Lets go of every fossil (the codex erased). */
-export const resetFossils = () => removeStored(NAME);
+/** Lets go of every fossil (the codex erased), and of what was kept aside of them. */
+export function resetFossils() {
+  removeStored(NAME);
+  clearAside(NAME);
+}
+
+/**
+ * Keeps every fossil a run gave this device's player (`me`; on one device,
+ * `local`, whoever played): read from the run's own state (Delve fossils),
+ * not the moment it was given, so a guest whose link dropped over the
+ * reveal, or who reloaded into the depth after it, still keeps it. Those
+ * already kept are skipped (keepFossils), so it can run on every state.
+ * Says which were new.
+ */
+export function keepRunFossils(given: readonly RunFossil[], me: string | null, local: boolean, together: boolean): FossilId[] {
+  const kept: FossilId[] = [];
+  for (const f of given) if (local || (me !== null && f.to.includes(me))) kept.push(...keepFossils([f.id], f.depth, together, f.at));
+  return kept;
+}

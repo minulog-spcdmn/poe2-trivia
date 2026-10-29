@@ -123,6 +123,19 @@ export const holds = (m: number, id: FossilId) => (m & bitOf(id)) !== 0;
 /** The fossils in mask `m`, in FOSSILS' order. */
 export const fossilsIn = (m: number): FossilId[] => FOSSIL_IDS.filter((id) => holds(m, id));
 
+/**
+ * The host's answer to the deal's question of what each of `ids` holds
+ * (Engine.setFossilsHeld): a guest's device's mask as its hello said (and
+ * runs since gave), kept by player id past a dropped link, so a player away
+ * from a run they still stand in is dealt as themselves; this device's own
+ * (`here`) only for its own players (the host, those at its screen, `own`).
+ * A player never heard from holds none.
+ */
+export function heldFor(ids: readonly string[], known: ReadonlyMap<string, number>, own: (id: string) => boolean, here: () => number): number[] {
+  let mine: number | null = null;
+  return ids.map((id) => (own(id) ? (mine ??= here()) : (known.get(id) ?? 0)));
+}
+
 // ---- the deal ------------------------------------------------------------------
 
 /**
