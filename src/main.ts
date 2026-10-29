@@ -25,9 +25,12 @@ import { whenIdle } from './lib/idle';
 import { lastPlayed } from './lib/lastPlayed';
 import { toasts } from './lib/toasts.svelte';
 import { bootSync } from './lib/sync/boot.svelte';
+import { ensureName } from './lib/madeName';
 
 // First: a pairing link's code leaves the address before anything reads it (lib/sync/boot.svelte.ts).
 bootSync();
+// A newcomer is never asked a name: one is made for a browser without one (lib/madeName.ts).
+ensureName();
 installUiSounds();
 installSpatial();
 installUiFx();

@@ -105,6 +105,9 @@ export function nameRefusal(name: string): NameRefusal | null {
   return reason ? { reason } : null;
 }
 
+/** Who a player is with no name of their own: the greeting's, and a run alone's (never saved). */
+export const NAMELESS = 'Exile';
+
 /** Whether this device can play under a name: long enough, not reserved, not held. */
 export const nameUsable = (name: string) => nameRefusal(name) === null;
 

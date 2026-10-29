@@ -88,6 +88,13 @@
     if (session.seatLocal(name)) newName = '';
   }
 
+  // Arriving from the start page leaves focus on the page itself: a screen
+  // reader then starts the room's top, at its unseen heading, and Tab goes on from there.
+  let heading = $state<HTMLHeadingElement>();
+  onMount(() => {
+    if (document.activeElement === document.body || !document.activeElement) heading?.focus({ preventScroll: true });
+  });
+
   // Players already here when the lobby opens just appear; newcomers get an entrance.
   let settled = false;
   onMount(() => {
@@ -328,6 +335,7 @@
      A host and a guest see different controls in the same places (a setting's choices or its value, Begin or the wait
      for it), so those share their row's anchor, and what only a host has falls back to it on a guest's screen. -->
 <div class="lobby" class:online={!local} data-cursor="game">
+  <h1 class="sr" tabindex="-1" bind:this={heading}>Your room</h1>
   <div class="cols">
     <div class="col side">
       {#if !local && !hereOnly}
@@ -670,6 +678,17 @@
 {/if}
 
 <style>
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .sr:focus {
+    outline: none;
+  }
   /* The start page's stage: 1200 wide in the middle of the window. */
   .lobby {
     width: min(980px, 100%);

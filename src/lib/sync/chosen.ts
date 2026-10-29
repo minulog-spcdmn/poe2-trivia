@@ -2,9 +2,12 @@
 // under and the colour they'd like (lib/sync/shared.ts passes them on). Each
 // device keeps when each was last chosen there, and the latest choice
 // stands everywhere. A name this device can't play under (the held one,
-// without the owner key: lib/names.ts) is never taken in.
+// without the owner key: lib/names.ts) is never taken in. A name made here
+// for a newcomer (lib/madeName.ts) is no choice: it is never sent, and any
+// name chosen on another device replaces it.
 
 import { COLOUR_NAME } from '../colour.ts';
+import { isMadeName } from '../madeName.ts';
 import { NAME_STORED, cleanName, nameUsable } from '../names.ts';
 import { isChoosableHue } from '../palette.ts';
 import { onStoredHere, readStored, removeStored, writeStored } from '../storage.ts';
@@ -72,9 +75,15 @@ export function stampChoices(): () => void {
   });
 }
 
+/** This device's own choice: none for a name made here, not chosen. */
+function ownChoice(c: Choice): string | null {
+  const v = readStored(CHOICES[c].stored);
+  return c === 'name' && isMadeName(v) ? null : v;
+}
+
 /** This device's choice, to send: its value (null: none) and when it was made (0: before that was kept); null when there is nothing to say. */
 export function chosenNow(c: Choice): string | null {
-  const v = readStored(CHOICES[c].stored);
+  const v = ownChoice(c);
   const at = madeAt(c, v);
   return v === null && !at ? null : JSON.stringify({ v, at });
 }
@@ -97,7 +106,7 @@ export function takeChosen(c: Choice, raw: string, now = Date.now()): boolean {
   }
   const { stored, fits } = CHOICES[c];
   if (theirs.v !== null && !fits(theirs.v)) return false;
-  const mine = readStored(stored);
+  const mine = ownChoice(c);
   const mineAt = madeAt(c, mine);
   const newer = theirs.at > mineAt || (!mineAt && mine === null && theirs.v !== null);
   if (!newer || theirs.v === mine) return false;

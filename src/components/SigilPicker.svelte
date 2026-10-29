@@ -17,6 +17,7 @@
   import { SIGILS_KEY, achievementsToNext, loadSigils, sigilsToUnlock, unlockSigil, wearSigil } from '../lib/sigils';
   import { onStoredElsewhere } from '../lib/storage';
   import { savedName, session } from '../lib/session.svelte';
+  import { NAMELESS } from '../lib/names';
   import { COLOUR_KEY, loadColour } from '../lib/colour';
   import { reservedHueOf } from '../lib/game';
   import Avatar from './Avatar.svelte';
@@ -28,7 +29,7 @@
     strip = false,
     hue,
   }: { achievements: number; unlocked?: number; strip?: boolean; hue?: number } = $props();
-  const name = savedName() || 'Exile';
+  const name = savedName() || NAMELESS;
   // The colour picked (lib/colour.ts), or the one kept for the name, unless
   // the page that has it says (the settings, as it's picked there).
   const own = () => reservedHueOf(name) ?? loadColour() ?? 0;

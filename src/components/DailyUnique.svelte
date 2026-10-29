@@ -36,7 +36,13 @@
   import ArtImage from './ArtImage.svelte';
   import DailyStreak, { BADGE_IN_MS } from './DailyStreak.svelte';
 
-  let { disabled = false }: { disabled?: boolean } = $props();
+  /**
+   * `newcomer`: a browser that has started no game here (the start page
+   * tells; null until it has): once answered, Identify more takes Practice
+   * more's place, a run alone (`onIdentify`). `lead`: it holds the page's
+   * gold, while nothing else there does.
+   */
+  let { disabled = false, newcomer = false, onIdentify, lead = false }: { disabled?: boolean; newcomer?: boolean | null; onIdentify?: () => void; lead?: boolean } = $props();
 
   // The clock moves on (the hours or minutes left, and past midnight UTC a new day):
   // just past each whole minute, when the minutes left go down, and at once
@@ -448,8 +454,13 @@
           <span aria-live="off">{nextIn(now)}</span>
         {/if}
       </p>
-      <!-- After the result, as in the game: what happened first, then the way on. -->
-      <button class="btn small" bind:this={practiceEl} onclick={practiceMore} {disabled} in:fade={{ duration: 250 }}>Practice more</button>
+      <!-- After the result, as in the game: what happened first, then the way on;
+           a newcomer's into the game itself, a run alone, rather than practice. -->
+      {#if newcomer && onIdentify}
+        <button class="btn small" class:primary={lead} bind:this={practiceEl} onclick={onIdentify} {disabled} in:fade={{ duration: 250 }}>Identify more</button>
+      {:else if newcomer !== null}
+        <button class="btn small" bind:this={practiceEl} onclick={practiceMore} {disabled} in:fade={{ duration: 250 }}>Practice more</button>
+      {/if}
     {/if}
   </div>
 </section>
