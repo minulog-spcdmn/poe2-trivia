@@ -658,9 +658,11 @@ they're worth more sigils than are unlocked already. Kept in this browser (`src/
     load, two words in the game's manner ("Ashen Wanderer",
     `src/lib/madeName.ts`), saved as its name, so a newcomer is never asked
     for one: New game, a join by code and an open room go straight on. The
-    start page greets it with "Welcome," and the quill and "Choose your own
-    name" beside it, at rest. A name the player chose is greeted with
-    "Welcome back," once a game has been started here (`src/lib/started.ts`).
+    start page greets it with "Welcome," and, until the first game, the
+    quill and "Choose your own name" at rest (beside the name; on touch the
+    name starts a line of its own after the comma). Once a game has been started here
+    (`src/lib/started.ts`) the greeting is anyone's: "Welcome back,", the
+    quill on hover.
     Sync never sends a made name, and a name chosen on a paired device
     replaces it. A room that turns a made name away as taken (two
     newcomers drew the same one) is joined again at once under another

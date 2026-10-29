@@ -113,15 +113,17 @@
    * answer in a game). Null until that's known.
    */
   const newcomer = $derived(started ? false : answered === null ? null : !answered);
-  /** Whether the name is still the one made for this browser: the greeting then says, at rest, that a name of one's own can be chosen. */
+  /** Whether the name is still the one made for this browser (lib/madeName.ts). */
   const made = $derived(isMadeName(known));
   const rename = $derived(made ? 'Choose your own name' : 'Change your name');
   /**
-   * Greeted as back again by a name the player chose, once a game has been
-   * started here (or until that's known). A made name is only welcomed: with
-   * its quill's words it fills the wide layout's line, which "back" would wrap.
+   * A made name, before the first game: the greeting says at rest that a name
+   * of one's own can be chosen. After it (or once one is), the greeting is as
+   * for anyone, never nagging a player happy with the name made for them.
    */
-  const welcomeBack = $derived(!!known && !made && newcomer !== true);
+  const askChoose = $derived(made && newcomer !== false);
+  /** Greeted as back again once a game has been started here; until that's known, by a name the player chose (not one made for them). */
+  const welcomeBack = $derived(!!known && (newcomer === false || (newcomer === null && !made)));
   // A game in another tab may add to both meanwhile (the codex by the name
   // lib/codex.ts writes, read raw so it stays out of the first download),
   // and the name may change there or come from another device (lib/sync).
@@ -730,8 +732,8 @@
           <button class="link" type="button" onclick={() => (renaming = false)}>Cancel</button>
         </form>
       {:else}
-        <p class="hello" class:named={!!known} class:made>
-          {welcomeBack ? 'Welcome back,' : 'Welcome,'}
+        <p class="hello" class:named={!!known} class:choose={askChoose}>
+          <span class="greet">{welcomeBack ? 'Welcome back,' : 'Welcome,'}</span>
           {#if invite}
             <!-- An invite asks the name in its own row: the greeting only greets. -->
             <span class="who">{known || NAMELESS}.</span>
@@ -740,7 +742,7 @@
             <span class="you">
               <button class="who" onclick={startRename} disabled={connecting}>{known || NAMELESS}.<span class="sr"> {rename}</span></button>
               <button class="quill" onclick={startRename} disabled={connecting}>
-                <span class="ring" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 19l2.5-.6L18 7.9a1.9 1.9 0 0 0-2.7-2.7L4.8 15.7 4.2 18.2zM14 6.5l3.2 3.2" /></svg></span>
+                <span class="ring" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20.5 3.5c-6 .3-11.3 4.6-12.4 11.8 1.4 0 2.6-.4 3.6-1l-1-.7 2.4-.6c1.5-1.2 2.4-2.4 3-3.6l-1.4-.2 2.1-.9c1.2-1.6 2.3-3.3 3.7-4.8z" /><path d="M17 7C12.6 10.6 8.4 15.2 4 20.5" /></svg></span>
                 <i>{rename}</i>
               </button>
             </span>
@@ -1131,16 +1133,18 @@
     visibility: visible;
     translate: 0 0;
   }
-  /* A made name: the quill and its words stand at rest, on every device, in
-     the line after the name (wrapping under it where the line is too short). */
-  .made .you {
+  /* A made name before the first game (choose): the quill and its words stand
+     at rest, on every device; with a mouse beside the name (the widest made
+     name with them takes 441 px of the wide layout's 452); on touch the name
+     goes to the line after the comma, the quill and its words beside it. */
+  .choose .you {
     display: contents;
   }
-  .made .you .quill {
+  .choose .you .quill {
     transform: none;
   }
-  .made .quill,
-  .made .you .quill {
+  .choose .quill,
+  .choose .you .quill {
     position: static;
     width: auto;
     padding: 0;
@@ -1150,7 +1154,7 @@
     translate: 0 0;
     transition: none;
   }
-  .made .quill:disabled {
+  .choose .quill:disabled {
     opacity: 0.45;
     cursor: default;
   }
@@ -1691,12 +1695,15 @@
     .quill i {
       display: none;
     }
-    /* Its ring lines up with the greeting's start on the line after the name, where it usually lands. */
-    .made .you .quill {
-      margin: -8px -8px -8px -8px;
+    /* The name on a line of its own, after the comma, and the quill with its words beside it. */
+    .choose .greet {
+      flex: 0 0 100%;
+    }
+    .choose .you .quill {
+      margin: -8px -8px -8px -0.3em;
       padding: 8px;
     }
-    .made .quill i {
+    .choose .quill i {
       display: inline;
     }
     button.who {

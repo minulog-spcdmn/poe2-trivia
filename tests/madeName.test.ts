@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { MADE_FIRST, MADE_SECOND, ensureName, isMadeName, makeName, remakeName } from '../src/lib/madeName.ts';
 import { MAX_NAME, MIN_NAME, cleanName, nameProblem, nameSkeleton, nameUsable } from '../src/lib/names.ts';
 import { readStored, writeStored } from '../src/lib/storage.ts';
+import { CLASSES } from '../src/lib/classSigils.ts';
 import { memoryStorage } from './helpers.ts';
 
 const store = new Map<string, string>();
@@ -26,6 +27,16 @@ test('no made name, nor a word of one, is a unique’s name', () => {
   const uniques = new Set(items);
   for (const word of [...MADE_FIRST, ...MADE_SECOND]) assert.ok(!uniques.has(word.toLowerCase()), word);
   for (const name of every) assert.ok(!uniques.has(name.toLowerCase()), name);
+});
+
+// The classes a sigil can show, and the ascendancies: a name made of one would seem to claim it (or clash with the sigil worn).
+const ASCENDANCIES = ['titan', 'warbringer', 'smith of kitava', 'deadeye', 'pathfinder', 'amazon', 'ritualist', 'stormweaver', 'chronomancer', 'infernalist', 'blood mage', 'lich', 'tactician', 'gemling legionnaire', 'witchhunter', 'invoker', 'acolyte of chayula', 'oracle', 'shaman', 'raider', 'warden', 'gladiator', 'assassin'];
+test('no made word is a class or an ascendancy, nor its start', () => {
+  const stems = [...CLASSES, ...ASCENDANCIES].map((c) => c.split(' ')[0].slice(0, 6));
+  for (const word of [...MADE_FIRST, ...MADE_SECOND]) {
+    const w = word.toLowerCase();
+    assert.ok(!stems.some((c) => w.startsWith(c) || c.startsWith(w.slice(0, 6))), word);
+  }
 });
 
 test('the lists make 3600 names, none like another', () => {

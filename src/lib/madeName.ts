@@ -1,34 +1,37 @@
 // A name made for a browser that has none yet: two words in Wraeclast's
 // manner ("Ashen Wanderer"), saved as its name at once, so a newcomer is
-// never asked for one before playing (New game, a join and an invite go
-// straight on, as for anyone named). The greeting's quill renames it.
+// never asked for one before playing (New game, a join by code and an open
+// room go straight on; an invite offers it in its field). The greeting says
+// a name of one's own can be chosen, at its quill.
 //
 // It is this device's alone: sync never sends a made name, and a name the
 // player chose on a paired device always replaces it (lib/sync/chosen.ts).
 // Every name the lists can make passes the name checks and is no unique's
-// name (tests/madeName.test.ts). Sixty by sixty, 3600 names: a room of
-// twelve newcomers has two with the same one about once in fifty-five
-// (1 - 3599/3600 x ... x 3589/3600, 66 pairs). The room turns the second
-// away, and that join tries again at once under another (remakeName).
+// name, and no word is a class a player's sigil can show or an ascendancy,
+// which a name would seem to claim (tests/madeName.test.ts). Sixty by
+// sixty, 3600 names: a room of twelve newcomers has two with the same one
+// about once in fifty-five (1 - 3599/3600 x ... x 3589/3600, 66 pairs). The
+// room turns the second away, and that join tries again at once under
+// another (remakeName).
 
 import { NAME_STORED, nameSkeleton } from './names.ts';
 import { readStored, removeStored, writeStored } from './storage.ts';
 
 export const MADE_FIRST = [
-  'Ashen', 'Amber', 'Ancient', 'Azure', 'Blighted', 'Bold', 'Brass', 'Burning', 'Copper', 'Crimson',
-  'Dusky', 'Ebon', 'Ember', 'Errant', 'Faded', 'Fallen', 'Feral', 'Forsaken', 'Frozen', 'Gilded',
-  'Gloom', 'Golden', 'Grim', 'Hallowed', 'Hollow', 'Iron', 'Ivory', 'Jade', 'Keen', 'Lone',
+  'Amber', 'Ancient', 'Ashen', 'Azure', 'Bleak', 'Blighted', 'Bold', 'Brass', 'Burning', 'Copper',
+  'Crimson', 'Dusky', 'Ebon', 'Ember', 'Errant', 'Faded', 'Fallen', 'Feral', 'Forsaken', 'Frozen',
+  'Gilded', 'Gloom', 'Golden', 'Grim', 'Hallowed', 'Hollow', 'Iron', 'Ivory', 'Jade', 'Keen',
   'Lost', 'Moonlit', 'Mossy', 'Obsidian', 'Onyx', 'Pale', 'Quiet', 'Restless', 'Rusted', 'Sacred',
-  'Scarlet', 'Shrouded', 'Silent', 'Silver', 'Starlit', 'Stoic', 'Storm', 'Sunken', 'Swift', 'Thorned',
+  'Scarlet', 'Shrouded', 'Silent', 'Silver', 'Starlit', 'Stoic', 'Sullen', 'Sunken', 'Swift', 'Thorned',
   'Tireless', 'Twilight', 'Umber', 'Valiant', 'Veiled', 'Wary', 'Weary', 'Wild', 'Withered', 'Wry',
 ];
 export const MADE_SECOND = [
-  'Acolyte', 'Alchemist', 'Archer', 'Castaway', 'Courier', 'Delver', 'Drifter', 'Druid', 'Exorcist', 'Ferryman',
-  'Gemcutter', 'Gravedigger', 'Hermit', 'Herald', 'Huntress', 'Invoker', 'Knight', 'Lamplighter', 'Lancer', 'Mapmaker',
-  'Mercenary', 'Miner', 'Monk', 'Mystic', 'Nomad', 'Oracle', 'Outcast', 'Pathfinder', 'Penitent', 'Pilgrim',
-  'Prospector', 'Raider', 'Ranger', 'Reaver', 'Runesmith', 'Sage', 'Scavenger', 'Scholar', 'Scout', 'Seeker',
-  'Sentinel', 'Smith', 'Sorcerer', 'Squire', 'Stalker', 'Survivor', 'Templar', 'Tinker', 'Tracker', 'Trapper',
-  'Vagrant', 'Vanguard', 'Warden', 'Warrior', 'Wayfarer', 'Witch', 'Woodcutter', 'Wanderer', 'Zealot', 'Stranger',
+  'Alchemist', 'Archer', 'Boatman', 'Brewer', 'Castaway', 'Chandler', 'Cobbler', 'Courier', 'Delver', 'Drifter',
+  'Exorcist', 'Ferryman', 'Fisher', 'Fletcher', 'Forager', 'Gemcutter', 'Gravedigger', 'Herald', 'Heretic', 'Hermit',
+  'Jeweller', 'Knight', 'Lamplighter', 'Lancer', 'Lookout', 'Mapmaker', 'Mason', 'Miner', 'Minstrel', 'Mystic',
+  'Nomad', 'Outcast', 'Peddler', 'Penitent', 'Pilgrim', 'Prospector', 'Reaver', 'Runesmith', 'Sage', 'Scavenger',
+  'Scholar', 'Scout', 'Seeker', 'Sentinel', 'Shepherd', 'Squire', 'Stalker', 'Stranger', 'Survivor', 'Tanner',
+  'Thatcher', 'Tinker', 'Tracker', 'Trapper', 'Vagrant', 'Vanguard', 'Wanderer', 'Wayfarer', 'Woodcutter', 'Zealot',
 ];
 
 /** A name from the lists; `rand` in [0, 1), the browser's own randomness unless given. */

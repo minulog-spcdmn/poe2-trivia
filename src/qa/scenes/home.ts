@@ -195,6 +195,8 @@ function afterDaily(v: Values = {}): Built {
 
 /** A name made for a first visit (lib/madeName.ts), as a newcomer's browser has from its first load. */
 const MADE = 'Ashen Wanderer';
+/** A made name before the first game says a name of one's own can be chosen (beside it; on touch the name and the quill on the line after the comma); after it, the greeting is anyone's. */
+const MADE_NAME: Control[] = [{ kind: 'toggle', key: 'played', label: 'A game played since', default: false }];
 /** A first visit: a name made for it, nothing played, no rooms open. */
 const firstVisit = (): Built => ({ state: null, name: MADE, stored: { 'name.made': MADE }, met: [], rooms: [] });
 
@@ -202,7 +204,14 @@ const home = (key: string, label: string, s: Omit<Scene, 'key' | 'label' | 'scre
 
 export function homeScenes(): Scene[] {
   return [
-    home('first-visit', 'A first visit: a name made for it, Choose your own name beside it at rest (Welcome, not Welcome back)', { build: firstVisit }),
+    home('first-visit', 'A first visit: a name made for it', {
+      controls: MADE_NAME,
+      states: [
+        { label: 'A first visit: a name made for it, Choose your own name at rest (Welcome, not Welcome back)', values: {} },
+        { label: 'The made name kept after a first game: greeted as anyone, Welcome back', values: { played: true } },
+      ],
+      build: (v = {}) => (v.played ? { ...firstVisit(), stored: { 'name.made': MADE, started: '1' } } : firstVisit()),
+    }),
     // A name let go (one this device can't play under) or never made: New game and Join a room ask for one.
     home('no-name', 'No name saved: New game and Join a room ask for one', { build: () => ({ state: null, name: '', met: [], rooms: [] }) }),
     home('returning', 'Back again', {
