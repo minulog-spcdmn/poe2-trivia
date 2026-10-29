@@ -41,14 +41,15 @@
   // Chrome draws for a fraction of what their strokes cost it.
   import { engrave } from '../lib/cardEngraving';
   import { findVariant } from '../lib/findEngraving';
-  import { printing, pull, pulled, type At, type Layer } from '../lib/platePrint.svelte';
+  import { leftKey, printing, pull, pulled, type At, type Layer } from '../lib/platePrint.svelte';
   import { layoutZoomOf } from '../lib/stage';
   import type { FindKind } from '../lib/delve';
   import type { Variant } from '../lib/cardEngraving';
 
   // `front`: only what stands in front of the emblem (Plate.front), solid, laid over the category's item.
   // `print`: its still layers shown as prints of themselves (lib/platePrint), where Chrome rasters it at its laid-out size.
-  let { side, find = null, custom, front = false, print = false }: { side: 'face' | 'back'; find?: FindKind | null; custom?: Variant; front?: boolean; print?: boolean } = $props();
+  // `hold`: how long it lies unseen once it's mounted (ms; a dealt card fades in late): a printed layer's svg isn't drawn so long while its print is pulled.
+  let { side, find = null, custom, front = false, print = false, hold = 0 }: { side: 'face' | 'back'; find?: FindKind | null; custom?: Variant; front?: boolean; print?: boolean; hold?: number } = $props();
   let w = $state(0);
   let h = $state(0);
   /** Its exact size: the glint's copy of the motif is drawn at it, as the lines stretch to it (w and h are whole pixels). */
@@ -92,6 +93,12 @@
   const uid = $props.id();
 
   const LAYERS: Layer[] = ['glow', 'lines'];
+  /** When its glow's svg was last drawn in, a find's glow breathing from then: its print takes the breath up where the svg had it. (Read as the print comes in, not watched.) */
+  const breath = { from: 0 };
+  /** Svelte action, on a layer's svg: notes when the glow's came in. */
+  function breathes(_svg: SVGSVGElement, layer: Layer) {
+    if (layer === 'glow') breath.from = performance.now();
+  }
   /** The still layers' svgs, which their prints are pulled from. */
   const svgs: Partial<Record<Layer, SVGSVGElement>> = $state({});
   /** How it's drawn, if it's printed. */
@@ -104,6 +111,15 @@
     const p = plate;
     return at && p ? { glow: pulled(p, 'glow', at, ink), lines: pulled(p, 'lines', at, ink) } : null;
   });
+  /** Whether its hold is over (or a print couldn't be pulled): its svgs are drawn from then on while their prints are pulled. */
+  let waited = $state(false);
+  $effect(() => {
+    if (!hold) return;
+    const over = setTimeout(() => (waited = true), hold);
+    return () => clearTimeout(over);
+  });
+  /** Whether its printed layers' svgs wait unseen for their prints: not drawn, which a plate seen for the first time would cost as much as before it was printed. */
+  const held = $derived(!!at && hold > 0 && !waited);
   /** Whether it has pulled a print yet: after that, a new size is printed once it holds still. */
   let pulledAny = false;
   $effect(() => {
@@ -113,7 +129,7 @@
     const due = LAYERS.flatMap((layer) => (!prints[layer] && svgs[layer] ? [[layer, svgs[layer]] as const] : []));
     if (!due.length) return;
     const go = () => {
-      for (const [layer, svg] of due) void pull(p, layer, now, inked, svg).then((url) => url && pulls++);
+      for (const [layer, svg] of due) void pull(p, layer, now, inked, svg).then((url) => (url === null ? (waited = true) : pulls++));
     };
     // (Not for every size a window passes through as it's resized.)
     if (!pulledAny) {
@@ -179,10 +195,13 @@
       </svg>
     {/if}
     {#each LAYERS as layer (layer)}
-      {#if prints?.[layer]}
-        <img class={layer} src={prints[layer]} alt="" />
-      {:else}
-        <svg class={layer} viewBox="0 0 {w} {h}" bind:this={svgs[layer]}>
+      {@const shown = prints?.[layer]}
+      {#if shown?.url}
+        <img class={layer} src={shown.url} alt="" style:animation-delay={layer === 'glow' ? `${Math.round(breath.from - performance.now())}ms` : undefined} />
+      {/if}
+      <!-- (Printed, only the hairlines its print leaves to it.) -->
+      {#if !shown || shown.left.size}
+        <svg class={layer} class:held={held && !shown} viewBox="0 0 {w} {h}" bind:this={svgs[layer]} use:breathes={layer}>
           {#if plate.fade}
             <defs>
               <radialGradient id="{uid}-{layer}-g" cx={plate.fade.c[0]} cy={plate.fade.c[1]} r={plate.fade.r} gradientUnits="userSpaceOnUse">
@@ -204,12 +223,12 @@
             </defs>
           {/if}
           <g mask={knockout.length ? `url(#${uid}-${layer}-ko)` : undefined}>
-            {#each strokes.filter((s) => !s.motif) as { cls, d } (cls)}
+            {#each strokes.filter((s) => !s.motif && (!shown || shown.left.has(leftKey(s.cls, false)))) as { cls, d } (cls)}
               <path {d} class={cls} mask={cls === 'ray' && plate.fade ? `url(#${uid}-${layer}-fade)` : undefined} />
             {/each}
           </g>
           {#if !(plate.gilt && layer === 'lines')}
-            {#each motif as { cls, d } (cls)}
+            {#each motif.filter((s) => !shown || shown.left.has(leftKey(s.cls, true))) as { cls, d } (cls)}
               <path {d} class={cls} />
             {/each}
           {/if}
@@ -276,6 +295,10 @@
   }
   svg {
     overflow: visible;
+  }
+  /* (Laid out and styled still, as its print is pulled from it; only not drawn.) */
+  .held {
+    visibility: hidden;
   }
   .warm {
     stop-color: var(--warm);

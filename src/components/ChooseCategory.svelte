@@ -1,8 +1,12 @@
 <script module lang="ts">
+  import { warmPrints } from '../lib/platePrint.svelte';
   /** How a card turns over as it is dealt: seconds, its lift off the table and swell (px, share), its perspective (px), and the screens it turns across on (stacked as wide rows: narrow screens, but not a phone on its side, too short for three rows; always a phone's width, though, too narrow for three tall cards) rather than sideways. The card bench turns them the same way. */
   /** Whether this browser registers custom properties (@property, app.css): without, the kindle animates the emblem's filter and opacity themselves (see .plain below). */
   const registered = typeof CSS !== 'undefined' && 'registerProperty' in CSS;
   export const TURN = { seconds: 0.46, lift: 16, swell: 0.05, perspective: 1200, across: '(max-width: 560px), (max-width: 700px) and (orientation: portrait), (max-width: 700px) and (min-height: 501px)' };
+  // Where the plates are printed (the sharp faces, below), the workers that
+  // print them start as the game's screens are loaded ahead (App).
+  if (typeof navigator !== 'undefined' && 'userAgentData' in navigator && !matchMedia(TURN.across).matches) warmPrints();
 </script>
 
 <script lang="ts">
@@ -571,6 +575,8 @@
    * takes flat transforms, which Chrome rasters larger as it grows.
    */
   const printed = $derived(sharp && !rows.current);
+  /** How long card i's side lies unseen once it's dealt (ms), which its plate's prints may take without its strokes drawn: its back until it fades in, its face until it's turned halfway up. Held still, it's seen at once. */
+  const unseen = (i: number, side: 'back' | 'face') => (motion.still ? 0 : Math.round((side === 'back' ? dealAt(i) : flipAt(i) + FLIP / 2) * 1000));
   /** When the deal began; null when the cards appeared without one (as after a refresh). */
   let dealtAt: number | null = null;
   /** Whether card i lies face up yet (it can't be picked or catch fire before). */
@@ -926,12 +932,12 @@
           <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
             <span class="back" aria-hidden="true">
               <span class="grain"></span>
-              <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} />
+              <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} hold={unseen(i, 'back')} />
               {@render filigree()}
             </span>
             <span class="frame" data-sharp={sharp || undefined} use:backdropShadow>
               <span class="grain"></span>
-              <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} />
+              <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} hold={unseen(i, 'face')} />
               <span class="glare"><span class="light"></span></span>
               <span class="sheen"></span>
               {@render filigree()}
