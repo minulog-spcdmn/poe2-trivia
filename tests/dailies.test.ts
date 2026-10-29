@@ -63,7 +63,9 @@ test('a deal puts the days before the cutoff back as the live site has them (a m
   for (const day of [today + 1, cutoff - 1]) moved[day - ROWS_FROM] = JSON.stringify({ ...JSON.parse(moved[day - ROWS_FROM]), itemId: 'moved' });
   const { text: fixed, restored } = deal(fileOf(ROWS_FROM, moved), items, fakes, Date.now(), { live: text });
   assert.equal(restored, 2);
-  assert.equal(fixed, text);
+  // (Over the days the file has: a deal reaches a year past the cutoff, a day further each day it moves on, from
+  // 22:00 UTC, before the file is dealt again.)
+  assert.deepEqual(rowsOf(fixed).rows.slice(0, rows.length), rows);
 });
 
 test('a refresh that adds, removes and renames an item moves no day before the cutoff, and new items reach the days to come', () => {
