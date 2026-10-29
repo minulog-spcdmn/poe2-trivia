@@ -358,9 +358,7 @@ const REDRAW_TRACE = ['cc', 'disabled-by-default-cc.debug'];
  * browser's). Without a GPU (CI) it all draws in SwiftShader, which Chrome
  * asks to be let in. The app comes to 2 or 3 frames a second there (a
  * plain page, 200), so what's counted is counted in frames, not in seconds.
- * The scenes at rest are drawn in software here too, as CI draws them: 8 s
- * at a GPU's 240 frames a second would be a trace of half a gigabyte. The
- * moments are drawn on the GPU here (REDRAWS_SOFTWARE=1: in software).
+ * Here it draws on the GPU (REDRAWS_SOFTWARE=1: in software, as CI does).
  */
 const software = process.platform !== 'win32' || !!process.env.REDRAWS_SOFTWARE;
 const launchTraced = (soft) =>
@@ -501,9 +499,10 @@ async function scenesAtRest(base, scenes, browsers) {
             await page.waitForTimeout(500);
             await page.evaluate(quiet, { still: 1000, most: 15000 });
             step('quiet');
-            // (8 s, for a light that sweeps every few seconds to show as the part of the time it is, and
-            // at least 12 frames, however long they take: in software, a frame can take half a second.)
-            const t = await traced(browser, page, () => page.evaluate(watchFrames, { least: 8000, frames: 12, most: 60000, still: false }));
+            // (In software, 8 s, for a light that sweeps every few seconds to show as the part of the time
+            // it is, and at least 12 frames, however long they take: a frame can take half a second. On a
+            // GPU, 3 s: 700 frames, a trace of 200 MB.)
+            const t = await traced(browser, page, () => page.evaluate(watchFrames, { least: software ? 8000 : 3000, frames: 12, most: 60000, still: false }));
             step(`${t.frames} frames in ${t.ms} ms, traced`);
             // (The page closed first, so that it isn't drawing while the trace is read.)
             await context.close();
@@ -639,11 +638,11 @@ async function checkRedraws(base, scenes) {
   try {
     if (values.only || !values.moments) {
       const of = new Set(scenes.map((s) => s.key)).size;
-      console.log(`Redraws at rest: ${shard ? `part ${shard[0]} of ${shard[1]} of ${of}` : of} scenes, ${at} at once, at ${REDRAW_SIZE}, from ${base}`);
-      atRestFound = await scenesAtRest(base, scenes, await Promise.all(Array.from({ length: at }, () => launched(true))));
+      console.log(`Redraws at rest: ${shard ? `part ${shard[0]} of ${shard[1]} of ${of}` : of} scenes, ${at} at once, at ${REDRAW_SIZE}, ${software ? 'in software' : 'on the GPU'}, from ${base}`);
+      atRestFound = await scenesAtRest(base, scenes, await Promise.all(Array.from({ length: at }, () => launched(software))));
     }
     if (values.moments || (!values.only && !shard)) {
-      console.log(`Redraws in the card bench’s moments, ${software ? 'in software' : 'on the GPU'}…`);
+      console.log('Redraws in the card bench’s moments…');
       momentsFound = await moments(base, await launched(software));
     }
   } finally {
