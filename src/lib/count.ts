@@ -7,6 +7,11 @@
 // datenschutz.html says what is sent, and vite.config.ts's CSP lets it
 // through.
 //
+// A game's frames are counted on each device that shows it (countGameFrames,
+// lib/stutter.ts): measured only while a game is under way and the page is
+// seen, sent once a game as one coarse path, the device's class and how
+// much it stuttered ("frames/ios/some/reveal"), never a timing.
+//
 // Not GoatCounter's count.js: it sends the address's query too, and an
 // invite link's carries the room's code. This sends only what's named here.
 // So count.js's #toggle-goatcounter means nothing to GoatCounter here;
@@ -19,6 +24,7 @@ import { COUNTER_ORIGIN } from './counter.ts';
 import { isoWeek } from './isoWeek.ts';
 import { countOptedOut, notCounted, privacySignal, setCountOptedOut } from './countOptOut.ts';
 import { SITE_URL } from './site.ts';
+import { GameFrames, deviceOf, framesEvent, type BrowserSays, type Moment } from './stutter.ts';
 
 /** Whether a page counts: the live game's own page at its own address, no robot driving it. */
 export function countsOn(at: { hostname: string; pathname: string }, channel: Channel, robot: boolean): boolean {
@@ -122,9 +128,12 @@ function release(url: string, now: boolean, head = false) {
   else queue.push(url);
   drainTimer ??= setTimeout(drain, Math.random() * JITTER_MS);
 }
+/** What's counted as the page is left, ahead of the queue going (a game's frames, countGameFrames). */
+const onLeaving: (() => void)[] = [];
 // (Where it counts at all, not only where it counts on loading: #toggle-goatcounter can switch counting on later.)
 if (countsHere && typeof addEventListener !== 'undefined')
   addEventListener('pagehide', () => {
+    for (const f of onLeaving) f();
     if (drainTimer) clearTimeout(drainTimer);
     drainTimer = null;
     atHead = 0;
@@ -651,6 +660,41 @@ export class GameCounts {
     this.ended = run;
     return out;
   }
+}
+
+// ---- frames ------------------------------------------------------------------
+
+/** A game's moment (stutter.ts), while one is under way and not yet decided; null for none: the lobby, the results, a Delve run nobody stands in. */
+export function gameMoment(s: GameState | null): Moment | null {
+  if (!s || !playing(s) || decided(s)) return null;
+  return s.phase === 'choosing' ? 'deal' : s.phase === 'question' ? 'question' : 'reveal';
+}
+
+let frames: GameFrames | null = null;
+
+/**
+ * How smoothly a game's frames came on this device ("frames/ios/some/reveal",
+ * stutter.ts), on every device that shows the game, host, guest or one
+ * watching: each has frames of its own. Given each state the page takes on
+ * (null: the game left), it measures while a game is under way (gameMoment)
+ * and the page is seen, and counts it once, as it's decided, left, or the
+ * page is (onLeaving, so it's in the queue that goes then). A game picked up
+ * after a reload is measured from there. Nothing measured where nothing counts.
+ */
+export function countGameFrames(s: GameState | null) {
+  if (!frames) {
+    if (!gameMoment(s) || !counting || notCounted() || typeof requestAnimationFrame === 'undefined') return;
+    const device = deviceOf(navigator as BrowserSays);
+    const f = new GameFrames(
+      { frame: (cb) => requestAnimationFrame(cb), cancel: (id) => cancelAnimationFrame(id), seen: () => document.visibilityState === 'visible' },
+      (v) => countEvent(framesEvent(device, v)),
+    );
+    document.addEventListener('visibilitychange', () => f.shown());
+    onLeaving.push(() => f.end());
+    frames = f;
+  }
+  // (Asked each time: the privacy page may have been used to opt out meanwhile.)
+  frames.at(counting && !notCounted() ? gameMoment(s) : null);
 }
 
 // ---- joining -----------------------------------------------------------------

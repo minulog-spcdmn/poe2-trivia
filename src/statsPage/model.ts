@@ -3,6 +3,7 @@
 // tests can feed it.
 
 import { DAILY_LAUNCH } from '../lib/dailyLaunch.ts';
+import { DEVICES, readFramesPath, type Device, type Moment } from '../lib/stutter.ts';
 import { addDays, midnight } from './zone.ts';
 import { isoWeekOfDay, weekMonday } from '../lib/isoWeek.ts';
 
@@ -156,6 +157,59 @@ export const FAILURES: Record<string, { label: string; host?: true; script?: tru
   chunk: { label: "A part of the game that didn't load", script: true },
 };
 
+export const DEVICE_NAMES: Record<Device, string> = {
+  'desktop-chrome': 'Chrome and Edge on a computer',
+  'desktop-other': 'Other browsers on a computer',
+  ios: 'iPhone and iPad',
+  android: 'Android',
+};
+export const MOMENT_NAMES: Record<Moment, string> = { deal: 'the deal', question: 'a question', reveal: 'the reveal' };
+
+/**
+ * A game's frames on one class of device (lib/stutter.ts, "frames/ios/some/reveal"),
+ * counted on each device in it: the games a day, those that stuttered some
+ * and many, and over the period the moment most of a stutter fell in.
+ */
+export interface DeviceFrames {
+  games: number[];
+  some: number[];
+  many: number[];
+  worst: Record<Moment, number>;
+}
+
+/** A share a day resting on fewer games than this is a guess: ShareLine draws it hollow, and stutterTop leaves it out. */
+export const FEW_GAMES = 5;
+
+/** The axis top, in percent, every device's share of games that stuttered fits under (ShareLine), a day or a week: those resting on FEW_GAMES or more; 10 at least. */
+export function stutterTop(rows: DeviceFrames[], days: string[], weekly: boolean): number {
+  let top = 10;
+  for (const r of rows) {
+    const whole = grouped(days, r.games, weekly ? 7 : 1).values;
+    const part = grouped(days, r.some.map((v, i) => v + r.many[i]), weekly ? 7 : 1).values;
+    whole.forEach((w, i) => {
+      if (w >= FEW_GAMES) top = Math.max(top, (100 * part[i]) / w);
+    });
+  }
+  return Math.min(100, top);
+}
+
+function framesOf(paths: PathCount[], days: string[]): Record<Device, DeviceFrames> {
+  const zeros = () => days.map(() => 0);
+  const out = Object.fromEntries(DEVICES.map((d) => [d, { games: zeros(), some: zeros(), many: zeros(), worst: { deal: 0, question: 0, reveal: 0 } }])) as Record<Device, DeviceFrames>;
+  for (const p of paths) {
+    const f = readFramesPath(p.path);
+    if (!f) continue;
+    const row = out[f.device];
+    days.forEach((d, i) => {
+      const n = p.days[d] ?? 0;
+      row.games[i] += n;
+      if (f.bucket !== 'smooth') row[f.bucket][i] += n;
+    });
+    if (f.worst) row.worst[f.worst] += p.count;
+  }
+  return out;
+}
+
 export interface ModeRow {
   mode: Mode;
   started: number;
@@ -192,6 +246,8 @@ export interface Counts {
   cohorts: Cohort[];
   /** Devices paired for sync. */
   sync: { paired: number };
+  /** How smoothly games' frames came, by class of device. */
+  frames: Record<Device, DeviceFrames>;
   /** Visits and games started by weekday (Monday first) and hour in the account's zone (weekHours), null where GoatCounter gave no hours; `until`: the last day's hours taken, those before it (null: all of them). */
   week: { visitors: number[][] | null; games: number[][] | null; until: number | null };
   /**
@@ -462,6 +518,7 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
     // (By UTC days, as a cohort's week is of its first answer's UTC time, where the hours came to sort them.)
     cohorts: cohortsOf(paths, days, utcPerDay(byPath.get('new/saved'), days, zone)),
     sync: { paired: count('sync/paired') },
+    frames: framesOf(paths, days),
     week: {
       visitors: weekHours(paths.filter((p) => p.path === '/'), days, hour),
       games: weekHours(paths.filter((p) => played.has(p.path)), days, hour),
