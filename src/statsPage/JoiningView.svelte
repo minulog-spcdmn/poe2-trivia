@@ -1,8 +1,9 @@
 <script lang="ts">
   // Joining: whether getting into a room works. Tries to join by where they
   // started, how many got in, every failure by its cause (opening a room's
-  // too), the game's own scripts' errors in a line of their own (they have
-  // nothing to do with joining), and the links that bring players in.
+  // too), the game's own scripts' errors and its parts that didn't load in
+  // lines of their own (they have nothing to do with joining), and the links
+  // that bring players in.
   import Bars from './Bars.svelte';
   import { fmt } from './chart';
   import Delta from './Delta.svelte';
@@ -24,8 +25,11 @@
   /** Failures for each 100 games and tries to join, as the overview's warning weighs them: more games bring more failures, and that's no news. */
   const rate = $derived(failureRate(L));
   const rateBefore = $derived(failureRate(B));
-  const scripts = $derived(failedOf(L, true));
-  const scriptsBefore = $derived(failedOf(B, true));
+  const errorsOf = (c: typeof L, key: string) => c.failures.find((f) => f.key === key)?.count ?? 0;
+  const scripts = $derived(errorsOf(L, 'script'));
+  const scriptsBefore = $derived(errorsOf(B, 'script'));
+  const lost = $derived(errorsOf(L, 'chunk'));
+  const lostBefore = $derived(errorsOf(B, 'chunk'));
 </script>
 
 <div class="stack">
@@ -85,6 +89,9 @@
       <Bars bars={failures} top={10} tone="down" empty="Nothing went wrong." />
       {#if scripts || scriptsBefore}
         <p class="line"><b class:bad={scripts > 0}>{fmt(scripts)}</b> {scripts === 1 ? 'error' : 'errors'} in the game's own scripts, once a page load at most. <Delta now={scripts} before={scriptsBefore} worse="up" period={period.before} /></p>
+      {/if}
+      {#if lost || lostBefore}
+        <p class="line"><b class:bad={lost > 0}>{fmt(lost)}</b> {lost === 1 ? 'page' : 'pages'} missing a part of the game that didn't load: the connection, or a page left open for weeks. <Delta now={lost} before={lostBefore} worse="up" period={period.before} /></p>
       {/if}
     </Section>
   </div>

@@ -141,7 +141,7 @@ export function underNamesNow(paths: PathCount[]): PathCount[] {
   return [...out.values()];
 }
 
-/** What each counted failure (count.ts Failure) means, in a line; `host`: on the side opening a room; `script`: no part of joining, an error in the game's own scripts. */
+/** What each counted failure (count.ts Failure) means, in a line; `host`: on the side opening a room; `script`: no part of joining, an error in the game's own scripts or a part of it that didn't load. */
 export const FAILURES: Record<string, { label: string; host?: true; script?: true }> = {
   'join-no-answer': { label: "The room didn't answer" },
   'join-no-such-room': { label: 'No room with that code' },
@@ -153,6 +153,7 @@ export const FAILURES: Record<string, { label: string; host?: true; script?: tru
   'host-room-not-opened': { label: "The room couldn't be opened", host: true },
   'host-room-not-reopened': { label: "The room couldn't be reopened after a reload", host: true },
   script: { label: "An error in the game's own scripts", script: true },
+  chunk: { label: "A part of the game that didn't load", script: true },
 };
 
 export interface ModeRow {

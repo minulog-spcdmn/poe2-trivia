@@ -863,13 +863,15 @@ test('who came: with no save on the device or back to one after so long, of thos
   assert.deepEqual([none.from, backShare(none), appShare(none)], [null, null, null]);
 });
 
-test("the game's own script errors are listed with the failures, but aren't joining's", () => {
+test("the game's own script errors and its parts that didn't load are listed with the failures, but aren't joining's", () => {
   const c = countsOf(
-    [path('play/race', [100, 100, 100]), path('error/join-no-answer', [2, 2, 2]), path('error/script', [0, 0, 40]), path('sync/paired', [1, 0, 2])],
+    [path('play/race', [100, 100, 100]), path('error/join-no-answer', [2, 2, 2]), path('error/script', [0, 0, 40]), path('error/chunk', [0, 5, 0]), path('sync/paired', [1, 0, 2])],
     DAYS,
   );
   const script = c.failures.find((f) => f.key === 'script')!;
   assert.deepEqual([script.script, script.host, script.count, script.label], [true, false, 40, "An error in the game's own scripts"]);
+  const chunk = c.failures.find((f) => f.key === 'chunk')!;
+  assert.deepEqual([chunk.script, chunk.host, chunk.count], [true, false, 5]);
   assert.deepEqual(c.failuresPerDay, [2, 2, 2]);
   // Forty of them today don't make joining look worse.
   assert.equal(troubleOf(c, c), null);
