@@ -19,7 +19,7 @@
   import { optionIndex } from '../lib/keys';
   import { answerDrawn, isFake, questionTopic, type Item, type Question } from '../lib/game';
   import { clock } from '../lib/clock';
-  import { countEvent } from '../lib/count';
+  import { countDaily, countStep } from '../lib/count';
   import { DAILY_KEY, DAYS_KEY, answerLog, answeredOn, askOne, dailyEngine, dailyGame, dailyQuestion, aTopic, dropAhead, graceOn, loadLog, mergeLogs, nextIn, replay, saveLog, settleDays, streakOn, untilNextMinute, upTo, utcDay } from '../lib/daily';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
@@ -262,12 +262,14 @@
     settled = false;
     clearTimeout(settleTimer);
     settleTimer = setTimeout(() => (settled = true), SETTLE_MS);
-    if (!next) practicePicked = i;
-    else {
+    if (!next) {
+      practicePicked = i;
+      countStep('reach/practice');
+    } else {
       const before = streakOn(rec, today);
       log = next;
       saveLog(log);
-      countEvent(good ? 'daily/right' : 'daily/wrong');
+      countDaily(good);
       justMissed = !good && before > 0;
       // Yesterday's fire catches as the badge comes in, and grows into today's a moment later.
       growingFrom = good ? before : null;

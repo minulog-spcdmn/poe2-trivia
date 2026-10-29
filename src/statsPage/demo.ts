@@ -122,6 +122,19 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
       // Their save's first item: a game's, or Today's unique's alone.
       add('new/saved', h, firstPlayed + ofThem(fresh - firstIn, 0.2, rnd));
       add('new/finished', h, ofThem(firstPlayed, 0.74, rnd));
+      // The start page's steps before that: most press something, fewer get as far as a room.
+      const acted = ofThem(fresh, 0.8, rnd);
+      const create = ofThem(acted, 0.55, rnd);
+      const named = ofThem(create, 0.8, rnd);
+      const daily = ofThem(acted, 0.35, rnd);
+      add('new/acted', h, acted);
+      add('new/create', h, create);
+      add('new/host', h, named);
+      add('new/room', h, ofThem(named, 0.9, rnd));
+      add('new/solo', h, ofThem(acted, 0.15, rnd));
+      add('new/daily', h, daily);
+      add('new/practice', h, ofThem(daily, 0.4, rnd));
+      add('new/identify', h, ofThem(daily, 0.3, rnd));
       // How far they got.
       const lobby = ofThem(came, 0.56, rnd);
       const played = ofThem(lobby, 0.8, rnd);

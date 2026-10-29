@@ -108,24 +108,38 @@ used, so this is the game's version of its toggle.
 Game events count each time (`ns`, no session): `play/<mode>`,
 `size/<mode>-<n>p`, `screen/<mode>` (some at the host's screen) and
 `end/<mode>` from the device running the game (`-online`/`-hotseat` until
-October 2026), Delve's depth range, the Daily's answers, links opened,
-joins, failures (`error/script` among them) and `sync/paired`. Visits count
+October 2026), Delve's depth range, `share/delve` (Share run tapped), the
+Daily's answers, links opened, joins, failures (`error/script` among them)
+and `sync/paired`. Visits count
 once a person in eight hours, and so do the steps (`countReach`, each once a
 page load): `reach/page` on every counted load, what the others are set
 against; `reach/lobby`, `reach/played`, `reach/finished` from each seated
 device (not one watching), a game started without a lobby entering it too;
 `reach/games-2|5` and `reach/time-2m|10m|30m` (active time) within one page
-load; `reach/codex`, `reach/achievements`;
-and `new/lobby|played|finished` for a load whose visit had no save, with
+load; `reach/codex`, `reach/achievements`; the start page's
+`reach/create` (New game tapped), `reach/host` (a room asked for under a
+name that passed), `reach/room` (its lobby, online or on this device),
+`reach/solo` (a run alone begun, `session.startDelve`), `reach/daily` and
+`reach/practice` (one answered), `reach/identify` (a run begun from the
+Daily's IDENTIFY MORE, a `reach/solo` too); and `new/…` for each of these and
+`new/lobby|played|finished` on a load whose visit had no save (or one begun
+within eight hours), with `new/acted` (its first press of a control, no
+`reach/` twin) and `load/ready-2s|5s|10s|later` (how long the page took to
+become usable: mounted, a frame drawn with its fonts loaded), and
 `new/saved` as that save gets its first item (a game's or Today's unique's),
-what a cohort is set against. With a
+what a cohort is set against. A Daily answer from any other load sends
+`daily/back`. With a
 visit, read from the codex with its paired devices' copies when the page is idle
 (so it speaks for the player, not the device):
 `visit/new` or `visit/back-1d|7d|30d|later` (nothing within eight hours of
 the last play, GoatCounter's visit being still open), `cohort/<ISO week of
-first play>` and `visit/app`. A link's `?ref=` tag goes as the visit's
-campaign. Counts go out one at a time, 0.6 s apart after a random wait:
-GoatCounter turns away more than four a second from one address.
+first play>` beside a `visit/back-…` only (from 2026-10-28; before, a page
+reopened within those eight hours sent it too) and `visit/app`. A link's
+`?ref=` tag goes as the visit's campaign. Counts go out one at a time, 0.6 s
+apart after a random wait: GoatCounter turns away more than four a second
+from one address. `new/acted`, `new/create` and `new/host` wait at the
+queue's head, behind the visit, so a newcomer who leaves at the portal is
+still counted as the page is left.
 
 **Reading them:** `stats.html` (Analytics, `src/statsPage`), with the
 owner's read-only GoatCounter API key, which stays in that browser until

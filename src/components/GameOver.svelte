@@ -23,6 +23,7 @@
   import { victory, winnerIgnites } from '../lib/fx/moments';
   import { fallen } from '../lib/fx/delveEnd';
   import { shareText } from '../lib/delveShare';
+  import { countEvent } from '../lib/count';
   import { portal } from '../lib/portal';
   import { dock, flat, phone } from '../lib/layout';
   import { FINDS_IN_ORDER, delveStandings, isGroupRun, shownDepth, teamDepth } from '../lib/delve';
@@ -251,6 +252,7 @@
   let shared = $state(false);
   async function shareDepth() {
     if (!canShare) return;
+    countEvent('share/delve');
     // Alone, your depth; together, the team's.
     const text = shareText(endDepth, together);
     try {

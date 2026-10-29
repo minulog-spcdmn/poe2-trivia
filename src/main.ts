@@ -19,7 +19,7 @@ import { installAutoscroll } from './lib/autoscroll';
 import { installNoMenu } from './lib/noMenu';
 import { fpsMeterOn, switchedOff } from './lib/switchedOff';
 import { installFpsMeter } from './lib/fpsMeter';
-import { countPage, countSaved, countTime, countVisit, onCountToggle, takeCampaign, type Toggled } from './lib/count';
+import { countActed, countPage, countReady, countSaved, countTime, countVisit, onCountToggle, takeCampaign, type Toggled } from './lib/count';
 import { onSaved } from './lib/codex';
 import { whenIdle } from './lib/idle';
 import { lastPlayed } from './lib/lastPlayed';
@@ -44,6 +44,7 @@ if (fpsMeterOn()) installFpsMeter();
 countVisit(lastPlayed, takeCampaign(), (f) => whenIdle(f, { timeout: 3_000 }));
 countPage();
 countTime();
+countActed();
 onSaved(countSaved);
 const TOGGLED: Record<Toggled, string> = {
   skipped: 'Visits from this browser are no longer counted. Open poe2.quest/#toggle-goatcounter again to count them.',
@@ -63,5 +64,7 @@ if (import.meta.env.DEV) Object.assign(window, { __fx: fxCore, __e: fxEffects, _
 const app = mount(Root, {
   target: document.getElementById('app')!,
 });
+// How long the page took to become usable, from here (count.ts).
+countReady();
 
 export default app;

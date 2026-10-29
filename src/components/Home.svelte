@@ -32,7 +32,7 @@
   import { probeRoom, type RoomInfo } from '../lib/rooms';
   import { warmPlate } from '../lib/plateStore.svelte';
   import { circleAtPlace } from '../lib/circlePlaces';
-  import { cameFromThisSite, countArrival, type JoinVia } from '../lib/count';
+  import { cameFromThisSite, countArrival, countStep, type JoinVia } from '../lib/count';
   import { withoutInvite } from '../lib/inviteAddress';
 
   /** Keeps a room code's letters and digits, uppercased, up to its length. */
@@ -282,6 +282,7 @@
 
   function choose(e: Entry) {
     if (connecting) return;
+    if (e === 'create') countStep('reach/create');
     cursor = ENTRIES.indexOf(e);
     rememberEntry(e);
     renaming = false;

@@ -80,6 +80,8 @@ const window = new EventTarget();
 const loadedOn = Object.assign(new Page(), { referrer: '' });
 Object.assign(globalThis, { window, location: new URL('https://poe2.quest/') });
 Object.defineProperty(globalThis, 'document', { value: loadedOn, configurable: true, writable: true });
+// At the live game's address the session's steps are counted (count.ts): their beacons go nowhere.
+Object.defineProperty(globalThis.navigator, 'sendBeacon', { value: () => true, configurable: true, writable: true });
 const { keepAwake } = await import('../src/lib/wakeLock.ts');
 const { session } = await import('../src/lib/session.svelte.ts');
 const { default: FakePeer } = await import('./fakePeerjs.ts');
