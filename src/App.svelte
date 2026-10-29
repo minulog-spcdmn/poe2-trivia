@@ -405,6 +405,7 @@
   // no more: some browsers keep a module that failed as failed, and a deploy
   // that replaced the chunk fails every time. After that, only a reload
   // brings it, which the screen offers (a room carries on through one).
+  // Each failure is counted as the codex's is (countFailedImport).
   let Lobby = $state<typeof import('./components/Lobby.svelte').default | null>(null);
   let PeerCursors = $state<typeof import('./components/PeerCursors.svelte').default | null>(null);
   let Game = $state<Component | null>(null);
@@ -417,7 +418,8 @@
     let loading: Promise<unknown> | null = null;
     let failed = 0;
     const get = (): Promise<unknown> =>
-      (loading ??= load().catch(() => {
+      (loading ??= load().catch((e) => {
+        countFailedImport(e);
         if (++failed < 2) {
           loading = null;
           setTimeout(() => inRoom() && get(), 1000);

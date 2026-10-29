@@ -492,35 +492,63 @@ export function countTime() {
 
 /** Whether an error's file or stack is the game's own built scripts (`assets`, its assets/ folder), not an extension's or a userscript's put into the page. */
 export const ownScript = (where: string, assets: string) => where.includes(assets);
-/** A module that failed to load: a page left open across an update asking for one the update removed. */
-export const failedImport = (message: string) => /dynamically imported module|Importing a module script failed/i.test(message);
+/**
+ * A part of the game that failed to load: a module (as each browser words it)
+ * or a stylesheet, as Vite's preload or lib/chunkRetry.ts linked it. Most
+ * often the connection, now that a deploy keeps the files earlier ones linked
+ * (deploy.yml); a page left open longer than that asks for one that's gone.
+ */
+export const failedImport = (message: string) => /dynamically imported module|Importing a module script failed|Unable to (pre)?load CSS/i.test(message);
 
-/** Whether "error/script" went out this page load, and how its listeners (countScriptErrors) are taken off once it has. */
-let scriptErrorCounted = false;
+/**
+ * What an uncaught error or rejection counts as, from its message and where it
+ * came from (its file, its stack): a part that didn't load ("chunk"), whoever
+ * asked for it, an error in the game's own scripts ("script"), or nothing (an
+ * extension's or a userscript's).
+ */
+export function errorKind(message: string, where: string[], assets: string): 'script' | 'chunk' | null {
+  if (failedImport(message)) return 'chunk';
+  return where.some((w) => ownScript(w, assets)) ? 'script' : null;
+}
+
+/**
+ * What a chunk's import() that a page caught counts as: the chunk didn't
+ * load ("chunk"), unless it came and threw as it ran, in the game's own
+ * scripts ("script").
+ */
+export const caughtImportKind = (e: unknown, assets: string): 'script' | 'chunk' => {
+  const err = e as { stack?: unknown; message?: unknown } | null;
+  const kind = errorKind(typeof err?.message === 'string' ? err.message : '', [typeof err?.stack === 'string' ? err.stack : ''], assets);
+  return kind === 'script' ? 'script' : 'chunk';
+};
+
+/** The game's own built scripts' folder, as ownScript has it: assets/ beside this page. */
+const assetsHere = () => `${location.origin}${location.pathname.replace(/[^/]*$/, '')}assets/`;
+
+/** The errors counted this page load ("error/script", "error/chunk"), each once, and how countScriptErrors' listeners are taken off once both have gone. */
+const errorsCounted = new Set<'script' | 'chunk'>();
 let stopScriptErrors = () => {};
-/** Counts "error/script", once a page load, whichever way it came. */
-function scriptErrorDone() {
-  if (scriptErrorCounted) return;
-  scriptErrorCounted = true;
-  stopScriptErrors();
-  countEvent('error/script');
+function errorDone(kind: 'script' | 'chunk' | null) {
+  if (!kind || errorsCounted.has(kind)) return;
+  errorsCounted.add(kind);
+  if (errorsCounted.size === 2) stopScriptErrors();
+  countEvent(`error/${kind}`);
 }
 
 /**
  * An uncaught error in the game's own scripts ("error/script"), thrown or
- * rejected, or a module of the game's that failed to load; once a page load.
+ * rejected, and apart from it a part of the game that failed to load
+ * ("error/chunk"), which is no fault in the code; each once a page load.
  * Installed first thing (lib/countErrors.ts), so a start that fails is
  * mostly caught too.
  */
 export function countScriptErrors() {
   if (!counting || typeof addEventListener === 'undefined') return;
-  const assets = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}assets/`;
-  const onError = (e: ErrorEvent) => {
-    if (ownScript(e.filename ?? '', assets) || ownScript((e.error as Error | undefined)?.stack ?? '', assets)) scriptErrorDone();
-  };
+  const assets = assetsHere();
+  const onError = (e: ErrorEvent) => errorDone(errorKind(e.message ?? '', [e.filename ?? '', (e.error as Error | undefined)?.stack ?? ''], assets));
   const onRejection = (e: PromiseRejectionEvent) => {
     const err = e.reason as { stack?: unknown; message?: unknown } | null;
-    if (ownScript(typeof err?.stack === 'string' ? err.stack : '', assets) || failedImport(typeof err?.message === 'string' ? err.message : '')) scriptErrorDone();
+    errorDone(errorKind(typeof err?.message === 'string' ? err.message : '', [typeof err?.stack === 'string' ? err.stack : ''], assets));
   };
   stopScriptErrors = () => {
     removeEventListener('error', onError);
@@ -531,12 +559,13 @@ export function countScriptErrors() {
 }
 
 /**
- * A module of the game's that failed to load where the page catches it (the
- * codex's, the settings'), so it never reaches countScriptErrors' listeners:
- * counted as theirs would be ("error/script", the once a page load they share).
+ * A module of the game's that failed where the page catches it (the codex's,
+ * the settings', a room's screens), so it never reaches countScriptErrors'
+ * listeners: counted as theirs would be (caughtImportKind, the once a page
+ * load they share).
  */
-export function countFailedImport() {
-  if (counting) scriptErrorDone();
+export function countFailedImport(e?: unknown) {
+  if (counting) errorDone(caughtImportKind(e, assetsHere()));
 }
 
 const arrivals = new Set<string>();

@@ -171,6 +171,36 @@ jobs:
         with:
           name: live
           path: dist
+      # The files earlier deploys linked stay up beside this one's, for two
+      # weeks after a deploy last had them: a page opened before a deploy
+      # fetches its lobby, game and codex later, and Pages serves only what
+      # this upload has. Their names carry a hash of what's in them, so none
+      # is ever replaced. `.seen` has each one's name and when a deploy last
+      # had it. A cache that's gone (evicted, never saved) starts over from
+      # this deploy.
+      - name: Bring back earlier deploys' files
+        uses: actions/cache/restore@v4
+        with:
+          path: kept-assets
+          key: live-assets-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: live-assets-
+      - name: Keep earlier deploys' files
+        run: |
+          mkdir -p kept-assets
+          touch kept-assets/.seen
+          now=$(date +%s)
+          for f in dist/assets/*; do echo "$(basename "$f") $now"; done >> kept-assets/.seen
+          cp dist/assets/* kept-assets/
+          # Each file once, when last seen; those not seen in two weeks go.
+          sort -k1,1 -k2,2nr kept-assets/.seen | awk '!had[$1]++' > seen
+          awk -v old=$((now - 14 * 86400)) '$2 < old { print $1 }' seen | while read -r f; do rm -f "kept-assets/$f"; done
+          awk -v old=$((now - 14 * 86400)) '$2 >= old' seen > kept-assets/.seen
+          for f in kept-assets/*; do [ -e "dist/assets/$(basename "$f")" ] || cp "$f" dist/assets/; done
+          echo "Files kept from earlier deploys: $(( $(ls dist/assets | wc -l) - $(grep -c " $now\$" kept-assets/.seen) ))" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/cache/save@v4
+        with:
+          path: kept-assets
+          key: live-assets-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Pick the beta
         id: pick
         env:

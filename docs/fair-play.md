@@ -109,7 +109,8 @@ Game events count each time (`ns`, no session): `play/<mode>`,
 `size/<mode>-<n>p`, `screen/<mode>` (some at the host's screen) and
 `end/<mode>` from the device running the game (`-online`/`-hotseat` until
 October 2026), Delve's depth range, `share/delve` (Share run tapped), the
-Daily's answers, links opened, joins, failures (`error/script` among them)
+Daily's answers, links opened, joins, failures (`error/script` and
+`error/chunk`, a part that didn't load, among them)
 and `sync/paired`. Visits count
 once a person in eight hours, and so do the steps (`countReach`, each once a
 page load): `reach/page` on every counted load, what the others are set

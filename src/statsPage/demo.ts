@@ -153,7 +153,8 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
       add('reach/codex', h, ofThem(came, 0.13, rnd));
       add('reach/achievements', h, ofThem(came, 0.08, rnd));
       add('sync/paired', h, around(v * 0.006, rnd));
-      if (rnd() < 0.02) add('error/script', h, 1);
+      const broke = rnd();
+      if (broke < 0.02) add(broke < 0.006 ? 'error/chunk' : 'error/script', h, 1);
     }
     for (const g of GAMES) {
       const started = around(v * g.share, rnd);

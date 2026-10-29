@@ -13,6 +13,8 @@ import {
   countReach,
   countScriptErrors,
   countFailedImport,
+  errorKind,
+  caughtImportKind,
   countTime,
   countVisit,
   countPage,
@@ -298,7 +300,7 @@ test("the save's play is the first and last answers across this device's codex a
   assert.deepEqual(playedIn([ahead], now), { first: now - 9e8, last: now - 9e8 });
 });
 
-test("only the game's own built scripts' errors count, and a module an update removed", () => {
+test("only the game's own built scripts' errors count, and apart from them a part that didn't load", () => {
   const assets = 'https://poe2.quest/assets/';
   assert.ok(ownScript('https://poe2.quest/assets/index-abc.js', assets));
   assert.ok(ownScript('TypeError: x\n    at f (https://poe2.quest/assets/game-1.js:1:2)', assets));
@@ -307,7 +309,21 @@ test("only the game's own built scripts' errors count, and a module an update re
   assert.ok(!ownScript('chrome-extension://abc/content.js', assets));
   assert.ok(failedImport('Failed to fetch dynamically imported module: https://poe2.quest/assets/Codex-1.js'));
   assert.ok(failedImport('Importing a module script failed.'));
+  assert.ok(failedImport('error loading dynamically imported module: https://poe2.quest/assets/Lobby-1.js'));
+  assert.ok(failedImport('Unable to preload CSS for ./assets/Codex-1.css'));
   assert.ok(!failedImport('Network error'));
+  // A part that didn't load counts apart from an error in the code, though the game's own script asked for it.
+  const own = 'TypeError: x\n    at f (https://poe2.quest/assets/game-1.js:1:2)';
+  assert.equal(errorKind('Failed to fetch dynamically imported module: https://poe2.quest/assets/Lobby-1.js', [own], assets), 'chunk');
+  assert.equal(errorKind('Importing a module script failed.', [''], assets), 'chunk');
+  assert.equal(errorKind('TypeError: x', ['', own], assets), 'script');
+  assert.equal(errorKind('TypeError: x', ['chrome-extension://abc/content.js'], assets), null);
+  // A chunk's import a page caught: a stylesheet linked again that failed too is a part that didn't load.
+  assert.equal(caughtImportKind(Object.assign(new Error('Unable to load CSS https://poe2.quest/assets/Codex-1.css?attempt=1'), { stack: own }), assets), 'chunk');
+  assert.equal(caughtImportKind(new TypeError('Importing a module script failed.'), assets), 'chunk');
+  assert.equal(caughtImportKind(undefined, assets), 'chunk');
+  // One that came and threw as it ran is an error in the game's own scripts.
+  assert.equal(caughtImportKind(Object.assign(new TypeError('x is undefined'), { stack: own }), assets), 'script');
 });
 
 test("a link's tag is its campaign only when it's a plain short word, so nothing else in an address goes along", () => {
