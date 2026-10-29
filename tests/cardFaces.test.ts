@@ -116,12 +116,20 @@ const targets = (s: string) => {
   return (is ? is[1]!.split(',') : [u.split(/[\s>+~]+/).pop()!]).map((p) => p.trim().match(/^\.([\w-]+)/)?.[1]).filter((c) => c !== undefined);
 };
 
-test('what kindles or swells on a sharp face is on a layer of its own', () => {
+/** The classes `root`'s animations of a filter, or of the kindle's numbers, run on. */
+const kindled = (root: postcss.Root) => {
   const painted = new Set<string>();
-  CSS.walkAtRules('keyframes', (k) => k.walkDecls((d) => void ((d.prop === 'filter' || d.prop.startsWith('--kindle-')) && painted.add(k.params))));
-  const animated = new Set<string>();
-  for (const d of decls(CSS, /^animation(-name)?$/))
-    if (painted.has(d.value.split(/\s+/)[0]!)) for (const s of (d.parent as Rule).selectors) for (const c of targets(s)) animated.add(c);
+  root.walkAtRules('keyframes', (k) => k.walkDecls((d) => void ((d.prop === 'filter' || d.prop.startsWith('--kindle-')) && painted.add(k.params))));
+  const out = new Set<string>();
+  for (const d of decls(root, /^animation(-name)?$/))
+    if (d.value.split(/[\s,]+/).some((t) => painted.has(t))) for (const s of (d.parent as Rule).selectors) for (const c of targets(s)) out.add(c);
+  return out;
+};
+const ENGRAVING = readFileSync('src/components/CardEngraving.svelte', 'utf8');
+
+test('what kindles or swells on a sharp face is on a layer of its own', () => {
+  const animated = kindled(CSS);
+  for (const c of kindled(postcss.parse(ENGRAVING.slice(ENGRAVING.indexOf('<style>') + '<style>'.length, ENGRAVING.lastIndexOf('</style>'))))) animated.add(c);
   const layered = new Set<string>();
   CSS.walkRules((r) => {
     const wc = r.nodes.find((n): n is Declaration => n.type === 'decl' && n.prop === 'will-change');
@@ -165,4 +173,22 @@ test("the deal puts .down on the card, and takes it off on the turn's own clock"
   assert.ok(DEAL.includes(`const ${holder} = node.closest('.card');`), `the deal adds .down to ${holder}, which must be node.closest('.card'): the CSS reads it from the card, and the turn sits inside .sides`);
   assert.doesNotMatch(DEAL, /setTimeout\([^;]*'down'/, "a timer counted from the deal runs ahead of the turn; take .down off in the transition's tick");
   assert.match(DEAL, /tick: \([^)]*\) => \{[\s\S]*classList\.remove\('down'\)/, "the deal takes .down off in its tick, on the turn's own clock");
+});
+
+// ---- what follows the pointer -----------------------------------------------
+// The tilt and the glare follow the pointer by transforms alone. The glare
+// was a gradient drawn at the pointer (--gx, --gy), and Chrome drew the
+// whole sharp face again at every move: a third of the GPU's time while the
+// pointer moved over a card. Its light is drawn once and moved (glareAt).
+
+test('what follows the pointer over a card moves by its transform alone', () => {
+  const set = new Set([...SCRIPT.matchAll(/setProperty\('(--[\w-]+)'/g)].map((m) => m[1]!));
+  assert.ok(set.has('--tilt-x'), 'found what the script sets as the pointer moves (--tilt-x)');
+  CSS.walkDecls((d) => {
+    for (const [, name] of d.value.matchAll(/var\((--[\w-]+)/g))
+      if (set.has(name!)) assert.equal(d.prop, 'transform', `${(d.parent as Rule).selector} { ${d.prop} } reads ${name}, which follows the pointer: only a transform may, or Chrome draws the sharp face again at every move`);
+  });
+  const light = decls(CSS, /^will-change$/).find((d) => (d.parent as Rule).selector === '.glare > .light');
+  assert.ok(light && /transform/.test(light.value), "the glare's light is on a layer of its own (will-change: transform), moved by glareAt");
+  assert.match(SCRIPT, /light\.style\.transform = /, 'glareAt moves the light by its transform');
 });

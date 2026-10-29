@@ -520,10 +520,15 @@
     stroke-dashoffset: 100;
     visibility: hidden;
   }
-  .arcane :global(.mark),
   .arcane :global(.carve),
   .arcane :global(.draw.ink) {
     opacity: 0;
+  }
+  /* A mark is a stroke alone, and fades by its stroke's opacity, not an
+     opacity of its own, which had Chrome lay out the page's layers again
+     in every frame one faded (see lib/drawIn). */
+  .arcane :global(.mark) {
+    stroke-opacity: 0;
   }
   .arcane :global(.seal) {
     transform-box: fill-box;

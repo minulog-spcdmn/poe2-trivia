@@ -120,7 +120,10 @@ for `profile.mjs`. Its first visit fills the phone's codex as a long-time
 player's would be (every item seen, 2000 answers; `--empty` leaves it
 empty), so the codex has its full weight. With `--qa` it has the QA desk
 too (`docs/qa.md`), for a scene on the phone on its own:
-`qa.html?frame&s=<scene key>`, its controls as `&k.<key>=<value>`.
+`qa.html?frame&s=<scene key>&size=fit`, its controls as `&k.<key>=<value>`.
+Leave out `&size=fit` and the desk plays a desktop: a fine pointer, so the
+app's engraved cursors (`src/lib/ownCursor.ts`), which no phone has, and
+with them a Delve vein's tremor repainted every card at every write.
 `serve.mjs` serves builds on the
 home network until stopped, each on a port of its own: `http://192.168.178.88:4403/`.
 
@@ -177,6 +180,8 @@ doesn't:
   another process (the drop shadows below did that).
 - **Layers** (`LayerTree`): every compositing layer, how often it painted
   and why WebKit made it. A count in the thousands is a problem by itself.
+  A layer's paint count counts its tiles (512 px each): a big layer painted
+  once can count 2 or more.
 - **Screenshots** (`Page.snapshotRect`), to see what the phone shows.
 - **Taking things away**: the `?off=` switches, or a style put in with
   `ask.mjs` (`filter: none` on the codex's tiles, say), one at a time,
@@ -285,15 +290,31 @@ with its numbers in the comments.
   show of the first tap's sound holds for a finger too: the hall's reverb
   took its steps over the second after it, as that screen came in; it's
   worked out in a worker now (`src/lib/hallWorker.ts`).
-- **A masked SVG costs its frames while what it masks changes.** Delve's
-  ladder (`DelveLadder.svelte`) is masked round its stars; while its 260
-  lines inked themselves in, the lobby came in at 24 to 35 fps, and at 60
-  with the mask overridden. Nothing showed in the page's own thread: its
-  styles, layouts and paints were the same, and so were its layers. The
-  mask now goes on only as the first star's cutout starts to show, as until
-  then it hides nothing. Try such a thing with a CSS rule (`mask: none`
-  through `ask.mjs`): taking the `mask` attribute off from script didn't
-  take the cost away.
+- **An SVG mask is painted again whenever anything reaches it.** Delve's
+  ladder (`DelveLadder.svelte`) was cut round its stars by an SVG `<mask>`.
+  While its 260 lines inked themselves in, the lobby came in at 24 to 35
+  fps, 60 with the mask overridden; so the mask went on only as the first
+  star's cutout started to show. Then WebKit still painted all it masked
+  through the mask again at every restyle or layout that reached it, as each
+  screen came or went over it: of Begin's four frames over 40 ms, its worst
+  was 138 to 154 ms. On iOS the mask cut nothing besides. The cutouts are a
+  CSS mask on the plate's `svg` now, a radial gradient for each star, carved
+  in and moved by registered properties (`@property`) animated on the `svg`:
+  three frames over 40 ms, the worst 88 to 93 ms. Its lines were left
+  dashed too (the draw-in's `stroke-dasharray`), so each repaint dashed all
+  282 paths again; a line is dashed only while it draws now. Nothing showed
+  in the page's own thread either way. Try such a thing with a CSS rule
+  (`mask: none` through `ask.mjs`): taking the `mask` attribute off from
+  script didn't take the cost away.
+- **A shadow that changes on an element in the flow lays it out.** A find
+  card's pulse (`ChooseCategory.svelte`, its `box-shadow` through `--bs1`)
+  has WebKit lay the card out in every frame and repaint whole each layer
+  round it up to the first element out of the flow: the shell, the stage
+  and the card, 183 times in 3 s, 93 Mpx against 3 to 6 with the pulse
+  off. Containment, `min-width: 0`, grid rows of `minmax(0, 1fr)` and the
+  like didn't stop it; only taking the card out of the flow did. The frames
+  held 60 fps either way, the worst 17 to 23 ms, so the pulse stays as it
+  is: weigh the frames before taking a repaint away.
 - **An idle step is as long as the work it can't split.** Delve's light
   table was worked out in idle steps of 4 ms, but a step is at least one
   stretch of the table, and a stretch took 52 to 56 ms on the phone, two or
@@ -336,15 +357,30 @@ with its numbers in the comments.
   something in it moves, though, the circle turning: weigh the calm
   question's and reveal's frames with `?off=group` (the stage resting at 1)
   against those without.
+- **A picture cursor restyles all an element holds.** WebKit makes an
+  element's picture cursor afresh each time the element is restyled, and
+  counts it as changed (a new one is still pending when compared), so it
+  restyles every element inside it too, each of which does the same with its
+  own. The app named one on every element (`cursor: var(--cursor-now)`, so a
+  pressed pointer stays on the element pressed), so a vein's tremor, a
+  translate written on `.shell` each frame, restyled the whole game and
+  repainted every card: 3.4 ms of styles a write, 1,223 paints (48 Mpx) in
+  2.5 s, 47.9 fps. That was the QA desk's `size=desktop`, which plays a
+  fine pointer and so draws the cursors; a phone draws none, but Safari on a
+  Mac with a mouse does. In WebKit every element inherits the cursor now
+  (`data-cursor-inherited`, `src/lib/ownCursor.ts` and `app.css`), an
+  inherited one being the parent's own, unchanged: 0.2 ms, 32 paints
+  (1.2 Mpx), 60.1 fps, as at `size=fit` with no cursors at all. A scene
+  measured on the phone at `size=desktop` has the cursors; `size=fit` has
+  none.
 
-Still open: Begin's worst frame, about 230 to 285 ms. About 70 ms of it is
-script mounting the game screen and about 140 ms its styles, layout and
-paint; and an item's details parse in about 60 ms. The rumble's 6 s noise
-buffer, which took about 75 ms of that time in one go, is now worked out
-in a worker (`src/lib/rumbleWorker.ts`, its samples in
-`src/lib/rumbleNoise.ts`), as are the light table and the cave-in, and the
-weave is made as the app is built; a trace from the phone still has to
-show them gone from the main thread.
+Still open: Begin's three frames over 40 ms (41 to 64 ms, the worst 88 to
+93), as the lobby goes and the game comes in. Most of their time is outside
+the page's main thread. Measured while the ladder still had its SVG mask:
+with every animation off one frame of 117 ms was left, and with the game
+hidden too, one of 85 to 98 ms, 72 of 81 outside the main thread. Taking away the faces' shadows, the banner, the cards,
+the effects, the lights, the screens' scale or `hold()` in `App.svelte`
+made none of them shorter.
 
 Still open too: a first visit's blank page. `index.html` is empty until
 the startup script has come and mounted the start page, and its CSS and

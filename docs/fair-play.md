@@ -111,7 +111,17 @@ Game events count each time (`ns`, no session): `play/<mode>`,
 October 2026), Delve's depth range, `share/delve` (Share run tapped), the
 Daily's answers, links opened, joins, failures (`error/script` and
 `error/chunk`, a part that didn't load, among them)
-and `sync/paired`. Visits count
+and `sync/paired`. Each device that shows a game, a guest's and a watcher's
+too, sends `frames/<device>/<bucket>[/<moment>]` once a game
+(`countGameFrames`, `src/lib/stutter.ts`): its gaps between animation frames
+measured only while the game is under way (not the lobby or the results) and
+the page is seen; the device as `desktop-chrome` (any Chromium browser on a
+computer), `desktop-other`, `ios` (iPhone and iPad) or `android`; `smooth`,
+`some` or `many` by the share of the game's time in frames over 50 ms
+(1% and 5%; time, not frames, so a 240 Hz screen reads as a 60 Hz one does);
+and for one that stuttered, `deal`, `question` or `reveal`, where most of it
+fell. It goes as the game is decided, left, or the page is; a game seen for
+less than 20 seconds sends nothing. Visits count
 once a person in eight hours, and so do the steps (`countReach`, each once a
 page load): `reach/page` on every counted load, what the others are set
 against; `reach/lobby`, `reach/played`, `reach/finished` from each seated
@@ -195,7 +205,12 @@ share is of page loads (`reach/page`) from the day those were first
 counted, against the period before only where that was a share of page
 loads too (`insights.ts`). Games once counted online and
 hot-seat apart (`play/race-online`) read as their mode (`model.ts`
-currentName). `#groups` (Groups) opens on what stands out between groups,
+currentName). Stutter (`#stutter`) has the share of games that stuttered
+a day on each kind of device, small charts on one axis with the period's
+share dashed across, so a deploy that made things worse on one shows as a
+jump there (a day resting on fewer than 5 games hollow, and out of the
+axis), and each device's period against the period before, with the moment
+most stuttered. `#groups` (Groups) opens on what stands out between groups,
 each a sentence and only beyond what chance makes of groups so small
 (`slices.ts` apartFrom), and sets the visits from a country, or on a system or
 a kind of device, against everyone in a table, each row saying what it

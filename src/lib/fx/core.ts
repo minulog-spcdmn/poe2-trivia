@@ -658,6 +658,11 @@ export type Tremor = (nowMs: number) => number | null;
 /** Whether the shake's targets are on layers of their own (see applyShake). */
 let layered = false;
 
+/** Whether a tremor may move the view, quiet as it may be now (effects off or the tab away, it can't). */
+function mayTremble() {
+  return shake.tremor !== null && fxActive() && !hidden;
+}
+
 /** Registers an element that moves with camera shake, `k` times as far. */
 export function shakeTarget(el: HTMLElement, k = 1) {
   shake.targets.push({ el, k });
@@ -731,7 +736,7 @@ function advanceShake(nowMs: number) {
     shake.tremorPx = px !== null && px > TREMOR_MIN && fxActive() && !hidden ? px : 0;
   }
   if (!shaking()) {
-    if (shake.x || shake.y || (layered && !shake.tremor)) applyShake(0, 0);
+    if (shake.x || shake.y || (layered && !mayTremble())) applyShake(0, 0);
     return;
   }
   let x = 0;
@@ -770,7 +775,7 @@ function wearJolt(dt: number) {
 function applyShake(x: number, y: number) {
   shake.x = x;
   shake.y = y;
-  const layer = !!(x || y) || shake.tremor !== null;
+  const layer = !!(x || y) || mayTremble();
   for (const t of shake.targets) {
     t.el.style.translate = x || y ? `${(x * t.k).toFixed(2)}px ${(y * t.k).toFixed(2)}px` : '';
     if (layer !== layered) t.el.style.willChange = layer ? 'translate' : '';
