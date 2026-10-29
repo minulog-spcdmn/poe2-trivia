@@ -88,6 +88,12 @@ export interface Built {
   runs?: DelveRun[];
   /** Items this device has met besides those in its log: by name, or the first so many of the game's; missing: a few. */
   met?: string[] | number;
+  /**
+   * The last so many of the game's items taken as new with the newest release
+   * (lib/releases.ts), as a refresh would stamp them (`added`), and how many of
+   * them this device has met besides. Missing: none came with it, as today.
+   */
+  released?: { count: number; met: number };
   /** The name this device plays under ('': a first visit, never asked). Missing: Kalguur. */
   name?: string;
   /** Today's unique as this device has it: the days answered (lib/daily.ts DailyLog's characters), the last `daysAgo` days before today (the frame's real today). */

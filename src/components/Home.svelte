@@ -20,7 +20,8 @@
   import { STARTED_KEY, hasStarted } from '../lib/started';
   import { isMadeName } from '../lib/madeName';
   import { shownDepth } from '../lib/delve';
-  import { ENTRIES, codexLine, codexLines, cursorKey, lastEntry, rememberEntry, type Entry } from '../lib/startMenu';
+  import { ENTRIES, codexLine, codexLines, cursorKey, lastEntry, rememberEntry, type Entry, type NewItems } from '../lib/startMenu';
+  import { releaseNote } from '../lib/releases';
   import GameTitle from './GameTitle.svelte';
   import Connecting from './Connecting.svelte';
   import DailyUnique from './DailyUnique.svelte';
@@ -92,11 +93,14 @@
   let discovered = $state<number | null>(null);
   /** Whether any game here has had an answer of this player's (the Daily and its practice give none); null until the codex is read. A game from before lib/started.ts says so by it. */
   let answered = $state<boolean | null>(null);
+  /** The newest release's items, while any is still to meet (lib/releases.ts): the Codex line counts them. */
+  let fresh = $state<NewItems>(null);
   const readDiscovered = () =>
     import('../lib/codex').then(({ loadCodex }) => {
       const codex = loadCodex();
       const seen = codex.items;
       discovered = engine.items.filter((it) => seen[it.id]).length;
+      fresh = releaseNote(engine.items, seen);
       answered = Object.keys(codex.byDifficulty).length > 0;
     })
     // Not to be had (a download that failed): taken as no answer yet, so the Daily still offers a way on.
@@ -649,7 +653,7 @@
   const about = $derived<Record<Entry, string>>({
     create: 'Host your party online or at one screen, or play alone.',
     join: 'With the code a friend sent you.',
-    codex: codexLine(discovered, total, deepest),
+    codex: codexLine(discovered, total, deepest, fresh),
     settings: 'Sound, keys, your name, colour and class sigil.',
   });
   const PAIR = [
@@ -658,7 +662,7 @@
   ] as const;
   /** The pair's lines in one column, short enough for half a phone's width. */
   const pairLines = $derived<Record<'codex' | 'settings', string[]>>({
-    codex: codexLines(discovered, total, deepest),
+    codex: codexLines(discovered, total, deepest, fresh),
     settings: ['Sound, keys, sigil.'],
   });
 </script>

@@ -341,7 +341,25 @@ stops when:
 
 A new item poe2db has no tooltip for is left out of this refresh rather than
 shipped without one. The run ends with a summary of what was added, renamed,
-dropped, changed and left out. `src/data/fakes.json` is by name: a new or
+dropped, changed and left out.
+
+Each item new in a run is stamped with the run's UTC day, `added` in
+`items.json` (`firstSeen` in `scripts/refresh-plan.mjs`), and keeps it
+through every later refresh, a rename too (it keeps its id). The items
+listed before the stamps began (every item before 1.0) have none. The start page
+counts the items of the newest release in `src/lib/releases.ts` by it:
+those first listed on the release's day or after, while any is still to
+meet ("39 came with 1.0", `docs/gameplay.md`, "Codex"). So:
+
+- run 1.0's refresh on or after its day, 2026-12-11 (a run before stamps
+  its items with a day before 1.0's, and they never count as its);
+- a new league's refresh adds the league's row to `RELEASES` first (its
+  name as players call it, its first day); without it the league's items
+  would count as 1.0's. The 1.0 line then gives way to the league's.
+
+An item left out for want of a tooltip is stamped on the run that lists
+it. Nothing else reads `added`: the Daily's rows and Delve's rules don't
+move with it. `src/data/fakes.json` is by name: a new or
 renamed item needs its two fakes there (`tests/fakes.test.ts`).
 
 Each item's tooltip (properties, requirements, mods, flavour text) comes from

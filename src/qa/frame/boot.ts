@@ -125,6 +125,13 @@ export async function boot(asked: URLSearchParams) {
   const met = built.met ?? 5;
   const before = typeof met === 'number' ? engine.items.slice(0, met) : engine.items.filter((it) => met.includes(it.name));
   for (const it of before) meet(it.id, at - 86_400_000, at + 1);
+  // Items new with the newest release, stamped as a refresh stamps them (the frame's own copy of the items), some of them met.
+  if (built.released) {
+    const { RELEASES } = await import('../../lib/releases.ts');
+    const came = engine.items.slice(engine.items.length - built.released.count);
+    for (const it of came) it.added = RELEASES.at(-1)!.from;
+    for (const it of came.slice(0, built.released.met)) meet(it.id, at - 86_400_000, at + 1);
+  }
   storage.writeKey(codex.CODEX_KEY, codex.serializeCodex(c));
   // Its Delve runs, oldest first, this one last.
   records.resetRecords();

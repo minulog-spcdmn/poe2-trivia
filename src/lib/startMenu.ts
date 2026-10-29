@@ -29,14 +29,22 @@ export function lastEntry(): number {
 }
 export const rememberEntry = (e: Entry) => void writeStored(LAST, e);
 
-/** The Codex entry's line: what has been met so far, or what it is for before anything has. */
-export function codexLine(met: number | null, total: number, deepest: number): string {
+/** What the Codex line says of the newest release (lib/releases.ts releaseNote): how many items came with it, while any is still to meet. */
+export type NewItems = { name: string; count: number } | null;
+
+/**
+ * The Codex entry's line: what has been met so far, or what it is for before
+ * anything has. While items new with a release are still to meet, it says how
+ * many came with it, so a returning player knows why the share fell, and that
+ * there's something new to find.
+ */
+export function codexLine(met: number | null, total: number, deepest: number, fresh: NewItems = null): string {
   if (!met) return 'Every unique you meet in a game is kept here.';
-  return `Every unique you have met: ${met} of ${total}.${deepest > 0 ? ` Deepest delve: ${deepest}.` : ''}`;
+  return `Every unique you have met: ${met} of ${total}${fresh ? `; ${fresh.count} came with ${fresh.name}` : ''}.${deepest > 0 ? ` Deepest delve: ${deepest}.` : ''}`;
 }
 
 /** The same in one column, where the Codex has half a phone's width: shorter, a line each. */
-export function codexLines(met: number | null, total: number, deepest: number): string[] {
+export function codexLines(met: number | null, total: number, deepest: number, fresh: NewItems = null): string[] {
   if (!met) return ['Kept as you play.'];
-  return [`${met} of ${total} met.`, ...(deepest > 0 ? [`Deepest delve: ${deepest}.`] : [])];
+  return [`${met} of ${total} met.`, ...(fresh ? [`${fresh.count} came with ${fresh.name}.`] : []), ...(deepest > 0 ? [`Deepest delve: ${deepest}.`] : [])];
 }
