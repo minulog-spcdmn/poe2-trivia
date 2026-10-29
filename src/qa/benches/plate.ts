@@ -12,7 +12,7 @@ export const plate: PieceBench = {
   key: 'plate',
   label: 'Name plate',
   about: "The plate behind a unique's name: dark, or lit with its seals' bloom breathing; seals left empty for a button; ends sized to a taller plate.",
-  files: ['src/components/NamePlate.svelte', 'src/lib/weave.ts', 'weaveTile.ts', 'src/lib/alchemy.ts'],
+  files: ['src/components/NamePlate.svelte', 'src/lib/drawIn.ts', 'src/lib/weave.ts', 'weaveTile.ts', 'src/lib/alchemy.ts'],
   controls: [
     { kind: 'toggle', key: 'lit', label: 'Lit', default: true },
     {
