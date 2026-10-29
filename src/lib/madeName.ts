@@ -8,9 +8,10 @@
 // Every name the lists can make passes the name checks and is no unique's
 // name (tests/madeName.test.ts). Sixty by sixty, 3600 names: a room of
 // twelve newcomers has two with the same one about once in fifty-five
-// (the room turns the second away, to rename at the quill).
+// (1 - 3599/3600 x ... x 3589/3600, 66 pairs). The room turns the second
+// away, and that join tries again at once under another (remakeName).
 
-import { NAME_STORED } from './names.ts';
+import { NAME_STORED, nameSkeleton } from './names.ts';
 import { readStored, removeStored, writeStored } from './storage.ts';
 
 export const MADE_FIRST = [
@@ -57,4 +58,22 @@ export function ensureName() {
   if (readStored(NAME_STORED)) return;
   const name = makeName();
   if (writeStored(MADE, name) && !writeStored(NAME_STORED, name)) removeStored(MADE);
+}
+
+/**
+ * Another made name in place of `was`, one a room found taken, saved as this
+ * browser's name; null when `was` isn't the made name saved (chosen since,
+ * here or on a paired device), which stays.
+ */
+export function remakeName(was: string, rand: () => number = randomUnit): string | null {
+  if (!isMadeName(was) || readStored(NAME_STORED) !== was) return null;
+  let name = makeName(rand);
+  for (let i = 0; i < 20 && nameSkeleton(name) === nameSkeleton(was); i++) name = makeName(rand);
+  if (nameSkeleton(name) === nameSkeleton(was)) return null;
+  if (!writeStored(MADE, name)) return null;
+  if (!writeStored(NAME_STORED, name)) {
+    writeStored(MADE, was);
+    return null;
+  }
+  return name;
 }

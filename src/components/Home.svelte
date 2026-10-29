@@ -113,8 +113,15 @@
    * answer in a game). Null until that's known.
    */
   const newcomer = $derived(started ? false : answered === null ? null : !answered);
-  /** Greeted as back again once a game has been started here; until that's known, by a name the player chose (not one made for them). */
-  const welcomeBack = $derived(!!known && (newcomer === false || (newcomer === null && !isMadeName(known))));
+  /** Whether the name is still the one made for this browser: the greeting then says, at rest, that a name of one's own can be chosen. */
+  const made = $derived(isMadeName(known));
+  const rename = $derived(made ? 'Choose your own name' : 'Change your name');
+  /**
+   * Greeted as back again by a name the player chose, once a game has been
+   * started here (or until that's known). A made name is only welcomed: with
+   * its quill's words it fills the wide layout's line, which "back" would wrap.
+   */
+  const welcomeBack = $derived(!!known && !made && newcomer !== true);
   // A game in another tab may add to both meanwhile (the codex by the name
   // lib/codex.ts writes, read raw so it stays out of the first download),
   // and the name may change there or come from another device (lib/sync).
@@ -477,6 +484,12 @@
     if (!connecting) settle();
   }
   function settle() {
+    // A join turned away for a made name someone there had is tried again under another, saved (lib/madeName.ts remakeName).
+    const saved = firstLook ? known : savedName().trim();
+    if (saved !== known) {
+      if (inviteName === known) inviteName = saved;
+      known = saved;
+    }
     if (joining && !session.state && busy !== 'rooms') {
       code = joining.code;
       left = joining;
@@ -593,13 +606,19 @@
   $effect(() => {
     if (session.state && invite) leaveInvite();
   });
-  // The invite screen is for a first visit, when there is no name yet. A
-  // player with a name goes straight on to the room: the start page shows the
-  // join on its way in Join a room's row, and a join that fails leaves the
-  // code there with the toast, to try again. Not over a game being resumed
-  // (App resumes it on mount, after this).
+  // The invite screen is for a first visit, when the name is still the one
+  // made here (or there is none): the friends in the room will see it, so it
+  // is offered in the field, selected, to keep with a tap or type over. A
+  // player with a name of their own goes straight on to the room: the start
+  // page shows the join on its way in Join a room's row, and a join that
+  // fails leaves the code there with the toast, to try again. Not over a game
+  // being resumed (App resumes it on mount, after this).
+  /** The invite's name field, holding the made name, selects it: typing replaces it. */
+  function selectMade(e: FocusEvent) {
+    if (isMadeName(inviteName)) (e.currentTarget as HTMLInputElement).select();
+  }
   const opened = untrack(() => ({ code: invite, name: known }));
-  if (opened.code && nameUsable(opened.name)) {
+  if (opened.code && nameUsable(opened.name) && !isMadeName(opened.name)) {
     const { code, name } = opened;
     leaveInvite();
     cursor = ENTRIES.indexOf('join');
@@ -670,7 +689,7 @@
     {:else}
       <form class="slot row" class:join={act} onsubmit={joinInvite} aria-labelledby={act ? 'invite-label' : undefined} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
         <!-- svelte-ignore a11y_autofocus -->
-        <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" enterkeyhint={act ? 'go' : undefined} autofocus />
+        <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" enterkeyhint={act ? 'go' : undefined} onfocus={selectMade} autofocus />
         <button class="btn primary" type="submit">Join</button>
       </form>
     {/if}
@@ -711,7 +730,7 @@
           <button class="link" type="button" onclick={() => (renaming = false)}>Cancel</button>
         </form>
       {:else}
-        <p class="hello" class:named={!!known}>
+        <p class="hello" class:named={!!known} class:made>
           {welcomeBack ? 'Welcome back,' : 'Welcome,'}
           {#if invite}
             <!-- An invite asks the name in its own row: the greeting only greets. -->
@@ -719,10 +738,10 @@
           {:else}
             <!-- The name and its quill keep together, the name giving way (an ellipsis) before the quill would leave the screen. -->
             <span class="you">
-              <button class="who" onclick={startRename} disabled={connecting} title="Change your name">{known || NAMELESS}.</button>
-              <button class="quill" onclick={startRename} disabled={connecting} tabindex="-1" aria-hidden="true">
-                <span class="ring"><svg viewBox="0 0 24 24"><path d="M5 19l2.5-.6L18 7.9a1.9 1.9 0 0 0-2.7-2.7L4.8 15.7 4.2 18.2zM14 6.5l3.2 3.2" /></svg></span>
-                <i>Change your name</i>
+              <button class="who" onclick={startRename} disabled={connecting}>{known || NAMELESS}.<span class="sr"> {rename}</span></button>
+              <button class="quill" onclick={startRename} disabled={connecting}>
+                <span class="ring" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 19l2.5-.6L18 7.9a1.9 1.9 0 0 0-2.7-2.7L4.8 15.7 4.2 18.2zM14 6.5l3.2 3.2" /></svg></span>
+                <i>{rename}</i>
               </button>
             </span>
           {/if}
@@ -1105,6 +1124,43 @@
     transition:
       opacity 0.2s,
       translate 0.2s var(--ease-out);
+  }
+  /* Tabbing to the name brings its quill along, the next stop. */
+  .hello:focus-within .quill:not(:disabled) {
+    opacity: 1;
+    visibility: visible;
+    translate: 0 0;
+  }
+  /* A made name: the quill and its words stand at rest, on every device, in
+     the line after the name (wrapping under it where the line is too short). */
+  .made .you {
+    display: contents;
+  }
+  .made .you .quill {
+    transform: none;
+  }
+  .made .quill,
+  .made .you .quill {
+    position: static;
+    width: auto;
+    padding: 0;
+    margin-left: 6px;
+    opacity: 1;
+    visibility: visible;
+    translate: 0 0;
+    transition: none;
+  }
+  .made .quill:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .ring {
     width: 30px;
@@ -1634,6 +1690,14 @@
     }
     .quill i {
       display: none;
+    }
+    /* Its ring lines up with the greeting's start on the line after the name, where it usually lands. */
+    .made .you .quill {
+      margin: -8px -8px -8px -8px;
+      padding: 8px;
+    }
+    .made .quill i {
+      display: inline;
     }
     button.who {
       margin: -10px 0;

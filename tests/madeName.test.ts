@@ -1,7 +1,7 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { MADE_FIRST, MADE_SECOND, ensureName, isMadeName, makeName } from '../src/lib/madeName.ts';
+import { MADE_FIRST, MADE_SECOND, ensureName, isMadeName, makeName, remakeName } from '../src/lib/madeName.ts';
 import { MAX_NAME, MIN_NAME, cleanName, nameProblem, nameSkeleton, nameUsable } from '../src/lib/names.ts';
 import { readStored, writeStored } from '../src/lib/storage.ts';
 import { memoryStorage } from './helpers.ts';
@@ -54,4 +54,17 @@ test('a browser without a name is given a made one, kept as made; a name it has 
   ensureName();
   assert.equal(readStored('name'), 'Doryani');
   assert.ok(!isMadeName('Doryani'));
+});
+
+test('a made name a room found taken gives way to another, saved; a chosen one stays', () => {
+  ensureName();
+  const made = readStored('name')!;
+  const next = remakeName(made);
+  assert.ok(next && every.includes(next) && nameSkeleton(next) !== nameSkeleton(made));
+  assert.equal(readStored('name'), next);
+  assert.ok(isMadeName(next), 'still a made name, never sent by sync');
+  writeStored('name', 'Kalguur');
+  assert.equal(remakeName(next), null);
+  assert.equal(readStored('name'), 'Kalguur');
+  assert.equal(remakeName('Kalguur'), null);
 });

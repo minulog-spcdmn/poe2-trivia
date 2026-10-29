@@ -1,8 +1,8 @@
 <script lang="ts">
   // While a room opens or is joined: the rune turning with a small portal
-  // swirling on it, what is happening, and a way out. Joining takes a while
-  // on some networks: after a few seconds it says it's still going, so no one
-  // gives up early.
+  // swirling on it, what is happening, and a way out. Joining, and opening
+  // a room, take a while on some networks: after a few seconds it says it's
+  // still going, so no one gives up early.
   import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
@@ -27,7 +27,7 @@
 <div class="connecting" role="status" in:fade={{ duration: 200 }}>
   <span class="rune" use:portalOn aria-hidden="true"></span>
   <span class="what" title={slow && joining ? 'Some networks take a little longer.' : undefined}>
-    {#if !joining}Opening a portal…{:else if slow}Still on the way…{:else}Travelling to <span class="num">{session.code}</span>…{/if}
+    {#if !joining}{slow ? 'Still opening the portal…' : 'Opening a portal…'}{:else if slow}Still on the way…{:else}Travelling to <span class="num">{session.code}</span>…{/if}
   </span>
   <button class="btn small ghost" type="button" onclick={() => session.leave()}>Cancel</button>
 </div>

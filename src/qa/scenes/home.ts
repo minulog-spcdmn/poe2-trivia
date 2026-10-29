@@ -89,7 +89,11 @@ const JOIN_FAILED: Control[] = [
   },
 ];
 
-/** What an invite's room answers, and whether this device has no name saved (one let go; ?first on the beta): a first visit's made name joins straight away. */
+/**
+ * What an invite's room answers, and the name this device has: its own goes straight into the join; a made one
+ * (a first visit's, lib/madeName.ts) shows the invite with it in the field, selected; none (one let go; ?first
+ * on the beta) shows it with the field empty.
+ */
 const INVITE: Control[] = [
   {
     kind: 'choice',
@@ -104,13 +108,24 @@ const INVITE: Control[] = [
       { value: 'silent', label: "Doesn't answer" },
     ],
   },
-  { kind: 'toggle', key: 'first', label: 'No name saved', default: false },
+  {
+    kind: 'choice',
+    key: 'name',
+    label: 'The name',
+    default: 'own',
+    options: [
+      { value: 'own', label: 'Their own' },
+      { value: 'made', label: 'Made for them' },
+      { value: 'none', label: 'None saved' },
+    ],
+  },
 ];
 function invite(v: Values = {}): Built {
   const asked = room(4, { code: 'KXR4QT', players: 3 });
   const answer = v.room === 'full' ? { ...asked, players: 12, maxPlayers: 12 } : v.room === 'playing' ? { ...asked, phase: 'question' as const } : v.room === 'gone' ? ('gone' as const) : v.room === 'silent' ? null : asked;
-  const query = v.first ? 'room=KXR4QT&first' : 'room=KXR4QT';
-  return v.first ? { state: null, name: '', met: [], query, invite: answer } : returning({}, { query, invite: answer });
+  if (v.name === 'made') return { ...firstVisit(), query: 'room=KXR4QT', invite: answer };
+  if (v.name === 'none') return { state: null, name: '', met: [], query: 'room=KXR4QT&first', invite: answer };
+  return returning({}, { query: 'room=KXR4QT', invite: answer });
 }
 
 /**
@@ -187,7 +202,7 @@ const home = (key: string, label: string, s: Omit<Scene, 'key' | 'label' | 'scre
 
 export function homeScenes(): Scene[] {
   return [
-    home('first-visit', 'A first visit: a name made for it (Welcome, not Welcome back), nothing played', { build: firstVisit }),
+    home('first-visit', 'A first visit: a name made for it, Choose your own name beside it at rest (Welcome, not Welcome back)', { build: firstVisit }),
     // A name let go (one this device can't play under) or never made: New game and Join a room ask for one.
     home('no-name', 'No name saved: New game and Join a room ask for one', { build: () => ({ state: null, name: '', met: [], rooms: [] }) }),
     home('returning', 'Back again', {
@@ -220,7 +235,8 @@ export function homeScenes(): Scene[] {
     home('code-short', 'Joining with a code too short: the notice', {
       build: () => returning({}, { steps: [{ toast: 'Room codes have 6 letters and digits.', kind: 'error', opts: { title: 'Code too short' } }] }),
     }),
-    home('connecting', 'Joining a room: connecting', { build: () => returning({}, { status: 'connecting' }) }),
+    // A host opening its room: after 6 s it says it's still opening the portal.
+    home('connecting', 'Opening a room: the portal, then still opening it', { build: () => returning({}, { status: 'connecting' }) }),
     // A guest on its way: after 6 s it says it's still going, and why it may take a while.
     home('joining', 'Joining a room: travelling, then still on the way', { build: () => returning({}, { status: 'connecting', seat: GUEST }) }),
     // A code typed into Join a room and joined, as a player would (the wide layout opens the entry first; on a
@@ -250,7 +266,8 @@ export function homeScenes(): Scene[] {
         controls: INVITE,
         states: [
           { label: 'An invite link to an open room', values: {} },
-          { label: 'An invite link with no name saved', values: { first: true } },
+          { label: 'An invite link under a made name: the field holds it, selected', values: { name: 'made' } },
+          { label: 'An invite link with no name saved', values: { name: 'none' } },
           { label: 'An invite to a full room', values: { room: 'full' } },
           { label: 'An invite to a room mid-game', values: { room: 'playing' } },
           { label: 'An invite to a room that has closed', values: { room: 'gone' } },

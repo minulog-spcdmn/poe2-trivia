@@ -657,22 +657,26 @@ they're worth more sigils than are unlocked already. Kept in this browser (`src/
   - **Names:** a browser with no name gets one made for it on its first
     load, two words in the game's manner ("Ashen Wanderer",
     `src/lib/madeName.ts`), saved as its name, so a newcomer is never asked
-    for one: New game, a join and an invite go straight on. The start page
-    greets it with "Welcome," until a game has been started here
-    (`src/lib/started.ts`), then "Welcome back,"; its quill renames it.
+    for one: New game, a join by code and an open room go straight on. The
+    start page greets it with "Welcome," and the quill and "Choose your own
+    name" beside it, at rest. A name the player chose is greeted with
+    "Welcome back," once a game has been started here (`src/lib/started.ts`).
     Sync never sends a made name, and a name chosen on a paired device
-    replaces it.
+    replaces it. A room that turns a made name away as taken (two
+    newcomers drew the same one) is joined again at once under another
+    made name, once, without a word (`remakeName`).
   - An invite link (`?room=CODE`) carries only the room's code. Opened
-    with no name saved (one let go, or `?first` on the beta), the start
-    page shows it with the choice made: "Join <host>'s room" with a name field, and the room as the
+    with no name saved (one let go, or `?first` on the beta) or a made one,
+    the start page shows it with the choice made: "Join <host>'s room" with a name field, and the room as the
     lobby will show it (its code, the host's chip, theirs filling in as they
-    type). Whose room it is, how many are in and whether it can be joined
+    type; a made name stands in the field, selected, to keep with one tap
+    on Join or type over). Whose room it is, how many are in and whether it can be joined
     (locked, full, playing, gone, another version) the room says itself:
     the screen asks it on opening, as the room list asks public rooms
     (`probeRoom`, answered by `ProbeDesk` in `src/lib/probeDesk.ts`), so
     no link can name a host it doesn't have. Asking connects to the host,
     as the room list does (see `docs/fair-play.md`, Privacy).
-    Anyone with a saved name joins straight away; if the room is gone or
+    Anyone with a name of their own joins straight away; if the room is gone or
     full they stay on the start page with the code in Join a room.
   - **Players at the host's screen:** in a Turns lobby the host can add
     players by name under the party (Add a player at your screen). They

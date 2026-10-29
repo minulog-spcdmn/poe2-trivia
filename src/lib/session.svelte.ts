@@ -41,6 +41,7 @@ import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HO
 import { LaneReceiver, LaneSender, openLane, parseFakeLink } from './artLane';
 import { honestRtt, measuredRtt, PING_SAMPLES } from './linkRtt';
 import { NAME_STORED, cleanName, isHeldName, isNameProblem, nameSkeleton, nameUsable } from './names';
+import { remakeName } from './madeName';
 import { JoinName } from './joinName';
 import { checkJoin, joinProof, newChallenge, ownerUnlocked, roomProof } from './ownerKey';
 import { prepareMedia, shown, warmMedia, type PreparedMedia } from './media.svelte';
@@ -1909,8 +1910,10 @@ class Session {
   codeDoubted = false;
   /** Whether what the host turned down at the door was the name (lib/names.ts isNameProblem): the start page puts the player back on it. */
   nameRefused = false;
+  /** Whether this join is the one tried again under another made name (lib/madeName.ts), the first having found its own taken: once per join. */
+  private madeAgain = false;
 
-  join(code: string, name: string, watch = false, via?: JoinVia, keepName = !!via) {
+  join(code: string, name: string, watch = false, via?: JoinVia, keepName = !!via, madeAgain = false) {
     // The host's room has its own settings: a shared link's Delve is moot.
     this.delveLink = false;
     this.reset();
@@ -1936,7 +1939,9 @@ class Session {
       return;
     }
     this.joinVia = via ?? null;
-    if (via) countEvent(`join/${via}`);
+    // Tried again under another made name, it's still the one join the player set off.
+    if (via && !madeAgain) countEvent(`join/${via}`);
+    this.madeAgain = madeAgain;
     this.saveGuest();
     const room = this.code;
     this.helloSecret = roomSecret(mySecret, room).catch(() => stored(`secret.${room}`, () => randomToken(32)));
@@ -2272,6 +2277,13 @@ class Session {
             this.turnedDown = { askedAt: msg.askedAt };
           }
           if (this.status === 'connecting') {
+            // A name made on this device that someone in the room has already (only a clash can turn one away):
+            // in again at once under another, without a word, once.
+            const again = !this.madeAgain && isNameProblem(msg.message) ? remakeName(this.joinName) : null;
+            if (again) {
+              this.join(this.code, again, this.watchOnly, this.joinVia ?? undefined, true, true);
+              break;
+            }
             this.nameRefused = isNameProblem(msg.message);
             this.fail(versionRefusal(msg.message), "Couldn’t join", { failure: this.joinFailure(isVersionRefusal(msg) ? 'join-version-mismatch' : 'join-refused') });
           } else this.flash(msg.message, 'error');
