@@ -23,7 +23,7 @@
 // --redraws instead checks what Chrome draws again (src/qa/redraws.ts,
 // docs/qa.md, "Redraws"): each scene's first state at rest, and the card
 // bench's moments (a deal, a dig's deal, a pick), traced with WebGL and full
-// motion on. It fails on a layer drawn again on most frames at rest, and on
+// motion on. It fails on a layer drawn again on nearly every frame at rest, and on
 // a moment past its baseline (src/qa/redraws.json; --baseline writes it).
 // It runs in CI on every pull request; here only with --only.
 //
@@ -356,16 +356,40 @@ const REDRAW_TRACE = ['cc', 'disabled-by-default-cc.debug'];
 /**
  * A browser of its own for each page traced (a trace is the whole
  * browser's). Without a GPU (CI) it all draws in SwiftShader, which Chrome
- * asks to be let in; REDRAWS_SOFTWARE=1 draws in it here too, as CI does.
- * The app comes to 2 or 3 frames a second there (a plain page, 200), so
- * what's counted is counted in frames, not in seconds.
+ * asks to be let in. The app comes to 2 or 3 frames a second there (a
+ * plain page, 200), so what's counted is counted in frames, not in seconds.
+ * The scenes at rest are drawn in software here too, as CI draws them: 8 s
+ * at a GPU's 240 frames a second would be a trace of half a gigabyte. The
+ * moments are drawn on the GPU here (REDRAWS_SOFTWARE=1: in software).
  */
 const software = process.platform !== 'win32' || !!process.env.REDRAWS_SOFTWARE;
-const launchTraced = () =>
+const launchTraced = (soft) =>
   chromium.launch({
     ...(process.env.CHROMIUM || process.env.BOT_CHROMIUM ? { executablePath: process.env.CHROMIUM || process.env.BOT_CHROMIUM } : { channel: 'chromium' }),
-    args: [...(software ? ['--enable-unsafe-swiftshader', ...(process.platform === 'win32' ? ['--use-angle=swiftshader'] : [])] : ['--use-angle=d3d11']), '--enable-gpu', '--ignore-gpu-blocklist'],
+    args: [...(soft ? ['--enable-unsafe-swiftshader', ...(process.platform === 'win32' ? ['--use-angle=swiftshader'] : [])] : ['--use-angle=d3d11']), '--enable-gpu', '--ignore-gpu-blocklist'],
   });
+
+/**
+ * In the page: waits until `still` ms pass with no style or class written
+ * (a rune circle's pen done drawing, which on a slow machine starts late),
+ * `most` ms at the most (a shake that never stops is watched all the same).
+ */
+async function quiet({ still, most }) {
+  const t0 = performance.now();
+  let last = t0;
+  const seen = new MutationObserver(() => (last = performance.now()));
+  seen.observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+  await new Promise((done) => {
+    const check = () => {
+      const now = performance.now();
+      if (now - last >= still || now - t0 >= most) done();
+      else setTimeout(check, 100);
+    };
+    check();
+  });
+  seen.disconnect();
+  return Math.round(performance.now() - t0);
+}
 
 /**
  * In the page: counts its frames until `least` ms (of the animations' own
@@ -427,7 +451,7 @@ const contextFor = (browser) => {
   return browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: size.dpr, reducedMotion: 'no-preference' });
 };
 
-/** Each scene's first state at rest, from its first seat: the layers drawn again on most frames, and what changes meanwhile. */
+/** Each scene's first state at rest, from its first seat: the layers drawn again on nearly every frame, and what changes meanwhile. */
 async function scenesAtRest(base, scenes, browsers) {
   // (With --shard i/n, every n-th scene from the i-th: each part gets some of each screen.)
   const firsts = scenes.filter((s, i) => scenes.findIndex((t) => t.key === s.key) === i).filter((s, i) => !shard || i % shard[1] === shard[0] - 1);
@@ -458,10 +482,13 @@ async function scenesAtRest(base, scenes, browsers) {
             const r0 = await page.evaluate(() => window.__qa);
             if (r0.failed) throw new Error(r0.failed);
             step('at rest');
-            // (What follows a scene's coming to rest, a toast, a sound's first beat, past.)
+            // (What follows a scene's coming to rest past: a toast, a sound's first beat, a rune circle's pen.)
             await page.waitForTimeout(500);
-            // (At least 12 frames, however long they take: in software, a frame can take half a second.)
-            const t = await traced(browser, page, () => page.evaluate(watchFrames, { least: 2000, frames: 12, most: 60000, still: false }));
+            await page.evaluate(quiet, { still: 1000, most: 15000 });
+            step('quiet');
+            // (8 s, for a light that sweeps every few seconds to show as the part of the time it is, and
+            // at least 12 frames, however long they take: in software, a frame can take half a second.)
+            const t = await traced(browser, page, () => page.evaluate(watchFrames, { least: 8000, frames: 12, most: 60000, still: false }));
             step(`${t.frames} frames in ${t.ms} ms, traced`);
             // (The page closed first, so that it isn't drawing while the trace is read.)
             await context.close();
@@ -516,10 +543,10 @@ async function moments(base, browser) {
       await clock(1);
       return page.evaluate(watchFrames, { least: 1000, frames: 1, most: 30000, still: true });
     };
-    const still = await rest();
-    // (Where the clock starts: a moment's frames come slower than those at rest, and it's soon set right.)
-    let rate = Math.min(16, Math.max(0.005, still.frames / (still.ms / 1000) / PLAYED_FPS / 2));
-    /** Keeps the clock to the frames until `watching` is over. */
+    await rest();
+    const between = (r) => Math.min(16, Math.max(0.002, r));
+    let rate = 1;
+    /** Keeps the clock to the frames until `watching` is over: set anew from every few frames, when it's off by a sixth or more. */
     const keepClock = async (watching) => {
       let over = false;
       watching.then(
@@ -531,10 +558,12 @@ async function moments(base, browser) {
       while (!over) {
         await new Promise((r) => setTimeout(r, 500));
         const n = await page.evaluate(() => window.__framesWatched ?? 0).catch(() => n0);
-        if (over || n <= n0) continue;
-        const fps = (n - n0) / ((Date.now() - t0) / 1000);
-        rate = Math.min(16, Math.max(0.005, (rate + fps / PLAYED_FPS) / 2));
-        await clock(rate).catch(() => {});
+        if (over || n - n0 < 3) continue;
+        const next = between((n - n0) / ((Date.now() - t0) / 1000) / PLAYED_FPS);
+        if (Math.abs(Math.log(next / rate)) > Math.log(7 / 6)) {
+          rate = next;
+          await clock(rate).catch(() => {});
+        }
         n0 = n;
         t0 = Date.now();
       }
@@ -550,7 +579,8 @@ async function moments(base, browser) {
     // (With --shard i/n, the i-th of every n moments: CI gives each its own job.)
     for (const m of MOMENTS.filter((m, i) => !shard || i % shard[1] === shard[0] - 1)) {
       const runs = [];
-      for (let i = 0; i < 3; i++) {
+      // (Run once first, unwatched: for the clock to start where it should, the page's first raster of it past.)
+      for (let i = -1; i < 3; i++) {
         // (A pick is of cards dealt first, unwatched.)
         if (m.key === 'pick') {
           await deal();
@@ -558,15 +588,18 @@ async function moments(base, browser) {
         }
         await clock(rate);
         // (Watched until it's over, and for a second and a half of its own time at least.)
-        const r = drawnAgain(
-          await traced(browser, page, async () => {
-            await setOff[m.key]();
-            return keepClock(page.evaluate(watchFrames, { least: 1500, frames: 8, most: 240000, still: true, played: true }));
-          }),
-        );
-        runs.push({ ...r, perFrame: r.again / Math.max(1, r.frames) });
-        if (!process.stdout.isTTY) console.log(`  ${m.key}, run ${i + 1}: ${r.frames} frames in ${r.ms} ms for ${r.played} ms of its own (the clock ending at ${rate.toFixed(3)}×), ${kpx(runs.at(-1).perFrame)} drawn again a frame`);
+        const started = rate;
+        const watched = async () => {
+          await setOff[m.key]();
+          return keepClock(page.evaluate(watchFrames, { least: 1500, frames: 8, most: 240000, still: true, played: true }));
+        };
+        const r = i < 0 ? await watched() : drawnAgain(await traced(browser, page, watched));
+        // (The next run's clock starts where this one's would have given it PLAYED_FPS frames to a second of its own.)
+        rate = between(r.frames / PLAYED_FPS / (r.ms / 1000));
         await rest();
+        if (i < 0) continue;
+        runs.push({ ...r, perFrame: r.again / Math.max(1, r.frames) });
+        if (!process.stdout.isTTY) console.log(`  ${m.key}, run ${i + 1}: ${r.frames} frames in ${r.ms} ms for ${r.played} ms of its own (its clock from ${started.toFixed(3)}×), ${kpx(runs.at(-1).perFrame)} drawn again a frame`);
       }
       runs.sort((a, b) => a.perFrame - b.perFrame);
       const r = runs[1];
@@ -580,18 +613,23 @@ async function moments(base, browser) {
 
 async function checkRedraws(base, scenes) {
   const at = Math.max(1, Math.min(concurrency, values.only ? 2 : concurrency));
-  const traceBrowsers = await Promise.all(Array.from({ length: at }, launchTraced));
+  const traceBrowsers = [];
+  const launched = async (soft) => {
+    const b = await launchTraced(soft);
+    traceBrowsers.push(b);
+    return b;
+  };
   let atRestFound = [];
   let momentsFound = [];
   try {
     if (values.only || !values.moments) {
       const of = new Set(scenes.map((s) => s.key)).size;
       console.log(`Redraws at rest: ${shard ? `part ${shard[0]} of ${shard[1]} of ${of}` : of} scenes, ${at} at once, at ${REDRAW_SIZE}, from ${base}`);
-      atRestFound = await scenesAtRest(base, scenes, traceBrowsers);
+      atRestFound = await scenesAtRest(base, scenes, await Promise.all(Array.from({ length: at }, () => launched(true))));
     }
     if (values.moments || (!values.only && !shard)) {
-      console.log('Redraws in the card bench’s moments…');
-      momentsFound = await moments(base, traceBrowsers[0]);
+      console.log(`Redraws in the card bench’s moments, ${software ? 'in software' : 'on the GPU'}…`);
+      momentsFound = await moments(base, await launched(software));
     }
   } finally {
     await Promise.all(traceBrowsers.map((b) => b.close()));
@@ -618,7 +656,7 @@ async function checkRedraws(base, scenes) {
       if (s.painted.length) lines.push(`    animating what isn’t its transform or opacity: ${s.painted.slice(0, 4).join('; ')}`);
     }
   }
-  if (atRestFound.length) console.log(`At rest: ${atRestFound.length} scenes, ${bad.length} with a layer drawn again on most frames${bad.length ? ':' : '.'}`);
+  if (atRestFound.length) console.log(`At rest: ${atRestFound.length} scenes, ${bad.length} with a layer drawn again on nearly every frame${bad.length ? ':' : '.'}`);
   for (const l of lines) console.log(l);
   for (const m of momentsFound) {
     const of = m.baseline === undefined ? 'no baseline yet' : `baseline ${kpx(m.baseline)}`;
@@ -638,7 +676,7 @@ async function checkRedraws(base, scenes) {
     const md = [
       shard ? `## Redraws at rest, part ${shard[0]} of ${shard[1]}` : '## Redraws',
       '',
-      ...(atRestFound.length ? [`At rest: ${atRestFound.length} scenes, ${bad.length} with a layer drawn again on most frames.`, '', ...lines.map((l) => `    ${l}`), ''] : []),
+      ...(atRestFound.length ? [`At rest: ${atRestFound.length} scenes, ${bad.length} with a layer drawn again on nearly every frame.`, '', ...lines.map((l) => `    ${l}`), ''] : []),
       ...(momentsFound.length
         ? [
             '| Moment | Drawn again a frame | Runs | Baseline |',

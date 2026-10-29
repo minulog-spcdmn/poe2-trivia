@@ -74,10 +74,10 @@ test('the trace is read a line an event, keeping only what is read', () => {
   );
 });
 
-test('at rest, a layer drawn again on most frames fails', () => {
+test('at rest, a layer drawn again on nearly every frame fails', () => {
   const l = { id: 5, name: 'div.stage', w: 1393, h: 594, node: 1, commits: 19, px: 20 * 400_000, again: 19 * 400_000 };
   assert.match(atRest('game/delve-dig', l, 20) ?? '', /div\.stage \(1393×594\) drawn again on 95% of the frames at rest, 400k px a frame/);
-  assert.equal(atRest('game/delve-dig', { ...l, commits: 9 }, 20), null, 'less than half the frames');
+  assert.equal(atRest('game/delve-dig', { ...l, commits: 14 }, 20), null, 'a light that sweeps now and then');
   assert.equal(atRest('game/delve-dig', l, 4), null, 'too few frames to tell');
 });
 

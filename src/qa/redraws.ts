@@ -185,13 +185,19 @@ export function redraws(events: TraceEvent[]): Redraws {
 
 // ---- at rest ----------------------------------------------------------------
 
-/** At rest, a layer drawn again in more than this share of the frames is drawn every frame, near enough. */
-export const MOST_FRAMES = 0.5;
+/**
+ * At rest, a layer drawn again on this share of the frames or more is drawn
+ * every frame. Not half: in software (CI) a light that sweeps a quarter of
+ * the time (GameOver's gleam) was drawn again on two thirds of the frames,
+ * those without it being the quick ones; a shake writing its style every
+ * frame is drawn again on all of them.
+ */
+export const NEARLY_EVERY_FRAME = 0.9;
 /** Fewer frames than this in the time watched and nothing can be said (a page that stalled). */
 export const FEWEST_FRAMES = 8;
 
 /**
- * What may be drawn again on most frames at rest, and why. `layer` is the
+ * What may be drawn again on nearly every frame at rest, and why. `layer` is the
  * layer's short name (layerName); `scenes` the scenes it may be in (all if
  * none); `px` the most it may draw a frame, so a small thing allowed here
  * doesn't let something big on the same layer through.
@@ -205,9 +211,9 @@ export interface Allowed {
 
 export const ALLOWED: Allowed[] = [];
 
-/** A layer drawn again on most of `frames` frames at rest, unless allowed: what's wrong, else null. */
+/** A layer drawn again on nearly every one of `frames` frames at rest, unless allowed: what's wrong, else null. */
 export function atRest(scene: string, l: LayerRedraws, frames: number): string | null {
-  if (frames < FEWEST_FRAMES || l.commits <= frames * MOST_FRAMES) return null;
+  if (frames < FEWEST_FRAMES || l.commits < frames * NEARLY_EVERY_FRAME) return null;
   const perFrame = l.px / frames;
   if (ALLOWED.some((a) => a.layer.test(l.name) && (!a.scenes || a.scenes.test(scene)) && perFrame <= a.px)) return null;
   return `${l.name} (${l.w}×${l.h}) drawn again on ${Math.round((Math.min(l.commits, frames) / frames) * 100)}% of the frames at rest, ${kpx(perFrame)} a frame`;
@@ -251,7 +257,7 @@ export const PAINTED: Painted[] = [
   { file: 'src/components/Lobby.svelte', keyframes: ['mode-off', 'mode-on'], why: 'No time at all (0 s): the WebGL backdrop’s fill for a mode, set as it changes.' },
   // ---- for as long as it shows
   { file: 'src/components/DelveLadder.svelte', keyframes: ['comet', 'reveal', 'draw', 'blend-stroke', 'blend-fill', 'blend-halo', 'blend-glory'], why: 'The ladder draws itself once as it shows (the comet, the reveal, the stars’ lines); a star for two bests drifts from gold to red and back, 7 s each way, for as long as it shows: a star’s lines on the ladder.' },
-  { file: 'src/components/GameOver.svelte', keyframes: ['gleam', 'ignite'], why: 'The headline’s and the winner’s row’s light runs across them every 5 s (the winner’s edge kindles once): measured at rest in over/n-won, nothing drawn again on most frames (the light passes, then holds).' },
+  { file: 'src/components/GameOver.svelte', keyframes: ['gleam', 'ignite'], why: 'The headline’s and the winner’s row’s light runs across them for a second and a quarter every 5 s (the winner’s edge kindles once). With no layer of its own it draws the shell round it again as it passes: in over/n-lost, in software, div.shell on two thirds of the frames, 500k px a frame. Not nearly every frame, so it passes; it’s the one to give a layer next.' },
   { file: 'src/components/Phial.svelte', keyframes: ['glint'], why: 'A phial’s glint runs along its edge now and then, for as long as it shows: a stroke 16 px long on a small svg.' },
   { file: 'src/components/QuestionView.svelte', keyframes: ['glow'], why: 'An option picked and waiting for the verdict glows, 1 s a breath, for the moment the verdict takes: the WebGL backdrop’s shadow under it (custom properties it reads), not drawn by Chrome.' },
   { file: 'src/components/Settings.svelte', keyframes: ['breathe'], why: 'The sync seal breathes while sync is on, 1.1 s a breath, for as long as the settings show: the seal’s own glow, a few dozen px.' },
