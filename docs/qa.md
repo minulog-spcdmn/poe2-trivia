@@ -58,6 +58,28 @@ Run it only when really necessary. Several sessions often share the machine, and
 - `--webgl` keeps the effects and the backdrop on; `--banding` also runs `scripts/find-banding.py` on each shot (it needs a Python with numpy and Pillow; `QA_PYTHON` names one).
 - `--url http://localhost:5173/` sweeps a running server instead of a build; `--no-build` reuses the last build.
 - `--map` runs every scene once with the browser's coverage on and writes `src/data/sceneFiles.json`, which files each scene runs: what This change goes by. Run it when scenes or screens have changed much; with `--only <scenes>` it maps just those (new scenes, say) and merges them into the map as it was.
+- `--redraws` checks what Chrome draws again instead (below).
+
+## Redraws
+
+Every stutter of October 2026 was one bug: something animated on the page's thread, with no layer of its own, so Chrome drew a big layer round it again on every frame while the screen looked nearly still. The emblems' kindle drew each sharp card face again for every frame of a deal; the camera shake's `translate` on `.shell` drew the whole page again all through a Delve vein. Nothing looks wrong; it only costs, and only a slow machine or a 4K screen feels it. How often a layer is drawn again doesn't depend on how fast the machine is, so it can be checked in CI, as fps can't.
+
+**The check runs in CI on every pull request into main** (`.github/workflows/redraws.yml`, “Redraws”), and fails the pull request when:
+
+- **at rest**, a layer is drawn again on more than half the frames. Each scene's first state is watched from its first seat at the desktop size (1440 × 900), WebGL and full motion on, for 2 s and at least 20 frames once it has come to rest.
+- **a moment** costs more than 1.5 times its baseline. The moments are on the card bench's stage (`cards.html?stage`): a deal of three cards, a dig's deal (the vein and the way out) and a card picked (`window.__cb.deal`, `window.__lab.ask`). Each is watched from when it's set off until it's over, as the pixels drawn again a frame (a tile drawn a second time or more; drawing a card as it first shows doesn't count), three times, the middle one kept. The baselines are in `src/qa/redraws.json`, each taken as at least 50k px a frame so that a moment costing next to nothing isn't failed for noise.
+
+It reads Chrome's own trace: the raster tasks (each a tile of a layer drawn for one of the page's commits) and the frame viewer's snapshots of the layer tree (each layer's element and size, each tile's rect, what each commit invalidated). A layer is named by its element (`div.stage`, `svg.lamp`). Where a layer is drawn again at rest, it also says what changed on most frames (a style or class written from script, such as the shake's) and what animates something other than its transform or opacity, which is where to look. The job's summary lists what it found and the moments as measured; `report.json`, kept with the run, has every layer.
+
+- **When it fails at rest:** give what animates a layer of its own (`will-change`, its transform, opacity or filter as fits), animate its transform or opacity instead, or stop writing its style every frame. `docs/development.md` (“Frame hitches from redrawing”) has how to trace it by hand.
+- **When a moment fails** and the change means it to cost more (a new card face, a richer deal), take its new number from the job's summary into `src/qa/redraws.json` in the same pull request, and say why in it. A moment that got cheaper can be lowered the same way.
+- **Locally**, only narrowed: `npm run sweep -- --redraws --only <scene>` for a scene or two at rest, `--moments` for the moments (`--baseline` writes them into `src/qa/redraws.json`), `--sizes <size>` for one other size. Without `--only` or `--moments` it refuses outside CI: every scene drawing WebGL at full motion is CI's to run, not a machine sessions share.
+
+**What may be drawn again on most frames at rest** is `ALLOWED` in `src/qa/redraws.ts`, each with why and the most it may draw a frame, so a small thing allowed there doesn't let something big on the same layer through. It's empty: nothing at rest is drawn again on most frames.
+
+**Read from the CSS** (`tests/ownLayers.test.ts`, in `npm test`): an animation whose keyframes change anything but transform or opacity (a filter, a custom property, a colour, a shadow, a stroke) has to be on an element with `will-change`, so it draws again only its own layer, or be in `PAINTED` in `src/qa/redraws.ts` with why. That widens rule 7 of `docs/category-cards.md` to every component; it catches a new one before it runs anywhere, the redraw check measures it. The ones there before the check are listed with what they cost: most run once, as something shows, and are small.
+
+**What it doesn't see:** WebKit. Safari (every browser on iOS) draws again for some things Chrome leaves to the compositor (a find card's `pulse`, custom properties on `.frame`, draws its face again every frame there); iOS is measured on the iPhone (`docs/iphone.md`). The CSS test still asks those for a layer of their own. Transitions and animations made in script (`element.animate`) aren't read from the CSS either; the redraw check measures them where a scene or moment has them.
 
 ## Keeping it easy
 

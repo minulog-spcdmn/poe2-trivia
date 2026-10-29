@@ -419,27 +419,33 @@ async function scenesAtRest(base, scenes, browsers) {
   await Promise.all(
     browsers.map(async (browser) => {
       while (next < firsts.length) {
-        const s = firsts[next++];
-        const context = await contextFor(browser);
-        const page = await context.newPage();
-        try {
-          const q = new URLSearchParams({ frame: `r${next}`, s: s.key, seat: '0', size: REDRAW_SIZE });
-          for (const [k, v] of s.values ?? []) q.set(`k.${k}`, v);
-          await page.goto(`${base}qa.html?${q}`, { waitUntil: 'load', timeout: 60000 });
-          await page.waitForFunction(() => window.__qa, null, { timeout: 90000 });
-          const r0 = await page.evaluate(() => window.__qa);
-          if (r0.failed) throw new Error(r0.failed);
-          // (What follows a scene's coming to rest, a toast, a sound's first beat, past.)
-          await page.waitForTimeout(500);
-          const r = await traced(browser, page, () => page.evaluate(watchFrames, { least: 2000, frames: 20, most: 8000, still: false }));
-          const problems = r.layers.map((l) => atRest(s.key, l, r.frames)).filter(Boolean);
-          out.push({ scene: s.key, frames: r.frames, ms: r.ms, problems, changing: r.changing, painted: r.painted, layers: r.layers.slice(0, 8) });
-        } catch (e) {
-          out.push({ scene: s.key, failed: e.message.split('\n')[0], problems: [] });
-        } finally {
-          await context.close();
-          if (process.stdout.isTTY) process.stdout.write(`\r${out.length}/${firsts.length}`);
+        const n = next++;
+        const s = firsts[n];
+        // (A frame that didn't load, a page timing out on a busy runner, is tried once more before it counts.)
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const context = await contextFor(browser);
+          const page = await context.newPage();
+          try {
+            const q = new URLSearchParams({ frame: `r${n}`, s: s.key, seat: '0', size: REDRAW_SIZE });
+            for (const [k, v] of s.values ?? []) q.set(`k.${k}`, v);
+            await page.goto(`${base}qa.html?${q}`, { waitUntil: 'load', timeout: 60000 });
+            await page.waitForFunction(() => window.__qa, null, { timeout: 90000 });
+            const r0 = await page.evaluate(() => window.__qa);
+            if (r0.failed) throw new Error(r0.failed);
+            // (What follows a scene's coming to rest, a toast, a sound's first beat, past.)
+            await page.waitForTimeout(500);
+            const r = await traced(browser, page, () => page.evaluate(watchFrames, { least: 2000, frames: 20, most: 8000, still: false }));
+            const problems = r.layers.map((l) => atRest(s.key, l, r.frames)).filter(Boolean);
+            out.push({ scene: s.key, frames: r.frames, ms: r.ms, problems, changing: r.changing, painted: r.painted, layers: r.layers.slice(0, 8) });
+            break;
+          } catch (e) {
+            if (attempt === 1) out.push({ scene: s.key, failed: e.message.split('\n')[0], problems: [] });
+          } finally {
+            await context.close();
+          }
         }
+        if (process.stdout.isTTY) process.stdout.write(`\r${out.length}/${firsts.length}`);
+        else if (out.length % 10 === 0) console.log(`  ${out.length}/${firsts.length} in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
       }
     }),
   );

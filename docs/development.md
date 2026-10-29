@@ -190,7 +190,8 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   (`applyShake` in `src/lib/fx/core.ts`). To find the next one, sum the
   raster tasks per frame; the categories `cc` and
   `disabled-by-default-devtools.timeline.invalidationTracking` add which
-  layer was redrawn and what invalidated it.
+  layer was redrawn and what invalidated it. The redraw check
+  (`docs/qa.md`, “Redraws”) does that in CI on every pull request.
 - **Frame hitches on iOS** are measured on the owner's iPhone, driven from
   the PC (`docs/iphone.md`, with what it found: layers composited after an
   animation WebKit can't bound, filters redrawn under a dialog, work that
