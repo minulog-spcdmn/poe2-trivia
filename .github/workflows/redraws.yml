@@ -9,8 +9,8 @@ run-name: "Redraws: ${{ github.event.pull_request.title || github.ref_name }}"
 # at full motion. There's no GPU here, so it all draws in
 # software, at 2 or 3 frames a second (some scenes, a frame every few
 # seconds): the scenes are split over eight jobs and the moments over three.
-# What's counted is counted in frames, the animations on a clock slowed to
-# them, so it holds at that pace (docs/qa.md, "Redraws").
+# What's counted is counted in frames (a moment's animations on a clock kept
+# to them), so it holds at that pace (docs/qa.md, "Redraws").
 #
 # Run it by hand (Run workflow) on any branch, and the job's summary lists
 # what it found and the moments as measured, to commit as the baseline when

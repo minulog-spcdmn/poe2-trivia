@@ -79,6 +79,9 @@ test('at rest, a layer drawn again on nearly every frame fails', () => {
   assert.match(atRest('game/delve-dig', l, 20) ?? '', /div\.stage \(1393×594\) drawn again on 95% of the frames at rest, 400k px a frame/);
   assert.equal(atRest('game/delve-dig', { ...l, commits: 14 }, 20), null, 'a light that sweeps now and then');
   assert.equal(atRest('game/delve-dig', l, 4), null, 'too few frames to tell');
+  assert.equal(atRest('home/returning', { ...l, name: 'svg.glow', w: 156, h: 108, px: 20 * 21_000, again: 19 * 21_000 }, 20), null, 'too small to feel');
+  assert.equal(atRest('over/n-won', { ...l, name: 'div.shell' }, 20), null, 'allowed there');
+  assert.match(atRest('game/turns-question', { ...l, name: 'div.shell' }, 20) ?? '', /div\.shell/, 'but not elsewhere');
 });
 
 test('a moment fails past its baseline, taken as at least the floor', () => {
