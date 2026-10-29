@@ -53,29 +53,16 @@ jobs:
       # Types, which the build leaves unchecked.
       - run: npm run check
       # Today's unique's rows as the live site has them, for the test that no
-      # day it may be asking changes (tests/dailies.test.ts): the last
-      # deployment's, not the commit before this one, which a late merge that
-      # failed to deploy would have let through. Empty when it had none.
+      # day it may be asking changes (tests/dailies.test.ts): the newest
+      # deployment that went up, not the commit before this one, which a late
+      # merge that failed to deploy would have let through.
       - name: Find the live site's daily rows
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          sha=$(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=github-pages&per_page=1" --jq '.[0].sha // empty')
-          if [ -z "$sha" ]; then
-            echo "::error::Couldn't find the live site's deployment."
-            exit 1
-          fi
-          echo "Live commit: $sha"
-          live="$RUNNER_TEMP/live-dailies.json"
-          if ! gh api -H "Accept: application/vnd.github.raw" "repos/$GITHUB_REPOSITORY/contents/src/data/dailies.json?ref=$sha" > "$live" 2> "$RUNNER_TEMP/err"; then
-            if ! grep -q "HTTP 404" "$RUNNER_TEMP/err"; then
-              cat "$RUNNER_TEMP/err"
-              exit 1
-            fi
-            echo "The live commit has no daily rows yet."
-            : > "$live"
-          fi
-          echo "LIVE_DAILIES=$live" >> "$GITHUB_ENV"
+          node scripts/live-dailies.mjs > "$RUNNER_TEMP/live-dailies.json"
+          echo "LIVE_DAILIES=$RUNNER_TEMP/live-dailies.json" >> "$GITHUB_ENV"
       - run: npm test
       - run: npm run build
       - uses: actions/upload-artifact@v4
@@ -153,7 +140,8 @@ jobs:
           # went up.
           if [ -n "$NEW" ]; then
             npm run check
-            npm test
+            # (No live rows to hold the daily's to: a beta never goes live, tests/dailies.test.ts.)
+            LIVE_DAILIES=/dev/null npm test
           fi
           VITE_CHANNEL=beta npm run build
       - name: List the files the beta changes, for the QA desk's "This change"

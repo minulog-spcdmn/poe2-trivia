@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Engine, TWINS, allArt, answerDrawn, isFake, type Question } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, GRACE_DAYS, GRACE_SINCE, TOO_THIN, dailyEngine, graceOn, aTopic, answerDaily, answerLog, askOne, daysOf, dailyGame, answeredOn, dailyQuestion, dealLive, hoursLeft, minutesLeft, nextIn, parseDaily, parseLog, replay, streakOn, untilNextMinute, upTo, utcDay, type DailyRecord } from '../src/lib/daily.ts';
+import { DAILY_LAUNCH, GRACE_DAYS, GRACE_SINCE, TOO_THIN, dailyEngine, graceOn, aTopic, answerDaily, answerLog, askOne, daysOf, dailyGame, answeredOn, cutoffDay, dailyQuestion, dealLive, hoursLeft, minutesLeft, nextIn, parseDaily, parseLog, replay, streakOn, untilNextMinute, upTo, utcDay, type DailyRecord } from '../src/lib/daily.ts';
 import { fakes, items, seeded } from './helpers.ts';
 
 const HOUR = 3_600_000;
@@ -88,7 +88,8 @@ test('the pictures too thin for the start page are real items\' pictures, and ne
   assert.ok(TOO_THIN.size > 0);
   for (const id of TOO_THIN) assert.equal(byArt.get(id)?.kind, 'unique', `${id} is an item's picture`);
   const shown = (q: Question) => answerDrawn(byId.get(q.itemId)!, q).art;
-  const start = utcDay(Date.now()) - 1;
+  // From the cutoff on: the days before it keep their rows, dealt before a picture was found thin.
+  const start = cutoffDay(Date.now());
   for (let d = start; d < start + 400; d++) assert.ok(!TOO_THIN.has(shown(dailyQuestion(d))), `day ${d}`);
   const engine = new Engine(items, { autoClock: true, fakes, rng: seeded(3) });
   const game = dailyGame();

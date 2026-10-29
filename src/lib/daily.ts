@@ -137,11 +137,13 @@ export function dealLive(items: Item[], fakes: Record<string, string[]>, day: nu
 export const dailyQuestion = (day: number): Question => dailyRow(day) ?? dealLive(itemData as Item[], fakeData, day);
 
 /**
- * The first day a deal may write again (scripts/deal.mjs): tomorrow, or in
- * the last two hours of a UTC day the day after. Days before it may be
- * played already, or will be before a change merged now goes live.
+ * The first day a deal may write again (scripts/deal.mjs): a week from
+ * today, or in the last two hours of a UTC day a week from tomorrow. Days
+ * before it may be played already, or will be in a tab loaded before a
+ * change merged now goes live (it asks from the rows it loaded with), or
+ * before a merge that slips a few days goes live.
  */
-export const cutoffDay = (now: number) => utcDay(now + 2 * HOUR_MS) + 1;
+export const cutoffDay = (now: number) => utcDay(now + 2 * HOUR_MS) + 7;
 
 // ---- this browser's answers ----------------------------------------------
 

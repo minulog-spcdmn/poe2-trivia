@@ -4,12 +4,12 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { isFake, type Item, type Question } from '../src/lib/game.ts';
 import { DAILY_LAUNCH, cutoffDay, dailyQuestion, dealLive, utcDay } from '../src/lib/daily.ts';
 import { ROWS_FROM, ROWS_TO, dailyRow } from '../src/lib/dailyRows.ts';
-import { FILE, deal, rowsOf } from '../scripts/deal.mjs';
+import { FILE, deal, fileOf, rowsOf } from '../scripts/deal.mjs';
+import { liveDailies } from '../scripts/live-dailies.mjs';
 import { fakes, items } from './helpers.ts';
 
 const DAY_MS = 86_400_000;
@@ -45,32 +45,25 @@ test('every id the rows name from yesterday on is an item', () => {
   }
 });
 
-/**
- * The rows as the site live has them: in CI the last deployment's
- * (LIVE_DAILIES, a path; an empty file when it had none), else origin/main's.
- * Null when there are none to compare with.
- */
-function liveRows(): string[] | null {
-  const path = process.env.LIVE_DAILIES;
-  if (path) {
-    const live = existsSync(path) ? readFileSync(path, 'utf8') : '';
-    return live.trim() ? rowsOf(live).rows : null;
-  }
-  try {
-    return rowsOf(execFileSync('git', ['show', 'origin/main:src/data/dailies.json'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })).rows;
-  } catch {
-    return null;
-  }
-}
-
-test("no day before the cutoff differs from the live site's (take main's dailies.json, then `npm run deal`)", (t) => {
-  const live = liveRows();
-  if (!live) return t.skip('no live rows to compare with');
+test("no day before the cutoff differs from the live site's (run `npm run deal`, which puts them back)", (t) => {
+  // In CI the live site's file is found before the tests run; the beta's run leaves this out (a beta never goes live).
+  const live = liveDailies();
+  if (!live.text) return t.skip(`no live rows to compare with (from ${live.from})`);
+  const shown = rowsOf(live.text).rows;
   // Every day the live site may be asking by the time this goes live: a row is never edited, and a deal never reaches back.
-  for (let i = 0; i < Math.min(live.length, cutoff - ROWS_FROM); i++) {
+  for (let i = 0; i < Math.min(shown.length, cutoff - ROWS_FROM); i++) {
     assert.ok(i < rows.length, `the rows end on day ${ROWS_TO}, before the live site's`);
-    assert.equal(rows[i], live[i], `day ${ROWS_FROM + i} (${new Date((ROWS_FROM + i) * DAY_MS).toISOString().slice(0, 10)}) changed`);
+    assert.equal(rows[i], shown[i], `day ${ROWS_FROM + i} (${new Date((ROWS_FROM + i) * DAY_MS).toISOString().slice(0, 10)}) differs from ${live.from}`);
   }
+});
+
+test('a deal puts the days before the cutoff back as the live site has them (a merge that slipped past it)', () => {
+  // The rows as a refresh merged too late left them: two days before the cutoff dealt again.
+  const moved = [...rows];
+  for (const day of [today + 1, cutoff - 1]) moved[day - ROWS_FROM] = JSON.stringify({ ...JSON.parse(moved[day - ROWS_FROM]), itemId: 'moved' });
+  const { text: fixed, restored } = deal(fileOf(ROWS_FROM, moved), items, fakes, Date.now(), { live: text });
+  assert.equal(restored, 2);
+  assert.equal(fixed, text);
 });
 
 test('a refresh that adds, removes and renames an item moves no day before the cutoff, and new items reach the days to come', () => {
