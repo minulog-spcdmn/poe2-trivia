@@ -11,8 +11,10 @@
  * inherited cursor changed on a big element restyles all it holds.)
  *
  * `cursor: inherit` is left as it is: in WebKit app.css has every element
- * inherit its cursor instead (see there).
+ * inherit its cursor instead (see there). So are `unset`, `initial`,
+ * `revert` and `revert-layer`, which mean nothing as a variable's value.
  */
+const CSS_WIDE = /^(inherit|initial|unset|revert|revert-layer)$/i;
 const CURSOR_VARS: Record<string, string> = {
   pointer: '--cursor-pointer',
   default: '--cursor',
@@ -29,7 +31,7 @@ export const themedCursors = {
   Declaration: {
     cursor(decl: { value: string; important: boolean; cloneBefore(o: { prop: string; value: string }): unknown }) {
       const v = decl.value.trim();
-      if (v.startsWith('var(--cursor-now') || v === 'inherit') return;
+      if (v.startsWith('var(--cursor-now') || CSS_WIDE.test(v)) return;
       const name = CURSOR_VARS[v];
       decl.cloneBefore({ prop: '--cursor-now', value: name ? `var(${name}, ${v})` : v });
       decl.value = HANDED_DOWN;

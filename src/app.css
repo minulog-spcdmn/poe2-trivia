@@ -220,6 +220,8 @@ a:any-link {
   stroke-miterlimit: 12;
   translate: -50% -50%;
   animation: seal-stamp 0.2s var(--ease-out) both;
+  /* (The cover's cursor over it too: it's the cover the pointer is over.) */
+  pointer-events: none;
 }
 @keyframes seal-stamp {
   from {

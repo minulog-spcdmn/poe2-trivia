@@ -54,6 +54,15 @@ test('as built, every element takes the cursor handed down to it, but in WebKit 
   assert.deepEqual(ruleOf('html').cursor, ['--cursor-now: var(--cursor, default)', 'cursor: var(--cursor-now)']);
 });
 
+test('the build hands a cursor down, but leaves the CSS-wide keywords as they are', () => {
+  const css = 'a{cursor:pointer}b{cursor:crosshair}c{cursor:Inherit}d{cursor:unset}e{cursor:initial}f{cursor:revert}g{cursor:revert-layer}';
+  assert.equal(
+    postcss([themedCursors]).process(css, { from: undefined }).css,
+    'a{--cursor-now:var(--cursor-pointer, pointer);cursor:var(--cursor-now)}b{--cursor-now:crosshair;cursor:var(--cursor-now)}' +
+      'c{cursor:Inherit}d{cursor:unset}e{cursor:initial}f{cursor:revert}g{cursor:revert-layer}',
+  );
+});
+
 test('ownCursor marks WebKit with the attribute app.css reads', () => {
   assert.match(readFileSync('src/lib/ownCursor.ts', 'utf8'), /setAttribute\('data-cursor-inherited', ''\)/);
 });
