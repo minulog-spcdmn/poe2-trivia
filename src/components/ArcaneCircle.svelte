@@ -23,10 +23,11 @@
   layer winds into place meanwhile, and the glow swells up under it all.
 -->
 
-{#snippet eye()}
+<!-- (`ink`: the stage's colour for the heart, on the drawing itself, under the SVGs that blink: see ArcaneStage's inkAt.) -->
+{#snippet eye(ink: string | undefined)}
   <div class="layer eye" style:left={at.left} style:top={at.top} style:width={at.width} style:height={at.height} style:transform-origin={at.origin}>
-    <svg class="glow" viewBox={at.viewBox} style:transform-origin={at.origin}>{@html eyeGlow}</svg>
-    <svg viewBox={at.viewBox} style:transform-origin={at.origin}>{@html eyeLines}</svg>
+    <svg class="glow" viewBox={at.viewBox} style:transform-origin={at.origin}><g style:color={ink}>{@html eyeGlow}</g></svg>
+    <svg viewBox={at.viewBox} style:transform-origin={at.origin}><g style:color={ink}>{@html eyeLines}</g></svg>
   </div>
 {/snippet}
 

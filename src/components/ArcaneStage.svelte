@@ -34,7 +34,7 @@
     size,
     color,
     strength,
-  }: { layers: StageLayer[]; heart?: Snippet; point?: { r: number; delay: number }; state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number } = $props();
+  }: { layers: StageLayer[]; heart?: Snippet<[string | undefined]>; point?: { r: number; delay: number }; state?: 'idle' | 'good' | 'bad'; size?: string; color?: string; strength?: number } = $props();
 
   /**
    * A layer's mask, as a CSS image: the whole plate, less the shape grown
@@ -144,6 +144,10 @@
   // most. The heart goes with the innermost ring. Until its turn a ring
   // keeps the colour before (`was`). A colour given (`color`) is the
   // circle's whatever its mood: nothing to hold.
+  // The colour goes on each drawing (its SVGs) itself, never on the layers
+  // round them, nor through the circle's own colour: a layer turning on the
+  // compositor that is restyled (taking a colour handed down, say) skips
+  // as it turns on an iPhone, every ring as it took the colour.
   /** The rings in the order they take it: the centre's first. */
   const outward = insideOut(groups.map((g) => g[0].box ?? WHOLE));
   /** Each ring's place in that order. */
@@ -194,22 +198,37 @@
     let raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
   });
-  /** The colour the ring at `n` (its place in `outward`) holds to on its way over (CSS, through the moods' own; none once it is over). */
+  /** The colour of the ring at `n` (its place in `outward`): its mood's, or on its way over from the one before (CSS, through the moods' own; none at rest, the circle's own). */
   const inkAt = (n: number) => {
     const p = was ? (over[n] ?? 0) : 1;
-    if (p >= 1) return undefined;
+    if (p >= 1) return mood === 'idle' ? undefined : `var(--ink-${mood})`;
     return p ? `color-mix(in srgb, var(--ink-${mood}) ${Math.round(p * 100)}%, var(--ink-${was}))` : `var(--ink-${was})`;
   };
-  const heldInk = (ring: StageLayer[]) => inkAt(turnOf.get(ring[0].name)!);
+  /** A layer's drawings' colour, from the colour `ink` handed to it (its ring's, tinted as the layers it rides are): tinted as the layer is (none: the layer's own). */
+  const inkOf = (l: StageLayer, ink: string | undefined) => (ink && l.tint ? `color-mix(in srgb, ${l.tint} 70%, ${ink})` : ink);
   /** The rings a wrong answer jars, by their first layer's name (those that turn, or carry a mask that does). */
   const jarring = new Set(untrack(() => groups.filter((ring) => ring.some((l) => !!l.spin) || !!spinOf(ring[0].mask?.with)).map((ring) => ring[0].name)));
 </script>
 
 {#if !off}
-<div class="arcane {mood}" aria-hidden="true" style:--clear="{HOLLOW_CLEAR}%" style:--rest="{EASE_MS}ms" style:--size={size} style:color={color} style:opacity={strength}>
+<!-- (A colour given is every mood's.) -->
+<div
+  class="arcane {mood}"
+  aria-hidden="true"
+  style:--clear="{HOLLOW_CLEAR}%"
+  style:--rest="{EASE_MS}ms"
+  style:--size={size}
+  style:--ink-idle={color}
+  style:--ink-good={color}
+  style:--ink-bad={color}
+  style:opacity={strength}
+>
   <div class="summon" bind:this={summon}>
     <div class="bloom"></div>
-    {#snippet plain(l: StageLayer, inside: Box)}
+    <!-- (`ink`: the ring's colour, tinted as the layers this one rides are; it goes on the drawings, inside the SVGs, whose glow
+         is animated, as the eye's does: see inkAt.) -->
+    {#snippet plain(l: StageLayer, inside: Box, ink: string | undefined)}
+      {@const own = inkOf(l, ink)}
       {@const parent = l.upright ? spinOf(l.within) : undefined}
       <!-- (A layer cut round the hollow keeps the whole plate: its mask is drawn to it.) -->
       {@const box = (!l.cut && l.box) || WHOLE}
@@ -220,7 +239,6 @@
         class:spin={!!l.spin && !l.within}
         class:turning={!!l.spin && !!l.within}
         class:upright={!!parent}
-        class:riding={!!parent}
         class:swaying={!!l.sway}
         class:breathing={!!l.breathe}
         class:fluttering={!!l.flutter}
@@ -244,17 +262,17 @@
         style:transform-origin={at.origin}
         style:color={l.tint && `color-mix(in srgb, ${l.tint} 70%, currentColor)`}
       >
-        <svg class="glow" viewBox={at.viewBox} data-layer={l.name}>{@html plate(l.glow, l.name)}</svg>
-        <svg viewBox={at.viewBox} data-layer={l.name}>{@html plate(l.lines, l.name)}</svg>
+        <svg class="glow" viewBox={at.viewBox} data-layer={l.name}><g style:color={own}>{@html plate(l.glow, l.name)}</g></svg>
+        <svg viewBox={at.viewBox} data-layer={l.name}><g style:color={own}>{@html plate(l.lines, l.name)}</g></svg>
         {#each layers.filter((c) => c.within === l.name) as child (child.name)}
-          {@render layer(child, box)}
+          {@render layer(child, box, own)}
         {/each}
       </div>
     {/snippet}
     <!-- A masked layer sits in a box that turns with the layer it follows and carries the mask, inside one that turns back the
          same, so the layer keeps its own way and only the mask moves; all on the compositor. Layers side by side with the same
          mask (a glory in sectors) share the one box, so the mask is drawn once. -->
-    {#snippet masked(group: StageLayer[], inside: Box)}
+    {#snippet masked(group: StageLayer[], inside: Box, ink: string | undefined)}
       {@const m = group[0].mask}
       {@const by = spinOf(m?.with)}
       {#if m && by}
@@ -275,39 +293,36 @@
         >
           <div class="layer upright" style:--turn="{by.turn}s" style:--from="{-by.from}deg" style:--dir={by.reverse ? 'normal' : 'reverse'}>
             {#each group as l (l.name)}
-              {@render plain(l, WHOLE)}
+              {@render plain(l, WHOLE, ink)}
             {/each}
           </div>
         </div>
       {:else}
         {#each group as l (l.name)}
-          {@render plain(l, inside)}
+          {@render plain(l, inside, ink)}
         {/each}
       {/if}
     {/snippet}
-    {#snippet layer(l: StageLayer, inside: Box)}
-      {@render masked([l], inside)}
+    {#snippet layer(l: StageLayer, inside: Box, ink: string | undefined)}
+      {@render masked([l], inside, ink)}
     {/snippet}
-    <!-- Each ring in a box of its own (the circle's size), which holds it to the colour before on its way over, and jars it at a
-         wrong answer, so the ring's own turning and winding go on untouched. -->
+    <!-- Each ring in a box of its own (the circle's size), which jars it at a wrong answer, so the ring's own turning and winding
+         go on untouched. -->
     {#each groups as group (group[0].name)}
-      <div class="hold" class:jars={jarring.has(group[0].name)} style:color={heldInk(group)}>
-        {@render masked(group, WHOLE)}
+      <div class="hold" class:jars={jarring.has(group[0].name)}>
+        {@render masked(group, WHOLE, inkAt(turnOf.get(group[0].name)!))}
       </div>
     {/each}
-    <!-- The heart and the point, with the innermost ring. -->
-    {#if heart || point}
-      <div class="hold" style:color={inkAt(0)}>
-        {@render heart?.()}
-        {#if point}
-          <!-- (Its layer only as large as it swells as it's set.) -->
-          {@const reach = point.r * 2.4 + 1.5}
-          {@const at = placed([-reach, -reach, reach, reach], WHOLE)}
-          <div class="layer point" style:left={at.left} style:top={at.top} style:width={at.width} style:height={at.height} style:--set="{point.delay}s">
-            <svg class="glow" viewBox={at.viewBox}><circle r={point.r} class="dot" /></svg>
-            <svg viewBox={at.viewBox}><circle r={point.r} class="dot" /></svg>
-          </div>
-        {/if}
+    <!-- The heart and the point, in the innermost ring's colour. -->
+    {@render heart?.(inkAt(0))}
+    {#if point}
+      <!-- (Its layer only as large as it swells as it's set.) -->
+      {@const reach = point.r * 2.4 + 1.5}
+      {@const at = placed([-reach, -reach, reach, reach], WHOLE)}
+      {@const ink = inkAt(0)}
+      <div class="layer point" style:left={at.left} style:top={at.top} style:width={at.width} style:height={at.height} style:--set="{point.delay}s">
+        <svg class="glow" viewBox={at.viewBox}><g style:color={ink}><circle r={point.r} class="dot" /></g></svg>
+        <svg viewBox={at.viewBox}><g style:color={ink}><circle r={point.r} class="dot" /></g></svg>
       </div>
     {/if}
     <div class="wave"></div>
@@ -326,7 +341,8 @@
     pointer-events: none;
     opacity: 0.22;
     /* Each mood's colour, named so a ring can hold to the one before for a
-       moment (heldInk). */
+       moment (inkAt). The circle's own stays at rest's: a mood's goes on the
+       drawings themselves (inkAt), and on its light (.bloom, .wave). */
     --ink-idle: #d9a45a;
     --ink-good: #d8dfa0;
     --ink-bad: #d98a6e;
@@ -338,16 +354,17 @@
        for most of a second, right as a reveal's effects began, which made
        them stutter. Answered, the flare covers the change and the rings
        take it one a frame; back at rest, each eases over in a few steps,
-       one after another (heldInk). */
+       one after another (inkAt). */
     transition: opacity var(--rest);
   }
   .arcane.good {
     opacity: 0.3;
-    color: var(--ink-good);
   }
   .arcane.bad {
     opacity: 0.16;
-    color: var(--ink-bad);
+  }
+  .good :is(.bloom, .wave) {
+    color: var(--ink-good);
   }
   /* A circle's heart (its own markup) is laid out as a layer too. */
   .summon,
@@ -413,18 +430,9 @@
   .bad .jars {
     animation: falter 0.7s var(--ease-out);
   }
-  /* A layer riding the ring that keeps its way up keeps it through the jar,
-     turned back about its own pivot. Its turn and winding stay in the list
-     (by name), so they go on untouched. */
-  .bad .jars .riding {
-    animation:
-      turn var(--turn) linear infinite var(--dir, normal),
-      wind 2.6s var(--ease-out) both,
-      unfalter 0.7s var(--ease-out);
-    /* (Added to the winding's transform, not in place of it: a jar while it
-       still winds in would otherwise drop its turning back for 0.7 s.) */
-    animation-composition: replace, replace, add;
-  }
+  /* (What rides a ring, upright or not, jars with it: turned back by an
+     animation of its own, the rider's animations would change with the
+     mood, and an iPhone restarts a layer's turning as they do.) */
 
   /* The lines are put on the page as markup (see lib/engraver), so their
      rules reach them as global ones within the circle. */
@@ -597,17 +605,6 @@
     }
     70% {
       transform: rotate(-0.6deg);
-    }
-  }
-  @keyframes unfalter {
-    20% {
-      transform: rotate(2.5deg);
-    }
-    45% {
-      transform: rotate(-1.6deg);
-    }
-    70% {
-      transform: rotate(0.6deg);
     }
   }
   @keyframes swell {
