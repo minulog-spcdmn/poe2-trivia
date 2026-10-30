@@ -23,8 +23,8 @@
 // --redraws instead checks what Chrome draws again (src/qa/redraws.ts,
 // docs/qa.md, "Redraws"), on fixed frames at full motion: each scene's first
 // state at rest with WebGL refused (--webgl: the few whose effects change
-// the page, WEBGL_SCENES, with it), or with --moments the card bench's (a
-// deal, a dig's deal, a pick). It fails on a layer drawn again 50k px a
+// the page, WEBGL_SCENES, with it), or with --moments the moments (MOMENTS:
+// a deal, a dig's deal, a pick, the pointer across a card, a name plate). It fails on a layer drawn again 50k px a
 // frame or more at rest, and on a moment past its baseline
 // (src/qa/redrawBaselines.json; --baseline writes it). It runs in CI on
 // every pull request; here only with --only or --moments.
@@ -97,7 +97,7 @@ if (values.help) {
   --redraws              check what Chrome draws again instead (docs/qa.md, Redraws): every scene's first
                          state at rest, WebGL refused; here only with --only (CI runs them all)
   --webgl                with --redraws: the scenes whose effects change the page (WEBGL_SCENES), with WebGL
-  --moments              with --redraws: the card bench's moments instead (--only: those whose key matches)
+  --moments              with --redraws: the moments instead, MOMENTS' (--only: those whose key matches)
   --baseline             with --redraws: write the moments as measured into src/qa/redrawBaselines.json
   --shard i/n            with --redraws: only the i-th of n parts of the scenes at rest (CI's jobs)`);
   process.exit(0);
@@ -184,7 +184,7 @@ const launch = () =>
  * up waiting on, past about four of them.
  */
 const PER_BROWSER = 4;
-// (--redraws traces, which is a browser's own: it launches one a page.)
+// (--redraws traces, which is a browser's own: it launches one for each page traced at once.)
 const browsers = values.redraws ? [] : await Promise.all(Array.from({ length: Math.ceil(concurrency / PER_BROWSER) }, launch));
 
 /** Every state of every scene the desk at `base` has: its scene's key, its number there and controls, label, seats, the sizes it is walked at. */
@@ -370,7 +370,7 @@ const FRAME = 1000 / 60;
 const AT_REST_FRAMES = 300;
 
 /**
- * A browser of its own for each page traced (a trace is the whole
+ * A browser of its own for each page traced at once (a trace is the whole
  * browser's): Chrome's headless shell, which draws in software here as
  * in CI, on fixed frames. Each frame is sent from here (begin-frame
  * control, frameDriver), FRAME ms of the page's own time (virtual time:
@@ -450,7 +450,8 @@ const still = () => !document.getAnimations().some((a) => a.playState === 'runni
 
 /** In the page, before a watch: from now on, each style or class written and the frames it was written in (window.__writes, the frames counted in window.__frames). */
 function noteWrites() {
-  const name = (el) => `${el.tagName.toLowerCase()}${[...el.classList].filter((c) => !c.startsWith('svelte-')).map((c) => `.${c}`).join('')}`;
+  // (An element's tag and classes, Svelte's left out; writesNoted names by it too.)
+  const name = (window.__name = (el) => `${el.tagName.toLowerCase()}${[...el.classList].filter((c) => !c.startsWith('svelte-')).map((c) => `.${c}`).join('')}`);
   const writes = (window.__writes = new Map());
   window.__frames = 0;
   new MutationObserver((list) => {
@@ -470,7 +471,7 @@ function noteWrites() {
 
 /** In the page, after a watch: what was written on half the frames or more, and what animates anything but its transform or opacity, where to look when something's drawn again. */
 function writesNoted() {
-  const name = (el) => `${el.tagName.toLowerCase()}${[...el.classList].filter((c) => !c.startsWith('svelte-')).map((c) => `.${c}`).join('')}`;
+  const name = window.__name;
   const n = Math.max(1, window.__frames);
   const changing = [...window.__writes].filter(([, f]) => f.size >= n / 2).map(([k, f]) => `${k} (${Math.round((f.size / n) * 100)}%)`);
   const COMPOSITED = new Set(['offset', 'easing', 'composite', 'computedOffset', 'transform', 'opacity', 'translate', 'rotate', 'scale']);
@@ -719,6 +720,7 @@ async function moments(base, browser) {
         // lines, for 2 s (the pen's in script, which still() doesn't see).
         plate: { go: () => page.evaluate(() => postMessage({ qa: 'replay' }, location.origin)), least: 2.5 },
       }[m.key];
+      if (!how) throw new Error(`The moment “${m.key}” is in MOMENTS but not in moments()’s how: say how it’s set off there.`);
       const settle = async () => {
         await page.waitForTimeout(500);
         await page.evaluate(quiet, { still: 1000, most: 15000 });
@@ -763,7 +765,7 @@ async function checkRedraws(base, scenes) {
   let momentsFound = [];
   try {
     if (values.moments) {
-      console.log(`Redraws in the card bench’s moments, at ${REDRAW_SIZE}, on fixed frames, from ${base}`);
+      console.log(`Redraws in the moments, at ${REDRAW_SIZE}, on fixed frames, from ${base}`);
       const b = await launchTraced();
       traceBrowsers.push(b);
       momentsFound = await moments(base, b);
@@ -812,7 +814,7 @@ async function checkRedraws(base, scenes) {
       lines.push(...clues(m));
     }
   }
-  if (bad.length || momentsFound.some((m) => m.problem)) lines.push(HOW);
+  if (atRestFound.some((s) => s.problems.length) || momentsFound.some((m) => m.problem)) lines.push(HOW);
   for (const l of lines) console.log(l);
   const measured = { size: REDRAW_SIZE, moments: Object.fromEntries(momentsFound.map((m) => [m.key, m.perFrame])) };
   if (values.baseline && momentsFound.length && !sameSize) console.log(`Not written into ${path.relative(ROOT, BASELINE)}: its baselines are at ${baseline.size}, CI's size, not ${REDRAW_SIZE}.`);

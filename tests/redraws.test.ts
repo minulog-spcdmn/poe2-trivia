@@ -101,6 +101,6 @@ test('the CSS backdrop the check leaves undrawn without WebGL is still Backgroun
 test('a moment fails past its baseline, taken as at least the floor', () => {
   assert.equal(overBaseline('deal', 30_000, 22_000), null);
   assert.equal(overBaseline('deal', SLACK * FLOOR - 1, 1000), null, 'a moment that costs next to nothing is held to the floor');
-  assert.match(overBaseline('deal', 666_000, 22_000) ?? '', /666k px drawn again a frame, past 1\.5× its baseline of 22k px/);
+  assert.match(overBaseline('deal', 666_000, 22_000) ?? '', /666k px drawn again a 60th of a second, past 1\.5× its baseline of 22k px/);
   assert.equal(overBaseline('new', 1e9, undefined), null, 'none yet');
 });

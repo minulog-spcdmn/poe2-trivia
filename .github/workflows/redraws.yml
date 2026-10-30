@@ -2,7 +2,7 @@ name: Redraws
 run-name: "Redraws: ${{ github.event.pull_request.title || github.ref_name }}"
 
 # The redraw check (docs/qa.md, "Redraws"), on every pull request into main:
-# each QA scene at rest and the card bench's moments, traced in Chrome's
+# each QA scene at rest and the moments (src/qa/redraws.ts MOMENTS), traced in Chrome's
 # headless shell on fixed frames (each 1/60 s of the page's own time,
 # however long it takes to draw here), so it plays as at 60 fps on any
 # machine, and at rest the same run to run. It fails on a layer drawn again 50k px a frame or

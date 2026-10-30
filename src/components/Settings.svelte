@@ -916,7 +916,7 @@
     opacity: 1;
   }
   /* The breath, on a layer of its own (will-change): its glow drawn again
-     every frame, as a box-shadow animated is, but only the seal's (70 × 70),
+     every frame, as a box-shadow animated is, but only the seal's (77 × 77, 16k px),
      not the page round it (135k px a frame without). */
   .seal.on {
     will-change: opacity;

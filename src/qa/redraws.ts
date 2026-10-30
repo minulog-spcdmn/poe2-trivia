@@ -296,7 +296,6 @@ export const MOMENTS = [
   { key: 'glare', label: 'The pointer across a card', webgl: false, hz: 60 },
   { key: 'plate', label: 'A name plate drawn in, at 240 Hz', webgl: false, hz: 240 },
 ] as const;
-export type MomentKey = (typeof MOMENTS)[number]['key'];
 
 /** How far past its baseline a moment may go. */
 export const SLACK = 1.5;
@@ -305,7 +304,7 @@ export const SLACK = 1.5;
 export function overBaseline(key: string, perFrame: number, baseline: number | undefined): string | null {
   if (baseline === undefined) return null;
   const limit = SLACK * Math.max(baseline, FLOOR);
-  return perFrame > limit ? `${kpx(perFrame)} drawn again a frame, past ${SLACK}× its baseline of ${kpx(baseline)} (src/qa/redrawBaselines.json, “${key}”)` : null;
+  return perFrame > limit ? `${kpx(perFrame)} drawn again a 60th of a second, past ${SLACK}× its baseline of ${kpx(baseline)} (src/qa/redrawBaselines.json, “${key}”)` : null;
 }
 
 /** Pixels, short: 1.2M px, 34k px. */
