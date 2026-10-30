@@ -222,6 +222,10 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
     if (rnd() < 0.015) add('error/join-no-such-room', h, 1);
     if (rnd() < 0.01) add('error/host-no-connection', h, 1);
     if (rnd() < 0.006) add('error/join-version-mismatch', h, 1);
+    if (rnd() < 0.03) {
+      add(rnd() < 0.7 ? 'room/off-hidden' : 'room/off-seen', h, 1);
+      if (rnd() < 0.8) add(`room/back-${['10s', '1m', '5m', 'later'][Math.floor(rnd() * 4)]}`, h, 1);
+    }
   }
   return out;
 }

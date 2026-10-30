@@ -722,3 +722,53 @@ export type Failure =
   | 'join-refused';
 
 export const countFailure = (failure: Failure) => countEvent(`error/${failure}`);
+
+// ---- a room off the matchmaking server ----------------------------------------
+
+/**
+ * An open room whose host lost the signalling server: until it's back there,
+ * a guest asking for its code is told no room has it. Counted as it's lost
+ * ("room/off-seen", or "room/off-hidden" when the page was out of sight
+ * then: a phone that leaves the browser stops its heartbeat, and the server
+ * lets the room go after about 100 s), and as it's back ("room/back-…", how
+ * long it was off, from when the page went out of sight if it had). A drop
+ * with no "back" is a room that never got there again.
+ */
+export const roomOffEvent = (hidden: boolean) => `room/off-${hidden ? 'hidden' : 'seen'}`;
+export const roomBackEvent = (ms: number) => (ms <= 10_000 ? 'room/back-10s' : ms <= 60_000 ? 'room/back-1m' : ms <= 300_000 ? 'room/back-5m' : 'room/back-later');
+
+/** One room's time off the server: each drop counted once, however often reconnecting fails, until it's back. */
+export class RoomOff {
+  /** Off since then; null while on the server. */
+  private since: number | null = null;
+  /** Lost the server at `now`, the page out of sight since `hiddenSince` (null: in sight); the event to count, once a drop. */
+  off(now: number, hiddenSince: number | null): string | null {
+    if (this.since !== null) return null;
+    this.since = hiddenSince ?? now;
+    return roomOffEvent(hiddenSince !== null);
+  }
+  /** On the server again at `now`: the event to count, if it had been off. */
+  back(now: number): string | null {
+    if (this.since === null) return null;
+    const ms = now - this.since;
+    this.since = null;
+    return roomBackEvent(ms);
+  }
+}
+
+/** A page woken (a phone's, back to the browser) notices its lost link only as it's shown again: a drop that soon after is the time it was away. */
+const WOKEN_MS = 5_000;
+let hiddenAt = 0;
+let shownAt = 0;
+if (typeof document !== 'undefined')
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) hiddenAt = Date.now();
+    else shownAt = Date.now();
+  });
+
+/** Since when the page has been out of sight, or was until a moment ago; null while it's in sight. */
+export function hiddenSince(now: number): number | null {
+  if (typeof document === 'undefined') return null;
+  if (!document.hidden && now - shownAt > WOKEN_MS) return null;
+  return hiddenAt || now;
+}

@@ -142,6 +142,10 @@ export function underNamesNow(paths: PathCount[]): PathCount[] {
   return [...out.values()];
 }
 
+/** How long a room that lost the matchmaking server was off it, as count.ts roomBackEvent buckets it. */
+export const ROOM_BACKS = ['10s', '1m', '5m', 'later'] as const;
+export type RoomBack = (typeof ROOM_BACKS)[number];
+
 /** What each counted failure (count.ts Failure) means, in a line; `host`: on the side opening a room; `script`: no part of joining, an error in the game's own scripts or a part of it that didn't load. */
 export const FAILURES: Record<string, { label: string; host?: true; script?: true }> = {
   'join-no-answer': { label: "The room didn't answer" },
@@ -238,6 +242,8 @@ export interface Counts {
   /** Tries to join, and those let in, a day, every way in together. */
   joinsPerDay: { tried: number[]; joined: number[] };
   failures: { key: string; label: string; host: boolean; script: boolean; count: number }[];
+  /** Open rooms that lost the matchmaking server (count.ts RoomOff), the page in sight or not then, and those back on it by how long they were off. */
+  roomsOff: { seen: number; hidden: number; back: Record<RoomBack, number> };
   /** The failures joining a room or opening one a day, every cause together (not the scripts' errors). */
   failuresPerDay: number[];
   /** The steps visits reached, a day each, counted once a visitor like visits (count.ts countReach). */
@@ -515,6 +521,11 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
       joined: perDay((p) => VIAS.some((via) => p === `joined/${via}`)),
     },
     failures,
+    roomsOff: {
+      seen: count('room/off-seen'),
+      hidden: count('room/off-hidden'),
+      back: Object.fromEntries(ROOM_BACKS.map((t) => [t, count(`room/back-${t}`)])) as Record<RoomBack, number>,
+    },
     failuresPerDay: perDay((p) => p.startsWith('error/') && !FAILURES[p.slice('error/'.length)]?.script),
     reach: Object.fromEntries(REACHES.map((r) => [r, perDay((p) => p === `reach/${r}`)])) as Record<Reach, number[]>,
     visits: Object.fromEntries(VISIT_KINDS.map((k) => [k, perDay((p) => p === `visit/${k}`)])) as Record<VisitKind, number[]>,

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   GameCounts,
+  RoomOff,
   Steps,
   flipSkip,
   isToggleHash,
@@ -32,6 +33,7 @@ import {
   gameMoment,
   reachEvents,
   readyEvent,
+  roomBackEvent,
   recencyEvent,
   referrerOf,
   visitMarks,
@@ -369,4 +371,18 @@ test("a Delve run's frames stop being measured as nobody stands in it, before it
   const fell = delve(game('delve', 1, 'reveal'), ['p0'], { p0: [3, 5, 24] });
   assert.equal(gameMoment(run), 'question');
   assert.equal(gameMoment(fell), null);
+});
+
+test('an open room off the matchmaking server is counted once a drop, and back by how long it was off', () => {
+  const off = new RoomOff();
+  assert.equal(off.back(1_000), null, 'never off: nothing to count');
+  assert.equal(off.off(10_000, null), 'room/off-seen');
+  // Reconnecting fails again (the id still held): the same drop.
+  assert.equal(off.off(12_000, null), null);
+  assert.equal(off.back(15_000), 'room/back-10s');
+  assert.equal(off.back(16_000), null);
+  // Out of sight since 0: off from then, as long as the page was away.
+  assert.equal(off.off(200_000, 0), 'room/off-hidden');
+  assert.equal(off.back(201_000), 'room/back-5m');
+  assert.deepEqual([10_000, 10_001, 60_000, 300_000, 300_001].map(roomBackEvent), ['room/back-10s', 'room/back-1m', 'room/back-1m', 'room/back-5m', 'room/back-later']);
 });
