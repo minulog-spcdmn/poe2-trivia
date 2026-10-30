@@ -85,17 +85,18 @@ Every stutter of October 2026 was one bug: something animated on the page's thre
 
 The jobs: the scenes in ten parts (`--shard 1/10` and on, two at a time), a job for each WebGL scene (`--webgl --only <scene>`), the deal, and the other moments in two. **Redraws** passes only when all of them did. `tests/redraws.test.ts` checks every WebGL scene and every moment has its job.
 
-**Reading a failure.** The job's log and summary name the scene, the layer by its element and size, what it draws again a frame and on how many of the frames, then what was written on most frames (a style or class set from script) and what animates something other than its transform or opacity: where to look. The shake, on the code before its fix:
+**Reading a failure.** The job's log and summary name the scene, the layer by its element and size, what it draws again a frame and on how many of the frames, then what was written on most frames (a style, a class or a data- attribute set from script) and what animated something other than its transform or opacity: where to look. The shake, in CI on the code before its fix:
 
 ```
 At rest: 1 scenes, 1 with a layer drawn again 50k px a frame or more:
-  game/delve-dig: div.stage (1408×594) drawn again 451k px a frame at rest, on 99% of the frames
-  game/delve-dig: div.shell (1425×900) drawn again 288k px a frame at rest, on 98% of the frames
-    written on most frames: div.shell’s style (98%)
+  game/delve-dig: div.stage (1393×594) drawn again 453k px a frame at rest, on 100% of the frames
+  game/delve-dig: div.shell (1425×900) drawn again 290k px a frame at rest, on 100% of the frames
+    written on most frames: div.shell’s style (100%)
+    animating what isn’t its transform or opacity: lamp on circle.fill (filter)
 To find what draws it again and fix it: docs/development.md, “Finding a stutter” (a layer of its own, or a transform or opacity animated instead; never drawn less well).
 ```
 
-A moment's failure lists the layers it drew again most, each a 60th of a second, the same way. `report.json`, kept with the run, has every layer. Then `docs/development.md`, “Finding a stutter”: give what animates a layer of its own (`will-change`), animate its transform or opacity instead, or stop writing its style every frame; never draw it less well. Settings' seal breathed a box-shadow, which drew the page again every frame (135k px), until it got a layer of its own; GameOver's gleam drew the page again a quarter of the time (70k px a frame) until its headline and the winner's row got theirs.
+A moment's failure lists the layers it drew again most, each a 60th of a second, the same way. `report.json`, kept with the run for 14 days, has the layers drawn again most and everything written, on how many of the frames. Then `docs/development.md`, “Finding a stutter”: give what animates a layer of its own (`will-change`), animate its transform or opacity instead, or stop writing its style every frame; never draw it less well. Settings' seal breathed a box-shadow, which drew the page again every frame (135k px), until it got a layer of its own; GameOver's gleam drew the page again a quarter of the time (70k px a frame) until its headline and the winner's row got theirs.
 
 **A moment that should cost more** (a new card face, a richer deal): take its new number from the job's summary into `src/qa/redrawBaselines.json` in the same pull request, and say why in it. One that got cheaper is lowered the same way.
 
