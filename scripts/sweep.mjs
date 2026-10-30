@@ -379,7 +379,9 @@ const AT_REST_FRAMES = values.webgl ? 120 : 300;
  * frame a second included, and what's drawn again comes out the same
  * from run to run.
  */
-const launchTraced = () => chromium.launch({ headless: true, args: ['--enable-begin-frame-control', '--run-all-compositor-stages-before-draw', '--enable-unsafe-swiftshader'] });
+// (And an image decoded before the tile it's in is drawn, not drawn without it and again once it's
+// decoded, as Chrome otherwise does: when a decode lands depends on real time.)
+const launchTraced = () => chromium.launch({ headless: true, args: ['--enable-begin-frame-control', '--run-all-compositor-stages-before-draw', '--enable-unsafe-swiftshader', '--disable-checker-imaging'] });
 
 /** Chrome's frame clock (base::TimeTicks), in ms: the monotonic clock Node's hrtime reads too, on each platform. */
 const ticks = () => Number(process.hrtime.bigint()) / 1e6;
@@ -491,6 +493,9 @@ function refuseWebGL(selector) {
 function seedRandom(seed) {
   let s = seed >>> 0;
   for (const c of location.pathname) s = Math.imul(s ^ c.charCodeAt(0), 0x9e3779b1) >>> 0;
+  // (window.__reseed starts it over: a moment's first run and its watched one draw the same.)
+  const start = s;
+  window.__reseed = () => (s = start);
   Math.random = () => {
     s = (s + 0x6d2b79f5) >>> 0;
     let t = Math.imul(s ^ (s >>> 15), s | 1);
@@ -619,8 +624,9 @@ async function scenesAtRest(base, firsts, browsers) {
  * The card bench's moments (src/qa/redraws.ts MOMENTS), on its stage
  * (cards.html?stage), each in a page of its own (with WebGL or not, as
  * MOMENTS has it): set off and watched until it's over, as the pixels
- * drawn again a frame. On fixed frames a moment comes out the same each
- * run, so each is watched once.
+ * drawn again a frame, after a first run unwatched (what a worker makes
+ * for it ready). On fixed frames a moment comes out the same each run, so
+ * each is watched once.
  */
 async function moments(base, browser) {
   const out = [];
@@ -630,9 +636,6 @@ async function moments(base, browser) {
     try {
       await page.goto(`${base}cards.html?stage`, { waitUntil: 'load', timeout: 60000 });
       await page.waitForFunction(() => window.__cb?.ready, null, { timeout: 90000, polling: 200 });
-      await page.waitForTimeout(500);
-      await page.evaluate(quiet, { still: 1000, most: 15000 });
-      await drive.fix();
       // (The bench's items: every category by name, the dig's way out last.)
       const deal = () => page.evaluate(() => window.__cb.deal(window.__cb.items.slice(0, 3).map((i) => ({ category: i.value, kind: null }))));
       const setOff = {
@@ -640,6 +643,24 @@ async function moments(base, browser) {
         dig: () => page.evaluate(() => window.__cb.deal([{ category: window.__cb.items[0].value, kind: 'azurite' }, { category: window.__cb.items.at(-1).value, kind: null }])),
         pick: () => page.evaluate(() => window.__lab.ask()),
       };
+      const settle = async () => {
+        await page.waitForTimeout(500);
+        await page.evaluate(quiet, { still: 1000, most: 15000 });
+      };
+      await settle();
+      // (Once first, unwatched, in real time: what a worker makes for it (a card plate's print, an
+      // arcane plate's geometry) comes in real time, so in the watched run it would land on another
+      // frame each run. Made now, it's kept for the visit, as for a player's second deal.)
+      const reseed = () => page.evaluate(() => window.__reseed());
+      await reseed();
+      if (m.key === 'pick') {
+        await deal();
+        await settle();
+      }
+      await setOff[m.key]();
+      await settle();
+      await drive.fix();
+      await reseed();
       // (A pick is of cards dealt first, unwatched.)
       if (m.key === 'pick') {
         await deal();
