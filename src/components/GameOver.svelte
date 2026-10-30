@@ -1288,6 +1288,9 @@
     background-clip: text;
     color: transparent;
     animation: gleam 5s ease-in-out 1.4s infinite;
+    /* On a layer of its own, so the gleam draws again only the headline,
+       not the page round it (a quarter of the frames, 70k px each). */
+    will-change: transform;
   }
   @keyframes gleam {
     0% {
@@ -1691,6 +1694,8 @@
     background-size: 250% 100%;
     background-position: 160% 0;
     animation: gleam 5s ease-in-out 1.4s infinite;
+    /* A layer of its own, as the headline's (.gold). */
+    will-change: transform;
   }
   @keyframes ignite {
     0% {

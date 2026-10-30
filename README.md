@@ -231,7 +231,8 @@ renewed, within six hours.
 `.github/workflows/deploy.yml` builds and deploys to GitHub Pages on every push
 to `main`, served on **poe2.quest** (`public/CNAME`). Every pull request into
 `main` runs the redraw check first (`.github/workflows/redraws.yml`): it fails
-on something Chrome draws again every frame ([docs/qa.md](docs/qa.md), “Redraws”).
+on something big Chrome draws again at rest, or a deal or a pick drawing more
+than it did ([docs/qa.md](docs/qa.md), “Redraws”).
 
 ### Beta
 

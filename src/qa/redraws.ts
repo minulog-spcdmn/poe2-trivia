@@ -4,9 +4,10 @@
 // the same bug: something animated on the page's thread, with no layer of
 // its own, had Chrome draw a big layer round it again on every frame (the
 // emblems' kindle each sharp card face, the camera shake the whole page),
-// while the screen looked nearly still. How often a layer is drawn again,
-// and how much of it, doesn't depend on how fast the machine is, so it holds
-// in CI as fps doesn't.
+// while the screen looked nearly still. The page is watched on fixed frames
+// (each 16.7 ms of its own time, however long it takes to draw), so what's
+// drawn again is the same on any machine, CI's in software included, and
+// the same run to run.
 //
 // Read from the trace's raster tasks (each a tile of a layer drawn for a
 // commit of the page's) and the frame viewer's snapshots of the layer tree
@@ -186,63 +187,40 @@ export function redraws(events: TraceEvent[]): Redraws {
 // ---- at rest ----------------------------------------------------------------
 
 /**
- * At rest, a layer drawn again on this share of the frames or more is drawn
- * every frame. Not half: in software (CI) a light that sweeps a quarter of
- * the time (GameOver's gleam) was drawn again on two thirds of the frames
- * (or, frames seconds apart, all of them: there a cause is asked too),
- * those without it being the quick ones; a shake writing its style every
- * frame is drawn again on all of them.
+ * The least a layer may draw again a frame (device pixels: a 220 px square)
+ * before it counts, at rest and in a moment: nothing a frame's budget feels.
  */
-export const NEARLY_EVERY_FRAME = 0.9;
-/** Fewer frames than this in the time watched and nothing can be said (a page that stalled). */
-export const FEWEST_FRAMES = 8;
+export const FLOOR = 50_000;
+
 /**
- * What may be drawn again on nearly every frame at rest, and why. `layer` is the
- * layer's short name (layerName); `scenes` the scenes it may be in (all if
- * none); `px` the most it may draw a frame, so a small thing allowed here
- * doesn't let something big on the same layer through.
+ * At rest, a layer drawn again FLOOR px a frame or more, over the frames
+ * watched: what's wrong, else null. At rest nothing big should be drawn
+ * again at all, so there's no share of the frames it may take: a light
+ * that passes over a big layer now and then counts for the time it takes
+ * (GameOver's gleam drew the page again a quarter of the time, 67k px a
+ * frame), and one that keeps to a small layer of its own is let be.
  */
-export interface Allowed {
-  layer: RegExp;
-  scenes?: RegExp;
-  px: number;
-  why: string;
+export function atRest(l: LayerRedraws, frames: number): string | null {
+  const perFrame = l.again / Math.max(1, frames);
+  if (perFrame < FLOOR) return null;
+  return `${l.name} (${l.w}×${l.h}) drawn again ${kpx(perFrame)} a frame at rest, on ${Math.round((Math.min(l.commits, frames) / frames) * 100)}% of the frames`;
 }
 
-export const ALLOWED: Allowed[] = [
-  // (To go once the seal's glow has a layer of its own: PAINTED has its note.)
-  { layer: /^div\.shell$/, scenes: /^settings\//, px: 800_000, why: 'The sync seal’s breathe, a box-shadow while sync is on or a key waits, draws the page round it again every frame: 756k px a frame on the GPU in settings/key. A cost to fix (Settings.svelte), not one to keep.' },
+/**
+ * The scenes watched at rest with WebGL on as well as off: one for each
+ * screen whose effects (src/lib/fx/) change what the page itself does.
+ * The rest refuse WebGL: drawn in software, as the check is, the backdrop
+ * and the effects take a second or more a frame (25 ms without), and they
+ * draw on canvases of their own, not on what Chrome draws again. Without
+ * WebGL the page paints the backdrop's shadows in CSS, as it does for a
+ * player without WebGL2.
+ */
+export const WEBGL_SCENES: { scene: string; why: string }[] = [
+  { scene: 'game/delve-dig', why: 'A vein shakes the page (tremor.ts through fx/core.ts’s shake, a translate on .shell every frame): the effects’ own, so without WebGL it never runs. The October shake was this.' },
+  { scene: 'home/returning', why: 'The start page’s daily streak lights in WebGL with the effects on and in CSS without (DailyStreak, onFxChange).' },
+  { scene: 'over/n-lost', why: 'GameOver plays its lights in WebGL with the effects on and in CSS without (fxActive), and the winner’s row ignites in the effects.' },
+  { scene: 'settings/key', why: 'Settings turns the effects on and off (html[data-still] holds the decorations still), and its seals light with them.' },
 ];
-
-/**
- * A layer drawn again on nearly every one of `frames` frames at rest, unless
- * allowed: what's wrong, else null. One drawing less than FLOOR a frame (a
- * 220 px square) is let be, as a moment is held to it: nothing a frame's
- * budget feels, and in software, where a frame can take seconds, a small
- * light that passes every few seconds lands on nearly every one (the start
- * screen's arcane glow, 21k px a frame, on 9 of 10 frames in CI).
- */
-export function atRest(scene: string, l: LayerRedraws, frames: number): string | null {
-  const perFrame = l.px / frames;
-  if (frames < FEWEST_FRAMES || l.commits < frames * NEARLY_EVERY_FRAME || perFrame < FLOOR) return null;
-  if (ALLOWED.some((a) => a.layer.test(l.name) && (!a.scenes || a.scenes.test(scene)) && perFrame <= a.px)) return null;
-  return `${l.name} (${l.w}×${l.h}) drawn again on ${Math.round((Math.min(l.commits, frames) / frames) * 100)}% of the frames at rest, ${kpx(perFrame)} a frame`;
-}
-
-/**
- * A scene at rest judged, from its layers over `frames` frames: what fails
- * (atRest's), and what's only listed. In software (CI) a frame can take
- * seconds, and a light that passes every few seconds lands on nearly every
- * one. So there a layer drawn again on nearly every frame fails only where
- * something changes on nearly every frame at any pace: a style or class
- * written on nearly every frame (`everyFrame`, a shake), or an endless
- * animation of what's painted that never waits (`endless`, a breathe).
- */
-export function sceneAtRest(scene: string, layers: LayerRedraws[], frames: number, { software, everyFrame, endless }: { software: boolean; everyFrame: string[]; endless: string[] }): { problems: string[]; unjudged: string[] } {
-  const found = layers.map((l) => atRest(scene, l, frames)).filter((p): p is string => p !== null);
-  const steady = !software || everyFrame.length > 0 || endless.length > 0;
-  return steady ? { problems: found, unjudged: [] } : { problems: [], unjudged: found };
-}
 
 // ---- what's painted ---------------------------------------------------------
 
@@ -282,10 +260,9 @@ export const PAINTED: Painted[] = [
   { file: 'src/components/Lobby.svelte', keyframes: ['mode-off', 'mode-on'], why: 'No time at all (0 s): the WebGL backdrop’s fill for a mode, set as it changes.' },
   // ---- for as long as it shows
   { file: 'src/components/DelveLadder.svelte', keyframes: ['comet', 'reveal', 'draw', 'blend-stroke', 'blend-fill', 'blend-halo', 'blend-glory'], why: 'The ladder draws itself once as it shows (the comet, the reveal, the stars’ lines); a star for two bests drifts from gold to red and back, 7 s each way, for as long as it shows: a star’s lines on the ladder.' },
-  { file: 'src/components/GameOver.svelte', keyframes: ['gleam', 'ignite'], why: 'The headline’s and the winner’s row’s light runs across them for a second and a quarter every 5 s (the winner’s edge kindles once). With no layer of its own it draws the shell round it again as it passes: in over/n-lost, div.shell on 5% of the frames on a GPU; in software, 500k px a frame on two thirds of the frames and up to all of them, as frames come seconds apart. It passes there as nothing on the page changes every frame (atRest’s caller, in scripts/sweep.mjs). It’s the one to give a layer next.' },
+  { file: 'src/components/GameOver.svelte', keyframes: ['ignite'], why: 'Once, 1.2 s, as the winner’s row is set down: its edge kindles (its border’s colour), the row’s own box.' },
   { file: 'src/components/Phial.svelte', keyframes: ['glint'], why: 'A phial’s glint runs along its edge now and then, for as long as it shows: a stroke 16 px long on a small svg.' },
   { file: 'src/components/QuestionView.svelte', keyframes: ['glow'], why: 'An option picked and waiting for the verdict glows, 1 s a breath, for the moment the verdict takes: the WebGL backdrop’s shadow under it (custom properties it reads), not drawn by Chrome.' },
-  { file: 'src/components/Settings.svelte', keyframes: ['breathe'], why: 'The sync seal breathes while sync is on (or a key waits), 1.1 s a breath, for as long as the settings show. Its box-shadow has no layer of its own, so it draws the page round it again every frame: in settings/key, div.shell, 756k px a frame on the GPU at the desktop size. Allowed at rest (ALLOWED) until it gets one.' },
   { file: 'src/components/TimerRing.svelte', keyframes: ['lamp'], why: 'A vein’s lamp, the clock’s ring, flickers for as long as the clock runs: measured at rest in game/delve-dig, Chrome gives its circle a layer while the filter runs (56 × 56, a filter it animates by itself), and nothing is drawn again on most frames.' },
 ];
 
@@ -296,20 +273,20 @@ export const PAINTED: Painted[] = [
  * (cards.html?stage): each is measured from when it's set off until it's
  * over, as the pixels drawn again a frame (`again` over the frames), and
  * fails past SLACK times its baseline (src/qa/redrawBaselines.json).
+ * `webgl`: watched with the effects drawing (the deal, where the cards'
+ * effects play), else with WebGL refused, as WEBGL_SCENES says why.
  */
 export const MOMENTS = [
-  { key: 'deal', label: 'A deal of three cards' },
-  { key: 'dig', label: 'A dig’s deal: the vein and the way out' },
-  { key: 'pick', label: 'A card picked' },
+  { key: 'deal', label: 'A deal of three cards', webgl: true },
+  { key: 'dig', label: 'A dig’s deal: the vein and the way out', webgl: false },
+  { key: 'pick', label: 'A card picked', webgl: false },
 ] as const;
 export type MomentKey = (typeof MOMENTS)[number]['key'];
 
 /** How far past its baseline a moment may go. */
 export const SLACK = 1.5;
-/** A baseline is taken as at least this (device pixels a frame: a 220 px square), so a moment that costs next to nothing isn't failed for a little noise. */
-export const FLOOR = 50_000;
 
-/** A moment's measure against its baseline: what's wrong, else null. */
+/** A moment's measure against its baseline (taken as FLOOR at least, so one that costs next to nothing isn't failed for a little noise): what's wrong, else null. */
 export function overBaseline(key: string, perFrame: number, baseline: number | undefined): string | null {
   if (baseline === undefined) return null;
   const limit = SLACK * Math.max(baseline, FLOOR);

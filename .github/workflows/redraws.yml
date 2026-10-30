@@ -2,15 +2,17 @@ name: Redraws
 run-name: "Redraws: ${{ github.event.pull_request.title || github.ref_name }}"
 
 # The redraw check (docs/qa.md, "Redraws"), on every pull request into main:
-# each QA scene at rest and the card bench's moments, traced in Chromium,
-# fail on a layer Chrome draws again on nearly every frame at rest, or a moment past
-# its baseline (src/qa/redrawBaselines.json). Every stutter of October 2026 was one
-# of those. It runs here, not on anyone's machine: every scene in a browser
-# at full motion. There's no GPU here, so it all draws in
-# software, at 2 or 3 frames a second (some scenes, a frame every few
-# seconds): the scenes are split over eight jobs and the moments over three.
-# What's counted is counted in frames (a moment's animations on a clock kept
-# to them), so it holds at that pace (docs/qa.md, "Redraws").
+# each QA scene at rest and the card bench's moments, traced in Chrome's
+# headless shell on fixed frames (each 1/60 s of the page's own time,
+# however long it takes to draw here), so it comes out the same on any
+# machine and run to run. It fails on a layer drawn again 50k px a frame or
+# more at rest, or a moment past its baseline (src/qa/redrawBaselines.json).
+# Every stutter of October 2026 was one of those.
+#
+# The scenes run with WebGL refused (25 ms a frame here, a WebGL one up to
+# 3 s): split over six jobs. The few whose effects change the page
+# (src/qa/redraws.ts WEBGL_SCENES says why each) run with it, a job each,
+# and so does the deal.
 #
 # Run it by hand (Run workflow) on any branch, and the job's summary lists
 # what it found and the moments as measured, to commit as the baseline when
@@ -32,22 +34,23 @@ jobs:
   redraws:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { name: 'Moments, 1 of 3', args: '--moments --shard 1/3' }
-          - { name: 'Moments, 2 of 3', args: '--moments --shard 2/3' }
-          - { name: 'Moments, 3 of 3', args: '--moments --shard 3/3' }
-          - { name: 'At rest, 1 of 8', args: '--shard 1/8' }
-          - { name: 'At rest, 2 of 8', args: '--shard 2/8' }
-          - { name: 'At rest, 3 of 8', args: '--shard 3/8' }
-          - { name: 'At rest, 4 of 8', args: '--shard 4/8' }
-          - { name: 'At rest, 5 of 8', args: '--shard 5/8' }
-          - { name: 'At rest, 6 of 8', args: '--shard 6/8' }
-          - { name: 'At rest, 7 of 8', args: '--shard 7/8' }
-          - { name: 'At rest, 8 of 8', args: '--shard 8/8' }
+          - { name: 'At rest, 1 of 6', args: '--shard 1/6' }
+          - { name: 'At rest, 2 of 6', args: '--shard 2/6' }
+          - { name: 'At rest, 3 of 6', args: '--shard 3/6' }
+          - { name: 'At rest, 4 of 6', args: '--shard 4/6' }
+          - { name: 'At rest, 5 of 6', args: '--shard 5/6' }
+          - { name: 'At rest, 6 of 6', args: '--shard 6/6' }
+          - { name: 'With WebGL: game/delve-dig', args: '--webgl --only "^game/delve-dig$"' }
+          - { name: 'With WebGL: home/returning', args: '--webgl --only "^home/returning$"' }
+          - { name: 'With WebGL: over/n-lost', args: '--webgl --only "^over/n-lost$"' }
+          - { name: 'With WebGL: settings/key', args: '--webgl --only "^settings/key$"' }
+          - { name: 'Moments: the deal, with WebGL', args: '--moments --only "^deal$"' }
+          - { name: 'Moments: the dig and the pick', args: '--moments --only "^(dig|pick)$"' }
     steps:
       - uses: actions/checkout@v4
         with:
@@ -57,14 +60,14 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Chromium as playwright-core's version has it, kept between runs.
+      # Chrome's headless shell as playwright-core's version has it, kept between runs.
       - id: playwright
         run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-chromium-${{ steps.playwright.outputs.version }}
-      - run: npx playwright-core install --with-deps chromium
+          key: playwright-shell-${{ steps.playwright.outputs.version }}
+      - run: npx playwright-core install --with-deps --only-shell chromium
       - run: npm run sweep -- --redraws ${{ matrix.args }}
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}

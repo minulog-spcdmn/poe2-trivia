@@ -3,7 +3,8 @@
 // what fails.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { FLOOR, SLACK, atRest, layerName, overBaseline, readTrace, redraws, sceneAtRest, type TraceEvent } from '../src/qa/redraws.ts';
+import { readFileSync } from 'node:fs';
+import { FLOOR, MOMENTS, SLACK, WEBGL_SCENES, atRest, layerName, overBaseline, readTrace, redraws, type TraceEvent } from '../src/qa/redraws.ts';
 
 test('a layer is named by its element, Svelte’s classes left out', () => {
   assert.equal(layerName("LayoutFlexibleBox (relative positioned) DIV class='shell svelte-1n46o8q'"), 'div.shell');
@@ -74,24 +75,21 @@ test('the trace is read a line an event, keeping only what is read', () => {
   );
 });
 
-test('at rest, a layer drawn again on nearly every frame fails', () => {
-  const l = { id: 5, name: 'div.stage', w: 1393, h: 594, node: 1, commits: 19, px: 20 * 400_000, again: 19 * 400_000 };
-  assert.match(atRest('game/delve-dig', l, 20) ?? '', /div\.stage \(1393×594\) drawn again on 95% of the frames at rest, 400k px a frame/);
-  assert.equal(atRest('game/delve-dig', { ...l, commits: 14 }, 20), null, 'a light that sweeps now and then');
-  assert.equal(atRest('game/delve-dig', l, 4), null, 'too few frames to tell');
-  assert.equal(atRest('home/returning', { ...l, name: 'svg.glow', w: 156, h: 108, px: 20 * 21_000, again: 19 * 21_000 }, 20), null, 'too small to feel');
-  assert.equal(atRest('settings/key', { ...l, name: 'div.shell' }, 20), null, 'allowed there');
-  assert.match(atRest('game/turns-question', { ...l, name: 'div.shell' }, 20) ?? '', /div\.shell/, 'but not elsewhere');
+test('at rest, a layer drawn again FLOOR px a frame or more, over the frames watched, fails', () => {
+  const l = { id: 5, name: 'div.stage', w: 1393, h: 594, node: 1, commits: 300, px: 300 * 400_000, again: 300 * 400_000 };
+  assert.match(atRest(l, 300) ?? '', /div\.stage \(1393×594\) drawn again 400k px a frame at rest, on 100% of the frames/);
+  // (GameOver's gleam before it had a layer: the page round it, a quarter of the frames.)
+  assert.match(atRest({ ...l, name: 'div.shell', commits: 72, again: 72 * 280_000 }, 300) ?? '', /div\.shell .* on 24% of the frames/, 'a light passing over a big layer, for its share of the time');
+  assert.equal(atRest({ ...l, name: 'svg.glow', w: 156, h: 108, px: 300 * 21_000, again: 300 * 21_000 }, 300), null, 'a light on a small layer of its own');
+  assert.equal(atRest({ ...l, again: 300 * FLOOR - 1 }, 300), null, 'just under the floor');
 });
 
-test('in software, a layer at rest fails only beside something that changes on nearly every frame', () => {
-  const layers = [{ id: 5, name: 'div.shell', w: 1425, h: 900, node: 1, commits: 10, px: 10 * 500_000, again: 9 * 500_000 }];
-  const none = { everyFrame: [], endless: [] };
-  assert.equal(sceneAtRest('over/n-lost', layers, 10, { software: false, ...none }).problems.length, 1, 'on a GPU, the share alone');
-  assert.deepEqual(sceneAtRest('over/n-lost', layers, 10, { software: true, ...none }).problems, [], 'a light passing every few seconds');
-  assert.equal(sceneAtRest('over/n-lost', layers, 10, { software: true, ...none }).unjudged.length, 1, 'listed, not failed');
-  assert.equal(sceneAtRest('game/delve-dig', layers, 10, { software: true, everyFrame: ['div.shell’s style'], endless: [] }).problems.length, 1, 'a shake');
-  assert.equal(sceneAtRest('game/turns-question', layers, 10, { software: true, everyFrame: [], endless: ['glow on span.seal (box-shadow)'] }).problems.length, 1, 'a breathe');
+test('CI watches each WebGL scene with WebGL, and every moment', () => {
+  const workflow = readFileSync(new URL('../.github/workflows/redraws.yml', import.meta.url), 'utf8');
+  const args = [...workflow.matchAll(/args: '([^']*)'/g)].map((m) => m[1]);
+  const only = (a: string) => new RegExp(a.match(/--only "([^"]+)"/)?.[1] ?? '.');
+  for (const { scene } of WEBGL_SCENES) assert.ok(args.some((a) => a.includes('--webgl') && only(a).test(scene)), `no job watches ${scene} with WebGL`);
+  for (const { key } of MOMENTS) assert.equal(args.filter((a) => a.includes('--moments') && only(a).test(key)).length, 1, `the ${key} moment in one job`);
 });
 
 test('a moment fails past its baseline, taken as at least the floor', () => {
