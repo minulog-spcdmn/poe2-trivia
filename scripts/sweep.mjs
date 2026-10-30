@@ -467,7 +467,7 @@ async function frameDriver(context, page, ms = FRAME) {
 /** In the page: no animation with an end still running (a moment over). */
 const still = () => !document.getAnimations().some((a) => a.playState === 'running' && Number.isFinite(a.effect?.getComputedTiming().endTime ?? Infinity));
 
-/** In the page, before a watch: from now on, each style or class written and the frames it was written in (window.__writes, the frames counted in window.__frames), and each animation that ran of anything but a transform or opacity (window.__painted). */
+/** In the page, before a watch: from now on, each attribute written (a style, a class, a data- one a stylesheet reads) and the frames it was written in (window.__writes, the frames counted in window.__frames), and each animation that ran of anything but a transform or opacity (window.__painted). */
 function noteWrites() {
   // (An element's tag and classes, Svelte's left out.)
   const name = (el) => `${el.tagName.toLowerCase()}${[...el.classList].filter((c) => !c.startsWith('svelte-')).map((c) => `.${c}`).join('')}`;
@@ -480,7 +480,7 @@ function noteWrites() {
       if (!writes.has(key)) writes.set(key, new Set());
       writes.get(key).add(window.__frames);
     }
-  }).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+  }).observe(document.documentElement, { subtree: true, attributes: true });
   const COMPOSITED = new Set(['offset', 'easing', 'composite', 'computedOffset', 'transform', 'opacity', 'translate', 'rotate', 'scale']);
   const painted = (window.__painted = new Set());
   const seen = new WeakSet();
@@ -498,11 +498,12 @@ function noteWrites() {
   requestAnimationFrame(count);
 }
 
-/** In the page, after a watch: what was written on half the frames or more, and what animated anything but its transform or opacity, where to look when something's drawn again. */
+/** In the page, after a watch: what was written on half the frames or more, and what animated anything but its transform or opacity, where to look when something's drawn again; and everything written, on how many of the frames, for the report. */
 function writesNoted() {
   const n = Math.max(1, window.__frames);
-  const changing = [...window.__writes].filter(([, f]) => f.size >= n / 2).map(([k, f]) => `${k} (${Math.round((f.size / n) * 100)}%)`);
-  return { changing, painted: [...window.__painted] };
+  const share = ([k, f]) => `${k} (${Math.round((f.size / n) * 100)}%)`;
+  const all = [...window.__writes].sort((a, b) => b[1].size - a[1].size);
+  return { changing: all.filter(([, f]) => f.size >= n / 2).map(share), writes: all.map(share), painted: [...window.__painted] };
 }
 
 /**
@@ -650,7 +651,7 @@ async function scenesAtRest(base, firsts, browsers) {
             const r = await watched(browser, page, () => drive.frames(AT_REST_FRAMES));
             step(`${r.frames} frames, traced (${(r.traced / 1e6).toFixed(0)} MB)`);
             const problems = r.layers.map((l) => atRest(l, r.frames)).filter(Boolean);
-            out.push({ scene: s.key, frames: r.frames, problems, changing: r.changing, painted: r.painted, layers: r.layers.slice(0, 8) });
+            out.push({ scene: s.key, frames: r.frames, problems, changing: r.changing, painted: r.painted, layers: r.layers.slice(0, 8), writes: r.writes });
             if (!process.stdout.isTTY) console.log(`  ${s.key}: ${took.join(', ')}`);
             break;
           } catch (e) {
@@ -781,7 +782,7 @@ async function moments(base, browser) {
       // (A 60th of a second's worth, whatever the screen's rate.)
       const perFrame = Math.round((r.again / Math.max(1, r.frames)) * (m.hz / 60));
       if (!process.stdout.isTTY) console.log(`  ${m.key}: ${r.frames} frames at ${m.hz} Hz, ${kpx(perFrame)} drawn again a 60th of a second`);
-      out.push({ key: m.key, label: m.label, webgl: m.webgl, hz: m.hz, perFrame, frames: r.frames, px: r.px, again: r.again, changing: r.changing, painted: r.painted, layers: r.layers.slice(0, 6) });
+      out.push({ key: m.key, label: m.label, webgl: m.webgl, hz: m.hz, perFrame, frames: r.frames, px: r.px, again: r.again, changing: r.changing, painted: r.painted, layers: r.layers.slice(0, 6), writes: r.writes });
     } finally {
       await drive.stop();
       await context.close();
