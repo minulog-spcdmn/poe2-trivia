@@ -243,6 +243,11 @@ live. It has its own rooms, saves and invite links (`VITE_CHANNEL=beta`).
   deploys of `main` keep showing it.
 - **Ship it:** merge the branch into `main`. The beta stays as it is until the
   next one goes up.
+- **Check it on the QA desk:** **poe2.quest/beta/qa.html**. The deploy also
+  builds the code before the change (main where the branch left it) at
+  `/beta/before/` (`scripts/qa-before.mjs`), so **B** (`&cmp=1`) shows it live
+  beside the branch's; marking what differs takes the dev server
+  (`docs/qa.md`).
 - **Stack changes:** the beta shows one commit at a time. To test a change with
   the one already there, start its branch from the newest `beta` deployment.
 

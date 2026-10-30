@@ -17,6 +17,7 @@ import { WAY_OUT_CARD } from '../lib/wayOut/lantern';
 import * as L from '../lab/controls.svelte';
 import { TURN } from '../components/ChooseCategory.svelte';
 import { cubicInOut } from 'svelte/easing';
+import { printing } from '../lib/platePrint.svelte';
 
 installUiSounds();
 installUiFx();
@@ -100,4 +101,9 @@ const items = [...engine.categories].sort((a, b) => a.localeCompare(b)).map((c) 
 items.push({ value: WAY_OUT, label: `${WAY_OUT_CARD.title} (a dig's)` });
 const finds = (Object.keys(FIND_TEXT) as FindKind[]).map((kind) => ({ kind, name: FIND_TEXT[kind].name }));
 
-Object.assign(window, { __cb: { deal, flip, items, finds, ready: true }, __s: session, __lab: L });
+/** The plates drawn as live strokes (true), as they were before their prints (lib/platePrint), or as prints: to compare the two. */
+function live(on: boolean) {
+  printing.on = !on;
+}
+
+Object.assign(window, { __cb: { deal, flip, live, items, finds, ready: true }, __s: session, __lab: L });
