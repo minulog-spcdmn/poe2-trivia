@@ -217,9 +217,9 @@ export const CSS_BACKDROP = '.bg.css';
 /**
  * The scenes watched at rest with WebGL on as well as off: one for each
  * screen whose effects (src/lib/fx/) change what the page itself does.
- * The rest refuse WebGL: drawn in software, as the check is, the backdrop
- * and the effects take a second or more a frame (25 ms without), and they
- * draw on canvases of their own, not on what Chrome draws again. Without
+ * The rest refuse WebGL: the backdrop and the effects draw on canvases of
+ * their own, not on what Chrome draws again, and drawn in software, as the
+ * check is, they're the slowest part of a frame. Without
  * WebGL the page paints the backdrop's shadows in CSS, and its CSS
  * backdrop isn't drawn (CSS_BACKDROP).
  */
@@ -277,17 +277,24 @@ export const PAINTED: Painted[] = [
 // ---- moments ----------------------------------------------------------------
 
 /**
- * The moments that should cost a known amount, on the card bench's stage
- * (cards.html?stage): each is measured from when it's set off until it's
- * over, as the pixels drawn again a frame (`again` over the frames), and
- * fails past SLACK times its baseline (src/qa/redrawBaselines.json).
+ * The moments that should cost a known amount, each measured from when
+ * it's set off until it's over, as the pixels drawn again a 60th of a
+ * second, and failed past SLACK times its baseline
+ * (src/qa/redrawBaselines.json). On the card bench's stage
+ * (cards.html?stage) but the plate, on its bench (qa.html?b=plate).
  * `webgl`: watched with the effects drawing (the deal, where the cards'
- * effects play), else with WebGL refused, as WEBGL_SCENES says why.
+ * effects play), else with WebGL refused, as WEBGL_SCENES says why. `hz`:
+ * the screen's rate it's watched at. The plate's at 240, a fast screen's:
+ * its lines drew in by CSS animations, which Chrome draws at the screen's
+ * rate, where the pen draws at its own (lib/drawIn), so at 60 the two cost
+ * the same and only a fast screen tells them apart.
  */
 export const MOMENTS = [
-  { key: 'deal', label: 'A deal of three cards', webgl: true },
-  { key: 'dig', label: 'A dig’s deal: the vein and the way out', webgl: false },
-  { key: 'pick', label: 'A card picked', webgl: false },
+  { key: 'deal', label: 'A deal of three cards', webgl: true, hz: 60 },
+  { key: 'dig', label: 'A dig’s deal: the vein and the way out', webgl: false, hz: 60 },
+  { key: 'pick', label: 'A card picked', webgl: false, hz: 60 },
+  { key: 'glare', label: 'The pointer across a card', webgl: false, hz: 60 },
+  { key: 'plate', label: 'A name plate drawn in, at 240 Hz', webgl: false, hz: 240 },
 ] as const;
 export type MomentKey = (typeof MOMENTS)[number]['key'];
 

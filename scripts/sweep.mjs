@@ -366,8 +366,8 @@ const REDRAW_SIZE = SIZES.some((s) => s.key === values.sizes) ? values.sizes : '
 const REDRAW_TRACE = ['cc', 'disabled-by-default-cc.debug'];
 /** A frame, of the page's own time. */
 const FRAME = 1000 / 60;
-/** How long a scene is watched at rest: 5 s (a light that passes every 5 s counts for its share), with WebGL 2 s (a frame of it can take 3 s in CI). */
-const AT_REST_FRAMES = values.webgl ? 120 : 300;
+/** How long a scene is watched at rest: 5 s, so a light that passes every 5 s counts for its share. */
+const AT_REST_FRAMES = 300;
 
 /**
  * A browser of its own for each page traced (a trace is the whole
@@ -380,21 +380,38 @@ const AT_REST_FRAMES = values.webgl ? 120 : 300;
  * same from run to run (a moment's, near it: docs/qa.md, "Redraws").
  */
 // (And an image decoded before the tile it's in is drawn, not drawn without it and again once it's
-// decoded, as Chrome otherwise does: when a decode lands depends on real time.)
-const launchTraced = () => chromium.launch({ headless: true, args: ['--enable-begin-frame-control', '--run-all-compositor-stages-before-draw', '--enable-unsafe-swiftshader', '--disable-checker-imaging'] });
+// decoded, as Chrome otherwise does: when a decode lands depends on real time. Composited on the GPU
+// as SwiftShader has it, the tiles still drawn in software, and a layer's draw left as it was while
+// nothing in it changes: what's drawn again is the same, a frame of category cards several times
+// quicker to put together.)
+const launchTraced = () =>
+  chromium.launch({
+    headless: true,
+    args: [
+      '--enable-begin-frame-control',
+      '--run-all-compositor-stages-before-draw',
+      '--enable-unsafe-swiftshader',
+      '--use-angle=swiftshader',
+      '--ignore-gpu-blocklist',
+      '--disable-gpu-rasterization',
+      '--enable-features=AllowUndamagedNonrootRenderPassToSkip',
+      '--disable-checker-imaging',
+    ],
+  });
 
 /** Chrome's frame clock (base::TimeTicks), in ms: the monotonic clock Node's hrtime reads too, on each platform. */
 const ticks = () => Number(process.hrtime.bigint()) / 1e6;
 
 /**
  * Drives `page`'s frames: as they come, in real time, until fix(); from
- * then on frames(n) sends them one at a time, each FRAME of the page's own
- * time, which stands still between them.
+ * then on frames(n) sends them one at a time, each `ms` of the page's own
+ * time (FRAME, a 60th of a second, unless asked), which stands still
+ * between them.
  */
-async function frameDriver(context, page) {
+async function frameDriver(context, page, ms = FRAME) {
   const cdp = await context.newCDPSession(page);
   let last = 0;
-  const frame = (at) => cdp.send('HeadlessExperimental.beginFrame', { frameTimeTicks: (last = Math.max(at, last + 1)), interval: FRAME });
+  const frame = (at) => cdp.send('HeadlessExperimental.beginFrame', { frameTimeTicks: (last = Math.max(at, last + 1)), interval: ms });
   let pumping = true;
   const pump = (async () => {
     while (pumping) {
@@ -417,9 +434,9 @@ async function frameDriver(context, page) {
       let n = 0;
       while (n < most) {
         const expired = new Promise((r) => cdp.once('Emulation.virtualTimeBudgetExpired', r));
-        await cdp.send('Emulation.setVirtualTimePolicy', { policy: 'advance', budget: FRAME });
+        await cdp.send('Emulation.setVirtualTimePolicy', { policy: 'advance', budget: ms });
         await expired;
-        await frame(last + FRAME);
+        await frame(last + ms);
         n++;
         if (until && n >= least && (await page.evaluate(until))) break;
       }
@@ -505,13 +522,13 @@ function seedRandom(seed) {
 }
 
 /** A page to watch, with what each frame of it was drawn again, and when: its context, page and frame driver. */
-async function watchedPage(browser, webgl, seed) {
+async function watchedPage(browser, webgl, seed, ms = FRAME) {
   const size = SIZES.find((s) => s.key === REDRAW_SIZE);
   const context = await browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: size.dpr, reducedMotion: 'no-preference' });
   await context.addInitScript(seedRandom, seed);
   if (!webgl) await context.addInitScript(refuseWebGL, CSS_BACKDROP);
   const page = await context.newPage();
-  return { context, page, drive: await frameDriver(context, page) };
+  return { context, page, drive: await frameDriver(context, page, ms) };
 }
 
 /** `frames` (a frameDriver's) watched with the browser tracing: how many, what changed meanwhile, and what was drawn again. */
@@ -621,60 +638,117 @@ async function scenesAtRest(base, firsts, browsers) {
 }
 
 /**
- * The card bench's moments (src/qa/redraws.ts MOMENTS), on its stage
- * (cards.html?stage), each in a page of its own (with WebGL or not, as
- * MOMENTS has it): set off and watched until it's over, as the pixels
- * drawn again a frame, after a first run unwatched (what a worker makes
- * for it ready). On fixed frames a moment comes out the same each run, so
- * each is watched once.
+ * The moments (src/qa/redraws.ts MOMENTS), each in a page of its own (with
+ * WebGL or not, at the screen's rate MOMENTS has): set off and watched
+ * until it's over, as the pixels drawn again a 60th of a second. Each runs
+ * once first, unwatched and in real time:
+ * what a worker makes for it (a card plate's print, an arcane plate's
+ * geometry) comes in real time, so in the watched run it would land on
+ * another frame each run; made then, it's kept for the visit, as for a
+ * player's second deal. Then Math.random starts over and it's watched.
  */
 async function moments(base, browser) {
   const out = [];
   const pick = values.only ? new RegExp(values.only) : null;
   for (const m of MOMENTS.filter((m) => !pick || pick.test(m.key))) {
-    const { context, page, drive } = await watchedPage(browser, m.webgl, seedOf(m.key));
+    const { context, page, drive } = await watchedPage(browser, m.webgl, seedOf(m.key), 1000 / m.hz);
+    /** Frames for `s` seconds of the page's own time. */
+    const frames = (s) => Math.round(s * m.hz);
     try {
-      await page.goto(`${base}cards.html?stage`, { waitUntil: 'load', timeout: 60000 });
-      await page.waitForFunction(() => window.__cb?.ready, null, { timeout: 90000, polling: 200 });
+      if (m.key === 'plate') {
+        // (Lit, as a question's at its reveal, with no right answer's glint: its spark, once a second, is PAINTED's.)
+        await page.goto(`${base}qa.html?${new URLSearchParams({ frame: 'm0', b: 'plate', size: REDRAW_SIZE, 'k.glint': 'false' })}`, { waitUntil: 'load', timeout: 60000 });
+        await page.waitForFunction(() => window.__qa, null, { timeout: 90000, polling: 200 });
+      } else {
+        await page.goto(`${base}cards.html?stage`, { waitUntil: 'load', timeout: 60000 });
+        await page.waitForFunction(() => window.__cb?.ready, null, { timeout: 90000, polling: 200 });
+      }
       // (The bench's items: every category by name, the dig's way out last.)
       const deal = () => page.evaluate(() => window.__cb.deal(window.__cb.items.slice(0, 3).map((i) => ({ category: i.value, kind: null }))));
-      const setOff = {
-        deal,
-        dig: () => page.evaluate(() => window.__cb.deal([{ category: window.__cb.items[0].value, kind: 'azurite' }, { category: window.__cb.items.at(-1).value, kind: null }])),
-        pick: () => page.evaluate(() => window.__lab.ask()),
+      // The pointer over the middle card: its events sent in the page, and the card held hovered (CSS's
+      // :hover) through DevTools. (A real pointer's, while the page's time stands still between frames,
+      // crashes Chrome's renderer.)
+      const MIDDLE = '.choose .cards > .card';
+      let cdp;
+      const hover = async (on) => {
+        if (!cdp) {
+          cdp = await context.newCDPSession(page);
+          await cdp.send('DOM.enable');
+          await cdp.send('CSS.enable');
+        }
+        await cdp.send('DOM.getDocument');
+        const { result } = await cdp.send('Runtime.evaluate', { expression: `document.querySelectorAll('${MIDDLE}')[1]` });
+        const { nodeId } = await cdp.send('DOM.requestNode', { objectId: result.objectId });
+        await cdp.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: on ? ['hover'] : [] });
       };
+      let box;
+      /** A pointer event at the i-th of 60 steps across the card, from near its top left to near its bottom right. */
+      const point = (type, i) => page.evaluate(([sel, type, x, y]) => document.querySelectorAll(sel)[1].dispatchEvent(new PointerEvent(type, { pointerType: 'mouse', clientX: x, clientY: y, bubbles: type === 'pointermove' })), [MIDDLE, type, box.x + box.width * (0.2 + (0.6 * i) / 60), box.y + box.height * (0.25 + (0.5 * i) / 60)]);
+      const enter = async () => {
+        box = await page.locator(MIDDLE).nth(1).boundingBox();
+        await hover(true);
+        await point('pointerenter', 0);
+      };
+      /**
+       * How each is set off: what's done first, each come to rest before
+       * it's watched (`before`); what sets it off (`go`, given `step`, to
+       * call between the pointer's moves: a frame, when watched); what's
+       * done once it's over (`after`); how long it's watched at the least
+       * (`least`, in seconds: 1).
+       */
+      const how = {
+        deal: { go: deal },
+        dig: { go: () => page.evaluate(() => window.__cb.deal([{ category: window.__cb.items[0].value, kind: 'azurite' }, { category: window.__cb.items.at(-1).value, kind: null }])) },
+        pick: { before: [deal], go: () => page.evaluate(() => window.__lab.ask()) },
+        // The pointer across the lifted card, a move a frame for a second (the card's own hover, its
+        // colours and glows coming up, over before it's watched).
+        glare: {
+          before: [deal, enter],
+          go: async (step) => {
+            for (let i = 0; i <= 60; i++) {
+              await point('pointermove', i);
+              await step();
+            }
+          },
+          after: async () => {
+            await point('pointerleave', 60);
+            await hover(false);
+          },
+        },
+        // The plate put up again, as the desk's Replay does: its field fades in and the pen draws its
+        // lines, for 2 s (the pen's in script, which still() doesn't see).
+        plate: { go: () => page.evaluate(() => postMessage({ qa: 'replay' }, location.origin)), least: 2.5 },
+      }[m.key];
       const settle = async () => {
         await page.waitForTimeout(500);
         await page.evaluate(quiet, { still: 1000, most: 15000 });
       };
-      await settle();
-      // (Once first, unwatched, in real time: what a worker makes for it (a card plate's print, an
-      // arcane plate's geometry) comes in real time, so in the watched run it would land on another
-      // frame each run. Made now, it's kept for the visit, as for a player's second deal.)
       const reseed = () => page.evaluate(() => window.__reseed());
+      await settle();
       await reseed();
-      if (m.key === 'pick') {
-        await deal();
+      for (const b of how.before ?? []) {
+        await b();
         await settle();
       }
-      await setOff[m.key]();
+      await how.go(() => page.waitForTimeout(1000 / m.hz));
+      await how.after?.();
       await settle();
       await drive.fix();
       await reseed();
-      // (A pick is of cards dealt first, unwatched.)
-      if (m.key === 'pick') {
-        await deal();
-        await drive.frames(900, still, 30);
+      for (const b of how.before ?? []) {
+        await b();
+        await drive.frames(frames(15), still, frames(0.5));
       }
-      // (Watched until it's over, a second at least; with WebGL 3 s at the most, a frame of it taking
-      // up to 3 s in CI, without 10 s.)
+      // (Watched until it's over, a second at least, 10 s at the most.)
       const r = await watched(browser, page, async () => {
-        await setOff[m.key]();
-        return drive.frames(m.webgl ? 180 : 600, still, 60);
+        let n = 0;
+        await how.go(async () => (n += await drive.frames(1)));
+        return n + (await drive.frames(frames(10), still, frames(how.least ?? 1)));
       });
-      const perFrame = Math.round(r.again / Math.max(1, r.frames));
-      if (!process.stdout.isTTY) console.log(`  ${m.key}: ${r.frames} frames, ${kpx(perFrame)} drawn again a frame`);
-      out.push({ key: m.key, label: m.label, webgl: m.webgl, perFrame, frames: r.frames, px: r.px, again: r.again, changing: r.changing, painted: r.painted, layers: r.layers.slice(0, 6) });
+      // (A 60th of a second's worth, whatever the screen's rate.)
+      const perFrame = Math.round((r.again / Math.max(1, r.frames)) * (m.hz / 60));
+      if (!process.stdout.isTTY) console.log(`  ${m.key}: ${r.frames} frames at ${m.hz} Hz, ${kpx(perFrame)} drawn again a 60th of a second`);
+      out.push({ key: m.key, label: m.label, webgl: m.webgl, hz: m.hz, perFrame, frames: r.frames, px: r.px, again: r.again, changing: r.changing, painted: r.painted, layers: r.layers.slice(0, 6) });
     } finally {
       await drive.stop();
       await context.close();
@@ -696,10 +770,8 @@ async function checkRedraws(base, scenes) {
     } else {
       const firsts = scenesToWatch(scenes);
       if (!firsts.length) throw new Error(only ? `No scene's key matches ${only}${values.webgl ? ' among the WebGL scenes' : ''}.` : 'No scenes.');
-      // (Two at once: a CI runner has four threads, and a page drawing in software keeps more than one
-      // busy; at three, a scene of category cards, a second a frame to composite, took twice as long.
-      // With WebGL one: a frame of it keeps them all busy.)
-      const at = Math.min(firsts.length, values.webgl ? 1 : 2);
+      // (Two at once: a CI runner has four threads, and a page drawing in software keeps more than one busy.)
+      const at = Math.min(firsts.length, 2);
       console.log(`Redraws at rest: ${firsts.length} scenes${shard ? ` (part ${shard[0]} of ${shard[1]})` : ''}, ${at} at once, at ${REDRAW_SIZE}, ${values.webgl ? 'with WebGL' : 'WebGL refused'}, on fixed frames, from ${base}`);
       for (let i = 0; i < at; i++) traceBrowsers.push(await launchTraced());
       atRestFound = await scenesAtRest(base, firsts, traceBrowsers);
@@ -722,6 +794,7 @@ async function checkRedraws(base, scenes) {
 
   // Where to look, for a scene or a moment that fails.
   const clues = (r) => [...(r.changing.length ? [`    written on most frames: ${r.changing.slice(0, 4).join(', ')}`] : []), ...(r.painted.length ? [`    animating what isn’t its transform or opacity: ${r.painted.slice(0, 4).join('; ')}`] : [])];
+  const HOW = 'To find what draws it again and fix it: docs/development.md, “Finding a stutter” (a layer of its own, or a transform or opacity animated instead; never drawn less well).';
   const lines = [];
   const bad = atRestFound.filter((s) => s.failed || s.problems.length);
   for (const s of atRestFound) {
@@ -732,13 +805,14 @@ async function checkRedraws(base, scenes) {
   if (atRestFound.length) lines.unshift(`At rest: ${atRestFound.length} scenes, ${bad.length} with a layer drawn again ${kpx(FLOOR)} a frame or more${bad.length ? ':' : '.'}`);
   for (const m of momentsFound) {
     const of = m.baseline !== undefined ? `baseline ${kpx(m.baseline)}` : sameSize ? 'no baseline yet' : `no baseline at ${REDRAW_SIZE}`;
-    lines.push(`${m.label}${m.webgl ? ' (with WebGL)' : ''}: ${kpx(m.perFrame)} drawn again a frame over ${m.frames} frames, ${of}`);
+    lines.push(`${m.label}${m.webgl ? ' (with WebGL)' : ''}: ${kpx(m.perFrame)} drawn again a 60th of a second, over ${m.frames} frames at ${m.hz} Hz; ${of}`);
     if (m.problem) {
-      lines.push(`  FAILS: ${m.problem}`);
-      for (const l of m.layers.slice(0, 4)) lines.push(`    ${l.name} (${l.w}×${l.h}): on ${Math.round((Math.min(l.commits, m.frames) / m.frames) * 100)}% of the frames, ${kpx(l.again / Math.max(1, m.frames))} a frame`);
+      lines.push(`  FAILS: ${m.problem}. Drawn again most:`);
+      for (const l of m.layers.slice(0, 4)) lines.push(`    ${l.name} (${l.w}×${l.h}): on ${Math.round((Math.min(l.commits, m.frames) / m.frames) * 100)}% of the frames, ${kpx((l.again / Math.max(1, m.frames)) * (m.hz / 60))} a 60th of a second`);
       lines.push(...clues(m));
     }
   }
+  if (bad.length || momentsFound.some((m) => m.problem)) lines.push(HOW);
   for (const l of lines) console.log(l);
   const measured = { size: REDRAW_SIZE, moments: Object.fromEntries(momentsFound.map((m) => [m.key, m.perFrame])) };
   if (values.baseline && momentsFound.length && !sameSize) console.log(`Not written into ${path.relative(ROOT, BASELINE)}: its baselines are at ${baseline.size}, CI's size, not ${REDRAW_SIZE}.`);

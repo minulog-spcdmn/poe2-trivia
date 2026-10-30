@@ -9,9 +9,9 @@ run-name: "Redraws: ${{ github.event.pull_request.title || github.ref_name }}"
 # more at rest, or a moment past its baseline (src/qa/redrawBaselines.json).
 # Every stutter of October 2026 was one of those.
 #
-# The scenes run with WebGL refused (25 ms a frame here, a WebGL one up to
-# 3 s; a scene of category cards a second or more, to composite in
-# software), split over ten jobs. The few whose effects change the page
+# The scenes run with WebGL refused (its canvases draw nothing Chrome draws
+# again, and in software they're the slowest part of a frame), split over
+# ten jobs. The few whose effects change the page
 # (src/qa/redraws.ts WEBGL_SCENES says why each) run with it, a job each,
 # and so does the deal.
 #
@@ -55,7 +55,7 @@ jobs:
           - { name: 'With WebGL: over/n-lost', args: '--webgl --only "^over/n-lost$"' }
           - { name: 'With WebGL: settings/key', args: '--webgl --only "^settings/key$"' }
           - { name: 'Moments: the deal, with WebGL', args: '--moments --only "^deal$"' }
-          - { name: 'Moments: the dig and the pick', args: '--moments --only "^(dig|pick)$"' }
+          - { name: 'Moments: the dig, the pick, the pointer and the plate', args: '--moments --only "^(dig|pick|glare|plate)$"' }
     steps:
       - uses: actions/checkout@v4
         with:

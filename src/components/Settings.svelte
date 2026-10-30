@@ -915,34 +915,24 @@
   .seal.on::before {
     opacity: 1;
   }
-  /* The breath: a wider glow fading in and out on a layer of its own, so
-     breathing draws nothing again (a box-shadow animated on the seal drew
-     the page round it again every frame). */
-  .seal::after {
-    content: '';
-    position: absolute;
-    z-index: -1;
-    inset: 0;
-    border-radius: inherit;
-    box-shadow: 0 0 20px rgba(241, 217, 155, 0.45);
-    opacity: 0;
-    pointer-events: none;
-  }
-  .seal.on::after {
+  /* The breath, on a layer of its own (will-change): its glow drawn again
+     every frame, as a box-shadow animated is, but only the seal's (70 × 70),
+     not the page round it (135k px a frame without). */
+  .seal.on {
     will-change: opacity;
     animation: breathe 1.1s ease-in-out infinite alternate;
   }
   @keyframes breathe {
     to {
-      opacity: 1;
+      box-shadow: 0 0 20px rgba(241, 217, 155, 0.65);
     }
   }
   /* Held still with the effects off or reduced motion asked for: lit, not breathing. */
-  :global(html[data-still]) .seal.on::after {
+  :global(html[data-still]) .seal.on {
     animation: none;
   }
   @media (prefers-reduced-motion: reduce) {
-    .seal.on::after {
+    .seal.on {
       animation: none;
     }
   }
