@@ -380,10 +380,9 @@ const AT_REST_FRAMES = 300;
  * same from run to run (a moment's, near it: docs/qa.md, "Redraws").
  */
 // (And an image decoded before the tile it's in is drawn, not drawn without it and again once it's
-// decoded, as Chrome otherwise does: when a decode lands depends on real time. Composited on the GPU
-// as SwiftShader has it, the tiles still drawn in software, and a layer's draw left as it was while
-// nothing in it changes: what's drawn again is the same, a frame of category cards several times
-// quicker to put together.)
+// decoded, as Chrome otherwise does: when a decode lands depends on real time. And a layer of its own
+// that nothing changed in composited as it was last frame, not put together again: what's drawn
+// again is the same, and a frame of category cards takes a CI runner 13 ms, not 700.)
 const launchTraced = () =>
   chromium.launch({
     headless: true,
@@ -391,9 +390,6 @@ const launchTraced = () =>
       '--enable-begin-frame-control',
       '--run-all-compositor-stages-before-draw',
       '--enable-unsafe-swiftshader',
-      '--use-angle=swiftshader',
-      '--ignore-gpu-blocklist',
-      '--disable-gpu-rasterization',
       '--enable-features=AllowUndamagedNonrootRenderPassToSkip',
       '--disable-checker-imaging',
     ],
