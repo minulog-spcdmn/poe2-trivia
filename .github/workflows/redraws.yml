@@ -55,7 +55,8 @@ jobs:
           - { name: 'With WebGL: over/n-lost', args: '--webgl --only "^over/n-lost$"' }
           - { name: 'With WebGL: settings/key', args: '--webgl --only "^settings/key$"' }
           - { name: 'Moments: the deal, with WebGL', args: '--moments --only "^deal$"' }
-          - { name: 'Moments: the dig, the pick, the pointer and the plate', args: '--moments --only "^(dig|pick|glare|plate)$"' }
+          - { name: 'Moments: the dig and the pick', args: '--moments --only "^(dig|pick)$"' }
+          - { name: 'Moments: the pointer and the plate', args: '--moments --only "^(glare|plate)$"' }
     steps:
       - uses: actions/checkout@v4
         with:
