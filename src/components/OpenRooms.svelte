@@ -341,7 +341,11 @@
     border-color: var(--gold-lo);
     box-shadow: 0 0 14px rgba(201, 164, 92, 0.3);
   }
+  /* On a layer of its own (will-change), so the spin, written each frame,
+     draws again only the icon, not the page round it (65k px a frame
+     without). The layer itself never turns: the rotation stays inside. */
   .refresh svg {
+    will-change: opacity;
     width: 20px;
     height: 20px;
     fill: none;
