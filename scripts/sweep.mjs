@@ -403,6 +403,21 @@ const launchTraced = () =>
     ],
   });
 
+/**
+ * `promise`, or a failure once a minute passes without it: a page that hangs
+ * (a frame that never comes back, its renderer gone) fails its scene, which is
+ * tried once more, instead of holding the job until its time runs out. (A
+ * frame with WebGL takes a CI runner 3 s at most.)
+ */
+async function withinAMinute(promise, what) {
+  let timer;
+  try {
+    return await Promise.race([promise, new Promise((_, fail) => (timer = setTimeout(() => fail(new Error(`${what} took over a minute: the page hung`)), 60000)))]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Chrome's frame clock (base::TimeTicks), in ms: the monotonic clock Node's hrtime reads too, on each platform. */
 const ticks = () => Number(process.hrtime.bigint()) / 1e6;
 
@@ -439,8 +454,8 @@ async function frameDriver(context, page, ms = FRAME) {
       while (n < most) {
         const expired = new Promise((r) => cdp.once('Emulation.virtualTimeBudgetExpired', r));
         await cdp.send('Emulation.setVirtualTimePolicy', { policy: 'advance', budget: ms });
-        await expired;
-        await frame(last + ms);
+        await withinAMinute(expired, 'The page’s time');
+        await withinAMinute(frame(last + ms), 'A frame');
         n++;
         if (until && n >= least && (await page.evaluate(until))) break;
       }
