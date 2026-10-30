@@ -1,0 +1,92 @@
+name: Redraws
+run-name: "Redraws: ${{ github.event.pull_request.title || github.ref_name }}"
+
+# The redraw check (docs/qa.md, "Redraws"), on every pull request into main:
+# each QA scene at rest and the moments (src/qa/redraws.ts MOMENTS), traced in Chrome's
+# headless shell on fixed frames (each 1/60 s of the page's own time,
+# however long it takes to draw here), so it plays as at 60 fps on any
+# machine, and at rest the same run to run. It fails on a layer drawn again 50k px a frame or
+# more at rest, or a moment past its baseline (src/qa/redrawBaselines.json).
+# Every stutter of October 2026 was one of those.
+#
+# The scenes run with WebGL refused (its canvases draw nothing Chrome draws
+# again, and in software they're the slowest part of a frame), split over
+# ten jobs. The few whose effects change the page
+# (src/qa/redraws.ts WEBGL_SCENES says why each) run with it, a job each,
+# and so does the deal.
+#
+# Run it by hand (Run workflow) on any branch, and the job's summary lists
+# what it found and the moments as measured, to commit as the baseline when
+# a change means them to cost more or less.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: redraws-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  redraws:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'At rest, 1 of 10', args: '--shard 1/10' }
+          - { name: 'At rest, 2 of 10', args: '--shard 2/10' }
+          - { name: 'At rest, 3 of 10', args: '--shard 3/10' }
+          - { name: 'At rest, 4 of 10', args: '--shard 4/10' }
+          - { name: 'At rest, 5 of 10', args: '--shard 5/10' }
+          - { name: 'At rest, 6 of 10', args: '--shard 6/10' }
+          - { name: 'At rest, 7 of 10', args: '--shard 7/10' }
+          - { name: 'At rest, 8 of 10', args: '--shard 8/10' }
+          - { name: 'At rest, 9 of 10', args: '--shard 9/10' }
+          - { name: 'At rest, 10 of 10', args: '--shard 10/10' }
+          - { name: 'With WebGL: game/delve-dig', args: '--webgl --only "^game/delve-dig$"' }
+          - { name: 'With WebGL: home/returning', args: '--webgl --only "^home/returning$"' }
+          - { name: 'With WebGL: over/n-lost', args: '--webgl --only "^over/n-lost$"' }
+          - { name: 'With WebGL: settings/key', args: '--webgl --only "^settings/key$"' }
+          - { name: 'Moments: the deal, with WebGL', args: '--moments --only "^deal$"' }
+          - { name: 'Moments: the dig and the pick', args: '--moments --only "^(dig|pick)$"' }
+          - { name: 'Moments: the pointer and the plate', args: '--moments --only "^(glare|plate)$"' }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Chrome's headless shell as playwright-core's version has it, kept between runs.
+      - id: playwright
+        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-shell-${{ steps.playwright.outputs.version }}
+      - run: npx playwright-core install --with-deps --only-shell chromium
+      - run: npm run sweep -- --redraws ${{ matrix.args }}
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: redraws-${{ strategy.job-index }}
+          path: screens/redraws-*/report.json
+          retention-days: 14
+
+  # The one check to require on main: it passes only when every job above did.
+  verdict:
+    name: Redraws
+    needs: redraws
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.redraws.result }}" = success

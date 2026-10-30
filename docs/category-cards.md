@@ -35,5 +35,6 @@ The cards a player picks a category from (`src/components/ChooseCategory.svelte`
 ## Checking a change
 
 - Look at it on the bench (`cards.html`), at rest, hovered and tilted, in Chrome, and once in Firefox or Safari.
+- What a deal, a pick and the pointer over a card draw again is measured in CI on every pull request (`docs/qa.md`, “Redraws”), and fails past its baseline.
 - A change to the plates: the bench's Live strokes draws them as svg strokes, as Firefox and Safari do, to compare with their prints.
 - For the shimmer and the tilt's cost, the measures are in `docs/handoff/anti-aliasing/` (README, “The sharp faces”, and `harness/`). Tilting measured 1.0 ms of GPU time a frame at 4K 150%; much more means a rule above is broken.

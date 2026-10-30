@@ -58,6 +58,55 @@ Run it only when really necessary. Several sessions often share the machine, and
 - `--webgl` keeps the effects and the backdrop on; `--banding` also runs `scripts/find-banding.py` on each shot (it needs a Python with numpy and Pillow; `QA_PYTHON` names one).
 - `--url http://localhost:5173/` sweeps a running server instead of a build; `--no-build` reuses the last build.
 - `--map` runs every scene once with the browser's coverage on and writes `src/data/sceneFiles.json`, which files each scene runs: what This change goes by. Run it when scenes or screens have changed much; with `--only <scenes>` it maps just those (new scenes, say) and merges them into the map as it was.
+- `--redraws` checks what Chrome draws again instead (below).
+
+## Redraws
+
+Every stutter of October 2026 was one bug: something animated on the page's thread, with no layer of its own, so Chrome drew a big layer round it again on every frame while the screen looked nearly still. The emblems' kindle drew each sharp card face again for every frame of a deal; the camera shake's `translate` on `.shell` drew the whole page again all through a Delve vein; the cards' glare drew the face again at every move of the pointer; a name plate's lines, drawn in by CSS animations, drew its two SVGs again at the screen's rate (240 times a second) with every question. Nothing looks wrong; it only costs, and only a slow machine or a 4K screen feels it.
+
+**The check runs in CI on every pull request into main** (`.github/workflows/redraws.yml`; the check to require is **Redraws**), and fails the pull request when:
+
+- **at rest**, a layer is drawn again 50k px a frame or more (a 220 px square), averaged over the frames watched. Each scene's first state is watched from its first seat at the desktop size (1440 × 900), full motion on, once it has come to rest: a second with no style or class written (a rune circle's pen done), no animation that ends still running (an entrance) and none waiting out its delay (GameOver's gleam, 1.4 s in); 15 s at most, so a shake that never stops is watched all the same. Then 300 frames, 5 s (with WebGL, 2 s: below). There's no share of the frames a layer may take and no list of layers let off: a light that passes over a big layer now and then counts for the time it takes, and one that keeps to a small layer of its own is let be.
+- **a moment** costs more than 1.5 times its baseline, as the pixels drawn again a 60th of a second (a tile drawn a second time or more; drawing something as it first shows doesn't count), each baseline taken as 50k at least (`src/qa/redrawBaselines.json`, as CI measures them). The moments (`MOMENTS` in `src/qa/redraws.ts`), each watched from when it's set off until it's over (a second at least):
+  - **a deal** of three cards, with WebGL (the cards' effects play in it): the emblems' kindle;
+  - **a dig's deal**, the vein and the way out: its lamp, gilt and swell;
+  - **a card picked**: the question coming in, its seal drawn by the pen;
+  - **the pointer across a card**, a move a frame for a second, the card already lifted: the glare and the tilt;
+  - **a name plate drawn in**, on its bench (`qa.html?b=plate`), with no right answer's glint (its spark: #340), at 240 Hz: CSS animations run at the screen's rate and the pen (`lib/drawIn`) at its own, so at 60 Hz the two cost the same and only a fast screen tells them apart.
+
+**Fixed frames.** It runs in Chrome's headless shell with begin-frame control and virtual time: the sweep sends each frame itself, a 60th of a second of the page's own time (its clocks, timers and animations; a 240th for the plate), however long the frame takes to draw. So the page plays as it would at 60 fps on any machine, a CI runner without a GPU included, and Math.random is seeded. At rest what's drawn again comes out the same run to run, or nearly: the page comes to rest in real time, before its frames are fixed, so a light that passes now and then (the title's gleam) falls a little earlier or later in the window, and a toast or a sheen that's drawn once may fall in it or just before (a few k px a frame either way). A moment runs once first, unwatched and in real time, so what a worker makes for it (a card plate's print, an arcane plate's geometry, kept for the visit) is ready, as for a player's second deal; made in real time, it would land on another frame of the watched run each time. Then it's watched with Math.random started over and each image decoded before its tile is drawn. Chrome composites a layer nothing changed in as it was the frame before (`AllowUndamagedNonrootRenderPassToSkip`), not put together again in software: what's drawn again is the same, and a frame of category cards takes a CI runner 13 ms to composite, not 700.
+
+**WebGL.** The backdrop and the effects draw on canvases of their own, not on what Chrome draws again, and in software a frame of them takes long. So the scenes run with WebGL refused (the backdrop's shadows then paint in CSS), and the CSS backdrop a page without WebGL falls back to (`.bg.css`, `CSS_BACKDROP`) left undrawn: what's watched is the page over the backdrop, as players with WebGL have it, less its canvas. (Drawn, it has the Codex's empty Delve pages draw their rune circle again: #339.) Except one scene for each screen whose effects change what the page itself does (`WEBGL_SCENES` in `src/qa/redraws.ts`, with why), watched with WebGL as well, 120 frames (2 s) from the same point at rest. Its 5 s with WebGL refused have the lights that pass now and then; with WebGL it's watched for what the effects do to the page, which they do on nearly every frame while they do it (a shake's translate). A frame with WebGL drawn in software takes a CI runner up to 3 s, so 5 s of a vein would take 14 minutes.
+
+- `game/delve-dig`: a vein shakes the page (`tremor.ts` through `fx/core.ts`'s shake, a translate on `.shell` every frame), only with the effects on. The October shake was this.
+- `home/returning`: the daily streak lights in WebGL with the effects on and in CSS without.
+- `over/n-lost`: GameOver plays its lights in WebGL with the effects on and in CSS without, and the winner's row ignites in the effects.
+- `settings/key`: Settings turns the effects on and off, and its seals light with them.
+
+The jobs: the scenes in ten parts (`--shard 1/10` and on, two at a time), a job for each WebGL scene (`--webgl --only <scene>`), the deal, and the other moments in two. **Redraws** passes only when all of them did. `tests/redraws.test.ts` checks every WebGL scene and every moment has its job.
+
+**Reading a failure.** The job's log and summary name the scene, the layer by its element and size, what it draws again a frame and on how many of the frames, then what was written on most frames (a style, a class or a data- attribute set from script) and what animated something other than its transform or opacity: where to look. The shake, in CI on the code before its fix:
+
+```
+At rest: 1 scenes, 1 with a layer drawn again 50k px a frame or more:
+  game/delve-dig: div.stage (1393×594) drawn again 453k px a frame at rest, on 100% of the frames
+  game/delve-dig: div.shell (1425×900) drawn again 290k px a frame at rest, on 100% of the frames
+    written on most frames: div.shell’s style (100%)
+    animating what isn’t its transform or opacity: lamp on circle.fill (filter)
+To find what draws it again and fix it: docs/development.md, “Finding a stutter” (a layer of its own, or a transform or opacity animated instead; never drawn less well).
+```
+
+A moment's failure lists the layers it drew again most, each a 60th of a second, the same way. `report.json`, kept with the run for 14 days, has the layers drawn again most and everything written, on how many of the frames. Then `docs/development.md`, “Finding a stutter”: give what animates a layer of its own (`will-change`), animate its transform or opacity instead, or stop writing its style every frame; never draw it less well. Settings' seal breathed a box-shadow, which drew the page again every frame (135k px), until it got a layer of its own; GameOver's gleam drew the page again a quarter of the time (70k px a frame) until its headline and the winner's row got theirs.
+
+**A moment that should cost more** (a new card face, a richer deal): take its new number from the job's summary into `src/qa/redrawBaselines.json` in the same pull request, and say why in it. One that got cheaper is lowered the same way.
+
+**Locally**, only narrowed (it opens a headless browser a scene; CLAUDE.md): `npm run sweep -- --redraws --only "^<scene>$"` for a scene at rest (`--webgl` too for one of `WEBGL_SCENES`), `npm run sweep -- --redraws --moments --only "^<moment>$"` for a moment (`--baseline` writes what it measured into `src/qa/redrawBaselines.json`, but CI's numbers are the ones to keep), `--sizes <size>` for one other size. It builds the beta of the checkout first (`--no-build` serves the last). A scene reads the same here as in CI, a pixel or so apart; a moment near it.
+
+**Adding a scene** (`src/qa/scenes/`): nothing to do. Every scene's first state is watched at rest, in one of the ten parts. If its screen's effects change what the page does (a shake, a light the page plays only with WebGL), add it to `WEBGL_SCENES` with why, and a job for it in the workflow (the test asks for one). **Adding a moment:** a line in `MOMENTS`, how it's set off in `moments()` in `scripts/sweep.mjs` (`how`), its key in a moments job's `--only`, and its baseline from that job's summary on the pull request.
+
+**Read from the CSS** (`tests/ownLayers.test.ts`, in `npm test`): an animation whose keyframes change anything but transform or opacity (a filter, a custom property, a colour, a shadow, a stroke) has to be on an element with `will-change`, so it draws again only its own layer, or be in `PAINTED` in `src/qa/redraws.ts` with why. That widens rule 7 of `docs/category-cards.md` to every component; it catches a new one before it runs anywhere, the redraw check measures it. `PAINTED` lets nothing off the redraw check, which watches each of them where a scene or moment shows it: they're there because each is small or runs once, as something shows.
+
+**What it doesn't see:** WebKit. Safari (every browser on iOS) draws again for some things Chrome leaves to the compositor (a find card's `pulse`, custom properties on `.frame`, draws its face again every frame there); iOS is measured on the iPhone (`docs/iphone.md`). The CSS test still asks those for a layer of their own. Nor what the GPU spends compositing layers, or raster too small to pass 50k px a frame at 1440 × 900 that a 4K screen at 200% draws four times over (#330 is that kind); those are found with a trace on the PC (`docs/development.md`, “Finding a stutter”). Nor, for sure, what comes less often than every 5 s: it counts only when a window falls on it (the title's gleam, every 7 s; the rooms list's refresh, every 20 s). One that falls in the 2 s with WebGL weighs more there than in 5 s: the refresh's spin, before its icon had a layer of its own, failed a run that way (#341).
 
 ## Keeping it easy
 
