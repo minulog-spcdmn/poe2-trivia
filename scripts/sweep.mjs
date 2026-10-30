@@ -46,7 +46,7 @@ import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
 import { SIZES } from '../src/qa/sizes.ts';
 import { touched } from '../src/qa/change.ts';
-import { FLOOR, MOMENTS, WEBGL_SCENES, atRest, kpx, overBaseline, readTrace, redraws } from '../src/qa/redraws.ts';
+import { CSS_BACKDROP, FLOOR, MOMENTS, WEBGL_SCENES, atRest, kpx, overBaseline, readTrace, redraws } from '../src/qa/redraws.ts';
 import { changedFiles } from '../qaServer.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -464,8 +464,15 @@ function writesNoted() {
   return { changing, painted: [...painted] };
 }
 
-/** In the page: WebGL refused, as a browser without it does (the backdrop and the effects then paint in CSS, or not at all). */
-function refuseWebGL() {
+/**
+ * In the page: WebGL refused, as a browser without it does, and the CSS
+ * backdrop it then falls back to (`selector`, Background.svelte's) not
+ * drawn: what's watched is the page over the backdrop, as a player with
+ * WebGL has it, less its canvas. (The stand-in's billows and arms, drawn
+ * only without WebGL, would be measured in place of a canvas that draws
+ * nothing again.)
+ */
+function refuseWebGL(selector) {
   delete window.WebGL2RenderingContext;
   delete window.WebGLRenderingContext;
   for (const C of [window.HTMLCanvasElement, window.OffscreenCanvas]) {
@@ -475,12 +482,15 @@ function refuseWebGL() {
       return /webgl/i.test(type) ? null : get.call(this, type, ...rest);
     };
   }
+  const sheet = new CSSStyleSheet();
+  sheet.replaceSync(`${selector} > :not(canvas) { display: none !important; }`);
+  document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
 }
 
-/** In the page: Math.random from `seed` and the frame's address, so what's drawn at random (a heading, where a shake starts) comes out the same each run. */
+/** In the page: Math.random from `seed` and the page's path (a frame of it its own; not its origin, whose port changes each run, nor its query, whose frame name is the scene's place in its part), so what's drawn at random (a heading, where a shake starts) comes out the same each run. */
 function seedRandom(seed) {
   let s = seed >>> 0;
-  for (const c of location.href) s = Math.imul(s ^ c.charCodeAt(0), 0x9e3779b1) >>> 0;
+  for (const c of location.pathname) s = Math.imul(s ^ c.charCodeAt(0), 0x9e3779b1) >>> 0;
   Math.random = () => {
     s = (s + 0x6d2b79f5) >>> 0;
     let t = Math.imul(s ^ (s >>> 15), s | 1);
@@ -494,7 +504,7 @@ async function watchedPage(browser, webgl, seed) {
   const size = SIZES.find((s) => s.key === REDRAW_SIZE);
   const context = await browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: size.dpr, reducedMotion: 'no-preference' });
   await context.addInitScript(seedRandom, seed);
-  if (!webgl) await context.addInitScript(refuseWebGL);
+  if (!webgl) await context.addInitScript(refuseWebGL, CSS_BACKDROP);
   const page = await context.newPage();
   return { context, page, drive: await frameDriver(context, page) };
 }
@@ -665,9 +675,10 @@ async function checkRedraws(base, scenes) {
     } else {
       const firsts = scenesToWatch(scenes);
       if (!firsts.length) throw new Error(only ? `No scene's key matches ${only}${values.webgl ? ' among the WebGL scenes' : ''}.` : 'No scenes.');
-      // (Three at once: a CI runner has four threads, and a page drawing in software keeps one busy.
+      // (Two at once: a CI runner has four threads, and a page drawing in software keeps more than one
+      // busy; at three, a scene of category cards, a second a frame to composite, took twice as long.
       // With WebGL one: a frame of it keeps them all busy.)
-      const at = Math.min(firsts.length, values.webgl ? 1 : 3);
+      const at = Math.min(firsts.length, values.webgl ? 1 : 2);
       console.log(`Redraws at rest: ${firsts.length} scenes${shard ? ` (part ${shard[0]} of ${shard[1]})` : ''}, ${at} at once, at ${REDRAW_SIZE}, ${values.webgl ? 'with WebGL' : 'WebGL refused'}, on fixed frames, from ${base}`);
       for (let i = 0; i < at; i++) traceBrowsers.push(await launchTraced());
       atRestFound = await scenesAtRest(base, firsts, traceBrowsers);

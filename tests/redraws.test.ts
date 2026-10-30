@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { FLOOR, MOMENTS, SLACK, WEBGL_SCENES, atRest, layerName, overBaseline, readTrace, redraws, type TraceEvent } from '../src/qa/redraws.ts';
+import { CSS_BACKDROP, FLOOR, MOMENTS, SLACK, WEBGL_SCENES, atRest, layerName, overBaseline, readTrace, redraws, type TraceEvent } from '../src/qa/redraws.ts';
 
 test('a layer is named by its element, Svelte’s classes left out', () => {
   assert.equal(layerName("LayoutFlexibleBox (relative positioned) DIV class='shell svelte-1n46o8q'"), 'div.shell');
@@ -90,6 +90,12 @@ test('CI watches each WebGL scene with WebGL, and every moment', () => {
   const only = (a: string) => new RegExp(a.match(/--only "([^"]+)"/)?.[1] ?? '.');
   for (const { scene } of WEBGL_SCENES) assert.ok(args.some((a) => a.includes('--webgl') && only(a).test(scene)), `no job watches ${scene} with WebGL`);
   for (const { key } of MOMENTS) assert.equal(args.filter((a) => a.includes('--moments') && only(a).test(key)).length, 1, `the ${key} moment in one job`);
+});
+
+test('the CSS backdrop the check leaves undrawn without WebGL is still Background.svelte’s', () => {
+  const bg = readFileSync(new URL('../src/components/Background.svelte', import.meta.url), 'utf8');
+  assert.equal(CSS_BACKDROP, '.bg.css');
+  assert.match(bg, /<div class="bg" class:css=\{!webgl\}/);
 });
 
 test('a moment fails past its baseline, taken as at least the floor', () => {

@@ -10,7 +10,8 @@ run-name: "Redraws: ${{ github.event.pull_request.title || github.ref_name }}"
 # Every stutter of October 2026 was one of those.
 #
 # The scenes run with WebGL refused (25 ms a frame here, a WebGL one up to
-# 3 s): split over six jobs. The few whose effects change the page
+# 3 s; a scene of category cards a second or more, to composite in
+# software), split over ten jobs. The few whose effects change the page
 # (src/qa/redraws.ts WEBGL_SCENES says why each) run with it, a job each,
 # and so does the deal.
 #
@@ -39,12 +40,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: 'At rest, 1 of 6', args: '--shard 1/6' }
-          - { name: 'At rest, 2 of 6', args: '--shard 2/6' }
-          - { name: 'At rest, 3 of 6', args: '--shard 3/6' }
-          - { name: 'At rest, 4 of 6', args: '--shard 4/6' }
-          - { name: 'At rest, 5 of 6', args: '--shard 5/6' }
-          - { name: 'At rest, 6 of 6', args: '--shard 6/6' }
+          - { name: 'At rest, 1 of 10', args: '--shard 1/10' }
+          - { name: 'At rest, 2 of 10', args: '--shard 2/10' }
+          - { name: 'At rest, 3 of 10', args: '--shard 3/10' }
+          - { name: 'At rest, 4 of 10', args: '--shard 4/10' }
+          - { name: 'At rest, 5 of 10', args: '--shard 5/10' }
+          - { name: 'At rest, 6 of 10', args: '--shard 6/10' }
+          - { name: 'At rest, 7 of 10', args: '--shard 7/10' }
+          - { name: 'At rest, 8 of 10', args: '--shard 8/10' }
+          - { name: 'At rest, 9 of 10', args: '--shard 9/10' }
+          - { name: 'At rest, 10 of 10', args: '--shard 10/10' }
           - { name: 'With WebGL: game/delve-dig', args: '--webgl --only "^game/delve-dig$"' }
           - { name: 'With WebGL: home/returning', args: '--webgl --only "^home/returning$"' }
           - { name: 'With WebGL: over/n-lost', args: '--webgl --only "^over/n-lost$"' }
@@ -75,3 +80,12 @@ jobs:
           name: redraws-${{ strategy.job-index }}
           path: screens/redraws-*/report.json
           retention-days: 14
+
+  # The one check to require on main: it passes only when every job above did.
+  verdict:
+    name: Redraws
+    needs: redraws
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.redraws.result }}" = success
