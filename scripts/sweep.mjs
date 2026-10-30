@@ -673,7 +673,7 @@ async function moments(base, browser) {
     const frames = (s) => Math.round(s * m.hz);
     try {
       if (m.key === 'plate') {
-        // (Lit, as a question's at its reveal, with no right answer's glint: its spark, once a second, is PAINTED's.)
+        // (Lit, as a question's at its reveal, with no right answer's glint: its spark, once a second, is PAINTED's, #340.)
         await page.goto(`${base}qa.html?${new URLSearchParams({ frame: 'm0', b: 'plate', size: REDRAW_SIZE, 'k.glint': 'false' })}`, { waitUntil: 'load', timeout: 60000 });
         await page.waitForFunction(() => window.__qa, null, { timeout: 90000, polling: 200 });
       } else {

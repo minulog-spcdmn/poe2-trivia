@@ -210,7 +210,8 @@ export function atRest(l: LayerRedraws, frames: number): string | null {
  * The CSS backdrop a page without WebGL falls back to (Background.svelte's
  * .bg, class:css): not drawn where WebGL is refused, so the page is watched
  * over the backdrop as players with WebGL have it (scripts/sweep.mjs,
- * refuseWebGL).
+ * refuseWebGL). Drawn, it has the Codex's empty Delve pages draw their rune
+ * circle again, a cost only a player without WebGL has: #339.
  */
 export const CSS_BACKDROP = '.bg.css';
 
@@ -251,7 +252,7 @@ export const PAINTED: Painted[] = [
   { file: 'src/app.css', keyframes: ['filigree-in', 'edge-light'], why: 'Once, as a panel rises (0.5 s, its corner filigree drawn out) or a dialog opens (0.9 s, the light along its edge): a pseudo-element on the panel, nothing under it moving.' },
   { file: 'src/components/codex/CodexMedallion.svelte', keyframes: ['fill-arc'], why: 'Once, 1.6 s, as a medallion’s arc fills in the codex: a ring of a few dozen px.' },
   { file: 'src/components/DailyStreak.svelte', keyframes: ['warm'], why: 'Once, 0.45 s, as the streak warms on the start page: the streak’s own small box.' },
-  { file: 'src/components/NamePlate.svelte', keyframes: ['spark'], why: 'Once, about a second, as a right answer’s spark runs along a name plate’s rules: thin strokes of a small svg.' },
+  { file: 'src/components/NamePlate.svelte', keyframes: ['spark'], why: 'Once, about a second, as a right answer’s spark runs along a name plate’s rules: thin strokes, but at the screen’s rate (181k px a 60th of a second at 240 Hz, the plate moment with it): #340.' },
   { file: 'src/components/Inventory.svelte', keyframes: ['lit', 'crumble'], why: 'Once, about a second, as a find in the pack lights up or crumbles: its count’s small icon.' },
   { file: 'src/components/RunsChart.svelte', keyframes: ['sink'], why: 'Once, as the chart’s shafts sink in on the end screen: each shaft its own clip.' },
   { file: 'src/components/Scoreboard.svelte', keyframes: ['down', 'bump'], why: 'Once, 0.7 s, as a score changes: one number’s colour and glow.' },
