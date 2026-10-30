@@ -2,9 +2,9 @@
   // Joining: whether getting into a room works. Tries to join by where they
   // started, how many got in, every failure by its cause (opening a room's
   // too), open rooms that lost the matchmaking server (a guest is told
-  // there's no such room meanwhile), the game's own scripts' errors and its parts that didn't load in
-  // lines of their own (they have nothing to do with joining), and the links
-  // that bring players in.
+  // there's no such room meanwhile), the game's own scripts' errors and its
+  // parts that didn't load in lines of their own (they have nothing to do
+  // with joining), and the links that bring players in.
   import Bars from './Bars.svelte';
   import { fmt } from './chart';
   import Delta from './Delta.svelte';
@@ -35,7 +35,7 @@
   const off = $derived(offOf(L));
   const offBefore = $derived(offOf(B));
   const back = $derived(ROOM_BACKS.reduce((n, t) => n + L.roomsOff.back[t], 0));
-  const BACK_NAMES: Record<RoomBack, string> = { '10s': 'within 10 s', '1m': 'a minute', '5m': '5 minutes', later: 'later' };
+  const BACK_NAMES: Record<RoomBack, string> = { '10s': 'within 10 s', '1m': 'within a minute', '5m': 'within 5 minutes', later: 'later' };
 </script>
 
 <div class="stack">

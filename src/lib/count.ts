@@ -734,7 +734,7 @@ export const countFailure = (failure: Failure) => countEvent(`error/${failure}`)
  * long it was off, from when the page went out of sight if it had). A drop
  * with no "back" is a room that never got there again.
  */
-export const roomOffEvent = (hidden: boolean) => `room/off-${hidden ? 'hidden' : 'seen'}`;
+const roomOffEvent = (hidden: boolean) => `room/off-${hidden ? 'hidden' : 'seen'}`;
 export const roomBackEvent = (ms: number) => (ms <= 10_000 ? 'room/back-10s' : ms <= 60_000 ? 'room/back-1m' : ms <= 300_000 ? 'room/back-5m' : 'room/back-later');
 
 /** One room's time off the server: each drop counted once, however often reconnecting fails, until it's back. */
@@ -756,8 +756,12 @@ export class RoomOff {
   }
 }
 
-/** A page woken (a phone's, back to the browser) notices its lost link only as it's shown again: a drop that soon after is the time it was away. */
-const WOKEN_MS = 5_000;
+/**
+ * A page woken (a phone's, back to the browser) notices its lost link only
+ * as it's shown again, and a phone's radio can take a while waking: a drop
+ * this soon after is the time it was away.
+ */
+const WOKEN_MS = 30_000;
 let hiddenAt = 0;
 let shownAt = 0;
 if (typeof document !== 'undefined')
@@ -770,5 +774,6 @@ if (typeof document !== 'undefined')
 export function hiddenSince(now: number): number | null {
   if (typeof document === 'undefined') return null;
   if (!document.hidden && now - shownAt > WOKEN_MS) return null;
-  return hiddenAt || now;
+  // (Never hidden since it loaded: out of sight from the start.)
+  return hiddenAt || Math.round(performance.timeOrigin);
 }
