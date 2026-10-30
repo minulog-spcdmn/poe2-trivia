@@ -13,7 +13,7 @@ import { MOMENTS, framesEvent } from '../lib/stutter.ts';
 import type { Named } from './api.ts';
 import { keptChanges } from './changes.ts';
 import { sameSites, spikesOf, stepsOf } from './insights.ts';
-import { DAILY_FROM, RETURNS, countsOf, daysBetween, isoWeek, modesOf, type PathCount } from './model.ts';
+import { DAILY_FROM, RETURNS, ROOM_BACKS, countsOf, daysBetween, isoWeek, modesOf, type PathCount } from './model.ts';
 import type { Read } from './read.ts';
 import { GROUPS, type Group, type Slices } from './slices.ts';
 import { addDays, dayIn, hoursIn, midnight } from './zone.ts';
@@ -222,6 +222,10 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
     if (rnd() < 0.015) add('error/join-no-such-room', h, 1);
     if (rnd() < 0.01) add('error/host-no-connection', h, 1);
     if (rnd() < 0.006) add('error/join-version-mismatch', h, 1);
+    if (rnd() < 0.03) {
+      add(rnd() < 0.7 ? 'room/off-hidden' : 'room/off-seen', h, 1);
+      if (rnd() < 0.8) add(`room/back-${ROOM_BACKS[Math.floor(rnd() * ROOM_BACKS.length)]}`, h, 1);
+    }
   }
   return out;
 }

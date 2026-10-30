@@ -1,14 +1,15 @@
 <script lang="ts">
   // Joining: whether getting into a room works. Tries to join by where they
   // started, how many got in, every failure by its cause (opening a room's
-  // too), the game's own scripts' errors and its parts that didn't load in
-  // lines of their own (they have nothing to do with joining), and the links
-  // that bring players in.
+  // too), open rooms that lost the matchmaking server (a guest is told
+  // there's no such room meanwhile), the game's own scripts' errors and its
+  // parts that didn't load in lines of their own (they have nothing to do
+  // with joining), and the links that bring players in.
   import Bars from './Bars.svelte';
   import { fmt } from './chart';
   import Delta from './Delta.svelte';
   import { chances, failureRate } from './insights';
-  import { VIA_NAMES, percent } from './model';
+  import { ROOM_BACKS, VIA_NAMES, percent, type RoomBack } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
 
@@ -30,6 +31,11 @@
   const scriptsBefore = $derived(errorsOf(B, 'script'));
   const lost = $derived(errorsOf(L, 'chunk'));
   const lostBefore = $derived(errorsOf(B, 'chunk'));
+  const offOf = (c: typeof L) => c.roomsOff.seen + c.roomsOff.hidden;
+  const off = $derived(offOf(L));
+  const offBefore = $derived(offOf(B));
+  const back = $derived(ROOM_BACKS.reduce((n, t) => n + L.roomsOff.back[t], 0));
+  const BACK_NAMES: Record<RoomBack, string> = { '10s': 'within 10 s', '1m': 'within a minute', '5m': 'within 5 minutes', later: 'later' };
 </script>
 
 <div class="stack">
@@ -87,6 +93,13 @@
         </div>
       {/snippet}
       <Bars bars={failures} top={10} tone="down" empty="Nothing went wrong." />
+      {#if off || offBefore}
+        <p class="line">
+          <b class:bad={off > 0}>{fmt(off)}</b> open {off === 1 ? 'room' : 'rooms'} lost the matchmaking server, {fmt(L.roomsOff.hidden)} with the host's page out of sight: until it's back, guests are told no room has its code.
+          {#if off}Back {ROOM_BACKS.map((t) => `${BACK_NAMES[t]}: ${fmt(L.roomsOff.back[t])}`).join(', ')}; never: {fmt(Math.max(0, off - back))}.{/if}
+          <Delta now={off} before={offBefore} worse="up" period={period.before} />
+        </p>
+      {/if}
       {#if scripts || scriptsBefore}
         <p class="line"><b class:bad={scripts > 0}>{fmt(scripts)}</b> {scripts === 1 ? 'error' : 'errors'} in the game's own scripts, once a page load at most. <Delta now={scripts} before={scriptsBefore} worse="up" period={period.before} /></p>
       {/if}
