@@ -6,8 +6,8 @@
 // emblems' kindle each sharp card face, the camera shake the whole page),
 // while the screen looked nearly still. The page is watched on fixed frames
 // (each 16.7 ms of its own time, however long it takes to draw), so what's
-// drawn again is the same on any machine, CI's in software included, and
-// the same run to run.
+// drawn again plays out as at 60 fps on any machine, CI's in software
+// included, and at rest the same run to run.
 //
 // Read from the trace's raster tasks (each a tile of a layer drawn for a
 // commit of the page's) and the frame viewer's snapshots of the layer tree

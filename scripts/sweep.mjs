@@ -376,8 +376,8 @@ const AT_REST_FRAMES = values.webgl ? 120 : 300;
  * control, frameDriver), FRAME ms of the page's own time (virtual time:
  * its clocks, timers and animations), however long it takes to draw. So
  * the page plays as it would at 60 fps on any machine, a CI runner at a
- * frame a second included, and what's drawn again comes out the same
- * from run to run.
+ * frame a second included, and what's drawn again at rest comes out the
+ * same from run to run (a moment's, near it: docs/qa.md, "Redraws").
  */
 // (And an image decoded before the tile it's in is drawn, not drawn without it and again once it's
 // decoded, as Chrome otherwise does: when a decode lands depends on real time.)
