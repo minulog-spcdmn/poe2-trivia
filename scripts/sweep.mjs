@@ -452,10 +452,10 @@ async function frameDriver(context, page, ms = FRAME) {
 /** In the page: no animation with an end still running (a moment over). */
 const still = () => !document.getAnimations().some((a) => a.playState === 'running' && Number.isFinite(a.effect?.getComputedTiming().endTime ?? Infinity));
 
-/** In the page, before a watch: from now on, each style or class written and the frames it was written in (window.__writes, the frames counted in window.__frames). */
+/** In the page, before a watch: from now on, each style or class written and the frames it was written in (window.__writes, the frames counted in window.__frames), and each animation that ran of anything but a transform or opacity (window.__painted). */
 function noteWrites() {
-  // (An element's tag and classes, Svelte's left out; writesNoted names by it too.)
-  const name = (window.__name = (el) => `${el.tagName.toLowerCase()}${[...el.classList].filter((c) => !c.startsWith('svelte-')).map((c) => `.${c}`).join('')}`);
+  // (An element's tag and classes, Svelte's left out.)
+  const name = (el) => `${el.tagName.toLowerCase()}${[...el.classList].filter((c) => !c.startsWith('svelte-')).map((c) => `.${c}`).join('')}`;
   const writes = (window.__writes = new Map());
   window.__frames = 0;
   new MutationObserver((list) => {
@@ -466,26 +466,28 @@ function noteWrites() {
       writes.get(key).add(window.__frames);
     }
   }).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+  const COMPOSITED = new Set(['offset', 'easing', 'composite', 'computedOffset', 'transform', 'opacity', 'translate', 'rotate', 'scale']);
+  const painted = (window.__painted = new Set());
+  const seen = new WeakSet();
   const count = () => {
     window.__frames++;
+    // (Each frame: a moment's are over by the watch's end.)
+    for (const a of document.getAnimations()) {
+      if (seen.has(a) || a.playState !== 'running' || !a.effect?.target) continue;
+      seen.add(a);
+      const props = [...new Set(a.effect.getKeyframes().flatMap((k) => Object.keys(k)))].filter((p) => !COMPOSITED.has(p));
+      if (props.length) painted.add(`${(a.animationName ?? a.id) || 'an animation'} on ${name(a.effect.target)} (${props.join(', ')})`.replace(/svelte-\w+-/, ''));
+    }
     requestAnimationFrame(count);
   };
   requestAnimationFrame(count);
 }
 
-/** In the page, after a watch: what was written on half the frames or more, and what animates anything but its transform or opacity, where to look when something's drawn again. */
+/** In the page, after a watch: what was written on half the frames or more, and what animated anything but its transform or opacity, where to look when something's drawn again. */
 function writesNoted() {
-  const name = window.__name;
   const n = Math.max(1, window.__frames);
   const changing = [...window.__writes].filter(([, f]) => f.size >= n / 2).map(([k, f]) => `${k} (${Math.round((f.size / n) * 100)}%)`);
-  const COMPOSITED = new Set(['offset', 'easing', 'composite', 'computedOffset', 'transform', 'opacity', 'translate', 'rotate', 'scale']);
-  const painted = new Set();
-  for (const a of document.getAnimations()) {
-    if (a.playState !== 'running' || !a.effect?.target) continue;
-    const props = [...new Set(a.effect.getKeyframes().flatMap((k) => Object.keys(k)))].filter((p) => !COMPOSITED.has(p));
-    if (props.length) painted.add(`${(a.animationName ?? a.id) || 'an animation'} on ${name(a.effect.target)} (${props.join(', ')})`.replace(/svelte-\w+-/, ''));
-  }
-  return { changing, painted: [...painted] };
+  return { changing, painted: [...window.__painted] };
 }
 
 /**
