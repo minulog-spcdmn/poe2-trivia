@@ -366,8 +366,16 @@ const REDRAW_SIZE = SIZES.some((s) => s.key === values.sizes) ? values.sizes : '
 const REDRAW_TRACE = ['cc', 'disabled-by-default-cc.debug'];
 /** A frame, of the page's own time. */
 const FRAME = 1000 / 60;
-/** How long a scene is watched at rest: 5 s, so a light that passes every 5 s counts for its share. */
-const AT_REST_FRAMES = 300;
+/**
+ * How long a scene is watched at rest: 5 s, so a light that passes every 5 s
+ * counts for its share. With WebGL (--webgl), 2 s: every scene is watched its
+ * 5 s with WebGL refused as well, lights that pass now and then included, and
+ * with WebGL it's watched for what the effects do to the page, which they do
+ * on nearly every frame while they do it (a shake's translate), from the same
+ * point at rest (quiet). Drawn in software a frame with WebGL takes a CI
+ * runner up to 3 s: 5 s of game/delve-dig would take 14 minutes.
+ */
+const AT_REST_FRAMES = values.webgl ? 120 : 300;
 
 /**
  * A browser of its own for each page traced at once (a trace is the whole
@@ -542,9 +550,13 @@ async function watched(browser, page, frames) {
 }
 
 /**
- * In the page: waits until `still` ms pass with no style or class written
- * (a rune circle's pen done drawing, which on a slow machine starts late),
- * `most` ms at the most (a shake that never stops is watched all the same).
+ * In the page: waits for the page at rest, where a scene is watched from:
+ * `still` ms with no style or class written (a rune circle's pen done
+ * drawing, which on a slow machine starts late), with no animation that ends
+ * still running (an entrance) nor one waiting out its delay (GameOver's gleam,
+ * 1.4 s in), so what loops is looping; `most` ms at the most (a shake that
+ * never stops is watched all the same). The same with WebGL and without, so
+ * both watch from the same point.
  */
 async function quiet({ still, most }) {
   const t0 = performance.now();
@@ -552,9 +564,15 @@ async function quiet({ still, most }) {
   const seen = new MutationObserver(() => (last = performance.now()));
   seen.observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
   await new Promise((done) => {
+    const settling = () =>
+      document.getAnimations().some((a) => {
+        if (a.playState !== 'running' || !a.effect) return false;
+        const t = a.effect.getComputedTiming();
+        return Number.isFinite(t.endTime) || (a.currentTime ?? 0) < (t.delay ?? 0);
+      });
     const check = () => {
       const now = performance.now();
-      if (now - last >= still || now - t0 >= most) done();
+      if ((now - last >= still && !settling()) || now - t0 >= most) done();
       else setTimeout(check, 100);
     };
     check();
