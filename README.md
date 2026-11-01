@@ -131,9 +131,11 @@ in the last two hours of a UTC day: `cutoffDay` in `src/lib/daily.ts`) and
 deals the rest again from the item data as it is, so new items reach the
 days to come. Each day is dealt from the answers of the days before it: an
 answer isn't asked again until as many days have gone by as three quarters
-of the items the daily may ask (`repeatGap`, about ten months). The live site's rows are those of the newest github-pages
-deployment that went up (`scripts/live-dailies.mjs`, through the GitHub
-CLI; `origin/main`'s when that can't be reached). Run it last, after
+of the items the daily may ask (`repeatGap`, about ten months), nor its
+twins (`TWINS`, the same picture turned or recoloured). The live
+site's rows are those of the newest github-pages deployment that went up
+(`scripts/live-dailies.mjs`, through the GitHub CLI; `origin/main`'s when
+that can't be reached). Run it last, after
 `fakes.json` and `dailyArt.json` are up to date. `tests/dailies.test.ts`
 holds it to that:
 

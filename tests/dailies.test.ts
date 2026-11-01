@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { isFake, type Item, type Question } from '../src/lib/game.ts';
+import { TWINS, isFake, type Item, type Question } from '../src/lib/game.ts';
 import { DAILY_LAUNCH, cutoffDay, dailyQuestion, dealLive, repeatGap, utcDay } from '../src/lib/daily.ts';
 import { ROWS_FROM, ROWS_TO, ROW_ANSWERS, dailyRow } from '../src/lib/dailyRows.ts';
 import { FILE, deal, fileOf, rowsOf } from '../scripts/deal.mjs';
@@ -45,10 +45,13 @@ test('no answer comes back from the cutoff on until repeatGap days have gone by'
   assert.ok(gap >= 300, `a gap of ${gap} days`);
   const last = new Map<string, number>();
   for (let day = ROWS_FROM; day <= ROWS_TO + 30; day++) {
+    // Twins (the same picture turned or recoloured) count as one.
     const id = dailyQuestion(day).itemId;
-    const was = last.get(id);
-    if (day >= cutoff && was !== undefined) assert.ok(day - was > gap, `day ${day} asks ${id} again after ${day - was} days`);
-    last.set(id, day);
+    const name = items.find((it) => it.id === id)?.name ?? id;
+    const key = TWINS.find((t) => t.names.includes(name))?.names[0] ?? id;
+    const was = last.get(key);
+    if (day >= cutoff && was !== undefined) assert.ok(day - was > gap, `day ${day} asks ${name} again after ${day - was} days`);
+    last.set(key, day);
   }
 });
 
