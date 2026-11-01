@@ -451,6 +451,18 @@
   $effect(() => {
     if (!blastSlot && slotWanted()) blastSlot = true;
   });
+  /**
+   * Detonate hides at once when it can't be used: answered, struck, the
+   * clock out. But as dynamite blasts the question away (pressed or gone off
+   * by itself) the view reads the new question a moment before the blast
+   * copies it to blow apart (lib/blastAway.ts), its clock not running yet:
+   * there it stays drawn, so it is blown away with the rest.
+   */
+  let blastShown = $state(false);
+  $effect(() => {
+    if (canBlast) blastShown = true;
+  });
+  const blastGone = $derived(!canBlast && !(blastShown && waiting && !reveal));
   let blasting = false;
   function blastThrough() {
     if (!canBlast || blasting) return;
@@ -1201,10 +1213,10 @@
       <button
         class="btn blast"
         data-cursor="blast"
-        class:gone={!canBlast}
+        class:gone={blastGone}
         class:out={!mine}
         data-sfx="none"
-        disabled={!canBlast}
+        disabled={blastGone}
         aria-hidden={!canBlast}
         tabindex={canBlast ? undefined : -1}
         aria-label="Detonate: use dynamite to blast this question away and get a new one at this depth.{fuse !== null ? ' The fuse is already burning.' : ''}"
