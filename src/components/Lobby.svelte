@@ -23,13 +23,16 @@
   import { creatorArrived, playerArrived, refuse, twinkle } from '../lib/fx/moments';
   import { overPage } from '../lib/fx/core';
   import { onMount } from 'svelte';
+  import type { TransitionConfig } from 'svelte/transition';
   import { categoryIcons, playerColor } from '../lib/ui';
   import { measure } from '../lib/iconFit.svelte';
   import { FLAT, dock, phone } from '../lib/layout';
   import { portal } from '../lib/portal';
   import WatchToggle from './WatchToggle.svelte';
   import { MediaQuery } from 'svelte/reactivity';
-  import { pinnedOut } from '../lib/stage';
+  import { pinnedOut, zoomOf } from '../lib/stage';
+  import { calm } from '../lib/motion.svelte';
+  import { cubicOut } from 'svelte/easing';
   import HostMark from './HostMark.svelte';
   import RoomCodeGlyphs from './RoomCodeGlyphs.svelte';
   import { greyed, markOf, missingNote, notReady, type Mark, type Missing } from '../lib/presence';
@@ -144,6 +147,43 @@
         `opacity: ${t}; scale: ${0.9 + 0.1 * t};` + (flare ? ` box-shadow: 0 0 ${18 * (1 - t)}px rgba(224, 85, 63, ${0.7 * (1 - t) * t * 4});` : ''),
     };
   });
+  /** Where each chip and onlooker stood as the room last changed, on screen, and the element it was:
+      one who moves between the party and a gallery (sitting out to watch, taking a seat) travels from there (moveIn). */
+  let stood = new Map<string, { at: DOMRect; el: Element }>();
+  let lobbyEl = $state<HTMLElement>();
+  const roster = $derived([s.players, s.spectators ?? [], s.aside ?? []].map((l) => l.map((p) => p.id).join()).join('|'));
+  // Before the markup changes, so it is where they stood (read only as the room's people change).
+  $effect.pre(() => {
+    void roster;
+    const was = new Map<string, { at: DOMRect; el: Element }>();
+    lobbyEl?.querySelectorAll<HTMLElement>('.chips li[data-id], .onlookers li[data-id]').forEach((li) => was.set(li.dataset.id!, { at: li.getBoundingClientRect(), el: li }));
+    stood = was;
+  });
+  /** A chip or onlooker coming in: one who was in the other list a moment ago comes from where they stood there, the one they leave fading in its place (kickOut),
+      so it reads as the same person moving; anyone else comes in as `fallback`. Measured on screen and moved in the chip's own px, under the stage's zoom (lib/stage).
+      It moves by `translate`, as Svelte's flip and pin move by `transform`. Deferred, as Svelte makes the transition once the flush is done, so its new place is laid out. */
+  function moveIn(node: Element, fallback: () => TransitionConfig | (() => TransitionConfig)) {
+    const id = (node as HTMLElement).dataset.id ?? '';
+    const from = stood.get(id);
+    return () => {
+      if (!from || from.el === node) {
+        const f = fallback();
+        return typeof f === 'function' ? f() : f;
+      }
+      const to = node.getBoundingClientRect();
+      const z = zoomOf(node);
+      // Left edges and middles meet, so the avatar travels with the name beside it.
+      const dx = (from.at.left - to.left) / z;
+      const dy = (from.at.top + from.at.height / 2 - (to.top + to.height / 2)) / z;
+      return calm({ duration: 420, easing: cubicOut, css: (t: number, u: number) => `opacity: ${Math.min(1, t * 1.6)}; translate: ${dx * u}px ${dy * u}px;` });
+    };
+  }
+  /** A party chip coming in: from a gallery, or a newcomer's slide in from the left. */
+  const chipIn = (node: Element) => moveIn(node, () => fly(node, calm({ x: -20, duration: 350 })));
+  /** An onlooker coming in: from the party or another gallery, or a newcomer's rise. Global, so it plays as a gallery opens with them in it,
+      but not as the lobby opens (`settled`): those already here just appear. */
+  const onlookerIn = (node: Element) => moveIn(node, () => fly(node, calm({ y: 6, duration: settled ? 300 : 0 })));
+
   /** Escape takes an armed kick back. */
   function disarm(e: KeyboardEvent) {
     // (Taken: the key doesn't open the settings too.)
@@ -275,31 +315,50 @@
   /** Guest: the host is away or idle (offline, the guest would be reconnecting). */
   const hostMark = $derived(isHost ? null : marks.get(s.hostId ?? ''));
   const hostName = $derived(s.players.find((p) => p.id === s.hostId)?.name);
+  /** Host: what the room's access means for who can come in, under its switches. */
+  const visHint = $derived(
+    s.settings.locked
+      ? 'Room locked: nobody new can join or watch. Players already in the game can still reconnect.'
+      : closed
+        ? 'Room full: nobody new can come in until someone leaves.'
+        : full
+          ? 'Every seat is taken: anyone new watches, and takes the first seat that opens.'
+          : s.settings.public
+            ? 'Anyone can find this room under “Open rooms”.'
+            : 'Only people with the code or link can join.',
+  );
+  /** The invite button's word. */
+  const inviteLabel = $derived(s.settings.locked ? 'Room locked' : closed ? 'Room full' : copied ? 'Link copied!' : canShare ? 'Share invite link' : 'Copy invite link');
+  /** Host: what the note by Begin says, as one key: a new one fades in where the last stood. */
+  const goKey = $derived(isHost ? [delveCrowded, hereOnly, atScreen, s.players.length, unready.length, missingNote(unready)].join('|') : '');
 </script>
 
 {#snippet startRow()}
   {#if isHost}
     <!-- Beside the start, the one thing to know before pressing it. -->
+    <!-- A new note fades in where the last one stood (none as the lobby opens). -->
+    {#key goKey}
     {#if delveCrowded}
-      <p class="go-note warn">Delve on one device is for one player. Remove the others, or host a room.</p>
+      <p in:fade|global={calm({ duration: modesLive ? 200 : 0 })} class="go-note warn">Delve on one device is for one player. Remove the others, or host a room.</p>
     {:else if local && !s.players.length}
-      <p class="go-note">Add the first exile to begin.</p>
+      <p in:fade|global={calm({ duration: modesLive ? 200 : 0 })} class="go-note">Add the first exile to begin.</p>
     {:else if hereOnly && s.players.length < 2}
-      <p class="go-note">{atScreen ? 'Begin alone, or add the players at your screen.' : 'You can begin alone.'}</p>
+      <p in:fade|global={calm({ duration: modesLive ? 200 : 0 })} class="go-note">{atScreen ? 'Begin alone, or add the players at your screen.' : 'You can begin alone.'}</p>
     {:else if !local && s.players.length < 2}
-      <p class="go-note">You can begin alone, or wait for your party.</p>
+      <p in:fade|global={calm({ duration: modesLive ? 200 : 0 })} class="go-note">You can begin alone, or wait for your party.</p>
     {:else if s.players.length > 1}
       <!-- A lone player knows they're here: Begin stands by itself. With a party, whether everyone is
            really there (lib/presence.ts): their game on screen and in use, or who it would begin without. -->
       {#if unready.length}
-        <p class="go-note"><b class="num">{s.players.length - unready.length}</b> of <b class="num">{s.players.length}</b> ready; {missingNote(unready)}</p>
+        <p in:fade|global={calm({ duration: modesLive ? 200 : 0 })} class="go-note"><b class="num">{s.players.length - unready.length}</b> of <b class="num">{s.players.length}</b> ready; {missingNote(unready)}</p>
       {:else}
-        <p class="go-note all-ready">
+        <p in:fade|global={calm({ duration: modesLive ? 200 : 0 })} class="go-note all-ready">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12.5l5 5 10-11" /></svg>
           {#if local}<b class="num">{s.players.length}</b> exiles ready{:else}All <b class="num">{s.players.length}</b> exiles here and ready{/if}
         </p>
       {/if}
     {/if}
+    {/key}
     <!-- Begin is the gold button whenever it can start: playing alone is a normal game. -->
     <button class="btn big primary" data-cursor="begin" use:backdropShadow disabled={!canStart} onclick={start}>{delve ? 'Begin the descent' : 'Begin the hunt'}</button>
   {:else}
@@ -307,7 +366,7 @@
     <p class="muted waiting">
       <span class="pulse"></span>
       <span
-        >Waiting for {#if hostName}<span class="host-name">{hostName}</span>{:else}the host{/if} to start{hostMark === 'away' || hostMark === 'idle' ? `; they seem to be ${hostMark}…` : '…'}</span
+        >Waiting for {#if hostName}{#key hostName}<span class="host-name" in:fade={calm({ duration: 260 })}>{hostName}</span>{/key}{:else}the host{/if} to start{hostMark === 'away' || hostMark === 'idle' ? `; they seem to be ${hostMark}…` : '…'}</span
       >
     </p>
   {/if}
@@ -324,7 +383,7 @@
 <!-- A rule's heading, the rule under it, as the Delve finds below are set (DelveRules): the rules read at a
      glance as a list without a sign that means nothing (never the diamond: "you are here"). -->
 {#snippet key(word: string, n?: number)}
-  <span class="key">{word}{#if n !== undefined}&nbsp;<span class="key-n">{n}</span>{/if}</span>
+  <span class="key">{word}{#if n !== undefined}&nbsp;{#key n}<span class="key-n" in:fly={calm({ y: -6, duration: 260 })}>{n}</span>{/key}{/if}</span>
 {/snippet}
 
 <!-- The start page's two columns carry on here: on the left, where its menu
@@ -334,7 +393,7 @@
 <!-- data-cursor: where other players' pointers are placed (PeerCursors): the room as a whole, its blocks and what's in them.
      A host and a guest see different controls in the same places (a setting's choices or its value, Begin or the wait
      for it), so those share their row's anchor, and what only a host has falls back to it on a guest's screen. -->
-<div class="lobby" class:online={!local} data-cursor="game">
+<div class="lobby" class:online={!local} data-cursor="game" bind:this={lobbyEl}>
   <h1 class="sr" tabindex="-1" bind:this={heading}>Your room</h1>
   <div class="cols">
     <div class="col side">
@@ -350,7 +409,8 @@
           <div class="invite-row">
             <!-- A locked room, or one with no seat and no room to watch, takes nobody new: the link isn't offered then, and the button says why. -->
             <button class="btn invite" data-cursor="invite" class:accent={alone && isHost && !closed} bind:this={copyBtn} onclick={copy} disabled={closed}>
-              {s.settings.locked ? 'Room locked' : closed ? 'Room full' : copied ? 'Link copied!' : canShare ? 'Share invite link' : 'Copy invite link'}
+              <!-- The new word fades in where the last stood; the button keeps its width (its row gives it). -->
+              {#key inviteLabel}<span class="invite-label" in:fade={calm({ duration: 200 })}>{inviteLabel}</span>{/key}
             </button>
             <!-- Hiding the code (for a stream) sits with the other ways of handing it on. -->
             <button
@@ -393,10 +453,11 @@
                 title={s.settings.locked ? 'Let new players join again' : 'Stop new players from joining or watching'}
               >
                 {#if s.settings.locked}
-                  <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>
+                  <!-- Its shackle drops shut as it locks, and springs up as it opens: only on the click, never idle. -->
+                  <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" in:fly={calm({ y: -3, opacity: 1, duration: 160 })} /></svg>
                   Locked
                 {:else}
-                  <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 7.5-2" /></svg>
+                  <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 7.5-2" in:fly={calm({ y: 3, opacity: 1, duration: 200 })} /></svg>
                   Lock
                 {/if}
               </button>
@@ -405,19 +466,7 @@
             {/if}
           </div>
           {#if isHost}
-            <p class="vis-hint">
-              {#if s.settings.locked}
-                Room locked: nobody new can join or watch. Players already in the game can still reconnect.
-              {:else if closed}
-                Room full: nobody new can come in until someone leaves.
-              {:else if full}
-                Every seat is taken: anyone new watches, and takes the first seat that opens.
-              {:else if s.settings.public}
-                Anyone can find this room under “Open rooms”.
-              {:else}
-                Only people with the code or link can join.
-              {/if}
-            </p>
+            {#key visHint}<p class="vis-hint" in:fade={calm({ duration: 200 })}>{visHint}</p>{/key}
           {/if}
         </section>
       {/if}
@@ -447,7 +496,8 @@
           <!-- Every seat as a pip, filled as exiles take them: how many more can come, at a glance. -->
           <span class="count">
             <span class="pips" aria-hidden="true">{#each { length: MAX_PLAYERS } as _, i (i)}<i class:taken={i < s.players.length}></i>{/each}</span>
-            {s.players.length} / {MAX_PLAYERS}
+            <!-- The new number as the new pip lights, a moment into the chip's arrival. -->
+            {#key s.players.length}<span class="seats" in:fade={calm({ duration: 250, delay: 120 })}>{s.players.length} / {MAX_PLAYERS}</span>{/key}
           </span>
         </header>
         <!-- The same chips the game shows along its top, two to a row. -->
@@ -458,7 +508,7 @@
               data-cursor="row:{i}"
               use:arriving={p.name}
               animate:flip={{ duration: 300 }}
-              in:fly={{ x: -20, duration: 350 }}
+              in:chipIn
               out:kickOut
               data-id={p.id}
               class:armed={confirming === p.id}
@@ -469,7 +519,7 @@
               <span class="name" title={p.name}><PlayerName name={p.name} />{#if !local && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}</span>
               {#if mark}<StandingMark {mark} />{/if}
               <!-- The host's chip carries a hanging banner, the party's standard, where the others have their ×. -->
-              {#if p.id === s.hostId && !local}<HostMark />{/if}
+              {#if p.id === s.hostId && !local}<HostMark unfurl />{/if}
               {#if isHost && (local || p.id !== s.hostId)}
                 <KickButton name={p.name} armed={confirming === p.id} onclick={() => removePlayer(p.id)} />
               {/if}
@@ -482,7 +532,7 @@
             <h3><WatchEye />{label}</h3>
             <ul class="onlookers">
               {#each list as o (o.id)}
-                <li data-id={o.id} class:armed={confirming === o.id} animate:flip={{ duration: 300 }} in:fly={{ y: 6, duration: 300 }} out:kickOut>
+                <li data-id={o.id} class:armed={confirming === o.id} animate:flip={{ duration: 300 }} in:onlookerIn|global out:kickOut>
                   <OnlookerMark name={o.name} size={24} />
                   <span class="name" title={o.name}><PlayerName name={o.name} />{#if o.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}</span>
                   {#if isHost}
@@ -506,7 +556,7 @@
           <p class="watch-choice" data-cursor="watch"><WatchToggle /></p>
         {/if}
         {#if !local && !hereOnly && s.players.length < 2}
-          <p class="hint waiting"><span class="pulse"></span>{isHost ? 'Nobody else yet. Send your party the code or the link.' : 'Waiting for more exiles to join…'}</p>
+          <p class="hint waiting" transition:slide={calm({ duration: 250 })}><span class="pulse"></span>{isHost ? 'Nobody else yet. Send your party the code or the link.' : 'Waiting for more exiles to join…'}</p>
         {/if}
         {#if delve && !local && !hereOnly}
           <!-- Co-op is about the party, so it is told under it: in a team room, or one a second player can still join (on one device, Delve is for one). -->
@@ -579,14 +629,14 @@
         <!-- The descent is Delve's progress: it is never cut. -->
         <!-- On a desktop the descent takes the height the panel has spare, at its own width:
              the gap to the finds is only what its leader lines need. -->
-        <div class="delve-slot" data-cursor="descent">
+        <div class="delve-slot" data-cursor="descent" in:fade={calm({ duration: 260 })}>
           <DelveRules {deepest} last={lastRun} {seen} {together} {met} />
         </div>
       {:else}
         <!-- One row per setting: its name, then its choices (a guest, who can't change them, reads the value). -->
-        <div class="setting row" data-cursor="target">
+        <div class="setting row" data-cursor="target" in:fade={calm({ duration: 260 })}>
           <span class="label">Points to win</span>
-          {#if !isHost}<b class="val num">{s.settings.targetScore}</b>{:else}
+          {#if !isHost}{#key s.settings.targetScore}<b class="val num" in:fly={calm({ y: -6, duration: 260 })}>{s.settings.targetScore}</b>{/key}{:else}
           <div class="seg">
             {#each TARGETS as t (t)}
               <button class:on={s.settings.targetScore === t} disabled={!isHost} onclick={() => setTarget(t)}>{t}</button>
@@ -600,9 +650,9 @@
           {/if}
         </div>
 
-        <div class="setting row" data-cursor="difficulty">
+        <div class="setting row" data-cursor="difficulty" in:fade={calm({ duration: 260 })}>
           <span class="label">Difficulty</span>
-          {#if !isHost}<b class="val">{DIFFICULTY_NAMES[difficulty]}</b>{:else}
+          {#if !isHost}{#key difficulty}<b class="val" in:fly={calm({ y: -6, duration: 260 })}>{DIFFICULTY_NAMES[difficulty]}</b>{/key}{:else}
           <div class="seg">
             {#each DIFFS as d (d.id)}
               {@const edit = d.id === 'custom' && difficulty === 'custom' && isHost}
@@ -631,9 +681,9 @@
           </div>
         </div>
 
-        <div class="setting row" data-cursor="time">
+        <div class="setting row" data-cursor="time" in:fade={calm({ duration: 260 })}>
           <span class="label">Time per question</span>
-          {#if !isHost}<b class="val">{s.settings.timer === 0 ? 'No limit' : `${s.settings.timer}s`}</b>{:else}
+          {#if !isHost}{#key s.settings.timer}<b class="val" in:fly={calm({ y: -6, duration: 260 })}>{s.settings.timer === 0 ? 'No limit' : `${s.settings.timer}s`}</b>{/key}{:else}
           <div class="seg">
             {#each TIMER_STEPS as t (t)}
               <button class:on={s.settings.timer === t} disabled={!isHost || (race && t === 0)} title={race && t === 0 ? 'Race needs a time limit' : undefined} onclick={() => setTimer(t)}>
@@ -644,14 +694,14 @@
           {/if}
         </div>
 
-        <ul class="rules" data-cursor="rules">
+        <ul class="rules" data-cursor="rules" in:fade={calm({ duration: 260 })}>
           {#if race}
             <li>{@render key('Wrong answers')}<span>Cost a point and sit you out until the next question.</span></li>
             <li>{@render key('First to', s.settings.targetScore)}<span>Wins; only the fastest right answer scores each question.</span></li>
           {:else}
             <li>
               {@render key('Right answers')}<span
-                >Score a point; {#if lockout > 0}the category then stays locked for your next <span class="num">{lockout}</span> turns{:else}then the turn passes to the next exile{/if}.</span
+                >Score a point; {#if lockout > 0}the category then stays locked for your next {#key lockout}<span class="num lockout" in:fly={calm({ y: -6, duration: 260 })}>{lockout}</span>{/key} turns{:else}then the turn passes to the next exile{/if}.</span
               >
             </li>
             <li>{@render key('First to', s.settings.targetScore)}<span>Wins once the round is over; a tie goes to sudden death.</span></li>
@@ -973,11 +1023,17 @@
     height: 6px;
     rotate: 45deg;
     border: 1px solid rgba(125, 99, 51, 0.7);
+    transition:
+      background-color 0.25s,
+      border-color 0.25s,
+      box-shadow 0.25s;
   }
+  /* A seat taken lights a moment into its chip's arrival (arriving), as the chip lands; one given up goes dark at once. */
   .pips i.taken {
     background: var(--gold);
     border-color: var(--gold);
     box-shadow: 0 0 6px rgba(201, 164, 92, 0.45);
+    transition-delay: 0.12s;
   }
   .name {
     flex: 1;
@@ -990,6 +1046,10 @@
   /* Away, idle or offline (lib/presence.ts, StandingMark): their name dims; idle (gone a couple of minutes) or offline, their avatar greys too, as an offline one does in the game. */
   .chips li.absent .name {
     opacity: 0.55;
+  }
+  /* (Dimming with the avatar's grey.) */
+  .chips .name {
+    transition: opacity 0.3s;
   }
   /* Pointing at the kick: the chip it would remove warms red, so it is clear whose it is. */
   .chips li:has(:global(.kick:hover)),
@@ -1509,6 +1569,11 @@
     color: var(--gold);
   }
   /* Its number in Cinzel, bold, as numbers among words are everywhere. */
+  /* (A box of its own, so a new number can drop in as the guest's values do.) */
+  .key-n,
+  .lockout {
+    display: inline-block;
+  }
   .key-n {
     font-family: var(--font-cinzel);
     font-weight: 700;

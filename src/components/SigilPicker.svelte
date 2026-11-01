@@ -146,8 +146,12 @@
   .acts {
     display: flex;
     gap: 0.5rem;
+    transition:
+      opacity 0.2s,
+      visibility 0.2s;
   }
   .acts.off {
+    opacity: 0;
     visibility: hidden;
   }
   .classes {
@@ -191,6 +195,8 @@
     width: 48px;
     height: 60px;
     background: var(--sigil) center / contain no-repeat;
+    /* Stone to gold as it is asked about or unlocked (a small picture: cheap to filter). */
+    transition: filter 0.4s;
   }
   .class:not(.have) .art {
     filter: grayscale(1) brightness(0.45);

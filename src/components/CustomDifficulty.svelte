@@ -75,6 +75,7 @@
       {#each KNOB_TEXT as knob (knob.key)}
         {@const steps = KNOB_STEPS[knob.key] as readonly Knobs[typeof knob.key][]}
         {@const why = offFor(knob, knobs[knob.key])}
+        {@const at = steps.indexOf(knobs[knob.key])}
         <!-- The step that's picked keeps its place when it has no effect; the hint says why. -->
         <div class="row" class:idle={steps.every((step) => offFor(knob, step))}>
           <div class="text">
@@ -82,6 +83,8 @@
             <span class="hint" class:why>{why ?? knob.hint}</span>
           </div>
           <div class="track" style:--n={steps.length} role="radiogroup" aria-label={knob.name}>
+            <!-- The lit plate slides under the step picked, as the lobby's Private / Public switch does. -->
+            {#if at >= 0}<span class="plate" style:--at={at} aria-hidden="true"></span>{/if}
             {#each steps as step (String(step))}
               <button
                 class:on={knobs[knob.key] === step}
@@ -186,6 +189,7 @@
   .name {
     font-size: 1.05rem;
     color: var(--gold-hi);
+    transition: color 0.3s;
   }
   .hint {
     font-size: 0.88rem;
@@ -208,6 +212,20 @@
     border-radius: 3px;
     background: rgba(0, 0, 0, 0.35);
     overflow: hidden;
+    position: relative;
+    transition: opacity 0.3s;
+  }
+  /* The chosen step's lit plate, one step wide, under the buttons. */
+  .plate {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: calc(100% / var(--n));
+    background: linear-gradient(180deg, #8a5a22, #452a0e);
+    box-shadow: inset 0 1px 0 rgba(255, 230, 170, 0.3);
+    translate: calc(var(--at) * 100%) 0;
+    transition: translate 0.3s var(--ease-out);
   }
   .track button {
     min-width: 0;
@@ -219,10 +237,12 @@
     color: var(--muted);
     background: none;
     border: 0;
+    position: relative;
     cursor: pointer;
     transition:
-      color 0.2s,
-      background 0.2s;
+      color 0.3s,
+      background 0.2s,
+      text-shadow 0.3s;
   }
   .track button + button {
     border-left: 1px solid var(--line);
@@ -247,9 +267,7 @@
   }
   .track button.on {
     color: #fff1cf;
-    background: linear-gradient(180deg, #8a5a22, #452a0e);
     text-shadow: 0 0 10px rgba(255, 220, 160, 0.5);
-    box-shadow: inset 0 1px 0 rgba(255, 230, 170, 0.3);
   }
 
   footer {

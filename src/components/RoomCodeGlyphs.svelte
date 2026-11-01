@@ -11,6 +11,8 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { CopyPress } from '../lib/copyPress.svelte';
   import CopyNote from './CopyNote.svelte';
+  import { fade } from '../lib/transitions';
+  import { calm } from '../lib/motion.svelte';
 
   let { code, hidden = false, sparks = false, delay = 0 }: { code: string; hidden?: boolean; sparks?: boolean; delay?: number } = $props();
 
@@ -40,7 +42,7 @@
   {#each code.split('') as ch, i (i)}
     <!-- The letter in gold; its gleam's copy of it is drawn from data-ch (a pseudo-element), so a copy gives each letter once. -->
     <span class="glyph" use:landing={i} use:backdropShadow={{ fill: 'linear' }} style:animation-delay="{delay + i * 80}ms" style:--i={i}
-      ><span class="ch">{hidden ? '•' : ch}</span><span class="gleam" aria-hidden="true" data-ch={hidden ? '•' : ch}></span></span
+      >{#key hidden}<span class="ch" in:fade={calm({ duration: 200, delay: i * 40 })}>{hidden ? '•' : ch}</span>{/key}<span class="gleam" aria-hidden="true" data-ch={hidden ? '•' : ch}></span></span
     >
   {/each}
 </span>
