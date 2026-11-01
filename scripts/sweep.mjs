@@ -48,7 +48,7 @@ import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
 import { SIZES } from '../src/qa/sizes.ts';
 import { touched } from '../src/qa/change.ts';
-import { CSS_BACKDROP, FLOOR, MARK, MOMENTS, PAGE_FLOOR, WEBGL_SCENES, atRest, kpx, overBaseline, pageAtRest, readTrace, redraws, unread, withoutMark } from '../src/qa/redraws.ts';
+import { FLOOR, MARK, MOMENTS, PAGE_FLOOR, WEBGL_SCENES, atRest, kpx, overBaseline, pageAtRest, readTrace, redraws, unread, withoutMark } from '../src/qa/redraws.ts';
 import { changedFiles } from '../qaServer.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -560,14 +560,11 @@ function writesNoted() {
 }
 
 /**
- * In the page: WebGL refused, as a browser without it does, and the CSS
- * backdrop it then falls back to (`selector`, Background.svelte's) not
- * drawn: what's watched is the page over the backdrop, as a player with
- * WebGL has it, less its canvas. (The stand-in's billows and arms, drawn
- * only without WebGL, would be measured in place of a canvas that draws
- * nothing again.)
+ * In the page: WebGL refused, as a browser without it does: what's watched
+ * is the page as a player without WebGL has it, over the CSS backdrop it
+ * falls back to (Background.svelte's), its billows and arms with it.
  */
-function refuseWebGL(selector) {
+function refuseWebGL() {
   delete window.WebGL2RenderingContext;
   delete window.WebGLRenderingContext;
   for (const C of [window.HTMLCanvasElement, window.OffscreenCanvas]) {
@@ -577,9 +574,6 @@ function refuseWebGL(selector) {
       return /webgl/i.test(type) ? null : get.call(this, type, ...rest);
     };
   }
-  const sheet = new CSSStyleSheet();
-  sheet.replaceSync(`${selector} > :not(canvas) { display: none !important; }`);
-  document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
 }
 
 /** The date a watched page has it be (Date, Date.now) as it loads: inside dailies.json's days, so a daily is dealt as on any day. */
@@ -629,7 +623,7 @@ async function watchedPage(browser, webgl, seed, ms = FRAME) {
   const size = SIZES.find((s) => s.key === REDRAW_SIZE);
   const context = await browser.newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: size.dpr, reducedMotion: 'no-preference' });
   await context.addInitScript(seedPage, { seed, clock: CLOCK });
-  if (!webgl) await context.addInitScript(refuseWebGL, CSS_BACKDROP);
+  if (!webgl) await context.addInitScript(refuseWebGL);
   const page = await context.newPage();
   return { context, page, drive: await frameDriver(context, page, ms) };
 }

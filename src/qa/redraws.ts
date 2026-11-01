@@ -289,22 +289,14 @@ export function pageAtRest(again: number, frames: number, layers: LayerRedraws[]
 }
 
 /**
- * The CSS backdrop a page without WebGL falls back to (Background.svelte's
- * .bg, class:css): not drawn where WebGL is refused, so the page is watched
- * over the backdrop as players with WebGL have it (scripts/sweep.mjs,
- * refuseWebGL). Drawn, it has the Codex's empty Delve pages draw their rune
- * circle again, a cost only a player without WebGL has: #339.
- */
-export const CSS_BACKDROP = '.bg.css';
-
-/**
  * The scenes watched at rest with WebGL on as well as off: one for each
  * screen whose effects (src/lib/fx/) change what the page itself does.
  * The rest refuse WebGL: the backdrop and the effects draw on canvases of
  * their own, not on what Chrome draws again, and drawn in software, as the
  * check is, they're the slowest part of a frame. Without
- * WebGL the page paints the backdrop's shadows in CSS, and its CSS
- * backdrop isn't drawn (CSS_BACKDROP).
+ * WebGL the page is watched as a player without it has it: the backdrop's
+ * shadows painted in CSS, over the CSS backdrop it falls back to
+ * (Background.svelte's .bg.css).
  */
 export const WEBGL_SCENES: { scene: string; why: string }[] = [
   { scene: 'game/delve-dig', why: 'A vein shakes the page (tremor.ts through fx/core.ts’s shake, a translate on .shell every frame): the effects’ own, so without WebGL it never runs. The October shake was this.' },

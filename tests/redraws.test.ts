@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CSS_BACKDROP, FLOOR, MARK, MOMENTS, PAGE_FLOOR, WEBGL_SCENES, atRest, layerName, overBaseline, pageAtRest, readTrace, redraws, slackOf, unread, withoutMark, type TraceEvent } from '../src/qa/redraws.ts';
+import { FLOOR, MARK, MOMENTS, PAGE_FLOOR, WEBGL_SCENES, atRest, layerName, overBaseline, pageAtRest, readTrace, redraws, slackOf, unread, withoutMark, type TraceEvent } from '../src/qa/redraws.ts';
 import { SCREENS } from '../src/qa/scene.ts';
 
 test('a layer is named by its element, Svelte’s classes left out', () => {
@@ -155,12 +155,6 @@ test('CI runs the canary, and every moment has its window and a baseline at CI�
     assert.ok(m.slack > 1 && m.slack <= 1.25, `${m.key}’s slack: from how far it moves run to run, not a floor`);
     assert.equal(typeof baseline.moments[m.key], 'number', `${m.key}’s baseline`);
   }
-});
-
-test('the CSS backdrop the check leaves undrawn without WebGL is still Background.svelte’s', () => {
-  const bg = readFileSync(new URL('../src/components/Background.svelte', import.meta.url), 'utf8');
-  assert.equal(CSS_BACKDROP, '.bg.css');
-  assert.match(bg, /<div class="bg" class:css=\{!webgl\}/);
 });
 
 test('a moment fails past its slack times its baseline, and in CI with none', () => {
