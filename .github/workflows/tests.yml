@@ -1,0 +1,54 @@
+name: Tests
+run-name: "Tests: ${{ github.event.pull_request.title || github.ref_name }}"
+
+# The types and the tests on every pull request into main, as the live
+# deploy runs them (deploy.yml, the live job) once it's merged. A pull request
+# that fails them would leave main unable to deploy: live stays on the commit
+# before, and every merge after it fails too, until someone mends it. Here it
+# fails before it's merged. A required check on main, beside Redraws.
+#
+# A title or description edit runs it again too (edited, for a pull request
+# moved onto main, which would otherwise wait on a check that never runs).
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+  merge_group:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  deployments: read
+
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Types, which the build leaves unchecked.
+      - run: npm run check
+      # Today's unique's rows as the live site has them, for the test that no
+      # day it may be asking changes (tests/dailies.test.ts), as deploy.yml
+      # finds them.
+      - name: Find the live site's daily rows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          node scripts/live-dailies.mjs > "$RUNNER_TEMP/live-dailies.json"
+          echo "LIVE_DAILIES=$RUNNER_TEMP/live-dailies.json" >> "$GITHUB_ENV"
+      - run: npm test
