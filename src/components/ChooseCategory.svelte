@@ -11,9 +11,10 @@
 
 <script lang="ts">
   import { cubicInOut, cubicOut } from 'svelte/easing';
-  import { scale } from 'svelte/transition';
+  import { fade, scale } from 'svelte/transition';
+  import { flip } from 'svelte/animate';
   import { untrack, type Snippet } from 'svelte';
-  import { motion } from '../lib/motion.svelte';
+  import { calm, motion } from '../lib/motion.svelte';
   import { engine, session } from '../lib/session.svelte';
   import { categoryCompanions, categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { MAX_H, MAX_W, PAD, WEIGHT, fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
@@ -37,11 +38,18 @@
 
   let {
     drawn = null,
+    taken = null,
     ondrawn,
     timer,
   }: {
     /** Delve together: the card the closed vote drew, while the draw plays out on the cards. */
     drawn?: string | null;
+    /**
+     * A pick, alone or on a turn: the card taken, while the cards hold a
+     * moment before the question comes in (Game.svelte), so every screen,
+     * the watchers' too, sees it lift as the others give way.
+     */
+    taken?: string | null;
     /** Called once the draw has landed and held (Game.svelte then shows the question). */
     ondrawn?: () => void;
     /**
@@ -191,6 +199,34 @@
   const waitingFor = $derived(coop && !drawn ? expectedVoters(s, hostNow).filter((id) => !Object.hasOwn(votes, id)) : []);
   const idle = $derived(coop && !drawn ? standingIds(s).filter((id) => isIdle(s, id) && !Object.hasOwn(votes, id)) : []);
   const anyVote = $derived(Object.keys(votes).length > 0);
+  /** Whether the vote is open on this screen (no draw playing yet). */
+  const voteOpen = $derived(coop && !drawn && s.phase === 'choosing');
+  type VoteLine = { closesIn: number | null; says: 'rule' | 'wait' | null; wait: string; idle: string };
+  /**
+   * The vote's line: its clock, and what it says (the rule before a first
+   * vote, then who it waits for). Once the vote has closed and its draw
+   * plays, as it last stood, fading until the cards go, so nothing under it
+   * moves up as the draw starts. Null while there is none.
+   */
+  let lastLine: VoteLine | null = null;
+  const voteLine = $derived.by((): VoteLine | null => {
+    if (voteOpen)
+      return (lastLine = {
+        closesIn,
+        says: !anyVote ? 'rule' : waitingFor.length ? 'wait' : null,
+        wait: waitingFor.length ? namesOf(waitingFor, nameOf, me) : '',
+        idle: idle.length ? namesOf(idle, nameOf, me) : '',
+      });
+    return coop && drawn ? lastLine : null;
+  });
+  /** The vote's clock warns in its last seconds, as the question's does (Game.svelte's warnFrom, for a clock this short). */
+  const VOTE_WARN_FROM = 3;
+  /** Svelte transition: a line leaving the vote's row as another comes in at its place, laid over it as it fades, so the row is laid out once. */
+  function lineOut(node: HTMLElement) {
+    node.style.width = `${node.getBoundingClientRect().width}px`;
+    node.style.position = 'absolute';
+    return calm({ duration: 150, css: (t: number) => `opacity: ${t}` });
+  }
   /** Delve together: whether anyone standing holds a flare or dynamite (they stay unused on a find's question). */
   const itemsHeld = $derived(coop && (holdersOf(s, 'flares').length > 0 || holdersOf(s, 'dynamite').length > 0));
 
@@ -456,6 +492,10 @@
   }
 
   let picked = $state<string | null>(null);
+  /** Which of its lines the prompt says (below), so it cross-fades as it changes. */
+  const promptKey = $derived(s.deathmatch ? 'duel' : coop ? (drawn ? 'draw' : canVote ? (myVote ? 'voted' : 'vote') : 'team') : mine ? 'mine' : 'wait');
+  /** The card a pick took: the one you picked, or, on every screen as the cards hold before the question, the one taken. */
+  const chosen = $derived(taken ?? picked);
 
   // Size each emblem, and the items behind it (lib/ui, categoryCompanions), by
   // its visible shape (see lib/iconFit); measured while the cards lie face down.
@@ -831,6 +871,9 @@
 {#snippet prompt()}
   <!-- data-cursor: where other players' pointers are placed (PeerCursors): each card, and the lines round them. -->
   <p class="prompt" data-cursor="prompt">
+    <!-- As it changes (your vote in, the draw), the line cross-fades, old and new in one place (.say). -->
+    {#key promptKey}
+      <span class="say" in:fade={calm({ duration: 200 })} out:fade={calm({ duration: 200 })}>
     {#if s.deathmatch}
       {#if knockedOut.length}{knockedOut.join(', ')} {knockedOut.length === 1 ? 'is' : 'are'} out;{' '}{/if}
       {#if mine}{knockedOut.length ? 'your' : 'Sudden death: your'} category is drawn at random.{:else}<span class="muted">{knockedOut.length ? 'sudden' : 'Sudden'} death for</span> {active.name}<span class="muted">…</span>{/if}
@@ -857,6 +900,8 @@
     {:else}
       <span class="muted">Waiting for</span> {active.name} <span class="muted">to choose a category…</span>
     {/if}
+      </span>
+    {/key}
   </p>
 {/snippet}
 
@@ -899,7 +944,7 @@
       ></span
     >
   {/snippet}
-  <div class="cards" data-cursor="cards" bind:this={cardsEl} data-zoom class:single={s.offered.length === 1} class:moving={!!drawn || !!picked} style:--n={s.offered.length}>
+  <div class="cards" data-cursor="cards" bind:this={cardsEl} data-zoom class:single={s.offered.length === 1} class:moving={!!drawn || !!picked || !!taken} style:--n={s.offered.length}>
     {#each s.offered as cat, i (cat)}
       {@const heap = heapOf(cat)}
       <button
@@ -915,8 +960,8 @@
         aria-describedby={kindOf(cat) && !s.deathmatch ? `${uid}-note-${kindOf(cat)}` : undefined}
         class:mine
         class:dim={dimmed}
-        class:chosen={picked === cat || (landed && lit === i)}
-        class:faded={(picked && picked !== cat) || (landed && lit !== i)}
+        class:chosen={chosen === cat || (landed && lit === i)}
+        class:faded={(chosen && chosen !== cat) || (landed && lit !== i)}
         class:voted={coop && myVote === cat && !landed}
         class:passing={!landed && lit === i}
         aria-label={coop ? `${cardName(cat)}: ${voteWords(cat)}` : isWayOut(cat) ? cardName(cat) : undefined}
@@ -995,11 +1040,23 @@
           {@const faces = voters.length > 5 ? voters.slice(0, 4) : voters}
           <span class="votes" aria-hidden="true">
             {#each faces as p (p.id)}
-              <span class="pip" class:me={p.id === me} title={p.name} use:cast in:scale={{ start: 0.3, duration: motion.still ? 0 : 300 }} out:scale={{ start: 0.3, duration: motion.still ? 0 : 200 }}
+              <span
+                class="pip"
+                class:me={p.id === me}
+                title={p.name}
+                use:cast
+                in:scale={{ start: 0.3, duration: motion.still ? 0 : 300 }}
+                out:scale={{ start: 0.3, duration: motion.still ? 0 : 200 }}
+                animate:flip={{ duration: motion.still ? 0 : 250 }}
                 ><Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={22} /></span
               >
             {/each}
-            {#if voters.length > faces.length}<span class="more">+{voters.length - faces.length}</span>{/if}
+            {#if voters.length > faces.length}
+              <!-- (Its number lands as a seal does.) -->
+              {#key voters.length}
+                <span class="more" in:scale={{ start: 0.3, duration: motion.still ? 0 : 300 }}>+{voters.length - faces.length}</span>
+              {/key}
+            {/if}
           </span>
         {/if}
       </button>
@@ -1042,22 +1099,29 @@
       {#if two && held}<p class="note muted">{held.trim()}</p>{/if}
     </div>
   {/if}
-  {#if coop && !drawn && s.phase === 'choosing'}
+  {#if voteLine}
+    {@const line = voteLine}
     <!-- The vote: when it closes, and who it is still waiting for (under what each card gives, with the rules' lines). -->
     <!-- Only who it waits for is announced; the countdown would be read out every second. -->
-    <p class="vote-status" data-cursor="vote">
-      {#if closesIn !== null}
-        <span class="closes" aria-hidden="true">Closes in <b>{closesIn}</b><span class="unit">s</span></span>
+    <!-- Closed, it stays as it last stood, fading, until the cards go (voteLine). -->
+    <p class="vote-status" class:gone={!voteOpen} aria-hidden={voteOpen ? undefined : 'true'} data-cursor="vote">
+      {#if line.closesIn !== null}
+        <span class="closes" aria-hidden="true" in:fade={calm({ duration: 200 })}
+          >Closes in <b class:urgent={line.closesIn > 0 && line.closesIn <= VOTE_WARN_FROM}>{line.closesIn}</b><span class="unit">s</span></span
+        >
       {/if}
       <span class="live" aria-live="polite">
-        {#if closesIn !== null}<span class="sr">The vote’s clock has started.</span>{/if}
-        {#if anyVote && waitingFor.length}
-          <span>Waiting for {namesOf(waitingFor, nameOf, me)}</span>
-        {:else if !anyVote}
-          <span class="muted">Each vote is a ticket in the draw. The clock starts at the first vote.</span>
-        {/if}
-        {#if idle.length}
-          <span class="idle">Not waiting for {namesOf(idle, nameOf, me)} (idle)</span>
+        {#if line.closesIn !== null}<span class="sr">The vote’s clock has started.</span>{/if}
+        <!-- The rule gives way to who it waits for as the first vote lands: one fades in as the other fades out over it (lineOut). -->
+        {#key line.says}
+          {#if line.says === 'wait'}
+            <span in:fade={calm({ duration: 200 })} out:lineOut>Waiting for {line.wait}</span>
+          {:else if line.says === 'rule'}
+            <span class="muted" in:fade={calm({ duration: 200 })} out:lineOut>Each vote is a ticket in the draw. The clock starts at the first vote.</span>
+          {/if}
+        {/key}
+        {#if line.idle}
+          <span class="idle" transition:fade={calm({ duration: 200 })}>Not waiting for {line.idle} (idle)</span>
         {/if}
       </span>
     </p>
@@ -1067,8 +1131,9 @@
     <p class="note muted" data-cursor="note">{mine ? 'Tap the card when you are ready.' : deathmatchText(difficultyOf(s.settings.difficulty))}</p>
   {:else if dig}
     <!-- (A dig's cards lock nothing.) -->
-  {:else if coop && canVote && lockout > 0}
-    <p class="note muted" data-cursor="note">A category the team plays stays locked for the next {lockout} depths.</p>
+  {:else if coop && (canVote || (!!drawn && !!me && livesOf(s, me) > 0)) && lockout > 0}
+    <!-- (Through the draw it stays, fading, as the vote's line does.) -->
+    <p class="note muted" class:gone={!canVote} data-cursor="note">A category the team plays stays locked for the next {lockout} depths.</p>
   {:else if mine && lockout > 0}
     <p class="note muted" data-cursor="note">A category you choose stays locked for {lockoutText(lockout)}.</p>
   {/if}
@@ -1082,9 +1147,14 @@
     gap: 1.6rem;
   }
   .prompt {
+    display: grid;
     margin: 0;
     font-size: 1.2rem;
     text-align: center;
+  }
+  /* What it says, old and new in one cell as they cross-fade. */
+  .say {
+    grid-area: 1 / 1;
   }
   /* A vein's lamp at the prompt's right end: the line and the clock as the
      question's task line has them (QuestionView's .task and .clock, its
@@ -2323,8 +2393,33 @@
     min-width: 1ch;
     font-size: 1rem;
   }
+  .closes b {
+    transition: color 0.3s;
+  }
+  /* Its last seconds, as the question's clock warns (TimerRing's .urgent). */
+  .closes b.urgent {
+    color: #ff9c86;
+    animation: throb 1s ease-in-out infinite;
+  }
+  :global(:root[data-still]) .closes b.urgent {
+    animation: none;
+  }
+  @keyframes throb {
+    50% {
+      transform: scale(1.2);
+    }
+  }
   .idle {
     color: var(--muted);
+  }
+  /* The vote closed: its line and the rule under it fade as the draw plays, keeping their room. */
+  .vote-status,
+  .note {
+    transition: opacity 0.2s ease-out;
+  }
+  .vote-status.gone,
+  .note.gone {
+    opacity: 0;
   }
   /* The live region lays its lines out in the row as if it weren't there. */
   .live {
