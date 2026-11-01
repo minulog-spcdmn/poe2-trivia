@@ -47,6 +47,7 @@
     ranked,
     runFacts,
     score,
+    setProgress,
     scoreLine,
     soloHighlights,
     usualLifted,
@@ -59,8 +60,8 @@
   // Read as the screen comes in, not a moment after, so what they fill (your lives, what you earned) is there in its first
   // frame instead of pushing the column down. (The game has loaded both by its end anyway.)
   import { loadCodex } from '../lib/codex';
-  import { FOSSIL_COUNT, FOSSIL_DEAL, fossilArt, fossilById, type FossilId } from '../lib/fossils';
-  import { foundCount, loadFossils } from '../lib/fossilStore';
+  import { FOSSIL_FROM, fossilArt, fossilById, type FossilId } from '../lib/fossils';
+  import { loadFossils } from '../lib/fossilStore';
   import { achievementById, type Achievement } from '../lib/achievements';
   import { readsShellHeights } from '../lib/shellHeights.svelte';
   import { backGuard } from '../lib/backGuard';
@@ -68,16 +69,14 @@
   // Its styles read the shell's --header-h and --legal-h (App.svelte).
   readsShellHeights();
 
-  /** Where the set stands, as the fossil line says it (`count`: how many this device holds, this run's with them). */
+  /** Where the set stands, as the fossil line says it (`count` of `total`: this device's, this run's with them). */
   type FossilFact =
-    | { kind: 'found'; id: FossilId; depth: number; count: number }
-    | { kind: 'missed'; depth: number; count: number }
-    | { kind: 'held' | 'none' | 'all'; count: number };
+    | { kind: 'found'; id: FossilId; depth: number; count: number; total: number }
+    | { kind: 'missed'; depth: number; count: number; total: number }
+    | { kind: 'held' | 'none' | 'all'; count: number; total: number };
   /** A line among the run's facts: the engine's, or the fossil line. */
   type Fact = Line | { fossil: FossilFact };
   const anOrA = (name: string) => (/^[AEIOU]/.test(name) ? 'an' : 'a');
-  /** The depth players see fossils start to turn up from. */
-  const FOSSILS_FROM = shownDepth(FOSSIL_DEAL.common.from);
   /**
    * A fossil's card picked and answered wrong this run, by whom and how deep (engine depth), as far as it reads sane.
    * (The engine keeps it as delve.fossilMissed; none in older saves.)
@@ -89,10 +88,10 @@
   };
 
   // The nodule a fossil lies in, engraved (docs/arcane-style.md; the card's own in lib/findEngraving.ts): an exact
-  // ellipse with two growth rings, hatched on the side from the light (the lower right) between its rim and the
+  // ellipse, tilted, with two growth rings off its centre toward the light, hatched on the side from the light (the lower right) between its rim and the
   // outer ring, and the fine seam it splits along across it, the rings and the hatching stopping short of it.
-  const ellipse = (rx: number, ry: number) => `M${-rx} 0A${rx} ${ry} 0 1 0 ${rx} 0A${rx} ${ry} 0 1 0 ${-rx} 0Z`;
-  const NODULE_RIM = `${ellipse(8.8, 6.4)}${ellipse(6, 4.3)}`;
+  const ellipse = (rx: number, ry: number, cx = 0, cy = 0) => `M${cx - rx} ${cy}A${rx} ${ry} 0 1 0 ${cx + rx} ${cy}A${rx} ${ry} 0 1 0 ${cx - rx} ${cy}Z`;
+  const NODULE_RIM = `${ellipse(8.8, 6.4)}${ellipse(6, 4.3, -0.5, -0.3)}`;
   const NODULE_HATCH = Array.from({ length: 7 }, (_, i) => 3.4 + i * 1.35)
     .map((c) => `M${(c - 11).toFixed(2)} 11L11 ${(c - 11).toFixed(2)}`)
     .join('');
@@ -297,13 +296,14 @@
    */
   const fossilLine = $derived.by((): FossilFact | null => {
     if (!run) return null;
-    const count = foundCount(fossils);
-    const mine = runFossils(s).find((f) => local || (!!me && f.to.includes(me)));
-    if (mine) return { kind: 'found', id: mine.id, depth: shownDepth(mine.depth), count };
-    if (count >= FOSSIL_COUNT) return { kind: 'all', count };
+    const set = setProgress(fossils, s, me, local);
+    const at = { count: set.found, total: set.total };
+    const mine = set.run.length ? runFossils(s).find((f) => f.id === set.run[0]) : undefined;
+    if (mine) return { kind: 'found', id: mine.id, depth: shownDepth(mine.depth), ...at };
+    if (set.complete) return { kind: 'all', ...at };
     const missed = fossilsMissed(s).find((f) => local || f.by === me);
-    if (missed) return { kind: 'missed', depth: shownDepth(missed.depth), count };
-    return { kind: count ? 'held' : 'none', count };
+    if (missed) return { kind: 'missed', depth: shownDepth(missed.depth), ...at };
+    return { kind: set.found ? 'held' : 'none', ...at };
   });
   /** At most this many facts: as many as before every run had a fossil line, so the column is never taller. */
   const MAX_FACTS = 5;
@@ -849,13 +849,15 @@
                 <path d={NODULE_SEAM} stroke="#000" stroke-width="2.2" fill="none" />
               </mask>
             </defs>
-            <g mask="url(#nodule-seam)">
-              <ellipse rx="8.8" ry="6.4" />
-              <ellipse class="ring" rx="6" ry="4.3" />
-              <ellipse class="ring" rx="3.3" ry="2.3" />
-              <path class="hatch" clip-path="url(#nodule-rim)" d={NODULE_HATCH} />
+            <g transform="rotate(-16)">
+              <g mask="url(#nodule-seam)">
+                <ellipse rx="8.8" ry="6.4" />
+                <ellipse class="ring" cx="-0.5" cy="-0.3" rx="6" ry="4.3" />
+                <ellipse class="ring" cx="-1.1" cy="-0.6" rx="3.1" ry="2.1" />
+                <path class="hatch" clip-path="url(#nodule-rim)" d={NODULE_HATCH} />
+              </g>
+              <path class="seam" d={NODULE_SEAM} />
             </g>
-            <path class="seam" d={NODULE_SEAM} />
           </svg>
         {/if}
       </span>
@@ -864,15 +866,15 @@
       <button class="set-link" onclick={openSet} aria-haspopup="dialog">
         {#if f.kind === 'found'}
           {@const name = fossilById(f.id).name}
-          You unearthed {anOrA(name)} <span class="fossil-name">{name}</span> at depth <b class="n">{f.depth}</b>; <span class="of"><b class="n">{f.count}</b> of <b class="n">{FOSSIL_COUNT}</b>.</span>
+          You unearthed {anOrA(name)} <span class="fossil-name">{name}</span> at depth <b class="n">{f.depth}</b>; <span class="of"><b class="n">{f.count}</b> of <b class="n">{f.total}</b>.</span>
         {:else if f.kind === 'missed'}
-          A fossil stayed in the stone at depth <b class="n">{f.depth}</b>; <span class="of"><b class="n">{f.count}</b> of <b class="n">{FOSSIL_COUNT}</b>.</span>
+          A fossil stayed in the stone at depth <b class="n">{f.depth}</b>; <span class="of"><b class="n">{f.count}</b> of <b class="n">{f.total}</b>.</span>
         {:else if f.kind === 'held'}
-          Fossils: <span class="of"><b class="n">{f.count}</b> of <b class="n">{FOSSIL_COUNT}</b> in your codex.</span>
+          Fossils: <span class="of"><b class="n">{f.count}</b> of <b class="n">{f.total}</b> in your codex.</span>
         {:else if f.kind === 'all'}
           <span class="of">Every fossil unearthed.</span>
         {:else}
-          <span class="of">Fossils for your codex turn up on cards from depth <b class="n">{FOSSILS_FROM}</b>.</span>
+          <span class="of">Fossils for your codex turn up on cards from depth <b class="n">{FOSSIL_FROM.common}</b>.</span>
         {/if}
       </button>
     </span>
