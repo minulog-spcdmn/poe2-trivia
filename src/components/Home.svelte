@@ -229,6 +229,8 @@
   /** An entry's description giving way to its fields, and back. */
   const SWAP_IN = { y: 4, duration: 240, delay: 90 };
   const SWAP_OUT = { duration: 140 };
+  /** The greeting and its rename form, crossing in place: a tap on the quill (or Cancel) answers at once, the form ready to type in. */
+  const RENAME_SWAP = { duration: 120 };
   /** The greeting's height as laid out, which its box eases to. */
   let greetingH = $state(0);
 
@@ -725,10 +727,10 @@
     <!-- The greeting: the name is asked once, then greeted (and changed here). -->
     <!-- Its height follows what it holds, eased (two lines to one as a chosen name drops the quill's words on touch), so the menu under it glides rather than jumps. -->
     <div class="greeting" style:height={greetingH ? `${greetingH}px` : undefined} in:fade|global={calm({ duration: 600, delay: 350 })}>
-      <!-- The greeting and the rename form share one cell, so one fades into the other, as the menu's rows do. -->
+      <!-- The greeting and the rename form share one cell, so one fades into the other where it stood. -->
       <div class="greeting-cell" bind:offsetHeight={greetingH}>
       {#if renaming}
-        <form class="row" onsubmit={saveRename} in:fly={calm(SWAP_IN)} out:fade={calm(SWAP_OUT)}>
+        <form class="row" onsubmit={saveRename} in:fade={calm(RENAME_SWAP)} out:fade={calm(RENAME_SWAP)}>
           <!-- No autofill on the name fields: its list is the browser's own and drops the game's cursor; the game remembers the name itself.
                No autocorrect either (tests/nameFields.test.ts): a gamer tag is seldom a word, and Gboard and iOS would make it one (Wolfsberg went in as Wolfsburg).
                The first letter is still capitalised as the keyboard likes: that only sets the shift key, and a name typed lower case stays so. -->
@@ -748,7 +750,7 @@
           <button class="link" type="button" onclick={() => (renaming = false)}>Cancel</button>
         </form>
       {:else}
-        <p class="hello" class:named={!!known} class:choose={askChoose} in:fly={calm(SWAP_IN)} out:fade={calm(SWAP_OUT)}>
+        <p class="hello" class:named={!!known} class:choose={askChoose} in:fade={calm(RENAME_SWAP)} out:fade={calm(RENAME_SWAP)}>
           <span class="greet">{welcomeBack ? 'Welcome back,' : 'Welcome,'}</span>
           {#if invite}
             <!-- An invite asks the name in its own row: the greeting only greets. -->
@@ -914,8 +916,8 @@
     {:else}
       <!-- A newcomer's way on from it holds the gold while no row's Start or Join has it and no join is on its way.
            (On a phone New game's gold is a scroll away up the page: the two are never on screen together.) -->
-      <!-- Coming from an invite's "Something else", it fades in after the menu has flown in (and the room's card just goes). -->
-      <div in:fade={calm({ duration: 600, delay: 450 })}>
+      <!-- Coming from an invite's "Something else" (a tap, so it answers quickly), it fades in with the menu flying in (and the room's card just goes). -->
+      <div in:fade={calm({ duration: 400, delay: 300 })}>
         <DailyUnique disabled={connecting} {newcomer} onIdentify={delveAlone} lead={!open && !connecting} />
       </div>
     {/if}
@@ -1061,7 +1063,7 @@
   /* ---- the greeting ---- */
   .greeting {
     margin: 16px 0;
-    transition: height 0.3s var(--ease-out);
+    transition: height 0.2s var(--ease-out);
   }
   .greeting-cell {
     /* A long name wraps the greeting onto a second line. */
