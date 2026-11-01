@@ -197,6 +197,9 @@ export const FOSSIL_DEAL = {
   perRun: 1,
 } as const;
 
+/** The shown depths (delve.ts shownDepth) fossils turn up from, by tier, for the words that say so (the codex). */
+export const FOSSIL_FROM = { common: FOSSIL_DEAL.common.from - 1, rare: FOSSIL_DEAL.rare.from - 1 } as const;
+
 const depthOf = (d: number) => (Number.isFinite(d) ? Math.floor(d) : 0);
 const round4 = (x: number) => Math.round(x * 10_000) / 10_000;
 

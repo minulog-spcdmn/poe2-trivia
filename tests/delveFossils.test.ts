@@ -6,6 +6,7 @@ import {
   FOSSILS,
   FOSSIL_COUNT,
   FOSSIL_DEAL,
+  FOSSIL_FROM,
   FOSSIL_IDS,
   dealFossil,
   drawFossil,
@@ -26,7 +27,7 @@ import { DELVE_RULESET, findOn, fossilOffer, fossilOn, fossilsOf, isWayOut, item
 import type { DelveRun } from '../src/lib/delveRecord.ts';
 import type { GameState } from '../src/lib/game.ts';
 import { fossilEvents } from '../src/lib/count.ts';
-import { runFacts, usualLifted } from '../src/lib/recap.ts';
+import { runFacts, setProgress, usualLifted } from '../src/lib/recap.ts';
 import { FOSSIL_FLIGHT } from '../src/lib/fossilFlight.ts';
 import { parseClientMsg } from '../src/lib/protocol.ts';
 import { takeIn, takenNow } from '../src/lib/sync/shared.ts';
@@ -542,4 +543,15 @@ test('erasing the codex erases the fossils, what was kept aside of them, and the
   assert.match(reset, /resetFossils\(\);[\s\S]*fossils = loadFossils\(\);/);
   assert.match(codex, /<CodexDelve [^>]*\{fossils\}/);
   store.clear();
+});
+
+test('the set’s progress for every Delve end screen: found of all, each tier, complete, and what this run gave', () => {
+  const s = { delve: { fossils: [{ id: 'jagged', depth: 9, at: 1, to: ['p0'] }, { id: 'dense', depth: 12, at: 2, to: ['p1'] }] } } as unknown as GameState;
+  const store: FossilStore = { found: { jagged: { at: 1, depth: 9 }, gilded: { at: 1, depth: 30 }, scorched: { at: 1, depth: 6 } } };
+  assert.deepEqual(setProgress(store, s, 'p0', false), { found: 3, total: 25, common: { found: 2, total: 17 }, rare: { found: 1, total: 8 }, complete: false, run: ['jagged'] });
+  assert.deepEqual(setProgress(store, s, null, true).run, ['jagged', 'dense']);
+  assert.deepEqual(setProgress(emptyFossils(), null, null, false).run, []);
+  const all: FossilStore = { found: Object.fromEntries(FOSSIL_IDS.map((id) => [id, { at: 1, depth: 30 }])) };
+  assert.ok(setProgress(all, null, null, false).complete);
+  assert.deepEqual(FOSSIL_FROM, { common: 5, rare: 25 });
 });
