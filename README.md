@@ -129,7 +129,9 @@ never changes a day already played. `npm run deal` keeps every row before
 the cutoff as the live site has them (a week ahead, or a week from tomorrow
 in the last two hours of a UTC day: `cutoffDay` in `src/lib/daily.ts`) and
 deals the rest again from the item data as it is, so new items reach the
-days to come. The live site's rows are those of the newest github-pages
+days to come. Each day is dealt from the answers of the days before it: an
+answer isn't asked again until as many days have gone by as three quarters
+of the items the daily may ask (`repeatGap`, about ten months). The live site's rows are those of the newest github-pages
 deployment that went up (`scripts/live-dailies.mjs`, through the GitHub
 CLI; `origin/main`'s when that can't be reached). Run it last, after
 `fakes.json` and `dailyArt.json` are up to date. `tests/dailies.test.ts`
@@ -138,6 +140,7 @@ holds it to that:
 - The rows from the cutoff on must be what a deal from the current data and
   code gives, so a forgotten deal, or a change to how the daily deals, fails
   until `npm run deal` is run.
+- No answer from the cutoff on may come back within `repeatGap` days.
 - No row before the cutoff may differ from the live site's. A merge that
   slipped past its cutoff fails the deploy, and the site stays as it was:
   run `npm run deal` on `main`, which puts those days back as the live site

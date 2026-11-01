@@ -18,6 +18,9 @@ const rows = dailies.days as unknown as Question[];
 /** The UTC day the last row is for. */
 export const ROWS_TO = ROWS_FROM + rows.length - 1;
 
+/** Each row's answer, from the first day's. */
+export const ROW_ANSWERS: readonly string[] = rows.map((q) => q.itemId);
+
 /** A day's question as written down (a copy), or null for a day with no row. */
 export const dailyRow = (day: number): Question | null =>
   day >= ROWS_FROM && day <= ROWS_TO ? structuredClone(rows[day - ROWS_FROM]) : null;
