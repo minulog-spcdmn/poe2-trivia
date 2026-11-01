@@ -10,12 +10,11 @@
   // plays on them: a find landing, a flare burning, a stick of dynamite going
   // off, one blown up by a Dynamite Cache missed (`blown`). A find on its way (`expect`: its sparks flying to it) has its place
   // kept, unseen, so they have somewhere to land.
+  import { untrack } from 'svelte';
   import type { Inventory } from '../lib/delve';
   import { ownRect, zoomOf } from '../lib/stage';
   import { ITEM_TIPS } from '../lib/difficultyText';
   import type { InventoryMoment } from '../lib/inventoryArt';
-  import { cubicOut } from 'svelte/easing';
-  import { calm } from '../lib/motion.svelte';
   import ItemGlyph from './ItemGlyph.svelte';
 
   let { inv, moment = null, expect = null }: { inv: Inventory; moment?: InventoryMoment | null; expect?: 'flare' | 'dynamite' | null } = $props();
@@ -96,48 +95,74 @@
       },
     };
   }
-  /** The gap between two counts (px; `.inventory`'s gap). */
-  const GAP = 5;
   /**
-   * The last of a find used up (its burn or crumble played out): it fades as
-   * it closes up, its width and the gap beside it going with it, so the
-   * other count slides over instead of jumping.
+   * The last of a find going (its flare burnt, its stick gone off, or blown
+   * up): it keeps its number as it goes, and beside the other count its
+   * place closes up with its own fading (CSS: .last), so the other slides
+   * over by the time the moment is over and it's gone.
    */
-  function closeUp(node: HTMLElement) {
-    const w = node.offsetWidth;
-    // The gap on the side where the other count stands, if one does.
-    const side = node.nextElementSibling ? 'right' : node.previousElementSibling ? 'left' : null;
-    return calm({
-      duration: 250,
-      easing: cubicOut,
-      css: (t: number) => `overflow: hidden; opacity: ${t}; width: ${t * w}px;${side ? ` margin-${side}: ${(t - 1) * GAP}px;` : ''}`,
-    });
-  }
-  const counts = $derived(inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn' || moment?.kind === 'blast' || blown === 'flares' || blown === 'dynamite' || !!expect);
+  const flareLast = $derived(inv.flares === 0 && (moment?.kind === 'burn' || blown === 'flares'));
+  const dynamiteLast = $derived(inv.dynamite === 0 && (moment?.kind === 'blast' || blown === 'dynamite'));
+  let keptFlares = 0;
+  let keptDynamite = 0;
+  const flaresShown = $derived(inv.flares > 0 ? (keptFlares = inv.flares) : keptFlares);
+  const dynamiteShown = $derived(inv.dynamite > 0 ? (keptDynamite = inv.dynamite) : keptDynamite);
+  let flareEl = $state<HTMLElement>();
+  let dynamiteEl = $state<HTMLElement>();
+  // Its width as it starts to go, for the close to run from (unrounded: offsetWidth would nudge the other count).
+  const keepWidth = (el: HTMLElement | undefined, on: boolean) => on && el?.style.setProperty('--w', getComputedStyle(el).width);
+  $effect(() => void keepWidth(flareEl, flareLast));
+  $effect(() => void keepWidth(dynamiteEl, dynamiteLast));
+  /**
+   * The last one just used: held a moment, as its moment comes a frame or
+   * two after the count goes down (Scoreboard's playMoment), which would
+   * otherwise take it away and bring it back meanwhile, the other count
+   * jumping over and back.
+   */
+  const HOLD_MS = 250;
+  let flareHeld = $state(false);
+  let dynamiteHeld = $state(false);
+  let hadFlares = untrack(() => inv.flares);
+  let hadDynamite = untrack(() => inv.dynamite);
+  $effect.pre(() => {
+    const { flares, dynamite } = inv;
+    if (hadFlares > 0 && flares === 0) {
+      flareHeld = true;
+      setTimeout(() => (flareHeld = false), HOLD_MS);
+    }
+    if (hadDynamite > 0 && dynamite === 0) {
+      dynamiteHeld = true;
+      setTimeout(() => (dynamiteHeld = false), HOLD_MS);
+    }
+    hadFlares = flares;
+    hadDynamite = dynamite;
+  });
+  const counts = $derived(inv.flares > 0 || flareHeld || dynamiteHeld || inv.dynamite > 0 || moment?.kind === 'burn' || moment?.kind === 'blast' || blown === 'flares' || blown === 'dynamite' || !!expect);
 </script>
 
 {#if counts}
   <span class="inventory" aria-hidden="true">
-    {#if inv.flares > 0 || moment?.kind === 'burn' || blown === 'flares' || expect === 'flare'}
+    {#if inv.flares > 0 || flareHeld || moment?.kind === 'burn' || blown === 'flares' || expect === 'flare'}
       <span
         class="count flare"
         class:fresh={moment?.kind === 'flare'}
         class:burning={moment?.kind === 'burn'}
         class:blown={blown === 'flares'}
         class:left={inv.flares > 0}
+        class:last={flareLast}
         class:kept={expect === 'flare' && inv.flares === 0}
         data-pip="flare"
+        bind:this={flareEl}
         use:tipOnHover
-        out:closeUp
       >
         {#key moment?.kind === 'flare' || moment?.kind === 'burn' || blown === 'flares' ? moment?.key : 0}
           <span class="grow"><ItemGlyph kind="flare" /></span>
         {/key}
-        <b>{inv.flares}</b>
+        <b>{flaresShown}</b>
         <span class="tip flare-tip" popover="manual"><strong>{ITEM_TIPS.flares.name}</strong>{ITEM_TIPS.flares.text}</span>
       </span>
     {/if}
-    {#if inv.dynamite > 0 || moment?.kind === 'blast' || blown === 'dynamite' || expect === 'dynamite'}
+    {#if inv.dynamite > 0 || dynamiteHeld || moment?.kind === 'blast' || blown === 'dynamite' || expect === 'dynamite'}
       <!-- A stick going off: it shudders, flares and is gone, the count already one down. -->
       <span
         class="count dynamite"
@@ -145,15 +170,16 @@
         class:lit={moment?.kind === 'blast'}
         class:blown={blown === 'dynamite'}
         class:left={inv.dynamite > 0}
+        class:last={dynamiteLast}
         class:kept={expect === 'dynamite' && inv.dynamite === 0}
         data-pip="dynamite"
+        bind:this={dynamiteEl}
         use:tipOnHover
-        out:closeUp
       >
         {#key moment?.kind === 'dynamite' || moment?.kind === 'blast' || blown === 'dynamite' ? moment?.key : 0}
           <span class="grow"><ItemGlyph kind="dynamite" /></span>
         {/key}
-        <b>{inv.dynamite}</b>
+        <b>{dynamiteShown}</b>
         <span class="tip dynamite-tip" popover="manual"><strong>{ITEM_TIPS.dynamite.name}</strong>{ITEM_TIPS.dynamite.text}</span>
       </span>
     {/if}
@@ -319,10 +345,7 @@
   .count.burning .grow {
     animation: burn 1s ease-out both;
   }
-  /* Its count one down as the flare flares up; a find's, once it has grown. */
-  .count.burning b {
-    animation: count-in 0.4s ease-out 0.15s both;
-  }
+  /* A find's count, once it has grown. */
   .count.fresh b {
     animation: count-in 0.4s ease-out 0.4s both;
   }
@@ -362,6 +385,60 @@
   }
   .count.blown b {
     animation: count-in 0.4s ease-out 0.5s both;
+  }
+  /* The last of it going: the flare burns away, and its number fades with
+     the glyph's own fading (the stick's as it goes off, the crumble), its
+     place closing up beside the other count by then (the glyph overflowing
+     it, centred, never cut). */
+  .count.last {
+    justify-content: center;
+    --close: 0.6s ease-in-out 0.4s;
+  }
+  .count.lit.last {
+    --close: 0.57s ease-in-out 0.53s;
+  }
+  .count.blown.last {
+    --close: 0.55s ease-in-out 0.3s;
+  }
+  .count.burning.last .grow {
+    animation: burn-out 1s ease-out both;
+  }
+  .count.last b {
+    animation: count-out var(--close) both;
+  }
+  .count.last:not(:only-child) {
+    animation: close var(--close) both;
+  }
+  .count.last:not(:last-child) {
+    --mr: -5px;
+  }
+  /* The one on the end: kept where it stands as it goes (nothing after it to slide over). */
+  .count.last:last-child {
+    justify-content: flex-start;
+  }
+  @keyframes close {
+    from {
+      width: var(--w);
+    }
+    to {
+      width: 0;
+      margin-right: var(--mr, 0px);
+    }
+  }
+  @keyframes count-out {
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes burn-out {
+    15% {
+      opacity: 1;
+      transform: scale(1.35);
+    }
+    to {
+      opacity: 0;
+      transform: scale(0.55);
+    }
   }
   @keyframes crumble {
     0% {
@@ -451,7 +528,8 @@
       display: none;
     }
     .count.fresh b,
-    .count.burning b,
+    .count.last,
+    .count.last b,
     .count.lit .grow,
     .count.lit b,
     .count.blown .grow,

@@ -27,8 +27,8 @@ const inGame = (steps: Step[], answered = false, owner?: string): Built => {
   return { state: t.s, act: t.room, at: t.clock.now + 3000, steps, rooms: [] };
 };
 /** A question asked in pictures, Doryani's pick wrong: the reveal names two, each opening its item's window. */
-const pictured = (steps: Step[]): Built => {
-  const t = new Table(THREE, { difficulty: 'custom', custom: { ...PRESETS.merciless, artChance: 1 } }).start().pick();
+const pictured = (steps: Step[], seed?: number): Built => {
+  const t = new Table(THREE, { difficulty: 'custom', custom: { ...PRESETS.merciless, artChance: 1 } }, { seed }).start().pick();
   t.answer(t.turn, false);
   return { state: t.s, act: t.room, at: t.clock.now, steps: [{ wait: 1200 }, ...steps], rooms: [] };
 };
@@ -128,7 +128,8 @@ export function overlayScenes(): Scene[] {
     overlay('back-codex-item', "Back in the codex with an item open: it closes, the codex stays as it was", [{ mode: 'none', me: null }], () => codexItem([{ back: true }])),
     overlay('back-end-item', "Back on the end screen with an item open: it closes, the room stays", [{ mode: 'local', me: null }], () => endItem([{ back: true }])),
     // The item's window open, another item opened in it: its name and tooltip cross-fade, and its top glides with the roll as the height changes.
-    overlay('item-switch', "An item's window: another item opened in it", [kalguur], () => pictured([{ click: '.tile.inspect' }, { wait: 1800 }, { click: '.tile.inspect ~ .tile.inspect' }])),
+    // (Seed 39: the pick's tooltip some eight lines shorter than the answer's, so the roll and the plate's glide show.)
+    overlay('item-switch', "An item's window: another item opened in it", [kalguur], () => pictured([{ click: '.tile.inspect' }, { wait: 1800 }, { click: '.tile.inspect ~ .tile.inspect' }], 39)),
     // On a phone the window keeps above the bar pinned at a reveal (Next): open across the next question and its answer, it glides as the bar goes and comes back.
     overlay('item-dock', "An item's window open as the game goes on: the dock changing under it (at a phone's size)", [{ mode: 'local', me: null }], acrossReveal),
     overlay('crash-host', 'The host crashed once: back on its feet', [kalguur], () => inGame([{ crash: 1 }])),

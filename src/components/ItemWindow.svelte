@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { fade, fly } from 'svelte/transition';
+  import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { type DrawnItem } from '../lib/game';
   import { portal } from '../lib/portal';
@@ -123,6 +123,9 @@
   });
   const stopGlides = () => box?.getAnimations().forEach((a) => a.id === 'glide' && a.cancel());
 
+  /** Another item's name and tooltip, in at once, sharpening from a ghost of themselves: no blank moment between the two. */
+  const swapIn = (_node: Element) => calm({ duration: 150, easing: cubicOut, css: (t: number) => `opacity: ${0.3 + 0.7 * t}` });
+
   /** A press that moves less than this (px) is a click, which folds the window, not a drag. */
   const CLICK_PX = 5;
   /** The drag under way: where the pointer took hold, from the window's corner, and whether it has moved yet. */
@@ -190,7 +193,7 @@
     <div class="head" bind:this={head} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up} role="presentation" title="Drag to move">
       <NamePlate start="empty" end="empty" />
       {#key item.art}
-        <div class="head-text" in:fade={calm({ duration: 200 })}>
+        <div class="head-text" in:swapIn>
           <span class="iname" id="item-window-name">{item.name}</span>
           <span class="ibase">{item.base}</span>
         </div>
@@ -217,7 +220,7 @@
         <div class="body" bind:this={body}>
           <!-- (Fading in with the name above.) -->
           {#key item.art}
-            <div in:fade={calm({ duration: 200 })}><ItemDetails {item} /></div>
+            <div in:swapIn><ItemDetails {item} /></div>
           {/key}
         </div>
       </div>
