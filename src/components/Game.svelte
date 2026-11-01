@@ -29,7 +29,6 @@
   import { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS, blastAway, prepareBlast } from '../lib/blastAway';
   import { untrack } from 'svelte';
   import { clockMs } from '../lib/game';
-  import { PICK_HOLD_MS } from '../lib/delveSession';
   import { calm, motion } from '../lib/motion.svelte';
   import { dealing } from '../lib/dealing.svelte';
   import { arrival, speak } from '../lib/zoneArrival.svelte';
@@ -271,22 +270,25 @@
   // Set before the DOM updates, so the cards stay up rather than being
   // swapped for the question and back.
   //
-  // A pick, alone or on a turn, holds the cards a moment too (PICK_HOLD_MS),
-  // on every screen that saw the choosing: the chosen card lifts as the
-  // others give way, on the picker's screen and the watchers' alike, before
-  // the question takes their place (a vote's draw has its own moment). Its
-  // clock waits as long (drawHoldUntil), so it costs no answer time.
+  // A pick, alone or on a turn, waits for nothing: the question comes in at
+  // once. The cards stay up only until the card taken is marked (chosen, the
+  // others faded) on every screen that saw the choosing, the watchers' too,
+  // then go as the question comes, slower than a draw's (pickOut), so the
+  // chosen card's lift plays on as it fades over the question.
   /** Whether the cards' choosing is the team's vote (Delve together), drawn on the cards, rather than one player's pick. */
   const voted = $derived(!!run && group);
   let raffle = $state<number | null>(null);
   let phaseSeen = '';
   let raffleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The cards are going after a pick (not a vote's draw): see cardsOut. */
+  let pickOut = false;
   $effect.pre(() => {
     const key = `${s.turnCount}:${s.phase}`;
     const was = phaseSeen;
     phaseSeen = key;
     if (s.phase !== 'question' || !s.question) {
       raffle = null;
+      pickOut = false;
       return;
     }
     // Back after a dropped connection with the question's clock already
@@ -298,7 +300,9 @@
       raffle = qid;
       // Should the draw never say it is done, the question shows anyway.
       if (raffleTimer) clearTimeout(raffleTimer);
-      raffleTimer = setTimeout(() => raffle === qid && (raffle = null), voted ? 4000 : PICK_HOLD_MS);
+      // (A pick: no longer than it takes the cards to be marked, before the page is next drawn.)
+      pickOut = !voted;
+      raffleTimer = setTimeout(() => raffle === qid && (raffle = null), voted ? 4000 : 0);
     }
   });
   $effect(() => () => {
@@ -457,10 +461,12 @@
    * fire) fade with them rather than outlining where they were. They take
    * no height meanwhile (.leaving), so the question is laid out where it
    * stays and nothing under it moves; what of them reaches past it, #app clips.
+   * After a pick they take longer, as the question is already there: the
+   * card taken goes on lifting as it fades (its lift is 0.55 s).
    */
   function cardsOut(node: HTMLElement) {
     node.classList.add('leaving');
-    return { duration: 180, css: (t: number) => `opacity: ${t}` };
+    return { duration: pickOut ? 400 : 180, css: (t: number) => `opacity: ${t}` };
   }
 
   /**

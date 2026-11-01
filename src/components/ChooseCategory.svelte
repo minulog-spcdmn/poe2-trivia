@@ -45,9 +45,9 @@
     /** Delve together: the card the closed vote drew, while the draw plays out on the cards. */
     drawn?: string | null;
     /**
-     * A pick, alone or on a turn: the card taken, while the cards hold a
-     * moment before the question comes in (Game.svelte), so every screen,
-     * the watchers' too, sees it lift as the others give way.
+     * A pick, alone or on a turn: the card taken, marked as the cards go
+     * (Game.svelte, as the question comes in), so every screen, the
+     * watchers' too, sees it lift as the others give way.
      */
     taken?: string | null;
     /** Called once the draw has landed and held (Game.svelte then shows the question). */
@@ -219,8 +219,6 @@
       });
     return coop && drawn ? lastLine : null;
   });
-  /** The vote's clock warns in its last seconds, as the question's does (Game.svelte's warnFrom, for a clock this short). */
-  const VOTE_WARN_FROM = 3;
   /** Svelte transition: a line leaving the vote's row as another comes in at its place, laid over it as it fades, so the row is laid out once. */
   function lineOut(node: HTMLElement) {
     node.style.width = `${node.getBoundingClientRect().width}px`;
@@ -494,7 +492,7 @@
   let picked = $state<string | null>(null);
   /** Which of its lines the prompt says (below), so it cross-fades as it changes. */
   const promptKey = $derived(s.deathmatch ? 'duel' : coop ? (drawn ? 'draw' : canVote ? (myVote ? 'voted' : 'vote') : 'team') : mine ? 'mine' : 'wait');
-  /** The card a pick took: the one you picked, or, on every screen as the cards hold before the question, the one taken. */
+  /** The card a pick took: the one you picked, or, on every screen as the cards go, the one taken. */
   const chosen = $derived(taken ?? picked);
 
   // Size each emblem, and the items behind it (lib/ui, categoryCompanions), by
@@ -1107,7 +1105,7 @@
     <p class="vote-status" class:gone={!voteOpen} aria-hidden={voteOpen ? undefined : 'true'} data-cursor="vote">
       {#if line.closesIn !== null}
         <span class="closes" aria-hidden="true" in:fade={calm({ duration: 200 })}
-          >Closes in <b class:urgent={line.closesIn > 0 && line.closesIn <= VOTE_WARN_FROM}>{line.closesIn}</b><span class="unit">s</span></span
+          >Closes in <b>{line.closesIn}</b><span class="unit">s</span></span
         >
       {/if}
       <span class="live" aria-live="polite">
@@ -2392,27 +2390,6 @@
     display: inline-block;
     min-width: 1ch;
     font-size: 1rem;
-  }
-  .closes b {
-    transition: color 0.3s;
-  }
-  /* Its last seconds, as the question's clock warns (TimerRing's .urgent). */
-  .closes b.urgent {
-    color: #ff9c86;
-    animation: throb 1s ease-in-out infinite;
-  }
-  :global(:root[data-still]) .closes b.urgent {
-    animation: none;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .closes b.urgent {
-      animation: none;
-    }
-  }
-  @keyframes throb {
-    50% {
-      transform: scale(1.2);
-    }
   }
   .idle {
     color: var(--muted);
