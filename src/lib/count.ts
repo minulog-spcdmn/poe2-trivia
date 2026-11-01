@@ -10,7 +10,7 @@
 // A game's frames are counted on each device that shows it (countGameFrames,
 // lib/stutter.ts): measured only while a game is under way and the page is
 // seen, sent once a game as one coarse path, the device's class and how
-// much it stuttered ("frames/ios/some/reveal"), never a timing.
+// much it stuttered ("frames2/ios/some/reveal"), never a timing.
 //
 // Not GoatCounter's count.js: it sends the address's query too, and an
 // invite link's carries the room's code. This sends only what's named here.
@@ -24,7 +24,7 @@ import { COUNTER_ORIGIN } from './counter.ts';
 import { isoWeek } from './isoWeek.ts';
 import { countOptedOut, notCounted, privacySignal, setCountOptedOut } from './countOptOut.ts';
 import { SITE_URL } from './site.ts';
-import { GameFrames, deviceOf, framesEvent, type BrowserSays, type Moment } from './stutter.ts';
+import { GameFrames, SOFTWARE, deviceOf, framesEvent, type BrowserSays, type StateMoment } from './stutter.ts';
 
 /** Whether a page counts: the live game's own page at its own address, no robot driving it. */
 export function countsOn(at: { hostname: string; pathname: string }, channel: Channel, robot: boolean): boolean {
@@ -101,7 +101,7 @@ function beacon(url: string) {
  * time, GAP_MS apart, the first after a random wait (JITTER_MS): a game's
  * start sends several at once, on every device at one router at the same
  * moment. The visit goes at once. What waits goes all at once as the page
- * is left: better a few turned away than all of them lost. A newcomer's
+ * is hidden or left: better a few turned away than all of them lost. A newcomer's
  * first steps (HEAD_STEPS) wait at the head, behind the visit, so one who
  * leaves within a second of pressing New game is still counted.
  */
@@ -128,18 +128,25 @@ function release(url: string, now: boolean, head = false) {
   else queue.push(url);
   drainTimer ??= setTimeout(drain, Math.random() * JITTER_MS);
 }
-/** What's counted as the page is left, ahead of the queue going (a game's frames, countGameFrames). */
+/** What's counted as the page is hidden or left, ahead of the queue going (a game's frames, countGameFrames). */
 const onLeaving: (() => void)[] = [];
+/** Sends what's counted as the page goes and all that waits. */
+function leaving() {
+  for (const f of onLeaving) f();
+  if (drainTimer) clearTimeout(drainTimer);
+  drainTimer = null;
+  atHead = 0;
+  const left = queue.splice(0);
+  if (!notCounted()) for (const url of left) beacon(url);
+}
 // (Where it counts at all, not only where it counts on loading: #toggle-goatcounter can switch counting on later.)
-if (countsHere && typeof addEventListener !== 'undefined')
-  addEventListener('pagehide', () => {
-    for (const f of onLeaving) f();
-    if (drainTimer) clearTimeout(drainTimer);
-    drainTimer = null;
-    atHead = 0;
-    const left = queue.splice(0);
-    if (!notCounted()) for (const url of left) beacon(url);
+// Hidden too: a phone often drops a tab switched away from without a pagehide.
+if (countsHere && typeof addEventListener !== 'undefined') {
+  addEventListener('pagehide', leaving);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') leaving();
   });
+}
 
 /** Whether the page has been seen yet: until it is, counts wait, so a tab opened in the background and closed unseen counts nothing. */
 let seen = typeof document === 'undefined' || document.visibilityState === 'visible';
@@ -665,32 +672,57 @@ export class GameCounts {
 // ---- frames ------------------------------------------------------------------
 
 /** A game's moment (stutter.ts), while one is under way and not yet decided; null for none: the lobby, the results, a Delve run nobody stands in. */
-export function gameMoment(s: GameState | null): Moment | null {
+export function gameMoment(s: GameState | null): StateMoment | null {
   if (!s || !playing(s) || decided(s)) return null;
   return s.phase === 'choosing' ? 'deal' : s.phase === 'question' ? 'question' : 'reveal';
 }
 
 let frames: GameFrames | null = null;
 
+/** Whether the game draws WebGL in software now, as gpuNotice.ts found (noteSoftware); not until it has. */
+let software = () => false;
+
 /**
- * How smoothly a game's frames came on this device ("frames/ios/some/reveal",
+ * Whether a game's frames want to know if the browser draws WebGL in
+ * software (gpuNotice.ts asks, off the main thread): where they're counted,
+ * on a computer, the only place hardware acceleration can be switched off.
+ */
+export const asksSoftware = () => counting && !notCounted() && deviceOf(navigator as BrowserSays).startsWith('desktop');
+
+/**
+ * What gpuNotice.ts found, asked as a game is counted (its backdrop can
+ * have fallen back to CSS meanwhile, which runs smoothly anyway): a game's
+ * frames then count as drawn in software (stutter.ts SOFTWARE). Only that
+ * is kept, never the renderer's name.
+ */
+export const noteSoftware = (drawsInSoftware: () => boolean) => void (software = drawsInSoftware);
+
+/**
+ * How smoothly a game's frames came on this device ("frames2/ios/some/reveal",
  * stutter.ts), on every device that shows the game, host, guest or one
  * watching: each has frames of its own. Given each state the page takes on
  * (null: the game left), it measures while a game is under way (gameMoment)
- * and the page is seen, and counts it once, as it's decided, left, or the
- * page is (onLeaving, so it's in the queue that goes then). A game picked up
- * after a reload is measured from there. Nothing measured where nothing counts.
+ * and the page is seen, and counts it once, as it's decided or left, or the
+ * page is hidden or left (onLeaving, so it's in the queue that goes then;
+ * a game counted as the page was hidden counts no more). A game picked up
+ * after a reload is measured from there. A computer drawing in software
+ * counts only that (asksSoftware). Nothing measured where nothing counts.
  */
 export function countGameFrames(s: GameState | null) {
   if (!frames) {
     if (!gameMoment(s) || !counting || notCounted() || typeof requestAnimationFrame === 'undefined') return;
     const device = deviceOf(navigator as BrowserSays);
     const f = new GameFrames(
-      { frame: (cb) => requestAnimationFrame(cb), cancel: (id) => cancelAnimationFrame(id), seen: () => document.visibilityState === 'visible' },
-      (v) => countEvent(framesEvent(device, v)),
+      {
+        frame: (cb) => requestAnimationFrame(cb),
+        cancel: (id) => cancelAnimationFrame(id),
+        now: () => performance.now(),
+        seen: () => document.visibilityState === 'visible',
+      },
+      (v) => countEvent(framesEvent(device, device.startsWith('desktop') && software() ? SOFTWARE : v)),
     );
     document.addEventListener('visibilitychange', () => f.shown());
-    onLeaving.push(() => f.end());
+    onLeaving.push(() => f.leave());
     frames = f;
   }
   // (Asked each time: the privacy page may have been used to opt out meanwhile.)
