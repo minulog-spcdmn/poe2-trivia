@@ -4,7 +4,7 @@
   // a room, take a while on some networks: after a few seconds it says it's
   // still going, so no one gives up early.
   import { onMount } from 'svelte';
-  import { fade } from 'svelte/transition';
+  import { fade } from '../lib/transitions';
   import { session } from '../lib/session.svelte';
   import { zoomOf } from '../lib/stage';
   import { connecting as portalFx } from '../lib/fx/moments';

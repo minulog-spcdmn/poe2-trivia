@@ -64,7 +64,13 @@ export function deal(text, items, fakes, now, { live = '', fill = false } = {}) 
     );
   }
   const rows = [...kept];
-  for (let day = first + rows.length; day <= cutoff + AHEAD; day++) rows.push(JSON.stringify(dealLive(items, fakes, day)));
+  // Each day dealt from the answers of the days before it, so none comes back soon (daily.ts repeatGap).
+  const asked = rows.map((row) => JSON.parse(row).itemId);
+  for (let day = first + rows.length; day <= cutoff + AHEAD; day++) {
+    const q = dealLive(items, fakes, day, asked);
+    rows.push(JSON.stringify(q));
+    asked.push(q.itemId);
+  }
   const was = (/** @type {number} */ i) => old.rows[i] && JSON.parse(old.rows[i]).itemId;
   let answers = 0;
   for (let i = cutoff - first; i < rows.length; i++) if (was(i) !== JSON.parse(rows[i]).itemId) answers++;

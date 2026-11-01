@@ -1399,6 +1399,8 @@ export class Engine {
   private readonly twins: { items: Item[]; depth: number; colour?: true }[];
   /** Every question's clock starts as it is asked (see the constructor). */
   private readonly autoClock: boolean;
+  /** Which items may be an answer (see the constructor). */
+  private readonly mayAsk: (id: string) => boolean;
   /** What each player's device has shown of Delve's start lines (see setStartLines). */
   private seenLines: ((ids: string[]) => number[][]) | null = null;
 
@@ -1410,10 +1412,13 @@ export class Engine {
    * played without a session (tests, tools). A session leaves it off: it
    * starts the clock itself ('clock'), once the art has reached those
    * answering.
+   * `mayAsk`: which items may be an answer (Today's unique keeps the days'
+   * recent answers out); any may still be a decoy. When none of a
+   * category's fit, one that doesn't is asked all the same.
    */
   constructor(
     items: Item[],
-    opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]>; looks?: Looks | null; twins?: boolean; autoClock?: boolean } = {},
+    opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]>; looks?: Looks | null; twins?: boolean; autoClock?: boolean; mayAsk?: (id: string) => boolean } = {},
   ) {
     this.items = items;
     this.byId = new Map(items.map((it) => [it.id, it]));
@@ -1429,6 +1434,7 @@ export class Engine {
     this.now = opts.now ?? Date.now;
     this.looks = opts.looks ?? null;
     this.autoClock = !!opts.autoClock;
+    this.mayAsk = opts.mayAsk ?? (() => true);
     const byName = new Map(items.map((it) => [it.name, it]));
     this.twins = opts.twins === false ? [] : TWINS.map(({ names, ...when }) => ({ items: names.flatMap((n) => byName.get(n) ?? []), ...when })).filter((t) => t.items.length > 1);
   }
@@ -3145,6 +3151,21 @@ export class Engine {
 
   private simCache = new Map<string, number>();
 
+  /**
+   * How alike `category`'s names look, pair by pair (similarity), worked
+   * out a step at a time ahead of the pick that may want them, each step one
+   * item against those after it. Left to the pick, a category's first
+   * question scored its pairs as it was asked: in a trace at 4K, 4 to 7 ms
+   * of the frame the question came in with (#331).
+   */
+  *likenessSteps(category: string): Generator<void> {
+    const items = this.byCategory.get(category) ?? [];
+    for (let i = 0; i < items.length; i++) {
+      for (let j = i + 1; j < items.length; j++) this.similarity(items[i], items[j]);
+      yield;
+    }
+  }
+
   private similarity(a: Item, b: Item): number {
     const key = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
     let v = this.simCache.get(key);
@@ -3310,7 +3331,9 @@ export class Engine {
       unused = this.unusedIn(s, category);
       candidates = answerable(unused);
     }
-    const answer = this.weightedPick(candidates.length ? candidates : unused.length ? unused : inCat);
+    const list = candidates.length ? candidates : unused.length ? unused : inCat;
+    const askable = list.filter((it) => this.mayAsk(it.id));
+    const answer = this.weightedPick(askable.length ? askable : list);
     // Fewer for a rare group's item (RARE_MAX_OPTIONS), and its made-up names to match.
     const count = optionsFor(answer, rules.options);
     const need = count - 1;

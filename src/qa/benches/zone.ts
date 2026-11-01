@@ -25,6 +25,8 @@ export const zone: PieceBench = {
   about: "Delve's title card for a new zone, as the run arrives there: each zone's name in its own family of motion, or another's.",
   files: [
     'src/components/zonecard/ZoneCard.svelte',
+    'src/components/zonecard/ZoneSeal.svelte',
+    'src/components/zonecard/NewsMark.svelte',
     'src/components/zonecard/family.ts',
     'src/components/zonecard/families.ts',
     'src/components/zonecard/ember.ts',

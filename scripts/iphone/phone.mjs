@@ -136,8 +136,9 @@ export async function connect(wsUrl) {
  * new address can swap the page's process, which ends the old connection).
  * With `fresh`, a room the page kept from the last run is let go of (and the
  * page loaded again), so the game opens at home, not on that room's end
- * screen. With the connection: ev (evaluate), until(expr, what, ms), which
- * waits for `expr` to be truthy, and tap(el), a finger's tap.
+ * screen, and it says what else the tab's page process holds (heldPages).
+ * With the connection: ev (evaluate), until(expr, what, ms), which waits for
+ * `expr` to be truthy, and tap(el), a finger's tap.
  */
 export async function open(url, { fresh = false } = {}) {
   const want = url.split(/[?#]/)[0];
@@ -153,7 +154,10 @@ export async function open(url, { fresh = false } = {}) {
       await sleep(1000);
     }
   };
-  let page = await go(`void (location.href = ${JSON.stringify(url)})`);
+  // (Replaced, not followed: WebKit keeps a page left for another address in
+  // the tab's process, its back-forward cache, and runs going back and forth
+  // between two builds kept three there; docs/iphone.md.)
+  let page = await go(`void location.replace(${JSON.stringify(url)})`);
   if (fresh) {
     const clear = (area) => `Object.keys(${area}).filter((k) => /\\.session\\./.test(k)).map((k) => ${area}.removeItem(k))`;
     const cleared = await page.evaluate(`[...${clear('localStorage')}, ...${clear('sessionStorage')}].length`).catch(() => 0);
@@ -161,6 +165,11 @@ export async function open(url, { fresh = false } = {}) {
       page.close();
       page = await go('void location.reload()');
     }
+    let held = await heldPages(page).catch((e) => log('heldPages:', e.message));
+    // (The page just left can take a moment to go.)
+    if (held?.others) held = await sleep(4000).then(() => heldPages(page).catch((e) => log('heldPages:', e.message)));
+    if (held) log(`the tab's process: ${held.line}`);
+    if (held?.others) log(`WARNING: it holds ${held.others} page(s) besides this one, which time everything wrong: node scripts/iphone/fresh.mjs ${url} (docs/iphone.md)`);
   }
   const ev = (expr) => page.evaluate(expr);
   const until = async (expr, what, ms = 30000) => {
@@ -222,6 +231,42 @@ const FINGER = `((types) => {
     }
   }
 })`;
+
+/**
+ * What the tab's page process holds, from a heap snapshot (taken after a full
+ * collection): its JS globals (Chrome gives a page two: its own, and its
+ * extension world's), the workers and decoded sounds in them, and the heap.
+ * `others` is how many pages besides the one in front it seems to hold, by
+ * the globals (Chrome's tab only; the home-screen app's count per page isn't
+ * known). Pages left for another address stay in the process, some for good
+ * (docs/iphone.md): one holding four of those gave the first pick after Begin
+ * a slow second or two (0.9 to 1.7 s of frames lost), where a fresh one never
+ * did.
+ */
+export async function heldPages(page) {
+  await page.send('Heap.enable');
+  try {
+    const { snapshotData } = await page.send('Heap.snapshot', {}, 120000);
+    const s = JSON.parse(snapshotData);
+    // (Its nodes: id, size, class, flags.)
+    const count = new Map();
+    let cells = 0;
+    let bytes = 0;
+    for (let i = 0; i < s.nodes.length; i += 4) {
+      const c = s.nodeClassNames[s.nodes[i + 2]];
+      count.set(c, (count.get(c) ?? 0) + 1);
+      cells++;
+      bytes += s.nodes[i + 1];
+    }
+    const globals = count.get('JSGlobalLexicalEnvironment') ?? 0;
+    const chrome = !page.tab || page.tab.app === 'Chrome';
+    const others = chrome ? Math.max(0, Math.round(globals / 2) - 1) : 0;
+    const line = `${globals} JS globals${chrome ? ` (${Math.round(globals / 2)} page${globals > 2 ? 's' : ''})` : ''}, ${count.get('Worker') ?? 0} workers, ${count.get('AudioBuffer') ?? 0} sounds, ${(cells / 1000).toFixed(0)}K cells, ${(bytes / 1e6).toFixed(0)} MB`;
+    return { globals, workers: count.get('Worker') ?? 0, sounds: count.get('AudioBuffer') ?? 0, cells, bytes, others, line };
+  } finally {
+    await page.send('Heap.disable').catch(() => {});
+  }
+}
 
 /** A button by its text (a regex's source), on screen and enabled, as an expression for the page. */
 export const button = (re) => `[...document.querySelectorAll('button')].find((b) => ${re}.test(b.textContent.trim()) && !b.disabled && b.offsetParent)`;

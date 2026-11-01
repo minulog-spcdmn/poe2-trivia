@@ -3,7 +3,9 @@
 // server keeps the code before ready on a server of its own (qaBefore.ts),
 // and takes shots of both in a browser of its own, the same way each time
 // (WebGL off, motion reduced), so two shots of the same code match: the
-// desk compares them here (./diff.ts) and marks what differs on both.
+// desk compares them here (./diff.ts) and marks what differs on both. The
+// beta has the code before built beside it (scripts/qa-before.mjs, at
+// /beta/before/) but no server to take shots: there the two are only live.
 
 import { compare, type Area, type Difference, type Pixels } from './diff.ts';
 
@@ -20,42 +22,51 @@ export interface Shown {
   layer?: string;
 }
 
-/** The code before this change, as the dev server has it (/__qa/before); `none` without one (the beta). */
+/**
+ * The code before this change: as the dev server has it (/__qa/before), or
+ * built beside the beta. `root` is where its qa.html is; `shots` whether a
+ * server takes shots to compare (the dev server's does); `none` without one.
+ */
 export type Before =
   | { state: 'preparing'; base?: string; step?: string }
-  | { state: 'ready'; base: string; origin: string }
+  | { state: 'ready'; base: string; root: string; shots: boolean }
   | { state: 'failed'; base?: string; error: string }
   | { state: 'none' };
 
-/** How far the code before is; `retry` starts again one that failed. */
+/** How far the dev server's code before is; `retry` starts again one that failed. */
 export async function askBefore(retry = false): Promise<Before> {
   try {
     const r = await fetch(`./__qa/before${retry ? '?retry' : ''}`, { cache: 'no-store' });
     if (!r.ok) return { state: 'none' };
     const got = await r.json();
+    if (got?.state === 'ready' && typeof got.origin === 'string') return { state: 'ready', base: got.base, root: `${got.origin}/`, shots: true };
     return got && typeof got.state === 'string' ? got : { state: 'none' };
   } catch {
     return { state: 'none' };
   }
 }
 
-/** A frame's address on the server of the code before: the same view, answering to this desk. */
-export function beforeSrc(src: string, origin: string, slot: string): string {
+/** The page a frame's address names (qa.html), at `root`, with `p`. */
+const at = (u: URL, p: URLSearchParams, root: string) => new URL(`${u.pathname.split('/').pop()}?${p}`, root).href;
+
+/** A frame's address on the code before (at `root`): the same view, answering to this desk. */
+export function beforeSrc(src: string, root: string, slot: string): string {
   const u = new URL(src, location.href);
   const p = u.searchParams;
   p.set('frame', slot);
-  p.set('desk', location.origin);
-  return `${origin}${u.pathname}?${p}`;
+  // (On another origin, the dev server's second server, it's told where the desk is.)
+  if (new URL(root).origin !== location.origin) p.set('desk', location.origin);
+  return at(u, p, root);
 }
 
-/** A frame's address for a shot of it: a page of its own, without the outlines of what's wrong. */
-export function shotSrc(src: string, origin = location.origin): string {
+/** A frame's address for a shot of it (of the code before at `root`, or now): a page of its own, without the outlines of what's wrong. */
+export function shotSrc(src: string, root = new URL('.', location.href).href): string {
   const u = new URL(src, location.href);
   const p = u.searchParams;
   p.set('frame', 'shot');
   p.set('o', '0');
   p.delete('desk');
-  return `${origin}${u.pathname}?${p}`;
+  return at(u, p, root);
 }
 
 export interface Compared {

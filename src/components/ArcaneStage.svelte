@@ -54,6 +54,13 @@
   // (its settle animation's), not from when this ran: a slow first frame
   // starts the CSS animations late, and the lines drawn on the page's clock
   // would run ahead of the circle settling in.
+  //
+  // A layer's box, too, is left out of the page's drawing until its lines go
+  // on (.waits): each is a compositing layer of its own, and an iPhone put
+  // all of a circle's (ten to thirty) on screen in the frames that show the
+  // question, most of them empty for a second yet (#331). It turns from
+  // then as if it had all along: its animations start as far in as the
+  // summoning is (--late).
   /** The outermost layers in order, those side by side under the same mask together. */
   const groups = untrack(() => layers)
     .filter((l) => !l.within)
@@ -75,6 +82,8 @@
   // (A circle's layers are fixed: it is drawn once, as it mounts.)
   let shown = $state<Record<string, true>>(Object.fromEntries(untrack(() => layers).filter((l) => !due(l)).map((l) => [l.name, true])));
   let drawn = $state<Record<string, true>>({});
+  /** How far into the summoning (s) each layer that came on late came on. */
+  let late = $state<Record<string, number>>({});
   let summon = $state<HTMLDivElement>();
   /** Every circle left out (?off=circles, the beta and the dev server only: lib/switchedOff.ts). */
   const off = switchedOff('circles');
@@ -98,7 +107,10 @@
         if (!due(l)) draw(l.name);
         else
           at(due(l), () => {
-            flushSync(() => (shown[l.name] = true));
+            flushSync(() => {
+              late[l.name] = (performance.now() - start) / 1000;
+              shown[l.name] = true;
+            });
             draw(l.name);
           });
         at(Math.max(l.lines.end, l.glow.end) + 0.15, () => (drawn[l.name] = true));
@@ -129,6 +141,13 @@
     };
   });
   const plate = (p: Plate, name: string) => (drawn[name] ? p.still : shown[name] ? p.drawing : '');
+  /** When a layer's box comes on (s into the summoning): as it, or the first of those riding it, does; Infinity while none has. */
+  const onAt = (l: StageLayer): number => Math.min(shown[l.name] ? (late[l.name] ?? 0) : Infinity, ...(riders.get(l.name) ?? []).map(onAt));
+  /** The layers riding each. */
+  const riders = new Map<string, StageLayer[]>();
+  for (const l of untrack(() => layers)) if (l.within) riders.set(l.within, [...(riders.get(l.within) ?? []), l]);
+  /** The same for a box that holds a group. */
+  const groupOnAt = (group: StageLayer[]) => Math.min(...group.map(onAt));
 
   // Answered, the circle takes its new colour (its mood's, below) a ring at
   // a time, from the centre out, one more each frame after the answer's own,
@@ -234,8 +253,10 @@
       {@const box = (!l.cut && l.box) || WHOLE}
       {@const at = placed(box, inside, l.pivot)}
       {@const spin = parent ? { turn: parent.turn, from: -parent.from, reverse: !parent.reverse } : l.spin}
+      {@const on = onAt(l)}
       <div
         class="layer"
+        class:waits={on === Infinity}
         class:spin={!!l.spin && !l.within}
         class:turning={!!l.spin && !!l.within}
         class:upright={!!parent}
@@ -261,6 +282,7 @@
         style:height={at.height}
         style:transform-origin={at.origin}
         style:color={l.tint && `color-mix(in srgb, ${l.tint} 70%, currentColor)`}
+        style:--late="{on === Infinity ? 0 : on}s"
       >
         <svg class="glow" viewBox={at.viewBox} data-layer={l.name}><g style:color={own}>{@html plate(l.glow, l.name)}</g></svg>
         <svg viewBox={at.viewBox} data-layer={l.name}><g style:color={own}>{@html plate(l.lines, l.name)}</g></svg>
@@ -278,8 +300,11 @@
       {#if m && by}
         <!-- (The whole plate, which its mask is drawn to, wherever it sits.) -->
         {@const at = placed(WHOLE, inside)}
+        {@const on = groupOnAt(group)}
         <div
           class="layer spin"
+          class:waits={on === Infinity}
+          style:--late="{on === Infinity ? 0 : on}s"
           style:left={at.left}
           style:top={at.top}
           style:width={at.width}
@@ -291,7 +316,7 @@
           style:mask-image={maskOf(m)}
           style:-webkit-mask-image={maskOf(m)}
         >
-          <div class="layer upright" style:--turn="{by.turn}s" style:--from="{-by.from}deg" style:--dir={by.reverse ? 'normal' : 'reverse'}>
+          <div class="layer upright" style:--turn="{by.turn}s" style:--from="{-by.from}deg" style:--dir={by.reverse ? 'normal' : 'reverse'} style:--late="{on === Infinity ? 0 : on}s">
             {#each group as l (l.name)}
               {@render plain(l, WHOLE, ink)}
             {/each}
@@ -309,7 +334,7 @@
     <!-- Each ring in a box of its own (the circle's size), which jars it at a wrong answer, so the ring's own turning and winding
          go on untouched. -->
     {#each groups as group (group[0].name)}
-      <div class="hold" class:jars={jarring.has(group[0].name)}>
+      <div class="hold" class:jars={jarring.has(group[0].name)} class:waits={groupOnAt(group) === Infinity}>
         {@render masked(group, WHOLE, inkAt(turnOf.get(group[0].name)!))}
       </div>
     {/each}
@@ -398,30 +423,38 @@
     -webkit-mask-image: radial-gradient(circle closest-side, transparent var(--clear), #000 var(--clear));
   }
 
-  /* Each ring turns its own way and speed, and first winds into place. */
+  /* A layer whose lines haven't come on yet: off the page's drawing, no
+     compositing layer (see --late). */
+  .waits {
+    display: none;
+  }
+
+  /* Each ring turns its own way and speed, and first winds into place. Each
+     animation is as far in as the summoning was when its layer came on
+     (--late), as if it had turned from the start. */
   .spin {
     animation:
-      turn var(--turn) linear infinite var(--dir, normal),
-      wind 2.6s var(--ease-out) both;
+      turn var(--turn) linear calc(0s - var(--late)) infinite var(--dir, normal),
+      wind 2.6s var(--ease-out) calc(0s - var(--late)) both;
   }
   /* A layer riding another turns about its own pivot, or sways on it. */
   .turning {
-    animation: turn var(--turn) linear infinite var(--dir, normal);
+    animation: turn var(--turn) linear calc(0s - var(--late)) infinite var(--dir, normal);
   }
   .swaying {
-    animation: sway var(--period) var(--sway-delay) ease-in-out infinite alternate;
+    animation: sway var(--period) ease-in-out calc(var(--sway-delay) - var(--late)) infinite alternate;
   }
   /* Turned back against its parent, wind and all, so it keeps its way up. */
   .upright {
     animation:
-      turn var(--turn) linear infinite var(--dir, normal),
-      wind 2.6s var(--ease-out) both;
+      turn var(--turn) linear calc(0s - var(--late)) infinite var(--dir, normal),
+      wind 2.6s var(--ease-out) calc(0s - var(--late)) both;
   }
   .breathing {
-    animation: swell var(--breath) var(--breath-delay) ease-in-out infinite alternate;
+    animation: swell var(--breath) ease-in-out calc(var(--breath-delay) - var(--late)) infinite alternate;
   }
   .fluttering {
-    animation: flutter var(--flutter) var(--flutter-delay) ease-in-out infinite;
+    animation: flutter var(--flutter) ease-in-out calc(var(--flutter-delay) - var(--late)) infinite;
   }
   /* A wrong answer jars the circle: each turning ring, in its box (.hold),
      about the circle's centre. Not on the ring itself, whose animations a
@@ -520,10 +553,15 @@
     stroke-dashoffset: 100;
     visibility: hidden;
   }
-  .arcane :global(.mark),
   .arcane :global(.carve),
   .arcane :global(.draw.ink) {
     opacity: 0;
+  }
+  /* A mark is a stroke alone, and fades by its stroke's opacity, not an
+     opacity of its own, which had Chrome lay out the page's layers again
+     in every frame one faded (see lib/drawIn). */
+  .arcane :global(.mark) {
+    stroke-opacity: 0;
   }
   .arcane :global(.seal) {
     transform-box: fill-box;

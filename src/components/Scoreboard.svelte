@@ -2,6 +2,7 @@
   import { sfx } from '../lib/sound';
   import { cubicOut } from 'svelte/easing';
   import { fly } from '../lib/transitions';
+  import { inFrame, onceFontsIn } from '../lib/inFrame';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
@@ -98,18 +99,76 @@
       board.style.zoom = zoom;
       board.style.setProperty('--board-zoom', zoom);
     };
-    fit();
-    void document.fonts?.ready.then(fit);
-    const ro = new ResizeObserver(fit);
+    // As it mounts and as an entry changes, in the frame's animation frame (lib/inFrame.ts).
+    const { soon, cancel } = inFrame(fit);
+    soon();
+    const fontsIn = onceFontsIn(soon);
+    // (Its first report is of the size the animation frame has just fitted it to.)
+    let first = true;
+    const ro = new ResizeObserver(() => (first ? (first = false) : fit()));
     ro.observe(board.parentElement!);
     // (Its entries' own changes, not its style: fitting never sets this off again.)
-    const mo = new MutationObserver(fit);
+    const mo = new MutationObserver(soon);
     mo.observe(board, { subtree: true, childList: true, characterData: true, attributeFilter: ['class'] });
     return () => {
+      cancel();
+      fontsIn();
       ro.disconnect();
       mo.disconnect();
       board.style.zoom = '';
       board.style.removeProperty('--board-zoom');
+    };
+  });
+  // Wrapped in rows (a desktop's full room), every name whole unless cutting
+  // the longest ones would save a row: then they're cut, but no further than
+  // that takes, and never below the 9.5rem they once were held to. Again
+  // whenever the row's width or an entry changes and once the fonts are in.
+  $effect(() => {
+    const board = boardEl;
+    if (tight || !board) return;
+    const rows = () => new Set([...board.children].map((li) => (li as HTMLElement).offsetTop)).size;
+    const capAt = (px: number) => board.style.setProperty('--name-cap', `${px}px`);
+    const fit = () => {
+      board.style.removeProperty('--name-cap');
+      if (getComputedStyle(board).flexWrap !== 'wrap') return;
+      const whole = rows();
+      const names = [...board.querySelectorAll<HTMLElement>('.name')].filter((n) => n.offsetParent);
+      if (whole < 2 || !names.length) return;
+      let lo = Math.round(9.5 * parseFloat(getComputedStyle(document.documentElement).fontSize));
+      let hi = Math.max(...names.map((n) => n.scrollWidth));
+      if (lo >= hi) return;
+      capAt(lo);
+      const fewest = rows();
+      if (fewest >= whole) {
+        board.style.removeProperty('--name-cap');
+        return;
+      }
+      // The widest cap that still saves the row(s).
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        capAt(mid);
+        if (rows() <= fewest) lo = mid;
+        else hi = mid;
+      }
+      capAt(lo);
+    };
+    // As it mounts and as an entry changes, in the frame's animation frame
+    // (lib/inFrame.ts): fitted as a game began, it had the new screen laid
+    // out twice over in the middle of mounting it.
+    const { soon, cancel } = inFrame(fit);
+    soon();
+    const fontsIn = onceFontsIn(soon);
+    let first = true;
+    const ro = new ResizeObserver(() => (first ? (first = false) : fit()));
+    ro.observe(board.parentElement!);
+    const mo = new MutationObserver(soon);
+    mo.observe(board, { subtree: true, childList: true, characterData: true, attributeFilter: ['class'] });
+    return () => {
+      cancel();
+      fontsIn();
+      ro.disconnect();
+      mo.disconnect();
+      board.style.removeProperty('--name-cap');
     };
   });
   const target = $derived(s.settings.targetScore);
@@ -1300,8 +1359,9 @@
     line-height: 1.1;
     white-space: nowrap;
     overflow: hidden;
+    /* No width of its own: the name takes what the row has, and is cut short only once the row runs out, or where cutting saves a row (--name-cap, set above). */
     text-overflow: ellipsis;
-    max-width: 9.5rem;
+    max-width: var(--name-cap, none);
     /* Room for descenders (g, y) that overflow: hidden would clip at line-height 1.1 */
     padding-bottom: 0.2em;
     margin-bottom: -0.2em;
@@ -1487,6 +1547,7 @@
     li:not(.wide) .info {
       position: absolute;
       width: 1px;
+      min-width: 0;
       height: 1px;
       overflow: hidden;
       clip-path: inset(50%);
@@ -1563,7 +1624,6 @@
       font-size: 1.05rem;
     }
     .name {
-      max-width: 6rem;
       font-size: 0.85rem;
     }
     .score {
