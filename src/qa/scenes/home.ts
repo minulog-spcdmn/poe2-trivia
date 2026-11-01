@@ -72,6 +72,13 @@ const BACK: Control[] = [
   },
 ];
 
+/** A release's new items, as a refresh stamps them (lib/releases.ts): how many came, how many are met, and whether a Delve run shares the line. */
+const RELEASED: Control[] = [
+  { kind: 'range', key: 'count', label: 'New with the release', min: 0, max: 120, default: 39, unit: 'items' },
+  { kind: 'range', key: 'met', label: 'Of them met', min: 0, max: 120, default: 3, unit: 'items' },
+  { kind: 'toggle', key: 'delved', label: 'A Delve run played', default: true },
+];
+
 /** A guest joining room KXR4QT. */
 const GUEST = { mode: 'client' as const, me: null };
 /** How a join gives up (session.svelte.ts' JOIN_FAILED), its sticky notice on the start page. */
@@ -227,6 +234,20 @@ export function homeScenes(): Scene[] {
         { label: "Today's unique missed, a streak of 30 ended", values: { today: 'missed', days: 30 }, group: "Today's unique" },
       ],
       build: (v) => returning(v),
+    }),
+    // After a refresh brings a release's new items (lib/releases.ts): the Codex line says how many came with it while any is still to meet.
+    home('new-release', 'Back again after a release: the Codex line counts its new items', {
+      controls: RELEASED,
+      states: [
+        { label: 'Back again, 39 items new with 1.0, 3 of them met: the Codex line counts them', values: {} },
+        { label: 'Back again, no Delve run yet: the count without the deepest', values: { delved: false } },
+        { label: 'All 39 met: the line as before', values: { met: 39 } },
+        { label: 'None new (as today, before the refresh): the line as before', values: { count: 0, met: 0 } },
+      ],
+      build: (v = {}) => {
+        const count = Number(v.count ?? 39);
+        return returning(v, { released: { count, met: Math.min(count, Number(v.met ?? 3)) }, ...(v.delved === false ? { runs: [] } : {}) });
+      },
     }),
     home('after-daily', 'After Today’s unique: a newcomer’s Identify more, a returning player’s Practice more', {
       controls: AFTER_DAILY,

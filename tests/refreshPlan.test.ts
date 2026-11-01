@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { artPlan, changedItems, reconcile, refreshArgs, summaryLines, withoutTooltip } from '../scripts/refresh-plan.mjs';
+import { artPlan, changedItems, firstSeen, reconcile, refreshArgs, summaryLines, withoutTooltip } from '../scripts/refresh-plan.mjs';
 
 // A refresh (npm run fetch-data) on made-up lists, before and after: what it
 // calls added, renamed, dropped and changed, and when it stops.
 
-type Item = { id: string; name: string; base: string; group: string; category: string; kind: string; w: number; h: number; variants?: { id: string; base: string; w: number; h: number }[] };
+type Item = { id: string; name: string; base: string; group: string; category: string; kind: string; w: number; h: number; variants?: { id: string; base: string; w: number; h: number }[]; added?: string };
 const item = (id: string, name: string, more: Partial<Item> = {}): Item => ({
   id,
   name,
@@ -145,6 +145,34 @@ test('a renamed item keeps its old id on every later run too, and its art is nei
 
 test('the art: fetched when not on disk or renamed, deleted when no item has it', () => {
   assert.deepEqual(artPlan(['aaa', 'ccc', 'ddd'], ['aaa.webp', 'bbb.webp', 'ccc.webp'], new Set(['ccc'])), { fetch: ['ccc', 'ddd'], prune: ['bbb.webp'] });
+});
+
+test('each item keeps its first day through later refreshes; one new in a run takes the run’s day', () => {
+  // The first refresh with stamps: the items before have none, the new one the run's day.
+  const first = firstSeen([item('k', 'Keep')], [item('k', 'Keep'), item('n', 'New One')], '2026-12-12');
+  assert.deepEqual(
+    first.map((it) => [it.id, it.added]),
+    [
+      ['k', undefined],
+      ['n', '2026-12-12'],
+    ],
+  );
+  assert.equal('added' in first[0], false);
+  // A later one: both keep theirs (a renamed item keeps its id, so its day), and only the newcomer takes the day.
+  const later = firstSeen(first, [item('k', 'Kept, renamed'), item('n', 'New One'), item('l', 'Later')], '2027-03-06');
+  assert.deepEqual(
+    later.map((it) => [it.id, it.added]),
+    [
+      ['k', undefined],
+      ['n', '2026-12-12'],
+      ['l', '2027-03-06'],
+    ],
+  );
+});
+
+test('the summary says which day the items added are stamped with, and where that counts', () => {
+  assert.match(summaryLines({ added: ['A', 'B'], day: '2026-12-12' }).at(-1)!, /The 2 added are first seen 2026-12-12: .*src\/lib\/releases\.ts/);
+  assert.equal(summaryLines({ day: '2026-12-12' }).length, 7);
 });
 
 test('a new item that would take a renamed one’s id stops the run', () => {

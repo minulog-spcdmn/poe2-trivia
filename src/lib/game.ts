@@ -87,6 +87,8 @@ export interface Item {
    * A question shows any of its art, each as often (Question.variant).
    */
   variants?: ArtVariant[];
+  /** The UTC day (YYYY-MM-DD) of the refresh that first listed it; none for those listed before the stamps began (lib/releases.ts). */
+  added?: string;
 }
 
 /** One more way an item is drawn (Item.variants): its art's id (its picture's file, as an item's id is), base and size. */
