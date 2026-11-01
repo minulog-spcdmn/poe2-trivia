@@ -29,6 +29,7 @@
   import { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS, blastAway, prepareBlast } from '../lib/blastAway';
   import { untrack } from 'svelte';
   import { clockMs } from '../lib/game';
+  import { PICK_IN_MS } from '../lib/delveSession';
   import { calm, motion } from '../lib/motion.svelte';
   import { dealing } from '../lib/dealing.svelte';
   import { arrival, speak } from '../lib/zoneArrival.svelte';
@@ -270,25 +271,27 @@
   // Set before the DOM updates, so the cards stay up rather than being
   // swapped for the question and back.
   //
-  // A pick, alone or on a turn, waits for nothing: the question comes in at
-  // once. The cards stay up only until the card taken is marked (chosen, the
-  // others faded) on every screen that saw the choosing, the watchers' too,
-  // then go as the question comes, slower than a draw's (pickOut), so the
-  // chosen card's lift plays on as it fades over the question.
+  // A pick, alone or on a turn, is handed over in order, on every screen
+  // that saw the choosing (the watchers' too): the card taken is marked
+  // (chosen, the others faded) as the cards go, they clear (cardsOut), and
+  // only then the question rises into their place (swingIn), PICK_IN_MS
+  // after the pick, its clock held as long (drawHoldUntil), so the handover
+  // costs no answer time. No moment of nothing: something moves throughout.
   /** Whether the cards' choosing is the team's vote (Delve together), drawn on the cards, rather than one player's pick. */
   const voted = $derived(!!run && group);
   let raffle = $state<number | null>(null);
   let phaseSeen = '';
   let raffleTimer: ReturnType<typeof setTimeout> | null = null;
-  /** The cards are going after a pick (not a vote's draw): see cardsOut. */
+  /** The cards are going after a pick (not a vote's draw), and its question coming: see cardsOut and swingIn (each lets its own go). */
   let pickOut = false;
+  let pickIn = false;
   $effect.pre(() => {
     const key = `${s.turnCount}:${s.phase}`;
     const was = phaseSeen;
     phaseSeen = key;
     if (s.phase !== 'question' || !s.question) {
       raffle = null;
-      pickOut = false;
+      pickOut = pickIn = false;
       return;
     }
     // Back after a dropped connection with the question's clock already
@@ -301,7 +304,7 @@
       // Should the draw never say it is done, the question shows anyway.
       if (raffleTimer) clearTimeout(raffleTimer);
       // (A pick: no longer than it takes the cards to be marked, before the page is next drawn.)
-      pickOut = !voted;
+      pickOut = pickIn = !voted;
       raffleTimer = setTimeout(() => raffle === qid && (raffle = null), voted ? 4000 : 0);
     }
   });
@@ -427,6 +430,11 @@
   /** Svelte transition: the new question comes in from the side the blast came from, as the smoke clears. */
   function swingIn(_node: Element) {
     const side = swingSide;
+    const pick = pickIn;
+    pickIn = false;
+    // After a pick: once the cards have cleared, the question rises a little into their place.
+    if (!side && pick && !motion.still)
+      return { duration: 320, delay: PICK_IN_MS, easing: cubicOut, css: (t: number, u: number) => `transform: translateY(${(u * 14).toFixed(2)}px); opacity: ${t}` };
     if (!side) return { duration: 0 };
     if (motion.still) return { duration: 300, delay: 150, css: (t: number) => `opacity: ${t}` };
     return {
@@ -466,7 +474,10 @@
    */
   function cardsOut(node: HTMLElement) {
     node.classList.add('leaving');
-    return { duration: pickOut ? 400 : 180, css: (t: number) => `opacity: ${t}` };
+    const pick = pickOut;
+    pickOut = false;
+    // After a pick, cleared just as the question starts to rise (PICK_IN_MS).
+    return { duration: pick && !motion.still ? PICK_IN_MS + 40 : 180, css: (t: number) => `opacity: ${t}` };
   }
 
   /**
@@ -593,7 +604,8 @@
                    cell while they cross. -->
               <div class="questions">
                 {#key s.question?.askedAt}
-                  <div class="q-slot" in:swingIn out:swingOut>
+                  <!-- (|global: it comes in with the turn's question, not only a new one on the same turn.) -->
+                  <div class="q-slot" in:swingIn|global out:swingOut>
                     <QuestionView timer={slim ? undefined : timer} />
                   </div>
                 {/key}
