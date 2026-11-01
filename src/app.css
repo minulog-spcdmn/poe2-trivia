@@ -181,19 +181,17 @@ html[data-fullscreen]::-webkit-scrollbar {
   display: none;
 }
 
-/* Every element takes the cursor handed down to it (themedCursors.ts), rather
-   than inheriting its parent's: one set on an element alone stays there. */
+/* Every element inherits the cursor (over the browser's own for links and
+   fields), the parent's own value, unchanged. One named through a variable
+   is a picture read afresh on every element at every restyle: named on every
+   element (cursor: var(--cursor-now), as it was), it was a third of the
+   style a new screen costs in Chrome. And WebKit counts a named picture
+   changed each time, so it restyles all the element holds: a vein's tremor
+   (a translate on .shell, every frame) restyled the whole game and repainted
+   every card, 46 Mpx in 2.5 s on an iPhone with a desktop's pointer. The
+   pressed pointer, set on one element alone, keeps off what that element
+   holds by handing its children the cursor themselves (lib/ownCursor.ts). */
 :where(*) {
-  cursor: var(--cursor-now, auto);
-}
-/* In WebKit (lib/ownCursor.ts marks it) every element inherits it instead.
-   WebKit makes a picture cursor afresh each time an element that names one is
-   restyled, and counts it changed, so everything the element holds is
-   restyled with it: with one named on every element, a vein's tremor (a
-   translate on .shell, every frame) restyled the whole game and repainted
-   every card, 46 Mpx in 2.5 s on an iPhone with a desktop's pointer. An
-   inherited one is the parent's own, unchanged. */
-:where(:root[data-cursor-inherited] *) {
   cursor: inherit;
 }
 

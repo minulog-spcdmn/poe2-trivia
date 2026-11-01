@@ -381,10 +381,11 @@ with its numbers in the comments.
   repainted every card: 3.4 ms of styles a write, 1,223 paints (48 Mpx) in
   2.5 s, 47.9 fps. That was the QA desk's `size=desktop`, which plays a
   fine pointer and so draws the cursors; a phone draws none, but Safari on a
-  Mac with a mouse does. In WebKit every element inherits the cursor now
-  (`data-cursor-inherited`, `src/lib/ownCursor.ts` and `app.css`), an
-  inherited one being the parent's own, unchanged: 0.2 ms, 32 paints
-  (1.2 Mpx), 60.1 fps, as at `size=fit` with no cursors at all. A scene
+  Mac with a mouse does. Every element inherits the cursor now (`app.css`;
+  in Chrome too, where a picture named on every element was a third of a
+  new screen's style), an inherited one being the parent's own,
+  unchanged: 0.2 ms, 32 paints (1.2 Mpx), 60.1 fps, as at `size=fit` with
+  no cursors at all. A scene
   measured on the phone at `size=desktop` has the cursors; `size=fit` has
   none.
 - **Every compositing layer is put on screen as it mounts, empty or not.**
