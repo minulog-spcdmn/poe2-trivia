@@ -274,8 +274,12 @@
     filter: drop-shadow(0 0 2px rgba(255, 214, 140, 0.9));
   }
 
-  /* The glow: the same lines, wide and faint, under them. */
+  /* The glow: the same lines, wide and faint, under them. Held inside its
+     box, which its lines never leave (the widest reaches 22.7 of 24): on iOS
+     27 the blur of an SVG left to overflow drew a magenta bar above the seal
+     in a toast (issue #323). The blur still spreads past the box. */
   .glow {
+    overflow: hidden;
     color: var(--sheen, var(--metal));
     opacity: var(--shine, 0.22);
     filter: blur(0.6px);
