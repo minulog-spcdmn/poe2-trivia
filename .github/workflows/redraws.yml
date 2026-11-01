@@ -85,12 +85,13 @@ jobs:
           - { name: 'At rest, 8 of 10', args: '--shard 8/10' }
           - { name: 'At rest, 9 of 10', args: '--shard 9/10' }
           - { name: 'At rest, 10 of 10', args: '--shard 10/10' }
-          # (A frame with WebGL takes one to three seconds here: the slow ones alone.)
+          # (A frame with WebGL takes a runner one to four seconds here: each alone.)
           - { name: 'With WebGL: game/delve-dig', args: '--webgl --only "^game/delve-dig$"' }
           - { name: 'With WebGL: lobby/room', args: '--webgl --only "^lobby/room$"' }
           - { name: 'With WebGL: codex/item', args: '--webgl --only "^codex/item$"' }
           - { name: 'With WebGL: over/n-lost', args: '--webgl --only "^over/n-lost$"' }
-          - { name: 'With WebGL: home/returning and settings/key', args: '--webgl --only "^(home/returning|settings/key)$"' }
+          - { name: 'With WebGL: home/returning', args: '--webgl --only "^home/returning$"' }
+          - { name: 'With WebGL: settings/key', args: '--webgl --only "^settings/key$"' }
           - { name: 'Moments: the deal, with WebGL', args: '--moments --only "^deal$"' }
           - { name: 'Moments: the dig and the pick', args: '--moments --only "^(dig|pick)$"' }
           - { name: 'Moments: the pointer and the plate', args: '--moments --only "^(glare|plate)$"' }
