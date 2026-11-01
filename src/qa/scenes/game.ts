@@ -2,17 +2,18 @@
 // clock running, the answer shown, right and wrong), played through the
 // engine to there, from the seat whose turn it is and from one watching it.
 // Delve alone and together, deeper down too, with finds among the cards and a
-// vein's dig.
+// vein's dig, the vote's clock running out and a teammate to bring back; the
+// host's kick, and a duelist sent to the bench.
 
 import { MAX_PLAYERS, PRESETS, TALL_ART_GROUPS, type Knobs, type Settings } from '../../lib/game.ts';
-import { DELVE_IDLE_ROUNDS, WAY_OUT } from '../../lib/delve.ts';
+import { DELVE_IDLE_ROUNDS, WAY_OUT, livesOf, voteClosesAt } from '../../lib/delve.ts';
 import { ACHIEVEMENTS } from '../../lib/achievements.ts';
 import { DELVE_FLAMES } from '../../lib/fx/streaks.ts';
 import type { Control, Values } from '../bench.ts';
 import { longestNamed, longestWord } from '../build/engine.ts';
 import { pid } from '../build/people.ts';
 import { Table } from '../build/play.ts';
-import type { Built, Scene, Seat } from '../scene.ts';
+import type { Built, Scene, Seat, Step } from '../scene.ts';
 
 /** Who sits down, in order: any game's players are the first so many. */
 const SEATED = ['Kalguur', 'Doryani', 'Una of the Vaal', 'Rog', 'Alva', 'Dannig', 'Hooded One', 'Zelina', 'Oswin', 'Finn', 'Sekhema Asala', 'Renly'];
@@ -79,9 +80,21 @@ const BLOWS: Control = {
   default: 'blast',
   options: [
     { value: 'blast', label: 'Dynamite goes off' },
+    { value: 'blast-last', label: 'The last dynamite goes off, a flare beside it' },
+    { value: 'flare', label: 'A flare burns, one left' },
+    { value: 'flare-last', label: 'The last flare burns, dynamite beside it' },
     { value: 'miss', label: 'A miss' },
     { value: 'ward', label: 'A ward takes a miss' },
   ],
+};
+/** What Kalguur holds for each blow: what it takes, and what stays beside it. */
+const HELD: Record<string, { wards: number; flares: number; dynamite: number }> = {
+  blast: { wards: 0, flares: 0, dynamite: 1 },
+  'blast-last': { wards: 0, flares: 1, dynamite: 1 },
+  flare: { wards: 0, flares: 2, dynamite: 0 },
+  'flare-last': { wards: 0, flares: 1, dynamite: 1 },
+  miss: { wards: 0, flares: 0, dynamite: 0 },
+  ward: { wards: 1, flares: 0, dynamite: 0 },
 };
 
 function scene(key: string, group: string, label: string, seats: Seat[], play: (v: Values) => Table, more: Partial<Scene> = {}): Scene {
@@ -130,6 +143,28 @@ function scene(key: string, group: string, label: string, seats: Seat[], play: (
 }
 const table = (names: string[], settings: Partial<Settings> = {}, o: { host?: null; seed?: number } = {}) => new Table(names, settings, o);
 
+/**
+ * A vote's scene with its clock running out (its `closing` control): from
+ * three seconds before it closes, a second at a time, then the room's draw.
+ * Before anyone votes there's no clock: the scene as it is.
+ */
+function withClosing(base: Scene, play: (v: Values) => Table): Scene {
+  return {
+    ...base,
+    build: (v = {}) => {
+      const built = base.build(v);
+      if (!v.closing) return built;
+      const t = play(v);
+      const end = voteClosesAt(t.s);
+      if (end === null) return built;
+      const shown = t.s;
+      t.wait(Math.max(0, end - t.clock.now)).act({ type: 'expire' }, null);
+      const ticks: Step[] = [2000, 1000, 0].flatMap((left) => [{ wait: 1000 }, { clock: end - left }]);
+      return { state: shown, act: t.room, at: end - 3000, steps: [...ticks, { wait: 500 }, { then: t.s, at: t.clock.now }] } satisfies Built;
+    },
+  };
+}
+
 export function gameScenes(): Scene[] {
   // Take turns: Doryani's turn first (the seed's, with three), Kalguur hosting.
   const turns = (v: Values) => table(seated(v, 3), asked(v)).start();
@@ -138,6 +173,19 @@ export function gameScenes(): Scene[] {
   const delveSeeded = (seed?: number) => table(['Kalguur'], { mode: 'delve' }, { host: null, seed }).start();
   const delveAlone = () => delveSeeded();
   const delveTogether = (v: Values) => table(seated(v, 3), { mode: 'delve' }).start();
+  // The team's cards: finds among them as set, and Doryani's vote.
+  const togetherCards = (v: Values) => {
+    const t = delveTogether(v);
+    const [vein, , flare] = t.s.offered;
+    const on = v.finds ?? 'none';
+    t.s.delve!.finds = [
+      ...(on === 'both' || on === 'vein' ? [{ category: vein, kind: 'azurite' as const }] : []),
+      ...(on === 'both' || on === 'flare' ? [{ category: flare, kind: 'flare' as const }] : []),
+    ];
+    if (v.held) t.s.delve!.inventory = { [pid('Doryani')]: { wards: 0, flares: 0, dynamite: 1 } };
+    if (v.idle) t.s.delve!.missed = { [pid('Una of the Vaal')]: DELVE_IDLE_ROUNDS };
+    return v.voted === false ? t : t.act({ type: 'vote', category: t.s.offered[1] }, 'Doryani');
+  };
   const turnsSeats = [guest('Doryani'), host('Kalguur'), WATCHER];
   // Una of the Vaal is in every take-turns scene's moves; the race's answer Doryani's and hers.
   const many = { controls: [players(3, 3)] };
@@ -206,6 +254,17 @@ export function gameScenes(): Scene[] {
     ),
     scene('turns-late', 'Take turns', 'Late in a game: scores near the target', turnsSeats, (v) => turns(v).playTo((s) => s.round >= 7 && s.phase === 'choosing', (name, round) => name !== 'Una of the Vaal' || round % 2 === 0), many),
     scene('turns-offline', 'Take turns', 'Una of the Vaal went offline', turnsSeats, (v) => turns(v).act({ type: 'connection', playerId: pid('Una of the Vaal'), connected: false }, null), many),
+    // The host's kick on the scoreboard: the first click arms it (the entry asks, in the wrong answer's colours, for
+    // KICK_ARMED_MS), the second removes them, their entry fading as the others close up. Here the room takes the second.
+    {
+      ...scene('turns-kick', 'Take turns', 'The host removing a player: asked, then gone', [host('Kalguur')], turns, many),
+      build: (v = {}) => {
+        const t = turns(v);
+        const shown = t.s;
+        t.act({ type: 'remove', playerId: pid('Doryani') });
+        return { state: shown, act: t.room, at: t.clock.now, steps: [{ wait: 700 }, { click: '.kick-at .kick' }, { wait: 1600 }, { then: t.s, at: t.clock.now }] } satisfies Built;
+      },
+    },
     scene(
       'turns-mirrored',
       'Take turns',
@@ -260,23 +319,32 @@ export function gameScenes(): Scene[] {
     }),
     // Three tied; Una of the Vaal missed while the others scored, and the next round says so.
     // Long names: on an upright phone the three share the intro's row, each name cut short only there.
-    scene(
-      'deathmatch-out',
-      'Deathmatch',
-      'Three in, one knocked out',
-      [host('Kalguur'), guest('Doryani'), WATCHER],
-      () =>
-        table(['Kalguur', 'Doryani', 'Una of the Vaal'], { targetScore: 1 })
+    {
+      ...scene('deathmatch-out', 'Deathmatch', 'Three in, one knocked out', [host('Kalguur'), guest('Doryani'), WATCHER], () => table(['Kalguur'])),
+      controls: [{ kind: 'toggle', key: 'live', label: 'Knocked out as it happens', default: false }],
+      states: [
+        { label: 'Three in, one knocked out', values: {} },
+        { label: 'Long names', values: { names: 'long' } },
+        // The round's last answer shown, then the next round: Una's entry set back on the bench as it starts.
+        { label: 'Knocked out as it happens: the bench', values: { live: true } },
+      ],
+      build: (v = {}) => {
+        const t = table(['Kalguur', 'Doryani', 'Una of the Vaal'], { targetScore: 1 })
           .start()
-          .playTo((s) => !!s.deathmatch)
-          .playTo((s) => !!s.deathmatch?.eliminated.length && s.phase === 'choosing', (name) => name !== 'Una of the Vaal'),
-      {
-        states: [
-          { label: 'Three in, one knocked out', values: {} },
-          { label: 'Long names', values: { names: 'long' } },
-        ],
+          .playTo((s) => !!s.deathmatch);
+        const una = pid('Una of the Vaal');
+        let last = { state: t.s, at: t.clock.now };
+        t.playTo(
+          (s) => {
+            if (s.deathmatch?.alive.includes(una)) last = { state: s, at: t.clock.now };
+            return !!s.deathmatch?.eliminated.length && s.phase === 'choosing';
+          },
+          (name) => name !== 'Una of the Vaal',
+        );
+        if (!v.live) return { state: t.s, act: t.room, at: t.clock.now } satisfies Built;
+        return { state: last.state, act: t.room, at: last.at, steps: [{ wait: 1500 }, { then: t.s, at: t.clock.now }] } satisfies Built;
       },
-    ),
+    },
     // A long name (20 characters, MAX_NAME): alone, it has the scoreboard's whole row, whole on a phone upright or on its side.
     scene('delve-cards', 'Delve alone', 'The cards dealt', [ALONE], delveAlone, {
       states: [
@@ -373,23 +441,31 @@ export function gameScenes(): Scene[] {
       },
     },
     {
-      ...scene('delve-blow', 'Delve alone', 'Played on from a question: dynamite going off, a miss, or a ward taking it', [ALONE], delveAlone),
-      controls: [BLOWS],
+      ...scene('delve-blow', 'Delve alone', 'Played on from a question: dynamite going off, a flare burning, a miss, or a ward taking it', [ALONE], delveAlone),
+      // (Two lives: a life lost on the first depth, so a miss leaves the last, its deeper red coming in after the drain.)
+      controls: [BLOWS, { kind: 'range', key: 'lives', label: 'Lives', min: 2, max: 3, default: 3 }],
       states: [
         { label: 'Dynamite goes off', values: {} },
+        { label: 'The last dynamite goes off: the flare beside it closes up', values: { blow: 'blast-last' } },
+        { label: 'A flare burns: its count fades back in', values: { blow: 'flare' } },
+        { label: 'The last flare burns: the dynamite beside it closes up', values: { blow: 'flare-last' } },
         { label: 'A miss costs a life', values: { blow: 'miss' } },
+        { label: 'A miss on two lives: the last one’s deeper red', values: { blow: 'miss', lives: 2 } },
         { label: 'A ward takes the miss', values: { blow: 'ward' } },
       ],
       build: (v = {}) => {
-        // Kalguur holds what the blow takes: a stick of dynamite, or a ward.
+        // Kalguur holds what the blow takes (dynamite, a flare, a ward), and what stays beside it.
         const blow = String(v.blow ?? 'blast');
         const t = delveAlone();
+        if (Number(v.lives ?? 3) < 3) t.pick().answer(null, false).wait(1000).next();
         const me = pid('Kalguur');
-        t.s = { ...t.s, delve: { ...t.s.delve!, inventory: { [me]: { wards: blow === 'ward' ? 1 : 0, flares: 0, dynamite: blow === 'blast' ? 1 : 0 } } } };
+        t.s = { ...t.s, delve: { ...t.s.delve!, inventory: { [me]: { ...(HELD[blow] ?? HELD.blast) } } } };
         t.pick();
         const shown = t.s;
         const at = t.clock.now + INTO;
-        if (blow === 'blast') t.wait(INTO + BLOW_AFTER).act({ type: 'blast', askedAt: t.q.askedAt }, null);
+        if (blow === 'blast' || blow === 'blast-last') t.wait(INTO + BLOW_AFTER).act({ type: 'blast', askedAt: t.q.askedAt }, null);
+        // The clock hits 0 with a flare in hand: it burns, and the clock runs on.
+        else if (blow === 'flare' || blow === 'flare-last') t.wait(t.q.deadline! - t.clock.now).act({ type: 'flare', askedAt: t.q.askedAt }, null);
         else t.answer(null, false, INTO + BLOW_AFTER);
         return { state: shown, act: t.room, at, steps: [{ wait: BLOW_AFTER }, { then: t.s, at: t.clock.now }] } satisfies Built;
       },
@@ -440,52 +516,47 @@ export function gameScenes(): Scene[] {
     // unused on them. And the vote before anyone has voted (its rule's
     // sentence in the clock's place) or with Una idle (a line of its own
     // under the wait): the most that line has to fit beside the cards.
-    scene(
-      'delve-together-cards',
-      'Delve together',
-      'The cards dealt, Doryani has voted',
-      [host('Kalguur'), guest('Doryani'), WATCHER],
-      (v) => {
-        const t = delveTogether(v);
-        const [vein, , flare] = t.s.offered;
-        const on = v.finds ?? 'none';
-        t.s.delve!.finds = [
-          ...(on === 'both' || on === 'vein' ? [{ category: vein, kind: 'azurite' as const }] : []),
-          ...(on === 'both' || on === 'flare' ? [{ category: flare, kind: 'flare' as const }] : []),
-        ];
-        if (v.held) t.s.delve!.inventory = { [pid('Doryani')]: { wards: 0, flares: 0, dynamite: 1 } };
-        if (v.idle) t.s.delve!.missed = { [pid('Una of the Vaal')]: DELVE_IDLE_ROUNDS };
-        return v.voted === false ? t : t.act({ type: 'vote', category: t.s.offered[1] }, 'Doryani');
-      },
-      {
-        controls: [
-          players(2, 3),
-          {
-            kind: 'choice',
-            key: 'finds',
-            label: 'Finds',
-            default: 'none',
-            options: [
-              { value: 'none', label: 'None' },
-              { value: 'both', label: 'A vein and a flare' },
-              { value: 'vein', label: 'A vein, first card' },
-              { value: 'flare', label: 'A flare, last card' },
-            ],
-          },
-          { kind: 'toggle', key: 'held', label: 'Dynamite in a pack', default: false },
-          { kind: 'toggle', key: 'voted', label: 'Doryani has voted', default: true },
-          { kind: 'toggle', key: 'idle', label: 'Una idle', default: false },
-        ],
-        states: [
-          { label: 'The cards dealt, Doryani has voted', values: {} },
-          { label: 'An Azurite Vein and a Flare Cache', values: { finds: 'both' } },
-          { label: 'Both, with dynamite in a pack', values: { finds: 'both', held: true } },
-          { label: 'Before anyone votes, two finds held', values: { finds: 'both', held: true, voted: false } },
-          { label: 'Una idle, two finds held', values: { finds: 'both', held: true, idle: true } },
-          { label: 'An Azurite Vein alone, on the first card', values: { finds: 'vein' } },
-          { label: 'A Flare Cache alone, on the last card', values: { finds: 'flare' } },
-        ],
-      },
+    withClosing(
+      scene(
+        'delve-together-cards',
+        'Delve together',
+        'The cards dealt, Doryani has voted',
+        [host('Kalguur'), guest('Doryani'), WATCHER],
+        togetherCards,
+        {
+          controls: [
+            players(2, 3),
+            {
+              kind: 'choice',
+              key: 'finds',
+              label: 'Finds',
+              default: 'none',
+              options: [
+                { value: 'none', label: 'None' },
+                { value: 'both', label: 'A vein and a flare' },
+                { value: 'vein', label: 'A vein, first card' },
+                { value: 'flare', label: 'A flare, last card' },
+              ],
+            },
+            { kind: 'toggle', key: 'held', label: 'Dynamite in a pack', default: false },
+            { kind: 'toggle', key: 'voted', label: 'Doryani has voted', default: true },
+            { kind: 'toggle', key: 'idle', label: 'Una idle', default: false },
+            { kind: 'toggle', key: 'closing', label: 'The vote’s clock running out', default: false },
+          ],
+          states: [
+            { label: 'The cards dealt, Doryani has voted', values: {} },
+            { label: 'An Azurite Vein and a Flare Cache', values: { finds: 'both' } },
+            { label: 'Both, with dynamite in a pack', values: { finds: 'both', held: true } },
+            { label: 'Before anyone votes, two finds held', values: { finds: 'both', held: true, voted: false } },
+            { label: 'Una idle, two finds held', values: { finds: 'both', held: true, idle: true } },
+            { label: 'An Azurite Vein alone, on the first card', values: { finds: 'vein' } },
+            { label: 'A Flare Cache alone, on the last card', values: { finds: 'flare' } },
+            // Its last three seconds ticking down, then the draw.
+            { label: 'The vote’s last 3 seconds, then the draw', values: { closing: true } },
+          ],
+        },
+      ),
+      togetherCards,
     ),
     scene(
       'delve-together-dig',
@@ -515,6 +586,40 @@ export function gameScenes(): Scene[] {
       },
       { controls: [players(2, 3)] },
     ),
+    // Una perishes on a question the team then clears: at its answer the revive heart grows in on her entry for
+    // those with lives to spare. Kalguur, on two after a miss, can bring her back: his second life pours out
+    // (the last one's deeper red coming in after it), hers fills, and the heart shrinks away.
+    {
+      ...scene('delve-together-fallen', 'Delve together', 'Una perishes: the revive heart', [host('Kalguur'), guest('Doryani'), WATCHER], delveTogether),
+      controls: [players(3, 3), { kind: 'toggle', key: 'gives', label: 'Kalguur brings her back', default: false }],
+      states: [
+        { label: 'Una perishes: the revive heart', values: {} },
+        { label: 'Kalguur brings her back with his second life', values: { gives: true } },
+      ],
+      build: (v = {}) => {
+        const t = delveTogether(v);
+        const una = 'Una of the Vaal';
+        for (let depth = 1; depth <= 3; depth++) {
+          for (const p of t.s.players) if (livesOf(t.s, p.id) > 0) t.act({ type: 'vote', category: t.s.offered[0] }, p.name);
+          if (t.s.phase === 'choosing') t.act({ type: 'expire' }, null);
+          t.answer(una, false);
+          // (Another wrong pick than hers: a pick struck out can't be made again.)
+          const struck = new Set((t.q.struck ?? []).map((x) => x.index));
+          if (depth === 1) t.answer('Kalguur', t.q.options.findIndex((o, i) => o !== t.q.itemId && !struck.has(i)));
+          if (depth < 3) t.answer('Doryani', true).wait(1000).next();
+        }
+        // Her last life gone on the question, which Doryani then clears.
+        const fallen = t.s;
+        const at = t.clock.now;
+        t.answer('Doryani', true, 1200);
+        const steps: Step[] = [{ wait: 1200 }, { then: t.s, at: t.clock.now }];
+        if (v.gives) {
+          t.wait(2600).act({ type: 'revive', target: pid(una) }, 'Kalguur');
+          steps.push({ wait: 2600 }, { then: t.s, at: t.clock.now });
+        }
+        return { state: fallen, act: t.room, at, steps } satisfies Built;
+      },
+    },
     scene(
       'delve-together-cleared',
       'Delve together',

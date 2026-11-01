@@ -3,14 +3,16 @@
 // leaving one (the owner's with Close room too; the header's
 // leave, or the browser's back, which closes what's open first, the codex's
 // item card too), news arriving mid-question (where the stack stands on a
-// phone, either way up), and coming back from a crash (Root.svelte: a guest
+// phone, either way up), a guest's link to the host lost, an item's window
+// as another item opens in it or the game goes on under it, and coming back
+// from a crash (Root.svelte: a guest
 // leaves the room, a second crash soon after leaves any game, and one with
 // no game left stops the page).
 
 import { pid, player } from '../build/people.ts';
 import { Table } from '../build/play.ts';
 import { endScenes } from './over.ts';
-import type { Settings } from '../../lib/game.ts';
+import { PRESETS, type Settings } from '../../lib/game.ts';
 import { ACHIEVEMENTS } from '../../lib/achievements.ts';
 import { METALS, TIERS, type Tier } from '../../lib/metals.ts';
 import type { Built, Scene, Seat, Step } from '../scene.ts';
@@ -23,6 +25,32 @@ const inGame = (steps: Step[], answered = false, owner?: string): Built => {
   if (owner) t.s.owner = { id: pid(owner) };
   // (Turned out, it lands on the start page: its room list finds nothing.)
   return { state: t.s, act: t.room, at: t.clock.now + 3000, steps, rooms: [] };
+};
+/** A question asked in pictures, Doryani's pick wrong: the reveal names two, each opening its item's window. */
+const pictured = (steps: Step[]): Built => {
+  const t = new Table(THREE, { difficulty: 'custom', custom: { ...PRESETS.merciless, artChance: 1 } }).start().pick();
+  t.answer(t.turn, false);
+  return { state: t.s, act: t.room, at: t.clock.now, steps: [{ wait: 1200 }, ...steps], rooms: [] };
+};
+/**
+ * A run alone, an item's window opened at an answer, then the run going on
+ * under it: the next depth's cards, its question and its answer, the bar
+ * pinned at each reveal on a phone going and coming back.
+ */
+const acrossReveal = (): Built => {
+  const t = new Table(['Kalguur'], { mode: 'delve' }, { host: null }).start().pick();
+  t.answer(null, true);
+  const shown = t.s;
+  const at = t.clock.now;
+  const then: Step[] = [];
+  const on = (wait: number) => then.push({ wait }, { then: t.s, at: t.clock.now });
+  t.wait(3000).next();
+  on(2200);
+  t.pick();
+  on(1600);
+  t.answer(null, true);
+  on(2000);
+  return { state: shown, act: t.room, at, steps: [{ wait: 1200 }, { click: '.details, .tile.inspect' }, ...then] };
 };
 /** The lobby, its host editing the custom difficulty (the edit button on Custom). */
 const CUSTOM: Settings['custom'] = { options: 6, similarNames: 1, fakes: 2, artChance: 0.5, veil: 'slow', grayscale: 'art', mirror: 0.3, lockout: 3 };
@@ -70,6 +98,19 @@ export function overlayScenes(): Scene[] {
         { toast: 'Too quick to count: the question had only just reached you. Answer again.', kind: 'error' },
       ]),
     ),
+    // A guest's link to the host lost under a notice already up: its row pinned at the head of the stack (the notice
+    // moving over for it), its words and seal cross-fading as reconnecting is given up, then gone as the link comes back.
+    overlay('lost', 'A guest’s link to the host lost: reconnecting, given up, back', [doryani], () =>
+      inGame([
+        { toast: 'Brea', opts: { title: 'Spectator joined', who: { name: 'Brea' } } },
+        { wait: 1200 },
+        { link: 'lost' },
+        { wait: 2600 },
+        { link: 'gaveUp' },
+        { wait: 2600 },
+        { link: 'back' },
+      ]),
+    ),
     // Achievements earned mid-question, worded as lib/achievementToasts.ts words them: one alone, and three as one notice under the first's seal, all of the metal picked.
     {
       ...overlay('achievement', 'Achievements earned during a question', [doryani], () => achievementNotices(3)),
@@ -86,6 +127,10 @@ export function overlayScenes(): Scene[] {
     overlay('back-item', "Back with an item's window open: it closes, the game stays", [kalguur], () => inGame([{ click: 'button.details' }, { wait: 800 }, { back: true }], true)),
     overlay('back-codex-item', "Back in the codex with an item open: it closes, the codex stays as it was", [{ mode: 'none', me: null }], () => codexItem([{ back: true }])),
     overlay('back-end-item', "Back on the end screen with an item open: it closes, the room stays", [{ mode: 'local', me: null }], () => endItem([{ back: true }])),
+    // The item's window open, another item opened in it: its name and tooltip cross-fade, and its top glides with the roll as the height changes.
+    overlay('item-switch', "An item's window: another item opened in it", [kalguur], () => pictured([{ click: '.tile.inspect' }, { wait: 1800 }, { click: '.tile.inspect ~ .tile.inspect' }])),
+    // On a phone the window keeps above the bar pinned at a reveal (Next): open across the next question and its answer, it glides as the bar goes and comes back.
+    overlay('item-dock', "An item's window open as the game goes on: the dock changing under it (at a phone's size)", [{ mode: 'local', me: null }], acrossReveal),
     overlay('crash-host', 'The host crashed once: back on its feet', [kalguur], () => inGame([{ crash: 1 }])),
     overlay('crash-guest', 'A guest crashed once: out of the room', [doryani], () => inGame([{ crash: 1 }])),
     overlay('crash-twice', 'The host crashed twice: out of the game', [kalguur], () => inGame([{ crash: 2 }])),

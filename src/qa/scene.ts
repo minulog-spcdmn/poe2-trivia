@@ -56,12 +56,20 @@ export type Step =
   | { toast: string; kind?: ToastKind; opts?: ToastOptions }
   /** The browser's back (Android's button, an iPhone's swipe), on the frame's history of its own (lib/backGuard.ts). */
   | { back: true }
+  /** A guest's link to the host (the session's status and gaveUp): `lost`, reconnecting; `gaveUp`, given up on; `back`, there again. */
+  | { link: 'lost' | 'gaveUp' | 'back' }
+  /** Achievements judged a moment late (ids, lib/achievements.ts), earned in the game on show (the session's earned). */
+  | { earn: string[] }
+  /** Answers this device's codex takes in late (the game's last ones, written once the page is calm): their items met for the first time then. */
+  | { logged: Answer[] }
   /**
    * The room moves on to `state` (the scene's game played on: dynamite going
    * off, an answer given), its clock standing still at `at` (host clock, ms),
    * as the host would send it: to see what happens as it does.
    */
-  | { then: GameState; at?: number };
+  | { then: GameState; at?: number }
+  /** The room's clock moves on to `clock` (host clock, ms), standing still there, the room as it is: a countdown ticking on. */
+  | { clock: number };
 
 /** Everything a seat's device holds for the scene, beyond the room's state. */
 export interface Built {

@@ -205,6 +205,29 @@ export async function boot(asked: URLSearchParams) {
   };
   await pictures(state);
 
+  const slot = asked.get('frame') ?? '';
+  const tell = (m: FrameMessage) => parent.postMessage(m, deskOrigin(asked));
+  handOnKeys(tell);
+  addEventListener('pagehide', () => {
+    // Lets go of its WebGL at once as it goes, so the next frame's shaders don't wait on this one's.
+    for (const gl of gls) gl.getExtension('WEBGL_lose_context')?.loseContext();
+    clear();
+  });
+  // Shown: the desk takes its Loading away now, so what the steps do plays in view (and Freeze or S reach it meanwhile).
+  tell({ qa: 'ready', slot });
+
+  // Checked once at rest (once the steps are done), and again whenever what it shows changes (a click in it, a toast).
+  outline(asked.get('o') !== '0');
+  addEventListener('message', (e) => {
+    if (e.origin !== deskOrigin(asked) || !isDeskMessage(e.data)) return;
+    if (e.data.qa === 'outlines') outline(e.data.on);
+    else if (e.data.qa === 'freeze') freeze(e.data.on);
+    else if (e.data.qa === 'css') {
+      const on = e.data.on;
+      void import('../../lib/backdrop.ts').then((b) => b.leaveUiToCss(on));
+    }
+  });
+
   // What the scene does once it shows.
   for (const step of built.steps ?? []) {
     if ('wait' in step) await new Promise((r) => setTimeout(r, step.wait));
@@ -246,32 +269,31 @@ export async function boot(asked: URLSearchParams) {
       }
     }
     else if ('toast' in step) toasts.hold(toasts.show(step.toast, step.kind, step.opts));
+    else if ('clock' in step) {
+      const now = step.clock;
+      session.clockOffset = now - Date.now();
+      session.hostNow = () => now;
+    } else if ('link' in step) {
+      // (With no peer the session never reconnects by itself; Retry counts its tries down to given up, as it would.)
+      session.status = step.link === 'back' ? 'ready' : 'lost';
+      session.gaveUp = step.link === 'gaveUp';
+    } else if ('earn' in step) {
+      const game = session.state?.startedAt;
+      if (game !== undefined) session.earned = { game, ids: [...new Set([...(session.earned?.game === game ? session.earned.ids : []), ...step.earn])] };
+    } else if ('logged' in step) {
+      // Met for the first time as answered, whatever the scene had met before.
+      for (const a of step.logged) {
+        c.log.push(a);
+        delete c.items[a.id];
+        meet(a.id, a.t, a.t);
+      }
+      storage.writeKey(codex.CODEX_KEY, codex.serializeCodex(c));
+    }
     // (In a tree before the back guard there's no Back of the game's to show: the tab's own history is the desk's.)
     else if ('back' in step) steps?.back();
     else (await found(step.click))?.click();
   }
 
-  const slot = asked.get('frame') ?? '';
-  const tell = (m: FrameMessage) => parent.postMessage(m, deskOrigin(asked));
-  handOnKeys(tell);
-  addEventListener('pagehide', () => {
-    // Lets go of its WebGL at once as it goes, so the next frame's shaders don't wait on this one's.
-    for (const gl of gls) gl.getExtension('WEBGL_lose_context')?.loseContext();
-    clear();
-  });
-  tell({ qa: 'ready', slot });
-
-  // Checked once at rest, and again whenever what it shows changes (a click in it, a toast).
-  outline(asked.get('o') !== '0');
-  addEventListener('message', (e) => {
-    if (e.origin !== deskOrigin(asked) || !isDeskMessage(e.data)) return;
-    if (e.data.qa === 'outlines') outline(e.data.on);
-    else if (e.data.qa === 'freeze') freeze(e.data.on);
-    else if (e.data.qa === 'css') {
-      const on = e.data.on;
-      void import('../../lib/backdrop.ts').then((b) => b.leaveUiToCss(on));
-    }
-  });
   const run = async () => {
     const settled = await settle();
     const problems = check(heard);
