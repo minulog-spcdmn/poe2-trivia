@@ -9,6 +9,8 @@
 // Chrome trace into .pc/runs/<label>.json, one event per line, for read.py.
 // Its window opens behind the others and gives the keyboard back
 // (behind.ps1), drawing every frame all the same; FRONT=1 keeps it in front.
+// It's muted: the sound still plays in the page, so it costs what a
+// player's does, but never reaches the speakers.
 // It slows every other session on this machine, so one run at a time, and
 // only for what nothing else settles.
 //
@@ -64,7 +66,7 @@ function behind() {
 export async function open() {
   mkdirSync(runs, { recursive: true });
   await behind();
-  const ctx = await chromium.launchPersistentContext(join(work, 'profile'), { channel: 'chrome', headless: false, viewport: null, args: ['--start-maximized'] });
+  const ctx = await chromium.launchPersistentContext(join(work, 'profile'), { channel: 'chrome', headless: false, viewport: null, args: ['--start-maximized', '--mute-audio'] });
   await ctx.addInitScript(RECORD);
   if (process.env.INIT) await ctx.addInitScript(process.env.INIT);
   if (process.env.CSS) await ctx.addInitScript(`document.addEventListener('DOMContentLoaded', () => { const st = document.createElement('style'); st.textContent = ${JSON.stringify(process.env.CSS)}; document.head.append(st); });`);
