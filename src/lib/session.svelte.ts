@@ -96,7 +96,7 @@ import type { PlayerClass } from './classSigils';
 import { helloRefusal, noPrivate, parseSaved, privateFrom, rememberSecret, soloHotSeat, takesState, tooFast, type HostPrivate, type Saved } from './sessionRules';
 import { sawLine, START_LINES } from './delveStart';
 import { seenLines } from './delveStartSeen';
-import { heldMask, keepRunFossils, loadFossils } from './fossilStore';
+import { completedBy, heldMask, keepRunFossils, loadFossils } from './fossilStore';
 import { fossilMask, heldFor } from './fossils';
 import { keepAwake } from './wakeLock';
 import { AWAY_AFTER_MS, goneFromEnd, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
@@ -2927,7 +2927,8 @@ class Session {
     const given = runFossils(next);
     if (!given.length) return;
     if (prev && prev.delve?.startedAt === next.delve?.startedAt && runFossils(prev).length === given.length) return;
-    keepRunFossils(given, this.myPlayerId, this.mode === 'local', isGroupRun(next));
+    const kept = keepRunFossils(given, this.myPlayerId, this.mode === 'local', isGroupRun(next));
+    if (counting && completedBy(kept)) countEvent('fossil/complete');
   }
 
   private gameCounts = new GameCounts();

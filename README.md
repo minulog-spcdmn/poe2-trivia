@@ -18,7 +18,8 @@ logins (see "Relay").
 - **Delve** (alone or together): no settings, the same rules for everyone. Each
   question cleared goes one depth deeper, every depth a little harder, with
   three lives, finds that give items (wards, flares, dynamite), fossils to
-  collect (25 of PoE2's, a card's question answered right) and a new zone
+  collect (25 of PoE2's, one a run at most, drawn from those you lack when a
+  fossil card's question is answered right) and a new zone
   every ten depths. How deep can you go?
 - **Difficulty:** Cruel (4 options), Merciless (6, the default), Eternal (8),
   or Custom, where the host sets each knob.

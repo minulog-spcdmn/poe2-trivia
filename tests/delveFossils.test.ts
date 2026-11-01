@@ -22,7 +22,7 @@ import {
   type FossilTaker,
   type FossilTier,
 } from '../src/lib/fossils.ts';
-import { FOSSILS_KEY, FOSSILS_VERSION, emptyFossils, heldMask, keepFossils, keepRunFossils, loadFossils, mergeFossils, parseFossils, resetFossils, serializeFossils, type FossilStore } from '../src/lib/fossilStore.ts';
+import { FOSSILS_KEY, FOSSILS_VERSION, completedBy, emptyFossils, heldMask, keepFossils, keepRunFossils, loadFossils, mergeFossils, parseFossils, resetFossils, serializeFossils, type FossilStore } from '../src/lib/fossilStore.ts';
 import { DELVE_RULESET, findOn, fossilOffer, fossilOn, fossilsOf, isWayOut, itemsWorkOn, livesOf, runFossils, shownDepth } from '../src/lib/delve.ts';
 import type { DelveRun } from '../src/lib/delveRecord.ts';
 import type { GameState } from '../src/lib/game.ts';
@@ -402,6 +402,23 @@ test('counts: a fossil taken by tier, and a fossil card passed up for a find', (
   const before = p.s;
   p.pick(p.s.offered[0]);
   assert.deepEqual(fossilEvents(before, p.s), ['fossil/passed']);
+  // Seen: once an offer, as it is dealt, not again as the vote goes on.
+  const seen = run(30, { held: fossilMask(['scorched']) });
+  const plain = seen.s;
+  seen.plant('common');
+  assert.deepEqual(fossilEvents({ ...plain, phase: 'reveal' }, seen.s), ['fossil/seen']);
+  assert.deepEqual(fossilEvents(seen.s, { ...seen.s, version: seen.s.version + 1 }), [], 'once');
+  // Missed: a fossil card's question answered wrong; never an ordinary one's.
+  const cat2 = seen.s.delve!.fossil!.category;
+  seen.pick(cat2);
+  const q = seen.s;
+  seen.answer(false);
+  assert.deepEqual(fossilEvents(q, seen.s), ['fossil/missed']);
+  const plainMiss = run(30, { held: fossilMask(['scorched']) });
+  plainMiss.pick(plainMiss.s.offered.find((c) => !findOn(plainMiss.s, c) && !isWayOut(c) && plainMiss.s.delve!.fossil?.category !== c)!);
+  const q2 = plainMiss.s;
+  plainMiss.answer(false);
+  assert.deepEqual(fossilEvents(q2, plainMiss.s), []);
   p.answer(true);
   assert.deepEqual(fossilEvents(p.s, p.s), []);
 });
@@ -572,4 +589,16 @@ test('in play: the first offer at shown 25 holds the Azurite Vein and, for one w
     assert.ok(findOn(h.s, h.s.offered.find((c) => findOn(h.s, c) === 'azurite') ?? '') === 'azurite', `the vein, seed ${seed}`);
     assert.equal(fossilOffer(h.s)?.tier, 'rare', `the rare beside it, seed ${seed}`);
   }
+});
+
+test('the set complete: said once, as the last of the 25 is kept on this device', () => {
+  store.clear();
+  const all24 = FOSSIL_IDS.slice(0, 24);
+  for (const id of all24) keepFossils([id], 30, false, 1000);
+  assert.equal(completedBy([]), false);
+  assert.equal(completedBy(['jagged']), false, '24 of 25');
+  const last = keepFossils([FOSSIL_IDS[24]], 40, false, 2000);
+  assert.ok(completedBy(last));
+  assert.equal(completedBy(keepFossils([FOSSIL_IDS[24]], 40, false, 3000)), false, 'not again');
+  store.clear();
 });

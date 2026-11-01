@@ -656,16 +656,22 @@ export class Steps {
 }
 
 /**
- * Delve's fossils (fossils.ts), on the device that runs the game: one taken
- * ("fossil/common", "fossil/rare": a right answer that gave it), and a fossil
- * card passed up for a find on the same offer ("fossil/passed": the card
- * picked, or drawn by the team's vote, was a find's). Whether the trade
- * the fossils are for is ever made.
+ * Delve's fossils (fossils.ts), on the device that runs the game: a fossil
+ * card dealt ("fossil/seen", once an offer), one taken ("fossil/common",
+ * "fossil/rare": a right answer that gave one, once however many took one),
+ * a fossil card's question missed ("fossil/missed": answered wrong or run
+ * out of time), and a fossil card passed up for a find on the same offer
+ * ("fossil/passed": the card picked, or drawn by the team's vote, was a
+ * find's). Whether the trade the fossils are for is ever made, and how
+ * often a card taken is kept.
  */
 export function fossilEvents(prev: GameState | null, next: GameState): string[] {
   if (!prev?.delve || !next.delve) return [];
-  if (next.phase === 'reveal' && next.reveal?.fossil && (prev.phase !== 'reveal' || prev.question?.askedAt !== next.question?.askedAt))
-    return [`fossil/${next.reveal.fossil.tier}`];
+  if (next.phase === 'choosing' && fossilOffer(next) && (prev.phase !== 'choosing' || prev.round !== next.round || prev.offered.join() !== next.offered.join()))
+    return ['fossil/seen'];
+  const revealed = next.phase === 'reveal' && next.reveal && (prev.phase !== 'reveal' || prev.question?.askedAt !== next.question?.askedAt);
+  if (revealed && next.reveal!.fossil) return [`fossil/${next.reveal!.fossil.tier}`];
+  if (revealed && !next.reveal!.correct && next.question?.fossil) return ['fossil/missed'];
   if (prev.phase === 'choosing' && next.phase === 'question' && next.question?.find && fossilOffer(prev) && findOffers(prev).some((f) => f.category === next.question!.category))
     return ['fossil/passed'];
   return [];

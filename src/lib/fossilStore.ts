@@ -8,7 +8,7 @@
 // written over (keepAside.ts).
 
 import { clearAside, openStored } from './keepAside.ts';
-import { FOSSIL_IDS, fossilMask, isFossilId, type FossilId } from './fossils.ts';
+import { FOSSIL_COUNT, FOSSIL_IDS, fossilMask, isFossilId, type FossilId } from './fossils.ts';
 import type { RunFossil } from './game.ts';
 import { removeStored, storeKey, tryReadStored, writeStored } from './storage.ts';
 
@@ -67,6 +67,9 @@ export const heldMask = (s: FossilStore) => fossilMask(Object.keys(s.found).filt
 
 /** How many fossils `s` holds. */
 export const foundCount = (s: FossilStore) => Object.keys(s.found).length;
+
+/** Whether the fossils just kept (`kept`, new ones only, as keepFossils says) made the set whole: true once, as the last comes ("fossil/complete"). */
+export const completedBy = (kept: readonly FossilId[], now: FossilStore = loadFossils()) => kept.length > 0 && foundCount(now) >= FOSSIL_COUNT;
 
 /** The earlier of two finds of one fossil (on a tie, the first). */
 const earlier = (a: FoundFossil, b: FoundFossil) => (b.at < a.at ? b : a);
