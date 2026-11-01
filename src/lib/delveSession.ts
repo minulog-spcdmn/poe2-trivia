@@ -50,34 +50,20 @@ export const DRAIN_POLL_MS = 50;
 export const COOP_DRAW_MS = 2000;
 
 /**
- * A pick, alone or on a turn, in every mode: how long the cards hold, the
- * card taken lifting as the others give way, before the question takes
- * their place (Game.svelte, on every screen), and so how long after it was
- * asked its clock may start at the earliest, so the moment costs no answer
- * time (ms).
- */
-export const PICK_HOLD_MS = 350;
-
-/**
- * The earliest the clock of the question `next` asks may start (host
- * clock), when it was asked from the cards: COOP_DRAW_MS after it was asked
- * when the team's vote drew it (Delve together), PICK_HOLD_MS when a player
- * picked it from the cards on offer. A question asked again in its place
- * (its art failed) while the cards still hold keeps the hold it had
- * (`held`, for the question it replaces). Null for any other question (one
- * not from the cards, as a race's; resumed; re-asked on a question that had
- * none; or asked as dynamite blasted the last away).
+ * Delve together: the earliest the clock of the question `next` asks may
+ * start (host clock), when the team's vote just drew it: COOP_DRAW_MS after
+ * it was asked. A question asked again in its place (its art failed) while
+ * the draw still plays keeps the hold it had (`held`, for the question it
+ * replaces). Null for any other question (alone, resumed, re-asked on a
+ * question that had none, or asked as dynamite blasted the last away).
  */
 export function drawHoldUntil(prev: GameState | null, next: GameState, held: { qid: number; until: number } | null = null): number | null {
   const q = next.question;
-  if (!q || next.phase !== 'question' || !prev) return null;
-  if (prev.phase === 'choosing') {
-    if (next.delve && isGroupRun(next) && prev.delve) return q.askedAt + COOP_DRAW_MS;
-    return next.offered.includes(q.category) ? q.askedAt + PICK_HOLD_MS : null;
-  }
+  if (!next.delve || !q || next.phase !== 'question' || !isGroupRun(next) || !prev?.delve) return null;
+  if (prev.phase === 'choosing') return q.askedAt + COOP_DRAW_MS;
   const reasked =
     prev.phase === 'question' &&
-    prev.delve?.startedAt === next.delve?.startedAt &&
+    prev.delve.startedAt === next.delve.startedAt &&
     prev.turnCount === next.turnCount &&
     !!prev.question &&
     held?.qid === prev.question.askedAt &&
