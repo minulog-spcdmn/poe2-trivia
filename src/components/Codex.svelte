@@ -403,9 +403,6 @@
     achievements = loadAchievements();
     wins = loadWins();
     confirmReset = false;
-    // The blank plate comes in as a turned page does, on the collection's page (the others go with what they showed).
-    tab = 'items';
-    turned = rising = true;
   }
   /** The tabs going as it's erased: they close their room as they fade, the column's gap after them with it, so the page glides up. */
   function closeTabs(node: HTMLElement) {
@@ -603,16 +600,18 @@
   <header class="hero">
     <p class="kicker">Your collection</p>
     <h1>Codex</h1>
-    <!-- Made anew as a tab is turned, so it rises with the page it speaks for (the styles). -->
-    {#key tab}
-      <p class="tagline" class:turned>
-        {tab === 'delve'
-          ? 'Every run you have made, and what it cost you.'
-          : tab === 'feats'
-            ? 'What you have earned, and how close you are to the rest.'
-            : 'Every unique and lineage gem you have seen in a game, and how well you know it.'}
-      </p>
-    {/key}
+    <!-- A tab turned, the line cross-fades in place: it stands between the title and the tabs, which stay put. -->
+    <p class="tagline">
+      {#key tab}
+        <span in:fade={calm({ duration: 200 })} out:fade={calm({ duration: 200 })}>
+          {tab === 'delve'
+            ? 'Every run you have made, and what it cost you.'
+            : tab === 'feats'
+              ? 'What you have earned, and how close you are to the rest.'
+              : 'Every unique and lineage gem you have seen in a game, and how well you know it.'}
+        </span>
+      {/key}
+    </p>
   </header>
 
   {#if kept}
@@ -1001,10 +1000,6 @@
   .hero > :nth-child(3) {
     --n: 2;
   }
-  /* A tab turned: the new line rises with the page's first section. */
-  .hero > .tagline.turned {
-    --n: 0;
-  }
   .tabs {
     --n: 3;
   }
@@ -1114,6 +1109,11 @@
     margin: 0.6rem 0 0;
     font-style: italic;
     color: #b8ab95;
+    /* The line going and the one coming over each other as they cross-fade. */
+    display: grid;
+  }
+  .tagline > span {
+    grid-area: 1 / 1;
   }
 
   /* ---- the three pages ---- */
@@ -1401,7 +1401,7 @@
     transition:
       color 0.2s,
       background-color 0.2s,
-      box-shadow 0.2s;
+      box-shadow 0.08s;
   }
   .cat-name {
     display: flex;
