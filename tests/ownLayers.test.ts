@@ -7,14 +7,14 @@
 // element. The emblems' kindle and the way out's lamp each drew a sharp
 // card face again every frame (rule 7 in docs/category-cards.md); this
 // widens that rule to every component. What may animate so without a layer
-// of its own, and why, is src/qa/redraws.ts' PAINTED. The sweep's redraw
+// of its own, and why, is src/qa/painted.ts' PAINTED. The sweep's redraw
 // check (scripts/sweep.mjs --redraws) measures what this can only guess.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import postcss, { type Rule } from 'postcss';
-import { PAINTED } from '../src/qa/redraws.ts';
+import { PAINTED } from '../src/qa/painted.ts';
 
 const root = join(import.meta.dirname, '..');
 
@@ -106,7 +106,7 @@ test('what animates anything but its transform or opacity has a layer of its own
   assert.deepEqual(
     missing.map((f) => `${f.file}: @keyframes ${f.keyframes} animates ${f.props.join(', ')} on ${f.selector} (animation: ${f.value})`),
     [],
-    'Chrome draws the layer under each of these again on every frame it runs. Give the element will-change (transform, opacity or filter, whichever fits) so it has a layer of its own, or add it to PAINTED in src/qa/redraws.ts with what the redraw check measured (npm run sweep -- --redraws --only <scene>)',
+    'Chrome draws the layer under each of these again on every frame it runs. Give the element will-change (transform, opacity or filter, whichever fits) so it has a layer of its own, or add it to PAINTED in src/qa/painted.ts with what the redraw check measured (npm run sweep -- --redraws --only <scene>)',
   );
 });
 
