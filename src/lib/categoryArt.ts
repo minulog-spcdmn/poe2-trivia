@@ -65,10 +65,12 @@ const COMPANIONS: Record<string, [group: string, name: string][]> = {
   ],
 };
 // Gem art comes as square tiles on cloth, so lineage gems use a cut-out of
-// Oisín's Oath (public/icons/, background removed with rembg, given the same
-// soft drop shadow as the poe2db item art, and padded so it sits a little
-// smaller).
-const GEM_ICON = 'icons/lineage-gems.webp';
+// Oisín's Oath (public/icons/, scripts/cut-gem-icon.py: from its upscaled
+// art at the same 4x as other one-cell items, with the soft drop shadow the
+// poe2db item art has), with a 128 px copy as the others have. The card
+// fits the brooch alone (lib/iconFit); ICON_FIT's k sets its size there.
+const GEM_ICON = 'icons/lineage-gems.avif';
+const GEM_GLYPH = 'icons/128/lineage-gems.avif';
 
 /** An item of another kind a category names, shown behind its icon: the kind (its group) and the item's picture. */
 export type CompanionArt = { kind: string; icon: string };
@@ -86,7 +88,7 @@ export function categoryArt(byCategory: ReadonlyMap<string, readonly Item[]>): M
   const out = new Map<string, CategoryArt>();
   for (const [cat, list] of byCategory) {
     if (list[0].kind === 'gem') {
-      out.set(cat, { icon: GEM_ICON, glyph: GEM_ICON, companions: [], tweak: tweak("Oisín's Oath") });
+      out.set(cat, { icon: GEM_ICON, glyph: GEM_GLYPH, companions: [], tweak: tweak("Oisín's Oath") });
       continue;
     }
     const named = list.find((it) => it.name === ICON_ITEM[cat]);
