@@ -152,7 +152,12 @@
         // (Reaching further over the clock's last seconds, but leaving room
         // for a miss, which swallows the scene, to surge much further.)
         el.style.setProperty('--reach', on ? reachOf(p).toFixed(3) : '0');
+        // (Each on a layer of its own while it shows: its opacity, written
+        // as the clock runs, had Chrome draw the CSS backdrop under it again,
+        // the whole screen, at each write.)
+        dim.style.willChange = on ? 'opacity' : '';
         dim.style.opacity = on ? (0.3 * p).toFixed(3) : '0';
+        lift.style.willChange = p < -0.001 ? 'opacity' : '';
         lift.style.opacity = p < -0.001 ? Math.min(1, -p / OVERSHOOT).toFixed(3) : '0';
         if (on) draw();
       }

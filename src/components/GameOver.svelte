@@ -866,7 +866,7 @@
           <div class="words">
             <h1 data-cursor="headline" bind:this={title} use:fit={headline} in:fly|global={calm({ y: 20, duration: 700, delay: 500 })}>
               <span class="shade" aria-hidden="true">{headline}</span>
-              <span class="gold">{headline}</span>
+              <span class="gold" class:gleams={!run}>{headline}</span>
             </h1>
             <p class="sub" data-cursor="sub" in:fly|global={calm({ y: 10, duration: 700, delay: 700 })}>{@render say(line)}</p>
           </div>
@@ -1305,7 +1305,13 @@
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
+  }
+  /* Not in a Delve, whose depth holds still. */
+  .gold.gleams {
     animation: gleam 5s ease-in-out 1.4s infinite;
+    /* On a layer of its own, so the gleam draws again only the headline,
+       not the page round it (280k px on a quarter of the frames). */
+    will-change: opacity;
   }
   @keyframes gleam {
     0% {
@@ -1325,7 +1331,6 @@
     background: linear-gradient(180deg, #ece4d4 8%, #a89f90 55%, #5f574b);
     -webkit-background-clip: text;
     background-clip: text;
-    animation: none;
   }
   .delve.bright .gold {
     background: linear-gradient(180deg, #fbecc6 8%, #c9a45c 55%, #7a5a26);
@@ -1709,6 +1714,8 @@
     background-size: 250% 100%;
     background-position: 160% 0;
     animation: gleam 5s ease-in-out 1.4s infinite;
+    /* A layer of its own, as the headline's (.gold). */
+    will-change: opacity;
   }
   @keyframes ignite {
     0% {

@@ -46,6 +46,8 @@
 
   /** A size to show at: a device's, or (fit) the desk's own window, the frame as large as the room there, at 1:1. */
   type Pick = SizeKey | 'fit';
+  /** What the address switches off (?off=webgl, lib/switchedOff.ts), in every frame shown, before and now: kept as the desk moves. */
+  const OFF = new URLSearchParams(location.search).get('off');
   /** The view the address asks for. */
   type Asked = { bench: Bench; scene: Scene | null; given: Record<string, string>; size: Pick | null; seat: number | 'all' | null; all: boolean; zoomed: boolean; outlines: boolean; compare: boolean };
   function fromAddress(): Asked | null {
@@ -275,6 +277,7 @@
     const base = (slot: string) => {
       const p = new URLSearchParams({ frame: slot, size });
       if (!outlines) p.set('o', '0');
+      if (OFF) p.set('off', OFF);
       return p;
     };
     if (piece) {
@@ -480,6 +483,7 @@
     if (zoomed) p.set('z', '1');
     if (!outlines) p.set('o', '0');
     if (comparing) p.set('cmp', '1');
+    if (OFF) p.set('off', OFF);
     const url = `${location.pathname}?${p}`;
     const step = moves !== lastMoves;
     lastMoves = moves;
