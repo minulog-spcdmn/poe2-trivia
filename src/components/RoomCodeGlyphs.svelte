@@ -28,34 +28,45 @@
 
   const press = new CopyPress(() => code, 'Room code copied');
 
-  /** Hiding or showing, each letter turns into its dot (or back) over EACH ms, the next STEP ms after the one before. */
-  const EACH = 220;
-  const STEP = 45;
-  const span = $derived(STEP * (code.length - 1) + EACH);
+  /** Hiding or showing, each letter turns into its dot (or back) over EACH ms, the next STEP ms after the one before, left to right. */
+  const EACH = 140;
+  const STEP = 25;
   /**
-   * How far the turning has gone (ms along it, 0 shown, span hidden), as one wave over the six: each letter's own part of it
-   * is worked out in CSS (--wave). A click mid-way turns the wave round where it is, at the same pace, so the letters
-   * already turning turn back first and none waits on a delay.
+   * How far each letter has turned (0 the letter, 1 its dot), in CSS as its --h. A click sends them left to right either way:
+   * one already turning turns back at once from where it is, and those at rest that have to change follow in order, STEP
+   * apart, so fast clicks never leave a letter waiting or stuck.
    */
-  const wave0 = untrack(() => (hidden ? STEP * (code.length - 1) + EACH : 0));
-  let wave = wave0;
+  const h0 = untrack(() => (hidden ? 1 : 0));
+  const turned: number[] = untrack(() => code.split('').map(() => h0));
   let frame = 0;
   $effect(() => {
-    const to = hidden ? span : 0;
+    const to = hidden ? 1 : 0;
     const el = glyphs;
     if (!el) return;
+    const boxes = [...el.querySelectorAll<HTMLElement>('.glyph')];
+    const show = () => boxes.forEach((b, i) => b.style.setProperty('--h', String(turned[i] ?? to)));
     cancelAnimationFrame(frame);
     if (motion.still || matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      wave = to;
-      el.style.setProperty('--wave', String(wave));
+      turned.fill(to);
+      show();
       return;
     }
-    let then = performance.now();
+    // When each starts: at once if mid-turn, else in its turn among those at rest that have to change.
+    let queued = 0;
+    const t0 = performance.now();
+    const starts = turned.map((h) => (h === to ? 0 : h > 0 && h < 1 ? t0 : t0 + STEP * queued++));
+    let then = t0;
     const step = (now: number) => {
-      wave += Math.sign(to - wave) * Math.min(Math.abs(to - wave), Math.max(0, now - then));
+      let moving = false;
+      turned.forEach((h, i) => {
+        if (h === to) return;
+        const dt = Math.max(0, now - Math.max(then, starts[i]));
+        turned[i] = to ? Math.min(1, h + dt / EACH) : Math.max(0, h - dt / EACH);
+        if (turned[i] !== to) moving = true;
+      });
       then = now;
-      el.style.setProperty('--wave', String(wave));
-      if (wave !== to) frame = requestAnimationFrame(step);
+      show();
+      if (moving) frame = requestAnimationFrame(step);
     };
     frame = requestAnimationFrame(step);
     return () => cancelAnimationFrame(frame);
@@ -71,10 +82,10 @@
 
 <svelte:document onselectionchange={selectionChanged} />
 
-<span class="glyphs" class:hidden class:selected={selected || press.lit} style:--wave={wave0} style:--each={EACH} style:--step={STEP} data-copy bind:this={glyphs} {@attach press.attach}>
+<span class="glyphs" class:hidden class:selected={selected || press.lit} data-copy bind:this={glyphs} {@attach press.attach}>
   {#each code.split('') as ch, i (i)}
     <!-- The letter in gold; its gleam's copy of it is drawn from data-ch (a pseudo-element), so a copy gives each letter once. -->
-    <span class="glyph" use:landing={i} use:backdropShadow={{ fill: 'linear' }} style:animation-delay="{delay + i * 80}ms" style:--i={i}
+    <span class="glyph" use:landing={i} use:backdropShadow={{ fill: 'linear' }} style:animation-delay="{delay + i * 80}ms" style:--i={i} style:--h={h0}
       ><span class="ch letter">{ch}</span><span class="ch dot" aria-hidden="true"></span><span class="gleam" aria-hidden="true" data-ch={hidden ? '•' : ch}></span></span
     >
   {/each}
@@ -237,11 +248,8 @@
     background-image: linear-gradient(180deg, #fffaf0 22%, #f4d79a 60%, #c99c4f 92%);
   }
   /* Each box holds its letter and its dot in one place: hidden, each letter in turn shrinks away as its dot swells in where it
-     stood, and back in the same order shown, as far along as the wave is (--wave, ms: each letter's part of it, --h, from 0
-     shown to 1 hidden). (The letter stays to be copied; the dot, drawn by CSS, never is.) */
-  .glyph {
-    --h: clamp(0, (var(--wave, 0) - var(--i) * var(--step)) / var(--each), 1);
-  }
+     stood, and back the same way, left to right, as far as each has turned (--h, from 0 shown to 1 hidden). (The letter
+     stays to be copied; the dot, drawn by CSS, never is.) */
   .ch.letter,
   .ch.dot {
     grid-area: 1 / 1;
