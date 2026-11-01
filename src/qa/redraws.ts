@@ -334,14 +334,15 @@ export const WEBGL_SCENES: { scene: string; why: string }[] = [
  * (lib/drawIn), so at 60 the two cost the same and only a fast screen
  * tells them apart.
  *
- * `slack`, from how far each moved in eight runs on CI, on virtual time
- * from before the page loads with its chance and date seeded: the pick,
- * the pointer and the plate within 0.8%, the dig within 2.3% of its
- * baseline, so a tenth. The deal, with WebGL, by whole card faces: its
- * faces' writes land a frame apart from run to run (frame 67 or 68), and
- * a face (927 × 1145) drawn once more or less is 4.4k px a 60th of a
- * second, so it read 59.9k to 72.6k; a quarter is two faces past the most
- * it read. The least of October's stutters cost its moment 2.8 times its
+ * `slack`, from how far each moved in twelve runs on CI, on virtual time
+ * from before the page loads with its chance and date seeded: the pick
+ * within 1%, the pointer and the plate the same every run, the dig within
+ * 2.3% of its baseline, so a tenth. The deal, with WebGL, by whole card
+ * faces: its faces' writes land a frame apart from run to run (frame 67
+ * or 68), and a face (927 × 1145) drawn once more or less is 4.4k px a
+ * 60th of a second, so it read 48.7k to 72.6k (the least on the run whose
+ * heading's font came in before the watch, not in it); a quarter is two
+ * faces past the most it read. The least of October's stutters cost its moment 2.8 times its
  * baseline (the plate's lines); the kindle, the deal's, 8.7 times.
  */
 export const MOMENTS = [
