@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { FLOOR, MARK, MOMENTS, PAGE_FLOOR, WEBGL_SCENES, atRest, layerName, overBaseline, pageAtRest, readTrace, redraws, slackOf, unread, withoutMark, type TraceEvent } from '../src/qa/redraws.ts';
+import { FLOOR, MARK, MOMENTS, PAGE_FLOOR, UNTIL_353, WEBGL_SCENES, atRest, layerName, overBaseline, pageAtRest, readTrace, redraws, slackOf, unread, without, withoutMark, type TraceEvent } from '../src/qa/redraws.ts';
 import { SCREENS } from '../src/qa/scene.ts';
 
 test('a layer is named by its element, Svelte’s classes left out', () => {
@@ -102,6 +102,21 @@ test('a trace that doesn’t read as one always does fails, and the mark is left
   assert.match(unread(redraws([])) ?? '', /the trace has nothing of the page’s renderer/, 'an empty trace');
   assert.match(unread(redraws([snapshot(20, 1, [])])) ?? '', /the trace has no tile drawn/, 'layer trees, but no raster tasks');
   assert.match(unread(redraws([raster(10, 1, '0xa'), snapshot(20, 1, [['0xa', 5, [0, 0, 100, 100]]])])) ?? '', /the trace has no tile of the mark/, 'tiles, but not the mark’s');
+});
+
+test('a moment leaves out only what an open issue says, and the pick only the dark’s arms and billows (#353)', () => {
+  const r = { layers: [{ name: 'span.arm', px: 30, again: 20 }, { name: 'div.dimmed', px: 7, again: 5 }], px: 37, again: 25 } as unknown as Parameters<typeof without>[0];
+  const left = without(r, UNTIL_353);
+  assert.deepEqual([left.layers.map((l) => l.name), left.px, left.again], [['div.dimmed'], 7, 5], 'what it leaves out, with what it drew');
+  for (const m of MOMENTS) if ('leaveOut' in m) assert.equal(m.key, 'pick', `${m.key} leaves layers out: only the pick may, till #353`);
+  const dark = readFileSync(new URL('../src/components/DarkTendrils.svelte', import.meta.url), 'utf8');
+  for (const name of UNTIL_353) assert.match(dark, new RegExp(`<${name.split('.')[0]}\\n\\s+class="${name.split('.')[1]}"`), `${name} is the dark’s`);
+  assert.deepEqual(UNTIL_353, ['span.arm', 'span.billow'], 'not its dimming nor its lift, on layers of their own while they show');
+});
+
+test('a page is traced once for nothing before its first watch', () => {
+  const sweep = readFileSync(new URL('../scripts/sweep.mjs', import.meta.url), 'utf8');
+  assert.match(sweep, /await drive\.settle\(\(\) => window\.__quiet\(\), 20000, 'Coming to rest'\);\n\s+await warmUp\(page, drive\);\n\s+await drive\.toSecond\(\);/, 'once it first comes to rest, before its whole second');
 });
 
 test('at rest, a layer drawn again FLOOR px a frame or more, over the frames watched, fails', () => {

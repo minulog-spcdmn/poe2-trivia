@@ -48,7 +48,7 @@ import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
 import { SIZES } from '../src/qa/sizes.ts';
 import { touched } from '../src/qa/change.ts';
-import { FLOOR, MARK, MOMENTS, PAGE_FLOOR, WEBGL_SCENES, atRest, kpx, overBaseline, pageAtRest, readTrace, redraws, unread, withoutMark } from '../src/qa/redraws.ts';
+import { FLOOR, MARK, MOMENTS, PAGE_FLOOR, WEBGL_SCENES, atRest, kpx, overBaseline, pageAtRest, readTrace, redraws, unread, without, withoutMark } from '../src/qa/redraws.ts';
 import { changedFiles } from '../qaServer.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -387,6 +387,8 @@ const FRAME = 1000 / 60;
  * runner up to 3 s: 5 s of game/delve-dig would take 14 minutes.
  */
 const AT_REST_FRAMES = values.webgl ? 120 : 300;
+/** The frames of the trace a page's first watch comes after (warmUp). */
+const WARM_FRAMES = 5;
 
 /**
  * A browser of its own for each page traced at once (a trace is the whole
@@ -728,7 +730,28 @@ async function settled(page, drive) {
   await drive.settle(() => false, SETTLE);
   await page.evaluate(listenQuiet, { still: 1000, most: 15000 });
   await drive.settle(() => window.__quiet(), 20000, 'Coming to rest');
+  await warmUp(page, drive);
   await drive.toSecond();
+}
+
+/** Pages traced already (warmUp). */
+const warm = new WeakSet();
+/**
+ * Once a page first comes to rest, a trace of a few frames that's read for
+ * nothing: on a page's first trace, Chrome draws the CSS backdrop's grain
+ * (an SVG image of a filter) again, 1.57M px that no later trace on the
+ * page draws, whatever ran before it untraced (docs/qa.md, "Redraws").
+ */
+async function warmUp(page, drive) {
+  if (warm.has(page)) return;
+  warm.add(page);
+  const browser = page.context().browser();
+  await browser.startTracing(page, { categories: REDRAW_TRACE });
+  try {
+    await drive.frames(WARM_FRAMES);
+  } finally {
+    await browser.stopTracing();
+  }
 }
 
 /** A number for `text`, to seed a page's Math.random by. */
@@ -924,12 +947,13 @@ async function moment(base, browser, m) {
     await ready();
     const once = took();
     // (Its `seconds` from when it's set off, however long it plays: docs/qa.md, “Redraws”.)
-    const r = await watched(browser, page, async () => {
+    const watch = await watched(browser, page, async () => {
       let n = 0;
       await how.go(async () => (n += await drive.frames(1)));
       return n + (await drive.frames(Math.max(0, frames(m.seconds) - n)));
     });
-    // (A 60th of a second's worth, whatever the screen's rate.)
+    // (What it leaves out (MOMENTS' leaveOut) left out; a 60th of a second's worth, whatever the screen's rate.)
+    const r = without(watch, m.leaveOut ?? []);
     const perFrame = Math.round((r.again / Math.max(1, r.frames)) * (m.hz / 60));
     if (!process.stdout.isTTY) console.log(`  ${m.key}: ${r.frames} frames at ${m.hz} Hz, ${kpx(perFrame)} drawn again a 60th of a second; last written ${(r.last / m.hz).toFixed(2)} s in, ${r.running} animations still running at the end; at rest ${loaded}, run once ${once}, traced ${took()}`);
     return { key: m.key, label: m.label, webgl: m.webgl, hz: m.hz, perFrame, frames: r.frames, px: r.px, again: r.again, last: r.last, running: r.running, changing: r.changing, painted: r.painted, layers: r.layers.slice(0, 6), writes: r.writes };
