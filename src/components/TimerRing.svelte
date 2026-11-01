@@ -430,7 +430,8 @@
       animation: none;
     }
   }
-  /* Stopped (the reveal): it dims, once, behind the verdict. */
+  /* Stopped (the reveal): it dims behind the verdict, eased over 0.4s (.timer),
+     in step with a wrapper that dims it too (QuestionView's .clock.done). */
   .stopped {
     opacity: 0.4;
   }

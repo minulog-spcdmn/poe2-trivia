@@ -1580,14 +1580,15 @@
     font-size: 1.2rem;
     line-height: 1.45;
   }
-  /* What it said, kept for its height under the outcome: it fades as the
-     outcome comes up over it (back at once with the next question). */
+  /* What it said, kept for its height under the outcome: it fades out over
+     the outcome's delay, gone just as the outcome starts rising in its place
+     (back at once with the next question). */
   .task-text.held {
     visibility: hidden;
     opacity: 0;
     transition:
-      opacity 0.2s,
-      visibility 0s 0.2s;
+      opacity 0.25s ease-in,
+      visibility 0s 0.25s;
   }
   /* At the top of the cell, where it stood when it took the line's place:
      a question's line that wraps (a long name picking the art) leaves the
@@ -1620,9 +1621,11 @@
   .task .clock :global(.timer span) {
     font-size: 1.15rem;
   }
-  /* Answered: stopped, and set back behind the verdict (the ring dims itself
-     as it stops, TimerRing's .stopped: dimmed here too, it went twice). */
+  /* Answered: stopped, and set back behind the verdict. The ring dims itself
+     as it stops (TimerRing's .stopped) over the same 0.4s as this, so the two
+     run together: one smooth dim, to 0.2. */
   .clock.done {
+    opacity: 0.5;
     pointer-events: none;
   }
 
