@@ -1,9 +1,9 @@
 {
-  "icons/lineage-gems.webp": {
+  "icons/lineage-gems.avif": {
     "iw": 144.6,
     "ih": 143.4,
-    "x": 10.3,
-    "y": 9.7,
+    "x": 10.2,
+    "y": 9.8,
     "w": 124,
     "h": 124,
     "mask": "icons/masks/lineage-gems.webp"
