@@ -27,8 +27,9 @@
 // would take it, while the tagged element's own style holds still: animated
 // there, everything inside it would be restyled on every frame (a card's
 // sharp face, 4 to 5 ms a frame at 4K). While CSS paints the shadow, the
-// element runs that animation itself (under :not([data-bs-on])), and as it
-// goes back to CSS it's put in step with the pulse's (inStep).
+// element or its pulse runs a swell of its own (under :not([data-bs-on]);
+// a card's light on its pulse's ::before and ::after), and as it goes back
+// to CSS that's put in step with the pulse's (inStep).
 //
 // Fills work the same way for backgrounds, which band just like shadows when
 // they're large and dark: `use:backdropShadow={{ fill: 'linear' }}` makes the
@@ -149,7 +150,9 @@ function inStep(node: HTMLElement) {
   const pulse = shadowed.get(node)?.pulse;
   const lead = pulse?.getAnimations().find((a) => a.playState === 'running');
   if (!lead || lead.startTime === null) return;
-  for (const a of node.getAnimations()) if (a instanceof CSSAnimation && a.effect?.getComputedTiming().iterations === Infinity) a.startTime = lead.startTime;
+  // (The element's own, and its pulse's light where CSS paints it there: on its ::before and ::after.)
+  const own = [...node.getAnimations(), ...pulse!.getAnimations({ subtree: true }).filter((a) => a !== lead && (a.effect as KeyframeEffect | null)?.target === pulse)];
+  for (const a of own) if (a instanceof CSSAnimation && a.effect?.getComputedTiming().iterations === Infinity) a.startTime = lead.startTime;
 }
 
 function release(node: HTMLElement) {

@@ -689,9 +689,13 @@
     if (!frame) return;
     tilts.get(frame)?.stop();
     tilts.delete(frame);
-    frame.style.removeProperty('--tilt-x');
-    frame.style.removeProperty('--tilt-y');
+    for (const el of [frame, twinOf(frame)]) {
+      el?.style.removeProperty('--tilt-x');
+      el?.style.removeProperty('--tilt-y');
+    }
   }
+  /** The face's twin that holds its light while CSS paints it (.pulse), tilted with it. */
+  const twinOf = (frame: HTMLElement) => frame.parentElement?.querySelector<HTMLElement>(':scope > .pulse') ?? null;
   /**
    * The tilt eases after the pointer in script, a frame at a time, once the
    * hover's own lift is over (.tilting): a CSS transition begun afresh on
@@ -704,9 +708,12 @@
   type Tilt = { since: number; rx: number; ry: number; to: [number, number]; frame: number; stop: () => void };
   const tilts = new Map<HTMLElement, Tilt>();
   function tiltTo(frame: HTMLElement, rx: number, ry: number) {
+    const twin = twinOf(frame);
     const put = (t: Tilt) => {
-      frame.style.setProperty('--tilt-x', `${t.rx.toFixed(3)}deg`);
-      frame.style.setProperty('--tilt-y', `${t.ry.toFixed(3)}deg`);
+      for (const el of [frame, twin]) {
+        el?.style.setProperty('--tilt-x', `${t.rx.toFixed(3)}deg`);
+        el?.style.setProperty('--tilt-y', `${t.ry.toFixed(3)}deg`);
+      }
     };
     let t = tilts.get(frame);
     if (!t) {
@@ -1221,23 +1228,77 @@
      its face, read by the backdrop (lib/backdropShadow, `pulse`): animated
      on the face, its light's properties had every part of the face restyled
      on every frame (4 to 5 ms a frame at 4K, most of the page's thread),
-     however still the card lay. While CSS paints the light, the face swells
-     itself (pulse-paint), in step. docs/category-cards.md, rule 9. */
+     however still the card lay. While CSS paints the light, .pulse holds it
+     itself, as the face's twin: laid out and moved as the face is (the
+     rules below that move the face move it too), its light on two layers
+     of its own (::before at rest, ::after swollen) whose opacities trade
+     places, in step. Swollen on the face itself, the face was drawn again
+     every frame (Firefox, Safari), or not at all (Chrome, where the light
+     then never swelled). docs/category-cards.md, rule 9. */
   .pulse {
     position: absolute;
     width: 0;
     height: 0;
     pointer-events: none;
+    /* (The face's light, as .frame has it; the states below set it on both.) */
+    --bs1: 16px 40px;
+    --bs1-color: rgba(0, 0, 0, 0.6);
+    transition:
+      var(--tilt-transition, transform 0.35s var(--ease-out)),
+      --bs1 0.35s,
+      --bs1-color 0.35s,
+      opacity 0.4s;
   }
   @keyframes pulse {
     50% {
       --bs-pulse: 1;
     }
   }
-  @keyframes pulse-paint {
+  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])),
+  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) {
+    /* (Its own light without its first shadow, which .pulse holds.) */
+    --bs-soft-paint: 0 var(--bs2, 0 0) var(--bs2-color, transparent);
+  }
+  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse,
+  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse {
+    inset: 0;
+    width: auto;
+    height: auto;
+    border-radius: 8px;
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+  }
+  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::before,
+  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after,
+  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::before,
+  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    will-change: opacity;
+  }
+  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::before,
+  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::before {
+    --bs1: inherit;
+    --bs1-color: inherit;
+    box-shadow: 0 var(--bs1) var(--bs1-color);
+  }
+  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after,
+  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after {
+    --bs1-pulse: inherit;
+    --bs1-pulse-color: inherit;
+    box-shadow: 0 var(--bs1-pulse) var(--bs1-pulse-color);
+    opacity: 0;
+  }
+  @keyframes light-ebb {
     50% {
-      --bs1: var(--bs1-pulse);
-      --bs1-color: var(--bs1-pulse-color);
+      opacity: 0;
+    }
+  }
+  @keyframes light-swell {
+    50% {
+      opacity: 1;
     }
   }
   /* A duel's face: its rim's ring and the shade over it, the face's own
@@ -1685,15 +1746,19 @@
   }
   /* Yours to pick, it menaces: its light swells red (by .pulse) as its
      ring fades (a layer, .rim), together. */
-  .card.dm.mine .frame {
+  .card.dm.mine .frame,
+  .card.dm.mine .pulse {
     --bs1-pulse: 0px 45px;
     --bs1-pulse-color: rgba(224, 85, 63, 0.45);
   }
   .card.dm.mine:not(:global(.down)) .pulse {
     animation: pulse 2.4s ease-in-out infinite;
   }
-  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) {
-    animation: pulse-paint 2.4s ease-in-out infinite;
+  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::before {
+    animation: light-ebb 2.4s ease-in-out infinite;
+  }
+  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after {
+    animation: light-swell 2.4s ease-in-out infinite;
   }
   .card.dm.mine:not(:global(.down)) .rim.ring {
     animation: menace 2.4s ease-in-out infinite;
@@ -1726,7 +1791,9 @@
     cursor: not-allowed;
   }
   .card.mine:not(:global(.down)):hover .frame,
-  .card.mine:not(:global(.down)):focus-visible .frame {
+  .card.mine:not(:global(.down)):focus-visible .frame,
+  .card.mine:not(:global(.down)):hover .pulse,
+  .card.mine:not(:global(.down)):focus-visible .pulse {
     transform: perspective(900px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) translateY(-10px) scale(1.04);
     border-color: var(--gold);
     --bs-ring: rgba(201, 164, 92, 0.6);
@@ -1748,7 +1815,8 @@
     initial-value: 0deg;
   }
   /* Lifted, it tilts by script (tiltTo): its own transform takes no transition. */
-  .card.mine:not(:global(.down)):not(.chosen):hover .frame:global(.tilting) {
+  .card.mine:not(:global(.down)):not(.chosen):hover .frame:global(.tilting),
+  .card.mine:not(:global(.down)):not(.chosen):hover .frame:global(.tilting) ~ .pulse {
     --tilt-transition: transform 0s;
   }
   .card.dm.mine:not(:global(.down)):hover .frame,
@@ -1832,7 +1900,8 @@
   }
   /* Lifted and grown a little: no more than keeps it clear of the line over
      the cards on a short window and inside a phone's margins. */
-  .card.chosen .frame {
+  .card.chosen .frame,
+  .card.chosen .pulse {
     transform: translateY(-4px) scale(1.05);
     transition:
       transform 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.15),
@@ -1858,7 +1927,8 @@
   }
   /* The others give way: they sink back and fade (opacity and transform
      only, as a filter would redraw the whole card every frame). */
-  .card.faded .frame {
+  .card.faded .frame,
+  .card.faded .pulse {
     opacity: 0.16;
     transform: scale(0.92) translateY(8px);
     transition:
@@ -1910,8 +1980,21 @@
     /* The shrink, in a rule of its own: beside the transform, the build's
        minifier drops it and the live cards come out twice their size
        (tests/minifiedTransforms). */
-    .sharp .turn > .frame {
+    .sharp .turn > .frame,
+    .sharp .turn > .pulse {
       scale: 0.5;
+    }
+    /* The face's twin that holds its light while CSS paints it (.pulse):
+       laid out, turned and shrunk as the face is, so the two lie in one
+       plane and its light over the face's own shadow, as the face's first
+       shadow lay over its second. */
+    .sharp .pulse {
+      transform: perspective(900px) rotateX(0.01deg) rotateY(0deg) translateY(0) scale(1);
+    }
+    .sharp .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse,
+    .sharp .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse {
+      zoom: 2;
+      inset: -75px -50%;
     }
     /* (Its soft shadow drawn by the backdrop, not round it: the filter needs no room for it.) */
     .sharp .frame:global([data-bs-on]) {
@@ -1936,17 +2019,22 @@
       filter: none;
     }
     .sharp .card.mine:not(:global(.down)):hover .frame,
-    .sharp .card.mine:not(:global(.down)):focus-visible .frame {
+    .sharp .card.mine:not(:global(.down)):focus-visible .frame,
+    .sharp .card.mine:not(:global(.down)):hover .pulse,
+    .sharp .card.mine:not(:global(.down)):focus-visible .pulse {
       transform: perspective(900px) rotateX(calc(var(--tilt-x) + 0.01deg)) rotateY(var(--tilt-y)) translateY(-10px) scale(1.04);
     }
-    .sharp .card.chosen .frame {
+    .sharp .card.chosen .frame,
+    .sharp .card.chosen .pulse {
       transform: perspective(900px) rotateX(0.01deg) rotateY(0deg) translateY(-4px) scale(1.05);
     }
-    .sharp .card.faded .frame {
+    .sharp .card.faded .frame,
+    .sharp .card.faded .pulse {
       /* (scale(0.92) translateY(8px), in this order.) */
       transform: perspective(900px) rotateX(0.01deg) rotateY(0deg) translateY(7.36px) scale(0.92);
     }
-    .sharp .card.voted .frame {
+    .sharp .card.voted .frame,
+    .sharp .card.voted .pulse {
       transform: perspective(900px) rotateX(0.01deg) rotateY(0deg) translateY(-8px) scale(1);
     }
   }
@@ -2059,7 +2147,8 @@
       radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #26110f, #0e0607 70%);
   }
-  .card.special[data-find='flare']:not(:global(.down)) .frame {
+  .card.special[data-find='flare']:not(:global(.down)) .frame,
+  .card.special[data-find='flare']:not(:global(.down)) .pulse {
     --bs1: 0px 44px;
   }
   /* Black powder: the ink an ash grey, the window lit by its ember. */
@@ -2087,28 +2176,36 @@
     --bs-ring: color-mix(in srgb, var(--f-border) 45%, transparent);
   }
   /* Its light, once it lies face up (face down, the back has a shadow of its own). */
-  .card.special:not(:global(.down)) .frame {
+  .card.special:not(:global(.down)) .frame,
+  .card.special:not(:global(.down)) .pulse {
     --bs1: 0px 34px;
     --bs1-color: var(--f-glow);
   }
   /* Yours to pick, its light swells and ebbs (by .pulse). */
-  .card.special.mine .frame {
+  .card.special.mine .frame,
+  .card.special.mine .pulse {
     --bs1-pulse: 0px 46px;
     --bs1-pulse-color: var(--f-pulse);
   }
   .card.special.mine:not(:global(.down)) .pulse {
     animation: pulse 3.2s ease-in-out infinite;
   }
-  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) {
-    animation: pulse-paint 3.2s ease-in-out infinite;
+  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::before {
+    animation: light-ebb 3.2s ease-in-out infinite;
+  }
+  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after {
+    animation: light-swell 3.2s ease-in-out infinite;
   }
   .card.special.mine:not(:global(.down)):hover .frame,
-  .card.special.mine:not(:global(.down)):focus-visible .frame {
+  .card.special.mine:not(:global(.down)):focus-visible .frame,
+  .card.special.mine:not(:global(.down)):hover .pulse,
+  .card.special.mine:not(:global(.down)):focus-visible .pulse {
     border-color: var(--f);
     --bs-ring: color-mix(in srgb, var(--f) 60%, transparent);
     --bs1-color: var(--f-pulse);
   }
-  .card.special.chosen .frame {
+  .card.special.chosen .frame,
+  .card.special.chosen .pulse {
     border-color: var(--f);
     --bs1-color: var(--f-pulse);
   }
@@ -2235,7 +2332,8 @@
     border-radius: 11px;
   }
   /* The card you voted for stands a little proud of the others, lit at its rim. */
-  .card.voted .frame {
+  .card.voted .frame,
+  .card.voted .pulse {
     transform: translateY(-8px);
     border-color: var(--gold-hi);
     --bs-ring: rgba(241, 217, 155, 0.55);
@@ -2435,7 +2533,8 @@
     .back {
       transform: rotateX(180deg);
     }
-    .card.mine:not(:global(.down)):hover .frame {
+    .card.mine:not(:global(.down)):hover .frame,
+    .card.mine:not(:global(.down)):hover .pulse {
       transform: translateX(6px);
     }
     /* Rows: the votes hang off the row's lower right edge, and the rows part a little more for them. */
