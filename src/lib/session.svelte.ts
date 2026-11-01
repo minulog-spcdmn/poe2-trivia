@@ -115,7 +115,7 @@ const LOOKS_FETCH_FROM = LOOKALIKES_ASKED_FROM - 10;
 
 /** How much of an idle moment a step of warmLikeness leaves (ms): a step is a fraction of one. */
 const LIKENESS_ROOM_MS = 2;
-/** The hand warmLikeness works on: a newer one takes over. */
+/** The hand warmLikeness works on while it's on offer: a newer one takes over, and a pick stops it. */
 let likenessFor: string[] | null = null;
 
 /**
@@ -2761,6 +2761,8 @@ class Session {
     if (this.isHost && next.phase !== 'lobby') warmMedia();
     // The question a card on offer would ask is ready to be made the moment it's picked.
     if (this.isHost && next.phase === 'choosing' && next.offered.join() !== prev?.offered.join()) warmLikeness(next.offered);
+    // (Picked: the cards not picked aren't asked of now, nor is what's left of the picked one, made as it was asked.)
+    else if (next.phase !== 'choosing') likenessFor = null;
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
       // A question asked again in its place while the draw plays keeps its hold.
       const until = drawHoldUntil(prev, next, this.drawHold);
