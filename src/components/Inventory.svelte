@@ -14,6 +14,8 @@
   import { ownRect, zoomOf } from '../lib/stage';
   import { ITEM_TIPS } from '../lib/difficultyText';
   import type { InventoryMoment } from '../lib/inventoryArt';
+  import { cubicOut } from 'svelte/easing';
+  import { calm } from '../lib/motion.svelte';
   import ItemGlyph from './ItemGlyph.svelte';
 
   let { inv, moment = null, expect = null }: { inv: Inventory; moment?: InventoryMoment | null; expect?: 'flare' | 'dynamite' | null } = $props();
@@ -94,6 +96,23 @@
       },
     };
   }
+  /** The gap between two counts (px; `.inventory`'s gap). */
+  const GAP = 5;
+  /**
+   * The last of a find used up (its burn or crumble played out): it fades as
+   * it closes up, its width and the gap beside it going with it, so the
+   * other count slides over instead of jumping.
+   */
+  function closeUp(node: HTMLElement) {
+    const w = node.offsetWidth;
+    // The gap on the side where the other count stands, if one does.
+    const side = node.nextElementSibling ? 'right' : node.previousElementSibling ? 'left' : null;
+    return calm({
+      duration: 250,
+      easing: cubicOut,
+      css: (t: number) => `overflow: hidden; opacity: ${t}; width: ${t * w}px;${side ? ` margin-${side}: ${(t - 1) * GAP}px;` : ''}`,
+    });
+  }
   const counts = $derived(inv.flares > 0 || inv.dynamite > 0 || moment?.kind === 'burn' || moment?.kind === 'blast' || blown === 'flares' || blown === 'dynamite' || !!expect);
 </script>
 
@@ -109,6 +128,7 @@
         class:kept={expect === 'flare' && inv.flares === 0}
         data-pip="flare"
         use:tipOnHover
+        out:closeUp
       >
         {#key moment?.kind === 'flare' || moment?.kind === 'burn' || blown === 'flares' ? moment?.key : 0}
           <span class="grow"><ItemGlyph kind="flare" /></span>
@@ -128,6 +148,7 @@
         class:kept={expect === 'dynamite' && inv.dynamite === 0}
         data-pip="dynamite"
         use:tipOnHover
+        out:closeUp
       >
         {#key moment?.kind === 'dynamite' || moment?.kind === 'blast' || blown === 'dynamite' ? moment?.key : 0}
           <span class="grow"><ItemGlyph kind="dynamite" /></span>
@@ -298,6 +319,13 @@
   .count.burning .grow {
     animation: burn 1s ease-out both;
   }
+  /* Its count one down as the flare flares up; a find's, once it has grown. */
+  .count.burning b {
+    animation: count-in 0.4s ease-out 0.15s both;
+  }
+  .count.fresh b {
+    animation: count-in 0.4s ease-out 0.4s both;
+  }
   /* A stick of dynamite goes off: it shudders as the fuse burns down, swells
      in a white-hot flash and is gone; the flash lingers as a red glow. */
   .count.lit::after {
@@ -422,6 +450,8 @@
     .count::after {
       display: none;
     }
+    .count.fresh b,
+    .count.burning b,
     .count.lit .grow,
     .count.lit b,
     .count.blown .grow,
