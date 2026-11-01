@@ -373,7 +373,10 @@ effect): find what holds the frame up.
 
    Run them against the dev server: the local channel counts nothing, and
    the live site would count the run as a player's game. Run one at a time:
-   it takes the screen and slows every other session. The first run on the
+   it slows every other session. Its window opens behind the others and
+   gives the keyboard back (`scripts/pc/behind.ps1`; Chrome draws every
+   frame there all the same), so it doesn't take the screen from whoever
+   works at the PC; `FRONT=1` keeps it in front. The first run on the
    fresh profile (`.pc/profile`) has a cold shader cache, so run each
    variant twice. Parts come away without editing code through `CSS=` (a
    style sheet added), `INIT=` (a script run first) and the `?off=`
