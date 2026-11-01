@@ -463,6 +463,19 @@
     return { duration: 180, css: (t: number) => `opacity: ${t}` };
   }
 
+  /**
+   * Svelte transition: a Delve line under the stage (you perished, how to
+   * revive) opens its room as it fades in and closes it as it fades out,
+   * so what is round it moves with it rather than jumping as it comes.
+   */
+  function slideFade(node: Element, params: { duration?: number }) {
+    const made = slide(node, params);
+    return () => {
+      const c = made();
+      return { ...c, css: (t: number, u: number) => `${c.css?.(t, u) ?? ''};opacity: ${t}` };
+    };
+  }
+
   /** Online Delve: where you perished, while the run goes on without you (someone still stands). */
   const myFall = $derived(session.perished && session.myPlayerId && standingIds(s).length ? fellAt(s, session.myPlayerId) : null);
   /** Delve together: a teammate who stands could still give you one of their lives. */
@@ -571,11 +584,11 @@
             </div>
           {/if}
           {#if myFall !== null}
-            <p class="delve-line muted" transition:fade={calm({ duration: 400 })}>
+            <p class="delve-line muted" transition:slideFade={calm({ duration: 400 })}>
               You perished and are now watching.{#if canBeRevived}{' '}A teammate can give you a life between questions.{/if}
             </p>
           {:else if revivable.length && (s.phase === 'choosing' || s.phase === 'reveal')}
-            <p class="delve-line revive-hint" transition:fade>
+            <p class="delve-line revive-hint" transition:slideFade={calm({ duration: 400 })}>
               {revivable.length === 1
                 ? `Use the heart on ${revivable[0].name}’s entry to revive them with one of your lives.`
                 : 'Use the heart on an entry to revive that teammate with one of your lives.'}
