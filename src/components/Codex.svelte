@@ -451,7 +451,7 @@
   let rising = $state(true);
   let codexEl = $state<HTMLElement>();
   /** The motions that are the page coming in (the styles here and in its pages, and app.css's filigree). */
-  const RISING = /codex-rise$|codex-fill$|^filigree-in$/;
+  const RISING = /codex-(rise|fill|ring)$|^filigree-in$/;
   $effect(() => {
     if (!rising || !codexEl) return;
     const el = codexEl;
@@ -477,6 +477,44 @@
       live = false;
     };
   });
+  /**
+   * The panels' bars and the seals' rings fill from empty as each first
+   * comes into view, as the medallion's arc fills: on screen as the page
+   * comes in, they wait for their panel to rise (--rise-delay); below it,
+   * till they're scrolled to (opened on a laptop, most of them are). Held
+   * empty from the first frame (data-fill, set before it's painted), let go
+   * as the observer sees them. Only the panels' bars, never the tiles'.
+   */
+  const filled = new WeakSet<Element>();
+  let fillSeen: IntersectionObserver | undefined;
+  $effect(() => {
+    void tab;
+    void kept;
+    void stats;
+    if (!codexEl) return;
+    // Held still (or made so meanwhile), they stand full.
+    if (motion.still) {
+      for (const el of codexEl.querySelectorAll<HTMLElement | SVGElement>('[data-fill]')) delete el.dataset.fill;
+      return;
+    }
+    fillSeen ??= new IntersectionObserver(
+      (seen) => {
+        for (const e of seen) {
+          if (!e.isIntersecting) continue;
+          (e.target as HTMLElement).dataset.fill = 'go';
+          fillSeen?.unobserve(e.target);
+        }
+      },
+      { rootMargin: '0px 0px -8% 0px' },
+    );
+    for (const el of codexEl.querySelectorAll<HTMLElement | SVGElement>('.panel .fill, .seal .done')) {
+      if (filled.has(el)) continue;
+      filled.add(el);
+      el.dataset.fill = 'held';
+      fillSeen.observe(el);
+    }
+  });
+  $effect(() => () => fillSeen?.disconnect());
   const within = (el: Element, a: Animation) => {
     const target = (a.effect as KeyframeEffect | null)?.target;
     return !!target && el.contains(target);
@@ -1006,30 +1044,45 @@
       translate: 0 14px;
     }
   }
-  /* A panel's bars fill from the left as it comes in, as the medallion's arc
-     does (CodexMedallion), once the panel has risen into place. Only the
-     panels' bars, never the many tiles' meters, and only while it comes in. */
-  .rising .bars .fill {
+  /* The panels' bars and the seals' rings fill from empty as each comes
+     into view (fillSeen, data-fill), as the medallion's arc does
+     (CodexMedallion): during the page's rise, once their panel has risen
+     into place; scrolled to later, at once. */
+  .codex :global(.fill[data-fill]) {
     transform-origin: left;
-    animation: codex-fill 1s var(--ease-out) calc(var(--rise-delay, 0s) + 0.25s) backwards;
+  }
+  .codex :global(.fill[data-fill='held']) {
+    scale: 0 1;
+  }
+  .codex :global(.done[data-fill='held']) {
+    stroke-dasharray: 0 100;
+  }
+  .codex :global(.fill[data-fill='go']) {
+    animation: codex-fill 1s var(--ease-out) calc(var(--rise-delay, -0.25s) + 0.25s) backwards;
+  }
+  .codex :global(.done[data-fill='go']) {
+    animation: codex-ring 1s var(--ease-out) calc(var(--rise-delay, -0.25s) + 0.25s) backwards;
   }
   @keyframes codex-fill {
     from {
       scale: 0 1;
     }
   }
+  @keyframes codex-ring {
+    from {
+      stroke-dasharray: 0 100;
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     .hero > *,
     .tabs,
     .end,
-    .rising :is(.page > :global(*), .page > :global(.delve-page > *), .collection > *),
-    .rising .bars .fill {
+    .rising :is(.page > :global(*), .page > :global(.delve-page > *), .collection > *) {
       animation: none;
     }
   }
   :global(:root[data-still]) :is(.hero > *, .tabs, .end),
-  :global(:root[data-still]) .rising :is(.page > :global(*), .page > :global(.delve-page > *), .collection > *),
-  :global(:root[data-still]) .rising .bars .fill {
+  :global(:root[data-still]) .rising :is(.page > :global(*), .page > :global(.delve-page > *), .collection > *) {
     animation: none;
   }
 

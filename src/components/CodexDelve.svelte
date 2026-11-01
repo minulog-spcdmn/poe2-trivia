@@ -656,26 +656,6 @@
     box-shadow: 0 0 8px rgba(224, 138, 68, 0.45);
   }
 
-  /* Its bars fill from the left as the codex brings their panel in, as the
-     medallion's arc does (Codex.svelte's .rising, its --rise-delay). */
-  :global(.codex.rising) .fill {
-    transform-origin: left;
-    animation: codex-fill 1s var(--ease-out) calc(var(--rise-delay, 0s) + 0.25s) backwards;
-  }
-  @keyframes codex-fill {
-    from {
-      scale: 0 1;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    :global(.codex.rising) .fill {
-      animation: none;
-    }
-  }
-  :global(:root[data-still] .codex.rising) .fill {
-    animation: none;
-  }
-
   /* Item rows, as the Collection's nemeses. */
   .rows {
     list-style: none;

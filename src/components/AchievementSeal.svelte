@@ -224,24 +224,6 @@
     stroke-width: 1.1;
     stroke-linecap: butt;
   }
-  /* In the codex, the ring is cut round as its page comes in, as the
-     medallion's arc fills (Codex.svelte's .rising, its --rise-delay). */
-  :global(.codex.rising) .done {
-    animation: codex-fill 1s var(--ease-out) calc(var(--rise-delay, 0s) + 0.25s) backwards;
-  }
-  @keyframes codex-fill {
-    from {
-      stroke-dasharray: 0 100;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    :global(.codex.rising) .done {
-      animation: none;
-    }
-  }
-  :global(:root[data-still] .codex.rising) .done {
-    animation: none;
-  }
 
   /*
    * The passing light: the slit's mask is three seals wide with the band in
