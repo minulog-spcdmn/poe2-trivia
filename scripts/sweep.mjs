@@ -738,9 +738,10 @@ async function settled(page, drive) {
 const warm = new WeakSet();
 /**
  * Once a page first comes to rest, a trace of a few frames that's read for
- * nothing: on a page's first trace, Chrome draws the CSS backdrop's grain
- * (an SVG image of a filter) again, 1.57M px that no later trace on the
- * page draws, whatever ran before it untraced (docs/qa.md, "Redraws").
+ * nothing: on a page's first trace, Chrome draws some of its layers once
+ * more, each whole (an arcane circle's spinning layer, a plate's weave, a
+ * board's panel: on 84 of 114 pages), which no later trace on the page
+ * draws, whatever ran before it untraced (docs/qa.md, "Redraws").
  */
 async function warmUp(page, drive) {
   if (warm.has(page)) return;
