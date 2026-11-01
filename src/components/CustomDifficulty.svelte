@@ -94,7 +94,7 @@
                 title={offFor(knob, step)}
                 onclick={() => set({ [knob.key]: step })}
               >
-                {(knob.label as (v: typeof step) => string)(step)}
+                <span class="lbl">{(knob.label as (v: typeof step) => string)(step)}</span>
               </button>
             {/each}
           </div>
@@ -215,9 +215,11 @@
     position: relative;
     transition: opacity 0.3s;
   }
-  /* The chosen step's lit plate, one step wide, under the buttons. */
+  /* The chosen step's lit plate, one step wide: over the lines between the steps (so it slides as one plate, never crossed by
+     them), under their words. */
   .plate {
     position: absolute;
+    z-index: 1;
     top: 0;
     bottom: 0;
     left: 0;
@@ -237,12 +239,15 @@
     color: var(--muted);
     background: none;
     border: 0;
-    position: relative;
     cursor: pointer;
     transition:
       color 0.3s,
       background 0.2s,
       text-shadow 0.3s;
+  }
+  .lbl {
+    position: relative;
+    z-index: 2;
   }
   .track button + button {
     border-left: 1px solid var(--line);

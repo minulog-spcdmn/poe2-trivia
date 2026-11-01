@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { SOL_RAYS } from '../lib/alchemy';
   import { star8 } from '../lib/arcane';
   import * as art from '../lib/ouroborosArt';
@@ -119,10 +119,12 @@
     let wanted = true;
     void drawDescent([w, h, deepest, $state.snapshot(metFinds), layout, last, seen]).then((p) => {
       if (!wanted) return;
-      if (plate && these !== records) shift = (performance.now() - firstPlateAt) / 1000;
+      const was = plate && these !== records ? plate : null;
+      if (was) shift = (performance.now() - firstPlateAt) / 1000;
       records = these;
       legend = words;
       plate = p;
+      if (was) void tick().then(() => glide(was, p));
     });
     return () => {
       wanted = false;
@@ -131,6 +133,54 @@
   $effect(() => {
     if (plate) natural = plate.natural;
   });
+  /** How long a star takes to glide to its depth in the other records, and its curve (easing in and out, as a thing slid along the wall). */
+  const GLIDE_MS = 700;
+  const GLIDE_EASE = 'cubic-bezier(0.65, 0, 0.35, 1)';
+  const glideEase = (u: number) => (u < 0.5 ? 4 * u * u * u : 1 - (-2 * u + 2) ** 3 / 2);
+  /** Where each star's cutout still is, short of its new place, as its star glides there (px off it): none at rest. */
+  let holeOff = $state.raw<{ star?: [number, number]; last?: [number, number] }>({});
+  /**
+   * Another's records (a second player joins, or the last one leaves): each star there before and still there glides along the
+   * wall from its old depth to its new one, and its depth with it, the old drawing fading out and the new in as they go (both
+   * layers move as one), its cutout in the plate following it. A star only one of them has fades, as the records do.
+   */
+  function glide(was: Plate, now: Plate) {
+    if (motion.still || !fig) return;
+    const layers = fig.querySelectorAll('.records');
+    const out = layers.length > 1 ? layers[0] : null;
+    const into = layers[layers.length - 1];
+    const timing = { duration: GLIDE_MS, easing: GLIDE_EASE };
+    const at = (c: readonly number[]) => `translate(${f(c[0])}px, ${f(c[1])}px)`;
+    const off: { star?: [number, number]; last?: [number, number] } = {};
+    (['last', 'star'] as const).forEach((k, i) => {
+      const a = was[k];
+      const b = now[k];
+      if (!a || !b || (a.c[0] === b.c[0] && a.c[1] === b.c[1])) return;
+      off[k] = [a.c[0] - b.c[0], a.c[1] - b.c[1]];
+      for (const layer of [out, into]) layer?.querySelector(`[data-star="${k}"]`)?.animate([{ transform: at(a.c) }, { transform: at(b.c) }], timing);
+      // Its depth (and the last run's, beside one star for both) goes with it.
+      for (const n of ['num', 'lastNum'] as const) {
+        const p = a[n];
+        const q = b[n];
+        if (!p || !q) continue;
+        const d = [p.x - q.x, p.y - q.y];
+        out?.querySelector(`[data-num="${i}-${n}"]`)?.animate([{ transform: 'translate(0px, 0px)' }, { transform: at([-d[0], -d[1]]) }], timing);
+        into.querySelector(`[data-num="${i}-${n}"]`)?.animate([{ transform: at(d) }, { transform: 'translate(0px, 0px)' }], timing);
+      }
+    });
+    if (!off.star && !off.last) return;
+    // The cutouts follow, a frame at a time (a mask's place can't be animated in CSS where @property is missing).
+    const t0 = performance.now();
+    const step = (t: number) => {
+      if (plate !== now) return (holeOff = {});
+      const u = Math.min(1, Math.max(0, (t - t0) / GLIDE_MS));
+      const r = 1 - glideEase(u);
+      holeOff = Object.fromEntries(Object.entries(off).map(([k, d]) => [k, [d[0] * r, d[1] * r]]));
+      if (u < 1) requestAnimationFrame(step);
+      else holeOff = {};
+    };
+    step(t0);
+  }
   /**
    * Whether the plate and its glow are masked round the stars yet (holes,
    * below): from when the first star's cutout starts to show (at once while
@@ -168,16 +218,17 @@
    * Each var() falls back to where the hole rests, for a browser that can't
    * register them (no @property): its holes just appear.
    */
-  const holes = (p: Plate, aa: number) =>
+  const holes = (p: Plate, aa: number, moved: typeof holeOff) =>
     [p.star, p.last]
       .flatMap((s, i) => {
         if (!s) return [];
+        const by = moved[i ? 'last' : 'star'] ?? [0, 0];
         const along = (k: 0 | 1) =>
           s.travel > 0
             ? ` + var(--hole-from, 0) * ${f(s.from[k])}px${s.mid ? ` + var(--hole-mid, 0) * ${f(s.mid[k])}px` : ''}${k ? ' + var(--hole-dip, 0) * 1px' : ''}`
             : '';
-        const x = `calc(50% + ${f(s.c[0] - p.w / 2)}px${along(0)})`;
-        const y = `calc(50% + ${f(s.c[1] - p.h / 2)}px${along(1)})`;
+        const x = `calc(50% + ${f(s.c[0] + by[0] - p.w / 2)}px${along(0)})`;
+        const y = `calc(50% + ${f(s.c[1] + by[1] - p.h / 2)}px${along(1)})`;
         return [`radial-gradient(circle at ${x} ${y}, rgb(0 0 0 / calc(1 - var(--hole-${i}, 1))) ${f(s.cut - aa)}px, #000 ${f(s.cut + aa)}px)`];
       })
       .join(', ');
@@ -195,7 +246,7 @@
                 ],
           )
           .join(', ');
-  const cuts = $derived(plate && { plate: holes(plate, 0.5 / devicePixelRatio), glow: holes(plate, 1), motion: holesMotion(plate) });
+  const cuts = $derived(plate && { plate: holes(plate, 0.5 / devicePixelRatio, holeOff), glow: holes(plate, 1, holeOff), motion: holesMotion(plate) });
   $effect(() => {
     stacked = !beside;
   });
@@ -549,7 +600,7 @@
         <svg class="live" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
           {#each [p.last, p.star] as s, i (i)}
             {#if s}
-              <g class={s.both ? 'both-star' : i ? 'gold-star' : 'red-star'} style:--b={late(s.delay + 0.25 + s.travel)} transform="translate({f(s.c[0])} {f(s.c[1])})">
+              <g class={s.both ? 'both-star' : i ? 'gold-star' : 'red-star'} data-star={i ? 'star' : 'last'} style:--b={late(s.delay + 0.25 + s.travel)} transform="translate({f(s.c[0])} {f(s.c[1])})">
                 <g
                   class="star"
                   class:travel={s.travel > 0}
@@ -587,10 +638,10 @@
                 </g>
               </g>
               {#if s.lastNum}
-                <text class="depth red-num" x={f(s.lastNum.x)} y={f(s.lastNum.y)} text-anchor="middle" style:font-size={s.lastNum.size < 1 ? `${f(13 * s.lastNum.size)}px` : null} style:--d={late(s.delay + 0.25 + s.travel)}>{s.lastNum.text}</text>
+                <text class="depth red-num" data-num="{i}-lastNum" x={f(s.lastNum.x)} y={f(s.lastNum.y)} text-anchor="middle" style:font-size={s.lastNum.size < 1 ? `${f(13 * s.lastNum.size)}px` : null} style:--d={late(s.delay + 0.25 + s.travel)}>{s.lastNum.text}</text>
               {/if}
               {#if s.num}
-                <text class="depth {i ? 'gold-num' : 'red-num'}" x={f(s.num.x)} y={f(s.num.y)} text-anchor={s.num.anchor} style:font-size={s.num.size < 1 ? `${f(13 * s.num.size)}px` : null} style:--d={late(s.delay + 0.25 + s.travel)}>{s.num.text}</text>
+                <text class="depth {i ? 'gold-num' : 'red-num'}" data-num="{i}-num" x={f(s.num.x)} y={f(s.num.y)} text-anchor={s.num.anchor} style:font-size={s.num.size < 1 ? `${f(13 * s.num.size)}px` : null} style:--d={late(s.delay + 0.25 + s.travel)}>{s.num.text}</text>
               {/if}
             {/if}
           {/each}

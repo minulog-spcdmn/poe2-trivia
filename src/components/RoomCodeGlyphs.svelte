@@ -11,8 +11,6 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { CopyPress } from '../lib/copyPress.svelte';
   import CopyNote from './CopyNote.svelte';
-  import { fade } from '../lib/transitions';
-  import { calm } from '../lib/motion.svelte';
 
   let { code, hidden = false, sparks = false, delay = 0 }: { code: string; hidden?: boolean; sparks?: boolean; delay?: number } = $props();
 
@@ -42,7 +40,7 @@
   {#each code.split('') as ch, i (i)}
     <!-- The letter in gold; its gleam's copy of it is drawn from data-ch (a pseudo-element), so a copy gives each letter once. -->
     <span class="glyph" use:landing={i} use:backdropShadow={{ fill: 'linear' }} style:animation-delay="{delay + i * 80}ms" style:--i={i}
-      >{#key hidden}<span class="ch" in:fade={calm({ duration: 200, delay: i * 40 })}>{hidden ? '•' : ch}</span>{/key}<span class="gleam" aria-hidden="true" data-ch={hidden ? '•' : ch}></span></span
+      ><span class="ch letter">{ch}</span><span class="ch dot" aria-hidden="true"></span><span class="gleam" aria-hidden="true" data-ch={hidden ? '•' : ch}></span></span
     >
   {/each}
 </span>
@@ -199,15 +197,44 @@
       opacity: 0;
     }
   }
-  .hidden .ch {
-    background-image: none;
-    color: var(--gold-lo);
-  }
   .selected .ch {
     filter: drop-shadow(0 0 9px rgba(255, 230, 170, 0.6));
     background-image: linear-gradient(180deg, #fffaf0 22%, #f4d79a 60%, #c99c4f 92%);
   }
+  /* Each box holds its letter and its dot in one place: hidden, each letter in turn shrinks away as its dot swells in where it
+     stood, and back in the same order shown. (The letter stays to be copied; the dot, drawn by CSS, never is.) */
+  .ch.letter,
+  .ch.dot {
+    grid-area: 1 / 1;
+    transition:
+      filter 0.15s,
+      opacity 0.22s var(--ease-out) calc(var(--i) * 45ms),
+      scale 0.22s var(--ease-out) calc(var(--i) * 45ms);
+  }
+  .ch.dot {
+    background-image: none;
+    color: var(--gold-lo);
+    opacity: 0;
+    scale: 0.4;
+  }
+  .ch.dot::before {
+    content: '•';
+  }
+  .hidden .ch.letter {
+    opacity: 0;
+    scale: 0.6;
+  }
+  .hidden .ch.dot {
+    opacity: 1;
+    scale: 1;
+  }
+  :global(html[data-still]) .ch:is(.letter, .dot) {
+    transition: filter 0.15s;
+  }
   @media (prefers-reduced-motion: reduce) {
+    .ch:is(.letter, .dot) {
+      transition: filter 0.15s;
+    }
     .gleam,
     .glyph::before {
       animation: none;

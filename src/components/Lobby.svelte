@@ -152,7 +152,8 @@
   });
   /** Where each chip and onlooker stood as the room last changed, on screen, and the element it was:
       one who moves between the party and a gallery (sitting out to watch, taking a seat) travels from there (moveIn). */
-  let stood = new Map<string, { at: DOMRect; el: Element }>();
+  let stood = new Map<string, Stood>();
+  type Stood = { at: DOMRect; el: Element; list: Element | null; name: DOMRect | undefined };
   let lobbyEl = $state<HTMLElement>();
   const roster = $derived([s.players, s.spectators ?? [], s.aside ?? []].map((l) => l.map((p) => p.id).join()).join('|'));
   // Before the markup changes, so it is where they stood (read only as the room's people change).
@@ -160,8 +161,10 @@
   let listsWere = new Map<Element, number>();
   $effect.pre(() => {
     void roster;
-    const was = new Map<string, { at: DOMRect; el: Element }>();
-    lobbyEl?.querySelectorAll<HTMLElement>('.chips li[data-id], .onlookers li[data-id]').forEach((li) => was.set(li.dataset.id!, { at: li.getBoundingClientRect(), el: li }));
+    const was = new Map<string, Stood>();
+    lobbyEl
+      ?.querySelectorAll<HTMLElement>('.chips li[data-id], .onlookers li[data-id]')
+      .forEach((li) => was.set(li.dataset.id!, { at: li.getBoundingClientRect(), el: li, list: li.parentElement, name: li.querySelector('.name')?.getBoundingClientRect() }));
     stood = was;
     listsWere = new Map([...(lobbyEl?.querySelectorAll<HTMLElement>('ul.chips, ul.onlookers') ?? [])].map((ul) => [ul, ul.offsetHeight]));
   });
@@ -221,16 +224,18 @@
   /**
    * One who moves between the party and a gallery crosses as one person: a ghost of the chip they leave and one of the chip they come to,
    * drawn over the party (outside the lists, so neither list scrolls or clips them), go together from the one place to the other,
-   * the first giving way to the second halfway, and grow or shrink from the one's size to the other's. The chip they come to waits
-   * unseen until they land; where it is is read each frame, as the lists around it open and close. Set in the party's own px, under the stage's zoom.
+   * the first giving way to the second halfway. Their names are held on one another the whole way (the same place and size, going
+   * from the one's to the other's), so the name is only ever written once and the chip and its avatar change round it. The chip
+   * they come to waits unseen until they land; where it is is read each frame, as the lists around it open and close. Set in the
+   * party's own px, under the stage's zoom.
    */
-  function travel(id: string, from: { at: DOMRect; el: Element }, toEl: HTMLElement) {
+  function travel(id: string, from: Stood, toEl: HTMLElement) {
     const box = partyEl;
     if (!box) return travelling.delete(id);
     const z = zoomOf(box);
-    const ghost = (li: Element, width: number) => {
-      // In a copy of its own list, for the list's styles; nothing of its place in it (Svelte's pin) but its colour.
-      const ul = li.parentElement?.cloneNode(false) as HTMLElement | undefined;
+    const ghost = (li: Element, list: Element | null, width: number) => {
+      // In a copy of its own list (as it was: the chip they leave may be out of it already), for the list's styles; nothing of its place in it (Svelte's pin) but its colour.
+      const ul = list?.cloneNode(false) as HTMLElement | undefined;
       const copy = li.cloneNode(true) as HTMLElement;
       const hue = (li as HTMLElement).style.getPropertyValue('--c');
       copy.removeAttribute('style');
@@ -244,9 +249,18 @@
       box.append(shell);
       return shell;
     };
-    const a = ghost(from.el, from.at.width);
-    const b = ghost(toEl, toEl.getBoundingClientRect().width);
+    const a = ghost(from.el, from.list, from.at.width);
+    const b = ghost(toEl, toEl.parentElement, toEl.getBoundingClientRect().width);
     toEl.style.opacity = '0';
+    // Each name's text size, and where its left middle is in its chip (screen px).
+    const nameOf = (li: Element) => li.querySelector<HTMLElement>('.name');
+    const toName = nameOf(toEl);
+    const sizeOf = (el: HTMLElement | null) => (el ? parseFloat(getComputedStyle(el).fontSize) : 0);
+    // (Off its ghost: the chip they leave may be gone from the page already.)
+    const fa = sizeOf(nameOf(a)) || 1;
+    const fb = sizeOf(nameOf(b)) || fa;
+    const fromName = from.name ?? from.at;
+    const offA = [fromName.left - from.at.left, fromName.top + fromName.height / 2 - from.at.top];
     let t0: number | undefined;
     let frame = 0;
     const done = () => {
@@ -264,16 +278,20 @@
       const e = cubicOut(u);
       const r = box.getBoundingClientRect();
       const to = toEl.getBoundingClientRect();
-      const h = from.at.height + (to.height - from.at.height) * e;
-      // Left edges and middles meet, so the avatar leads the name across.
-      const x = (from.at.left + (to.left - from.at.left) * e - r.left) / z - box.clientLeft;
-      const mid = from.at.top + from.at.height / 2 + (to.top + to.height / 2 - from.at.top - from.at.height / 2) * e;
-      const y = (mid - h / 2 - r.top) / z - box.clientTop;
-      const swap = Math.min(1, Math.max(0, (e - 0.25) / 0.5));
-      a.style.transform = `translate(${x}px, ${y}px) scale(${h / from.at.height})`;
-      a.style.opacity = String(1 - swap);
-      b.style.transform = `translate(${x}px, ${y}px) scale(${h / to.height})`;
-      b.style.opacity = String(swap);
+      const tn = toName?.getBoundingClientRect() ?? to;
+      const offB = [tn.left - to.left, tn.top + tn.height / 2 - to.top];
+      // The name's left middle now, and its size, between the two.
+      const nx = from.at.left + offA[0] + (to.left + offB[0] - from.at.left - offA[0]) * e;
+      const ny = from.at.top + offA[1] + (to.top + offB[1] - from.at.top - offA[1]) * e;
+      const size = fa + (fb - fa) * e;
+      const place = (g: HTMLElement, off: number[], k: number) =>
+        (g.style.transform = `translate(${(nx - off[0] * k - r.left) / z - box.clientLeft}px, ${(ny - off[1] * k - r.top) / z - box.clientTop}px) scale(${k})`);
+      place(a, offA, size / fa);
+      place(b, offB, size / fb);
+      // The one they come to (drawn over) comes in a little before the one they leave goes, so the name stays as bright throughout.
+      const ramp = (from: number) => Math.min(1, Math.max(0, (e - from) / 0.35));
+      a.style.opacity = String(1 - ramp(0.4));
+      b.style.opacity = String(ramp(0.25));
       if (u < 1) frame = requestAnimationFrame(step);
       else done();
     };
@@ -315,6 +333,17 @@
   const canShare = typeof navigator !== 'undefined' && !!navigator.share && matchMedia('(pointer: coarse)').matches;
 
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
+  /** How long the invite button's words take to change: at once as it is clicked, slowly as they go back by themselves. */
+  let labelMs = $state(200);
+  /**
+   * A word or line giving way to the next, which fades in where it stood: it fades out over it, out of the flow (so its box is
+   * only ever as tall as the new one, and the new one's height is what settles).
+   */
+  function fadeOver(node: Element, { duration }: { duration: number }) {
+    // Out of the flow at once, before the flush's heights are read (settle), not a frame later as its first style.
+    Object.assign((node as HTMLElement).style, { position: 'absolute', left: '0', right: '0', top: '0' });
+    return calm({ duration, css: (t: number) => `opacity: ${t};` });
+  }
   onMount(() => () => clearTimeout(copiedTimer));
   async function copy() {
     if (copyBtn) twinkle(copyBtn);
@@ -323,9 +352,14 @@
         await navigator.share({ title: 'PoE2.Quest', text: `Join my PoE2 trivia room ${session.code}`, url: inviteLink });
       } else {
         await navigator.clipboard.writeText(inviteLink);
+        labelMs = 120;
         copied = true;
         clearTimeout(copiedTimer);
-        copiedTimer = setTimeout(() => (copied = false), 1800);
+        copiedTimer = setTimeout(() => {
+          labelMs = 450;
+          copied = false;
+          copiedTimer = setTimeout(() => (labelMs = 200), 500);
+        }, 1800);
       }
     } catch {
       /* dismissed */
@@ -436,7 +470,7 @@
   /** Host: what the room's access means for who can come in, under its switches. */
   const visHint = $derived(
     s.settings.locked
-      ? 'Room locked: nobody new can join or watch. Players already in the game can still reconnect.'
+      ? 'Nobody new can join or watch; players can still reconnect.'
       : closed
         ? 'Room full: nobody new can come in until someone leaves.'
         : full
@@ -458,6 +492,22 @@
   // Where the panel is as tall as what's in it (below a desktop), a mode's settings and Delve's descent differ a little in height:
   // Begin glides from where it stood as the new ones fade in (their 260ms), rather than stepping. (A desktop pins it to the panel's foot.)
   let startEl = $state<HTMLElement>();
+  /**
+   * Switching between Delve and the others, co-op's rules come into the party as the adder goes (or back): for a frame or
+   * two the chips' list can stand a few px short of its own foot (the padding under its last row, nothing of the chips),
+   * which would show a scrollbar. Meanwhile it doesn't scroll.
+   */
+  let switching = $state(false);
+  let switchTimer: ReturnType<typeof setTimeout> | undefined;
+  let wasDelve = untrack(() => delve);
+  $effect(() => {
+    if (delve === wasDelve) return;
+    wasDelve = delve;
+    switching = true;
+    clearTimeout(switchTimer);
+    switchTimer = setTimeout(() => (switching = false), 320);
+  });
+  onMount(() => () => clearTimeout(switchTimer));
   let startWas: number | undefined;
   $effect.pre(() => {
     void delve;
@@ -565,7 +615,7 @@
             <!-- A locked room, or one with no seat and no room to watch, takes nobody new: the link isn't offered then, and the button says why. -->
             <button class="btn invite" data-cursor="invite" class:accent={alone && isHost && !closed} bind:this={copyBtn} onclick={copy} disabled={closed}>
               <!-- The new word fades in where the last stood; the button keeps its width (its row gives it). -->
-              {#key inviteLabel}<span class="invite-label" in:fade={calm({ duration: 200 })}>{inviteLabel}</span>{/key}
+              {#key inviteLabel}<span class="invite-label" in:fade={calm({ duration: labelMs })} out:fadeOver={{ duration: labelMs }}>{inviteLabel}</span>{/key}
             </button>
             <!-- Hiding the code (for a stream) sits with the other ways of handing it on. -->
             <button
@@ -610,11 +660,11 @@
                 {#if s.settings.locked}
                   <!-- Its shackle drops shut as it locks, and springs up as it opens: only on the click, never idle. -->
                   <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" in:fly={calm({ y: -3, opacity: 1, duration: 160 })} /></svg>
-                  Locked
                 {:else}
                   <svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 7.5-2" in:fly={calm({ y: 3, opacity: 1, duration: 200 })} /></svg>
-                  Lock
                 {/if}
+                <!-- Both words in one place, as wide as the longer, so the button never changes width: the one that holds shows. -->
+                <span class="lock-words"><span class:shown={!!s.settings.locked}>Locked</span><span class:shown={!s.settings.locked}>Lock</span></span>
               </button>
             {:else}
               <span class="vis-tag">{s.settings.public ? 'Public room' : 'Private room'}{s.settings.locked ? ' · locked' : ''}</span>
@@ -623,7 +673,7 @@
           {#if isHost}
             <!-- A hint that wraps longer or shorter opens or closes its room as it fades in, so the party below glides (settle). -->
             <div class="vis-hint-box" bind:this={hintBox}>
-              {#key visHint}<p class="vis-hint" in:fade={calm({ duration: 200 })}>{visHint}</p>{/key}
+              {#key visHint}<p class="vis-hint" in:fade={calm({ duration: 250 })} out:fadeOver={{ duration: 250 }}>{visHint}</p>{/key}
             </div>
           {/if}
         </section>
@@ -659,7 +709,7 @@
           </span>
         </header>
         <!-- The same chips the game shows along its top, two to a row. -->
-        <ul class="chips">
+        <ul class="chips" class:switching>
           {#each s.players as p, i (p.id)}
             {@const mark = marks.get(p.id)}
             <li
@@ -718,7 +768,8 @@
         {/if}
         {#if delve && !local && !hereOnly}
           <!-- Co-op is about the party, so it is told under it: in a team room, or one a second player can still join (on one device, Delve is for one). -->
-          <div class="setting together" data-cursor="coop">
+          <!-- It comes as the adder for those at the host's screen goes (Delve sets them aside), in the same slide, so the two together never stand taller than either. -->
+          <div class="setting together" data-cursor="coop" transition:slide={{ duration: 250 }}>
             <span class="label">Play co-op together</span>
             {#if !together}
               <p class="together-when" out:fadeShut>Once a second exile joins this room:</p>
@@ -928,6 +979,18 @@
     letter-spacing: 0.12em;
     text-transform: uppercase;
   }
+  .lock-words {
+    display: inline-grid;
+  }
+  .lock-words > span {
+    grid-area: 1 / 1;
+    justify-self: center;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .lock-words > .shown {
+    opacity: 1;
+  }
   .lock.on {
     color: #ffcf9e;
     border-color: #8c5a2c;
@@ -1025,6 +1088,10 @@
     font-size: 0.9rem;
     font-style: italic;
   }
+  /* (What a hint giving way fades over: fadeOver.) */
+  .vis-hint-box {
+    position: relative;
+  }
   .block {
     min-width: 0;
   }
@@ -1055,6 +1122,8 @@
   }
   .invite-row .invite {
     flex: 1;
+    /* (What its word giving way fades over: fadeOver, centred as the word was.) */
+    position: relative;
   }
   /* Alone in an open room, inviting is the next step: lit in gold, but not gold itself (Begin is). */
   .invite.accent {
@@ -1892,13 +1961,20 @@
       flex: 0 1 auto;
       min-height: 0;
       overflow-y: auto;
-      padding-bottom: 1rem;
+      padding-bottom: 0.6rem;
       align-content: start;
       scrollbar-width: thin;
       scrollbar-color: var(--gold-lo) transparent;
     }
     .party .chips {
       min-height: min(6.6rem, 100%);
+    }
+    .party .chips.switching {
+      overflow-y: hidden;
+    }
+    /* The list's own foot is the gap over co-op's rules, and nothing under them, so two rows of chips still fit over them. */
+    .party .together {
+      margin: 0;
     }
     .game {
       display: flex;
