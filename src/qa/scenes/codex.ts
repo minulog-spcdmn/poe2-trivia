@@ -19,7 +19,8 @@ export function codexScenes(): Scene[] {
     codex('empty', 'Nothing met yet', () => ({ state: null, hash: '#codex', met: [] })),
     codex('collection', 'The collection, part filled', () => filled()),
     // The table, sorted once by its second column a moment in (the rows on screen sliding to their new places); its headings sort it again.
-    codex('table', 'The collection as a table: sorted by a heading', () => filled([{ wait: 600 }, { click: '.collection .seg button:last-child' }, { wait: 1400 }, { click: '.ledger th:nth-child(2) button' }])),
+    // (The table sits below the screen, so it's brought into view before the sort: the rows on screen slide.)
+    codex('table', 'The collection as a table: sorted by a heading', () => filled([{ wait: 600 }, { click: '.collection .seg button:last-child' }, { wait: 1400 }, { scroll: '.ledger' }, { wait: 600 }, { click: '.ledger th:nth-child(2) button' }])),
     codex('item', 'An item open', () => filled([{ click: '.tile' }])),
     // Its tabs turned a moment apart, the line under the title rising with each page.
     codex('tabs', 'Its tabs turned, one after another', () =>

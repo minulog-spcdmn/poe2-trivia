@@ -155,8 +155,23 @@ const INVITE: Control[] = [
       { value: 'none', label: 'None saved' },
     ],
   },
+  {
+    kind: 'choice',
+    key: 'then',
+    label: 'Then',
+    default: 'stay',
+    options: [
+      { value: 'stay', label: 'Nothing' },
+      { value: 'leave', label: '“Something else” is tapped' },
+    ],
+  },
 ];
 function invite(v: Values = {}): Built {
+  const built = inviteFor(v);
+  // Something else tapped a moment in: Today's unique comes in after the menu.
+  return v.then === 'leave' ? { ...built, steps: [...(built.steps ?? []), { wait: 1200 }, { click: ':is(.pair-pick, .entry:nth-child(2 of .entry) .pick)' }] } : built;
+}
+function inviteFor(v: Values): Built {
   const asked = room(4, { code: 'KXR4QT', players: 3 });
   const answer = v.room === 'full' ? { ...asked, players: 12, maxPlayers: 12 } : v.room === 'playing' ? { ...asked, phase: 'question' as const } : v.room === 'gone' ? ('gone' as const) : v.room === 'silent' ? null : asked;
   if (v.name === 'made') return { ...firstVisit(), query: 'room=KXR4QT', invite: answer };
@@ -320,6 +335,7 @@ export function homeScenes(): Scene[] {
           { label: 'An invite link to an open room', values: {} },
           { label: 'An invite link under a made name: the field holds it, selected', values: { name: 'made' } },
           { label: 'An invite link with no name saved', values: { name: 'none' } },
+          { label: 'An invite link under a made name, then Something else', values: { name: 'made', then: 'leave' } },
           { label: 'An invite to a full room', values: { room: 'full' } },
           { label: 'An invite to a room mid-game', values: { room: 'playing' } },
           { label: 'An invite to a room that has closed', values: { room: 'gone' } },
