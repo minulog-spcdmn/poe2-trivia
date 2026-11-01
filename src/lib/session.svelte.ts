@@ -88,7 +88,7 @@ import {
 import { readLegacy, readStored, removeLegacy, removeStored, storeKey, writeStored } from './storage';
 import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, TAP, actionOf, cursorKey, cursorsLive, entryAt, entryMs, stampOf, type CursorAt, type CursorEntry } from './cursors';
 import { peerCursors } from './peerCursors.svelte';
-import { whenCalm } from './idle';
+import { whenCalm, whenIdle, type Deadline } from './idle';
 import { frameEvent } from './fpsMeter';
 import { SIGILS_KEY, loadSigils } from './sigils';
 import { COLOUR_KEY, loadColour } from './colour';
@@ -112,6 +112,37 @@ export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
  * by name (Engine.setLooks).
  */
 const LOOKS_FETCH_FROM = LOOKALIKES_ASKED_FROM - 10;
+
+/** How much of an idle moment a step of warmLikeness leaves (ms): a step is a fraction of one. */
+const LIKENESS_ROOM_MS = 2;
+/** The hand warmLikeness works on: a newer one takes over. */
+let likenessFor: string[] | null = null;
+
+/**
+ * The look-alike scores of the categories on offer (Engine.likenessSteps),
+ * worked out while the hand is looked over: in a calm moment once the deal
+ * has played out, then as many steps as each idle moment has room for. A
+ * pick that comes first works out the rest itself, as before.
+ */
+function warmLikeness(offered: string[]) {
+  const hand = (likenessFor = offered);
+  whenCalm(() => {
+    if (likenessFor !== hand) return;
+    const steps = (function* () {
+      for (const category of hand) yield* engine.likenessSteps(category);
+    })();
+    const step = (deadline?: Deadline) => {
+      if (likenessFor !== hand) return;
+      for (;;) {
+        if (steps.next().done) return;
+        if (!deadline || deadline.timeRemaining() < LIKENESS_ROOM_MS) break;
+      }
+      whenIdle(step, { timeout: 1000, fallback: 30 });
+    };
+    whenIdle(step, { timeout: 1000, fallback: 30 });
+  });
+}
+
 let looksFetched = false;
 function fetchLooks() {
   if (looksFetched) return;
@@ -2728,6 +2759,8 @@ class Session {
     }
     // The art's workers are ready before the first question wants them (media.svelte.ts; once is enough).
     if (this.isHost && next.phase !== 'lobby') warmMedia();
+    // The question a card on offer would ask is ready to be made the moment it's picked.
+    if (this.isHost && next.phase === 'choosing' && next.offered.join() !== prev?.offered.join()) warmLikeness(next.offered);
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
       // A question asked again in its place while the draw plays keeps its hold.
       const until = drawHoldUntil(prev, next, this.drawHold);
