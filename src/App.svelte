@@ -5,6 +5,7 @@
   import { isGroupRun, shownDepth } from './lib/delve';
   import { dealing, followDeal, shownRound } from './lib/dealing.svelte';
   import { arrival, beginArrival, endArrival } from './lib/zoneArrival.svelte';
+  import { T as ZONE_T } from './lib/zoneTitleTiming';
   import { ownRect, stageZoom } from './lib/stage';
   import { onMount, untrack, type Component } from 'svelte';
   import { fade as plainFade, type TransitionConfig } from 'svelte/transition';
@@ -233,6 +234,25 @@
     arrival.card && screen === 'game' && dealing.held && gs?.delve?.startedAt === arrival.card.run && gs.round === arrival.card.depth ? arrival.card : null,
   );
 
+  /**
+   * The zone card whose letterbox has closed over the header (its key): the
+   * line there takes the zone's depth and name then, at once and unseen,
+   * rather than at the deal (shownRound), after the bars have opened again.
+   * The card has just announced them.
+   */
+  let barsShut = $state<string | null>(null);
+  $effect(() => {
+    const c = zoneCard;
+    if (!c) return;
+    const shut = c.t0 + (c.tl.mode === 'still' ? 900 : ZONE_T.BARS + ZONE_T.BARS_MS) + 50;
+    const t = setTimeout(() => (barsShut = c.key), Math.max(0, shut - performance.now()));
+    return () => clearTimeout(t);
+  });
+  /** The header's line is behind the zone card's bars: what changes there changes at once. */
+  const underBars = () => !!zoneCard && barsShut === zoneCard.key;
+  /** The depth the header's line shows: the one dealt (shownRound), or under the closed bars already the zone's. */
+  const metaRound = (s: NonNullable<typeof gs>) => (underBars() ? s.round : shownRound(s));
+
   /** How long the outgoing screen takes to go (the .screen transition below). */
   const SCREEN_OUT_MS = 130;
   /** And the incoming one to come in. */
@@ -408,7 +428,7 @@
    * new width as it rolls, rather than stepping there.
    */
   function roll(node: HTMLElement, { out = false } = {}): TransitionConfig {
-    const { duration } = calm({ duration: 200 });
+    const { duration } = calm({ duration: underBars() ? 0 : 200 });
     const by = out ? -4 : 4;
     if (!out) easeWidth(node, duration);
     return { duration, easing: cubicOut, css: (t, u) => `opacity: ${t}; transform: translateY(${u * by}px)` };
@@ -428,12 +448,14 @@
     if (Math.abs(from - to) < 0.5 || Math.abs(ownRect(box).width - Math.max(from, to)) > 0.5) return;
     box.animate([{ width: `${from}px` }, { width: `${to}px` }], { duration, easing: 'cubic-bezier(0.33, 1, 0.68, 1)' });
   }
-  /** A new zone's name: the place for it eases to its width as the last one fades, and it fades in once it's announced. */
+  /** A new zone's name (after a zone card, already there under its bars): the place for it eases to its width as the last one fades, and it fades in once it's announced. */
   function zoneIn(node: HTMLElement): TransitionConfig {
+    // (Under the zone card's bars, unseen: at once.)
+    if (underBars()) return {};
     easeWidth(node, calm({ duration: 500 }).duration);
     return plainFade(node, calm({ duration: 900, delay: 500 }));
   }
-  const zoneOut = (node: Element) => plainFade(node, calm({ duration: 300 }));
+  const zoneOut = (node: Element) => (underBars() ? {} : plainFade(node, calm({ duration: 300 })));
   const showHeader = () => (headerOn = screen !== 'home');
   $effect(() => {
     if (screen !== 'home' === untrack(() => headerOn)) return;
@@ -736,7 +758,7 @@
                    names none here: the banner below has its start line (Game.svelte),
                    too long for this line on a phone. -->
               <!-- (Going down into a new zone, the depth before until its cards are dealt: lib/dealing.svelte.ts.) -->
-              {@const round = shownRound(gs)}
+              {@const round = metaRound(gs)}
               {#if metaFor !== 'game' || shownDepth(round) > 0}
                 {#if !folded || session.spectating}<span class="dot">•</span>{/if}
                 <span class="depth" style:--accent={accentAt(round)} in:fade={{ duration: 600 }}>Depth <b>{@render rolled(shownDepth(round))}</b></span>

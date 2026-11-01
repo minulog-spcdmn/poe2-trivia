@@ -527,9 +527,12 @@ export function gameScenes(): Scene[] {
     // The header's depth rolling over: a run at Depth 1 (or 9), answered
     // right, then on to the next, its number rising out as the next one
     // rises in once its cards are dealt. 1 to 2 keeps the line's width; 9 to
-    // 10, a figure more, eases it wider (and comes into a new zone, its card
-    // first). (At depth 0 the line names no depth: the banner under it has
-    // the run's start line, Game.svelte.)
+    // 10, a figure more, eases it wider, as it does where the zone's card
+    // doesn't play (a screen that saw the run move on too late for one): this
+    // scene comes in at the deal, with no card. With its card (game/delve-zone,
+    // Depth 11) the line changes at once under the card's closed bars.
+    // (At depth 0 the line names no depth: the banner under it has the run's
+    // start line, Game.svelte.)
     {
       ...scene('delve-depth', 'Delve alone', 'A depth answered, then on: the header’s depth rolling over', [ALONE], delveAlone),
       controls: [
@@ -540,13 +543,13 @@ export function gameScenes(): Scene[] {
           default: '1',
           options: [
             { value: '1', label: '1 to 2' },
-            { value: '9', label: '9 to 10' },
+            { value: '9', label: '9 to 10, no zone card' },
           ],
         },
       ],
       states: [
         { label: '1 to 2: the same width', values: {} },
-        { label: '9 to 10: a figure more', values: { from: '9' } },
+        { label: '9 to 10 with no zone card: a figure more, eased', values: { from: '9' } },
       ],
       build: (v = {}) => {
         // (The round is a depth on: the line shows round 2 as Depth 1, shownDepth.)
