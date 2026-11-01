@@ -380,8 +380,9 @@ One column, 16 px gutters, scrolling:
 - **Your row below the fold:** when you did not win and your row is not on
   the first screen (seventh or lower), it rides on the dock's top edge as one
   opaque piece with it (`n-phone-twelve`), until the list scrolls it into
-  place, rising out of the dock's edge as it comes and sinking back as it
-  goes. Nothing of the list shows between it and the dock.
+  place: set down in its turn among the rows as the screen comes in, then,
+  as you scroll, sinking into the dock's edge and rising out of it again
+  (opaque, in about 0.15 s: your doing). Nothing of the list shows between it and the dock.
 - The start page footer ends the page.
 
 ## Copy

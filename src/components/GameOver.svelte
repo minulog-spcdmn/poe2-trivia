@@ -223,11 +223,14 @@
   const found = $derived(newInCodex(met));
   /** When the screen came up: what is read in later takes its place in the entrances' order from there. */
   const shownAt = performance.now();
-  /** "New in your codex" settles in after the Highlights over it (at 1000 ms)... */
-  const FOUND_IN_MS = 1150;
-  /** ...or, read in after that (the codex read again a moment later), opens out as an achievement judged late does. */
-  function foundIn(node: Element): TransitionConfig {
-    const left = FOUND_IN_MS - (performance.now() - shownAt);
+  /**
+   * A section set down in the entrances' order, `at` ms after the screen came up, as its neighbours are (the panel's,
+   * top to bottom: the runs 700, what was earned 850, the Highlights 1000, New in your codex 1150; beside it, Your game
+   * 900 and what it earned 1050); one that comes after its turn (an achievement judged late, the codex read again)
+   * opens out instead.
+   */
+  function arrive(node: Element, { at }: { at: number }): TransitionConfig {
+    const left = at - (performance.now() - shownAt);
     return left > 0 ? settle(node, { delay: left }) : slide(node, calm({ duration: 450 }));
   }
   /** Their row of thumbs' width (0 until measured): as many as fit, its "+N" opening it as a folded list's does. */
@@ -334,8 +337,21 @@
    */
   function rankIn(node: Element, { i, n, top }: { i: number; n: number; top: boolean }): TransitionConfig {
     if (top) return scale(node, calm({ start: 1.07, delay: WINNER_IN_MS, duration: 520, easing: quintOut }));
-    const step = n > 2 ? Math.min(70, 400 / (n - 1)) : 70;
-    return settle(node, { delay: 450 + (n - 1 - i) * step });
+    return settle(node, { delay: rankDelay(i, n) });
+  }
+  /** When the `i`th of `n` rows is set down: from the foot up, the winner last. */
+  const rankDelay = (i: number, n: number) => 450 + (n - 1 - i) * (n > 2 ? Math.min(70, 400 / (n - 1)) : 70);
+  /**
+   * Your row on a phone's dock: as the screen comes in, set down in its turn among the rows, as it would have been; after
+   * that (you scrolled past it, or back), out of the dock's edge and back into it, quickly: it is your doing. Opaque all
+   * the while, cut off at the dock's edge (.pin-edge), so nothing shows through it.
+   */
+  function pinIn(node: Element): TransitionConfig {
+    const left = rankDelay(rows.findIndex((x) => x.p.id === me), rows.length) - (performance.now() - shownAt);
+    return left > 0 ? settle(node, { delay: left }) : fly(node, calm({ y: (node as HTMLElement).offsetHeight, opacity: 1, duration: 160, easing: quintOut }));
+  }
+  function pinOut(node: Element): TransitionConfig {
+    return fly(node, calm({ y: (node as HTMLElement).offsetHeight, opacity: 1, duration: 140 }));
   }
   /** A part of the end screen set down into its place: risen a little, on the house's ease-out. */
   function settle(node: Element, { delay = 0, y = 12 }: { delay?: number; y?: number } = {}): TransitionConfig {
@@ -980,7 +996,7 @@
         </section>
         {#if earned.length}
           <!-- Judged as the game ends, it can come in after the screen: it opens out rather than jumping in. -->
-          <section class="sec yours earned-sec" in:slide={calm({ duration: 450 })}>
+          <section class="sec yours earned-sec" in:arrive|global={{ at: 1050 }}>
             <h3>Earned this game</h3>
             {@render achievements(earned, sideFit, 'earned')}
           </section>
@@ -1050,7 +1066,7 @@
           <h2>{modeName}</h2>
           {#if canShare}
             <span class="share-wrap">
-              <button class="share" data-cursor="share" onclick={shareDepth} title={together ? "Share the team’s depth" : 'Share your depth'}>
+              <button class="share" class:copied={shared} data-cursor="share" onclick={shareDepth} title={together ? "Share the team’s depth" : 'Share your depth'}>
                 <!-- Both faces in one cell, the button as wide as the wider: one fades to the other. -->
                 <span class="face" class:off={shared} aria-hidden={shared || undefined}>
                   <!-- Three linked seals: the share sign. -->
@@ -1107,7 +1123,7 @@
         {/if}
 
         {#if run}
-          <div class="runs" data-cursor="runs">
+          <div class="runs" data-cursor="runs" in:settle|global={{ delay: 700 }}>
             {#if first}
               {#if facts.length > 1}
                 <p class="cap">This run</p>
@@ -1143,7 +1159,7 @@
 
       {#if run && earned.length}
         <!-- Every run that earns one (judged as it ends: it opens out rather than jumping in). -->
-        <section class="sec earned-sec" in:slide={calm({ duration: 450 })}>
+        <section class="sec earned-sec" in:arrive|global={{ at: 850 }}>
           <h3>Earned this run</h3>
           {@render achievements(earned, boardFit, 'earned')}
         </section>
@@ -1158,7 +1174,7 @@
 
       {#if found}
         <!-- Delve alone: the uniques met for the first time, how many on the heading's line. -->
-        <section class="sec found" in:foundIn|global>
+        <section class="sec found" in:arrive|global={{ at: 1150 }}>
           <h3><span>New in your codex</span><span class="count">{@render say(found)}</span></h3>
           {@render minis(met.fresh)}
         </section>
@@ -1176,10 +1192,12 @@
 {#if phone.current}
   <!-- Phones: the start row docked at the foot of the screen, where the thumb rests (lib/layout's dock). -->
   <div class="dock" class:host={session.isHost} use:portal use:overPage use:dock bind:offsetHeight={dockH} in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
-    {#if pinned}
-      {@const x = rows.find((r) => r.p.id === me)}
-      {#if x}<div class="pinned" transition:fly|global={calm({ y: 14, duration: 250, easing: quintOut })}><div class="ranking"><div class="row you">{@render rankRow(x, true)}</div></div></div>{/if}
-    {/if}
+    <div class="pin-edge">
+      {#if pinned}
+        {@const x = rows.find((r) => r.p.id === me)}
+        {#if x}<div class="pinned" in:pinIn|global out:pinOut|global><div class="ranking"><div class="row you">{@render rankRow(x, true)}</div></div></div>{/if}
+      {/if}
+    </div>
     <div class="dock-row">{@render startRow()}</div>
   </div>
 {/if}
@@ -2119,7 +2137,12 @@
     align-items: center;
     justify-content: center;
     gap: 0.45em;
-    transition: opacity 0.2s;
+    /* Back to Share run by itself: slowly. */
+    transition: opacity 0.45s;
+  }
+  /* Copied answers the click at once (the lobby's Link copied!). */
+  .share.copied .face {
+    transition-duration: 0.12s;
   }
   .share .face.off {
     opacity: 0;
@@ -2519,12 +2542,19 @@
   .dock-row .status {
     display: none;
   }
-  /* Your row riding on the dock's top edge, one opaque piece with it. */
-  .pinned {
+  /* Your row riding on the dock's top edge, one opaque piece with it; cut off at that edge as it comes out of it and goes back in. */
+  .pin-edge {
     position: absolute;
     left: 0;
     right: 0;
     bottom: 100%;
+    clip-path: inset(-200px -40px 0 -40px);
+  }
+  .pinned {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
     padding: 8px 16px 6px;
     background: #0b0907;
   }
