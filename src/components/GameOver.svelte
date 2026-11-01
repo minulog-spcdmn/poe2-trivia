@@ -253,7 +253,7 @@
   const lifted = $derived(run && self && measured && chart.length >= 3 ? usualLifted(kept, run.startedAt, together, local ? null : self) : null);
   const facts = $derived.by(() => {
     if (!run) return [];
-    const out = runFacts(s, solo ? self : null, foundCount(loadFossils()) >= FOSSIL_COUNT);
+    const out = runFacts(s, solo ? self : null);
     if (lifted !== null) out.splice(1, 0, { icon: { usual: true }, parts: ['Your usual is now ', { n: lifted }, '.'] });
     return out;
   });

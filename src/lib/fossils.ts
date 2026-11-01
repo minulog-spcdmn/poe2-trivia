@@ -4,8 +4,7 @@
 // kept in the codex at once (lib/fossilStore.ts). It does nothing in the
 // run; taking it means passing up whatever else is on the offer, a find
 // among them. Only fossils a player lacks ever turn up, so the set can be
-// completed, and at most one a run and one a day (UTC), so it takes weeks
-// of coming back.
+// completed, and at most one a run, so it takes many runs of coming back.
 //
 // Which offer holds one, and of which tier, is dealt by dealFossil, every
 // number of it in FOSSIL_DEAL; which fossil it is, only on the right answer
@@ -124,35 +123,17 @@ export const holds = (m: number, id: FossilId) => (m & bitOf(id)) !== 0;
 /** The fossils in mask `m`, in FOSSILS' order. */
 export const fossilsIn = (m: number): FossilId[] => FOSSIL_IDS.filter((id) => holds(m, id));
 
-/** A UTC day, as a number (days since 1970): the day a fossil was found, for the one a day. */
-export const fossilDay = (ms: number) => Math.floor(ms / 86_400_000);
-
 /**
- * What a player's device holds, for the deal: its fossils as a mask, and the
- * UTC day of its latest find (null for none), from the found dates it keeps
- * (fossilStore.ts), so paired devices, which keep the earlier date of one
- * both found, agree on it.
- */
-export interface FossilsHeld {
-  held: number;
-  day: number | null;
-}
-export const NO_FOSSILS: FossilsHeld = { held: 0, day: null };
-
-/** Whether `v` reads as a UTC day a fossil could have been found on. */
-export const isFossilDay = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 1_000_000;
-
-/**
- * The host's answer to the deal's question of what each of `ids` holds
- * (Engine.setFossilsHeld): a guest's device's as its hello said (and runs
- * since gave), kept by player id past a dropped link, so a player away from
- * a run they still stand in is dealt as themselves; this device's own
+ * The host's answer to the deal's question of what each of `ids` holds, as
+ * masks (Engine.setFossilsHeld): a guest's device's as its hello said (and
+ * runs since gave), kept by player id past a dropped link, so a player away
+ * from a run they still stand in is dealt as themselves; this device's own
  * (`here`) only for its own players (the host, those at its screen, `own`).
  * A player never heard from holds none.
  */
-export function heldFor(ids: readonly string[], known: ReadonlyMap<string, FossilsHeld>, own: (id: string) => boolean, here: () => FossilsHeld): FossilsHeld[] {
-  let mine: FossilsHeld | null = null;
-  return ids.map((id) => (own(id) ? (mine ??= here()) : (known.get(id) ?? NO_FOSSILS)));
+export function heldFor(ids: readonly string[], known: ReadonlyMap<string, number>, own: (id: string) => boolean, here: () => number): number[] {
+  let mine: number | null = null;
+  return ids.map((id) => (own(id) ? (mine ??= here()) : (known.get(id) ?? 0)));
 }
 
 // ---- the deal ------------------------------------------------------------------
@@ -161,38 +142,40 @@ export function heldFor(ids: readonly string[], known: ReadonlyMap<string, Fossi
  * Every number the deal goes by, in the engine's depths (one more than a
  * player sees: delve.ts shownDepth). A fossil rides on an ordinary category
  * card, as a find does, never on a find's card, and at most one an offer.
+ * The offer says only its tier; which fossil is drawn on the right answer.
  * They are dealt as the finds are: one roll per offer against two slices in
  * turn, the rares' and then the commons', each with its own chance by depth.
  *
- * - One a day and one a run, each player's own: one found today (UTC, by
- *   the found dates), or given this run, and nothing more turns up for them
- *   until tomorrow, or the next run.
- * - The first-fossil hook: until a player holds their first fossil, the
- *   first offer of every depth from `hookFrom` (shown 5) holds a common,
- *   certain, as a find is on its own first depth; one after a miss there
- *   rolls as any other. That first one is the day's. Together, while anyone
- *   standing holds none.
+ * - One a run, each player's own: once the run gave them one, nothing more
+ *   turns up for them until the next run.
+ * - The hooks, each tier's, by what a player holds (so one waits while the
+ *   run's one is spent): until they hold a common, the first offer of every
+ *   depth from `hookFrom` (shown 5) holds a common, certain, as a find is
+ *   on its own first depth (one after a miss there rolls as any other);
+ *   until they hold a rare, the first offer at `rareHookAt` (shown 25)
+ *   holds a rare, certain, beside the Azurite Vein that offer always holds.
+ *   Together, while anyone standing could take one.
  * - Commons, from `common.from` (shown 5): `common.start` of plain offers,
- *   `common.step` more every depth, `common.cap` from shown 30 and holding;
+ *   `common.step` more every depth, `common.cap` from shown 29 and holding;
  *   on an offer that holds a find (from shown 10) `common.withFind`.
  * - Rares (the 8), none above `rare.from` (shown 25, the Azurite Vein's
  *   depth): `rare.start` there, `rare.step` more every depth, `rare.cap`
  *   from shown 55 and holding; `rare.findBoost` times that on an offer with
  *   a find.
  * - A slice whose fossils its takers all hold, or that can't give them one
- *   today or this run, finds nothing; it never feeds the other slice.
+ *   this run, finds nothing; it never feeds the other slice.
  *
- * Tuned on the counted runs (of 95, 58 ended before shown 10, 22 in 10 to
- * 19, 12 in 20 to 29, 3 at 30 or deeper; about 75% of answers right) by
- * simulation, at three runs a day: a player whose runs end about 12 deep
- * finds the day's fossil on about half the days, one whose runs end past 20
- * on most; the whole set takes such a deep player about three months, one
- * whose runs end near 30 about seven weeks. docs/gameplay.md, "Fossils",
- * has the table.
+ * Tuned by simulation (the red team's sim, runs ending at a set depth, a
+ * fossil card taken 4 in 5 plain and 3 in 5 beside a find, 80% right): past
+ * the first, a player whose runs end near 15 keeps one about every 5 or 6
+ * runs and the 17 commons in about 90, near 25 one every 2 or 3; past shown
+ * 10, about 4 in 5 fossil cards sit beside a find. docs/gameplay.md,
+ * "Fossils", has the table.
  */
 export const FOSSIL_DEAL = {
   hookFrom: 6,
-  common: { from: 6, start: 0.01, step: 0.002, cap: 0.06, withFind: 0.3 },
+  rareHookAt: 26,
+  common: { from: 6, start: 0.0035, step: 0.0007, cap: 0.02, withFind: 0.2 },
   rare: { from: 26, start: 0.01, step: 0.001, cap: 0.04, findBoost: 3 },
   perRun: 1,
 } as const;
@@ -218,26 +201,24 @@ export function fossilChance(rare: boolean, d: number, withFind: boolean): numbe
 
 /**
  * One player an offer could hold a fossil for: the fossils they hold (a
- * mask, those given this run in it), how many this run gave them, and
- * whether they found one today.
+ * mask, those given this run in it), and how many this run gave them.
  */
 export interface FossilTaker {
   held: number;
   run: number;
-  today: boolean;
 }
 
-/** Whether `t` can be given a fossil now: none found today, none given this run. */
-const open = (t: FossilTaker) => !t.today && t.run < FOSSIL_DEAL.perRun;
+/** Whether `t` can be given a fossil now: none given this run. */
+const open = (t: FossilTaker) => t.run < FOSSIL_DEAL.perRun;
 
-/** The fossils of a tier a slice could give `t`: those they lack, while they found none today and the run gave them none. */
+/** The fossils of a tier a slice could give `t`: those they lack, while the run gave them none. */
 export function lackedBy(t: FossilTaker, rare: boolean): FossilId[] {
   if (!open(t)) return [];
   return FOSSILS.filter((f) => f.rare === rare && !holds(t.held, f.id)).map((f) => f.id);
 }
 
-/** Whether the first-fossil hook holds for `t`: they hold none yet. */
-export const hooked = (t: FossilTaker) => t.held === 0 && open(t);
+/** Whether a tier's hook holds for `t`: they hold none of it yet, and the run gave them none. */
+export const hooked = (t: FossilTaker, rare: boolean) => open(t) && !FOSSILS.some((f) => f.rare === rare && holds(t.held, f.id));
 
 /** A fossil's tier: one of the 17 common ones or of the 8 rare ones. All an offer's card says of its fossil. */
 export type FossilTier = 'common' | 'rare';
@@ -255,9 +236,10 @@ export const tierOf = (id: FossilId): FossilTier => (fossilById(id).rare ? 'rare
  */
 export function dealFossil(d: number, takers: FossilTaker[], opts: { fresh: boolean; withFind: boolean }, rng: () => number): FossilTier | null {
   const lacking = (rare: boolean, who = takers) => who.some((t) => lackedBy(t, rare).length > 0);
-  const hook = takers.filter(hooked);
-  if (opts.fresh && depthOf(d) >= FOSSIL_DEAL.hookFrom && lacking(false, hook)) return 'common';
-  // Nobody it could go to (each found today's, or took this run's): no roll at all.
+  const depth = depthOf(d);
+  if (opts.fresh && depth === FOSSIL_DEAL.rareHookAt && lacking(true, takers.filter((t) => hooked(t, true)))) return 'rare';
+  if (opts.fresh && depth >= FOSSIL_DEAL.hookFrom && lacking(false, takers.filter((t) => hooked(t, false)))) return 'common';
+  // Nobody it could go to (each took this run's): no roll at all.
   if (!takers.some(open)) return null;
   const rare = fossilChance(true, d, opts.withFind);
   const common = fossilChance(false, d, opts.withFind);
