@@ -2404,6 +2404,11 @@
   :global(:root[data-still]) .closes b.urgent {
     animation: none;
   }
+  @media (prefers-reduced-motion: reduce) {
+    .closes b.urgent {
+      animation: none;
+    }
+  }
   @keyframes throb {
     50% {
       transform: scale(1.2);

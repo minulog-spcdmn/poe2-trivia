@@ -29,6 +29,7 @@
   import { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS, blastAway, prepareBlast } from '../lib/blastAway';
   import { untrack } from 'svelte';
   import { clockMs } from '../lib/game';
+  import { PICK_HOLD_MS } from '../lib/delveSession';
   import { calm, motion } from '../lib/motion.svelte';
   import { dealing } from '../lib/dealing.svelte';
   import { arrival, speak } from '../lib/zoneArrival.svelte';
@@ -273,13 +274,13 @@
   // A pick, alone or on a turn, holds the cards a moment too (PICK_HOLD_MS),
   // on every screen that saw the choosing: the chosen card lifts as the
   // others give way, on the picker's screen and the watchers' alike, before
-  // the question takes their place (a vote's draw has its own moment).
+  // the question takes their place (a vote's draw has its own moment). Its
+  // clock waits as long (drawHoldUntil), so it costs no answer time.
   /** Whether the cards' choosing is the team's vote (Delve together), drawn on the cards, rather than one player's pick. */
   const voted = $derived(!!run && group);
   let raffle = $state<number | null>(null);
   let phaseSeen = '';
   let raffleTimer: ReturnType<typeof setTimeout> | null = null;
-  const PICK_HOLD_MS = 350;
   $effect.pre(() => {
     const key = `${s.turnCount}:${s.phase}`;
     const was = phaseSeen;
