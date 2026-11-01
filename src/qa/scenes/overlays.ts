@@ -11,6 +11,7 @@ import { pid, player } from '../build/people.ts';
 import { Table } from '../build/play.ts';
 import { endScenes } from './over.ts';
 import type { Settings } from '../../lib/game.ts';
+import { ACHIEVEMENTS } from '../../lib/achievements.ts';
 import { METALS, TIERS, type Tier } from '../../lib/metals.ts';
 import type { Built, Scene, Seat, Step } from '../scene.ts';
 
@@ -36,6 +37,15 @@ const endItem = (steps: Step[]): Built => {
   const { state, delveResult, log, runs } = endScenes().find((e) => e.key === 'd-solo')!;
   return { state, delveResult, log, runs, steps: [{ wait: 2500 }, { click: 'button.thumb' }, { wait: 800 }, ...steps] };
 };
+/** A question, then the notices for achievements of `tier` (the first four not kept secret): one alone, then three at once. */
+const achievementNotices = (tier: Tier): Built => {
+  const [alone, ...burst] = ACHIEVEMENTS.filter((a) => a.tier === tier && !a.secret).slice(0, 4);
+  const seal = (a: typeof alone) => ({ sign: a.sign, tier: a.tier });
+  return inGame([
+    { toast: alone.title, opts: { title: 'Achievement earned', seal: seal(alone) } },
+    { toast: burst.map((a) => a.title).join(' • '), opts: { title: `${burst.length} achievements earned`, seal: seal(burst[0]) } },
+  ]);
+};
 const overlay = (key: string, label: string, seats: Seat[], build: () => Built): Scene => ({ key: `overlay/${key}`, screen: 'overlay', group: 'Over the game', label, seats, build });
 const doryani: Seat = { mode: 'client', me: pid('Doryani') };
 const kalguur: Seat = { mode: 'host', me: pid('Kalguur') };
@@ -60,18 +70,12 @@ export function overlayScenes(): Scene[] {
         { toast: 'Too quick to count: the question had only just reached you. Answer again.', kind: 'error' },
       ]),
     ),
-    // Achievements earned mid-question (lib/achievementToasts.ts): one alone, and several as one notice under the hardest's seal, in the metal picked.
+    // Achievements earned mid-question, worded as lib/achievementToasts.ts words them: one alone, and three as one notice under the first's seal, all of the metal picked.
     {
-      ...overlay('achievement', 'Achievements earned during a question', [doryani], () => inGame([])),
+      ...overlay('achievement', 'Achievements earned during a question', [doryani], () => achievementNotices(3)),
       controls: [{ kind: 'choice', key: 'tier', label: 'Metal', default: '3', options: TIERS.map((t) => ({ value: String(t), label: METALS[t].name })) }],
       states: TIERS.map((t) => ({ label: METALS[t].name, values: { tier: String(t) } })),
-      build: (v) => {
-        const tier = Number(v?.tier ?? 3) as Tier;
-        return inGame([
-          { toast: 'Know Thy Enemy', opts: { title: 'Achievement earned', seal: { sign: 'eye', tier } } },
-          { toast: 'Far Sight • Steady Hand • Deep Roots', opts: { title: '3 achievements earned', seal: { sign: 'sol', tier } } },
-        ]);
-      },
+      build: (v) => achievementNotices(Number(v?.tier ?? 3) as Tier),
     },
     overlay('leave', 'Leaving a game: the dialog', [kalguur, doryani], () => inGame([{ click: 'button[aria-label="Leave game"]' }])),
     // The owner in someone else's room: the dialog offers to close it for everyone too.
