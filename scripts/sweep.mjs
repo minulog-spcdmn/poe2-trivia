@@ -634,10 +634,15 @@ async function watchedPage(browser, webgl, seed, ms = FRAME) {
   return { context, page, drive: await frameDriver(context, page, ms) };
 }
 
-/** `url` loaded, its frames driven, until `ready` (run in the page) says so, within 2 minutes of the page's time. */
+/** `url` loaded, its frames driven, until `ready` (run in the page) says so, within 2 minutes of the page's time; then every font it declares. */
 async function load(page, drive, url, ready) {
   await drive.during(page.goto(url, { waitUntil: 'commit', timeout: 60000 }));
   await drive.settle(ready, 120000, 'Loading');
+  // (Each font's scripts are files of their own, fetched when a glyph first asks: one asked for in the
+  // watch, by a Delve's start line its first run didn't show, came in on real time's clock, and the
+  // heading fitted to it (Game's bannerFit) changed size on whichever frame it landed: the deal read
+  // 49k px a 60th of a second on one run, 65k on others.)
+  await drive.during(page.evaluate(() => Promise.all([...document.fonts].map((f) => f.load().catch(() => {})))));
 }
 
 /**

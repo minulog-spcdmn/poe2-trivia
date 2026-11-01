@@ -337,7 +337,9 @@ export const WEBGL_SCENES: { scene: string; why: string }[] = [
  * `slack`, from how far each moved in eight runs on CI, on virtual time
  * from before the page loads with its chance and date seeded: the pick,
  * the pointer and the plate within 0.8%, the dig within 2.3% of its
- * baseline, so a tenth. The deal, with WebGL, by whole card faces: its
+ * baseline, so a tenth. (The dig's baseline was measured again with every
+ * font loaded before the watch: its banner, sized once and not again as
+ * its font came in, costs 28k, not 45k.) The deal, with WebGL, by whole card faces: its
  * faces' writes land a frame apart from run to run (frame 67 or 68), and
  * a face (927 × 1145) drawn once more or less is 4.4k px a 60th of a
  * second, so it read 59.9k to 72.6k; a quarter is two faces past the most
