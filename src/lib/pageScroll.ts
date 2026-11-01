@@ -29,5 +29,10 @@ if (typeof window !== 'undefined') {
   };
 }
 
-/** How far the page is scrolled, [x, y] in CSS px (0 with no window, as in the tests). */
-export const pageScroll = (): [number, number] => (typeof scrollY === 'number' ? (at ?? heard()) : [0, 0]);
+/**
+ * How far the page is scrolled, [x, y] in CSS px (0 with no window, as in
+ * the tests). Whether there's one is asked with `in`, which doesn't read
+ * it: even `typeof scrollY` reads it, which laid the game out as it
+ * mounted every time a game began (14 ms in a trace at 4K, #331).
+ */
+export const pageScroll = (): [number, number] => ('scrollY' in globalThis ? (at ?? heard()) : [0, 0]);

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { flip } from 'svelte/animate';
-  import { fade, fly, scale, slide } from 'svelte/transition';
+  import { fade, fly, scale, slide } from '../lib/transitions';
   import { session } from '../lib/session.svelte';
   import { MAX_PLAYERS, MAX_SPECTATORS, RACE_DEFAULT_TIMER, TIMER_STEPS, difficultyOf, rulesFor, type Difficulty, type GameMode, type Spectator } from '../lib/game';
   import { DIFFICULTY_NAMES, MODE_NAMES, describe } from '../lib/difficultyText';

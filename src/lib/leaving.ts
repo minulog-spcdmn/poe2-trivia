@@ -13,20 +13,36 @@
 /** What is on its way out: made inert by Svelte, or marked leaving here. */
 export const GONE = '[inert], [data-leaving]';
 
+/** The elements on their way out whose focus and screen readers are let go of in the next animation frame (goOut). */
+const letGo = new Map<HTMLElement, number>();
+
 /** What an element's own `inert` would do for it as it goes out, done as outWithoutInert does it. */
 function goOut(node: HTMLElement) {
-  // As inert would: the focus can't stay on what can no longer be used (the
-  // card just picked). Let go first: Chrome won't hide from screen readers
-  // what holds the focus, and warns of it.
-  const focused = document.activeElement;
-  if (focused instanceof HTMLElement && node.contains(focused)) focused.blur();
   node.dataset.leaving = '';
   node.style.pointerEvents = 'none';
-  node.setAttribute('aria-hidden', 'true');
+  // As inert would: the focus can't stay on what can no longer be used (the
+  // card just picked). Let go first: Chrome won't hide from screen readers
+  // what holds the focus, and warns of it. In the frame's animation frame,
+  // not as the outro starts: a blur has the browser lay the page out, and
+  // there the next screen had just mounted, so it was laid out in the middle
+  // of being made and again once it was (a pick's frame at 4K, traced:
+  // 7 to 21 ms, #331). There the backdrop's reads have laid it out already.
+  if (letGo.has(node)) return;
+  letGo.set(
+    node,
+    requestAnimationFrame(() => {
+      letGo.delete(node);
+      const focused = document.activeElement;
+      if (focused instanceof HTMLElement && node.contains(focused)) focused.blur();
+      node.setAttribute('aria-hidden', 'true');
+    }),
+  );
 }
 
 /** Back, its outro turned round by an intro (a key changed back). */
 function comeBack(node: HTMLElement, style: { pointerEvents: string; hidden: string | null }) {
+  cancelAnimationFrame(letGo.get(node) ?? 0);
+  letGo.delete(node);
   delete node.dataset.leaving;
   node.style.pointerEvents = style.pointerEvents;
   if (style.hidden === null) node.removeAttribute('aria-hidden');

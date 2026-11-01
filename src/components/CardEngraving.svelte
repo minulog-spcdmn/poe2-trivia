@@ -125,11 +125,16 @@
     const go = () => {
       for (const [layer, svg] of due) void pull(p, layer, now, inked, svg).then((url) => (url === null ? (waited = true) : pulls++));
     };
-    // (Not for every size a window passes through as it's resized.)
+    // (Not for every size a window passes through as it's resized.) The
+    // first in the frame's animation frame, not as the hand mounts: where
+    // it's drawn from is read from the svg (platePrint's placed), which had
+    // the new screen laid out in the middle of being made (lib/inFrame.ts).
     if (!pulledAny) {
-      pulledAny = true;
-      go();
-      return;
+      const asked = requestAnimationFrame(() => {
+        pulledAny = true;
+        go();
+      });
+      return () => cancelAnimationFrame(asked);
     }
     const later = setTimeout(go, 250);
     return () => clearTimeout(later);

@@ -3151,6 +3151,21 @@ export class Engine {
 
   private simCache = new Map<string, number>();
 
+  /**
+   * How alike `category`'s names look, pair by pair (similarity), worked
+   * out a step at a time ahead of the pick that may want them, each step one
+   * item against those after it. Left to the pick, a category's first
+   * question scored its pairs as it was asked: in a trace at 4K, 4 to 7 ms
+   * of the frame the question came in with (#331).
+   */
+  *likenessSteps(category: string): Generator<void> {
+    const items = this.byCategory.get(category) ?? [];
+    for (let i = 0; i < items.length; i++) {
+      for (let j = i + 1; j < items.length; j++) this.similarity(items[i], items[j]);
+      yield;
+    }
+  }
+
   private similarity(a: Item, b: Item): number {
     const key = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
     let v = this.simCache.get(key);

@@ -722,3 +722,22 @@ test('a question thrown out for failed art does not count toward the art lean', 
     assert.ok(Math.abs(s.artLean!.p0 - (PRESETS.cruel.artChance - art)) < 1e-9, 'only the latest question counts');
   }
 });
+
+test('warming the look-alike scores ahead (likenessSteps) changes nothing a pick asks', () => {
+  const play = (warm: boolean) => {
+    let { s } = lobby(['Ash'], 3, 'eternal');
+    const engine = new Engine(items, { autoClock: true, rng: seeded(5), fakes });
+    s = engine.apply(s, { type: 'start' }, 'p0');
+    const asked: Question[] = [];
+    for (let turn = 0; turn < 12; turn++) {
+      if (warm) for (const category of s.offered) for (const _ of engine.likenessSteps(category));
+      s = engine.apply(s, { type: 'pick', category: s.offered[turn % s.offered.length] }, 'p0');
+      asked.push(s.question!);
+      s = engine.apply(s, { type: 'answer', index: right(s.question!) }, 'p0');
+      s = engine.apply(s, { type: 'next' }, 'p0');
+      if (s.phase === 'over') s = engine.apply(engine.apply(s, { type: 'restart' }, 'p0'), { type: 'start' }, 'p0');
+    }
+    return asked.map((q) => [q.itemId, q.options]);
+  };
+  assert.deepEqual(play(true), play(false));
+});

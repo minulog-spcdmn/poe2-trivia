@@ -413,6 +413,18 @@ effect): find what holds the frame up.
      "Frame hitches").
    - **Long animation frames.** Script, style or layout on the page's
      thread.
+   - **A screen laid out twice as it changes.** Something read the page
+     as the new screen mounted, among the writes that make it, so it was
+     laid out half made and again once made (`Layout` and
+     `UpdateLayoutTree` inside the click's task; the category
+     `disabled-by-default-devtools.timeline.stack` says who forced them).
+     Besides sizes, Chrome lays the page out for `document.fonts.ready`,
+     a `blur()`, `scrollTo`, `scrollY` (even `typeof scrollY`: ask
+     `src/lib/pageScroll.ts`) and every keyed `{#each}` with an `animate:`
+     (Svelte measures each entry before and after). The backdrop reads
+     boxes in each animation frame anyway, so what measures something
+     that has just mounted does it there (`src/lib/inFrame.ts`): laid out
+     once by then, and still before the frame is painted.
 3. **On the iPhone**, the same questions through its Web Inspector:
    `docs/iphone.md`. A scene on its own is `qa.html?frame&s=<scene
    key>&size=fit` in a `--qa` build. Without `&size=fit` the desk plays a
