@@ -738,16 +738,25 @@ const seedOf = (text) => [...text].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0
 /**
  * The scenes to watch at rest: each scene's first state (with --webgl, of
  * WEBGL_SCENES' only), and with --shard i/n, every n-th from the i-th, so
- * each part gets some of each screen.
+ * each part gets some of each screen; SLOW first, each in a part of its
+ * own and first in it, so it's watched beside the rest of its part, not
+ * after them.
  */
 function scenesToWatch(scenes) {
   const seen = new Set();
   const webgl = new Set(WEBGL_SCENES.map((w) => w.scene));
-  return scenes
-    .filter((s) => !seen.has(s.key) && seen.add(s.key))
-    .filter((s) => !values.webgl || webgl.has(s.key))
-    .filter((s, i) => !shard || i % shard[1] === shard[0] - 1);
+  const all = scenes.filter((s) => !seen.has(s.key) && seen.add(s.key)).filter((s) => !values.webgl || webgl.has(s.key));
+  return [...all.filter((s) => SLOW.includes(s.key)), ...all.filter((s) => !SLOW.includes(s.key))].filter((s, i) => !shard || i % shard[1] === shard[0] - 1);
 }
+
+/**
+ * The scenes that take a CI runner longest to watch at rest, slowest
+ * first (1 November 2026, WebGL refused): the Delve's find cards, whose
+ * faces take it up to 1.6 s a frame to composite in software, with nothing
+ * drawn again. Kept to the slowest, so each part's time is what the rest
+ * of it takes beside one of these.
+ */
+const SLOW = ['game/delve-finds', 'game/delve-together-dig', 'game/delve-dig', 'game/delve-deep', 'game/delve-blow'];
 
 /** Each of `firsts` at rest, from its first seat: the layers drawn again, and what changes meanwhile. */
 async function scenesAtRest(base, firsts, browsers) {
@@ -934,8 +943,9 @@ async function checkRedraws(base, scenes) {
     } else {
       const firsts = scenesToWatch(scenes);
       if (!firsts.length) throw new Error(only ? `No scene's key matches ${only}${values.webgl ? ' among the WebGL scenes' : ''}.` : 'No scenes.');
-      // (Two at once: a CI runner has four threads, and a page drawing in software keeps more than one busy.)
-      const at = Math.min(firsts.length, 2);
+      // (Two at once: a CI runner has four threads, and a page drawing in software keeps more than one busy.
+      // With WebGL one: two drawing WebGL in software take longer at once than one after the other.)
+      const at = Math.min(firsts.length, values.webgl ? 1 : 2);
       console.log(`Redraws at rest: ${firsts.length} scenes${shard ? ` (part ${shard[0]} of ${shard[1]})` : ''}, ${at} at once, at ${REDRAW_SIZE}, ${values.webgl ? 'with WebGL' : 'WebGL refused'}, on fixed frames, from ${base}`);
       for (let i = 0; i < at; i++) traceBrowsers.push(await launchTraced());
       atRestFound = await scenesAtRest(base, firsts, traceBrowsers);
