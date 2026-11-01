@@ -23,7 +23,7 @@ import {
   type FossilTier,
 } from '../src/lib/fossils.ts';
 import { FOSSILS_KEY, FOSSILS_VERSION, completedBy, emptyFossils, heldMask, keepFossils, keepRunFossils, loadFossils, mergeFossils, parseFossils, resetFossils, serializeFossils, type FossilStore } from '../src/lib/fossilStore.ts';
-import { DELVE_RULESET, findOn, fossilOffer, fossilOn, fossilsOf, isWayOut, itemsWorkOn, livesOf, runFossils, shownDepth } from '../src/lib/delve.ts';
+import { DELVE_RULESET, findOn, fossilOffer, fossilOn, fossilsOf, isWayOut, itemsWorkOn, livesOf, missedFossils, runFossils, shownDepth } from '../src/lib/delve.ts';
 import type { DelveRun } from '../src/lib/delveRecord.ts';
 import type { GameState } from '../src/lib/game.ts';
 import { fossilEvents } from '../src/lib/count.ts';
@@ -496,14 +496,40 @@ test('the usual: named when a run lifts the runs chart’s usual depth, never wh
   assert.equal(usualLifted(two, two.at(-1)!.id, false, null), null);
 });
 
-test('the end screen names the run’s fossil, and no “tomorrow”', () => {
+test('the run’s facts leave its fossils to the end screen’s own line (setProgress), and say no “tomorrow”', () => {
   const h = run(12, { held: fossilMask(['scorched']) });
-  h.engine.setFossilsHeld((ids) => ids.map(() => fossilMask(COMMONS.filter((id) => id !== 'aberrant'))));
   h.pick(h.plant('common'));
   h.answer(true);
-  const text = (me: string | null) => runFacts(h.s, me).map((l) => l.parts.map((p) => (typeof p === 'string' ? p : 'n' in p ? String(p.n) : '')).join(''));
-  assert.ok(text('p0').includes('You found an Aberrant Fossil at depth 11.'), text('p0').join(' | '));
-  assert.ok(!text('p0').some((l) => /tomorrow/i.test(l)));
+  const text = runFacts(h.s, 'p0').map((l) => l.parts.map((p) => (typeof p === 'string' ? p : 'n' in p ? String(p.n) : '')).join(''));
+  assert.ok(!text.some((l) => /fossil|tomorrow/i.test(l)), text.join(' | '));
+  assert.equal(setProgress(emptyFossils(), h.s, 'p0', false).run.length, 1);
+});
+
+test('a fossil card missed is kept in the run for the end screen: its depth, tier, and who could have taken one', () => {
+  const h = run(14, { held: fossilMask(['scorched']) });
+  h.pick(h.plant('rare'));
+  h.answer(false);
+  assert.deepEqual(missedFossils(h.s), [{ depth: 14, tier: 'rare', to: ['p0'] }]);
+  // A plain card missed, or a fossil card answered right: nothing.
+  const plain = run(14, { held: fossilMask(['scorched']) });
+  plain.pick(plain.s.offered.find((c) => !findOn(plain.s, c) && !isWayOut(c) && plain.s.delve!.fossil?.category !== c)!);
+  plain.answer(false);
+  assert.deepEqual(missedFossils(plain.s), []);
+  // Together, nobody right: everyone who could have taken one.
+  const t = run(20, { players: ['Ash', 'Brea'] });
+  t.engine.setFossilsHeld((ids) => ids.map((id) => (id === 'p1' ? fossilMask(COMMONS) : fossilMask(['scorched']))));
+  const cat = t.plant('common');
+  for (const p of ['p0', 'p1']) t.act({ type: 'vote', category: cat }, p);
+  if (t.s.phase === 'choosing') t.act({ type: 'expire' }, null);
+  t.act({ type: 'clock', askedAt: t.s.question!.askedAt });
+  const q = t.s.question!;
+  const wrongs = q.options.map((_, i) => i).filter((i) => i !== right(q));
+  t.act({ type: 'answer', index: wrongs[0], askedAt: q.askedAt }, 'p0');
+  if (t.s.phase !== 'reveal') t.act({ type: 'answer', index: wrongs[1], askedAt: q.askedAt }, 'p1');
+  assert.equal(t.s.phase, 'reveal');
+  assert.deepEqual(missedFossils(t.s), [{ depth: 20, tier: 'common', to: ['p0'] }]);
+  // Read sanely.
+  assert.deepEqual(missedFossils({ delve: { fossilsMissed: [{ depth: 3, tier: 'gold', to: [] }, null, { depth: 4, tier: 'rare', to: ['p0'] }] } } as unknown as GameState), [{ depth: 4, tier: 'rare', to: ['p0'] }]);
 });
 
 test('the flight: the tally is in its place before the piece sets off for it, the piece lands, then the tally goes', () => {

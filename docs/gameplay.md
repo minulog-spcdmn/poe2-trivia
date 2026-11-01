@@ -548,10 +548,10 @@ the same thing for everyone.
   lives lost, given and brought back ("Lost 2 lives, gave 1 life,
   was brought back once"). The warmth dies out of the rune circle and ash
   settles, to a slowed toll and an ember crackling out.
-- Among the run's facts, the fossil it gave, with its art ("You found a
-  Jagged Fossil at depth 9."; together, each player's). Every Delve end
-  screen shows the set's progress ("6 of 25"), leading to the codex's
-  Delve page. And when the run
+- Every Delve end screen shows the set's progress ("6 of 25"), leading
+  to the codex's Delve page, with the fossil the run gave or the fossil
+  card it missed (`recap.ts` setProgress, `delve.ts` missedFossils). And
+  when the run
   lifts the runs chart's usual depth (its median, once the chart drew one
   before this run), one line says so ("Your usual is now 12."); a usual
   that holds or drops is never mentioned.

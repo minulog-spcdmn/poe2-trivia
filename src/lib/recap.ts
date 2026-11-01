@@ -9,7 +9,7 @@
 // for the viewer), an item or a category.
 
 import { DELVE_LIVES, DELVE_RULESET, FLARE_MS, delveStandings, isGroupRun, runFossils, shownDepth, teamDepth, type FindKind } from './delve.ts';
-import { FOSSILS, aFossil, fossilById, type FossilId } from './fossils.ts';
+import { FOSSILS, type FossilId } from './fossils.ts';
 import type { FossilStore } from './fossilStore.ts';
 import type { GameState, RecapItem } from './game.ts';
 import { stratumName } from './descent.ts';
@@ -381,13 +381,6 @@ export function runFacts(s: GameState, me: string | null): Line[] {
   const items = (s.recap?.items ?? []).filter((x) => together || !me || x.by === me);
   const you = together ? '' : ' you';
   const at = (n: number): Part[] => [' at depth ', { n: shownDepth(n) }];
-  // The fossils it gave first (lib/fossils.ts): alone yours, together whose each is.
-  for (const f of runFossils(s)) {
-    if (out.length >= 4) break;
-    if (!together && me && !f.to.includes(me)) continue;
-    const who = together ? (nameIn(s, f.to[0]) ?? 'Someone') : 'You';
-    out.push({ icon: { fossil: f.id }, parts: join(`${who} found ${aFossil(f.id)}`, ...at(f.depth), '.') });
-  }
   for (let i = 0; i < items.length && out.length < 4; i++) {
     const x = items[i];
     if (x.kind === 'wards') {
@@ -399,9 +392,6 @@ export function runFacts(s: GameState, me: string | null): Line[] {
   }
   return out;
 }
-
-/** A player's name as the run knew it: seated, or as the recap kept it for one gone since. */
-const nameIn = (s: GameState, id: string | undefined): string | undefined => (id ? (s.players.find((p) => p.id === id)?.name ?? s.recap?.people?.[id]?.name) : undefined);
 
 function itemFact(x: RecapItem, you: string, at: (n: number) => Part[]): Part[] {
   const won: Part[] = x.kind === 'dynamite' ? join(`Dynamite${you} won`, ...at(x.at)) : join(`A flare${you} won`, ...at(x.at));
