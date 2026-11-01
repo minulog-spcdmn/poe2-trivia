@@ -240,7 +240,9 @@
   let livesSeen: Record<string, number> = {};
   let lossesSeen: Record<string, number> = {};
   let runSeen = 0;
-  $effect(() => {
+  // Before the board updates, so the phial never shows the new count for a
+  // moment before it's held (its last life's red would flash on and fade).
+  $effect.pre(() => {
     if (!run) return;
     if (run.startedAt !== runSeen) {
       runSeen = run.startedAt;
