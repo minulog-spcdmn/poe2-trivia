@@ -1286,6 +1286,18 @@
     }
   }
 
+  /* Short desktop windows (13 and 14 inch laptops, as Game.svelte's): the
+     game's links, hidden, take no height under it either, so the question
+     and Next fit the window. */
+  @media (min-width: 641px) and (max-height: 820px) {
+    .legal.hidden {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+    }
+  }
+
   /* A phone on its side (lib/layout.ts `flat`): a slimmer header, clear of
      the notch, so the game below it fits the screen's height (its buttons
      keep their size: a thumb's to tap). */
