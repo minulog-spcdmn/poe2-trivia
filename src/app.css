@@ -871,6 +871,24 @@ h3,
   inherits: false;
   initial-value: transparent;
 }
+/* A first shadow that swells and ebbs (a find's card, a duel's): where it
+   swells to, and how far it is now, 0 to 1, animated on another element
+   than the one it lights (lib/backdropShadow.ts, `pulse`). */
+@property --bs1-pulse {
+  syntax: '<length>+';
+  inherits: false;
+  initial-value: 0px 0px;
+}
+@property --bs1-pulse-color {
+  syntax: '<color>';
+  inherits: false;
+  initial-value: transparent;
+}
+@property --bs-pulse {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0;
+}
 /* Colours for crisp rings next to those shadows, registered so they can
    transition without transitioning box-shadow as a whole (which would fade
    the CSS copy of a soft shadow out slowly when the backdrop takes it over). */

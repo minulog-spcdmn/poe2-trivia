@@ -19,6 +19,17 @@
 // toward the pointer) gets its shadows drawn in its own plane, through the
 // perspective map from the screen onto it (see screenToLocal).
 //
+// A first shadow that swells and ebbs (a find's card, a duel's) swells by an
+// element of its own: `use:backdropShadow={{ pulse }}`, where `pulse` is an
+// element outside the tagged one whose --bs-pulse a CSS animation takes
+// from 0 to 1 and back. The shadow goes that far from --bs1 / --bs1-color
+// toward --bs1-pulse / --bs1-pulse-color, as an animation of --bs1 itself
+// would take it, while the tagged element's own style holds still: animated
+// there, everything inside it would be restyled on every frame (a card's
+// sharp face, 4 to 5 ms a frame at 4K). While CSS paints the shadow, the
+// element runs that animation itself (under :not([data-bs-on])), and as it
+// goes back to CSS it's put in step with the pulse's (inStep).
+//
 // Fills work the same way for backgrounds, which band just like shadows when
 // they're large and dark: `use:backdropShadow={{ fill: 'linear' }}` makes the
 // backdrop paint the element's background from --bs-fill-a, --bs-fill-b and
@@ -55,7 +66,7 @@ export type Fill = 'linear' | 'stage';
  * background of its own has come to cover (as the scoreboard pinned over the
  * page on phones), which would hide whatever the backdrop drew under it.
  */
-export type BackdropOptions = { fill?: Fill; off?: boolean } | undefined;
+export type BackdropOptions = { fill?: Fill; off?: boolean; pulse?: Element | null } | undefined;
 
 const shadowed = new Map<HTMLElement, BackdropOptions>();
 
@@ -87,12 +98,58 @@ function parseColor(css: string): number[] | null {
   return null;
 }
 
-/** Reads soft shadow `n` from the element's --bsN (y offset, blur and, if given, spread) / --bsN-color. */
-function readShadow(cs: CSSStyleDeclaration, n: number): Shadow | null {
-  const color = parseColor(cs.getPropertyValue(`--bs${n}-color`).trim());
+/** The px lengths in a `<length>+` value. */
+const lengthsOf = (css: string) => (css.match(/-?[\d.]+(?:e-?\d+)?px/g) ?? []).map(parseFloat);
+
+/** `t` of the way from colour `a` to `b`, as CSS animates one: premultiplied. */
+export function mixColor(a: number[] | null, b: number[] | null, t: number): number[] | null {
+  if (!a || !b) return t < 0.5 ? a : b;
+  const alpha = a[3] + (b[3] - a[3]) * t;
+  if (alpha <= 0) return [0, 0, 0, 0];
+  return [0, 1, 2].map((i) => (a[i] * a[3] + (b[i] * b[3] - a[i] * a[3]) * t) / alpha).concat(alpha);
+}
+
+/** `t` of the way from one list of lengths to another; lists of other lengths swap halfway, as CSS's do. */
+export function mixLengths(a: number[], b: number[], t: number): number[] {
+  return a.length === b.length ? a.map((x, i) => x + (b[i] - x) * t) : t < 0.5 ? a : b;
+}
+
+/**
+ * Reads soft shadow `n` from the element's --bsN (y offset, blur and, if
+ * given, spread) / --bsN-color; the first `swell` of the way toward its
+ * --bs1-pulse / --bs1-pulse-color.
+ */
+function readShadow(cs: CSSStyleDeclaration, n: number, swell = 0): Shadow | null {
+  let color = parseColor(cs.getPropertyValue(`--bs${n}-color`).trim());
+  let lengths = lengthsOf(cs.getPropertyValue(`--bs${n}`));
+  if (n === 1 && swell) {
+    color = mixColor(color, parseColor(cs.getPropertyValue('--bs1-pulse-color').trim()), swell);
+    lengths = mixLengths(lengths, lengthsOf(cs.getPropertyValue('--bs1-pulse')), swell);
+  }
   if (!color || color[3] <= 0) return null;
-  const [oy = 0, blur = 0, spread = 0] = (cs.getPropertyValue(`--bs${n}`).match(/-?[\d.]+(?:e-?\d+)?px/g) ?? []).map(parseFloat);
+  const [oy = 0, blur = 0, spread = 0] = lengths;
   return blur > 0 ? { color, oy, blur, spread } : null;
+}
+
+/** How far the element's first shadow has swollen now (its pulse's --bs-pulse), 0 with none. */
+function swellOf(node: HTMLElement) {
+  const pulse = shadowed.get(node)?.pulse;
+  return pulse?.isConnected ? parseFloat(getComputedStyle(pulse).getPropertyValue('--bs-pulse')) || 0 : 0;
+}
+
+/** The element's soft shadows now, in paint order (--bs2 under --bs1). */
+const softOf = (node: HTMLElement, cs: CSSStyleDeclaration) => [readShadow(cs, 2), readShadow(cs, 1, swellOf(node))].filter((x): x is Shadow => !!x);
+
+/**
+ * The element's own swell, which CSS runs while it paints the shadow, put
+ * in step with its pulse's: started with it, as they are when both start
+ * at once, and not afresh as the shadow goes back to CSS.
+ */
+function inStep(node: HTMLElement) {
+  const pulse = shadowed.get(node)?.pulse;
+  const lead = pulse?.getAnimations().find((a) => a.playState === 'running');
+  if (!lead || lead.startTime === null) return;
+  for (const a of node.getAnimations()) if (a instanceof CSSAnimation && a.effect?.getComputedTiming().iterations === Infinity) a.startTime = lead.startTime;
 }
 
 function release(node: HTMLElement) {
@@ -102,7 +159,9 @@ function release(node: HTMLElement) {
 
 /** Releases every element back to CSS, e.g. when the renderer stops. */
 export function releaseAll() {
+  const swelling = [...shadowed.keys()].filter((n) => n.hasAttribute('data-bs-on') && shadowed.get(n)?.pulse);
   for (const node of shadowed.keys()) release(node);
+  for (const node of swelling) inStep(node);
 }
 
 // ---------- when fills must go back to CSS ----------
@@ -391,6 +450,9 @@ export function measureShadows(
   nodes.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
   const withFill = nodes.filter((n) => shadowed.get(n)?.fill);
   const fillNodes = new Set<Element>(withFill);
+  // Those whose shadow swells and the backdrop draws: one handed back to CSS
+  // below is put in step with its pulse once all is written (inStep).
+  const swelling = [...shadowed.keys()].filter((n) => n.isConnected && n.hasAttribute('data-bs-on') && shadowed.get(n)?.pulse);
   for (const n of shadowed.keys()) if (!n.isConnected || shadowed.get(n)?.off) release(n);
   // The turned elements' probes (see screenToLocal) go in before anything
   // below is read: put in as each is measured, every one would have the page
@@ -400,7 +462,7 @@ export function measureShadows(
   const turned = nodes.filter((n) => {
     if (flatLin(linearOf(n, linears))) return false;
     const cs = getComputedStyle(n);
-    const draws = !!shadowed.get(n)?.fill || !!readShadow(cs, 2) || !!readShadow(cs, 1);
+    const draws = !!shadowed.get(n)?.fill || softOf(n, cs).length > 0;
     return draws && cs.position !== 'static' && n.offsetWidth > 0 && n.offsetHeight > 0;
   });
   for (const n of turned) probesOf(n);
@@ -412,7 +474,7 @@ export function measureShadows(
   const measured: Measured[] = [];
   for (const node of nodes) {
     const cs = getComputedStyle(node);
-    const soft = [readShadow(cs, 2), readShadow(cs, 1)].filter((x): x is Shadow => !!x);
+    const soft = softOf(node, cs);
     const fillKind = shadowed.get(node)?.fill;
     // Nothing to draw now (a shadow transitioned away): back to CSS, no budget.
     if (!soft.length && !fillKind) {
@@ -529,4 +591,6 @@ export function measureShadows(
     });
     n++;
   }
+
+  for (const node of swelling) if (!node.hasAttribute('data-bs-on')) inStep(node);
 }

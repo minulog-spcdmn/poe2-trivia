@@ -2903,6 +2903,9 @@
     filter: none;
     color: var(--muted);
   }
+  /* The countdown to the next, shrunk every frame (autoLeft): on a layer of
+     its own, or Chrome draws the whole button again with each step, all
+     the reveal long. */
   .auto {
     position: absolute;
     left: 0;
@@ -2911,6 +2914,7 @@
     width: 100%;
     background: var(--gold-hi);
     transform-origin: left;
+    will-change: transform;
   }
   /* Race avatars: an overlapping stack, out of the flow so they never squeeze
      or rewrap the answer as guesses come in and at the reveal. */

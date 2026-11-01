@@ -2,7 +2,10 @@
 // the start page, New game, Take turns, Begin, then each turn's category,
 // answer and next, the pointer travelling to each button as a player's
 // would. Each step is a mark, so read.py gives each its frames and the GPU's
-// raster time.
+// raster time. The mark is made as the pointer sets off, so a step's last
+// second (read.py's at rest) is the screen lying still, the pointer resting
+// where it last clicked: the travel and the hover it passes through are the
+// next step's.
 //   node scripts/pc/game.mjs <url> <label> [turns]
 //   python scripts/pc/read.py .pc/runs/<label>.json
 
@@ -21,7 +24,7 @@ const end = await trace(ctx, page, label);
 await page.goto(url, { waitUntil: 'load' });
 await sleep(4000);
 
-/** The pointer travels to the first visible, enabled button whose name matches, then clicks it. */
+/** Marks the step, then the pointer travels to the first visible, enabled button whose name matches and clicks it. */
 async function press(re, name) {
   const box = await page.evaluate((src) => {
     const re = new RegExp(src, 'i');
@@ -34,9 +37,9 @@ async function press(re, name) {
     console.log(`!! no button for ${name}`);
     return false;
   }
+  await mark(page, name);
   await page.mouse.move(box.x, box.y, { steps: 25 });
   await sleep(250);
-  await mark(page, name);
   await page.mouse.click(box.x, box.y);
   return true;
 }

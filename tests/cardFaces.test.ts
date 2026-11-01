@@ -192,3 +192,28 @@ test('what follows the pointer over a card moves by its transform alone', () => 
   assert.ok(light && /transform/.test(light.value), "the glare's light is on a layer of its own (will-change: transform), moved by glareAt");
   assert.match(SCRIPT, /light\.style\.transform = /, 'glareAt moves the light by its transform');
 });
+
+// ---- what swells on a face --------------------------------------------------
+// A custom property animated on the face restyles it and all on it every
+// frame, and the backdrop reads its style every frame: a find's and a duel's
+// light swelling on .frame held the page's thread 4 to 5 ms a frame. What
+// swells plays on .pulse beside the face (lib/backdropShadow, `pulse`); the
+// face swells itself only where the backdrop doesn't draw its light.
+
+test('no custom property is animated on the face while the backdrop draws its light', () => {
+  const custom = new Set<string>();
+  CSS.walkAtRules('keyframes', (k) => {
+    k.walkDecls(/^--/, () => void custom.add(k.params));
+  });
+  assert.ok(custom.has('pulse'), 'found the keyframes that animate a custom property (pulse)');
+  let proxies = 0;
+  CSS.walkDecls(/^animation(-name)?$/, (d) => {
+    const names = d.value.split(/[\s,]+/).filter((n) => custom.has(n));
+    if (!names.length) return;
+    const rule = d.parent as Rule;
+    for (const s of faceSelectors(rule))
+      assert.match(s, /\.frame:not\(:global\(\[data-bs-on\]\)\)/, `${s} animates ${names.join(', ')} on the face; play it on .pulse beside it (docs/category-cards.md, rule 9), or only under :not([data-bs-on])`);
+    if (rule.selectors.some((s) => /\.pulse$/.test(s))) proxies++;
+  });
+  assert.ok(proxies >= 2, "the finds' and the duel's swell play on .pulse");
+});
