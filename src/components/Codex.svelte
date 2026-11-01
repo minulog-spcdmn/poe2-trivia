@@ -2,7 +2,6 @@
   import { flushSync, onMount, tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { fade, slide } from 'svelte/transition';
-  import { quintOut } from 'svelte/easing';
   import { calm, motion } from '../lib/motion.svelte';
   import { engine, savedName, session } from '../lib/session.svelte';
   import { nameUsable } from '../lib/names';
@@ -346,8 +345,7 @@
     });
   });
   function sortBy(key: SortKey) {
-    resorting = true;
-    requestAnimationFrame(() => (resorting = false));
+    resort();
     if (sortKey === key) sortDown = !sortDown;
     else {
       sortKey = key;
@@ -357,17 +355,22 @@
   }
 
   /**
-   * Sorted afresh, the rows on screen slide to their places, a row from off
-   * the screen in from its edge, the side it was on. Only those: the rest,
-   * hundreds of them, just move, and only for a sort (not a search).
+   * Sorted afresh, the rows fade in in their new order, in place: hundreds
+   * of them reordered take a long frame or two, which ate most of a slide.
+   * So the body is held clear as they're reordered, and fades in from the
+   * first frame after (a frame of their own).
    */
-  let resorting = false;
-  function reorder(_: Element, { from, to }: { from: DOMRect; to: DOMRect }) {
-    const h = innerHeight;
-    if (!resorting || motion.still || to.bottom < 0 || to.top > h) return { duration: 0 };
-    const dy = Math.max(-to.height, Math.min(h, from.top)) - to.top;
-    if (!dy) return { duration: 0 };
-    return { duration: 200, easing: quintOut, css: (_t: number, u: number) => `transform: translateY(${u * dy}px)` };
+  let ledgerBody = $state<HTMLElement>();
+  function resort() {
+    const body = ledgerBody;
+    if (!body || motion.still) return;
+    body.style.opacity = '0';
+    void tick().then(() =>
+      requestAnimationFrame(() => {
+        body.style.opacity = '';
+        body.animate({ opacity: [0, 1] }, { duration: 180, easing: 'ease-out' });
+      }),
+    );
   }
 
   let collection = $state<HTMLElement>();
@@ -892,9 +895,9 @@
                 {/each}
               </tr>
             </thead>
-            <tbody>
+            <tbody bind:this={ledgerBody}>
               {#each rows as r (r.item.id)}
-                <tr animate:reorder>
+                <tr>
                   <td>
                     <button class="item" onclick={() => (open = r.item)}>
                       {@render thumb(r.item)}
