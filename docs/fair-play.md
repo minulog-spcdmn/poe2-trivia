@@ -124,8 +124,10 @@ state change that started it), `deal`, `question` or `reveal`, where most of
 it fell. A computer whose browser draws WebGL without the GPU sends
 `frames2/<device>/software` instead, nothing more: whether it does is all
 that is kept of the check (`src/lib/gpuCheck.ts`), never the renderer's
-name. It goes as the game is decided or left, or as the page is hidden or
-left (not again for the same game if it's seen once more); a game seen for
+name. It goes as the game is decided or left, or as the page is left, or
+on a phone as it's hidden (not again for the same game if it's seen once
+more; a computer's game switched away from is counted when it ends, as a
+whole); a game seen for
 less than 20 seconds sends nothing. Until 1 November 2026 it was
 `frames/…`, by frames over 50 ms and with no `begin`; the stats page reads
 only `frames2/`, so the two never mix. Visits count
