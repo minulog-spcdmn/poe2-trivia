@@ -554,7 +554,7 @@ function writesNoted() {
   const all = [...window.__writes].sort((a, b) => b[1].size - a[1].size);
   const last = all.reduce((a, [, f]) => Math.max(a, ...f), 0);
   const running = document.getAnimations().filter((a) => a.playState === 'running' && Number.isFinite(a.effect?.getComputedTiming().endTime ?? Infinity)).length;
-  return { changing: all.filter(([, f]) => f.size >= n / 2).map(share), writes: all.map(share), painted: [...window.__painted], last, running };
+  return { changing: all.filter(([, f]) => f.size >= n / 2).map(share), writes: all.map(([k, f]) => `${share([k, f])}, last on frame ${Math.max(...f)}`), painted: [...window.__painted], last, running };
 }
 
 /**
