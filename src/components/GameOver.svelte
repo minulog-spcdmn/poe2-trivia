@@ -5,7 +5,6 @@
   import { calm } from '../lib/motion.svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { engine, session } from '../lib/session.svelte';
-  import type { GameState } from '../lib/game';
   import { categoryGlyph, itemSrcset, itemThumb, playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
@@ -27,7 +26,7 @@
   import { countEvent } from '../lib/count';
   import { portal } from '../lib/portal';
   import { dock, flat, phone } from '../lib/layout';
-  import { FINDS_IN_ORDER, delveStandings, isGroupRun, runFossils, shownDepth, teamDepth } from '../lib/delve';
+  import { FINDS_IN_ORDER, delveStandings, isGroupRun, missedFossils, runFossils, shownDepth, teamDepth } from '../lib/delve';
   import { FIND_RULES, FIND_TEXT, MODE_NAMES } from '../lib/difficultyText';
   import { loadRecords } from '../lib/delveRecord';
   import { GROUND_Y } from '../lib/runsPlate';
@@ -77,15 +76,6 @@
   /** A line among the run's facts: the engine's, or the fossil line. */
   type Fact = Line | { fossil: FossilFact };
   const anOrA = (name: string) => (/^[AEIOU]/.test(name) ? 'an' : 'a');
-  /**
-   * A fossil's card picked and answered wrong this run, by whom and how deep (engine depth), as far as it reads sane.
-   * (The engine keeps it as delve.fossilMissed; none in older saves.)
-   */
-  const fossilsMissed = (st: GameState): { depth: number; by: string }[] => {
-    const all = (st.delve as { fossilMissed?: unknown } | null | undefined)?.fossilMissed;
-    if (!Array.isArray(all)) return [];
-    return all.filter((f): f is { depth: number; by: string } => !!f && typeof f === 'object' && Number.isFinite(f.depth) && typeof f.by === 'string');
-  };
 
   // The nodule a fossil lies in, engraved (docs/arcane-style.md; the card's own in lib/findEngraving.ts): an exact
   // ellipse, tilted, with two growth rings off its centre toward the light, hatched on the side from the light (the lower right) between its rim and the
@@ -301,7 +291,7 @@
     const mine = set.run.length ? runFossils(s).find((f) => f.id === set.run[0]) : undefined;
     if (mine) return { kind: 'found', id: mine.id, depth: shownDepth(mine.depth), ...at };
     if (set.complete) return { kind: 'all', ...at };
-    const missed = fossilsMissed(s).find((f) => local || f.by === me);
+    const missed = missedFossils(s).find((f) => local || (!!me && f.to.includes(me)));
     if (missed) return { kind: 'missed', depth: shownDepth(missed.depth), ...at };
     return { kind: set.found ? 'held' : 'none', ...at };
   });
@@ -309,8 +299,7 @@
   const MAX_FACTS = 5;
   const facts = $derived.by((): Fact[] => {
     if (!run) return [];
-    // (The engine's lines name a fossil the old way: the line below says it.)
-    const out: Fact[] = runFacts(s, solo ? self : null).filter((l) => !('fossil' in l.icon));
+    const out: Fact[] = runFacts(s, solo ? self : null);
     if (lifted !== null) out.splice(1, 0, { icon: { usual: true }, parts: ['Your usual is now ', { n: lifted }, '.'] });
     if (!fossilLine) return out;
     const kept = out.slice(0, MAX_FACTS - 1);

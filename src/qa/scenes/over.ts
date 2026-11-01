@@ -441,8 +441,7 @@ function heldFossils(n: number, run?: FossilId): { stored: Record<string, string
 function soloFossil(o: { found?: FossilId; missed?: number }): GameState {
   const s = solo();
   if (o.found) s.delve!.fossils = [{ id: o.found, depth: 22, at: RUN + 22, to: [K] }];
-  // (Kept by the engine as delve.fossilMissed: GameOver.svelte fossilsMissed.)
-  if (o.missed) Object.assign(s.delve!, { fossilMissed: [{ depth: o.missed, by: K }] });
+  if (o.missed) s.delve!.fossilsMissed = [{ depth: o.missed, tier: 'common', to: [K] }];
   return s;
 }
 

@@ -9,7 +9,7 @@
 // team votes for a card, everyone standing answers the one question, and a
 // teammate with lives to spare can bring back one who perished.
 
-import type { DifficultyRules, Dig, GameState, Player, Preset, Question, RunFossil } from './game.ts';
+import type { DifficultyRules, Dig, GameState, MissedFossil, Player, Preset, Question, RunFossil } from './game.ts';
 import { isFossilId, isFossilTier, type CardFossil, type FossilId, type FossilTier } from './fossils.ts';
 import { veilSpan, type VeilPlan } from './patches.ts';
 
@@ -845,6 +845,13 @@ export function runFossils(s: GameState): RunFossil[] {
   const all = s.delve?.fossils;
   if (!Array.isArray(all)) return [];
   return all.filter((f): f is RunFossil => !!f && typeof f === 'object' && isFossilId(f.id) && Array.isArray(f.to) && Number.isFinite(f.depth) && Number.isFinite(f.at));
+}
+
+/** The fossil cards the run picked and missed so far, oldest first, as far as they read sane (none outside Delve and in older saves). */
+export function missedFossils(s: GameState): MissedFossil[] {
+  const all = s.delve?.fossilsMissed;
+  if (!Array.isArray(all)) return [];
+  return all.filter((f): f is MissedFossil => !!f && typeof f === 'object' && isFossilTier(f.tier) && Array.isArray(f.to) && Number.isFinite(f.depth));
 }
 
 /** The fossils `id` was given this run, oldest first. */

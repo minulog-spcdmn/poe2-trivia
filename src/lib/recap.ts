@@ -9,7 +9,7 @@
 // for the viewer), an item or a category.
 
 import { DELVE_LIVES, DELVE_RULESET, FLARE_MS, delveStandings, isGroupRun, runFossils, shownDepth, teamDepth, type FindKind } from './delve.ts';
-import { FOSSILS, aFossil, fossilById, type FossilId } from './fossils.ts';
+import { FOSSILS, type FossilId } from './fossils.ts';
 import type { FossilStore } from './fossilStore.ts';
 import type { GameState, RecapItem } from './game.ts';
 import { stratumName } from './descent.ts';
@@ -372,25 +372,15 @@ export function setProgress(store: FossilStore, s: GameState | null, me: string 
 /**
  * What the run's finds gave and what came of it, oldest first: alone (and
  * `me`) this player's, together the party's. First the zone it reached (by
- * name: the descent never ends, so there is no "of ten"). `allFossils`: this
- * device's player now holds every fossil, so none can turn up tomorrow.
+ * name: the descent never ends, so there is no "of ten").
  */
-export function runFacts(s: GameState, me: string | null, allFossils = false): Line[] {
+export function runFacts(s: GameState, me: string | null): Line[] {
   const together = isGroupRun(s);
   const depth = teamDepth(s);
   const out: Line[] = [{ icon: { zone: depth }, parts: [`Reached ${zoneOf(depth).the}.`] }];
   const items = (s.recap?.items ?? []).filter((x) => together || !me || x.by === me);
   const you = together ? '' : ' you';
   const at = (n: number): Part[] => [' at depth ', { n: shownDepth(n) }];
-  // The fossils it gave first (lib/fossils.ts): alone yours, together whose each is.
-  // One of them yours is the day's (one a day): another can only turn up tomorrow, while any is left.
-  for (const f of runFossils(s)) {
-    if (out.length >= 4) break;
-    if (!together && me && !f.to.includes(me)) continue;
-    const who = together ? (nameIn(s, f.to[0]) ?? 'Someone') : 'You';
-    const mine = !allFossils && (!together || (!!me && f.to.includes(me)));
-    out.push({ icon: { fossil: f.id }, parts: join(`${who} found ${aFossil(f.id)}`, ...at(f.depth), mine ? '. Another can turn up tomorrow.' : '.') });
-  }
   for (let i = 0; i < items.length && out.length < 4; i++) {
     const x = items[i];
     if (x.kind === 'wards') {
@@ -402,9 +392,6 @@ export function runFacts(s: GameState, me: string | null, allFossils = false): L
   }
   return out;
 }
-
-/** A player's name as the run knew it: seated, or as the recap kept it for one gone since. */
-const nameIn = (s: GameState, id: string | undefined): string | undefined => (id ? (s.players.find((p) => p.id === id)?.name ?? s.recap?.people?.[id]?.name) : undefined);
 
 function itemFact(x: RecapItem, you: string, at: (n: number) => Part[]): Part[] {
   const won: Part[] = x.kind === 'dynamite' ? join(`Dynamite${you} won`, ...at(x.at)) : join(`A flare${you} won`, ...at(x.at));
