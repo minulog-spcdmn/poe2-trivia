@@ -134,7 +134,9 @@ export function gameScenes(): Scene[] {
   // Take turns: Doryani's turn first (the seed's, with three), Kalguur hosting.
   const turns = (v: Values) => table(seated(v, 3), asked(v)).start();
   const race = (v: Values) => table(seated(v, 5), { mode: 'race', ...asked(v) }).start();
-  const delveAlone = () => table(['Kalguur'], { mode: 'delve' }, { host: null }).start();
+  // (Its own dice by a `seed`; delveAlone is handed straight to scenes, which give it their controls' values.)
+  const delveSeeded = (seed?: number) => table(['Kalguur'], { mode: 'delve' }, { host: null, seed }).start();
+  const delveAlone = () => delveSeeded();
   const delveTogether = (v: Values) => table(seated(v, 3), { mode: 'delve' }).start();
   const turnsSeats = [guest('Doryani'), host('Kalguur'), WATCHER];
   // Una of the Vaal is in every take-turns scene's moves; the race's answer Doryani's and hers.
@@ -306,6 +308,16 @@ export function gameScenes(): Scene[] {
     scene('delve-question', 'Delve alone', 'A question', [ALONE], () => delveAlone().pick()),
     scene('delve-wrong', 'Delve alone', 'Answered wrong: a life lost', [ALONE], () => {
       const t = delveAlone().pick();
+      return t.answer(null, false);
+    }),
+    // Depth 15, the seed's: Ratha's Assault, its picture mirrored, six names
+    // beside it. A phone on its side under 336 tall gives the names more of the
+    // width, and an iPhone's notch takes more of it again, so there the plate's
+    // base type wraps (centred) between the name and the Mirrored line.
+    // (tests/qaScenes.test.ts says so if new items or a new curve change it.)
+    scene('delve-long-base', 'Delve alone', 'Answered wrong deeper down: a long base type and the Mirrored line on the plate', [ALONE], () => {
+      const t = delveSeeded(79);
+      t.playTo((s) => s.round >= 16 && s.phase === 'choosing').pick();
       return t.answer(null, false);
     }),
     // The taps of a run as they play out, each moment from the one before:
