@@ -1,69 +1,26 @@
 <script lang="ts" module>
-  // The set of 25 fossils Delve turns up (lib/fossils.ts), as sockets in the
-  // achievement seals' language (AchievementSeal.svelte, docs/arcane-style.md):
-  // each a worn double ring, a rare one's with a glory of 16 fine rays between
-  // its rings, as the harder seals have. Not yet found, a socket is a dull
-  // impression with the nodule faint inside (the stone a fossil waits in, as
-  // the Delve card shows it); found, the fossil's art sits in the ring on its
-  // glow, and a rare one's rings are gold and catch the gold seals' light.
-  import { at, line, ring, wear, type Pt } from '../../lib/arcane';
+  // The set of 25 fossils Delve turns up (lib/fossils.ts), as PoE's Delve
+  // stash tab lays them out: a fixed slot for each, a recess cut into the
+  // panel. One kept sits in its slot lit from behind, the lamp's amber
+  // light coming through it as through the resin; a rare one's light is
+  // deeper, red-gold, the brightest. Now and then a band of lamplight
+  // passes over the kept ones, a rare one's more often. One not kept yet is
+  // a faint print of itself in its empty recess: knowing what's missing is
+  // the hunt.
   import { passingLight } from '../../lib/glint';
-  import { METALS } from '../../lib/metals';
 
-  const C: Pt = [0, 0];
-  const OUTER = 22.6;
-  const INNER = 18.2;
-  /** The outer ring, worn the same in every socket (a fixed seed), and whole for its glow. */
-  const OUTER_WORN = ring(C, OUTER, { wear: wear(173) });
-  const OUTER_WHOLE = ring(C, OUTER);
-
-  /**
-   * The nodule, small: an exact ellipse lying tilted, two growth rings
-   * inside it grown about a nucleus off to its lower left, as a concretion's
-   * are, and the side away from the light (the right, where the rings lie
-   * widest apart) hatched between the outer two. At this size the card's
-   * seam across it, and its strata, read as an eye or a sign, so the socket
-   * leaves them out.
-   */
-  const RX = 8.4;
-  const RY = 7;
-  const TILT = -28;
-  const NUCLEUS: Pt = [-3, 2];
-  const p2 = (x: number, y: number) => `${x.toFixed(2)} ${y.toFixed(2)}`;
-  /** A point of the ellipse scaled by `k` about the nucleus's share `1 - k`, at angle `t` (radians, clockwise from the right). */
-  const onShell = (k: number, t: number): Pt => [NUCLEUS[0] * (1 - k) + RX * k * Math.cos(t), NUCLEUS[1] * (1 - k) + RY * k * Math.sin(t)];
-  const shell = (k: number) => {
-    const [cx, cy] = [NUCLEUS[0] * (1 - k), NUCLEUS[1] * (1 - k)];
-    const [rx, ry] = [RX * k, RY * k];
-    return `M${p2(cx - rx, cy)}A${rx} ${ry} 0 1 0 ${p2(cx + rx, cy)}A${rx} ${ry} 0 1 0 ${p2(cx - rx, cy)}Z`;
-  };
-  const NODULE = shell(1);
-  const GROWTH = shell(0.62) + shell(0.3);
-  /** Strokes across the band between the outer two, from above right round to below right. */
-  const HATCH = Array.from({ length: 9 }, (_, i) => {
-    const t = ((-62 + i * 15) * Math.PI) / 180;
-    const [a, b] = [onShell(0.7, t), onShell(0.93, t)];
-    return `M${p2(...a)}L${p2(...b)}`;
-  }).join('');
-  /** A rare one's glory: 16 fine rays inside the inner ring, long and short in turn, as a silver seal's. */
-  const GLORY = Array.from({ length: 16 }, (_, k) => line(at(C, k * 22.5, 12.4), at(C, k * 22.5, k % 2 ? INNER - 3 : INNER - 1.3))).join('');
-
-  // Gold's light, as the gold seals catch it: every found rare one sweeps together, on the page's beat.
-  const GOLD = METALS[3];
-  const LIGHT = passingLight(GOLD.light.every, GOLD.light.sweep, { travel: true });
-  /** A rare socket's metal, its glow and its light, as a gold seal's. */
-  const GOLD_STYLE = `--gold: ${GOLD.color}; --gold-sheen: ${GOLD.sheen?.color}; --gold-shine: ${GOLD.sheen?.opacity}; --gleam: ${GOLD.light.gleam}; --band: ${GOLD.light.band}%`;
-  const sheen = (slit: Element) => LIGHT.glintAt(slit, slit.closest('.socket') ?? slit);
-  const spark = (el: Element) => LIGHT.sparkAt(el, el.closest('.socket') ?? el);
-  /** Where the spark kindles: on the outer ring, up and to the right, as a share of the socket. */
-  const SPARK_AT = at(C, 45, OUTER).map((v) => `${50 + (v / 48) * 100}%`);
+  /** The lamplight passing over the kept ones (lib/glint.ts), all of a kind on the same beat: every `every` ms, `sweep` to cross. */
+  const LAMP = passingLight(12000, 1500, { travel: true });
+  const LAMP_RARE = passingLight(7000, 1400, { travel: true });
+  const sweep = (slit: Element, rare: boolean) => (rare ? LAMP_RARE : LAMP).glintAt(slit, slit.closest('.slot') ?? slit);
 </script>
 
 <script lang="ts">
   // Choosing one shows it in the detail box (beside the set on a wide
   // screen, under it on a narrow one) as the game's tooltip would: its name
   // in the currency colour, whether it is rare, and when and how deep it was
-  // unearthed. A mouse chooses by resting on a socket, and the choice stays
+  // kept (one not kept yet, where it turns up). A mouse chooses by resting
+  // on a slot, and the choice stays
   // until it enters another (the cells touch, their spacing inside them, so
   // moving across the set never drops it); a touch chooses only by a tap, so
   // a finger scrolling over the set chooses nothing. The box is as tall as
@@ -101,7 +58,7 @@
   ] as const;
 
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-  /** The fossil chosen (the last a mouse rested on, or tapped); else the latest found. */
+  /** The fossil chosen (the last a mouse rested on, or tapped); else the latest kept. */
   let chosen = $state<FossilId | null>(null);
   const latest = $derived(FOSSILS.filter((f) => found[f.id]).sort((a, b) => found[b.id]!.at - found[a.id]!.at)[0] ?? null);
   const shown: Fossil | null = $derived(FOSSILS.find((f) => f.id === chosen) ?? latest);
@@ -115,42 +72,20 @@
   const tapped = (e: MouseEvent) => !pressed || Math.hypot(e.clientX - pressed.x, e.clientY - pressed.y) <= TAP;
 </script>
 
-{#snippet rings(f: Fossil, whole: boolean)}
-  <path d={whole ? OUTER_WHOLE : OUTER_WORN} class="main" />
-  <circle r={INNER} class="hair" />
-  {#if f.rare}<path d={GLORY} class="hair" />{/if}
-{/snippet}
-
-{#snippet socket(f: Fossil)}
+{#snippet slot(f: Fossil)}
   {@const got = found[f.id]}
-  <span class="socket" class:got={!!got} class:rare={f.rare} style={f.rare ? GOLD_STYLE : undefined}>
-    {#if got}
-      <svg class="glow" viewBox="-24 -24 48 48" aria-hidden="true">{@render rings(f, true)}</svg>
-    {/if}
-    <svg viewBox="-24 -24 48 48" aria-hidden="true">
-      {@render rings(f, false)}
-      {#if !got}
-        <g class="nodule" transform="rotate({TILT})">
-          <path d={NODULE} class="thin" />
-          <path d={GROWTH + HATCH} class="hair" />
-        </g>
-      {/if}
-    </svg>
-    {#if got}
-      <img src={fossilArt(f.id, 128)} alt="" loading="lazy" draggable="false" />
-      {#if f.rare && !motion.still}
-        <span class="light"><span class="slit" use:sheen><svg viewBox="-24 -24 48 48">{@render rings(f, true)}</svg></span></span>
-        <svg class="spark" use:spark viewBox="-1 -1 2 2" style:left={SPARK_AT[0]} style:top={SPARK_AT[1]}>
-          <path d="M0 -1L0.16 -0.16L1 0L0.16 0.16L0 1L-0.16 0.16L-1 0L-0.16 -0.16Z" />
-        </svg>
-      {/if}
+  <span class="slot" class:got={!!got} class:rare={f.rare}>
+    <img src={fossilArt(f.id, 128)} alt="" loading="lazy" draggable="false" />
+    {#if got && !motion.still}
+      <!-- The lamplight: a band of light passing over a brighter copy of it. -->
+      <span class="lamp"><span class="slit" use:sweep={f.rare}><img src={fossilArt(f.id, 128)} alt="" loading="lazy" draggable="false" /></span></span>
     {/if}
   </span>
 {/snippet}
 
 {#snippet set()}
   <p class="about">
-    {#if complete}Every fossil unearthed.{:else}Found now and then on a Delve card; answer right to unearth one. They don’t change a run.{/if}
+    {#if complete}Every fossil kept.{:else}Now and then a Delve card holds a fossil: answer it right to keep one for your codex. Your run is unchanged.{/if}
   </p>
   <div class="body">
     <div class="sets">
@@ -167,7 +102,7 @@
                   class:got={!!got}
                   class:rare={f.rare}
                   class:on={shown?.id === f.id}
-                  aria-label={got ? f.name : f.rare ? 'A rare fossil, still in the stone' : 'A fossil still in the stone'}
+                  aria-label={got ? f.name : `${f.name}, not kept yet`}
                   aria-pressed={shown?.id === f.id}
                   aria-controls="{uid}-tip"
                   onpointerdown={(e) => (pressed = { x: e.clientX, y: e.clientY })}
@@ -180,7 +115,7 @@
                     if (e.pointerType === 'mouse') chosen = f.id;
                   }}
                 >
-                  {@render socket(f)}
+                  {@render slot(f)}
                 </button>
               </li>
             {/each}
@@ -197,19 +132,19 @@
           {#if got}
             <p class="name">{f.name}</p>
             {#if f.rare}<p class="mark">Rare</p>{/if}
-            <p class="when">Unearthed {date(got.at)} at depth <span class="n">{shownDepth(got.depth)}</span>{got.together ? ', in a run together' : ''}.</p>
+            <p class="when">Kept {date(got.at)} at depth <span class="n">{shownDepth(got.depth)}</span>{got.together ? ', in a run together' : ''}.</p>
           {:else}
-            <p class="name unknown">Still in the stone</p>
+            <p class="name unknown">{f.name}</p>
             {#if f.rare}<p class="mark">Rare</p>{/if}
             <p class="when">
-              {#if f.rare}From depth <span class="n">{rareFrom}</span>, and more often the deeper you go.{:else}From depth <span class="n">{commonFrom}</span>, and most often beside a find.{/if}
+              Not kept yet. {#if f.rare}From depth <span class="n">{rareFrom}</span>, more often the deeper you go.{:else}From depth <span class="n">{commonFrom}</span>, most often beside a find.{/if}
             </p>
           {/if}
         </div>
       {/each}
       {#if !count}
         <div class="face" class:shown={!shown} aria-hidden={!!shown}>
-          <p class="name unknown">None unearthed yet</p>
+          <p class="name unknown">None kept yet</p>
           <p class="when">The first can turn up from depth <span class="n">{commonFrom}</span>.</p>
         </div>
       {/if}
@@ -218,7 +153,7 @@
 {/snippet}
 
 {#if embedded}
-  <div class="fossils embedded" role="group" aria-label="Fossils, {count} of {FOSSIL_COUNT} unearthed">{@render set()}</div>
+  <div class="fossils embedded" role="group" aria-label="Fossils, {count} of {FOSSIL_COUNT} kept">{@render set()}</div>
 {:else}
   <section class="panel fossils" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="{uid}-h">
     <header>
@@ -231,14 +166,18 @@
 
 <style>
   .fossils {
-    /* A rare one's gold: the gold seals' metal, a shade warmer to read as type on the dark. */
-    --rare-gold: #d9b26a;
-    /* The stone's ink, as the fossil card's (bone now): the nodule, and the lines of the one chosen. One place, to follow the card's palette. */
-    --fossil-ink: #e6dcc6;
-    --fossil-hi: #f6f0e2;
-    /* The light a found one sits in: a found fossil is a prize, lit; a rare one's the brightest. */
-    --fossil-glow: #ffb45a;
-    --fossil-glow-rare: #ffd27a;
+    /*
+     * The amber, as the fossil card's (direction A, "held to the lamp"): the
+     * light through a kept one, its heart and its edge; a rare one's deeper,
+     * red-gold. One place, to follow the card's palette.
+     */
+    --fossil-ink: #f0962a;
+    --fossil-hi: #ffd04a;
+    --fossil-edge: #ec6a10;
+    --fossil-rare-hi: #ffb428;
+    --fossil-rare-edge: #c8300c;
+    /* A rare one's word, red-gold as the card's note. */
+    --fossil-rare-ink: #ff7a3a;
     container: fossils / inline-size;
     min-width: 0;
   }
@@ -288,7 +227,7 @@
    * The layout, by the width alone. Narrow: six to a row (the rare ones four),
    * the detail box under the set. From 480px, nine to a row. From 700px, the
    * detail box beside the set, which takes what the box leaves it, up to a
-   * 66px cell (a 60px socket).
+   * 66px cell (a 60px slot).
    */
   .body {
     display: grid;
@@ -339,7 +278,7 @@
     color: #9a8f7c;
   }
   .rare .head > span:first-child {
-    color: var(--rare-gold);
+    color: var(--fossil-rare-ink);
   }
   .tally {
     letter-spacing: 0.08em;
@@ -369,144 +308,96 @@
     -webkit-tap-highlight-color: transparent;
   }
   .cell:focus-visible {
-    outline: 2px solid var(--gold-hi);
+    outline: 2px solid var(--fossil-hi);
     outline-offset: -2px;
-    border-radius: 50%;
+    border-radius: 18%;
   }
 
-  /* The socket: lines cut into a dark medallion, as a seal's. */
-  .socket {
-    --ink: #7d6f5c;
+  /* The slot: a recess cut into the panel, its lip catching a little light along the bottom. */
+  .slot {
+    --hi: var(--fossil-hi);
+    --edge: var(--fossil-edge);
+    --rim: rgba(255, 190, 120, 0.07);
+    --spill: transparent;
     position: relative;
     display: block;
     width: 100%;
     height: 100%;
-    border-radius: 50%;
-    color: var(--ink);
-    background: radial-gradient(circle, rgba(0, 0, 0, 0.55) 0 62%, rgba(0, 0, 0, 0.25) 74%, transparent 76%);
-  }
-  /* Found: lit from within the ring, the fossil glowing in it, the rings bright in the currency colour. */
-  .socket.got {
-    --ink: #cbbd9b;
-    --light: var(--fossil-glow);
-    background: radial-gradient(
-      circle,
-      color-mix(in srgb, var(--light) 42%, transparent) 0 22%,
-      color-mix(in srgb, var(--light) 16%, rgba(0, 0, 0, 0.4)) 48%,
-      rgba(0, 0, 0, 0.55) 64%,
-      rgba(0, 0, 0, 0.25) 74%,
-      transparent 76%
-    );
-    box-shadow: 0 0 12px color-mix(in srgb, var(--light) 18%, transparent);
-  }
-  .socket.got .glow {
-    color: var(--light);
-    opacity: 0.4;
-  }
-  /* Rare: the brightest, its rings gold, its light warmer and wider. */
-  .socket.got.rare {
-    --ink: var(--gold);
-    --light: var(--fossil-glow-rare);
-    box-shadow: 0 0 18px color-mix(in srgb, var(--light) 30%, transparent);
-  }
-  .socket.got.rare .glow {
-    color: var(--gold-sheen);
-    opacity: 0.7;
-  }
-  /* The one shown: its lines bright as bone, and a pale light round it. */
-  .cell.on .socket {
-    --ink: var(--fossil-ink);
+    border-radius: 18%;
+    background: linear-gradient(165deg, #0a0806, #140f0a);
     box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--fossil-hi) 55%, transparent),
-      0 0 10px color-mix(in srgb, var(--fossil-hi) 22%, transparent);
+      inset 0 2px 5px rgba(0, 0, 0, 0.85),
+      inset 0 0 0 1px var(--rim),
+      0 1px 0 rgba(255, 225, 180, 0.05),
+      0 0 12px var(--spill);
   }
-  .cell.on .socket.got {
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--fossil-hi) 65%, transparent),
-      0 0 16px color-mix(in srgb, var(--light) 40%, transparent);
+  .slot.rare {
+    --hi: var(--fossil-rare-hi);
+    --edge: var(--fossil-rare-edge);
+    --rim: color-mix(in srgb, var(--fossil-rare-edge) 26%, transparent);
   }
-  .cell.on .socket:not(.got) {
-    background: radial-gradient(circle, color-mix(in srgb, var(--fossil-ink) 8%, transparent) 0 40%, rgba(0, 0, 0, 0.55) 62%, rgba(0, 0, 0, 0.25) 74%, transparent 76%);
-  }
-  .cell.on.got .socket.rare {
-    --ink: #fff0c8;
-  }
-  svg {
+  .slot img {
     position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    overflow: visible;
-    fill: none;
-    stroke: currentColor;
-    stroke-linecap: butt;
-    stroke-linejoin: miter;
-    stroke-miterlimit: 12;
-  }
-  .main {
-    stroke-width: 0.85;
-  }
-  .thin {
-    stroke-width: 0.55;
-  }
-  .hair {
-    stroke-width: 0.4;
-  }
-  circle {
-    stroke-linecap: round;
-  }
-  /* Not yet found: a dull impression, the nodule faint inside it, quiet so the found ones stand out. */
-  .socket:not(.got) svg {
-    opacity: 0.55;
-  }
-  .nodule {
-    color: color-mix(in srgb, var(--fossil-ink) 75%, #4a4438);
-    opacity: 0.5;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-  .cell.on .nodule {
-    color: var(--fossil-ink);
-    opacity: 0.8;
-  }
-  .socket img {
-    position: absolute;
-    left: 20%;
-    top: 20%;
-    width: 60%;
-    height: 60%;
+    left: 15%;
+    top: 15%;
+    width: 70%;
+    height: 70%;
     object-fit: contain;
     pointer-events: none;
     -webkit-user-select: none;
     user-select: none;
-    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--light) 55%, transparent)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
   }
-  .rare img {
-    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--light) 75%, transparent)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+  /* Not kept yet: a faint print of it in the empty recess. */
+  .slot:not(.got) > img {
+    filter: grayscale(1) sepia(0.5) brightness(0.55);
+    opacity: 0.2;
+  }
+  /* Kept: lit from behind, the light coming through it, its heart bright and its edge deep. */
+  .slot.got {
+    background:
+      radial-gradient(
+        circle,
+        color-mix(in srgb, var(--hi) 55%, transparent) 0,
+        color-mix(in srgb, var(--edge) 30%, transparent) 36%,
+        color-mix(in srgb, var(--edge) 8%, transparent) 58%,
+        transparent 72%
+      ),
+      linear-gradient(165deg, #0a0806, #140f0a);
+  }
+  .slot.got > img {
+    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--hi) 70%, transparent)) drop-shadow(0 0 7px color-mix(in srgb, var(--edge) 55%, transparent));
+  }
+  /* A rare one, the brightest: its light wider, spilling over the recess's lip. */
+  .slot.got.rare {
+    --rim: color-mix(in srgb, var(--fossil-rare-edge) 55%, transparent);
+    --spill: color-mix(in srgb, var(--fossil-rare-edge) 35%, transparent);
+  }
+  .slot.got.rare > img {
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--hi) 85%, transparent)) drop-shadow(0 0 9px color-mix(in srgb, var(--edge) 70%, transparent));
+  }
+  /* The one shown: its rim lit in the amber's heart. */
+  .cell.on .slot {
+    --rim: color-mix(in srgb, var(--hi) 80%, transparent);
+    --spill: color-mix(in srgb, var(--hi) 30%, transparent);
+  }
+  .cell.on .slot:not(.got) > img {
+    opacity: 0.4;
   }
 
-  /* The glow: the same lines, wide and faint, under them (AchievementSeal's). */
-  .glow {
-    overflow: hidden;
-    opacity: 0.22;
-    filter: blur(0.6px);
-  }
-  .glow * {
-    stroke-width: 2.2;
-  }
-  .glow .hair {
-    stroke-width: 1.2;
-  }
-
-  /* Gold's passing light and its spark, as on a gold seal (AchievementSeal.svelte, lib/glint.ts). */
-  .light {
+  /*
+   * The lamplight (lib/glint.ts): a slanted slit masked to a narrow band,
+   * holding a brighter copy of the fossil, the band sliding across it. Kept
+   * to the recess.
+   */
+  .lamp {
     position: absolute;
     inset: 0;
     overflow: hidden;
-    border-radius: 50%;
+    border-radius: inherit;
     pointer-events: none;
   }
   .slit {
+    --band: 16%;
     position: absolute;
     inset: 0;
     -webkit-mask-image: linear-gradient(90deg, transparent calc(50% - var(--band) / 3), #000 50%, transparent calc(50% + var(--band) / 3));
@@ -519,23 +410,12 @@
     mask-position: 100% 0;
     transform: skewX(-20deg);
   }
-  .slit svg {
-    color: var(--gleam);
-    filter: drop-shadow(0 0 1px var(--gleam));
+  .slit img {
     transform: skewX(20deg);
+    filter: brightness(1.9) saturate(1.15);
   }
-  .spark {
-    position: absolute;
-    width: 34%;
-    height: 34%;
-    inset: auto;
-    overflow: visible;
-    opacity: 0;
-    transform: translate(-50%, -50%);
-    pointer-events: none;
-    fill: #fffaf0;
-    stroke: none;
-    filter: drop-shadow(0 0 2px rgba(255, 214, 140, 0.9));
+  .rare .slit img {
+    filter: brightness(2.1) saturate(1.3) hue-rotate(-8deg);
   }
 
   /* The game's tooltip: the name in the currency colour (ItemDetails.svelte), Fontin SmallCaps. */
@@ -567,7 +447,7 @@
     font-size: 0.8rem;
     letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--rare-gold);
+    color: var(--fossil-rare-ink);
   }
   .when {
     margin-top: 0.45rem;
