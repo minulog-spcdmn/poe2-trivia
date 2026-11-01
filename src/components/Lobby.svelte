@@ -22,7 +22,7 @@
   import { kickConfirm } from '../lib/kick';
   import { creatorArrived, playerArrived, refuse, twinkle } from '../lib/fx/moments';
   import { overPage } from '../lib/fx/core';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import type { TransitionConfig } from 'svelte/transition';
   import { categoryIcons, playerColor } from '../lib/ui';
   import { measure } from '../lib/iconFit.svelte';
@@ -31,7 +31,7 @@
   import WatchToggle from './WatchToggle.svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { pinnedOut, zoomOf } from '../lib/stage';
-  import { calm } from '../lib/motion.svelte';
+  import { calm, motion } from '../lib/motion.svelte';
   import { cubicOut } from 'svelte/easing';
   import HostMark from './HostMark.svelte';
   import RoomCodeGlyphs from './RoomCodeGlyphs.svelte';
@@ -153,18 +153,59 @@
   let lobbyEl = $state<HTMLElement>();
   const roster = $derived([s.players, s.spectators ?? [], s.aside ?? []].map((l) => l.map((p) => p.id).join()).join('|'));
   // Before the markup changes, so it is where they stood (read only as the room's people change).
+  /** How tall each list of them was then (settle). */
+  let listsWere = new Map<Element, number>();
   $effect.pre(() => {
     void roster;
     const was = new Map<string, { at: DOMRect; el: Element }>();
     lobbyEl?.querySelectorAll<HTMLElement>('.chips li[data-id], .onlookers li[data-id]').forEach((li) => was.set(li.dataset.id!, { at: li.getBoundingClientRect(), el: li }));
     stood = was;
+    listsWere = new Map([...(lobbyEl?.querySelectorAll<HTMLElement>('ul.chips, ul.onlookers') ?? [])].map((ul) => [ul, ul.offsetHeight]));
   });
+  // Once it has: each list that grew or shrank opens or closes its room as its chip comes or goes, so what's below glides.
+  // (A gallery that opens or closes slides as a whole.)
+  $effect(() => {
+    void roster;
+    untrack(() => listsWere.forEach((was, ul) => ul.isConnected && settle(ul as HTMLElement, was)));
+  });
+  /** Lists a chip is travelling into from the other (moveIn): it comes from outside them, so they don't clip it as they open. */
+  const boarding = new WeakSet<Element>();
+  /** The easing of a chip's own fly (Svelte's cubicOut), for what moves with it. */
+  const CUBIC_OUT = 'cubic-bezier(0.33, 1, 0.68, 1)';
+  const settling = new WeakMap<Element, Animation>();
+  /**
+   * `el` is now a different height than `was`: what's below glides there over a chip's 350ms instead of jumping, its bottom margin
+   * taking the change back and letting it go (from wherever a change still under way had it). Growing, what isn't uncovered yet is clipped.
+   * In layout px (offsetHeight), the stage's zoom no matter.
+   */
+  function settle(el: HTMLElement, was: number) {
+    const now = el.offsetHeight;
+    if (now === was || motion.still) return;
+    const at = parseFloat(getComputedStyle(el).marginBottom) || 0;
+    settling.get(el)?.cancel();
+    const base = parseFloat(getComputedStyle(el).marginBottom) || 0;
+    const from = was + (at - base) - now;
+    const clip = from < 0 && !boarding.has(el);
+    const a = el.animate(
+      [
+        { marginBottom: `${base + from}px`, ...(clip ? { clipPath: `inset(-100vh -100vw ${-from}px -100vw)` } : {}) },
+        { marginBottom: `${base}px`, ...(clip ? { clipPath: 'inset(-100vh -100vw 0px -100vw)' } : {}) },
+      ],
+      { duration: 350, easing: CUBIC_OUT },
+    );
+    settling.set(el, a);
+    a.finished.then(
+      () => boarding.delete(el),
+      () => {},
+    );
+  }
   /** A chip or onlooker coming in: one who was in the other list a moment ago comes from where they stood there, the one they leave fading in its place (kickOut),
       so it reads as the same person moving; anyone else comes in as `fallback`. Measured on screen and moved in the chip's own px, under the stage's zoom (lib/stage).
       It moves by `translate`, as Svelte's flip and pin move by `transform`. Deferred, as Svelte makes the transition once the flush is done, so its new place is laid out. */
   function moveIn(node: Element, fallback: () => TransitionConfig | (() => TransitionConfig)) {
     const id = (node as HTMLElement).dataset.id ?? '';
     const from = stood.get(id);
+    if (from && from.el !== node && node.parentElement) boarding.add(node.parentElement);
     return () => {
       if (!from || from.el === node) {
         const f = fallback();
@@ -327,6 +368,16 @@
             ? 'Anyone can find this room under “Open rooms”.'
             : 'Only people with the code or link can join.',
   );
+  let hintBox = $state<HTMLElement>();
+  let hintWas: number | undefined;
+  $effect.pre(() => {
+    void visHint;
+    hintWas = untrack(() => hintBox)?.offsetHeight;
+  });
+  $effect(() => {
+    void visHint;
+    untrack(() => hintBox && hintWas !== undefined && settle(hintBox, hintWas));
+  });
   /** The invite button's word. */
   const inviteLabel = $derived(s.settings.locked ? 'Room locked' : closed ? 'Room full' : copied ? 'Link copied!' : canShare ? 'Share invite link' : 'Copy invite link');
   /** Host: what the note by Begin says, as one key: a new one fades in where the last stood. */
@@ -466,7 +517,10 @@
             {/if}
           </div>
           {#if isHost}
-            {#key visHint}<p class="vis-hint" in:fade={calm({ duration: 200 })}>{visHint}</p>{/key}
+            <!-- A hint that wraps longer or shorter opens or closes its room as it fades in, so the party below glides (settle). -->
+            <div class="vis-hint-box" bind:this={hintBox}>
+              {#key visHint}<p class="vis-hint" in:fade={calm({ duration: 200 })}>{visHint}</p>{/key}
+            </div>
           {/if}
         </section>
       {/if}
