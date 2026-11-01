@@ -233,10 +233,22 @@ export function gameScenes(): Scene[] {
     scene('race-question', 'Race', 'A question, everyone answering', [host('Kalguur'), guest('Doryani'), WATCHER], race, crowdAsked),
     scene('race-answered', 'Race', 'Answered, waiting on the others', [host('Kalguur'), guest('Doryani'), WATCHER], (v) => race(v).answer('Doryani', false, 1800), crowdAsked),
     scene('race-reveal', 'Race', 'The answer shown', [host('Kalguur'), guest('Doryani'), WATCHER], (v) => race(v).answer('Una of the Vaal', true, 1500), crowdAsked),
-    scene('deathmatch', 'Deathmatch', 'A tie at the target: the deathmatch', [host('Kalguur'), guest('Doryani'), WATCHER], () =>
-      table(['Kalguur', 'Doryani'], { targetScore: 1 })
-        .start()
-        .playTo((s) => !!s.deathmatch),
+    // Long names too: the intro's duelists as wide as the longest name between them, each name whole.
+    scene(
+      'deathmatch',
+      'Deathmatch',
+      'A tie at the target: the deathmatch',
+      [host('Kalguur'), guest('Doryani'), WATCHER],
+      () =>
+        table(['Kalguur', 'Doryani'], { targetScore: 1 })
+          .start()
+          .playTo((s) => !!s.deathmatch),
+      {
+        states: [
+          { label: 'A tie at the target: the deathmatch', values: {} },
+          { label: 'Long names', values: { names: 'long' } },
+        ],
+      },
     ),
     // The first duelist missed: face down on the scoreboard till the round ends.
     scene('deathmatch-miss', 'Deathmatch', 'A duelist missed, the next to answer', [host('Kalguur'), guest('Doryani'), WATCHER], () => {
@@ -247,13 +259,31 @@ export function gameScenes(): Scene[] {
       return t.answer(t.turn, false).wait(1000).next();
     }),
     // Three tied; Una of the Vaal missed while the others scored, and the next round says so.
-    scene('deathmatch-out', 'Deathmatch', 'Three in, one knocked out', [host('Kalguur'), guest('Doryani'), WATCHER], () =>
-      table(['Kalguur', 'Doryani', 'Una of the Vaal'], { targetScore: 1 })
-        .start()
-        .playTo((s) => !!s.deathmatch)
-        .playTo((s) => !!s.deathmatch?.eliminated.length && s.phase === 'choosing', (name) => name !== 'Una of the Vaal'),
+    // Long names: on an upright phone the three share the intro's row, each name cut short only there.
+    scene(
+      'deathmatch-out',
+      'Deathmatch',
+      'Three in, one knocked out',
+      [host('Kalguur'), guest('Doryani'), WATCHER],
+      () =>
+        table(['Kalguur', 'Doryani', 'Una of the Vaal'], { targetScore: 1 })
+          .start()
+          .playTo((s) => !!s.deathmatch)
+          .playTo((s) => !!s.deathmatch?.eliminated.length && s.phase === 'choosing', (name) => name !== 'Una of the Vaal'),
+      {
+        states: [
+          { label: 'Three in, one knocked out', values: {} },
+          { label: 'Long names', values: { names: 'long' } },
+        ],
+      },
     ),
-    scene('delve-cards', 'Delve alone', 'The cards dealt', [ALONE], delveAlone),
+    // A long name (20 characters, MAX_NAME): alone, it has the scoreboard's whole row, whole on a phone upright or on its side.
+    scene('delve-cards', 'Delve alone', 'The cards dealt', [ALONE], delveAlone, {
+      states: [
+        { label: 'The cards dealt', values: {} },
+        { label: 'A long name', values: { names: 'long' } },
+      ],
+    }),
     // Which cards hold a find: a vein on the first and a flare on the last,
     // or one of them alone, its note on its card's side (where a phone's
     // browser on its side gives the lock rule the other); and dynamite in
