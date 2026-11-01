@@ -1282,12 +1282,12 @@
        verdict, where a long sentence (a team's, say) would make the row
        under the answers taller and push Next up: that row keeps the verdict
        and Next alone, and the art gives up what the sentence needs. The
-       line it takes the place of stays, unseen under it (.held), so the line
+       line it takes the place of stays, unseen under it (.kept), so the line
        keeps its height for a sentence no taller: the answers and the art
        under it stay where they were and the art's circle keeps its size, so
        nothing on the screen moves, or has to be drawn again, for it. -->
   <div class="task" data-cursor="task" class:snug class:timed={!!timer && clocked}>
-    <p class="task-text" class:held={!!reveal && upright.current}>
+    <p class="task-text" class:kept={!!reveal && upright.current}>
       <!-- Said to whoever can't answer as what is going on, and so it holds through the reveal. -->
       {#if !race && !coop && !session.myTurn}
         {active.name} <span class="muted">{q.mode === 'art' ? 'picks the art that matches the name' : 'names this item'}</span>
@@ -1583,7 +1583,7 @@
   /* What it said, kept for its height under the outcome: it fades out over
      the outcome's delay, gone just as the outcome starts rising in its place
      (back at once with the next question). */
-  .task-text.held {
+  .task-text.kept {
     visibility: hidden;
     opacity: 0;
     transition:
@@ -2132,14 +2132,9 @@
       0 0 20px rgba(238, 191, 150, 0.28),
       0 2px 10px rgba(0, 0, 0, 0.5);
   }
-  /* Gone as you answer or are struck: it fades out first, then can't be
-     reached (its way back in is at once, .btn.blast's own). */
   .btn.blast.gone {
     visibility: hidden;
     opacity: 0;
-    transition:
-      opacity 0.25s,
-      visibility 0s 0.25s;
   }
   .btn.blast .stick {
     display: inline-block;

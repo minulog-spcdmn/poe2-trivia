@@ -181,6 +181,39 @@
   /** Delve together: nobody has a turn; on phones your own entry is the one spelled out. */
   const coop = $derived(!!run && isGroupRun(s));
   const me = $derived(session.mode === 'local' ? null : session.myPlayerId);
+  /** The entry spelled out on phones (wide): the turn's, the race's winner, or in co-op your own; none in a full room. */
+  const wideId = $derived.by(() => {
+    if (bare) return null;
+    if (coop) return me;
+    if (race) return s.phase === 'reveal' ? (s.reveal?.winnerId ?? null) : null;
+    return s.phase !== 'over' ? (s.players[s.turn]?.id ?? null) : null;
+  });
+  /**
+   * Phones: as the entry spelled out changes, the one opening grows to its
+   * width and the one closing shrinks to its own, the row moving with them,
+   * rather than each taking its width at once and passing over its neighbour.
+   * Their widths are read before the change and after it.
+   */
+  let widthsWere = new Map<Element, number>();
+  let resizing = false;
+  $effect.pre(() => {
+    void wideId;
+    if (!boardEl || motion.still) return;
+    resizing = true;
+    widthsWere = new Map([...boardEl.children].map((li) => [li, parseFloat(getComputedStyle(li).width)]));
+  });
+  $effect(() => {
+    void wideId;
+    const was = widthsWere;
+    widthsWere = new Map();
+    resizing = false;
+    for (const [li, from] of was) {
+      if (!li.isConnected) continue;
+      const to = parseFloat(getComputedStyle(li).width);
+      if (Math.abs(to - from) < 1) continue;
+      li.animate([{ width: `${from}px`, minWidth: '0px' }, { width: `${to}px`, minWidth: '0px' }], { duration: 350, easing: 'cubic-bezier(0.33, 1, 0.68, 1)' });
+    }
+  });
   /** Delve together: who answered the question in play (wrong, or it would be over). */
   const struck = $derived(new Set(coop && s.phase === 'question' ? (s.question?.struck ?? []).map((x) => x.by) : []));
 
@@ -773,6 +806,8 @@
    * active entry's own transform stays.
    */
   function glide(node: Element, { from, to }: { from: DOMRect; to: DOMRect }) {
+    // (An entry opening or closing as this happens moves the row by its width, below: a glide to where it ends would pass over it.)
+    if (resizing) return { duration: 0 };
     // Measured on screen: in the entry's own px under the stage's zoom.
     const z = zoomOf(node);
     const dx = (from.left - to.left) / z;
@@ -781,17 +816,36 @@
   }
 
   /**
-   * A kicked player's entry fades out. It leaves the flow as it starts, so the
-   * others glide into the gap at once (the glide measures after this runs).
+   * A kicked player's entry closes its room as it fades (gone by halfway), the
+   * row's gap after it with it, so the others slide over as it goes and none
+   * passes over it while it's still there.
    */
   function leave(node: HTMLElement) {
-    node.style.cssText += `;position:absolute;left:${node.offsetLeft}px;top:${node.offsetTop}px;width:${node.offsetWidth}px;margin:0;pointer-events:none`;
-    return calm({ duration: 250, easing: cubicOut, css: (t: number) => `opacity: ${t}` });
+    const cs = getComputedStyle(node);
+    const [w, pl, pr] = [cs.width, cs.paddingLeft, cs.paddingRight].map(parseFloat);
+    const gap = parseFloat(getComputedStyle(node.parentElement!).columnGap) || 0;
+    return calm({
+      duration: 350,
+      easing: cubicOut,
+      css: (t: number, u: number) =>
+        `min-width: 0; width: ${t * w}px; padding-left: ${t * pl}px; padding-right: ${t * pr}px; border-width: ${t < 0.05 ? 0 : 1}px; margin-right: ${-u * gap}px; overflow: hidden; opacity: ${Math.max(0, 2 * t - 1)}; pointer-events: none`,
+    });
   }
 
-  /** The revive heart grows in from a small size and shrinks away (its own wrapper, so the beat is left alone). */
-  function bloom(_node: Element) {
-    return calm({ duration: 250, easing: cubicOut, css: (t: number) => `opacity: ${t}; scale: ${0.6 + 0.4 * t}` });
+  /**
+   * The revive heart grows in from a small size and shrinks away (its own wrapper, so the beat is left alone),
+   * opening its room in the entry as it comes and closing it as it goes: the entry widens and narrows with it,
+   * the others gliding aside, rather than jumping.
+   */
+  function bloom(node: Element) {
+    const cs = getComputedStyle(node);
+    const [w, ml, mr] = [cs.width, cs.marginLeft, cs.marginRight].map(parseFloat);
+    const gap = parseFloat(getComputedStyle(node.parentElement!).columnGap) || 0;
+    return calm({
+      duration: 250,
+      easing: cubicOut,
+      css: (t: number, u: number) => `opacity: ${t}; scale: ${0.6 + 0.4 * t}; width: ${t * w}px; margin-left: ${t * ml - u * gap}px; margin-right: ${t * mr}px`,
+    });
   }
 
   // Stuck (phones upright): the strip sticks 1px above the top of the screen, so
@@ -835,7 +889,7 @@
   <ol class="board" class:crowded={fullRoom(s.players.length)} class:tight bind:this={boardEl}>
     {#each s.players as p, i (p.id)}
       {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : !coop && i === s.turn && s.phase !== 'over'}
-      {@const wide = !bare && (coop ? p.id === me : active)}
+      {@const wide = p.id === wideId}
       {@const out = (race && s.phase !== 'over' && missed.has(p.id)) || struck.has(p.id) || (!!s.deathmatch && s.phase !== 'over' && s.deathmatch.results[p.id] === false)}
       {@const benched = !!s.deathmatch && s.phase !== 'over' && !s.deathmatch.alive.includes(p.id)}
       {@const duelist = !!s.deathmatch && s.phase !== 'over' && s.deathmatch.alive.includes(p.id)}
@@ -1698,8 +1752,9 @@
     /* An entry shrunk to its avatar takes the heart in beside it, the heart
        laid a little over the avatar's edge so the entry grows only a little;
        with four or more such entries the row breaks in two rather than run
-       off the screen. */
-    li.revivable:not(.wide) {
+       off the screen. (Set by the heart itself, not .revivable, so it holds
+       while the heart shrinks away: the entry narrows smoothly with it.) */
+    li:not(.wide):has(> .revive) {
       gap: 0;
       padding-right: 3px;
     }

@@ -69,7 +69,15 @@ export type Step =
    */
   | { then: GameState; at?: number }
   /** The room's clock moves on to `clock` (host clock, ms), standing still there, the room as it is: a countdown ticking on. */
-  | { clock: number };
+  | { clock: number }
+  /** Scrolls the first element `selector` finds into the middle of the view, at once (nothing if none). */
+  | { scroll: string }
+  /** The start page's list finds these rooms from now on, and looks again at once, as its Refresh would (a room opening or closing). */
+  | { rooms: RoomInfo[] }
+  /** How this device's sync stands changes (the link coming up, going), over what it was (Built's sync). */
+  | { sync: Partial<NonNullable<Built['sync']>> }
+  /** What's copied is taken as copied, as a frame of the desk may not write to the clipboard (Share run's Copied). */
+  | { clipboard: true };
 
 /** Everything a seat's device holds for the scene, beyond the room's state. */
 export interface Built {
@@ -119,6 +127,8 @@ export interface Built {
   sound?: { muted?: boolean; volume?: number; ambience?: number };
   /** Other things this device keeps, by their storage names ('keys': the player's keys, lib/keybinds.svelte.ts). */
   stored?: Record<string, string>;
+  /** A game this tab saved before it reloaded (the session's save, lib/session.svelte.ts' SAVE): the page picks it up as it loads, as a reload does. */
+  saved?: { mode: 'local'; state: GameState };
   /** The circle behind the end screen, instead of the one the game falls to (components/gameCircles.svelte.ts). */
   circle?: PlateName | null;
   /** A page whose chunk never comes, as with the Wi-Fi gone as it's fetched (lib/chunkRetry.ts): what a player gets then. */

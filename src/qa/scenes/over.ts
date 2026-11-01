@@ -108,6 +108,18 @@ const deathmatch = () =>
     recap: turnsRecap('Doryani', "Atziri's Disdain", { answers: { [pid('Doryani')]: { n: 10, ok: 10, ms: 1800, dn: 3, dok: 2 }, [K]: { n: 10, ok: 10, ms: 2000, dn: 3, dok: 3 } }, misses: misses('Doryani', ['Death Rush'], true) }),
     extra: { deathmatch: { alive: [K], entrants: [K, pid('Doryani')], round: 3, results: {}, eliminated: [pid('Doryani')], out: { [pid('Doryani')]: 3 }, startedAt: 0 } },
   });
+/**
+ * The room after the game, as it changes under the host: Alva goes (her row dims, "All 5" gives way to "4 of 5"),
+ * comes back, and Finn comes to watch and play the next game ("Finn joins next" opens out).
+ */
+function comingAndGoing(): { state: GameState; steps: Step[] } {
+  const s = game(FIVE, { recap: turnsRecap('Doryani', "Atziri's Disdain", { answers: { [K]: { n: 10, ok: 10, ms: 2400 } } }) });
+  const alva = (connected: boolean): GameState => ({ ...s, players: s.players.map((p) => (p.name === 'Alva' ? { ...p, connected } : p)) });
+  return {
+    state: s,
+    steps: [{ wait: 1200 }, { then: alva(false) }, { wait: 2000 }, { then: alva(true) }, { wait: 2000 }, { then: { ...s, spectators: [spectator('Finn')] } }],
+  };
+}
 function left() {
   const s = game(FIVE, {
     recap: turnsRecap('Doryani', "Atziri's Disdain", { answers: { [K]: { n: 10, ok: 10, ms: 2400 } } }),
@@ -249,6 +261,10 @@ function judged(earned: string[], late: unknown): { earned: string[]; steps?: St
   return { earned: earned.slice(0, -1), steps: [{ wait: LATE_MS }, { earn: earned.slice(-1) }] };
 }
 
+/** A list's "+N" (the missed items') pressed a moment after the screen is up, if it folded. */
+const PRESSED: Control = choice('pressed', 'Pressed', [['', 'Nothing'], ['missed', 'The missed list’s +N']]);
+/** Share run pressed (Delve alone). */
+const SHARED: Control = { kind: 'toggle', key: 'shared', label: 'Share run pressed', default: false };
 const GAME_CONTROLS: Control[] = [
   choice('kind', 'Game', [['turns', 'Take turns'], ['race', 'Race'], ['dm', 'Deathmatch'], ['hot', 'Hot-seat']]),
   range('players', 'Players', 1, 12, 5),
@@ -257,6 +273,7 @@ const GAME_CONTROLS: Control[] = [
   range('missed', 'Missed', 0, 30, 0),
   range('earned', 'Achievements earned', 0, 8, 0),
   choice('late', 'Read in late', [['', 'Nothing'], LATE_FEAT]),
+  PRESSED,
   choice('twist', 'Besides', [['', 'Nothing'], ['one-point', 'A game to 1 point'], ['negative', 'Scores below nothing'], ['idle', 'You never answered'], ['gems', 'Gems and many-pictured items'], ['default', 'A deathmatch won by default'], ['no-recap', 'No highlights (an older host)']]),
 ];
 const GAME_EARNED = ['first-victory', 'tide-turner', 'great-work', 'sweet-revenge', 'fooled-twice', 'prima-materia', 'mercurial', 'twofold'];
@@ -314,10 +331,13 @@ function anyGame(v: Values): AsSet {
     s.winners = [a];
   }
   if (watching) s.spectators = [spectator('Kalguur', v.place === 'watches')];
+  const told = judged(watching ? [] : GAME_EARNED.slice(0, Number(v.earned)), v.late);
+  const pressed: Step[] = v.pressed === 'missed' ? [{ wait: 1000 }, { click: `[data-more="${hot ? 'hot' : 'missed'}"]` }] : [];
   return {
     state: s,
     seat: hot ? { mode: 'local', me: null } : { mode: guest ? 'client' : 'host', me: K },
-    ...judged(watching ? [] : GAME_EARNED.slice(0, Number(v.earned)), v.late),
+    ...told,
+    ...(pressed.length ? { steps: [...pressed, ...(told.steps ?? [])] } : {}),
   };
 }
 
@@ -482,6 +502,7 @@ export function endScenes(): EndScene[] {
     },
     { key: 'n-dm', group: 'Normal games', label: 'Lost a deathmatch', boards: { desktop: 'n-dm' }, view: D, mode: 'client', me: doryani, state: deathmatch() },
     { key: 'n-left', group: 'Normal games', label: 'Alva went offline; two join next', boards: { desktop: 'n-left' }, view: D, mode: 'host', me: K, state: left(), earned: ['first-victory', 'untarnished'] },
+    { key: 'n-coming-going', group: 'Normal games', label: 'Alva goes and comes back, then Finn joins next (host)', view: D, mode: 'host', me: K, ...comingAndGoing() },
     { key: 'n-twelve', group: 'Normal games', label: '12 players (you are Dannig)', boards: { desktop: 'n-twelve', air13: 'n-air13-twelve' }, view: D, mode: 'client', me: dannig, state: twelve() },
     { key: 'n-phone-twelve', group: 'Normal games', label: '12 on a phone: your row on the dock', boards: { phone: 'n-phone-twelve' }, view: P, mode: 'client', me: pid('Oswin'), state: twelve() },
     { key: 'n-hot', group: 'Normal games', label: 'Hot-seat', boards: { desktop: 'n-hot' }, view: D, mode: 'local', me: null, state: hotSeat() },
@@ -489,7 +510,24 @@ export function endScenes(): EndScene[] {
     // The host gone from the screen (the room is off the list meanwhile): the line under the game says so, their row has the lobby's mark.
     { key: 'n-host-away', group: 'Normal games', label: 'Host away: a spectator who plays next', view: D, mode: 'client', me: pid('Watcher'), state: watched(won()), standing: { [K]: 'away', [pid('Rog')]: 'idle' } },
     { key: 'n-host-idle', group: 'Normal games', label: 'Host idle: a guest waits (phone)', view: P, mode: 'client', me: una(), state: lost(), standing: { [K]: 'idle' } },
-    { key: 'd-solo', group: 'Delve', label: 'Alone: four short of the best', boards: { desktop: 'd-solo', air13: 'd-air13', phone: 'd-phone-full' }, view: D, mode: 'local', me: null, state: solo(), ...solo23() },
+    {
+      key: 'd-solo',
+      group: 'Delve',
+      label: 'Alone: four short of the best',
+      boards: { desktop: 'd-solo', air13: 'd-air13', phone: 'd-phone-full' },
+      view: D,
+      mode: 'local',
+      me: null,
+      state: solo(),
+      ...solo23(),
+      controls: [SHARED],
+      states: [
+        { label: 'Alone: four short of the best', values: {} },
+        { label: 'Share run pressed: Copied fades in in its place, and back', values: { shared: true } },
+      ],
+      // (Copied whether or not the frame may write to the clipboard.)
+      vary: (v) => ({ seat: { mode: 'local', me: null }, state: solo(), ...solo23(), ...(v.shared ? { steps: [{ clipboard: true }, { wait: 1000 }, { click: '.share' }] } : {}) }),
+    },
     {
       key: 'd-first',
       group: 'Delve',
@@ -554,6 +592,7 @@ export function endScenes(): EndScene[] {
       { label: 'Any game, as set', values: {} },
       { label: 'The fullest game: twelve players, 24 missed, eight earned', values: { players: 12, place: 'second', missed: 24, earned: 8, joining: 3 } },
       { label: 'The fullest game, its last achievement judged a moment late', values: { players: 12, place: 'second', missed: 24, earned: 8, joining: 3, late: 'feat' } },
+      { label: 'The fullest game, the missed list’s +N pressed: it opens, what’s below glides down', values: { players: 12, place: 'second', missed: 24, earned: 8, joining: 3, pressed: 'missed' } },
       { label: 'The fullest hot-seat: six players, 30 missed', values: { kind: 'hot', players: 6, missed: 30 } },
     ], anyGame),
     asSet('alone', 'Delve', 'Any run alone, as set', ALONE_CONTROLS, [

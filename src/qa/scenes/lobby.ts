@@ -132,6 +132,10 @@ const HAPPENS: Control = {
     { value: 'settings', label: 'The host sets the game: points, difficulty, timer, lock' },
     { value: 'arrives', label: 'A second player arrives' },
     { value: 'gallery', label: 'Una of the Vaal goes to watch, and comes back' },
+    { value: 'offline', label: 'Una of the Vaal goes offline, and comes back' },
+    { value: 'host-leaves', label: 'The host leaves: Doryani hosts' },
+    { value: 'onlookers', label: 'Two arrive to watch' },
+    { value: 'sigils', label: 'Sigils put on, changed and taken off' },
   ],
 };
 
@@ -156,12 +160,77 @@ function live(v: Values = {}): Built {
     then(1200, () => t.act({ type: 'settings', settings: { timer: 32 } }));
     then(1200, () => t.act({ type: 'settings', settings: { locked: true } }));
   } else if (happens === 'arrives') then(1600, () => t.act({ type: 'join', playerId: pid('Doryani'), name: 'Doryani' }, 'Doryani'));
-  else {
+  else if (happens === 'offline') {
+    then(1400, () => t.act({ type: 'connection', playerId: pid('Una of the Vaal'), connected: false }, null));
+    then(2200, () => t.act({ type: 'connection', playerId: pid('Una of the Vaal'), connected: true }, null));
+  } else if (happens === 'host-leaves') {
+    // (No move of the game's hands a room over: the room as a new host would carry it on, set by hand.)
+    then(1600, () => (t.s = { ...t.s, hostId: pid('Doryani'), players: t.s.players.filter((p) => p.name !== 'Kalguur') }));
+  } else if (happens === 'onlookers') {
+    then(1400, () => t.act({ type: 'join', playerId: pid('Finn'), name: 'Finn', watch: true }, 'Finn'));
+    then(1200, () => t.act({ type: 'join', playerId: pid('Renly'), name: 'Renly', watch: true }, 'Renly'));
+  } else if (happens === 'sigils') {
+    then(1400, () => t.act({ type: 'sigil', sigil: 'witch' }, 'Doryani'));
+    then(1200, () => t.act({ type: 'sigil', sigil: 'ranger' }, 'Una of the Vaal'));
+    then(1400, () => t.act({ type: 'sigil', sigil: 'monk' }, 'Doryani'));
+    then(1400, () => t.act({ type: 'sigil' }, 'Una of the Vaal'));
+  } else {
     then(1600, () => t.act({ type: 'watch', watch: true }, 'Una of the Vaal'));
     then(2200, () => t.act({ type: 'watch', watch: false }, 'Una of the Vaal'));
   }
   // The host's seat, and (but for the arrival, where there's none to see it from before) a guest's.
-  return { state: shown, act: t.room, steps, ...(happens === 'settings' ? { seat: guest('Doryani') } : happens === 'arrives' ? { seat: host('Kalguur') } : {}) };
+  // The host's leaving from a third seat, whose host it was and who sees the banner come to Doryani.
+  const seat = happens === 'settings' ? guest('Doryani') : happens === 'arrives' ? host('Kalguur') : happens === 'host-leaves' ? guest('Una of the Vaal') : undefined;
+  return { state: shown, act: t.room, steps, ...(seat ? { seat } : {}) };
+}
+
+/** What this device's host does by hand as the room shows (the moves scene's control): each a click, a moment in, and where it's a toggle, back. */
+const DOES: Control = {
+  kind: 'choice',
+  key: 'does',
+  label: 'The host clicks',
+  default: 'mode',
+  options: [
+    { value: 'mode', label: 'Delve, then Take turns again' },
+    { value: 'lock', label: 'Lock, then unlock' },
+    { value: 'invite', label: 'Copy invite link' },
+    { value: 'hide', label: 'Hide the code, then show it' },
+    { value: 'custom', label: 'Custom’s editor, stepped through' },
+  ],
+};
+
+/** The steps for each of DOES: a wait, then a click. */
+const CLICKS: Record<string, [number, string][]> = {
+  mode: [
+    [1200, '.modes button[data-mode="delve"]'],
+    [1600, '.modes button[data-mode="turns"]'],
+  ],
+  lock: [
+    [1200, 'button.lock'],
+    [1800, 'button.lock'],
+  ],
+  invite: [[1200, 'button.invite']],
+  hide: [
+    [1200, 'button.room-tool[data-cursor="hide"]'],
+    [1800, 'button.room-tool[data-cursor="hide"]'],
+  ],
+  // Custom (picked) opens its editor; then Options, its first row, from 6 to 8, 10, 4 and back.
+  custom: [
+    [1000, '.seg button.edit'],
+    [1000, '.editor .track button:nth-of-type(3)'],
+    [900, '.editor .track button:nth-of-type(4)'],
+    [900, '.editor .track button:nth-of-type(1)'],
+    [900, '.editor .track button:nth-of-type(2)'],
+  ],
+};
+
+/** The room as its host's own clicks change it: what each click does on this device. */
+function moves(v: Values = {}): Built {
+  const does = String(v.does ?? 'mode');
+  const built = room(does === 'custom' ? { difficulty: 'custom' } : {});
+  const clicks = (CLICKS[does] ?? CLICKS.mode).flatMap(([wait, click]): Step[] => [{ wait }, { click }]);
+  // (Copied whether or not the frame may write to the clipboard.)
+  return { ...built, steps: does === 'invite' ? [{ clipboard: true }, ...clicks] : clicks };
 }
 
 export function lobbyScenes(): Scene[] {
@@ -201,8 +270,28 @@ export function lobbyScenes(): Scene[] {
         { label: 'A guest reads the host’s settings as they change', values: {} },
         { label: 'A second player arrives', values: { happens: 'arrives' } },
         { label: 'A player goes to the gallery, and comes back', values: { happens: 'gallery' } },
+        { label: 'A player goes offline, and comes back', values: { happens: 'offline' } },
+        { label: 'The host leaves: the banner comes to Doryani', values: { happens: 'host-leaves' } },
+        { label: 'Two arrive to watch', values: { happens: 'onlookers' } },
+        { label: 'Sigils put on, changed and taken off', values: { happens: 'sigils' } },
       ],
       build: live,
+    },
+    {
+      key: 'lobby/moves',
+      screen: 'lobby',
+      group: 'Lobby',
+      label: 'The host’s own clicks',
+      seats: [host('Kalguur')],
+      controls: [DOES],
+      states: [
+        { label: 'Delve picked, then Take turns: Begin glides both ways', values: {} },
+        { label: 'Locked, then unlocked', values: { does: 'lock' } },
+        { label: 'The invite link copied', values: { does: 'invite' } },
+        { label: 'The code hidden, then shown', values: { does: 'hide' } },
+        { label: 'Custom’s editor, stepped through', values: { does: 'custom' } },
+      ],
+      build: moves,
     },
     {
       key: 'lobby/at-screen',

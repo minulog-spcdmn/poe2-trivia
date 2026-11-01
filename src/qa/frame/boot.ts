@@ -140,6 +140,8 @@ export async function boot(asked: URLSearchParams) {
   if (built.sound?.volume !== undefined) sound.setVolume(built.sound.volume);
   if (built.sound?.ambience !== undefined) sound.setAmbience(built.sound.ambience);
   for (const [name, value] of Object.entries(built.stored ?? {})) storage.writeStored(name, value);
+  // A game saved before a reload, where the page looks for it as it loads ('session.v4', lib/session.svelte.ts' SAVE).
+  if (built.saved) storage.writeStored('session.v4', JSON.stringify(built.saved), 'session');
   if (built.stored?.keys) (await import('../../lib/keybinds.svelte.ts')).reloadKeys();
   // How its sync stands (only where the scene says: sync's link is loaded for those scenes alone).
   if (built.sync) {
@@ -291,6 +293,29 @@ export async function boot(asked: URLSearchParams) {
     }
     // (In a tree before the back guard there's no Back of the game's to show: the tab's own history is the desk's.)
     else if ('back' in step) steps?.back();
+    else if ('scroll' in step) document.querySelector(step.scroll)?.scrollIntoView({ block: 'center', behavior: 'instant' });
+    else if ('rooms' in step) {
+      // Found from now on; then a look at once, once the list's last look is over (Refresh waits out its 1.5 s).
+      rooms.useMadeUpRooms(step.rooms, built.invite);
+      for (let i = 0; i < 100; i++) {
+        const refresh = document.querySelector<HTMLButtonElement>('button.refresh');
+        if (refresh && !refresh.disabled) {
+          refresh.click();
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    } else if ('sync' in step) {
+      const { sync } = await import('../../lib/sync/link.svelte.ts');
+      Object.assign(sync, step.sync);
+    } else if ('clipboard' in step) {
+      // Written if the frame may, and taken as written either way.
+      const real = navigator.clipboard as Clipboard | undefined;
+      const write = real?.writeText.bind(real);
+      const writeText = (text: string) => (write ? write(text) : Promise.resolve()).catch(() => undefined);
+      if (real) Object.defineProperty(real, 'writeText', { configurable: true, value: writeText });
+      else Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    }
     else (await found(step.click))?.click();
   }
 

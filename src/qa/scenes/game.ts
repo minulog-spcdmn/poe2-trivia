@@ -5,7 +5,7 @@
 // vein's dig, the vote's clock running out and a teammate to bring back; the
 // host's kick, and a duelist sent to the bench.
 
-import { MAX_PLAYERS, PRESETS, TALL_ART_GROUPS, type Knobs, type Settings } from '../../lib/game.ts';
+import { MAX_PLAYERS, PRESETS, TALL_ART_GROUPS, type GameState, type Knobs, type Settings } from '../../lib/game.ts';
 import { DELVE_IDLE_ROUNDS, WAY_OUT, livesOf, voteClosesAt } from '../../lib/delve.ts';
 import { ACHIEVEMENTS } from '../../lib/achievements.ts';
 import { DELVE_FLAMES } from '../../lib/fx/streaks.ts';
@@ -148,6 +148,32 @@ const table = (names: string[], settings: Partial<Settings> = {}, o: { host?: nu
  * three seconds before it closes, a second at a time, then the room's draw.
  * Before anyone votes there's no clock: the scene as it is.
  */
+/** How long a scene that plays a moment by itself shows as it is first (ms). */
+const LOOK_FIRST = 1200;
+/**
+ * The cards dealt and turned before a click picks one (the last of three
+ * faces up 1.32 s after the deal starts: ChooseCategory's flipAt and FLIP).
+ */
+const CARDS_UP = 1600;
+
+/**
+ * A question as asked, before its clock: nobody sees its words yet (the
+ * scenes' engine starts every clock as its question is asked); and the same
+ * with its clock started `after` ms later, as a host's would once its
+ * pictures were in.
+ */
+function clockedLater(s: GameState, after: number): { asked: GameState; running: GameState; start: number } {
+  const q = s.question!;
+  const unclocked = { ...q };
+  delete unclocked.clockAt;
+  const start = q.askedAt + after;
+  return {
+    asked: { ...s, question: { ...unclocked, deadline: null } },
+    running: { ...s, question: { ...q, clockAt: start, deadline: q.deadline === null ? null : q.deadline + after } },
+    start,
+  };
+}
+
 function withClosing(base: Scene, play: (v: Values) => Table): Scene {
   return {
     ...base,
@@ -281,6 +307,30 @@ export function gameScenes(): Scene[] {
     ),
     scene('turns-untimed', 'Take turns', 'A question with no timer', turnsSeats, () => table(THREE, { timer: 0 }).start().pick()),
     scene('hot-seat', 'Take turns', 'Hot-seat: a question', [ALONE], () => table(THREE, {}, { host: null }).start().pick()),
+    // The page reloaded mid-game: the game this tab saved, picked up as the page loads (Replay reloads it again).
+    {
+      ...scene('hot-seat-reload', 'Take turns', 'Hot-seat: the page reloaded in a game', [{ mode: 'none', me: null }], () => table(THREE, {}, { host: null })),
+      build: () => ({ state: null, saved: { mode: 'local', state: table(THREE, {}, { host: null }).start().pick().s } }) satisfies Built,
+    },
+    // A picture question answered by a click (hot-seat, so this screen's turn): the
+    // host's word comes back a moment later and the verdict's tints fade in with
+    // the borders, the answer's and (a wrong click) the one picked.
+    {
+      ...scene('art-clicked', 'Take turns', 'A picture question answered by a click: its tints fade in', [ALONE], () => table(THREE, asked({ asked: 'art' }), { host: null }).start().pick()),
+      controls: [{ kind: 'toggle', key: 'right', label: 'Clicks the right one', default: false }],
+      states: [
+        { label: 'A wrong picture clicked', values: {} },
+        { label: 'The right picture clicked', values: { right: true } },
+      ],
+      build: (v = {}) => {
+        const t = table(THREE, asked({ asked: 'art' }), { host: null }).start().pick();
+        const shown = t.s;
+        const at = t.clock.now + 1000;
+        const i = v.right ? t.right() : t.wrong();
+        t.answer(null, i, 1000 + LOOK_FIRST + 250);
+        return { state: shown, act: t.room, at, steps: [{ wait: LOOK_FIRST }, { click: `.tile[data-cursor="opt:${i}"]` }, { wait: 250 }, { then: t.s, at: t.clock.now }] } satisfies Built;
+      },
+    },
     // Rog plays at Kalguur's screen: on his turn the host's screen answers, under his name.
     scene('at-screen', 'Take turns', "A turn at the host's screen", [host('Kalguur'), guest('Doryani')], () =>
       table(['Kalguur', 'Doryani'])
@@ -292,6 +342,40 @@ export function gameScenes(): Scene[] {
     scene('race-question', 'Race', 'A question, everyone answering', [host('Kalguur'), guest('Doryani'), WATCHER], race, crowdAsked),
     scene('race-answered', 'Race', 'Answered, waiting on the others', [host('Kalguur'), guest('Doryani'), WATCHER], (v) => race(v).answer('Doryani', false, 1800), crowdAsked),
     scene('race-reveal', 'Race', 'The answer shown', [host('Kalguur'), guest('Doryani'), WATCHER], (v) => race(v).answer('Una of the Vaal', true, 1500), crowdAsked),
+    // A miss as it happens, from Kalguur's seat: his own (the line under the
+    // answers saying it fades in), or a sixth on one answer while he still
+    // answers (past five, its faces give way to four and a count, "+2", which
+    // scales in).
+    {
+      ...scene('race-miss', 'Race', 'Answered wrong as it happens: the line, or a sixth miss’s +2', [host('Kalguur')], race),
+      controls: [
+        {
+          kind: 'choice',
+          key: 'miss',
+          label: 'Who misses',
+          default: 'mine',
+          options: [
+            { value: 'mine', label: 'Kalguur, this seat' },
+            { value: 'sixth', label: 'A sixth on one answer: +2' },
+          ],
+        },
+      ],
+      states: [
+        { label: 'Kalguur answers wrong: his line fades in', values: {} },
+        { label: 'A sixth miss on one answer: +2 scales in', values: { miss: 'sixth' } },
+      ],
+      build: (v = {}) => {
+        const sixth = v.miss === 'sixth';
+        const t = table(SEATED.slice(0, sixth ? 8 : 5), { mode: 'race' }).start();
+        const w = t.wrong();
+        // Five of the others on one wrong answer already, the sixth to come.
+        if (sixth) for (const name of SEATED.slice(1, 6)) t.answer(name, w, 400);
+        const shown = t.s;
+        const at = t.clock.now + (sixth ? 0 : 1000);
+        t.answer(sixth ? SEATED[6] : 'Kalguur', w, LOOK_FIRST + (sixth ? 0 : 1000));
+        return { state: shown, act: t.room, at, steps: [{ wait: LOOK_FIRST }, { then: t.s, at: t.clock.now }] } satisfies Built;
+      },
+    },
     // Long names too: the intro's duelists as wide as the longest name between them, each name whole.
     scene(
       'deathmatch',
@@ -437,6 +521,27 @@ export function gameScenes(): Scene[] {
           act: t.room,
           at,
           steps: [{ wait: BLOW_AFTER }, { then: answered, at: answeredAt }, { wait: REVEAL_FOR }, { then: t.s, at: t.clock.now }],
+        } satisfies Built;
+      },
+    },
+    // A pick as it happens: a moment after the cards are up this device picks the
+    // first by a click (the frame says what it would send), the room's question
+    // comes back at once and the cards hold it a moment, the card lifting
+    // (PICK_HOLD_MS); then the question, its words veiled until its clock starts
+    // a moment later, as a host's would once the pictures were in, and fading in.
+    {
+      ...scene('delve-pick', 'Delve alone', 'A card picked by a click, then its question’s words as the clock starts', [ALONE], delveAlone),
+      build: () => {
+        const t = delveAlone();
+        const shown = t.s;
+        const at = t.clock.now;
+        t.wait(CARDS_UP + 50).pick();
+        const { asked, running, start } = clockedLater(t.s, 900);
+        return {
+          state: shown,
+          act: t.room,
+          at,
+          steps: [{ wait: CARDS_UP }, { click: '.cards .card' }, { wait: 50 }, { then: asked, at: asked.question!.askedAt }, { wait: 900 }, { then: running, at: start }],
         } satisfies Built;
       },
     },
@@ -620,6 +725,79 @@ export function gameScenes(): Scene[] {
         return { state: fallen, act: t.room, at, steps } satisfies Built;
       },
     },
+    // The same run from Una's own seat, a moment before her last life goes:
+    // she misses, and "You perished and are now watching" opens its room as it
+    // fades in; Doryani clears the depth, and (Kalguur bringing her back) the
+    // line closes up again as it fades out.
+    {
+      ...scene('delve-together-perish', 'Delve together', 'Una perishes, from her seat: her line slides in', [guest('Una of the Vaal')], delveTogether),
+      controls: [players(3, 3), { kind: 'toggle', key: 'gives', label: 'Kalguur brings her back', default: false }],
+      states: [
+        { label: 'Una perishes, from her seat: her line slides in', values: {} },
+        { label: 'Kalguur brings her back: the line slides out', values: { gives: true } },
+      ],
+      build: (v = {}) => {
+        const t = delveTogether(v);
+        const una = 'Una of the Vaal';
+        for (let depth = 1; depth <= 3; depth++) {
+          for (const p of t.s.players) if (livesOf(t.s, p.id) > 0) t.act({ type: 'vote', category: t.s.offered[0] }, p.name);
+          if (t.s.phase === 'choosing') t.act({ type: 'expire' }, null);
+          if (depth === 3) break;
+          t.answer(una, false);
+          const struck = new Set((t.q.struck ?? []).map((x) => x.index));
+          if (depth === 1) t.answer('Kalguur', t.q.options.findIndex((o, i) => o !== t.q.itemId && !struck.has(i)));
+          t.answer('Doryani', true).wait(1000).next();
+        }
+        // Her last life, on the third depth's question.
+        const shown = t.s;
+        const at = t.clock.now + 1000;
+        t.answer(una, false, 1000 + LOOK_FIRST);
+        const steps: Step[] = [{ wait: LOOK_FIRST }, { then: t.s, at: t.clock.now }];
+        t.answer('Doryani', true, 1500);
+        steps.push({ wait: 1500 }, { then: t.s, at: t.clock.now });
+        if (v.gives) {
+          t.wait(2000).act({ type: 'revive', target: pid(una) }, 'Kalguur');
+          steps.push({ wait: 2000 }, { then: t.s, at: t.clock.now });
+        }
+        return { state: shown, act: t.room, at, steps } satisfies Built;
+      },
+    },
+    // Kalguur's own miss on the team's question: the line on what it cost him fades in.
+    {
+      ...scene('delve-together-miss', 'Delve together', 'Kalguur misses, from his seat: his line fades in', [host('Kalguur')], delveTogether),
+      controls: [players(2, 3)],
+      build: (v = {}) => {
+        const t = delveTogether(v);
+        for (const p of t.s.players) t.act({ type: 'vote', category: t.s.offered[0] }, p.name);
+        if (t.s.phase === 'choosing') t.act({ type: 'expire' }, null);
+        const shown = t.s;
+        const at = t.clock.now + 1000;
+        t.answer('Kalguur', false, 1000 + LOOK_FIRST);
+        return { state: shown, act: t.room, at, steps: [{ wait: LOOK_FIRST }, { then: t.s, at: t.clock.now }] } satisfies Built;
+      },
+    },
+    // The vote, its votes coming in one at a time from Kalguur's seat, all on
+    // one card: the first starts the clock (Closes in fades in, the rule gives
+    // way to who it waits for); each seal comes in at its seat's place, those
+    // after it sliding aside; Kalguur's own turns the prompt's line; past five,
+    // four faces and a count, which scales in, and again as it grows.
+    {
+      ...scene('delve-together-votes', 'Delve together', 'The votes coming in one at a time', [host('Kalguur')], delveTogether),
+      build: () => {
+        // Eight, so the vote stays open with one still to vote.
+        const t = table(SEATED.slice(0, 8), { mode: 'delve' }).start();
+        const shown = t.s;
+        const at = t.clock.now;
+        const card = t.s.offered[1];
+        const steps: Step[] = [];
+        ['Rog', 'Una of the Vaal', 'Doryani', 'Alva', 'Dannig', 'Kalguur', 'Hooded One'].forEach((name, n) => {
+          const wait = n === 0 ? CARDS_UP : 800;
+          t.wait(wait).act({ type: 'vote', category: card }, name);
+          steps.push({ wait }, { then: t.s, at: t.clock.now });
+        });
+        return { state: shown, act: t.room, at, steps } satisfies Built;
+      },
+    },
     scene(
       'delve-together-cleared',
       'Delve together',
@@ -633,5 +811,59 @@ export function gameScenes(): Scene[] {
       },
       { controls: [players(2, 3)] },
     ),
+    // A game starting, from the lobby or Play again on an end screen: the
+    // header's line changes with the screen it is for, the old one fading as
+    // the new one comes ("Round 1 • First to 10"; Delve alone, on this device,
+    // "Delve • Depth 1"). Take turns from Kalguur's room, Delve alone.
+    {
+      ...scene('starts', 'A game starting', 'The header’s line as a game starts', [host('Kalguur')], () => table(THREE)),
+      controls: [
+        {
+          kind: 'choice',
+          key: 'from',
+          label: 'From',
+          default: 'lobby',
+          options: [
+            { value: 'lobby', label: 'The lobby' },
+            { value: 'over', label: 'An end screen: Play again' },
+          ],
+        },
+        {
+          kind: 'choice',
+          key: 'mode',
+          label: 'Mode',
+          default: 'turns',
+          options: [
+            { value: 'turns', label: 'Take turns' },
+            { value: 'delve', label: 'Delve alone' },
+          ],
+        },
+      ],
+      states: [
+        { label: 'Take turns, from the lobby', values: {} },
+        { label: 'Delve alone, from the lobby', values: { mode: 'delve' } },
+        { label: 'Take turns, Play again', values: { from: 'over' } },
+        { label: 'Delve alone, Play again', values: { from: 'over', mode: 'delve' } },
+      ],
+      build: (v = {}) => {
+        const delve = v.mode === 'delve';
+        const t = delve ? table(['Kalguur'], { mode: 'delve' }, { host: null }) : table(THREE);
+        // To the end: Kalguur alone right on his turns, or a run's three misses.
+        if (v.from === 'over') t.start().playTo((s) => s.phase === 'over', (name) => !delve && name === 'Kalguur');
+        const shown = t.s;
+        const at = t.clock.now;
+        t.wait(LOOK_FIRST);
+        if (v.from === 'over') t.act({ type: 'restart', play: true });
+        else t.start();
+        return {
+          state: shown,
+          act: t.room,
+          at,
+          // (Alone, on this device: no room code on the line.)
+          ...(delve ? { seat: ALONE, hereOnly: true } : {}),
+          steps: [{ wait: LOOK_FIRST }, { then: t.s, at: t.clock.now }],
+        } satisfies Built;
+      },
+    },
   ];
 }
