@@ -10,7 +10,7 @@
   import { ring, wear } from '../../lib/arcane';
   import { sigilStrokes } from '../../lib/zoneSigils';
   import { T, drawPlan } from '../../lib/zoneTitleTiming';
-  import type { Ctx } from './family';
+  import { DRAW_LINE, type Ctx } from './family';
 
   let {
     sigil,
@@ -48,7 +48,9 @@
         from,
         ms,
       );
-      paths.forEach((p, i) => play(p, [{ strokeDashoffset: 100 }, { strokeDashoffset: 0 }], { at: plan[i].delay, ms: plan[i].dur }));
+      // (Unseen by its opacity, not its visibility: a line made visible
+      // would show through the column, hidden till the name has its size.)
+      paths.forEach((p, i) => play(p, DRAW_LINE, { at: plan[i].delay, ms: plan[i].dur }));
     };
     draw('.ring0', T.SEAL, T.SEAL_MS);
     draw('.ring1', T.SEAL + 120, T.SEAL_MS);
@@ -122,9 +124,6 @@
     stroke-width: calc(0.36px / var(--k));
     stroke-linecap: round;
     opacity: 0.8;
-  }
-  .draw {
-    stroke-dasharray: 100;
   }
   .glow {
     opacity: 0.3;

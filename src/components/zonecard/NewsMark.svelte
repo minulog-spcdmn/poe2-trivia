@@ -9,7 +9,7 @@
   import { EYE, GEMINI, LUNA, LUNA_HATCH, PROJECTION, RETORT, STONE, SUBLIMATION } from '../../lib/alchemy';
   import type { News, NewsSign } from '../../lib/zoneTitle';
   import ItemGlyph from '../ItemGlyph.svelte';
-  import type { Ctx } from './family';
+  import { DRAW_LINE, type Ctx } from './family';
 
   let { news, play, at, still }: { news: News; play: Ctx['play']; at: number; still: boolean } = $props();
 
@@ -31,7 +31,7 @@
   onMount(() => {
     k = Math.max(0.5, el.querySelector('svg')!.clientWidth / 30);
     if (still) return;
-    for (const r of el.querySelectorAll('.ring')) play(r, [{ strokeDashoffset: 100 }, { strokeDashoffset: 0 }], { at, ms: 300, easing: 'cubic-bezier(0.55, 0, 0.25, 1)' });
+    for (const r of el.querySelectorAll('.ring')) play(r, DRAW_LINE, { at, ms: 300, easing: 'cubic-bezier(0.55, 0, 0.25, 1)' });
     play(el.querySelector('.sign')!, [{ opacity: 0, transform: 'scale(1.4)' }, { opacity: 1, transform: 'none' }], { at: at + 300, ms: 300, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
     play(el.querySelector('.label')!, [{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 0.85, transform: 'none' }], { at: at + 420, ms: 250, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
   });
@@ -83,7 +83,6 @@
     stroke-linejoin: round;
   }
   .ring {
-    stroke-dasharray: 100;
     stroke-linecap: butt;
   }
   .thin {

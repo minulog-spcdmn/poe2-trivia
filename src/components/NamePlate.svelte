@@ -251,7 +251,6 @@
     {#each [-1, 1] as side (side)}
       <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="140%" y2={side * 29.5} class="draw rule metal thin" style:--d="0.6s" style:--t="0.9s" pathLength="100" />
       <line x1={f(INNER_RULE_X)} y1={side * 26.5} x2="140%" y2={side * 26.5} class="draw rule metal" style:--d="1.1s" style:--t="0.9s" pathLength="100" />
-      <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="104%" y2={side * 29.5} class="spark" pathLength="100" />
     {/each}
     {@render moulding(END.spandrels)}
     {@render moulding(END.ogees)}
@@ -285,11 +284,35 @@
   <svg x="50%" width="50%" height="100%" overflow="hidden"><svg x="100%" y="50%" overflow="visible"><g transform="scale(-1 1)">{@render cap(end)}</g></svg></svg>
 {/snippet}
 
-<span class="plate" class:lit class:glint aria-hidden="true" bind:this={plateEl} style:--end-scale={endScale} style:--seal-x="{SOCKET_X}px" style:--bloom-r="{BLOOM_R}px">
+<span
+  class="plate"
+  class:lit
+  class:glint
+  aria-hidden="true"
+  bind:this={plateEl}
+  style:--end-scale={endScale}
+  style:--seal-x="{SOCKET_X}px"
+  style:--bloom-r="{BLOOM_R}px"
+  style:--rule-x="{f(OUTER_RULE_X)}px"
+>
   <span class="field {WEAVE_CLASS}" bind:this={fieldEl}></span>
   <!-- The lines twice, as on the circle: a soft, wide copy for the glow, and the lines. -->
   <svg class="art glow" width="100%" height="100%" bind:this={glowEl}>{@render plate()}</svg>
   <svg class="art" width="100%" height="100%" bind:this={linesEl}>{@render plate()}</svg>
+  <!-- The glint's sparks, one along each outer rule from each end, laid out
+       as the rules are in the SVG (each half clipped at the middle, its end
+       scaled and the right one mirrored) but on layers of their own, run by
+       a transform: a dash run along the rule in the SVG had Chrome paint the
+       plate's lines again at the screen's rate for the second it ran. -->
+  {#each ['left', 'right'] as side (side)}
+    <span class="sparks {side}">
+      <span class="spark-end">
+        {#each [-1, 1] as y (y)}
+          <span class="spark-run" style:top="{y * 29.5 - 1.6}px"><span class="spark-line"><span class="spark"></span></span></span>
+        {/each}
+      </span>
+    </span>
+  {/each}
   <!-- Each seal's bloom of light, over the seal: pressed in with it (.seal),
        flaring and breathing as the seals light (.bloom). -->
   {#each ['left', 'right'] as side (side)}
@@ -399,8 +422,7 @@
   }
   .glow .ground,
   .glow .well,
-  .glow .sign,
-  .glow .spark {
+  .glow .sign {
     display: none;
   }
 
@@ -495,16 +517,67 @@
   .fade {
     opacity: 0;
   }
-  /* The glint: a spark that runs along the outer rules, from the ends to the middle. */
+  /* The glint: a spark that runs along the outer rules, from the ends to the
+     middle, as a dash of 7% of the rule 1.2 wide with round ends would. Each
+     end's sparks are placed as its SVG places the rule (in px of the end as
+     drawn for 64, from the plate's edge and middle), the right end mirrored;
+     each half clips them at the middle. */
+  .sparks {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 50%;
+    overflow: hidden;
+  }
+  .sparks.right {
+    left: 50%;
+  }
+  .spark-end {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    width: 100%;
+    height: 0;
+    transform-origin: 0 0;
+    transform: scale(var(--end-scale, 1));
+  }
+  .right .spark-end {
+    left: 100%;
+    transform: scale(calc(-1 * var(--end-scale, 1)), var(--end-scale, 1));
+  }
+  /* The rule the spark runs along, from where it leaves the spandrel to 104%
+     of the half (as the SVG's line), clipped at its ends as the dash was.
+     It shows from the spandrel's edge (half its 1.3 stroke on), where the
+     spandrel, drawn over it in the SVG, let it out. A pixel taller than the
+     spark each way, so only its ends clip it. */
+  .spark-run {
+    position: absolute;
+    left: calc(var(--rule-x) + 0.65px);
+    width: calc(104% - var(--rule-x) - 0.65px);
+    height: 3.2px;
+    overflow: hidden;
+  }
+  .spark-line {
+    position: absolute;
+    inset: 1px 0 1px -0.65px;
+  }
+  /* The dash, its round ends outside it as a stroke's caps are. */
   .spark {
-    stroke: #fff0d6;
-    stroke-width: 1.2;
-    stroke-dasharray: 7 200;
-    stroke-dashoffset: 7;
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 7%;
     opacity: 0;
+  }
+  .spark::before {
+    content: '';
+    position: absolute;
+    inset: 0 -0.6px;
+    border-radius: 0.6px;
+    background: #fff0d6;
   }
   .lit.glint .spark {
     animation: spark 1.1s 0.15s cubic-bezier(0.45, 0, 0.3, 1) both;
+    will-change: transform, opacity;
   }
 
   @keyframes fade {
@@ -546,16 +619,18 @@
       transform: scale(1.6);
     }
   }
+  /* From just short of the rule's start (its own length back) to its end,
+     100 dashes' worth of 7 on. */
   @keyframes spark {
     from {
-      stroke-dashoffset: 7;
+      transform: translateX(-100%);
       opacity: 1;
     }
     85% {
       opacity: 1;
     }
     to {
-      stroke-dashoffset: -100;
+      transform: translateX(calc(100% / 0.07));
       opacity: 0;
     }
   }
