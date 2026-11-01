@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { fade } from 'svelte/transition';
   import { engine } from '../lib/session.svelte';
+  import { calm } from '../lib/motion.svelte';
   import type { Codex } from '../lib/codex';
   import {
     CATEGORY_MIN,
@@ -190,7 +192,7 @@
             {/if}
             <ol class="list zones">
               {#each zoneRows as z (z.k)}
-                <li>
+                <li in:fade={calm({ duration: allZones ? 200 : 0 })}>
                   <span class="z-depth n">{shownDepth(z.depth)}</span>
                   <span class="l-name"><span>{z.name}</span></span>
                   <span class="z-when n">{date(z.at)}</span>
@@ -652,6 +654,26 @@
     border-radius: 3px;
     background: linear-gradient(90deg, #6d4a1c, #c9a45c 70%, #f1d99b);
     box-shadow: 0 0 8px rgba(224, 138, 68, 0.45);
+  }
+
+  /* Its bars fill from the left as the codex brings their panel in, as the
+     medallion's arc does (Codex.svelte's .rising, its --rise-delay). */
+  :global(.codex.rising) .fill {
+    transform-origin: left;
+    animation: codex-fill 1s var(--ease-out) calc(var(--rise-delay, 0s) + 0.25s) backwards;
+  }
+  @keyframes codex-fill {
+    from {
+      scale: 0 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    :global(.codex.rising) .fill {
+      animation: none;
+    }
+  }
+  :global(:root[data-still] .codex.rising) .fill {
+    animation: none;
   }
 
   /* Item rows, as the Collection's nemeses. */
