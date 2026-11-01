@@ -24,19 +24,42 @@ export interface TraceEvent {
   args?: any;
 }
 
-/** The events of a trace that are read here, from its JSON (the trace's own one-event-a-line form, else parsed whole). */
-export function readTrace(json: string): TraceEvent[] {
-  const wanted = (line: string) => line.includes('"RasterTask"') || line.includes('"cc::LayerTreeHostImpl"');
+/** The events read here. */
+const READ = ['RasterTask', 'cc::LayerTreeHostImpl'];
+const isRead = (e: TraceEvent | undefined) => !!e && READ.includes(e.name);
+
+/** A trace's bytes as Playwright gives them (Node's Buffer): as much of one as is used here. */
+export interface TraceBytes {
+  length: number;
+  indexOf(text: string, from?: number): number;
+  lastIndexOf(text: string, from?: number): number;
+  toString(encoding: 'utf8', start: number, end: number): string;
+}
+
+/**
+ * The events of a trace that are read here, from its JSON: one event a
+ * line, as Chrome writes it, and only the lines that name one are made
+ * into strings. (A watch with WebGL traces 200 MB; past about 512 MB the
+ * whole would be longer than V8 makes a string.) Not one event a line
+ * after all, it's parsed whole.
+ */
+export function readTrace(trace: string | TraceBytes): TraceEvent[] {
+  const text = (start: number, end: number) => (typeof trace === 'string' ? trace.slice(start, end) : trace.toString('utf8', start, end));
+  const lines = new Set<number>();
+  for (const name of READ) for (let i = trace.indexOf(`"${name}"`); i >= 0; i = trace.indexOf(`"${name}"`, i + 1)) lines.add(trace.lastIndexOf('\n', i) + 1);
+  const whole = (all: any) => ((Array.isArray(all) ? all : all.traceEvents) as TraceEvent[]).filter(isRead);
   const out: TraceEvent[] = [];
-  for (const line of json.split('\n')) {
-    if (!wanted(line)) continue;
+  for (const start of [...lines].sort((a, b) => a - b)) {
+    const end = trace.indexOf('\n', start);
+    let e;
     try {
-      out.push(JSON.parse(line.trim().replace(/,$/, '')));
+      e = JSON.parse(text(start, end < 0 ? trace.length : end).trim().replace(/,$/, ''));
     } catch {
-      // Not one event a line after all.
-      const all = JSON.parse(json);
-      return ((Array.isArray(all) ? all : all.traceEvents) as TraceEvent[]).filter((e) => e.name === 'RasterTask' || e.name === 'cc::LayerTreeHostImpl');
+      return whole(JSON.parse(text(0, trace.length)));
     }
+    // (The whole trace on one line; or a line that names one only in another event's arguments.)
+    if (Array.isArray(e) || e?.traceEvents) return whole(e);
+    if (isRead(e)) out.push(e);
   }
   return out;
 }
@@ -64,6 +87,8 @@ export interface Redraws {
   /** Over every layer. */
   px: number;
   again: number;
+  /** What was read: whether the trace had the page's renderer, how many of its layer trees and tiles drawn (unread() says what's missing). */
+  read: { renderer: boolean; snapshots: number; tiles: number };
 }
 
 type Rect = [number, number, number, number];
@@ -181,7 +206,42 @@ export function redraws(events: TraceEvent[]): Redraws {
     out.set(d.layerId, r);
   }
   const list = [...out.values()].map(({ at: _, ...r }) => r).sort((a, b) => b.px - a.px);
-  return { layers: list, px: list.reduce((a, l) => a + l.px, 0), again: list.reduce((a, l) => a + l.again, 0) };
+  const read = { renderer: pid !== null, snapshots: snaps.length, tiles: mine.filter((e) => e.name === 'RasterTask' && e.args?.tileData).length };
+  return { layers: list, px: list.reduce((a, l) => a + l.px, 0), again: list.reduce((a, l) => a + l.again, 0), read };
+}
+
+/**
+ * The layer the sweep draws in every watch (scripts/sweep.mjs, mark), so
+ * a trace always has a tile drawn that's known: its name as layerName
+ * gives it.
+ */
+export const MARK = 'div#redraw-mark';
+
+/**
+ * Whether `r` read what the trace of a watch always has: the page's
+ * renderer, its layer trees, tiles drawn, and among them the mark's (MARK).
+ * If not, what's missing, else null: a trace read as nothing would pass
+ * every limit, so it fails instead (its format changed, as an update to
+ * Chrome or Playwright can make it).
+ */
+export function unread(r: Redraws): string | null {
+  const missing = !r.read.renderer
+    ? 'the page’s renderer (no layer tree with the document)'
+    : !r.read.snapshots
+      ? 'layer tree'
+      : !r.read.tiles
+        ? 'tile drawn'
+        : !r.layers.some((l) => l.name === MARK)
+          ? `mark (${MARK}), drawn in every watch`
+          : null;
+  return missing && `the trace has no ${missing}: its format may have changed (an update to Chrome or Playwright); src/qa/redraws.ts reads it`;
+}
+
+/** `r` with the mark (MARK) left out: it's the sweep's, not the page's. */
+export function withoutMark(r: Redraws): Redraws {
+  const mark = r.layers.filter((l) => l.name === MARK);
+  const sum = (k: 'px' | 'again') => mark.reduce((a, l) => a + l[k], 0);
+  return { ...r, layers: r.layers.filter((l) => l.name !== MARK), px: r.px - sum('px'), again: r.again - sum('again') };
 }
 
 // ---- at rest ----------------------------------------------------------------
@@ -207,6 +267,28 @@ export function atRest(l: LayerRedraws, frames: number): string | null {
 }
 
 /**
+ * The most the whole page may draw again a frame at rest, its layers
+ * together: two layers' FLOOR. Each layer is held to FLOOR, but many small
+ * ones each under it (three cards at 40k, twenty rows at 10k) cost a frame
+ * as much as a big one. (The most a scene draws again in CI is GameOver's
+ * gleam, on two layers of its own: 76k px a frame with WebGL, when a whole
+ * pass falls in the 2 s watched.)
+ */
+export const PAGE_FLOOR = 2 * FLOOR;
+
+/** At rest, the page drawn again PAGE_FLOOR px a frame or more, its layers together (`again` over `frames`): what's wrong, else null. */
+export function pageAtRest(again: number, frames: number, layers: LayerRedraws[]): string | null {
+  const perFrame = again / Math.max(1, frames);
+  if (perFrame < PAGE_FLOOR) return null;
+  const most = [...layers]
+    .sort((a, b) => b.again - a.again)
+    .slice(0, 4)
+    .map((l) => `${l.name} ${kpx(l.again / Math.max(1, frames))}`)
+    .join(', ');
+  return `the page drawn again ${kpx(perFrame)} a frame at rest, its layers together (most: ${most})`;
+}
+
+/**
  * The CSS backdrop a page without WebGL falls back to (Background.svelte's
  * .bg, class:css): not drawn where WebGL is refused, so the page is watched
  * over the backdrop as players with WebGL have it (scripts/sweep.mjs,
@@ -229,39 +311,48 @@ export const WEBGL_SCENES: { scene: string; why: string }[] = [
   { scene: 'home/returning', why: 'The start page’s daily streak lights in WebGL with the effects on and in CSS without (DailyStreak, onFxChange).' },
   { scene: 'over/n-lost', why: 'GameOver plays its lights in WebGL with the effects on and in CSS without (fxActive), and the winner’s row ignites in the effects.' },
   { scene: 'settings/key', why: 'Settings turns the effects on and off (html[data-still] holds the decorations still), and its seals light with them.' },
+  { scene: 'lobby/room', why: 'The lobby lights its seats in the effects as players arrive (fx/moments.ts creatorArrived, playerArrived): the effects’ own, so without WebGL they never run.' },
+  { scene: 'codex/item', why: 'An item’s art lights in the effects as it’s revealed (CodexItem, fx/moments.ts artRevealed).' },
 ];
 
 // ---- moments ----------------------------------------------------------------
 
 /**
- * The moments that should cost a known amount, each measured from when
- * it's set off until it's over, as the pixels drawn again a 60th of a
- * second, and failed past SLACK times its baseline
- * (src/qa/redrawBaselines.json). On the card bench's stage
- * (cards.html?stage) but the plate, on its bench (qa.html?b=plate).
- * `webgl`: watched with the effects drawing (the deal, where the cards'
- * effects play), else with WebGL refused, as WEBGL_SCENES says why. `hz`:
- * the screen's rate it's watched at. The plate's at 240, a fast screen's:
- * its lines drew in by CSS animations, which Chrome draws at the screen's
- * rate, where the pen draws at its own (lib/drawIn), so at 60 the two cost
- * the same and only a fast screen tells them apart.
+ * The moments that should cost a known amount, each watched for `seconds`
+ * of the page's time from when it's set off, a window as long as the
+ * moment with its pen's last stroke (written from script, so no animation
+ * says when it's over), and the same length each run: what it draws again
+ * a 60th of a second over that window, failed past SLACK times its
+ * baseline (src/qa/redrawBaselines.json). A fixed window, so a moment that
+ * grows longer (a fade added after it) can't thin what it draws over more
+ * frames. On the card bench's stage (cards.html?stage) but the plate, on
+ * its bench (qa.html?b=plate). `webgl`: watched with the effects drawing
+ * (the deal, where the cards' effects play), else with WebGL refused, as
+ * WEBGL_SCENES says why. `hz`: the screen's rate it's watched at. The
+ * plate's at 240, a fast screen's: its lines drew in by CSS animations,
+ * which Chrome draws at the screen's rate, where the pen draws at its own
+ * (lib/drawIn), so at 60 the two cost the same and only a fast screen
+ * tells them apart.
  */
 export const MOMENTS = [
-  { key: 'deal', label: 'A deal of three cards', webgl: true, hz: 60 },
-  { key: 'dig', label: 'A dig’s deal: the vein and the way out', webgl: false, hz: 60 },
-  { key: 'pick', label: 'A card picked', webgl: false, hz: 60 },
-  { key: 'glare', label: 'The pointer across a card', webgl: false, hz: 60 },
-  { key: 'plate', label: 'A name plate drawn in, at 240 Hz', webgl: false, hz: 240 },
+  { key: 'deal', label: 'A deal of three cards', webgl: true, hz: 60, seconds: 3 },
+  { key: 'dig', label: 'A dig’s deal: the vein and the way out', webgl: false, hz: 60, seconds: 3 },
+  { key: 'pick', label: 'A card picked', webgl: false, hz: 60, seconds: 4 },
+  { key: 'glare', label: 'The pointer across a card', webgl: false, hz: 60, seconds: 2 },
+  { key: 'plate', label: 'A name plate drawn in, at 240 Hz', webgl: false, hz: 240, seconds: 3 },
 ] as const;
 
 /** How far past its baseline a moment may go. */
-export const SLACK = 1.5;
+export const SLACK = 1.25;
 
-/** A moment's measure against its baseline (taken as FLOOR at least, so one that costs next to nothing isn't failed for a little noise): what's wrong, else null. */
-export function overBaseline(key: string, perFrame: number, baseline: number | undefined): string | null {
-  if (baseline === undefined) return null;
-  const limit = SLACK * Math.max(baseline, FLOOR);
-  return perFrame > limit ? `${kpx(perFrame)} drawn again a 60th of a second, past ${SLACK}× its baseline of ${kpx(baseline)} (src/qa/redrawBaselines.json, “${key}”)` : null;
+/**
+ * A moment's measure against its baseline: what's wrong, else null. With
+ * none (a new moment, or the baselines at another size than the one
+ * watched), what's wrong if `required` (in CI), else null.
+ */
+export function overBaseline(key: string, perFrame: number, baseline: number | undefined, required = false): string | null {
+  if (baseline === undefined) return required ? `no baseline at this size in src/qa/redrawBaselines.json for “${key}”: add the measure from this job’s summary` : null;
+  return perFrame > SLACK * baseline ? `${kpx(perFrame)} drawn again a 60th of a second, past ${SLACK}× its baseline of ${kpx(baseline)} (src/qa/redrawBaselines.json, “${key}”)` : null;
 }
 
 /** Pixels, short: 1.2M px, 34k px. */
