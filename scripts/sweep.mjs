@@ -373,6 +373,8 @@ if (values.map) {
 const REDRAW_SIZE = SIZES.some((s) => s.key === values.sizes) ? values.sizes : 'desktop';
 /** The trace's categories: the raster tasks (cc) and the frame viewer's snapshots of the layer tree. */
 const REDRAW_TRACE = ['cc', 'disabled-by-default-cc.debug'];
+/** The machine, for CI's log: one runner draws in software at twice the speed of another. */
+const runner = () => `on ${os.cpus().length} × ${os.cpus()[0]?.model.trim() ?? 'an unknown CPU'}`;
 /** A frame, of the page's own time. */
 const FRAME = 1000 / 60;
 /**
@@ -840,6 +842,13 @@ async function moment(base, browser, m) {
   const { context, page, drive } = await watchedPage(browser, m.webgl, seedOf(m.key), 1000 / m.hz);
   /** Frames for `s` seconds of the page's own time. */
   const frames = (s) => Math.round(s * m.hz);
+  // (Where the time goes, for CI's log.)
+  let since = Date.now();
+  const took = () => {
+    const s = (Date.now() - since) / 1000;
+    since = Date.now();
+    return `${s.toFixed(1)} s`;
+  };
   try {
     // (The plate lit, as a question's at its reveal, with no right answer's glint: its spark, once a second, is PAINTED's, #340.)
     if (m.key === 'plate') await load(page, drive, `${base}qa.html?${new URLSearchParams({ frame: 'm0', b: 'plate', size: REDRAW_SIZE, 'k.glint': 'false' })}`, () => window.__qa);
@@ -910,11 +919,13 @@ async function moment(base, browser, m) {
       await reseed();
     };
     await settled(page, drive);
+    const loaded = took();
     await ready();
     await how.go(() => drive.frames(1));
     await how.after?.();
     await settled(page, drive);
     await ready();
+    const once = took();
     // (Its `seconds` from when it's set off, however long it plays: docs/qa.md, “Redraws”.)
     const r = await watched(browser, page, async () => {
       let n = 0;
@@ -923,7 +934,7 @@ async function moment(base, browser, m) {
     });
     // (A 60th of a second's worth, whatever the screen's rate.)
     const perFrame = Math.round((r.again / Math.max(1, r.frames)) * (m.hz / 60));
-    if (!process.stdout.isTTY) console.log(`  ${m.key}: ${r.frames} frames at ${m.hz} Hz, ${kpx(perFrame)} drawn again a 60th of a second; last written ${(r.last / m.hz).toFixed(2)} s in, ${r.running} animations still running at the end`);
+    if (!process.stdout.isTTY) console.log(`  ${m.key}: ${r.frames} frames at ${m.hz} Hz, ${kpx(perFrame)} drawn again a 60th of a second; last written ${(r.last / m.hz).toFixed(2)} s in, ${r.running} animations still running at the end; at rest ${loaded}, run once ${once}, traced ${took()}`);
     return { key: m.key, label: m.label, webgl: m.webgl, hz: m.hz, perFrame, frames: r.frames, px: r.px, again: r.again, last: r.last, running: r.running, changing: r.changing, painted: r.painted, layers: r.layers.slice(0, 6), writes: r.writes };
   } finally {
     await context.close();
@@ -936,17 +947,16 @@ async function checkRedraws(base, scenes) {
   let momentsFound = [];
   try {
     if (values.moments) {
-      console.log(`Redraws in the moments, at ${REDRAW_SIZE}, on fixed frames, from ${base}`);
+      console.log(`Redraws in the moments, at ${REDRAW_SIZE}, on fixed frames, from ${base}, ${runner()}`);
       const b = await launchTraced();
       traceBrowsers.push(b);
       momentsFound = await moments(base, b);
     } else {
       const firsts = scenesToWatch(scenes);
       if (!firsts.length) throw new Error(only ? `No scene's key matches ${only}${values.webgl ? ' among the WebGL scenes' : ''}.` : 'No scenes.');
-      // (Two at once: a CI runner has four threads, and a page drawing in software keeps more than one busy.
-      // With WebGL one: two drawing WebGL in software take longer at once than one after the other.)
-      const at = Math.min(firsts.length, values.webgl ? 1 : 2);
-      console.log(`Redraws at rest: ${firsts.length} scenes${shard ? ` (part ${shard[0]} of ${shard[1]})` : ''}, ${at} at once, at ${REDRAW_SIZE}, ${values.webgl ? 'with WebGL' : 'WebGL refused'}, on fixed frames, from ${base}`);
+      // (Two at once: a CI runner has four threads, and a page drawing in software keeps more than one busy.)
+      const at = Math.min(firsts.length, 2);
+      console.log(`Redraws at rest: ${firsts.length} scenes${shard ? ` (part ${shard[0]} of ${shard[1]})` : ''}, ${at} at once, at ${REDRAW_SIZE}, ${values.webgl ? 'with WebGL' : 'WebGL refused'}, on fixed frames, from ${base}, ${runner()}`);
       for (let i = 0; i < at; i++) traceBrowsers.push(await launchTraced());
       atRestFound = await scenesAtRest(base, firsts, traceBrowsers);
     }

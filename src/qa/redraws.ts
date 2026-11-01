@@ -342,8 +342,15 @@ export const MOMENTS = [
   { key: 'plate', label: 'A name plate drawn in, at 240 Hz', webgl: false, hz: 240, seconds: 3 },
 ] as const;
 
-/** How far past its baseline a moment may go. */
-export const SLACK = 1.25;
+/**
+ * How far past its baseline a moment may go. On virtual time from before
+ * the page loads, with its chance and date seeded, a moment measures the
+ * same run to run: in two runs on CI the pick, the pointer and the plate
+ * never moved, the dig moved 0.7% and the deal (with WebGL) 1.7%. A tenth
+ * is six times the widest of those; the least of October's stutters was
+ * three times its moment's cost (the plate's lines).
+ */
+export const SLACK = 1.1;
 
 /**
  * A moment's measure against its baseline: what's wrong, else null. With
