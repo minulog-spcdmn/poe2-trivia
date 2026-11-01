@@ -141,6 +141,10 @@ test('CI’s parts of the scenes at rest are each of them once, of one count', (
   for (const a of jobArgs) if (a.includes('--shard')) assert.ok(!/--only|--webgl|--moments/.test(a), `a part of the scenes at rest is all of its scenes, WebGL refused: ${a}`);
 });
 
+test('only what the check finds fails a job: the report’s upload, timing out, can’t', () => {
+  assert.match(workflow, /uses: actions\/upload-artifact@v4\n\s+if: .*\n\s+continue-on-error: true/);
+});
+
 test('CI runs the canary, and every moment has its window and a baseline at CI’s size', () => {
   assert.match(workflow, /if: \$\{\{ matrix\.canary \}\}\n\s+run: npm run sweep -- --redraws --canary .*--only/);
   assert.equal([...workflow.matchAll(/canary: true/g)].length, 1, 'in one job');

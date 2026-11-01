@@ -116,8 +116,10 @@ jobs:
       # A box drawn again every frame, which has to fail: the trace still read right (a playwright-core bump can change it).
       - if: ${{ matrix.canary }}
         run: npm run sweep -- --redraws --canary --no-build --only "^settings/key$"
+      # (The report is for reading a failure: GitHub's artifact store timing out, as it does now and then, fails nothing.)
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
+        continue-on-error: true
         with:
           name: redraws-${{ strategy.job-index }}
           path: screens/redraws-*/report.json
