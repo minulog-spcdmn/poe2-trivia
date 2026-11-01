@@ -48,7 +48,7 @@ import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
 import { SIZES } from '../src/qa/sizes.ts';
 import { touched } from '../src/qa/change.ts';
-import { FLOOR, MARK, MOMENTS, PAGE_FLOOR, WEBGL_SCENES, atRest, kpx, overBaseline, pageAtRest, readTrace, redraws, unread, without, withoutMark } from '../src/qa/redraws.ts';
+import { FLOOR, MARK, MOMENTS, PAGE_FLOOR, WEBGL_SCENES, atRest, kpx, overBaseline, pageAtRest, readTrace, redraws, unread, withoutMark } from '../src/qa/redraws.ts';
 import { changedFiles } from '../qaServer.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -948,13 +948,12 @@ async function moment(base, browser, m) {
     await ready();
     const once = took();
     // (Its `seconds` from when it's set off, however long it plays: docs/qa.md, “Redraws”.)
-    const watch = await watched(browser, page, async () => {
+    const r = await watched(browser, page, async () => {
       let n = 0;
       await how.go(async () => (n += await drive.frames(1)));
       return n + (await drive.frames(Math.max(0, frames(m.seconds) - n)));
     });
-    // (What it leaves out (MOMENTS' leaveOut) left out; a 60th of a second's worth, whatever the screen's rate.)
-    const r = without(watch, m.leaveOut ?? []);
+    // (A 60th of a second's worth, whatever the screen's rate.)
     const perFrame = Math.round((r.again / Math.max(1, r.frames)) * (m.hz / 60));
     if (!process.stdout.isTTY) console.log(`  ${m.key}: ${r.frames} frames at ${m.hz} Hz, ${kpx(perFrame)} drawn again a 60th of a second; last written ${(r.last / m.hz).toFixed(2)} s in, ${r.running} animations still running at the end; at rest ${loaded}, run once ${once}, traced ${took()}`);
     return { key: m.key, label: m.label, webgl: m.webgl, hz: m.hz, perFrame, frames: r.frames, px: r.px, again: r.again, last: r.last, running: r.running, changing: r.changing, painted: r.painted, layers: r.layers.slice(0, 6), writes: r.writes };

@@ -313,16 +313,6 @@ export const WEBGL_SCENES: { scene: string; why: string }[] = [
 // ---- moments ----------------------------------------------------------------
 
 /**
- * The dark's arms and billows (DarkTendrils, the CSS backdrop's, so only
- * without WebGL), left out of the pick: Chrome draws each again as the
- * reach the script writes grows its scale over a question's clock, 140k to
- * 171k px a 60th of a second, #353. An exception till that's fixed: then
- * it goes, and the pick's baseline is measured again. (The dark's dimming
- * and lift, on layers of their own while they show, are watched.)
- */
-export const UNTIL_353 = ['span.arm', 'span.billow'];
-
-/**
  * The moments that should cost a known amount, each watched for `seconds`
  * of the page's time from when it's set off, a window as long as the
  * moment with its pen's last stroke (written from script, so no animation
@@ -349,14 +339,12 @@ export const UNTIL_353 = ['span.arm', 'span.billow'];
  * heading's font came in before the watch, not in it); a quarter is two
  * faces past the most it read. The least of October's stutters cost its moment 2.8 times its
  * baseline (the plate's lines); the kindle, the deal's, 8.7 times.
- *
- * `leaveOut`: layers a moment's measure leaves out, each an exception
- * tied to its issue, to go when that's fixed (UNTIL_353).
+
  */
 export const MOMENTS = [
   { key: 'deal', label: 'A deal of three cards', webgl: true, hz: 60, seconds: 3, slack: 1.25 },
   { key: 'dig', label: 'A dig’s deal: the vein and the way out', webgl: false, hz: 60, seconds: 3, slack: 1.1 },
-  { key: 'pick', label: 'A card picked', webgl: false, hz: 60, seconds: 4, slack: 1.1, leaveOut: UNTIL_353 },
+  { key: 'pick', label: 'A card picked', webgl: false, hz: 60, seconds: 4, slack: 1.1 },
   { key: 'glare', label: 'The pointer across a card', webgl: false, hz: 60, seconds: 2, slack: 1.1 },
   { key: 'plate', label: 'A name plate drawn in, at 240 Hz', webgl: false, hz: 240, seconds: 3, slack: 1.1 },
 ] as const;
