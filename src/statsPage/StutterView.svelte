@@ -63,6 +63,7 @@
             <th scope="col" class="n">Stuttered</th>
             <th scope="col" class="n opt">A lot</th>
             <th scope="col">Mostly at</th>
+            <th scope="col" class="n">In software</th>
           </tr>
         </thead>
         <tbody>
@@ -76,6 +77,8 @@
               </td>
               <td class="n opt">{percent(d.now.many, d.now.games)}</td>
               <td class:soft={!d.now.worst}>{d.now.worst ? MOMENT_NAMES[d.now.worst] : '–'}</td>
+              <!-- (Counted on a computer alone: a phone has no setting to switch its GPU off.) -->
+              <td class="n" class:soft={!d.device.startsWith('desktop')}>{d.device.startsWith('desktop') ? fmt(d.now.f.software) : '–'}</td>
             </tr>
           {/each}
         </tbody>
@@ -86,9 +89,12 @@
   <How
     items={[
       'Each device in a game counts how its frames came, while the game was on screen and the page was seen (not the lobby or the results), once the game ends or is left. So a game of four counts four times, and a device that shows the results only is no game.',
-      "Stuttered: over 1% of that time went to frames longer than 50 ms; a lot: 5% or more. By time, not by frames: the same hitches are a smaller share of a fast screen's frames.",
-      'Mostly at: the moment (the deal, a question, the reveal) most of the stuttering time fell in, of the games that stuttered.',
-      'A game seen for less than 20 seconds counts nothing. A hollow point rests on fewer than 5 games; the dashed line is the share over the whole period.',
+      "Counted this way from 1 November 2026. The counts from 29 October to then went by frames over 50 ms and had no start, so they aren't shown.",
+      "Stuttered: over 1% of that time went to frames longer than 40 ms; a lot: 5% or more. By time, not by frames: the same hitches are a smaller share of a fast screen's frames.",
+      "Mostly at: the moment (the start, the deal, a question, the reveal) most of the stuttering time fell in, of the games that stuttered. The start is a game's first 3 seconds on the device, from Begin (or the page picking the game up) with its screen being built; the deal is every hand dealt after it, Delve's new zones too.",
+      "In software: games on a computer whose browser draws WebGL without the GPU (hardware acceleration switched off), about 6 frames a second, so they'd all stutter a lot whatever the game did. Counted apart, in none of the other figures.",
+      'A device counts its game as the page goes out of sight, too (a phone often drops a tab switched away from without a word), and not again if it comes back to it.',
+      'A game seen for less than 20 seconds counts nothing. A hollow point rests on fewer than 5 games; the dashed line is the share over the whole period. At a dozen games a day, read it by the week: a day moves by chance alone.',
       'Chrome and Edge on a computer are every Chromium browser there; an iPad is counted with the iPhones (one engine), an Android tablet with the phones.',
     ]}
   />

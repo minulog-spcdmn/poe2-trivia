@@ -126,7 +126,7 @@
     if (had) return had;
     try {
       const r = JSON.parse(readStored(`analytics.read.${days}`, 'session') ?? 'null') as Read | null;
-      if (r?.v !== 11 || r.span !== days) return null;
+      if (r?.v !== 12 || r.span !== days) return null;
       cache.set(days, r);
       return r;
     } catch {
@@ -244,7 +244,7 @@
       if (added) writeStored(DAY_REFS_KEY, dayRefsToKeep(keptRefs, tz, addDays(today, -Math.max(...PERIODS.map((p) => p.value)))));
       if (ask !== asked) return;
       const r: Read = {
-        v: 11,
+        v: 12,
         span: days,
         from: start,
         to: today,

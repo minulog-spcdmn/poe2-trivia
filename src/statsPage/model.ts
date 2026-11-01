@@ -3,7 +3,7 @@
 // tests can feed it.
 
 import { DAILY_LAUNCH } from '../lib/dailyLaunch.ts';
-import { DEVICES, readFramesPath, type Device, type Moment } from '../lib/stutter.ts';
+import { DEVICES, SOFTWARE, readFramesPath, type Device, type Moment } from '../lib/stutter.ts';
 import { addDays, midnight } from './zone.ts';
 import { isoWeekOfDay, weekMonday } from '../lib/isoWeek.ts';
 
@@ -167,13 +167,15 @@ export const DEVICE_NAMES: Record<Device, string> = {
   ios: 'iPhone and iPad',
   android: 'Android',
 };
-export const MOMENT_NAMES: Record<Moment, string> = { deal: 'the deal', question: 'a question', reveal: 'the reveal' };
+export const MOMENT_NAMES: Record<Moment, string> = { begin: 'the start', deal: 'the deal', question: 'a question', reveal: 'the reveal' };
 
 /**
- * A game's frames on one class of device (lib/stutter.ts, "frames/ios/some/reveal"),
+ * A game's frames on one class of device (lib/stutter.ts, "frames2/ios/some/reveal"),
  * counted on each device in it: the games a day, those that stuttered (some
  * and many together, and each), and over the period the moment most of a
- * stutter fell in.
+ * stutter fell in, and the games drawn in software, apart from the rest
+ * (in none of the others). Only the paths' current generation (stutter.ts
+ * FRAMES): older ones counted by other rules.
  */
 export interface DeviceFrames {
   games: number[];
@@ -181,6 +183,7 @@ export interface DeviceFrames {
   some: number[];
   many: number[];
   worst: Record<Moment, number>;
+  software: number;
 }
 
 /** A share a day resting on fewer games than this is a guess: ShareLine draws it hollow, and stutterTop leaves it out. */
@@ -201,17 +204,24 @@ export function stutterTop(rows: DeviceFrames[], days: string[], weekly: boolean
 
 function framesOf(paths: PathCount[], days: string[]): Record<Device, DeviceFrames> {
   const zeros = () => days.map(() => 0);
-  const out = Object.fromEntries(DEVICES.map((d) => [d, { games: zeros(), stuttered: zeros(), some: zeros(), many: zeros(), worst: { deal: 0, question: 0, reveal: 0 } }])) as Record<Device, DeviceFrames>;
+  const out = Object.fromEntries(
+    DEVICES.map((d) => [d, { games: zeros(), stuttered: zeros(), some: zeros(), many: zeros(), worst: { begin: 0, deal: 0, question: 0, reveal: 0 }, software: 0 }]),
+  ) as Record<Device, DeviceFrames>;
   for (const p of paths) {
     const f = readFramesPath(p.path);
     if (!f) continue;
     const row = out[f.device];
+    if (f.bucket === SOFTWARE) {
+      row.software += p.count;
+      continue;
+    }
+    const bucket = f.bucket;
     days.forEach((d, i) => {
       const n = p.days[d] ?? 0;
       row.games[i] += n;
-      if (f.bucket === 'smooth') return;
+      if (bucket === 'smooth') return;
       row.stuttered[i] += n;
-      row[f.bucket][i] += n;
+      row[bucket][i] += n;
     });
     if (f.worst) row.worst[f.worst] += p.count;
   }

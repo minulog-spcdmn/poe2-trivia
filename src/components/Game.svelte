@@ -2,6 +2,7 @@
   import { fade, fly, scale, slide } from '../lib/transitions';
   import { cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
+  import { inFrame, onceFontsIn } from '../lib/inFrame';
   import { pageScroll } from '../lib/pageScroll';
   import { playerColor } from '../lib/ui';
   import Scoreboard from './Scoreboard.svelte';
@@ -84,11 +85,13 @@
   const skipIn = $derived(session.skipAt ? Math.max(0, Math.ceil((session.skipAt - now) / 1000)) : 0);
 
   // New turn or question: bring the scoreboard and banner back into view
-  // (on phones the previous reveal is often scrolled down).
+  // (on phones the previous reveal is often scrolled down). Asked only when
+  // it's scrolled: a scroll has the browser lay the new turn out there and
+  // then, as it mounts (lib/pageScroll.ts).
   let lastTurn = -1;
   $effect(() => {
     const t = s.turnCount;
-    if (lastTurn !== -1 && t !== lastTurn) window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (lastTurn !== -1 && t !== lastTurn && pageScroll()[1] > 0) window.scrollTo({ top: 0, behavior: 'smooth' });
     lastTurn = t;
   });
   const dm = $derived(s.deathmatch);
@@ -177,17 +180,23 @@
       // Floored, so the line never ends a fraction of a pixel past its room.
       if (room > 0 && w > room) node.style.fontSize = `${Math.floor((parseFloat(getComputedStyle(node).fontSize) * room) / w)}px`;
     };
-    size();
+    // In the frame's animation frame, not as it mounts (lib/inFrame.ts).
+    const { soon, cancel } = inFrame(size);
+    soon();
     // Again as its font comes in (it may only start loading once the title asks for it), and as the column changes (a phone turned).
-    void document.fonts?.ready.then(size);
-    document.fonts?.addEventListener('loadingdone', size);
-    const ro = new ResizeObserver(size);
+    const fontsIn = onceFontsIn(soon);
+    document.fonts?.addEventListener('loadingdone', soon);
+    // (Its first report is of the size the animation frame has just fitted it to.)
+    let first = true;
+    const ro = new ResizeObserver(() => (first ? (first = false) : size()));
     ro.observe(banner);
     return {
-      update: size,
+      update: soon,
       destroy: () => {
+        cancel();
+        fontsIn();
         ro.disconnect();
-        document.fonts?.removeEventListener('loadingdone', size);
+        document.fonts?.removeEventListener('loadingdone', soon);
       },
     };
   }
@@ -203,11 +212,18 @@
       const w = Math.max(0, ...[...node.querySelectorAll<HTMLElement>('.face b')].map((b) => b.scrollWidth));
       node.style.setProperty('--name-w', `${w + 1}px`);
     };
-    measure();
-    // Again as its font comes in.
-    void document.fonts?.ready.then(measure);
-    document.fonts?.addEventListener('loadingdone', measure);
-    return { destroy: () => document.fonts?.removeEventListener('loadingdone', measure) };
+    // In the frame's animation frame, as it mounts and again as its font comes in (lib/inFrame.ts).
+    const { soon, cancel } = inFrame(measure);
+    soon();
+    const fontsIn = onceFontsIn(soon);
+    document.fonts?.addEventListener('loadingdone', soon);
+    return {
+      destroy: () => {
+        cancel();
+        fontsIn();
+        document.fonts?.removeEventListener('loadingdone', soon);
+      },
+    };
   }
 
   /** Svelte action: the deathmatch intro's title bursts in. */

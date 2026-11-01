@@ -1,7 +1,8 @@
 // count.ts's count of a game's frames (countGameFrames, lib/stutter.ts) in a
 // browser at the live game's address (globals set before it loads, as
 // `counting` is settled then): measured only while a game is under way and
-// the page is seen, one path a game, sent as it ends, is left, or the page is.
+// the page is seen, one path a game, sent as it ends or is left, or as the
+// page is hidden or left.
 import { mock, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_SETTINGS, createGame, type GameState } from '../src/lib/game.ts';
@@ -36,6 +37,8 @@ set('removeEventListener', () => {});
 let t = 0;
 let pending: ((t: number) => void) | null = null;
 set('requestAnimationFrame', (cb: (t: number) => void) => ((pending = cb), 1));
+// (The frames' own clock: a game's begin is timed from the state change by it.)
+set('performance', { now: () => t });
 set('cancelAnimationFrame', () => void (pending = null));
 /** `times` frames, each `ms` after the last; none while the page is hidden. */
 const frames = (ms: number, times = 1) => {
@@ -51,7 +54,7 @@ const fireDoc = (type: string) => {
   for (const fn of docListeners.get(type) ?? []) fn();
 };
 
-const { countGameFrames, gameMoment } = await import('../src/lib/count.ts');
+const { asksSoftware, countGameFrames, gameMoment, noteSoftware } = await import('../src/lib/count.ts');
 const { OPT_OUT_KEY } = await import('../src/lib/countOptOut.ts');
 
 /** What each beacon counted, in the order it went. */
@@ -83,7 +86,7 @@ test("a game's frames count once, as it ends, under the device's class", () => {
   countGameFrames(game('over'));
   assert.equal(pending, null, 'and no longer once it is decided');
   mock.timers.tick(3_000);
-  assert.deepEqual(paths(), ['frames/ios/smooth']);
+  assert.deepEqual(paths(), ['frames2/ios/smooth']);
   // The results screen and the lobby after it add nothing.
   countGameFrames(game('lobby'));
   mock.timers.tick(3_000);
@@ -103,7 +106,7 @@ test('the time the page is hidden is no stutter, however long', () => {
   frames(16, 800);
   countGameFrames(game('over'));
   mock.timers.tick(3_000);
-  assert.deepEqual(paths(), ['frames/ios/smooth']);
+  assert.deepEqual(paths(), ['frames2/ios/smooth']);
 });
 
 test('a game the page is left in counts as far as it got, ahead of the queue going', () => {
@@ -119,7 +122,13 @@ test('a game the page is left in counts as far as it got, ahead of the queue goi
     frames(16, 200);
   }
   listeners.get('pagehide')?.forEach((fn) => fn({}));
-  assert.deepEqual(paths(), ['frames/ios/many/reveal']);
+  assert.deepEqual(paths(), ['frames2/ios/many/reveal']);
+  // (Brought back from the back-forward cache, the game counts no more: it's counted.)
+  countGameFrames(game('reveal'));
+  assert.equal(pending, null);
+  countGameFrames(game('over'));
+  mock.timers.tick(3_000);
+  assert.equal(sent.length, 1);
 });
 
 test('a game left mid-way counts as it is left', () => {
@@ -128,7 +137,7 @@ test('a game left mid-way counts as it is left', () => {
   frames(16, 1500);
   countGameFrames(null);
   mock.timers.tick(3_000);
-  assert.deepEqual(paths(), ['frames/ios/smooth']);
+  assert.deepEqual(paths(), ['frames2/ios/smooth']);
 });
 
 test('nothing goes from a browser that opted out, mid-game too', () => {
@@ -141,4 +150,52 @@ test('nothing goes from a browser that opted out, mid-game too', () => {
   countGameFrames(game('over'));
   mock.timers.tick(3_000);
   assert.deepEqual(paths(), []);
+});
+
+test('a game counts as the page is hidden, at once, and not again when it comes back', () => {
+  stored.delete(OPT_OUT_KEY);
+  sent.length = 0;
+  countGameFrames(game('question'));
+  frames(16, 1500);
+  doc.visibilityState = 'hidden';
+  fireDoc('visibilitychange');
+  // No timer: a phone may drop the tab before one fires.
+  assert.deepEqual(paths(), ['frames2/ios/smooth']);
+  doc.visibilityState = 'visible';
+  fireDoc('visibilitychange');
+  countGameFrames(game('reveal'));
+  frames(16, 1500);
+  countGameFrames(game('over'));
+  listeners.get('pagehide')?.forEach((fn) => fn({}));
+  mock.timers.tick(3_000);
+  assert.deepEqual(paths(), ['frames2/ios/smooth'], 'the same game counts once');
+  // The next one counts again.
+  countGameFrames(game('choosing'));
+  frames(16, 1500);
+  countGameFrames(game('over'));
+  mock.timers.tick(3_000);
+  assert.deepEqual(paths(), ['frames2/ios/smooth', 'frames2/ios/smooth']);
+});
+
+test("a game's begin runs from the state change that starts it", () => {
+  sent.length = 0;
+  countGameFrames(game('choosing'));
+  // The game screen built: 700 ms to the first frame.
+  t += 700;
+  frames(16, 1300);
+  countGameFrames(game('over'));
+  mock.timers.tick(3_000);
+  assert.deepEqual(paths(), ['frames2/ios/some/begin']);
+});
+
+test("a phone's game never counts as drawn in software: only a computer's can be", () => {
+  sent.length = 0;
+  assert.equal(asksSoftware(), false, 'nothing asked of a phone');
+  noteSoftware(() => true);
+  countGameFrames(game('question'));
+  frames(16, 1500);
+  countGameFrames(game('over'));
+  mock.timers.tick(3_000);
+  assert.deepEqual(paths(), ['frames2/ios/smooth']);
+  noteSoftware(() => false);
 });

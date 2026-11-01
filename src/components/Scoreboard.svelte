@@ -2,6 +2,7 @@
   import { sfx } from '../lib/sound';
   import { cubicOut } from 'svelte/easing';
   import { fly } from '../lib/transitions';
+  import { inFrame, onceFontsIn } from '../lib/inFrame';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
@@ -98,14 +99,20 @@
       board.style.zoom = zoom;
       board.style.setProperty('--board-zoom', zoom);
     };
-    fit();
-    void document.fonts?.ready.then(fit);
-    const ro = new ResizeObserver(fit);
+    // As it mounts and as an entry changes, in the frame's animation frame (lib/inFrame.ts).
+    const { soon, cancel } = inFrame(fit);
+    soon();
+    const fontsIn = onceFontsIn(soon);
+    // (Its first report is of the size the animation frame has just fitted it to.)
+    let first = true;
+    const ro = new ResizeObserver(() => (first ? (first = false) : fit()));
     ro.observe(board.parentElement!);
     // (Its entries' own changes, not its style: fitting never sets this off again.)
-    const mo = new MutationObserver(fit);
+    const mo = new MutationObserver(soon);
     mo.observe(board, { subtree: true, childList: true, characterData: true, attributeFilter: ['class'] });
     return () => {
+      cancel();
+      fontsIn();
       ro.disconnect();
       mo.disconnect();
       board.style.zoom = '';
@@ -145,13 +152,20 @@
       }
       capAt(lo);
     };
-    fit();
-    void document.fonts?.ready.then(fit);
-    const ro = new ResizeObserver(fit);
+    // As it mounts and as an entry changes, in the frame's animation frame
+    // (lib/inFrame.ts): fitted as a game began, it had the new screen laid
+    // out twice over in the middle of mounting it.
+    const { soon, cancel } = inFrame(fit);
+    soon();
+    const fontsIn = onceFontsIn(soon);
+    let first = true;
+    const ro = new ResizeObserver(() => (first ? (first = false) : fit()));
     ro.observe(board.parentElement!);
-    const mo = new MutationObserver(fit);
+    const mo = new MutationObserver(soon);
     mo.observe(board, { subtree: true, childList: true, characterData: true, attributeFilter: ['class'] });
     return () => {
+      cancel();
+      fontsIn();
       ro.disconnect();
       mo.disconnect();
       board.style.removeProperty('--name-cap');

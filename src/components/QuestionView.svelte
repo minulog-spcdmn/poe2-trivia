@@ -2,6 +2,7 @@
   import { fly, fade, scale, slide } from '../lib/transitions';
   import { session, engine } from '../lib/session.svelte';
   import { glare } from '../lib/glare';
+  import { onceFontsIn } from '../lib/inFrame';
   import { AUTO_NEXT_MS, answerDrawn, autoNextLeft, clockMs, clockRuns, drawnAs, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
   import { FINALE_MS, materialize, warmBurns, type BurnParams } from '../lib/materialize';
@@ -125,8 +126,12 @@
     run();
     // Again once the display font is in, and whenever the plate's width changes (a phone turned). Only while it is on: off,
     // run() measures nothing, and asking for the fonts' readiness lays the whole page out there and then (Chrome), in the
-    // middle of a reveal coming in (12 ms in a trace).
-    const fonts = () => void document.fonts?.ready.then(run);
+    // middle of a reveal coming in (12 ms in a trace). Asked in the frame's animation frame for that too (lib/inFrame.ts).
+    let fontsIn = () => {};
+    const fonts = () => {
+      fontsIn();
+      fontsIn = onceFontsIn(run);
+    };
     if (on) fonts();
     const ro = new ResizeObserver(run);
     const head = node.closest('.head');
@@ -150,6 +155,7 @@
         if (on && !was) fonts();
       },
       destroy: () => {
+        fontsIn();
         ro.disconnect();
         mo.disconnect();
       },
@@ -196,12 +202,14 @@
     const tile = node.closest('.tile');
     if (tile) ro.observe(tile);
     else run();
-    void document.fonts?.ready.then(run);
+    // (Asked in the frame's animation frame: asking as each tile mounted laid the page out for each, lib/inFrame.ts.)
+    const fontsIn = onceFontsIn(run);
     // And when the name changes: once its new words are in (before the next paint).
     const mo = new MutationObserver(run);
     mo.observe(node, { characterData: true, childList: true, subtree: true });
     return {
       destroy: () => {
+        fontsIn();
         ro.disconnect();
         mo.disconnect();
       },

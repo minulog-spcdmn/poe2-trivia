@@ -1231,28 +1231,34 @@ test('a share says what it rests on while that is little', () => {
   assert.equal(restsOn(3, 10, '2026-10-22'), ' (3 of 10, since Oct 22)');
 });
 
-test("games' frames are read by kind of device, a day each, a stutter's moment over the period", () => {
+test("games' frames are read by kind of device, a day each, a stutter's moment over the period, those drawn in software apart", () => {
   const l = countsOf(
     [
-      path('frames/ios/smooth', [3, 4, 0]),
-      path('frames/ios/some/reveal', [1, 0, 2]),
-      path('frames/ios/many/reveal', [0, 1, 0]),
-      path('frames/ios/some/deal', [1, 0, 0]),
-      path('frames/desktop-chrome/smooth', [5, 5, 5]),
-      path('frames/toaster/smooth', [9, 9, 9]),
+      path('frames2/ios/smooth', [3, 4, 0]),
+      path('frames2/ios/some/reveal', [1, 0, 2]),
+      path('frames2/ios/many/reveal', [0, 1, 0]),
+      path('frames2/ios/some/deal', [1, 0, 0]),
+      path('frames2/ios/some/begin', [0, 0, 1]),
+      path('frames2/desktop-chrome/smooth', [5, 5, 5]),
+      path('frames2/desktop-chrome/software', [1, 0, 2]),
+      path('frames2/toaster/smooth', [9, 9, 9]),
+      // The older generation, counted by other rules (stutter.ts FRAMES): never mixed in.
+      path('frames/ios/many/deal', [7, 7, 7]),
+      path('frames/desktop-chrome/smooth', [7, 7, 7]),
       path('play/race', [2, 2, 2]),
     ],
     DAYS,
   );
-  assert.deepEqual(l.frames.ios, { games: [5, 5, 2], stuttered: [2, 1, 2], some: [2, 0, 2], many: [0, 1, 0], worst: { deal: 1, question: 0, reveal: 4 } });
-  assert.deepEqual(l.frames['desktop-chrome'].games, [5, 5, 5]);
-  assert.deepEqual(l.frames.android, { games: [0, 0, 0], stuttered: [0, 0, 0], some: [0, 0, 0], many: [0, 0, 0], worst: { deal: 0, question: 0, reveal: 0 } });
+  assert.deepEqual(l.frames.ios, { games: [5, 5, 3], stuttered: [2, 1, 3], some: [2, 0, 3], many: [0, 1, 0], worst: { begin: 1, deal: 1, question: 0, reveal: 4 }, software: 0 });
+  assert.deepEqual(l.frames['desktop-chrome'].games, [5, 5, 5], 'a game drawn in software is in none of the shares');
+  assert.equal(l.frames['desktop-chrome'].software, 3);
+  assert.deepEqual(l.frames.android, { games: [0, 0, 0], stuttered: [0, 0, 0], some: [0, 0, 0], many: [0, 0, 0], worst: { begin: 0, deal: 0, question: 0, reveal: 0 }, software: 0 });
   // Nothing else reads them as games.
   assert.equal(l.games.started, 6);
 });
 
 test("every device's stutter shares fit under one axis, a share resting on few games left out", () => {
-  const l = countsOf([path('frames/ios/smooth', [3, 4, 0]), path('frames/ios/some/reveal', [2, 1, 2]), path('frames/android/smooth', [8, 0, 0]), path('frames/android/many/deal', [2, 0, 0])], DAYS);
+  const l = countsOf([path('frames2/ios/smooth', [3, 4, 0]), path('frames2/ios/some/reveal', [2, 1, 2]), path('frames2/android/smooth', [8, 0, 0]), path('frames2/android/many/deal', [2, 0, 0])], DAYS);
   // iOS: 40% of 5, 20% of 5, and 100% of 2 (too few to set the axis); Android 20% of 10.
   assert.equal(stutterTop(Object.values(l.frames), DAYS, false), 40);
   assert.equal(stutterTop([], DAYS, false), 10);
