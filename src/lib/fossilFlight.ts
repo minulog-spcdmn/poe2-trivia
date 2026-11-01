@@ -41,14 +41,15 @@ import { sfx } from './sound.ts';
 import { zoomOf } from './stage.ts';
 import { fossilArt, fossilById, type FossilId } from './fossils.ts';
 import { FOSSIL_REVEAL, type FindSize } from './fossilReveal.ts';
+import { FOSSIL_AMBER, amberLight } from './fossilAmber.ts';
 
 const { RISE, LIT, SWEPT, SHARP, GLINTS, NAME, COUNT, SHOWN, FLY, LANDS, RARE, RARE_SWEEP, RING, LINE_LEAD } = FOSSIL_REVEAL;
 
-/** Amber's light (direction-a.md), for the fx and the lights (HDR). */
-const AMBER: Vec3 = [1, 0.62, 0.22];
-const AMBER_HOT: Vec3 = [3.1, 2.2, 0.9];
-const RED_GOLD: Vec3 = [3.0, 1.2, 0.35];
-const EMBER: Vec3 = [0.5, 0.22, 0.05];
+/** Amber's light (lib/fossilAmber.ts), for the fx and the lights (HDR). */
+const AMBER: Vec3 = amberLight('mid');
+const AMBER_HOT: Vec3 = amberLight('core', 3.1);
+const RED_GOLD: Vec3 = amberLight('rareMid', 3.15);
+const EMBER: Vec3 = amberLight('edge', 0.54);
 
 /** The art box (stage px) under which the fossil comes up over the whole question instead. */
 const ART_MIN = 120;
@@ -182,7 +183,13 @@ export function revealFossil(u: Reveal): () => void {
       rareWord = document.createElement('span');
       rareWord.className = 'fr-rare';
       rareWord.textContent = 'Rare';
-      label.append(rareWord);
+      // A phone on its side has no height for a third line: the word goes beside the count.
+      if (u.size === 'flat') {
+        const line = document.createElement('span');
+        line.className = 'fr-line';
+        count.replaceWith(line);
+        line.append(count, rareWord);
+      } else label.append(rareWord);
     }
     const ring = fossil.rare ? document.createElement('div') : null;
     if (ring) ring.className = 'fr-ring';
@@ -260,8 +267,8 @@ export function revealFossil(u: Reveal): () => void {
       letters.forEach((l, i) =>
         l.animate(
           [
-            { opacity: 0, color: '#fff4cf' },
-            { opacity: 1, color: '#fff4cf', offset: 0.3 },
+            { opacity: 0, color: FOSSIL_AMBER.fleck },
+            { opacity: 1, color: FOSSIL_AMBER.fleck, offset: 0.3 },
             { opacity: 1, color: '#aa9e82' },
           ],
           { duration: 420, delay: i * each, easing: 'ease-out', fill: 'backwards' },
@@ -286,7 +293,7 @@ export function revealFossil(u: Reveal): () => void {
           ],
           { duration: RING, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)', fill: 'forwards' },
         );
-        light(piece, { color: [1, 0.42, 0.14], radius: n * 3.2, intensity: 0.5, hold: 0.15, decay: 1 });
+        light(piece, { color: amberLight('rareMid', 1.05), radius: n * 3.2, intensity: 0.5, hold: 0.15, decay: 1 });
         glints(veil, { count: 8, color: RED_GOLD, area: 'fill', size: [3, 7], delay: [0.05, 0.4] });
       });
     }
@@ -340,5 +347,5 @@ export const stopFossilFlight = () => current?.stop();
 export function shatterFossilMark(node: Element) {
   const box = node.querySelector('.fossil-mark')?.getBoundingClientRect();
   if (!box?.width) return;
-  shards(box, { count: 14, colors: [AMBER_HOT, [2.6, 1.2, 0.3], [1.6, 0.6, 0.12]], cool: [0.4, 0.14, 0.03], speed: [120, 380], size: [2.5, 5.5], area: 'centre' });
+  shards(box, { count: 14, colors: [AMBER_HOT, amberLight('mid', 2.6), amberLight('edge', 1.7)], cool: amberLight('resin', 1.13), speed: [120, 380], size: [2.5, 5.5], area: 'centre' });
 }

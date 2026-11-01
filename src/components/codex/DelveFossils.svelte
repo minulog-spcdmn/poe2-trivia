@@ -166,18 +166,7 @@
 
 <style>
   .fossils {
-    /*
-     * The amber, as the fossil card's (direction A, "held to the lamp"): the
-     * light through a kept one, its heart and its edge; a rare one's deeper,
-     * red-gold. One place, to follow the card's palette.
-     */
-    --fossil-ink: #f0962a;
-    --fossil-hi: #ffd04a;
-    --fossil-edge: #ec6a10;
-    --fossil-rare-hi: #ffb428;
-    --fossil-rare-edge: #c8300c;
-    /* A rare one's word, red-gold as the card's note. */
-    --fossil-rare-ink: #ff7a3a;
+    /* (The amber is app.css's --fossil-*, the card's.) */
     container: fossils / inline-size;
     min-width: 0;
   }
@@ -308,14 +297,14 @@
     -webkit-tap-highlight-color: transparent;
   }
   .cell:focus-visible {
-    outline: 2px solid var(--fossil-hi);
+    outline: 2px solid var(--fossil-core);
     outline-offset: -2px;
     border-radius: 18%;
   }
 
   /* The slot: a recess cut into the panel, its lip catching a little light along the bottom. */
   .slot {
-    --hi: var(--fossil-hi);
+    --hi: var(--fossil-core);
     --edge: var(--fossil-edge);
     --rim: rgba(255, 190, 120, 0.07);
     --spill: transparent;
@@ -332,7 +321,7 @@
       0 0 12px var(--spill);
   }
   .slot.rare {
-    --hi: var(--fossil-rare-hi);
+    --hi: var(--fossil-rare-core);
     --edge: var(--fossil-rare-edge);
     --rim: color-mix(in srgb, var(--fossil-rare-edge) 26%, transparent);
   }

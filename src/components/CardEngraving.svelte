@@ -382,6 +382,7 @@
         <span class="heart"></span>
         <span class="heart two"></span>
         <span class="gloss"></span>
+        <span class="dither"></span>
         <svg class="resin" viewBox="0 0 {w} {h}">
           {#if plate.fade}
             <defs>
@@ -721,19 +722,19 @@
      resin. Bright as it is, its gradients cross enough of 8-bit's levels
      not to band. A rare's is deeper, red-gold, with gold flecks that wink. */
   .pane {
-    --core: #ffe066;
-    --mid: #ffaa2c;
-    --edge: #ec6a10;
-    --resin: #5a2004;
+    --core: var(--fossil-core);
+    --mid: var(--fossil-mid);
+    --edge: var(--fossil-edge);
+    --resin: var(--fossil-resin);
     --rim: rgba(130, 40, 0, 0.42);
     position: absolute;
     inset: 0;
   }
   .pane.rare {
-    --core: #ffc43a;
-    --mid: #f27c1c;
-    --edge: #c8300c;
-    --resin: #4a1204;
+    --core: var(--fossil-rare-core);
+    --mid: var(--fossil-rare-mid);
+    --edge: var(--fossil-rare-edge);
+    --resin: var(--fossil-rare-resin);
     --rim: rgba(100, 12, 0, 0.5);
   }
   .amber,
@@ -801,6 +802,19 @@
     -webkit-mask: conic-gradient(from 248deg, transparent, #000 22deg, #000 48deg, transparent 84deg);
     mask: conic-gradient(from 248deg, transparent, #000 22deg, #000 48deg, transparent 84deg);
   }
+  /* The light dithered (CLAUDE.md, "No banding"): toward the arch's top
+     the amber darkens to its rim so slowly that each of 8-bit's levels
+     there showed as a ring. The tile (app.css, --dither: near-black, its
+     opacity 0 to 10/255 a pixel at random) stirs every pixel of the light
+     by a level or two before it's rounded; faded to a quarter, as the light
+     is bright. Written out on its own element (docs/category-cards.md, 3). */
+  .dither {
+    position: absolute;
+    inset: 0;
+    background: url('../assets/dither.png') 0 0 / 128px;
+    image-rendering: pixelated;
+    opacity: 0.25;
+  }
   .resin {
     color: var(--resin);
   }
@@ -818,7 +832,7 @@
     aspect-ratio: 1;
     margin: -4.5px 0 0 -4.5px;
     border-radius: 50%;
-    background: radial-gradient(closest-side, #fffbe8, #fff2c4 30%, rgba(255, 242, 196, 0));
+    background: radial-gradient(closest-side, #fffbe8, var(--fossil-fleck) 30%, color-mix(in srgb, var(--fossil-fleck) 0%, transparent));
     transform: rotate(var(--a)) translateY(calc(var(--r) * var(--k) * -1)) rotate(calc(var(--a) * -1));
     opacity: 0.6;
     animation: wink 4.8s ease-out var(--t) infinite;

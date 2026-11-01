@@ -23,6 +23,7 @@
   import { WAY_OUT_CARD as out } from '../lib/wayOut/lantern';
   import { digOf, expectedVoters, fossilOffer, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
   import type { CardFossil, FossilTier } from '../lib/fossils';
+  import { amberLight } from '../lib/fossilAmber';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
   import { FIND_COLORS, cardHover, cardPicked, cardRevealed, raffleHop, voteCast } from '../lib/fx/moments';
@@ -489,8 +490,8 @@
   // lights up as it turns up, glints under the pointer, and floods out,
   // ringing, as it's chosen. Never which fossil; that's the right answer's.
   const AMBER: Record<FossilTier, { main: Vec3; pale: Vec3; light: Vec3 }> = {
-    common: { main: [2.4, 1.15, 0.22], pale: [3, 2.3, 1.1], light: [1, 0.62, 0.2] },
-    rare: { main: [2.7, 0.62, 0.14], pale: [3.2, 2.6, 1.4], light: [1, 0.42, 0.12] },
+    common: { main: amberLight('edge', 2.6), pale: amberLight('core', 3), light: amberLight('mid') },
+    rare: { main: amberLight('rareEdge', 3.45), pale: amberLight('rareCore', 3.2), light: amberLight('rareMid', 1.05) },
   };
   const paneOf = (frame: Element) => frame.querySelector('.frame .pane') ?? frame.querySelector('.pane:not(.back)') ?? frame;
   function fossilRevealed(frame: Element, tier: FossilTier) {
@@ -2317,15 +2318,15 @@
   }
   /* A fossil's: amber, as its pane. */
   .find-note[data-find='fossil'] {
-    color: #ffb46a;
+    color: color-mix(in srgb, var(--fossil-ink), var(--fossil-fleck) 30%);
   }
   .find-note[data-find='fossil'] strong,
   .note.fossil-line strong {
-    color: #ff9a3c;
+    color: var(--fossil-ink);
   }
   .find-note[data-find='fossil'][data-tier='rare'] strong,
   .note.fossil-line strong[data-tier='rare'] {
-    color: #ff7a3a;
+    color: var(--fossil-rare-ink);
   }
   .find-note[data-find='dynamite'] {
     color: #eebf96;

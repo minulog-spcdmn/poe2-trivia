@@ -2136,7 +2136,7 @@
     margin-left: 0.25em;
   }
   /* A fossil card's light on the question: a small pane of the card's lit
-     amber (direction-a.md: core #ffd04a to edge #ec6a10, a resin rim), its
+     amber (app.css's --fossil-*: its middle to its edge, a resin rim), its
      heart drifting as if a lamp passed behind it. It sits at the art's foot
      (on the plate's, picking art). Small, so its glow can't band. */
   .fossil-mark {
@@ -2150,11 +2150,11 @@
     overflow: hidden;
     border-radius: 3px;
     transform: rotate(45deg);
-    background: radial-gradient(circle at 50% 50%, #f0962a, #ec6a10 75%);
+    background: radial-gradient(circle at 50% 50%, var(--fossil-mid), var(--fossil-edge) 75%);
     box-shadow:
-      inset 0 0 0 1px rgba(90, 32, 4, 0.9),
-      0 0 0 1px rgba(255, 208, 74, 0.35),
-      0 0 10px 2px rgba(240, 150, 42, 0.45);
+      inset 0 0 0 1px color-mix(in srgb, var(--fossil-resin) 90%, transparent),
+      0 0 0 1px color-mix(in srgb, var(--fossil-core) 35%, transparent),
+      0 0 10px 2px color-mix(in srgb, var(--fossil-mid) 45%, transparent);
     transition:
       opacity 0.3s ease-out,
       filter 0.4s ease-out;
@@ -2168,21 +2168,21 @@
     content: '';
     position: absolute;
     inset: -40%;
-    background: radial-gradient(circle at 50% 50%, #fff2c4, #ffd04a 22%, transparent 55%);
+    background: radial-gradient(circle at 50% 50%, var(--fossil-fleck), var(--fossil-core) 22%, transparent 55%);
     animation: fossil-mark-drift 5.2s ease-in-out infinite alternate;
   }
   .fossil-mark.rare {
-    background: radial-gradient(circle at 50% 50%, #ffb428, #c8300c 78%);
+    background: radial-gradient(circle at 50% 50%, var(--fossil-rare-core), var(--fossil-rare-edge) 78%);
     box-shadow:
-      inset 0 0 0 1px rgba(90, 20, 4, 0.9),
-      0 0 0 1px rgba(255, 180, 40, 0.4),
-      0 0 12px 3px rgba(200, 48, 12, 0.5);
+      inset 0 0 0 1px color-mix(in srgb, var(--fossil-rare-resin) 90%, transparent),
+      0 0 0 1px color-mix(in srgb, var(--fossil-rare-core) 40%, transparent),
+      0 0 12px 3px color-mix(in srgb, var(--fossil-rare-edge) 50%, transparent);
   }
   .fossil-mark.rare::before {
     background:
-      radial-gradient(circle at 30% 70%, #fff2c4 0 1px, transparent 2px),
-      radial-gradient(circle at 70% 35%, #fff2c4 0 1px, transparent 2px),
-      radial-gradient(circle at 50% 50%, #fff2c4, #ffb428 22%, transparent 55%);
+      radial-gradient(circle at 30% 70%, var(--fossil-fleck) 0 1px, transparent 2px),
+      radial-gradient(circle at 70% 35%, var(--fossil-fleck) 0 1px, transparent 2px),
+      radial-gradient(circle at 50% 50%, var(--fossil-fleck), var(--fossil-rare-core) 22%, transparent 55%);
   }
   /* Dynamite: it shatters into amber shards (Game.svelte), not flung whole with the question's pieces. */
   :global(.blast-copy) .fossil-mark {

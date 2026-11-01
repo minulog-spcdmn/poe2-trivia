@@ -833,7 +833,7 @@
       <span class="ic" aria-hidden="true"></span>
       <span class="txt">
         {#if f.kind === 'missed'}
-          Missed a fossil at depth <b class="n">{f.depth}</b>; {@render count(f, '')}.
+          Lost a fossil at depth <b class="n">{f.depth}</b>; {@render count(f, '')}.
         {:else if f.kind === 'held'}
           {@render count(f, '')} in your codex.
         {:else if f.kind === 'all'}
@@ -2087,11 +2087,11 @@
     font: inherit;
     line-height: inherit;
     text-align: left;
-    color: #ff9a3c;
+    color: var(--fossil-ink);
     background: none;
     border: 0;
     cursor: pointer;
-    text-decoration: underline dotted rgba(255, 154, 60, 0.4);
+    text-decoration: underline dotted color-mix(in srgb, var(--fossil-ink) 40%, transparent);
     text-underline-offset: 3px;
     transition:
       color 0.2s,
@@ -2102,8 +2102,8 @@
   }
   .set-link:hover,
   .set-link:focus-visible {
-    color: #ffc06a;
-    text-decoration-color: rgba(255, 192, 106, 0.8);
+    color: color-mix(in srgb, var(--fossil-ink), var(--fossil-fleck) 45%);
+    text-decoration-color: color-mix(in srgb, var(--fossil-ink), var(--fossil-fleck) 45%);
   }
   /*
    * A fossil kept: its icon, larger than the line's marks (it reaches out of their column), lit from behind as amber
@@ -2126,16 +2126,16 @@
     height: 38px;
     translate: -50% -50%;
     object-fit: contain;
-    --drop-shadow: 0 0 3px rgba(255, 208, 74, 0.85), 0 0 12px rgba(236, 106, 16, 0.6);
+    --drop-shadow: 0 0 3px color-mix(in srgb, var(--fossil-core) 85%, transparent), 0 0 12px color-mix(in srgb, var(--fossil-edge) 60%, transparent);
   }
   .kept-ic:not([data-bs-drop]) {
-    filter: drop-shadow(0 0 3px rgba(255, 208, 74, 0.85)) drop-shadow(0 0 12px rgba(236, 106, 16, 0.6));
+    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--fossil-core) 85%, transparent)) drop-shadow(0 0 12px color-mix(in srgb, var(--fossil-edge) 60%, transparent));
   }
   .rare .kept-ic {
-    --drop-shadow: 0 0 3px rgba(255, 180, 40, 0.95), 0 0 14px rgba(200, 48, 12, 0.7);
+    --drop-shadow: 0 0 3px color-mix(in srgb, var(--fossil-rare-core) 95%, transparent), 0 0 14px color-mix(in srgb, var(--fossil-rare-edge) 70%, transparent);
   }
   .rare .kept-ic:not([data-bs-drop]) {
-    filter: drop-shadow(0 0 3px rgba(255, 180, 40, 0.95)) drop-shadow(0 0 14px rgba(200, 48, 12, 0.7));
+    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--fossil-rare-core) 95%, transparent)) drop-shadow(0 0 14px color-mix(in srgb, var(--fossil-rare-edge) 70%, transparent));
   }
   .prize .txt {
     display: flex;
@@ -2145,10 +2145,10 @@
   /* Its name as PoE's tooltip names it, in its own type, the amber's light. */
   .fossil-name {
     font-family: var(--font-tooltip);
-    color: #ffd27a;
+    color: var(--fossil-core);
   }
   .rare .fossil-name {
-    color: #ffb46a;
+    color: var(--fossil-rare-core);
   }
   .kept-at {
     font-size: 0.9em;

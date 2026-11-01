@@ -55,6 +55,23 @@
 }
 
 :root {
+  /* Fossils: the one amber every fossil surface draws on (the card's pane,
+     the question's mark, the find moment, the codex, the end screen), as
+     the fossils' own icons are lit (direction A, "held to the lamp"): the
+     light's heart, its middle and its edge through the amber, the resin's
+     dark, and the note's ink; a rare's deeper, red-gold, with gold flecks.
+     lib/fossilFlight.ts takes the same for its light (tests/fossilPalette). */
+  --fossil-core: #ffe066;
+  --fossil-mid: #ffaa2c;
+  --fossil-edge: #ec6a10;
+  --fossil-resin: #5a2004;
+  --fossil-ink: #ff9a3c;
+  --fossil-rare-core: #ffc43a;
+  --fossil-rare-mid: #f27c1c;
+  --fossil-rare-edge: #c8300c;
+  --fossil-rare-resin: #4a1204;
+  --fossil-rare-ink: #ff7a3a;
+  --fossil-fleck: #fff2c4;
   --bg: #0a0908;
   --line: #3b3024;
   --gold: #c9a45c;
@@ -1003,7 +1020,7 @@ h3,
   position: absolute;
   border-radius: 50%;
   opacity: 0;
-  background: radial-gradient(closest-side, #fff2c4, #ffd04a 30%, rgba(236, 106, 16, 0.55) 60%, transparent);
+  background: radial-gradient(closest-side, var(--fossil-fleck), var(--fossil-core) 30%, color-mix(in srgb, var(--fossil-edge) 55%, transparent) 60%, transparent);
 }
 .fossil-reveal .fr-piece {
   position: absolute;
@@ -1040,10 +1057,10 @@ h3,
   position: absolute;
   opacity: 0;
   border-radius: 50%;
-  border: 2px solid #ffd27a;
+  border: 2px solid var(--fossil-rare-core);
   box-shadow:
-    0 0 8px 1px rgba(255, 140, 40, 0.85),
-    inset 0 0 8px 1px rgba(200, 48, 12, 0.85);
+    0 0 8px 1px color-mix(in srgb, var(--fossil-rare-mid) 85%, transparent),
+    inset 0 0 8px 1px color-mix(in srgb, var(--fossil-rare-edge) 85%, transparent);
   transform: translate(-50%, -50%);
 }
 .fossil-reveal .fr-label {
@@ -1080,7 +1097,12 @@ h3,
   font-weight: 600;
   letter-spacing: 0.2em;
   text-transform: uppercase;
-  color: #ffb428;
+  color: var(--fossil-rare-core);
+}
+.fossil-reveal .fr-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
 }
 @media (max-width: 640px), (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
   .fossil-reveal .fr-name {
