@@ -207,11 +207,24 @@
     const was = widthsWere;
     widthsWere = new Map();
     resizing = false;
+    // With an entry leaving (a kick), the widths change as its room closes, in step with it (leave):
+    // the row then moves one way, rather than the others being pushed out before it closes.
+    // Each width it's going to is the one it will have once they've gone, not squeezed by them on the way out.
+    const gone = [...was.keys()].filter((li): li is HTMLElement => leaving.has(li) && li instanceof HTMLElement);
+    const closing = gone.length > 0;
+    for (const li of gone) li.style.display = 'none';
+    const tos = new Map([...was.keys()].map((li) => [li, parseFloat(getComputedStyle(li).width)]));
+    for (const li of gone) li.style.display = '';
     for (const [li, from] of was) {
       if (!li.isConnected || leaving.has(li)) continue;
-      const to = parseFloat(getComputedStyle(li).width);
+      const to = tos.get(li)!;
       if (Math.abs(to - from) < 1) continue;
-      li.animate([{ width: `${from}px`, minWidth: '0px' }, { width: `${to}px`, minWidth: '0px' }], { duration: 350, easing: 'cubic-bezier(0.33, 1, 0.68, 1)' });
+      li.animate([{ width: `${from}px`, minWidth: '0px' }, { width: `${to}px`, minWidth: '0px' }], {
+        duration: closing ? LEAVE_MS * (1 - SHUT_FROM) : 350,
+        delay: closing ? LEAVE_MS * SHUT_FROM : 0,
+        fill: 'backwards',
+        easing: 'cubic-bezier(0.33, 1, 0.68, 1)',
+      });
     }
   });
   /** Delve together: who answered the question in play (wrong, or it would be over). */
@@ -825,6 +838,9 @@
    * off, over its neighbour: that's undone first, so it stays in the row.
    */
   const leaving = new WeakSet<Element>();
+  /** How long a leaving entry takes, and from what share of it its room closes (the widths change with it). */
+  const LEAVE_MS = 500;
+  const SHUT_FROM = 0.3;
   function leave(node: HTMLElement) {
     leaving.add(node);
     Object.assign(node.style, { position: '', width: '', height: '', transform: '' });
@@ -832,10 +848,10 @@
     const [w, pl, pr] = [cs.width, cs.paddingLeft, cs.paddingRight].map(parseFloat);
     const gap = parseFloat(getComputedStyle(node.parentElement!).columnGap) || 0;
     return calm({
-      duration: 500,
+      duration: LEAVE_MS,
       css: (_t: number, u: number) => {
-        // u runs evenly from 0 to 1: the first 35% fades it out; from 30% its room closes, quick and then settling, as a glide does.
-        const shut = cubicOut(Math.max(0, (u - 0.3) / 0.7));
+        // u runs evenly from 0 to 1: the first 35% fades it out; from SHUT_FROM its room closes, quick and then settling, as a glide does.
+        const shut = cubicOut(Math.max(0, (u - SHUT_FROM) / (1 - SHUT_FROM)));
         const k = 1 - shut;
         return `min-width: 0; width: ${k * w}px; padding-left: ${k * pl}px; padding-right: ${k * pr}px; border-width: ${k < 0.05 ? 0 : 1}px; margin-right: ${-shut * gap}px; opacity: ${1 - cubicOut(Math.min(1, u / 0.35))}; pointer-events: none`;
       },

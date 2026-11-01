@@ -176,7 +176,11 @@ export async function boot(asked: URLSearchParams) {
     session.hostNow = () => now;
   }
   const said = (what: string) => toasts.show(what, 'info', { title: 'Preview' });
-  session.dispatch = (a) => said(a.type === 'restart' ? (a.play ? 'The next game would start now.' : 'Everyone would go back to the lobby.') : `Would send: ${a.type}`);
+  session.dispatch = (a) => {
+    // A scene whose host's moves count (Built.own) plays them through the room, as the host would.
+    if (built.own && built.act && seat.mode === 'host' && session.state) session.state = built.act(session.state, a);
+    else said(a.type === 'restart' ? (a.play ? 'The next game would start now.' : 'Everyone would go back to the lobby.') : `Would send: ${a.type}`);
+  };
   session.watch = (on) => said(on ? 'You would just watch the next game.' : 'You would play in the next game.');
   session.leave = () => said('You would leave the room.');
   session.closeAsOwner = () => said('The room would close for everyone in it.');

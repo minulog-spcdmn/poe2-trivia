@@ -230,7 +230,8 @@ function moves(v: Values = {}): Built {
   const built = room(does === 'custom' ? { difficulty: 'custom' } : {});
   const clicks = (CLICKS[does] ?? CLICKS.mode).flatMap(([wait, click]): Step[] => [{ wait }, { click }]);
   // (Copied whether or not the frame may write to the clipboard.)
-  return { ...built, steps: does === 'invite' ? [{ clipboard: true }, ...clicks] : clicks };
+  // The host's clicks change the room, as they would (Built.own), rather than only saying what they'd send.
+  return { ...built, own: true, steps: does === 'invite' ? [{ clipboard: true }, ...clicks] : clicks };
 }
 
 export function lobbyScenes(): Scene[] {

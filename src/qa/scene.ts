@@ -92,6 +92,8 @@ export interface Built {
    * hand, set as it is.
    */
   act?: (s: GameState, a: Action) => GameState;
+  /** Host: this device's own moves (a setting changed, the room locked) go through the room as `act` plays them and come back, as a host's do, instead of the frame only saying what it would send. */
+  own?: boolean;
   /** The moment the scene is at (host clock, ms): its clocks stand still there. Missing: the state's own start. */
   at?: number;
   /** How the run measured up against this device's records (the session's delveResult). */
