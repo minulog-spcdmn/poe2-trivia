@@ -29,7 +29,8 @@
   import { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS, blastAway, prepareBlast } from '../lib/blastAway';
   import { untrack } from 'svelte';
   import { clockMs } from '../lib/game';
-  import { motion } from '../lib/motion.svelte';
+  import { PICK_HOLD_MS } from '../lib/delveSession';
+  import { calm, motion } from '../lib/motion.svelte';
   import { dealing } from '../lib/dealing.svelte';
   import { arrival, speak } from '../lib/zoneArrival.svelte';
   import { closeItemWindow, itemWindow } from '../lib/itemWindow.svelte';
@@ -269,6 +270,14 @@
   // vote: one joining or refreshing into the question goes straight to it.
   // Set before the DOM updates, so the cards stay up rather than being
   // swapped for the question and back.
+  //
+  // A pick, alone or on a turn, holds the cards a moment too (PICK_HOLD_MS),
+  // on every screen that saw the choosing: the chosen card lifts as the
+  // others give way, on the picker's screen and the watchers' alike, before
+  // the question takes their place (a vote's draw has its own moment). Its
+  // clock waits as long (drawHoldUntil), so it costs no answer time.
+  /** Whether the cards' choosing is the team's vote (Delve together), drawn on the cards, rather than one player's pick. */
+  const voted = $derived(!!run && group);
   let raffle = $state<number | null>(null);
   let phaseSeen = '';
   let raffleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -276,20 +285,20 @@
     const key = `${s.turnCount}:${s.phase}`;
     const was = phaseSeen;
     phaseSeen = key;
-    if (!run || !group || s.phase !== 'question' || !s.question) {
-      if (s.phase !== 'question') raffle = null;
+    if (s.phase !== 'question' || !s.question) {
+      raffle = null;
       return;
     }
     // Back after a dropped connection with the question's clock already
     // running: the draw would eat into it, so the question shows at once.
     const asked = s.question;
     const running = asked.deadline !== null && asked.clockAt !== undefined && session.hostNow() > asked.clockAt;
-    if (was === `${s.turnCount}:choosing` && !running && untrack(() => raffle) === null) {
+    if (was === `${s.turnCount}:choosing` && !running && untrack(() => raffle) === null && s.offered.includes(asked.category)) {
       const qid = asked.askedAt;
       raffle = qid;
       // Should the draw never say it is done, the question shows anyway.
       if (raffleTimer) clearTimeout(raffleTimer);
-      raffleTimer = setTimeout(() => raffle === qid && (raffle = null), 4000);
+      raffleTimer = setTimeout(() => raffle === qid && (raffle = null), voted ? 4000 : PICK_HOLD_MS);
     }
   });
   $effect(() => () => {
@@ -533,7 +542,8 @@
             {#if s.phase === 'choosing' || drawing}
               <div class="cards-slot" use:outWithoutInert out:cardsOut>
                 <ChooseCategory
-                  drawn={drawing ? (s.question?.category ?? null) : leaving ? WAY_OUT : null}
+                  drawn={drawing && voted ? (s.question?.category ?? null) : leaving ? WAY_OUT : null}
+                  taken={drawing && !voted ? (s.question?.category ?? null) : null}
                   ondrawn={() => (raffle = null)}
                   timer={lampHeld && !slim ? timer : undefined}
                 />
@@ -561,7 +571,7 @@
             </div>
           {/if}
           {#if myFall !== null}
-            <p class="delve-line muted">
+            <p class="delve-line muted" transition:fade={calm({ duration: 400 })}>
               You perished and are now watching.{#if canBeRevived}{' '}A teammate can give you a life between questions.{/if}
             </p>
           {:else if revivable.length && (s.phase === 'choosing' || s.phase === 'reveal')}
