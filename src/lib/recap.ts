@@ -9,7 +9,8 @@
 // for the viewer), an item or a category.
 
 import { DELVE_LIVES, DELVE_RULESET, FLARE_MS, delveStandings, isGroupRun, runFossils, shownDepth, teamDepth, type FindKind } from './delve.ts';
-import { aFossil, fossilById, type FossilId } from './fossils.ts';
+import { FOSSILS, aFossil, fossilById, type FossilId } from './fossils.ts';
+import type { FossilStore } from './fossilStore.ts';
 import type { GameState, RecapItem } from './game.ts';
 import { stratumName } from './descent.ts';
 import { counts, isTogether, type DelveRun } from './delveRecord.ts';
@@ -338,13 +339,42 @@ export function livesLost(s: GameState, me: string | null, log: readonly Answer[
 
 // ---- Delve: the run's facts -------------------------------------------------
 
+/** How far a player's set of fossils is: all of it and each tier, found of all there are. */
+export interface SetProgress {
+  found: number;
+  total: number;
+  common: { found: number; total: number };
+  rare: { found: number; total: number };
+  /** Every fossil found: nothing more can turn up. */
+  complete: boolean;
+  /** Those this run gave this device's player (in `found` already, once kept), oldest first. */
+  run: FossilId[];
+}
+
+/**
+ * The set's progress for a Delve end screen (every one, a fossil found or
+ * not): this device's store (fossilStore.ts loadFossils), and what the run
+ * gave this device's player (`me`; on one device, `local`, whoever played).
+ */
+export function setProgress(store: FossilStore, s: GameState | null, me: string | null, local: boolean): SetProgress {
+  const tier = (rare: boolean) => {
+    const all = FOSSILS.filter((f) => f.rare === rare);
+    return { found: all.filter((f) => store.found[f.id]).length, total: all.length };
+  };
+  const common = tier(false);
+  const rare = tier(true);
+  const found = common.found + rare.found;
+  const total = common.total + rare.total;
+  const run = s ? runFossils(s).filter((f) => local || (me !== null && f.to.includes(me))).map((f) => f.id) : [];
+  return { found, total, common, rare, complete: found >= total, run };
+}
+
 /**
  * What the run's finds gave and what came of it, oldest first: alone (and
  * `me`) this player's, together the party's. First the zone it reached (by
- * name: the descent never ends, so there is no "of ten"). `allFossils`: this
- * device's player now holds every fossil, so none can turn up tomorrow.
+ * name: the descent never ends, so there is no "of ten").
  */
-export function runFacts(s: GameState, me: string | null, allFossils = false): Line[] {
+export function runFacts(s: GameState, me: string | null): Line[] {
   const together = isGroupRun(s);
   const depth = teamDepth(s);
   const out: Line[] = [{ icon: { zone: depth }, parts: [`Reached ${zoneOf(depth).the}.`] }];
@@ -352,13 +382,11 @@ export function runFacts(s: GameState, me: string | null, allFossils = false): L
   const you = together ? '' : ' you';
   const at = (n: number): Part[] => [' at depth ', { n: shownDepth(n) }];
   // The fossils it gave first (lib/fossils.ts): alone yours, together whose each is.
-  // One of them yours is the day's (one a day): another can only turn up tomorrow, while any is left.
   for (const f of runFossils(s)) {
     if (out.length >= 4) break;
     if (!together && me && !f.to.includes(me)) continue;
     const who = together ? (nameIn(s, f.to[0]) ?? 'Someone') : 'You';
-    const mine = !allFossils && (!together || (!!me && f.to.includes(me)));
-    out.push({ icon: { fossil: f.id }, parts: join(`${who} found ${aFossil(f.id)}`, ...at(f.depth), mine ? '. Another can turn up tomorrow.' : '.') });
+    out.push({ icon: { fossil: f.id }, parts: join(`${who} found ${aFossil(f.id)}`, ...at(f.depth), '.') });
   }
   for (let i = 0; i < items.length && out.length < 4; i++) {
     const x = items[i];

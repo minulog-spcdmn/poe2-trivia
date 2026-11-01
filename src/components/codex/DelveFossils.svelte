@@ -78,7 +78,7 @@
   //
   // `embedded`: in a dialog of its own (the end screen's), with no panel or
   // heading of the codex's; the dialog names it. Read-only either way.
-  import { FOSSILS, FOSSIL_COUNT, FOSSIL_DEAL, fossilArt, type Fossil, type FossilId } from '../../lib/fossils';
+  import { FOSSILS, FOSSIL_COUNT, FOSSIL_FROM, fossilArt, type Fossil, type FossilId } from '../../lib/fossils';
   import { FOSSILS_KEY, loadFossils, type FossilStore } from '../../lib/fossilStore';
   import { onStoredElsewhere } from '../../lib/storage';
   import { shownDepth } from '../../lib/delve';
@@ -106,8 +106,8 @@
   const latest = $derived(FOSSILS.filter((f) => found[f.id]).sort((a, b) => found[b.id]!.at - found[a.id]!.at)[0] ?? null);
   const shown: Fossil | null = $derived(FOSSILS.find((f) => f.id === chosen) ?? latest);
   /** The depths players see where fossils start to turn up. */
-  const rareFrom = shownDepth(FOSSIL_DEAL.rare.from);
-  const commonFrom = shownDepth(FOSSIL_DEAL.common.from);
+  const rareFrom = FOSSIL_FROM.rare;
+  const commonFrom = FOSSIL_FROM.common;
   const uid = $props.id();
   /** Where a press began: a click that ends far from it was a drag or a scroll, and chooses nothing. */
   let pressed: { x: number; y: number } | null = null;
