@@ -342,13 +342,15 @@
   /** When the `i`th of `n` rows is set down: from the foot up, the winner last. */
   const rankDelay = (i: number, n: number) => 450 + (n - 1 - i) * (n > 2 ? Math.min(70, 400 / (n - 1)) : 70);
   /**
-   * Your row on a phone's dock: as the screen comes in, set down in its turn among the rows, as it would have been; after
-   * that (you scrolled past it, or back), out of the dock's edge and back into it, quickly: it is your doing. Opaque all
-   * the while, cut off at the dock's edge (.pin-edge), so nothing shows through it.
+   * Your row on a phone's dock: it comes up out of the dock, from behind its face, the dock's dividing line riding on
+   * top of it (.pinned's own; the dock's is hidden meanwhile), and goes back down into it. As the screen comes in, in its
+   * turn among the rows, as they settle; after that (you scrolled past it, or back), quickly: it is your doing. Opaque
+   * all the while, and nothing cuts it or its glow: only the dock's face covers what is still inside.
    */
   function pinIn(node: Element): TransitionConfig {
     const left = rankDelay(rows.findIndex((x) => x.p.id === me), rows.length) - (performance.now() - shownAt);
-    return left > 0 ? settle(node, { delay: left }) : fly(node, calm({ y: (node as HTMLElement).offsetHeight, opacity: 1, duration: 160, easing: quintOut }));
+    const y = (node as HTMLElement).offsetHeight;
+    return fly(node, calm(left > 0 ? { y, opacity: 1, delay: left, duration: 440, easing: quintOut } : { y, opacity: 1, duration: 160, easing: quintOut }));
   }
   function pinOut(node: Element): TransitionConfig {
     return fly(node, calm({ y: (node as HTMLElement).offsetHeight, opacity: 1, duration: 140 }));
@@ -1192,12 +1194,10 @@
 {#if phone.current}
   <!-- Phones: the start row docked at the foot of the screen, where the thumb rests (lib/layout's dock). -->
   <div class="dock" class:host={session.isHost} use:portal use:overPage use:dock bind:offsetHeight={dockH} in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
-    <div class="pin-edge">
-      {#if pinned}
-        {@const x = rows.find((r) => r.p.id === me)}
-        {#if x}<div class="pinned" in:pinIn|global out:pinOut|global><div class="ranking"><div class="row you">{@render rankRow(x, true)}</div></div></div>{/if}
-      {/if}
-    </div>
+    {#if pinned}
+      {@const x = rows.find((r) => r.p.id === me)}
+      {#if x}<div class="pinned" in:pinIn|global out:pinOut|global><div class="ranking"><div class="row you">{@render rankRow(x, true)}</div></div></div>{/if}
+    {/if}
     <div class="dock-row">{@render startRow()}</div>
   </div>
 {/if}
@@ -2494,7 +2494,8 @@
     height: 40px;
   }
 
-  /* The dock: fixed to the bottom, opaque, a hairline on top and a short fade above it. */
+  /* The dock: fixed to the bottom, opaque, a hairline on top and a short fade above it. Its face (::after, the opaque
+     ground and the hairline) lies over your row (.pinned) as it goes in and out of it, the buttons over that. */
   .dock {
     position: fixed;
     left: 0;
@@ -2502,10 +2503,26 @@
     bottom: 0;
     z-index: 20;
     padding: 0.6rem max(16px, env(safe-area-inset-right)) max(0.6rem, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    border-top: 1px solid transparent;
+  }
+  .dock::after {
+    content: '';
+    position: absolute;
+    inset: -1px 0 0;
+    z-index: 1;
     background: #0b0907;
     border-top: var(--pinned-line);
+    pointer-events: none;
   }
-  .dock::before {
+  /* Your row on it: the hairline and the fade ride on top of it instead (.pinned's), until it is back inside. */
+  .dock:has(.pinned)::after {
+    border-top-color: transparent;
+  }
+  .dock:has(.pinned)::before {
+    visibility: hidden;
+  }
+  .dock::before,
+  .pinned::before {
     content: '';
     position: absolute;
     left: 0;
@@ -2518,6 +2535,8 @@
     pointer-events: none;
   }
   .dock-row {
+    position: relative;
+    z-index: 2;
     display: flex;
     align-items: center;
     gap: 0.8rem;
@@ -2542,21 +2561,17 @@
   .dock-row .status {
     display: none;
   }
-  /* Your row riding on the dock's top edge, one opaque piece with it; cut off at that edge as it comes out of it and goes back in. */
-  .pin-edge {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 100%;
-    clip-path: inset(-200px -40px 0 -40px);
-  }
+  /* Your row riding on the dock's top edge, one opaque piece with it, the dock's hairline over it; room round the row for
+     its glow, so nothing cuts it. */
   .pinned {
     position: absolute;
+    z-index: 0;
     left: 0;
     right: 0;
-    bottom: 0;
-    padding: 8px 16px 6px;
+    bottom: calc(100% + 1px);
+    padding: 12px 16px;
     background: #0b0907;
+    border-top: var(--pinned-line);
   }
   .pinned .row {
     height: 46px;
