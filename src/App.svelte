@@ -806,8 +806,9 @@
     {/key}
   </main>
 
-  <!-- The end of a game closes with the start page's footer, the legal links in it. -->
-  {#if headerOn && screen !== 'over'}
+  <!-- The end of a game closes with the start page's footer, the legal links in it.
+       (headerFor: going home from it, these don't come for the moment the header still fades.) -->
+  {#if headerOn && headerFor !== 'over'}
     <nav class="legal" class:hidden={legalHidden} class:leaving={screen === 'home'} in:fade|global={calm({ duration: 300 })} aria-label="Legal" bind:this={legalNav} use:heightVar={'legal-h'}>
       {@render legalLinks()}
     </nav>
