@@ -18,6 +18,7 @@
   //   the dark.
 
   import { LUNA, LUNA_HATCH, SOL_RAYS } from '../lib/alchemy';
+  import { flushSync } from 'svelte';
   import { drawIn, type Pen } from '../lib/drawIn';
   import { WEAVE_CLASS } from '../lib/weave';
   import 'virtual:plate-weave.css';
@@ -196,6 +197,9 @@
   // 4K screen, with every question). Timed on the plate's own clock (its
   // field's fade), as the bloom's stamp is, asked for once the frame that
   // shows the plate has worked out its styles (see ArcaneStage).
+  // The lines themselves go on the page as the pen starts, as the circle's
+  // layers do (ArcaneStage): nothing of them shows before it draws them.
+  let inked = $state(false);
   let glowEl = $state<SVGSVGElement>();
   let linesEl = $state<SVGSVGElement>();
   let fieldEl = $state<HTMLElement>();
@@ -210,6 +214,7 @@
     const draw = (start: number) => {
       if (stopped) return;
       pen = drawIn(start);
+      if (!inked) flushSync(() => (inked = true));
       for (const svg of svgs) if (svg) pen.add(svg);
     };
     // (Moved on the page, as a dialog's backdrop is, the fade starts over and
@@ -242,39 +247,41 @@
   <g class="end">
     <path d={GROUND} class="ground" />
     <path d={SPANDREL_GROUND} class="ground leaf" />
-    <path d={SPINE_PATHS} class="draw fine" style:--d="0.6s" style:--t="0.9s" pathLength="100" />
-    <!-- The frame: the outer rule runs on from the spandrels, the inner from
-         the flames, on past the middle (as long as before: 70% of the plate, so
-         the pen keeps its pace) so they scale with the end; each end
-         is clipped at the middle (see plate()), so the two ends' rules meet
-         there instead of overlapping, which showed as a brighter stretch. -->
-    {#each [-1, 1] as side (side)}
-      <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="140%" y2={side * 29.5} class="draw rule metal thin" style:--d="0.6s" style:--t="0.9s" pathLength="100" />
-      <line x1={f(INNER_RULE_X)} y1={side * 26.5} x2="140%" y2={side * 26.5} class="draw rule metal" style:--d="1.1s" style:--t="0.9s" pathLength="100" />
-    {/each}
-    {@render moulding(END.spandrels)}
-    {@render moulding(END.ogees)}
-    {@render moulding(END.flames)}
-    <!-- The seal, pressed in like the circle's. -->
-    <g class="seal" style:--d="0.3s">
-      <circle cx={SEAL[0]} cy={SEAL[1]} r={SEAL_R + 1} class="well" />
-      {@render moulding(END.ring)}
-      {#if sign !== 'empty'}
-        <g class="sign fade" style:--d="0.7s" style:--t="0.6s" transform="translate({pt(SEAL)}) scale({f(SIGN_SCALE)})">
-          {#if sign === 'sol'}
-            <circle r="5" />
-            <circle r="1.1" />
-            <path d={SOL_RAYS} />
-          {:else}
-            <!-- Turned as on the circle, her horns facing out. -->
-            <g transform="rotate(180)">
-              <path d={LUNA} />
-              <path d={LUNA_HATCH} class="hatch" />
-            </g>
-          {/if}
-        </g>
-      {/if}
-    </g>
+    {#if inked}
+      <path d={SPINE_PATHS} class="draw fine" style:--d="0.6s" style:--t="0.9s" pathLength="100" />
+      <!-- The frame: the outer rule runs on from the spandrels, the inner from
+           the flames, on past the middle (as long as before: 70% of the plate, so
+           the pen keeps its pace) so they scale with the end; each end
+           is clipped at the middle (see plate()), so the two ends' rules meet
+           there instead of overlapping, which showed as a brighter stretch. -->
+      {#each [-1, 1] as side (side)}
+        <line x1={f(OUTER_RULE_X)} y1={side * 29.5} x2="140%" y2={side * 29.5} class="draw rule metal thin" style:--d="0.6s" style:--t="0.9s" pathLength="100" />
+        <line x1={f(INNER_RULE_X)} y1={side * 26.5} x2="140%" y2={side * 26.5} class="draw rule metal" style:--d="1.1s" style:--t="0.9s" pathLength="100" />
+      {/each}
+      {@render moulding(END.spandrels)}
+      {@render moulding(END.ogees)}
+      {@render moulding(END.flames)}
+      <!-- The seal, pressed in like the circle's. -->
+      <g class="seal" style:--d="0.3s">
+        <circle cx={SEAL[0]} cy={SEAL[1]} r={SEAL_R + 1} class="well" />
+        {@render moulding(END.ring)}
+        {#if sign !== 'empty'}
+          <g class="sign fade" style:--d="0.7s" style:--t="0.6s" transform="translate({pt(SEAL)}) scale({f(SIGN_SCALE)})">
+            {#if sign === 'sol'}
+              <circle r="5" />
+              <circle r="1.1" />
+              <path d={SOL_RAYS} />
+            {:else}
+              <!-- Turned as on the circle, her horns facing out. -->
+              <g transform="rotate(180)">
+                <path d={LUNA} />
+                <path d={LUNA_HATCH} class="hatch" />
+              </g>
+            {/if}
+          </g>
+        {/if}
+      </g>
+    {/if}
   </g>
 {/snippet}
 

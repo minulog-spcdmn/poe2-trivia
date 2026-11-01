@@ -373,6 +373,22 @@ with its numbers in the comments.
   (1.2 Mpx), 60.1 fps, as at `size=fit` with no cursors at all. A scene
   measured on the phone at `size=desktop` has the cursors; `size=fit` has
   none.
+- **Every compositing layer is put on screen as it mounts, empty or not.**
+  Each box of a rune circle is a compositing layer (`will-change`, and
+  most turn), and WebKit put all of a circle's (10 to 30) on screen in
+  the frames after a pick, though most stood empty for up to 1.15 s,
+  until their lines were due. That commit runs outside the page's main
+  thread: splitting the pick's task in two (the question a frame after
+  the tap, `Game.svelte`) took the longest hold from 43 to 28 ms but left
+  the frames as long. Mounting the boxes later, as the pen starts, was
+  worse: put into a stage already on screen they cost a 50 to 62 ms frame
+  of their own. Keeping each box out of the drawing until its lines go on
+  (`display: none`, then its animations started as far in as the
+  summoning is: `.waits` and `--late` in `ArcaneStage.svelte`) took a
+  pick's worst frame from 49 to 37 ms (median of 18 and 15 picks). A
+  hand of cards gained the same way: each side's engraving drawn in a frame of
+  its own while its card lies unseen (`CardEngraving.svelte`) took
+  Begin's worst frame from 116 to 85 ms (6 and 5 runs, #331).
 
 Still open: Begin's three frames over 40 ms (41 to 64 ms, the worst 88 to
 93), as the lobby goes and the game comes in. Most of their time is outside
