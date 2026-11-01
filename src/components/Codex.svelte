@@ -2,6 +2,8 @@
   import { flushSync, onMount, tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { fade } from 'svelte/transition';
+  import { quintOut } from 'svelte/easing';
+  import { motion } from '../lib/motion.svelte';
   import { engine, savedName, session } from '../lib/session.svelte';
   import { nameUsable } from '../lib/names';
   import { CODEX_KEY, PRACTICE_KEY, RECENT, loadCodex, loadPractice, resetCodex, type Tally } from '../lib/codex';
@@ -344,12 +346,28 @@
     });
   });
   function sortBy(key: SortKey) {
+    resorting = true;
+    requestAnimationFrame(() => (resorting = false));
     if (sortKey === key) sortDown = !sortDown;
     else {
       sortKey = key;
       // Names read A to Z; numbers start with the most.
       sortDown = key !== 'name' && key !== 'type';
     }
+  }
+
+  /**
+   * Sorted afresh, the rows on screen slide to their places, a row from off
+   * the screen in from its edge, the side it was on. Only those: the rest,
+   * hundreds of them, just move, and only for a sort (not a search).
+   */
+  let resorting = false;
+  function reorder(_: Element, { from, to }: { from: DOMRect; to: DOMRect }) {
+    const h = innerHeight;
+    if (!resorting || motion.still || to.bottom < 0 || to.top > h) return { duration: 0 };
+    const dy = Math.max(-to.height, Math.min(h, from.top)) - to.top;
+    if (!dy) return { duration: 0 };
+    return { duration: 200, easing: quintOut, css: (_t: number, u: number) => `transform: translateY(${u * dy}px)` };
   }
 
   let collection = $state<HTMLElement>();
@@ -385,6 +403,9 @@
     achievements = loadAchievements();
     wins = loadWins();
     confirmReset = false;
+    // The blank plate comes in as a turned page does, on the collection's page (the others go with what they showed).
+    tab = 'items';
+    turned = rising = true;
   }
   /**
    * The sections near the screen as the last dialog opened, and those that
@@ -423,8 +444,8 @@
    */
   let rising = $state(true);
   let codexEl = $state<HTMLElement>();
-  /** The motions that are the page coming in (the styles here, and app.css's filigree). */
-  const RISING = /codex-rise$|^filigree-in$/;
+  /** The motions that are the page coming in (the styles here and in its pages, and app.css's filigree). */
+  const RISING = /codex-rise$|codex-fill$|^filigree-in$/;
   $effect(() => {
     if (!rising || !codexEl) return;
     const el = codexEl;
@@ -538,13 +559,16 @@
   <header class="hero">
     <p class="kicker">Your collection</p>
     <h1>Codex</h1>
-    <p class="tagline">
-      {tab === 'delve'
-        ? 'Every run you have made, and what it cost you.'
-        : tab === 'feats'
-          ? 'What you have earned, and how close you are to the rest.'
-          : 'Every unique and lineage gem you have seen in a game, and how well you know it.'}
-    </p>
+    <!-- Made anew as a tab is turned, so it rises with the page it speaks for (the styles). -->
+    {#key tab}
+      <p class="tagline" class:turned>
+        {tab === 'delve'
+          ? 'Every run you have made, and what it cost you.'
+          : tab === 'feats'
+            ? 'What you have earned, and how close you are to the rest.'
+            : 'Every unique and lineage gem you have seen in a game, and how well you know it.'}
+      </p>
+    {/key}
   </header>
 
   {#if kept}
@@ -827,7 +851,7 @@
             </thead>
             <tbody>
               {#each rows as r (r.item.id)}
-                <tr>
+                <tr animate:reorder>
                   <td>
                     <button class="item" onclick={() => (open = r.item)}>
                       {@render thumb(r.item)}
@@ -933,6 +957,10 @@
   .hero > :nth-child(3) {
     --n: 2;
   }
+  /* A tab turned: the new line rises with the page's first section. */
+  .hero > .tagline.turned {
+    --n: 0;
+  }
   .tabs {
     --n: 3;
   }
@@ -972,16 +1000,30 @@
       translate: 0 14px;
     }
   }
+  /* A panel's bars fill from the left as it comes in, as the medallion's arc
+     does (CodexMedallion), once the panel has risen into place. Only the
+     panels' bars, never the many tiles' meters, and only while it comes in. */
+  .rising .bars .fill {
+    transform-origin: left;
+    animation: codex-fill 1s var(--ease-out) calc(var(--rise-delay, 0s) + 0.25s) backwards;
+  }
+  @keyframes codex-fill {
+    from {
+      scale: 0 1;
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     .hero > *,
     .tabs,
     .end,
-    .rising :is(.page > :global(*), .page > :global(.delve-page > *), .collection > *) {
+    .rising :is(.page > :global(*), .page > :global(.delve-page > *), .collection > *),
+    .rising .bars .fill {
       animation: none;
     }
   }
   :global(:root[data-still]) :is(.hero > *, .tabs, .end),
-  :global(:root[data-still]) .rising :is(.page > :global(*), .page > :global(.delve-page > *), .collection > *) {
+  :global(:root[data-still]) .rising :is(.page > :global(*), .page > :global(.delve-page > *), .collection > *),
+  :global(:root[data-still]) .rising .bars .fill {
     animation: none;
   }
 
@@ -1299,7 +1341,8 @@
     color: var(--text);
     transition:
       color 0.2s,
-      background-color 0.2s;
+      background-color 0.2s,
+      box-shadow 0.2s;
   }
   .cat-name {
     display: flex;

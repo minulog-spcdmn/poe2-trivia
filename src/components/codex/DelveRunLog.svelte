@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { tick } from 'svelte';
+  import { fade } from 'svelte/transition';
   import { engine } from '../../lib/session.svelte';
+  import { calm } from '../../lib/motion.svelte';
   import type { Answer } from '../../lib/codex';
   import { answersFor, runLog, runStory, zoneOf, type RulesGroup } from '../../lib/codexStats';
   import { RUN_LIMIT, isTogether, runKey, type DelveRun } from '../../lib/delveRecord';
@@ -28,6 +31,22 @@
   const listed = $derived(runs.length + otherCount);
   /** The rows: in the short list SHORT runs at most, under these rules and others alike. */
   const log = $derived(runLog(runs, others, all ? Infinity : SHORT));
+  let more = $state<HTMLButtonElement>();
+  /**
+   * All shown, the new rows fade in; back to the short list, the page
+   * scrolls by what went, so the button stays under the pointer.
+   */
+  async function toggle() {
+    if (!all || !more) {
+      all = !all;
+      return;
+    }
+    const was = more.getBoundingClientRect().top;
+    all = false;
+    await tick();
+    const moved = more.getBoundingClientRect().top - was;
+    if (moved) window.scrollBy({ top: moved, behavior: 'instant' });
+  }
 
   const who = (r: DelveRun) => (isTogether(r) ? `${r.players} together` : 'Alone');
   /** Lives a row shows: three at most, the last of more standing for the rest. */
@@ -37,7 +56,8 @@
 {#snippet row(r: DelveRun)}
   {@const story = runStory(r, answersFor(byRun, r), engine.byId).lives}
   {@const lives = story.length > MAX_LIVES ? story.slice(0, MAX_LIVES - 1) : story}
-  <tr class:left={r.left}>
+  <!-- (Global, as the row is a snippet's: only the rows "Show all" brings fade, the first ones come with the page.) -->
+  <tr class:left={r.left} in:fade|global={calm({ duration: all ? 200 : 0 })}>
     <td class="num depth">{shownDepth(r.depth)}</td>
     <td class="run">
       <span class="r-main"><span class="r-zone">{zoneOf(r.depth).name}</span></span>
@@ -119,7 +139,7 @@
   </div>
 
   {#if listed > SHORT}
-    <button class="more" onclick={() => (all = !all)}>{all ? 'Show the latest 10' : `Show all ${listed} runs`}</button>
+    <button class="more" bind:this={more} onclick={toggle}>{all ? 'Show the latest 10' : `Show all ${listed} runs`}</button>
   {/if}
   {#if total > runs.length && (all || runs.length <= SHORT)}
     <p class="foot">The last {RUN_LIMIT} runs are kept here; all {total} count in the numbers above.</p>
