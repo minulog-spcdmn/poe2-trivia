@@ -2104,13 +2104,21 @@
     object-fit: contain;
     filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
   }
-  /* The nodule a fossil lies in, engraved in bone (the fossil card's ink): no fossil found this run. */
+  /*
+   * The fossil card's ink, for the line's nodule and its link: --fossil-ink and --fossil-ink-hi where the card's
+   * palette sets them for the page (app.css), else bone.
+   */
+  .fossil-line {
+    --ink: var(--fossil-ink, #e6dcc6);
+    --ink-hi: var(--fossil-ink-hi, #f6f0e2);
+  }
+  /* The nodule a fossil lies in, engraved in the card's ink: no fossil found this run. */
   .nodule-ic {
     width: 82%;
     height: 82%;
     overflow: visible;
     fill: none;
-    stroke: #e6dcc6;
+    stroke: var(--ink);
     stroke-width: 0.9;
   }
   .nodule-ic .ring {
@@ -2123,7 +2131,7 @@
     opacity: 0.75;
   }
   .nodule-ic .seam {
-    stroke: #f6f0e2;
+    stroke: var(--ink-hi);
     stroke-width: 0.5;
     stroke-linejoin: round;
   }
@@ -2140,7 +2148,7 @@
     cursor: pointer;
   }
   .set-link .of {
-    text-decoration: underline dotted rgba(230, 220, 198, 0.35);
+    text-decoration: underline dotted color-mix(in srgb, var(--ink) 35%, transparent);
     text-underline-offset: 3px;
     transition:
       color 0.2s,
@@ -2148,8 +2156,8 @@
   }
   .set-link:hover .of,
   .set-link:focus-visible .of {
-    color: #f6f0e2;
-    text-decoration-color: rgba(246, 240, 226, 0.75);
+    color: var(--ink-hi);
+    text-decoration-color: color-mix(in srgb, var(--ink-hi) 75%, transparent);
   }
   /* A fossil's name as PoE names a currency item (a fossil is one): its colour, in the tooltip's own type. */
   .fossil-name {
