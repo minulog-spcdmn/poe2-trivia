@@ -588,12 +588,13 @@
    * made with the screen that deals them, they were half of what an iPhone
    * mounted at Begin, all in the frame that shows it (#331). The cards and
    * their sides' boxes come first, sized as ever, so nothing moves as
-   * they're filled; what plays on a side keeps to the deal's clock (`late`).
+   * they're filled, and the sheen, whose entrance keeps to the deal's clock;
+   * the engravings' holds are short of how late they're filled (`late`).
    * Shown without a deal (held still, or after a refresh), or too near to
    * being seen to wait a frame, they're filled in the frame that shows them.
    */
   let filled = $state(false);
-  /** How far into the deal (ms) the sides were filled: what their entrances and their engravings' holds are short of. */
+  /** How far into the deal (ms) the sides were filled: what their engravings' holds are short of. */
   let late = $state(0);
   $effect(() => {
     // (In the animation frame of the frame the cards are first drawn in:
@@ -965,7 +966,7 @@
         <!-- (The card's two sides together: what a dim card's filter goes on when its face is sharp.) -->
         <span class="sides">
           <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
-            <!-- What's on each side waits for `filled`, all but what lays a row out (the emblem's box, the name). -->
+            <!-- What's on each side waits for `filled`, all but what lays a row out (the emblem's box, the name) and the sheen, whose entrance starts with the emblem's. -->
             <span class="back" aria-hidden="true">
               {#if filled}
                 <span class="grain"></span>
@@ -983,7 +984,9 @@
                 <span class="grain"></span>
                 <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} hold={unseen(i, 'face')} />
                 <span class="glare"><span class="light"></span></span>
-                <span class="sheen" style:--late="{late}ms"></span>
+              {/if}
+              <span class="sheen"></span>
+              {#if filled}
                 {@render filigree()}
                 {#if kindOf(cat)}
                   {@const kind = kindOf(cat)!}
@@ -1523,9 +1526,8 @@
       will-change: opacity;
     }
   }
-  /* (Less how far into the deal it was filled in, `late` in the script: on the deal's clock.) */
   .turn:global(.dealt) .sheen::before {
-    animation: sheen 0.8s var(--ease-out) calc(var(--face, 0ms) + 80ms - var(--late, 0ms)) backwards;
+    animation: sheen 0.8s var(--ease-out) calc(var(--face, 0ms) + 80ms) backwards;
   }
   /* The way out: no light runs across it; its lantern kindles, the light
      round it swelling up and settling to breathe (CardEngraving's .lamp). */
