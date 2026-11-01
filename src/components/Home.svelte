@@ -1,7 +1,7 @@
 <script lang="ts">
   import { flushSync, onDestroy, tick, untrack } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
-  import { fade, fly } from 'svelte/transition';
+  import { fade, fly } from '../lib/transitions';
   import { MAX_NAME, NAMELESS, cleanName, isHeldName, nameRefusal, nameUsable, unlockHeldName } from '../lib/names';
   import { onOwnerKey, ownerUnlocked } from '../lib/ownerKey';
   import { refuseName } from '../lib/nameField';

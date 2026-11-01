@@ -79,6 +79,23 @@ export type FamilyMotion = {
 };
 
 /** The house's strong ease-out, and its ease-in for leaving. */
+/**
+ * A line drawn in along its dash (`pathLength="100"`, and no dash of its own:
+ * it's dashed only while it draws). Chrome dashes a path measured a little
+ * longer than the one the dash was sized for, about 1% on a seal's ring. With
+ * a gap as long as the dash, the next dash fell on that last 1%: a dot at
+ * the line's end (a ring's top) before and as it started (#335). Its gap is
+ * twice as long, so nothing past the dash shows; it's unseen till it starts
+ * (a dash of no length still draws a round cap); and it's undashed once
+ * drawn, or it would stop that 1% short, a ring left open.
+ */
+export const DRAW_LINE: Keyframe[] = [
+  { offset: 0, strokeDashoffset: 100 },
+  { offset: 0, opacity: 0, easing: 'steps(1, jump-start)' },
+  { offset: 0, strokeDasharray: '100 200', easing: 'steps(1, jump-end)' },
+  { offset: 1, strokeDashoffset: 0, opacity: 1, strokeDasharray: 'none' },
+];
+
 export const OUT = 'cubic-bezier(0.16, 1, 0.3, 1)';
 export const IN = 'cubic-bezier(0.5, 0, 0.75, 0)';
 

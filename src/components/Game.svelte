@@ -2,6 +2,7 @@
   import { fade, fly, scale, slide } from '../lib/transitions';
   import { cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
+  import { inFrame, onceFontsIn } from '../lib/inFrame';
   import { pageScroll } from '../lib/pageScroll';
   import { playerColor } from '../lib/ui';
   import Scoreboard from './Scoreboard.svelte';
@@ -84,11 +85,13 @@
   const skipIn = $derived(session.skipAt ? Math.max(0, Math.ceil((session.skipAt - now) / 1000)) : 0);
 
   // New turn or question: bring the scoreboard and banner back into view
-  // (on phones the previous reveal is often scrolled down).
+  // (on phones the previous reveal is often scrolled down). Asked only when
+  // it's scrolled: a scroll has the browser lay the new turn out there and
+  // then, as it mounts (lib/pageScroll.ts).
   let lastTurn = -1;
   $effect(() => {
     const t = s.turnCount;
-    if (lastTurn !== -1 && t !== lastTurn) window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (lastTurn !== -1 && t !== lastTurn && pageScroll()[1] > 0) window.scrollTo({ top: 0, behavior: 'smooth' });
     lastTurn = t;
   });
   const dm = $derived(s.deathmatch);
@@ -177,17 +180,48 @@
       // Floored, so the line never ends a fraction of a pixel past its room.
       if (room > 0 && w > room) node.style.fontSize = `${Math.floor((parseFloat(getComputedStyle(node).fontSize) * room) / w)}px`;
     };
-    size();
+    // In the frame's animation frame, not as it mounts (lib/inFrame.ts).
+    const { soon, cancel } = inFrame(size);
+    soon();
     // Again as its font comes in (it may only start loading once the title asks for it), and as the column changes (a phone turned).
-    void document.fonts?.ready.then(size);
-    document.fonts?.addEventListener('loadingdone', size);
-    const ro = new ResizeObserver(size);
+    const fontsIn = onceFontsIn(soon);
+    document.fonts?.addEventListener('loadingdone', soon);
+    // (Its first report is of the size the animation frame has just fitted it to.)
+    let first = true;
+    const ro = new ResizeObserver(() => (first ? (first = false) : size()));
     ro.observe(banner);
     return {
-      update: size,
+      update: soon,
       destroy: () => {
+        cancel();
+        fontsIn();
         ro.disconnect();
-        document.fonts?.removeEventListener('loadingdone', size);
+        document.fonts?.removeEventListener('loadingdone', soon);
+      },
+    };
+  }
+
+  /**
+   * Svelte action: the deathmatch intro's duelists all as wide as the longest
+   * name among them (--name-w; the face's own width at least), so "vs" stays
+   * on the middle and no name is cut short while the row has room for it.
+   */
+  function evenFaces(node: HTMLElement) {
+    const measure = () => {
+      // (Ceiled a pixel past, as scrollWidth rounds: a name exactly its width never shows an ellipsis.)
+      const w = Math.max(0, ...[...node.querySelectorAll<HTMLElement>('.face b')].map((b) => b.scrollWidth));
+      node.style.setProperty('--name-w', `${w + 1}px`);
+    };
+    // In the frame's animation frame, as it mounts and again as its font comes in (lib/inFrame.ts).
+    const { soon, cancel } = inFrame(measure);
+    soon();
+    const fontsIn = onceFontsIn(soon);
+    document.fonts?.addEventListener('loadingdone', soon);
+    return {
+      destroy: () => {
+        cancel();
+        fontsIn();
+        document.fonts?.removeEventListener('loadingdone', soon);
       },
     };
   }
@@ -235,39 +269,54 @@
   // vote: one joining or refreshing into the question goes straight to it.
   // Set before the DOM updates, so the cards stay up rather than being
   // swapped for the question and back.
+  //
+  // Any other pick holds the cards for one frame too, the frame its tap (or
+  // the word of it) shows in: the question that takes their place comes in
+  // the frame after, mounted in a task of its own. Mounted with the pick, it
+  // made one task of the two, the longest of a game on an iPhone (#331).
   let raffle = $state<number | null>(null);
+  let swap = $state<number | null>(null);
   let phaseSeen = '';
   let raffleTimer: ReturnType<typeof setTimeout> | null = null;
   $effect.pre(() => {
     const key = `${s.turnCount}:${s.phase}`;
     const was = phaseSeen;
     phaseSeen = key;
-    if (!run || !group || s.phase !== 'question' || !s.question) {
+    if (s.phase !== 'question' || !s.question) {
       if (s.phase !== 'question') raffle = null;
       return;
     }
+    if (was !== `${s.turnCount}:choosing`) return;
+    const asked = s.question;
+    const qid = asked.askedAt;
     // Back after a dropped connection with the question's clock already
     // running: the draw would eat into it, so the question shows at once.
-    const asked = s.question;
     const running = asked.deadline !== null && asked.clockAt !== undefined && session.hostNow() > asked.clockAt;
-    if (was === `${s.turnCount}:choosing` && !running && untrack(() => raffle) === null) {
-      const qid = asked.askedAt;
+    if (run && group && !running && untrack(() => raffle) === null) {
       raffle = qid;
       // Should the draw never say it is done, the question shows anyway.
       if (raffleTimer) clearTimeout(raffleTimer);
       raffleTimer = setTimeout(() => raffle === qid && (raffle = null), 4000);
+      return;
     }
+    swap = qid;
+    const done = () => swap === qid && (swap = null);
+    requestAnimationFrame(() => setTimeout(done));
+    // (A hidden page draws no frames.)
+    setTimeout(done, 200);
   });
   $effect(() => () => {
     if (raffleTimer) clearTimeout(raffleTimer);
   });
   const drawing = $derived(raffle !== null && raffle === s.question?.askedAt && s.phase === 'question');
+  /** The cards still up over a question just picked: its draw playing on them, or the pick's own frame. */
+  const cardsHeld = $derived(drawing || (swap !== null && swap === s.question?.askedAt && s.phase === 'question'));
   /**
    * Delve: between a vein's strikes, its two cards up (and the team's draw
    * playing on them), the lamp stays in view, still at the light it has left
    * for the next strike, where the strike's clock will run it.
    */
-  const lampHeld = $derived(!!between || (drawing && inVein(s) && !!digOf(s)));
+  const lampHeld = $derived(!!between || (cardsHeld && inVein(s) && !!digOf(s)));
   /** Together: the vote drew a vein's way out, and its draw plays on the two cards before the team goes back to the light (Delve.leaving). */
   const leaving = $derived(!!run && group && s.phase === 'choosing' && s.delve?.leaving !== undefined);
 
@@ -455,7 +504,7 @@
 
 {#snippet timer()}
   <!-- There from the question's start, full while its clock waits for the art, so nothing jumps as it starts. -->
-  {#if lampHeld || (!drawing && q && (q.deadline || (s.phase === 'question' && seconds > 0)))}
+  {#if lampHeld || (!cardsHeld && q && (q.deadline || (s.phase === 'question' && seconds > 0)))}
     {#key q?.askedAt}
       <TimerRing deadline={lampHeld ? null : q!.deadline} total={seconds} stopped={s.phase === 'reveal'} {warnFrom} />
     {/key}
@@ -496,7 +545,7 @@
 
           <!-- The cards fade out over the question that takes their place (see cardsOut). -->
           <div class="turn-body">
-            {#if s.phase === 'choosing' || drawing}
+            {#if s.phase === 'choosing' || cardsHeld}
               <div class="cards-slot" use:outWithoutInert out:cardsOut>
                 <ChooseCategory
                   drawn={drawing ? (s.question?.category ?? null) : leaving ? WAY_OUT : null}
@@ -567,7 +616,7 @@
       <p class="dm-kicker">It’s a tie</p>
       <h1 use:introFx>Deathmatch</h1>
       <div class="dm-below">
-        <div class="dm-faces">
+        <div class="dm-faces" use:evenFaces style:--n={dm.entrants.filter(nameOf).length}>
           {#each dm.entrants as id, i (id)}
             {@const p = nameOf(id)}
             {#if p}
@@ -857,16 +906,22 @@
     gap: calc(var(--R) * 0.045);
     margin-top: calc(var(--R) * 0.05);
   }
-  /* Each duelist as wide as the others, so "vs" stands on the middle, level with their tokens. */
+  /* Each duelist as wide as the others (the longest name, evenFaces), so "vs" stands on the middle, level with their tokens. */
   .dm-faces {
+    /* The gap either side of a "vs", and its size (about as wide as that, the face's cap below counts on it). */
+    --dm-gap: calc(var(--R) * 0.03);
+    --vs-size: max(0.9rem, calc(var(--R) * 0.06));
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
     justify-content: center;
-    gap: 0.4rem calc(var(--R) * 0.03);
+    gap: 0.4rem var(--dm-gap);
   }
   .face {
-    width: calc(var(--face) * 2.1);
+    width: max(calc(var(--face) * 2.1), var(--name-w, 0px));
+    /* As many to a row as before, however long the names: the row shared between them, less the "vs" and its gaps between each two
+       (a long name cut short only then); never narrower than the face's own width, past which they wrap as they always did. */
+    max-width: max(calc(var(--face) * 2.1), calc((100% - (var(--n) - 1) * (2 * var(--dm-gap) + var(--vs-size))) / var(--n)));
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -886,7 +941,7 @@
     display: grid;
     place-items: center;
     font-family: var(--font-display);
-    font-size: max(0.9rem, calc(var(--R) * 0.06));
+    font-size: var(--vs-size);
     font-style: italic;
     color: #ff7a5c;
   }

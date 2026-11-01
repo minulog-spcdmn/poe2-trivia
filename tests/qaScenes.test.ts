@@ -145,6 +145,17 @@ test("Offline on a game played through the engine goes the engine's way: a race'
   assert.deepEqual(alone, u.s);
 });
 
+test('the long base type scene still asks for what it shows: a mirrored picture of an item with a long base type, named', () => {
+  const s = catalog().find((x) => x.key === 'game/delve-long-base')!;
+  const state = buildScene(s).built.state!;
+  const q = state.question!;
+  const item = items.find((i) => i.id === q.itemId)!;
+  assert.equal(state.phase, 'reveal');
+  assert.notEqual(q.mode, 'art');
+  assert.ok(q.mirrored?.[0], 'its picture isn’t mirrored');
+  assert.ok(item.base.length >= 20, `${item.name}’s base type, ${item.base}, is short`);
+});
+
 test('scene keys are unique and well formed, and scenes come in the order of the screens', () => {
   const all = catalog();
   const keys = all.map((s) => s.key);

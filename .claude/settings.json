@@ -2,9 +2,16 @@
   "permissions": {
     "allow": [
       "Bash(gh pr merge:*)"
+    ],
+    "deny": [
+      "SuggestPluginInstall",
+      "SuggestSkills",
+      "SearchPlugins"
     ]
   },
+  "enableArtifact": false,
   "env": {
-    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000"
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000",
+    "CLAUDE_CODE_USE_POWERSHELL_TOOL": "0"
   }
 }

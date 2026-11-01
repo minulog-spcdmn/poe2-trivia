@@ -28,9 +28,19 @@ class FakeElement {
   contains = (other: FakeElement): boolean => other === this || this.children.some((c) => c.contains(other));
   blur = () => void this.blurred++;
 }
-const g = globalThis as { HTMLElement?: unknown; document?: { activeElement: unknown } };
+const g = globalThis as { HTMLElement?: unknown; document?: { activeElement: unknown }; requestAnimationFrame?: unknown; cancelAnimationFrame?: unknown };
 g.HTMLElement = FakeElement;
 g.document = { activeElement: null };
+/** The animation frame's callbacks, run by frame(). */
+let frames = new Map<number, () => void>();
+let lastFrame = 0;
+g.requestAnimationFrame = (f: () => void) => (frames.set(++lastFrame, f), lastFrame);
+g.cancelAnimationFrame = (id: number) => void frames.delete(id);
+const frame = () => {
+  const now = frames;
+  frames = new Map();
+  for (const f of now.values()) f();
+};
 
 const { GONE, outWithoutInert } = await import('../src/lib/leaving.ts');
 
@@ -52,6 +62,10 @@ test("an outro's inert marks the element as leaving, and none of it inert", () =
   assert.equal(stage.inert, true, 'it reads as going out');
   assert.equal(stage.dataset.leaving, '');
   assert.equal(stage.style.pointerEvents, 'none');
+  // (The focus and the screen readers let go of in the frame's animation frame: a blur lays the page out.)
+  assert.equal(button.blurred, 0);
+  assert.equal(stage.getAttribute('aria-hidden'), null);
+  frame();
   assert.equal(stage.getAttribute('aria-hidden'), 'true');
   assert.equal(button.blurred, 1, 'the focus let go, as inert would');
   assert.equal(hiddenAsBlurred, null, 'before it is hidden from screen readers');
@@ -71,6 +85,7 @@ test('the focus on the element itself goes too, as inert would take it', () => {
   g.document!.activeElement = slot;
   outWithoutInert(slot as unknown as HTMLElement);
   slot.inert = true;
+  frame();
   assert.equal(slot.blurred, 1);
   g.document!.activeElement = null;
 });
@@ -81,9 +96,23 @@ test('what it had of its own comes back with it', () => {
   card.setAttribute('aria-hidden', 'false');
   outWithoutInert(card as unknown as HTMLElement);
   card.inert = true;
+  frame();
   card.inert = false;
   assert.equal(card.style.pointerEvents, 'auto');
   assert.equal(card.getAttribute('aria-hidden'), 'false');
+});
+
+test('turned round before its animation frame, nothing is let go of', () => {
+  const card = new FakeElement();
+  g.document!.activeElement = card;
+  outWithoutInert(card as unknown as HTMLElement);
+  card.inert = true;
+  card.inert = false;
+  frame();
+  assert.equal(card.blurred, 0, 'the focus stays');
+  assert.equal(card.getAttribute('aria-hidden'), null);
+  assert.equal(card.dataset.leaving, undefined);
+  g.document!.activeElement = null;
 });
 
 test('the code that skips what is going finds either mark', () => {

@@ -3,7 +3,7 @@
 // served by a second Vite dev server of its own, so the desk can frame the
 // same bench, state and size from the code before and the code now; and
 // shots of any frame from one headless Chromium, for the desk's pixel diff.
-// Dev server only.
+// Dev server only (the beta's code before is built by scripts/qa-before.mjs).
 //
 // The before tree is the base commit's files, unpacked into the system's
 // temp folder (poe2-qa-before/<this checkout>/<sha>/: not under

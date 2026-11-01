@@ -39,7 +39,7 @@
   import { T, glowAt } from '../../lib/zoneTitleTiming';
   import type { Arrival } from '../../lib/zoneArrival.svelte';
   import { FAMILIES } from './families';
-  import { IN, OUT, drift, enterDefault, exitDefault, seeded, seedOf, type Ctx } from './family';
+  import { DRAW_LINE, IN, OUT, drift, enterDefault, exitDefault, seeded, seedOf, type Ctx } from './family';
   import ZoneSeal from './ZoneSeal.svelte';
   import NewsMark from './NewsMark.svelte';
 
@@ -234,7 +234,7 @@
       // The divider struck out under it (a fire zone's upper rule is its fissure, opened sooner).
       c.rules.forEach((r, i) => {
         const early = fam.fissure && i < 2;
-        play(r, [{ strokeDashoffset: 100 }, { strokeDashoffset: 0 }], { at: early ? 1500 : tl.lock, ms: early ? 400 : 600, easing: OUT });
+        play(r, DRAW_LINE, { at: early ? 1500 : tl.lock, ms: early ? 400 : 600, easing: OUT });
       });
       play(c.star, [{ opacity: 0, transform: 'scale(1.6)' }, { opacity: 1, transform: 'none' }], { at: tl.lock - 40, ms: 400, easing: OUT });
       // The letters come in, as the family has them.
@@ -554,14 +554,12 @@
     fill: none;
     stroke: var(--ink);
     stroke-width: 0.8px;
-    stroke-dasharray: 100;
   }
   .divider .hair {
     stroke-width: 0.55px;
   }
   .divider .star path {
     stroke: var(--ink-hi);
-    stroke-dasharray: none;
     stroke-width: 0.6px;
   }
   .divider .star .hatch {

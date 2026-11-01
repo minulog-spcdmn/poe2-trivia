@@ -4,8 +4,9 @@
   // game screen in the frame below, at a desktop's width or a phone's, as in a
   // game: the deal, the hover and its fire are the game's own. A card clicked
   // turns over; Deal plays the deal again. Pinning an item already pinned
-  // changes its find. The frame (cards.html?stage, ./stage.ts) runs the lab's
-  // Delve run.
+  // changes its find. Live strokes draws the plates as svg strokes, as they
+  // were before their prints (lib/platePrint), to compare the two. The frame
+  // (cards.html?stage, ./stage.ts) runs the lab's Delve run.
   import { onMount } from 'svelte';
   import { readStored, writeStored } from '../lib/storage';
   import { WAY_OUT, type FindKind } from '../lib/delve';
@@ -14,6 +15,7 @@
   type Api = {
     deal: (cards: BenchCard[]) => void;
     flip: (i?: number) => void;
+    live: (on: boolean) => void;
     items: { value: string; label: string }[];
     finds: { kind: FindKind; name: string }[];
     ready: boolean;
@@ -31,6 +33,8 @@
   let item = $state(load('item', ''));
   let find = $state<FindKind | ''>(load('find', 'azurite'));
   let phone = $state(load('phone', false));
+  /** (Not kept: the prints are what the game shows.) */
+  let live = $state(false);
   $effect(() => {
     writeStored('cards.pinned', JSON.stringify(pinned));
     writeStored('cards.item', JSON.stringify(item));
@@ -54,6 +58,7 @@
     frame.contentWindow?.addEventListener('keydown', key);
     items = a.items;
     finds = a.finds;
+    a.live(live);
     if (!items.some((i) => i.value === item)) item = items[0]?.value ?? '';
     if (!pinned.length) pinned = items.slice(0, 3).map((i, k) => ({ category: i.value, kind: k === 1 ? 'azurite' : null }));
     deal();
@@ -119,6 +124,9 @@
     <button class="btn small" onclick={deal} title="Deal again (R)">Deal</button>
     <button class="btn small" onclick={() => api()?.flip()} title="Turn every card over (F)">Flip all</button>
     <label class="tog"><input type="checkbox" bind:checked={phone} /> Phone width</label>
+    <label class="tog" title="The plates as svg strokes, as they were drawn before their prints (only Chromium's tall cards are printed)"
+      ><input type="checkbox" bind:checked={live} onchange={() => api()?.live(live)} /> Live strokes</label
+    >
     <span class="hint">Click a card to turn it over.</span>
   </header>
   <div class="stage" class:phone>

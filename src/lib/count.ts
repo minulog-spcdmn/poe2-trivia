@@ -7,6 +7,11 @@
 // datenschutz.html says what is sent, and vite.config.ts's CSP lets it
 // through.
 //
+// A game's frames are counted on each device that shows it (countGameFrames,
+// lib/stutter.ts): measured only while a game is under way and the page is
+// seen, sent once a game as one coarse path, the device's class and how
+// much it stuttered ("frames2/ios/some/reveal"), never a timing.
+//
 // Not GoatCounter's count.js: it sends the address's query too, and an
 // invite link's carries the room's code. This sends only what's named here.
 // So count.js's #toggle-goatcounter means nothing to GoatCounter here;
@@ -19,6 +24,7 @@ import { COUNTER_ORIGIN } from './counter.ts';
 import { isoWeek } from './isoWeek.ts';
 import { countOptedOut, notCounted, privacySignal, setCountOptedOut } from './countOptOut.ts';
 import { SITE_URL } from './site.ts';
+import { GameFrames, SOFTWARE, deviceOf, framesEvent, type BrowserSays, type StateMoment } from './stutter.ts';
 
 /** Whether a page counts: the live game's own page at its own address, no robot driving it. */
 export function countsOn(at: { hostname: string; pathname: string }, channel: Channel, robot: boolean): boolean {
@@ -95,7 +101,7 @@ function beacon(url: string) {
  * time, GAP_MS apart, the first after a random wait (JITTER_MS): a game's
  * start sends several at once, on every device at one router at the same
  * moment. The visit goes at once. What waits goes all at once as the page
- * is left: better a few turned away than all of them lost. A newcomer's
+ * is hidden or left: better a few turned away than all of them lost. A newcomer's
  * first steps (HEAD_STEPS) wait at the head, behind the visit, so one who
  * leaves within a second of pressing New game is still counted.
  */
@@ -122,15 +128,25 @@ function release(url: string, now: boolean, head = false) {
   else queue.push(url);
   drainTimer ??= setTimeout(drain, Math.random() * JITTER_MS);
 }
+/** What's counted as the page is hidden (`hidden`) or left, ahead of the queue going (a game's frames, countGameFrames). */
+const onLeaving: ((hidden: boolean) => void)[] = [];
+/** Sends what's counted as the page goes and all that waits. */
+function leaving(hidden: boolean) {
+  for (const f of onLeaving) f(hidden);
+  if (drainTimer) clearTimeout(drainTimer);
+  drainTimer = null;
+  atHead = 0;
+  const left = queue.splice(0);
+  if (!notCounted()) for (const url of left) beacon(url);
+}
 // (Where it counts at all, not only where it counts on loading: #toggle-goatcounter can switch counting on later.)
-if (countsHere && typeof addEventListener !== 'undefined')
-  addEventListener('pagehide', () => {
-    if (drainTimer) clearTimeout(drainTimer);
-    drainTimer = null;
-    atHead = 0;
-    const left = queue.splice(0);
-    if (!notCounted()) for (const url of left) beacon(url);
+// Hidden too: a phone often drops a tab switched away from without a pagehide.
+if (countsHere && typeof addEventListener !== 'undefined') {
+  addEventListener('pagehide', () => leaving(false));
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') leaving(true);
   });
+}
 
 /** Whether the page has been seen yet: until it is, counts wait, so a tab opened in the background and closed unseen counts nothing. */
 let seen = typeof document === 'undefined' || document.visibilityState === 'visible';
@@ -492,35 +508,63 @@ export function countTime() {
 
 /** Whether an error's file or stack is the game's own built scripts (`assets`, its assets/ folder), not an extension's or a userscript's put into the page. */
 export const ownScript = (where: string, assets: string) => where.includes(assets);
-/** A module that failed to load: a page left open across an update asking for one the update removed. */
-export const failedImport = (message: string) => /dynamically imported module|Importing a module script failed/i.test(message);
+/**
+ * A part of the game that failed to load: a module (as each browser words it)
+ * or a stylesheet, as Vite's preload or lib/chunkRetry.ts linked it. Most
+ * often the connection, now that a deploy keeps the files earlier ones linked
+ * (deploy.yml); a page left open longer than that asks for one that's gone.
+ */
+export const failedImport = (message: string) => /dynamically imported module|Importing a module script failed|Unable to (pre)?load CSS/i.test(message);
 
-/** Whether "error/script" went out this page load, and how its listeners (countScriptErrors) are taken off once it has. */
-let scriptErrorCounted = false;
+/**
+ * What an uncaught error or rejection counts as, from its message and where it
+ * came from (its file, its stack): a part that didn't load ("chunk"), whoever
+ * asked for it, an error in the game's own scripts ("script"), or nothing (an
+ * extension's or a userscript's).
+ */
+export function errorKind(message: string, where: string[], assets: string): 'script' | 'chunk' | null {
+  if (failedImport(message)) return 'chunk';
+  return where.some((w) => ownScript(w, assets)) ? 'script' : null;
+}
+
+/**
+ * What a chunk's import() that a page caught counts as: the chunk didn't
+ * load ("chunk"), unless it came and threw as it ran, in the game's own
+ * scripts ("script").
+ */
+export const caughtImportKind = (e: unknown, assets: string): 'script' | 'chunk' => {
+  const err = e as { stack?: unknown; message?: unknown } | null;
+  const kind = errorKind(typeof err?.message === 'string' ? err.message : '', [typeof err?.stack === 'string' ? err.stack : ''], assets);
+  return kind === 'script' ? 'script' : 'chunk';
+};
+
+/** The game's own built scripts' folder, as ownScript has it: assets/ beside this page. */
+const assetsHere = () => `${location.origin}${location.pathname.replace(/[^/]*$/, '')}assets/`;
+
+/** The errors counted this page load ("error/script", "error/chunk"), each once, and how countScriptErrors' listeners are taken off once both have gone. */
+const errorsCounted = new Set<'script' | 'chunk'>();
 let stopScriptErrors = () => {};
-/** Counts "error/script", once a page load, whichever way it came. */
-function scriptErrorDone() {
-  if (scriptErrorCounted) return;
-  scriptErrorCounted = true;
-  stopScriptErrors();
-  countEvent('error/script');
+function errorDone(kind: 'script' | 'chunk' | null) {
+  if (!kind || errorsCounted.has(kind)) return;
+  errorsCounted.add(kind);
+  if (errorsCounted.size === 2) stopScriptErrors();
+  countEvent(`error/${kind}`);
 }
 
 /**
  * An uncaught error in the game's own scripts ("error/script"), thrown or
- * rejected, or a module of the game's that failed to load; once a page load.
+ * rejected, and apart from it a part of the game that failed to load
+ * ("error/chunk"), which is no fault in the code; each once a page load.
  * Installed first thing (lib/countErrors.ts), so a start that fails is
  * mostly caught too.
  */
 export function countScriptErrors() {
   if (!counting || typeof addEventListener === 'undefined') return;
-  const assets = `${location.origin}${location.pathname.replace(/[^/]*$/, '')}assets/`;
-  const onError = (e: ErrorEvent) => {
-    if (ownScript(e.filename ?? '', assets) || ownScript((e.error as Error | undefined)?.stack ?? '', assets)) scriptErrorDone();
-  };
+  const assets = assetsHere();
+  const onError = (e: ErrorEvent) => errorDone(errorKind(e.message ?? '', [e.filename ?? '', (e.error as Error | undefined)?.stack ?? ''], assets));
   const onRejection = (e: PromiseRejectionEvent) => {
     const err = e.reason as { stack?: unknown; message?: unknown } | null;
-    if (ownScript(typeof err?.stack === 'string' ? err.stack : '', assets) || failedImport(typeof err?.message === 'string' ? err.message : '')) scriptErrorDone();
+    errorDone(errorKind(typeof err?.message === 'string' ? err.message : '', [typeof err?.stack === 'string' ? err.stack : ''], assets));
   };
   stopScriptErrors = () => {
     removeEventListener('error', onError);
@@ -531,12 +575,13 @@ export function countScriptErrors() {
 }
 
 /**
- * A module of the game's that failed to load where the page catches it (the
- * codex's, the settings'), so it never reaches countScriptErrors' listeners:
- * counted as theirs would be ("error/script", the once a page load they share).
+ * A module of the game's that failed where the page catches it (the codex's,
+ * the settings', a room's screens), so it never reaches countScriptErrors'
+ * listeners: counted as theirs would be (caughtImportKind, the once a page
+ * load they share).
  */
-export function countFailedImport() {
-  if (counting) scriptErrorDone();
+export function countFailedImport(e?: unknown) {
+  if (counting) errorDone(caughtImportKind(e, assetsHere()));
 }
 
 const arrivals = new Set<string>();
@@ -624,6 +669,73 @@ export class GameCounts {
   }
 }
 
+// ---- frames ------------------------------------------------------------------
+
+/** A game's moment (stutter.ts), while one is under way and not yet decided; null for none: the lobby, the results, a Delve run nobody stands in. */
+export function gameMoment(s: GameState | null): StateMoment | null {
+  if (!s || !playing(s) || decided(s)) return null;
+  return s.phase === 'choosing' ? 'deal' : s.phase === 'question' ? 'question' : 'reveal';
+}
+
+let frames: GameFrames | null = null;
+
+/** Whether the game draws WebGL in software now, as gpuNotice.ts found (noteSoftware); not until it has. */
+let software = () => false;
+
+/**
+ * Whether a game's frames want to know if the browser draws WebGL in
+ * software (gpuNotice.ts asks, off the main thread): where they're counted,
+ * on a computer, the only place hardware acceleration can be switched off.
+ */
+export const asksSoftware = () => counting && !notCounted() && deviceOf(navigator as BrowserSays).startsWith('desktop');
+
+/**
+ * What gpuNotice.ts found, asked as a game is counted (its backdrop can
+ * have fallen back to CSS meanwhile, which runs smoothly anyway): a game's
+ * frames then count as drawn in software (stutter.ts SOFTWARE). Only that
+ * is kept, never the renderer's name.
+ */
+export const noteSoftware = (drawsInSoftware: () => boolean) => void (software = drawsInSoftware);
+
+/**
+ * How smoothly a game's frames came on this device ("frames2/ios/some/reveal",
+ * stutter.ts), on every device that shows the game, host, guest or one
+ * watching: each has frames of its own. Given each state the page takes on
+ * (null: the game left), it measures while a game is under way (gameMoment)
+ * and the page is seen, and counts it once, as it's decided or left, or the
+ * page is left, or on a phone hidden (onLeaving, so it's in the queue that
+ * goes then; a game counted as the page was hidden counts no more). A game picked up
+ * after a reload is measured from there. A computer drawing in software
+ * counts only that (asksSoftware). Nothing measured where nothing counts.
+ */
+export function countGameFrames(s: GameState | null) {
+  if (!frames) {
+    if (!gameMoment(s) || !counting || notCounted() || typeof requestAnimationFrame === 'undefined') return;
+    const device = deviceOf(navigator as BrowserSays);
+    const f = new GameFrames(
+      {
+        frame: (cb) => requestAnimationFrame(cb),
+        cancel: (id) => cancelAnimationFrame(id),
+        now: () => performance.now(),
+        seen: () => document.visibilityState === 'visible',
+      },
+      (v) => countEvent(framesEvent(device, device.startsWith('desktop') && software() ? SOFTWARE : v)),
+    );
+    document.addEventListener('visibilitychange', () => f.shown());
+    // Hidden, a phone's game counts there and then: a phone often drops a tab
+    // switched away from without a pagehide. A computer's waits for the page
+    // to be left, as it fires one then: a game switched away from at 25 s
+    // and counted there would be mostly its begin, and the rest never seen.
+    const phone = device === 'ios' || device === 'android';
+    onLeaving.push((hidden) => {
+      if (phone || !hidden) f.leave();
+    });
+    frames = f;
+  }
+  // (Asked each time: the privacy page may have been used to opt out meanwhile.)
+  frames.at(counting && !notCounted() ? gameMoment(s) : null);
+}
+
 // ---- joining -----------------------------------------------------------------
 
 /** Where a join started: a code typed, an invite link, the Open rooms list. Counted as tried ("join/…") and as let in ("joined/…"). */
@@ -649,3 +761,58 @@ export type Failure =
   | 'join-refused';
 
 export const countFailure = (failure: Failure) => countEvent(`error/${failure}`);
+
+// ---- a room off the matchmaking server ----------------------------------------
+
+/**
+ * An open room whose host lost the signalling server: until it's back there,
+ * a guest asking for its code is told no room has it. Counted as it's lost
+ * ("room/off-seen", or "room/off-hidden" when the page was out of sight
+ * then: a phone that leaves the browser stops its heartbeat, and the server
+ * lets the room go after about 100 s), and as it's back ("room/back-…", how
+ * long it was off, from when the page went out of sight if it had). A drop
+ * with no "back" is a room that never got there again.
+ */
+const roomOffEvent = (hidden: boolean) => `room/off-${hidden ? 'hidden' : 'seen'}`;
+export const roomBackEvent = (ms: number) => (ms <= 10_000 ? 'room/back-10s' : ms <= 60_000 ? 'room/back-1m' : ms <= 300_000 ? 'room/back-5m' : 'room/back-later');
+
+/** One room's time off the server: each drop counted once, however often reconnecting fails, until it's back. */
+export class RoomOff {
+  /** Off since then; null while on the server. */
+  private since: number | null = null;
+  /** Lost the server at `now`, the page out of sight since `hiddenSince` (null: in sight); the event to count, once a drop. */
+  off(now: number, hiddenSince: number | null): string | null {
+    if (this.since !== null) return null;
+    this.since = hiddenSince ?? now;
+    return roomOffEvent(hiddenSince !== null);
+  }
+  /** On the server again at `now`: the event to count, if it had been off. */
+  back(now: number): string | null {
+    if (this.since === null) return null;
+    const ms = now - this.since;
+    this.since = null;
+    return roomBackEvent(ms);
+  }
+}
+
+/**
+ * A page woken (a phone's, back to the browser) notices its lost link only
+ * as it's shown again, and a phone's radio can take a while waking: a drop
+ * this soon after is the time it was away.
+ */
+const WOKEN_MS = 30_000;
+let hiddenAt = 0;
+let shownAt = 0;
+if (typeof document !== 'undefined')
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) hiddenAt = Date.now();
+    else shownAt = Date.now();
+  });
+
+/** Since when the page has been out of sight, or was until a moment ago; null while it's in sight. */
+export function hiddenSince(now: number): number | null {
+  if (typeof document === 'undefined') return null;
+  if (!document.hidden && now - shownAt > WOKEN_MS) return null;
+  // (Never hidden since it loaded: out of sight from the start.)
+  return hiddenAt || Math.round(performance.timeOrigin);
+}

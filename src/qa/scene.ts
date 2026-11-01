@@ -9,6 +9,7 @@ import type { DelveRun } from '../lib/delveRecord.ts';
 import type { RoomInfo } from '../lib/roomInfo.ts';
 import type { PlateName } from '../lib/plates/index.ts';
 import type { RetriedPage } from '../lib/retriedPages.ts';
+import type { Standing } from '../lib/presence.ts';
 import type { SizeKey } from './sizes.ts';
 import type { ToastKind, ToastOptions } from '../lib/toasts.svelte.ts';
 import type { Control, State, Values } from './bench.ts';
@@ -100,6 +101,8 @@ export interface Built {
   daily?: { days: string; daysAgo: number };
   /** Host: the room never went online (the session's hereOnly), so it is on this device only. */
   hereOnly?: boolean;
+  /** How the players who aren't simply there stand, as the host tells the room (the session's standing, lib/presence.ts): away or idle, by id. */
+  standing?: Record<string, Standing>;
   /** The session's status ('connecting': joining a room). */
   status?: 'idle' | 'connecting' | 'ready' | 'lost';
   /** What follows the page's address: a query to add ('room=KXR4QT&first') and a hash ('#codex'). */

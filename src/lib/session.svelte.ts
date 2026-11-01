@@ -55,7 +55,7 @@ import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
 import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, livesOf, pausedUsed, standingIds, type CardFind, type FindKind } from './delve';
-import { GameCounts, Steps, countEvent, countFailure, countStep, counting, markActive, type Failure, type JoinVia } from './count';
+import { GameCounts, RoomOff, Steps, countEvent, countFailure, countGameFrames, countStep, counting, hiddenSince, markActive, type Failure, type JoinVia } from './count';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
@@ -88,7 +88,7 @@ import {
 import { readLegacy, readStored, removeLegacy, removeStored, storeKey, writeStored } from './storage';
 import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, TAP, actionOf, cursorKey, cursorsLive, entryAt, entryMs, stampOf, type CursorAt, type CursorEntry } from './cursors';
 import { peerCursors } from './peerCursors.svelte';
-import { whenCalm } from './idle';
+import { whenCalm, whenIdle, type Deadline } from './idle';
 import { frameEvent } from './fpsMeter';
 import { SIGILS_KEY, loadSigils } from './sigils';
 import { COLOUR_KEY, loadColour } from './colour';
@@ -97,7 +97,7 @@ import { helloRefusal, noPrivate, parseSaved, privateFrom, rememberSecret, soloH
 import { sawLine, START_LINES } from './delveStart';
 import { seenLines } from './delveStartSeen';
 import { keepAwake } from './wakeLock';
-import { AWAY_AFTER_MS, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
+import { AWAY_AFTER_MS, goneFromEnd, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
 import { markStarted } from './started';
 
 /** The room is told how its players stand at most this often (Session.updateStandingPaced). */
@@ -112,6 +112,37 @@ export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
  * by name (Engine.setLooks).
  */
 const LOOKS_FETCH_FROM = LOOKALIKES_ASKED_FROM - 10;
+
+/** How much of an idle moment a step of warmLikeness leaves (ms): a step is a fraction of one. */
+const LIKENESS_ROOM_MS = 2;
+/** The hand warmLikeness works on while it's on offer: a newer one takes over, and a pick stops it. */
+let likenessFor: string[] | null = null;
+
+/**
+ * The look-alike scores of the categories on offer (Engine.likenessSteps),
+ * worked out while the hand is looked over: in a calm moment once the deal
+ * has played out, then as many steps as each idle moment has room for. A
+ * pick that comes first works out the rest itself, as before.
+ */
+function warmLikeness(offered: string[]) {
+  const hand = (likenessFor = offered);
+  whenCalm(() => {
+    if (likenessFor !== hand) return;
+    const steps = (function* () {
+      for (const category of hand) yield* engine.likenessSteps(category);
+    })();
+    const step = (deadline?: Deadline) => {
+      if (likenessFor !== hand) return;
+      for (;;) {
+        if (steps.next().done) return;
+        if (!deadline || deadline.timeRemaining() < LIKENESS_ROOM_MS) break;
+      }
+      whenIdle(step, { timeout: 1000, fallback: 30 });
+    };
+    whenIdle(step, { timeout: 1000, fallback: 30 });
+  });
+}
+
 let looksFetched = false;
 function fetchLooks() {
   if (looksFetched) return;
@@ -404,8 +435,9 @@ class Session {
    */
   idle = $state(false);
   /**
-   * Online, in the lobby: how each player who isn't simply ready stands
-   * (presence.ts), by id. The host works it out and tells everyone.
+   * Online, in the lobby and on the end screen: how each player who isn't
+   * simply ready stands (presence.ts), by id. The host works it out and tells
+   * everyone.
    */
   standing = $state.raw<Record<string, Standing>>({});
   /** Follows this device's presence (set up on the first room opened or joined): a guest tells the host, a host the room. */
@@ -867,7 +899,19 @@ class Session {
       this.startPings();
       this.watchOwnPresence();
     });
+    // An open room off the signalling server, and back (count.ts RoomOff).
+    const off = new RoomOff();
+    peer.on('open', () => {
+      const back = this.peer === peer && off.back(Date.now());
+      if (back) countEvent(back);
+    });
     peer.on('disconnected', () => {
+      // (After the moment: a peer being destroyed, the room left, disconnects first.)
+      const hidden = hiddenSince(Date.now());
+      queueMicrotask(() => {
+        const event = !peer.destroyed && this.peer === peer && this.status === 'ready' && off.off(Date.now(), hidden);
+        if (event) countEvent(event);
+      });
       // Lost the signalling server; existing peer links keep working. (Not
       // again if the page coming back reconnected it meanwhile, nudge.)
       if (!peer.destroyed) setTimeout(() => !peer.destroyed && peer.disconnected && peer.reconnect(), 1500);
@@ -1331,16 +1375,17 @@ class Session {
   }
 
   /**
-   * Host, in the lobby: works out how each player stands (presence.ts) and,
-   * when that changed, tells everyone. Players who are simply ready, and
-   * those offline (Player.connected says so), aren't listed.
+   * Host, in the lobby and on the end screen: works out how each player
+   * stands (presence.ts) and, when that changed, tells everyone. Players who
+   * are simply ready, and those offline (Player.connected says so), aren't
+   * listed.
    */
 
   private updateStanding() {
     const s = this.state;
     const now = Date.now();
     const next: Record<string, Standing> = {};
-    if (this.mode === 'host' && s?.phase === 'lobby') {
+    if (this.mode === 'host' && (s?.phase === 'lobby' || s?.phase === 'over')) {
       const links = new Map([...this.guests.values()].flatMap((g) => (g.playerId ? [[g.playerId, g] as const] : [])));
       for (const p of s.players) {
         const g = links.get(p.id);
@@ -2716,6 +2761,10 @@ class Session {
     }
     // The art's workers are ready before the first question wants them (media.svelte.ts; once is enough).
     if (this.isHost && next.phase !== 'lobby') warmMedia();
+    // The question a card on offer would ask is ready to be made the moment it's picked.
+    if (this.isHost && next.phase === 'choosing' && next.offered.join() !== prev?.offered.join()) warmLikeness(next.offered);
+    // (Picked: the cards not picked aren't asked of now, nor is what's left of the picked one, made as it was asked.)
+    else if (next.phase !== 'choosing') likenessFor = null;
     if (next.phase === 'question' && next.question && next.question.askedAt !== prev?.question?.askedAt) {
       // A question asked again in its place while the draw plays keeps its hold.
       const until = drawHoldUntil(prev, next, this.drawHold);
@@ -2745,6 +2794,8 @@ class Session {
     // out), and its art goes out while the reveal plays, after the reveal's own last patches.
     if (patchesOut) this.drawAhead(next, patchesOut);
     this.scheduleTimers(next);
+    // Into or out of the lobby or the end screen: how everyone stands is told now, not at the next ping.
+    if (this.mode === 'host' && prev?.phase !== next.phase) this.updateStanding();
     this.syncBeacon(next);
     this.save();
   }
@@ -2774,12 +2825,22 @@ class Session {
   private syncBeacon(s: GameState) {
     const want = this.mode === 'host' && !this.roomless && !!s.settings.public;
     if (want && !this.beacon) {
-      this.beacon = new Beacon((challenge) => this.listing(challenge));
+      this.beacon = new Beacon((challenge) => (this.unlisted() ? null : this.listing(challenge)));
       this.beacon.start();
     } else if (!want && this.beacon) {
       this.beacon.stop();
       this.beacon = null;
     }
+  }
+
+  /**
+   * The room is left off the list for now: its host has gone from the end
+   * screen (presence.ts goneFromEnd), and only they can start the next game.
+   * It keeps its listing slot, and is listed again once they're back. An
+   * invite's screen is still told what the room is (probeDesk).
+   */
+  private unlisted() {
+    return this.state?.phase === 'over' && goneFromEnd(ownPresence(), Date.now());
   }
 
   private roomInfo(): RoomInfo | null {
@@ -2848,12 +2909,13 @@ class Session {
     for (const e of this.gameCounts.events(prev, next)) countEvent(e);
   }
 
-  /** What every device makes of a state change, host and guest alike: a Delve clock starting, records, sounds and notices, achievements. */
+  /** What every device makes of a state change, host and guest alike: a Delve clock starting, records, its own frames measured, sounds and notices, achievements. */
   private noteChange(prev: GameState | null, next: GameState) {
     // (Named in the beta's frame meter, so a slow frame can be placed in the game.)
     if (prev?.phase !== next.phase || prev?.question?.askedAt !== next.question?.askedAt) frameEvent(`game: ${next.phase}${next.reveal && !prev?.reveal ? (next.reveal.correct ? ' (right)' : ' (wrong)') : ''}`);
     this.noteClock(next);
     this.notePlay(prev, next);
+    countGameFrames(next);
     this.noteRun(prev, next);
     this.onNewState(prev, next);
     this.noteEncounter(prev, next);
@@ -3477,6 +3539,8 @@ class Session {
     this.peerEpoch++;
     this.closeAsked = false;
     this.recordLeaving();
+    // The game's frames, as far as they got, counted as it's left (count.ts).
+    countGameFrames(null);
     // A join never let in leaves the saved name as it was (turned down, given up, left).
     this.nameToKeep.dropped();
     // A new attempt (or leaving) makes the last one's errors moot.

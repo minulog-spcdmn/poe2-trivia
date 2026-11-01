@@ -3,6 +3,7 @@
 // tests can feed it.
 
 import { DAILY_LAUNCH } from '../lib/dailyLaunch.ts';
+import { DEVICES, SOFTWARE, readFramesPath, type Device, type Moment } from '../lib/stutter.ts';
 import { addDays, midnight } from './zone.ts';
 import { isoWeekOfDay, weekMonday } from '../lib/isoWeek.ts';
 
@@ -141,7 +142,11 @@ export function underNamesNow(paths: PathCount[]): PathCount[] {
   return [...out.values()];
 }
 
-/** What each counted failure (count.ts Failure) means, in a line; `host`: on the side opening a room; `script`: no part of joining, an error in the game's own scripts. */
+/** How long a room that lost the matchmaking server was off it, as count.ts roomBackEvent buckets it. */
+export const ROOM_BACKS = ['10s', '1m', '5m', 'later'] as const;
+export type RoomBack = (typeof ROOM_BACKS)[number];
+
+/** What each counted failure (count.ts Failure) means, in a line; `host`: on the side opening a room; `script`: no part of joining, an error in the game's own scripts or a part of it that didn't load. */
 export const FAILURES: Record<string, { label: string; host?: true; script?: true }> = {
   'join-no-answer': { label: "The room didn't answer" },
   'join-no-such-room': { label: 'No room with that code' },
@@ -153,7 +158,75 @@ export const FAILURES: Record<string, { label: string; host?: true; script?: tru
   'host-room-not-opened': { label: "The room couldn't be opened", host: true },
   'host-room-not-reopened': { label: "The room couldn't be reopened after a reload", host: true },
   script: { label: "An error in the game's own scripts", script: true },
+  chunk: { label: "A part of the game that didn't load", script: true },
 };
+
+export const DEVICE_NAMES: Record<Device, string> = {
+  'desktop-chrome': 'Chrome and Edge on a computer',
+  'desktop-other': 'Other browsers on a computer',
+  ios: 'iPhone and iPad',
+  android: 'Android',
+};
+export const MOMENT_NAMES: Record<Moment, string> = { begin: 'the start', deal: 'the deal', question: 'a question', reveal: 'the reveal' };
+
+/**
+ * A game's frames on one class of device (lib/stutter.ts, "frames2/ios/some/reveal"),
+ * counted on each device in it: the games a day, those that stuttered (some
+ * and many together, and each), and over the period the moment most of a
+ * stutter fell in, and the games drawn in software, apart from the rest
+ * (in none of the others). Only the paths' current generation (stutter.ts
+ * FRAMES): older ones counted by other rules.
+ */
+export interface DeviceFrames {
+  games: number[];
+  stuttered: number[];
+  some: number[];
+  many: number[];
+  worst: Record<Moment, number>;
+  software: number;
+}
+
+/** A share a day resting on fewer games than this is a guess: ShareLine draws it hollow, and stutterTop leaves it out. */
+export const FEW_GAMES = 5;
+
+/** The axis top, in percent, every device's share of games that stuttered fits under (ShareLine), a day or a week: those resting on FEW_GAMES or more; 10 at least. */
+export function stutterTop(rows: DeviceFrames[], days: string[], weekly: boolean): number {
+  let top = 10;
+  for (const r of rows) {
+    const whole = grouped(days, r.games, weekly ? 7 : 1).values;
+    const part = grouped(days, r.stuttered, weekly ? 7 : 1).values;
+    whole.forEach((w, i) => {
+      if (w >= FEW_GAMES) top = Math.max(top, (100 * part[i]) / w);
+    });
+  }
+  return Math.min(100, top);
+}
+
+function framesOf(paths: PathCount[], days: string[]): Record<Device, DeviceFrames> {
+  const zeros = () => days.map(() => 0);
+  const out = Object.fromEntries(
+    DEVICES.map((d) => [d, { games: zeros(), stuttered: zeros(), some: zeros(), many: zeros(), worst: { begin: 0, deal: 0, question: 0, reveal: 0 }, software: 0 }]),
+  ) as Record<Device, DeviceFrames>;
+  for (const p of paths) {
+    const f = readFramesPath(p.path);
+    if (!f) continue;
+    const row = out[f.device];
+    if (f.bucket === SOFTWARE) {
+      row.software += p.count;
+      continue;
+    }
+    const bucket = f.bucket;
+    days.forEach((d, i) => {
+      const n = p.days[d] ?? 0;
+      row.games[i] += n;
+      if (bucket === 'smooth') return;
+      row.stuttered[i] += n;
+      row[bucket][i] += n;
+    });
+    if (f.worst) row.worst[f.worst] += p.count;
+  }
+  return out;
+}
 
 export interface ModeRow {
   mode: Mode;
@@ -179,6 +252,8 @@ export interface Counts {
   /** Tries to join, and those let in, a day, every way in together. */
   joinsPerDay: { tried: number[]; joined: number[] };
   failures: { key: string; label: string; host: boolean; script: boolean; count: number }[];
+  /** Open rooms that lost the matchmaking server (count.ts RoomOff), the page in sight or not then, and those back on it by how long they were off. */
+  roomsOff: { seen: number; hidden: number; back: Record<RoomBack, number> };
   /** The failures joining a room or opening one a day, every cause together (not the scripts' errors). */
   failuresPerDay: number[];
   /** The steps visits reached, a day each, counted once a visitor like visits (count.ts countReach). */
@@ -191,6 +266,8 @@ export interface Counts {
   cohorts: Cohort[];
   /** Devices paired for sync. */
   sync: { paired: number };
+  /** How smoothly games' frames came, by class of device. */
+  frames: Record<Device, DeviceFrames>;
   /** Visits and games started by weekday (Monday first) and hour in the account's zone (weekHours), null where GoatCounter gave no hours; `until`: the last day's hours taken, those before it (null: all of them). */
   week: { visitors: number[][] | null; games: number[][] | null; until: number | null };
   /**
@@ -454,6 +531,11 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
       joined: perDay((p) => VIAS.some((via) => p === `joined/${via}`)),
     },
     failures,
+    roomsOff: {
+      seen: count('room/off-seen'),
+      hidden: count('room/off-hidden'),
+      back: Object.fromEntries(ROOM_BACKS.map((t) => [t, count(`room/back-${t}`)])) as Record<RoomBack, number>,
+    },
     failuresPerDay: perDay((p) => p.startsWith('error/') && !FAILURES[p.slice('error/'.length)]?.script),
     reach: Object.fromEntries(REACHES.map((r) => [r, perDay((p) => p === `reach/${r}`)])) as Record<Reach, number[]>,
     visits: Object.fromEntries(VISIT_KINDS.map((k) => [k, perDay((p) => p === `visit/${k}`)])) as Record<VisitKind, number[]>,
@@ -461,6 +543,7 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
     // (By UTC days, as a cohort's week is of its first answer's UTC time, where the hours came to sort them.)
     cohorts: cohortsOf(paths, days, utcPerDay(byPath.get('new/saved'), days, zone)),
     sync: { paired: count('sync/paired') },
+    frames: framesOf(paths, days),
     week: {
       visitors: weekHours(paths.filter((p) => p.path === '/'), days, hour),
       games: weekHours(paths.filter((p) => played.has(p.path)), days, hour),

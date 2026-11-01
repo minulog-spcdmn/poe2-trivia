@@ -177,10 +177,42 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   embers, a calm streak's fire) every frame at the display's refresh, down
   to 30fps only where the GPU can't keep up; find what really holds the
   frame up.
+- **Frame hitches from redrawing** (October 2026): every turn stuttered in
+  Chrome at 4K, and Delve's veins all the time. The trace showed `CrGpuMain`
+  busy drawing the page's tiles (the renderer's raster command buffer,
+  `DoRasterCHROMIUM`) for a page that hardly changed: something animated on
+  the page's thread, with no layer of its own, had Chrome redraw the layer
+  round it every frame. The emblems' kindle redrew each card's sharp face
+  (`docs/category-cards.md`, rule 7); the camera shake, a `translate` on
+  `.shell`, redrew the whole page, and a vein's tremor shakes it now and
+  then for as long as you stand in one (a quarter of the GPU's time at
+  rest). The shake now puts `.shell` on a layer while it may move
+  (`applyShake` in `src/lib/fx/core.ts`). To find the next one, sum the
+  raster tasks per frame; the categories `cc` and
+  `disabled-by-default-devtools.timeline.invalidationTracking` add which
+  layer was redrawn and what invalidated it. The redraw check
+  (`docs/qa.md`, “Redraws”) does that in CI on every pull request.
 - **Frame hitches on iOS** are measured on the owner's iPhone, driven from
   the PC (`docs/iphone.md`, with what it found: layers composited after an
   animation WebKit can't bound, filters redrawn under a dialog, work that
   belongs in a worker).
+- **Frame hitches from drawing in** (October 2026): about one question in
+  four began with a burst of dropped frames in Chrome at 4K, 240 Hz. An SVG
+  with a CSS animation anywhere in it is redrawn whole at the screen's rate,
+  however little moves: the question's name plate drew its lines in that
+  way, two SVGs as wide as the question, 240 times a second for two seconds
+  with every question. The pen draws it in now, as it does the rune circles,
+  each of a circle's SVGs on its own turn among the frames
+  (`docs/arcane-style.md`, "Keeping it light"). Likewise a gradient drawn
+  at the pointer redraws what it lies on at every move (the cards' glare,
+  `docs/category-cards.md`, rule 8). A hand's first draw still takes a
+  frame of 25 to 35 ms: each face's engraving (`CardEngraving`, strokes as
+  wide as the card) is drawn by Skia's software path renderer, a mask made
+  on the CPU for every path in every tile on `CrGpuMain`
+  (`skgpu::ganesh::Device::drawPath`, the masks' textures in
+  `GrGpu::createTexture`; the category `disabled-by-default-skia.gpu`
+  shows them), some 30 ms for the first card and 10 for each of the
+  others.
 - **The creator** (zoe_arcana, a name only an unlocked device can take; a
   deterrent, not proof) is marked out. Gold motes circle her avatar on a
   tilted orbit, passing behind it on the far side, in a ruby glow with
@@ -298,6 +330,109 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   that run hot. Quality drops by itself (resolution) on
   devices that can't keep up. Without WebGL2 the site falls back
   to its CSS look.
+
+## Finding a stutter
+
+Where to start when the game stutters or lags, in this order. Never answer
+it by drawing less well (a lower resolution, fewer frames, a plainer
+effect): find what holds the frame up.
+
+1. **Whether players feel it, and where.** The stats' Stutter view
+   (`stats.html#stutter`, `docs/fair-play.md`) has the share of games that
+   stuttered by kind of device and day, and the phase most of it fell in
+   (deal, question, reveal). A jump the day after a deploy points at that
+   deploy. Android shows up only here: its emulators' frame rates say
+   nothing (`docs/android.md`).
+2. **On the PC, a trace.** `scripts/pc/` runs Chrome on this PC's screen,
+   headed (headless Chrome has no real GPU), and traces it:
+
+   ```bash
+   node scripts/pc/game.mjs http://localhost:5173/ before 4
+   python scripts/pc/read.py .pc/runs/before.json
+   ```
+
+   `game.mjs` plays a solo Take-turns game of that many turns. `cards.mjs
+   <url> <label> [deals] [finds|way-out|plain]` deals a hand on the card
+   bench's stage (`cards.html?stage`) again and again, for a deal and the
+   hand at rest. `scenes.mjs <url> <label> <scene key> [...]` opens QA
+   scenes (`qa.html?frame&s=<key>&size=fit`) and lets each lie still, for
+   what a game only reaches now and then: a vein's finds, a duel's card.
+   `read.py` lists each step with:
+   - its frames over 25 and 50 ms;
+   - the GPU's raster time (`CrGpuMain` running the renderer's raster
+     command buffer) and its longest task;
+   - the raster in its last second, what the screen costs at rest;
+   - the page's thread, busy in that last second (ms a second), and the
+     frames drawn in it;
+   - its long animation frames, naming the script that took most of the
+     longest.
+
+   A step is marked as the pointer sets off for its button, so its last
+   second is the screen lying still; the pointer's travel, and the hover
+   it passes through, count to the next step.
+
+   Run them against the dev server: the local channel counts nothing, and
+   the live site would count the run as a player's game. Run one at a time:
+   it takes the screen and slows every other session. The first run on the
+   fresh profile (`.pc/profile`) has a cold shader cache, so run each
+   variant twice. Parts come away without editing code through `CSS=` (a
+   style sheet added), `INIT=` (a script run first) and the `?off=`
+   switches (`src/lib/switchedOff.ts`). `CATS=` sets the trace's
+   categories; the defaults are `toplevel,gpu,blink.user_timing,devtools.timeline`.
+   `cc` and `disabled-by-default-devtools.timeline.invalidationTracking`
+   say which layer was redrawn and why, and
+   `disabled-by-default-skia.gpu` shows Skia's path masks.
+
+   What a trace showed before:
+   - **Raster at rest.** The screen hardly changes, but the GPU keeps
+     drawing its tiles. Something animated on the page's thread, with no
+     layer of its own, has Chrome redraw the layer round it every frame.
+     Give it a layer (`will-change`), or animate a transform or opacity
+     instead ("Frame hitches from redrawing" above;
+     `docs/category-cards.md`, rules 7 and 8).
+   - **The page's thread busy at rest.** A custom property animated on an
+     element is a restyle of it and all inside it on every frame, and the
+     backdrop reads every lit element's style each frame: a find's or a
+     duel's card swelling its light (`--bs1`) on its face cost 4 to 5 ms a
+     frame. What swells now plays on an empty element beside it
+     (`docs/category-cards.md`, rule 9; `pulse` in
+     `src/lib/backdropShadow.ts`).
+   - **Raster at rest from something small.** A bar scaled every frame
+     from a script (the reveal's countdown to the next question) redraws
+     the button it sits in; a band of light moved by `background-position`
+     (the room code's gleam) redraws what it lies on. A layer for the bar;
+     a mask moved by a transform for the band.
+   - **Not to chase:** while the backdrop animates, the compositor draws
+     every render pass on the screen again each frame (the sharp faces'
+     filters among them), however still the page lies. That's the
+     backdrop's cost, not the page's; tiles redrawn are what to find.
+   - **A burst of long frames as something draws in.** An SVG with a CSS
+     animation is redrawn whole at the screen's rate ("Frame hitches from
+     drawing in").
+   - **Long tasks on `CrGpuMain` that aren't raster.** The GPU process was
+     held up around the draws (`SharedImageStub::OnCreateSharedImage`,
+     "Frame hitches").
+   - **Long animation frames.** Script, style or layout on the page's
+     thread.
+   - **A screen laid out twice as it changes.** Something read the page
+     as the new screen mounted, among the writes that make it, so it was
+     laid out half made and again once made (`Layout` and
+     `UpdateLayoutTree` inside the click's task; the category
+     `disabled-by-default-devtools.timeline.stack` says who forced them).
+     Besides sizes, Chrome lays the page out for `document.fonts.ready`,
+     a `blur()`, `scrollTo`, `scrollY` (even `typeof scrollY`: ask
+     `src/lib/pageScroll.ts`) and every keyed `{#each}` with an `animate:`
+     (Svelte measures each entry before and after). The backdrop reads
+     boxes in each animation frame anyway, so what measures something
+     that has just mounted does it there (`src/lib/inFrame.ts`): laid out
+     once by then, and still before the frame is painted.
+3. **On the iPhone**, the same questions through its Web Inspector:
+   `docs/iphone.md`. A scene on its own is `qa.html?frame&s=<scene
+   key>&size=fit` in a `--qa` build. Without `&size=fit` the desk plays a
+   desktop, with a fine pointer, and shows what only Safari with a mouse
+   would.
+4. **Whether it still looks the same**: the QA desk's before and after
+   (B, on the dev server; `docs/qa.md`).
 
 ## Refreshing item data
 

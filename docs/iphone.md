@@ -87,6 +87,17 @@ the tab there from the PC.
    ```bash
    node scripts/iphone/ask.mjs "navigator.userAgent"
    ```
+5. Once a build is served (below), put the tab on it in a fresh page
+   process, holding no page but the build's ("A tab's process keeps pages
+   it has left", below):
+
+   ```bash
+   node scripts/iphone/fresh.mjs http://192.168.178.88:4403/
+   ```
+
+   It ends saying what the process holds: `2 JS globals (1 page)` in
+   Chrome. `codex.mjs` and `game.mjs` say it again as each run starts, and
+   warn when it holds more.
 
 When it doesn't:
 
@@ -120,14 +131,19 @@ for `profile.mjs`. Its first visit fills the phone's codex as a long-time
 player's would be (every item seen, 2000 answers; `--empty` leaves it
 empty), so the codex has its full weight. With `--qa` it has the QA desk
 too (`docs/qa.md`), for a scene on the phone on its own:
-`qa.html?frame&s=<scene key>`, its controls as `&k.<key>=<value>`.
+`qa.html?frame&s=<scene key>&size=fit`, its controls as `&k.<key>=<value>`.
+Leave out `&size=fit` and the desk plays a desktop: a fine pointer, so the
+app's engraved cursors (`src/lib/ownCursor.ts`), which no phone has, and
+with them a Delve vein's tremor repainted every card at every write.
 `serve.mjs` serves builds on the
 home network until stopped, each on a port of its own: `http://192.168.178.88:4403/`.
 
 To set a change against what it changes, build both (check out the commit
 before it and build it as `before`, then the change as `after`) and serve
-them side by side, `before=4402 after=4403`. Each address is a site of its
-own to the phone, with its own storage.
+them side by side, `before=4402 after=4403`. Each address has its own
+storage on the phone, but all are one site, so one page process: the
+scripts replace the address as they go from one to the other, so neither
+build's pages are kept beside the other's.
 
 Stop the server and the proxy when done, and leave the phone's tab where the
 owner can use it.
@@ -138,6 +154,7 @@ owner can use it.
 |---|---|
 | `ask.mjs "<js>"` | Runs an expression in the phone's tab and prints its value. |
 | `goto.mjs <url>` | Sends the tab to an address, a build for the owner to try, say. |
+| `fresh.mjs <url>` | Puts the tab on a build in a fresh page process, through six pages on other sites, and says what the process holds (`heldPages`). Start each session with it. |
 | `shot.mjs <out.png>` | A screenshot of the tab, at the phone's pixels. |
 | `codex.mjs <url> <label>` | The codex as a thumb goes through it: opened, down to the items, scrolled through them and back, two items opened and closed, each tap a finger's (`tap`). Each phase's frames, and the page's CPU. |
 | `game.mjs <url> <label>` | A game (`MODE=delve`, `turns` or `race`; `ROUNDS=4`): New game, a mode, Begin, then cards, question, answer and reveal, each click timed in parts. Each phase's frames. It answers right (`ANSWER=right`, so a Delve run lives on), or always the first option (`ANSWER=first`). |
@@ -177,6 +194,8 @@ doesn't:
   another process (the drop shadows below did that).
 - **Layers** (`LayerTree`): every compositing layer, how often it painted
   and why WebKit made it. A count in the thousands is a problem by itself.
+  A layer's paint count counts its tiles (512 px each): a big layer painted
+  once can count 2 or more.
 - **Screenshots** (`Page.snapshotRect`), to see what the phone shows.
 - **Taking things away**: the `?off=` switches, or a style put in with
   `ask.mjs` (`filter: none` on the codex's tiles, say), one at a time,
@@ -285,15 +304,31 @@ with its numbers in the comments.
   show of the first tap's sound holds for a finger too: the hall's reverb
   took its steps over the second after it, as that screen came in; it's
   worked out in a worker now (`src/lib/hallWorker.ts`).
-- **A masked SVG costs its frames while what it masks changes.** Delve's
-  ladder (`DelveLadder.svelte`) is masked round its stars; while its 260
-  lines inked themselves in, the lobby came in at 24 to 35 fps, and at 60
-  with the mask overridden. Nothing showed in the page's own thread: its
-  styles, layouts and paints were the same, and so were its layers. The
-  mask now goes on only as the first star's cutout starts to show, as until
-  then it hides nothing. Try such a thing with a CSS rule (`mask: none`
-  through `ask.mjs`): taking the `mask` attribute off from script didn't
-  take the cost away.
+- **An SVG mask is painted again whenever anything reaches it.** Delve's
+  ladder (`DelveLadder.svelte`) was cut round its stars by an SVG `<mask>`.
+  While its 260 lines inked themselves in, the lobby came in at 24 to 35
+  fps, 60 with the mask overridden; so the mask went on only as the first
+  star's cutout started to show. Then WebKit still painted all it masked
+  through the mask again at every restyle or layout that reached it, as each
+  screen came or went over it: of Begin's four frames over 40 ms, its worst
+  was 138 to 154 ms. On iOS the mask cut nothing besides. The cutouts are a
+  CSS mask on the plate's `svg` now, a radial gradient for each star, carved
+  in and moved by registered properties (`@property`) animated on the `svg`:
+  three frames over 40 ms, the worst 88 to 93 ms. Its lines were left
+  dashed too (the draw-in's `stroke-dasharray`), so each repaint dashed all
+  282 paths again; a line is dashed only while it draws now. Nothing showed
+  in the page's own thread either way. Try such a thing with a CSS rule
+  (`mask: none` through `ask.mjs`): taking the `mask` attribute off from
+  script didn't take the cost away.
+- **A shadow that changes on an element in the flow lays it out.** A find
+  card's pulse (`ChooseCategory.svelte`, its `box-shadow` through `--bs1`)
+  has WebKit lay the card out in every frame and repaint whole each layer
+  round it up to the first element out of the flow: the shell, the stage
+  and the card, 183 times in 3 s, 93 Mpx against 3 to 6 with the pulse
+  off. Containment, `min-width: 0`, grid rows of `minmax(0, 1fr)` and the
+  like didn't stop it; only taking the card out of the flow did. The frames
+  held 60 fps either way, the worst 17 to 23 ms, so the pulse stays as it
+  is: weigh the frames before taking a repaint away.
 - **An idle step is as long as the work it can't split.** Delve's light
   table was worked out in idle steps of 4 ms, but a step is at least one
   stretch of the table, and a stretch took 52 to 56 ms on the phone, two or
@@ -336,15 +371,73 @@ with its numbers in the comments.
   something in it moves, though, the circle turning: weigh the calm
   question's and reveal's frames with `?off=group` (the stage resting at 1)
   against those without.
+- **A picture cursor restyles all an element holds.** WebKit makes an
+  element's picture cursor afresh each time the element is restyled, and
+  counts it as changed (a new one is still pending when compared), so it
+  restyles every element inside it too, each of which does the same with its
+  own. The app named one on every element (`cursor: var(--cursor-now)`, so a
+  pressed pointer stays on the element pressed), so a vein's tremor, a
+  translate written on `.shell` each frame, restyled the whole game and
+  repainted every card: 3.4 ms of styles a write, 1,223 paints (48 Mpx) in
+  2.5 s, 47.9 fps. That was the QA desk's `size=desktop`, which plays a
+  fine pointer and so draws the cursors; a phone draws none, but Safari on a
+  Mac with a mouse does. In WebKit every element inherits the cursor now
+  (`data-cursor-inherited`, `src/lib/ownCursor.ts` and `app.css`), an
+  inherited one being the parent's own, unchanged: 0.2 ms, 32 paints
+  (1.2 Mpx), 60.1 fps, as at `size=fit` with no cursors at all. A scene
+  measured on the phone at `size=desktop` has the cursors; `size=fit` has
+  none.
+- **Every compositing layer is put on screen as it mounts, empty or not.**
+  Each box of a rune circle is a compositing layer (`will-change`, and
+  most turn), and WebKit put all of a circle's (10 to 30) on screen in
+  the frames after a pick, though most stood empty for up to 1.15 s,
+  until their lines were due. That commit runs outside the page's main
+  thread: splitting the pick's task in two (the question a frame after
+  the tap, `Game.svelte`) took the longest hold from 43 to 28 ms but left
+  the frames as long. Mounting the boxes later, as the pen starts, was
+  worse: put into a stage already on screen they cost a 50 to 62 ms frame
+  of their own. Keeping each box out of the drawing until its lines go on
+  (`display: none`, then its animations started as far in as the
+  summoning is: `.waits` and `--late` in `ArcaneStage.svelte`) took a
+  pick's worst frame from 49 to 37 ms (median of 18 and 15 picks). A
+  hand of cards gained the same way: each side's engraving drawn in a frame of
+  its own while its card lies unseen (`CardEngraving.svelte`) took
+  Begin's worst frame from 116 to 85 ms (6 and 5 runs, #331).
+- **A tab's process keeps pages it has left.** WebKit keeps a page left for
+  another address in the tab's page process (its back-forward cache: three
+  pages here), and every port on the PC is one site to it, so runs going
+  back and forth between two builds kept three earlier games beside the one
+  measured. Some pages stay for good: after a day of runs the tab's process
+  held four game pages no navigation let go of, with their 43 workers and
+  240 decoded sounds, 490,000 cells and 200 MB of heap (a heap snapshot),
+  where one page is 110,000 cells and 50 MB. In that process the first pick
+  after Begin went slow 5 times in 8 Delve runs (7 in 11 in the runs for
+  PR #364 just before): from the tap, a second or two of frames at 12 to 28
+  fps, each frame's rendering about 29 ms against 4, 0.9 to 1.7 s lost
+  where a fine pick loses 33 to 78 ms. In fresh processes it never came, 0
+  times in 29, and none of what that process held brought it back: the
+  cache full of games (the same 490,000 cells), 600 or 800 MB of ballast
+  (the pressure iOS reports came, non-critical from 1.2 GB and critical
+  from 1.4 GB, one critical right at the pick), a page stranded by a trip
+  to another site and back, or 13 more WebGL contexts. What in the old
+  process did it went with the process. Instruments can hide such a thing
+  too: in that process, with the inspector's Heap domain on, or a probe
+  allocating 1.6 MB a second, the slow pick never came in 16 runs. So
+  `open()` replaces the address (a replaced page isn't kept), says what the
+  tab's process holds (`heldPages` in `phone.mjs`) and warns when it holds
+  more than the page, and `fresh.mjs` gives the tab a fresh process: six
+  pages on other sites, each in a process of its own, let the old one go
+  (reloading the build, or going to another of the PC's ports, keeps it).
+  The PC has no second site for the phone over http: Chrome's HTTPS-first
+  warning stopped its name on the home network and its IPv6 address.
 
-Still open: Begin's worst frame, about 230 to 285 ms. About 70 ms of it is
-script mounting the game screen and about 140 ms its styles, layout and
-paint; and an item's details parse in about 60 ms. The rumble's 6 s noise
-buffer, which took about 75 ms of that time in one go, is now worked out
-in a worker (`src/lib/rumbleWorker.ts`, its samples in
-`src/lib/rumbleNoise.ts`), as are the light table and the cave-in, and the
-weave is made as the app is built; a trace from the phone still has to
-show them gone from the main thread.
+Still open: Begin's three frames over 40 ms (41 to 64 ms, the worst 88 to
+93), as the lobby goes and the game comes in. Most of their time is outside
+the page's main thread. Measured while the ladder still had its SVG mask:
+with every animation off one frame of 117 ms was left, and with the game
+hidden too, one of 85 to 98 ms, 72 of 81 outside the main thread. Taking away the faces' shadows, the banner, the cards,
+the effects, the lights, the screens' scale or `hold()` in `App.svelte`
+made none of them shorter.
 
 Still open too: a first visit's blank page. `index.html` is empty until
 the startup script has come and mounted the start page, and its CSS and

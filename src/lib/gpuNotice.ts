@@ -10,6 +10,7 @@
 // software on purpose.
 
 import { backdropOnWebgl } from './backdrop.ts';
+import { asksSoftware, noteSoftware } from './count.ts';
 import { accelerationFix } from './gpuCheck.ts';
 import { whenIdle } from './idle.ts';
 import { BOT, QA, readStored, writeStored } from './storage.ts';
@@ -33,33 +34,37 @@ export const showGpuNotice = () =>
   });
 
 /**
- * Whether this page should ask at all: not where it's driven by a script (a
- * headless check of the effects draws in software on purpose), nor where
- * there's no setting to point to.
+ * Whether this page should show the notice at all: not where it's driven by
+ * a script (a headless check of the effects draws in software on purpose),
+ * nor where there's no setting to point to.
  */
-const asks = () => !QA && !BOT && !navigator.webdriver && typeof WebGL2RenderingContext !== 'undefined' && !!fix() && !readStored(CLOSED);
+const notices = () => !QA && !BOT && !navigator.webdriver && !!fix() && !readStored(CLOSED);
 
 /**
  * Follows the screens (App.svelte), as the fullscreen tip does: `calm`
- * while no question runs.
+ * while no question runs. Asks also where the notice won't show but a
+ * game's frames are counted (count.ts asksSoftware): a game drawn in
+ * software is counted apart.
  */
 export function watchGpuNotice(): { calm: (on: boolean) => void; stop: () => void } {
   let calm = false;
   let software = false;
   let shownId: number | null = null;
   let stops: (() => void)[] = [];
+  const notice = notices();
 
   const up = () => shownId !== null && toasts.list.some((t) => t.id === shownId);
+  // (Only while the backdrop draws with WebGL: on the CSS one the game runs smoothly anyway.)
+  const slow = () => software && backdropOnWebgl();
   const show = () => {
-    // (Only while the backdrop draws with WebGL: on the CSS one the game runs smoothly anyway.)
-    if (calm && software && backdropOnWebgl() && !up() && !readStored(CLOSED)) shownId = showGpuNotice();
+    if (notice && calm && slow() && !up() && !readStored(CLOSED)) shownId = showGpuNotice();
   };
   const hide = () => {
     if (up()) toasts.dismiss(shownId!);
     shownId = null;
   };
 
-  if (asks()) {
+  if (typeof WebGL2RenderingContext !== 'undefined' && (notice || asksSoftware())) {
     let worker: Worker | null = null;
     const done = () => {
       worker?.terminate();
@@ -74,6 +79,7 @@ export function watchGpuNotice(): { calm: (on: boolean) => void; stop: () => voi
       worker.onmessage = ({ data }: MessageEvent<boolean>) => {
         done();
         software = data === true;
+        noteSoftware(slow);
         show();
       };
       worker.onerror = done;
