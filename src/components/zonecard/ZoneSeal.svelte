@@ -48,7 +48,20 @@
         from,
         ms,
       );
-      paths.forEach((p, i) => play(p, [{ strokeDashoffset: 100 }, { strokeDashoffset: 0 }], { at: plan[i].delay, ms: plan[i].dur }));
+      // Hidden until its pen sets down: a dash of no length still draws its
+      // round caps, a dot at each line's end while it waits (#335). Hidden
+      // only at the very start, so the cap that leads the line is round from
+      // its first frame and nothing changes once it has drawn.
+      paths.forEach((p, i) =>
+        play(
+          p,
+          [
+            { strokeDashoffset: 100, visibility: 'hidden' },
+            { strokeDashoffset: 0, visibility: 'visible' },
+          ],
+          { at: plan[i].delay, ms: plan[i].dur },
+        ),
+      );
     };
     draw('.ring0', T.SEAL, T.SEAL_MS);
     draw('.ring1', T.SEAL + 120, T.SEAL_MS);

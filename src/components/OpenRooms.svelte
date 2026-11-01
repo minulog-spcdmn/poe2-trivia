@@ -165,6 +165,10 @@
 
   // The refresh icon eases up to speed while scanning and coasts to a stop
   // wherever it happens to be, instead of snapping back to its start angle.
+  // It turns on a layer of its own: turned inside the SVG, as it was against a
+  // wobble on phones, it had the page round it painted again on every frame of
+  // the spin. (Chrome at 2.625 and 1.5 turns the layer within a tenth of a
+  // device pixel of the SVG's own turn, whatever the fraction it sits at.)
   const SPIN_SPEED = 0.4; // degrees per ms
   const SPIN_UP_MS = 350;
   const SPIN_DOWN_MS = 700;
@@ -208,15 +212,10 @@
     <h2 id="rooms-h">Open rooms</h2>
     {#if enterable}<span class="open" in:fade={{ duration: 200 }}><span class="num">{enterable}</span> open</span>{/if}
     <button class="refresh" class:busy={scanning} onclick={scan} disabled={scanning || disabled} aria-label="Refresh room list" title="Refresh">
-      <!-- The arc is centred on the viewBox so the icon turns in place. The
-           rotation lives inside the SVG, around its exact centre, rather than
-           on the element: a rotated compositor layer gets snapped to device
-           pixels each frame, which makes it wobble at fractional DPRs (phones). -->
-      <svg viewBox="0 0 24 24">
-        <g transform="rotate({angle} 12 12)">
-          <path d="M18.58 14.39A7 7 0 1 1 14.39 5.42" />
-          <path class="head" d="M18.15 6.8 15.6 2.15 13.2 8.7Z" />
-        </g>
+      <!-- The arc is centred on the viewBox so the icon turns in place. -->
+      <svg viewBox="0 0 24 24" style:transform="rotate({angle}deg)">
+        <path d="M18.58 14.39A7 7 0 1 1 14.39 5.42" />
+        <path class="head" d="M18.15 6.8 15.6 2.15 13.2 8.7Z" />
       </svg>
     </button>
     {#if enterable}<p class="note">{seatFree ? 'Anyone can join.' : 'No seat free: watch, and play once you can.'}</p>{/if}
@@ -344,6 +343,7 @@
   .refresh svg {
     width: 20px;
     height: 20px;
+    will-change: transform;
     fill: none;
     stroke: currentColor;
     stroke-width: 2;
