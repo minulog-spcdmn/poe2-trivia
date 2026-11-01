@@ -1,5 +1,6 @@
-// The codex, opened from the start page (#codex): empty, part filled, an
-// item open, and its Delve (with runs and without) and Achievements pages.
+// The codex, opened from the start page (#codex): empty, part filled (as a
+// table too, sorted), an item open, erased, and its Delve (with runs and
+// without) and Achievements pages.
 // And the codex that never came (the Wi-Fi gone as it was fetched).
 
 import { DELVE_RULESET } from '../../lib/delve.ts';
@@ -17,7 +18,11 @@ export function codexScenes(): Scene[] {
   return [
     codex('empty', 'Nothing met yet', () => ({ state: null, hash: '#codex', met: [] })),
     codex('collection', 'The collection, part filled', () => filled()),
+    // The table, sorted once by its second column a moment in (the rows on screen sliding to their new places); its headings sort it again.
+    codex('table', 'The collection as a table: sorted by a heading', () => filled([{ wait: 600 }, { click: '.collection .seg button:last-child' }, { wait: 1400 }, { click: '.ledger th:nth-child(2) button' }])),
     codex('item', 'An item open', () => filled([{ click: '.tile' }])),
+    // Asked, then erased: the blank codex's plate rising in as a turned page. (The frame's storage is its own, cleared as it closes.)
+    codex('erase', 'Erasing it: asked, then erased', () => filled([{ wait: 600 }, { click: 'footer.end .btn.danger' }, { wait: 1600 }, { click: '.confirm .btn.danger' }])),
     codex('delve', 'The Delve page', () => filled([{ click: '#codex-tab-delve' }])),
     codex('delve-none', 'The Delve page, never delved', () => filled([{ click: '#codex-tab-delve' }], [])),
     codex('feats', 'The Achievements page', () => filled([{ click: '#codex-tab-feats' }])),
