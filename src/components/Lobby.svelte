@@ -106,6 +106,26 @@
   });
 
   /** Svelte action: a new player's row arrives with a flash (zoe_arcana's is her own). */
+  /**
+   * A chip's standing mark (offline, away…) opens its own room beside the name as it fades in, over the 0.3s the chip dims in,
+   * and closes it as it goes: the name gives way a little each frame (fadeCut), never all at once. The flex gap before it too.
+   */
+  function markRoom(node: Element) {
+    const el = node as HTMLElement;
+    const w = el.offsetWidth;
+    const gap = parseFloat(getComputedStyle(el.parentElement ?? el).columnGap) || 0;
+    return calm({ duration: 300, easing: cubicOut, css: (t: number) => `width: ${w * t}px; margin-left: ${-gap * (1 - t)}px; overflow: hidden;` });
+  }
+  /**
+   * A chip's name that runs short of room fades out at its end rather than being cut to an ellipsis, the fade as long as
+   * what's cut (to a point): as its room narrows a frame at a time (markRoom), it eases under the fade, nothing jumping.
+   */
+  function fadeCut(node: HTMLElement) {
+    const measure = () => node.style.setProperty('--cut', `${Math.min(18, 1.5 * Math.max(0, node.scrollWidth - node.clientWidth))}px`);
+    const seen = new ResizeObserver(measure);
+    seen.observe(node);
+    return { destroy: () => seen.disconnect() };
+  }
   function arriving(node: HTMLElement, name: string) {
     if (!settled) return;
     const t = setTimeout(() => (creatorShown(name) ? creatorArrived(node) : playerArrived(node)), 120);
@@ -724,8 +744,8 @@
               style:--c={playerColor(p.hue)}
             >
               <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={32} dim={greyed(mark)} />
-              <span class="name" title={p.name}><PlayerName name={p.name} />{#if !local && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}</span>
-              {#if mark}<StandingMark {mark} />{/if}
+              <span class="name" title={p.name} use:fadeCut><PlayerName name={p.name} />{#if !local && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}</span>
+              {#if mark}<span class="mark-room" transition:markRoom><StandingMark {mark} /></span>{/if}
               <!-- The host's chip carries a hanging banner, the party's standard, where the others have their ×. -->
               {#if p.id === s.hostId && !local}<HostMark unfurl />{/if}
               {#if isHost && (local || p.id !== s.hostId)}
@@ -1235,6 +1255,14 @@
     line-height: 1.1;
     padding-bottom: 0.2em;
     margin-bottom: -0.2em;
+    /* Cut short, its end fades (fadeCut) instead of an ellipsis, which would jump as a mark takes its room. */
+    text-overflow: clip;
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--cut, 0px)), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - var(--cut, 0px)), transparent);
+  }
+  .mark-room {
+    flex: none;
+    display: flex;
   }
   .chips .name em {
     color: var(--muted);
