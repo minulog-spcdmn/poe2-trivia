@@ -87,6 +87,17 @@ the tab there from the PC.
    ```bash
    node scripts/iphone/ask.mjs "navigator.userAgent"
    ```
+5. Once a build is served (below), put the tab on it in a fresh page
+   process, holding no page but the build's ("A tab's process keeps pages
+   it has left", below):
+
+   ```bash
+   node scripts/iphone/fresh.mjs http://192.168.178.88:4403/
+   ```
+
+   It ends saying what the process holds: `2 JS globals (1 page)` in
+   Chrome. `codex.mjs` and `game.mjs` say it again as each run starts, and
+   warn when it holds more.
 
 When it doesn't:
 
@@ -129,8 +140,10 @@ home network until stopped, each on a port of its own: `http://192.168.178.88:44
 
 To set a change against what it changes, build both (check out the commit
 before it and build it as `before`, then the change as `after`) and serve
-them side by side, `before=4402 after=4403`. Each address is a site of its
-own to the phone, with its own storage.
+them side by side, `before=4402 after=4403`. Each address has its own
+storage on the phone, but all are one site, so one page process: the
+scripts replace the address as they go from one to the other, so neither
+build's pages are kept beside the other's.
 
 Stop the server and the proxy when done, and leave the phone's tab where the
 owner can use it.
@@ -141,6 +154,7 @@ owner can use it.
 |---|---|
 | `ask.mjs "<js>"` | Runs an expression in the phone's tab and prints its value. |
 | `goto.mjs <url>` | Sends the tab to an address, a build for the owner to try, say. |
+| `fresh.mjs <url>` | Puts the tab on a build in a fresh page process, through six pages on other sites, and says what the process holds (`heldPages`). Start each session with it. |
 | `shot.mjs <out.png>` | A screenshot of the tab, at the phone's pixels. |
 | `codex.mjs <url> <label>` | The codex as a thumb goes through it: opened, down to the items, scrolled through them and back, two items opened and closed, each tap a finger's (`tap`). Each phase's frames, and the page's CPU. |
 | `game.mjs <url> <label>` | A game (`MODE=delve`, `turns` or `race`; `ROUNDS=4`): New game, a mode, Begin, then cards, question, answer and reveal, each click timed in parts. Each phase's frames. It answers right (`ANSWER=right`, so a Delve run lives on), or always the first option (`ANSWER=first`). |
@@ -389,6 +403,33 @@ with its numbers in the comments.
   hand of cards gained the same way: each side's engraving drawn in a frame of
   its own while its card lies unseen (`CardEngraving.svelte`) took
   Begin's worst frame from 116 to 85 ms (6 and 5 runs, #331).
+- **A tab's process keeps pages it has left.** WebKit keeps a page left for
+  another address in the tab's page process (its back-forward cache: three
+  pages here), and every port on the PC is one site to it, so runs going
+  back and forth between two builds kept three earlier games beside the one
+  measured. Some pages stay for good: after a day of runs the tab's process
+  held four game pages no navigation let go of, with their 43 workers and
+  240 decoded sounds, 490,000 cells and 200 MB of heap (a heap snapshot),
+  where one page is 110,000 cells and 50 MB. In that process the first pick
+  after Begin went slow 5 times in 8 Delve runs (7 in 11 in the runs for
+  PR #364 just before): from the tap, a second or two of frames at 12 to 28
+  fps, each frame's rendering about 29 ms against 4, 0.9 to 1.7 s lost
+  where a fine pick loses 33 to 78 ms. In fresh processes it never came, 0
+  times in 29, and none of what that process held brought it back: the
+  cache full of games (the same 490,000 cells), 600 or 800 MB of ballast
+  (the pressure iOS reports came, non-critical from 1.2 GB and critical
+  from 1.4 GB, one critical right at the pick), a page stranded by a trip
+  to another site and back, or 13 more WebGL contexts. What in the old
+  process did it went with the process. Instruments can hide such a thing
+  too: in that process, with the inspector's Heap domain on, or a probe
+  allocating 1.6 MB a second, the slow pick never came in 16 runs. So
+  `open()` replaces the address (a replaced page isn't kept), says what the
+  tab's process holds (`heldPages` in `phone.mjs`) and warns when it holds
+  more than the page, and `fresh.mjs` gives the tab a fresh process: six
+  pages on other sites, each in a process of its own, let the old one go
+  (reloading the build, or going to another of the PC's ports, keeps it).
+  The PC has no second site for the phone over http: Chrome's HTTPS-first
+  warning stopped its name on the home network and its IPv6 address.
 
 Still open: Begin's three frames over 40 ms (41 to 64 ms, the worst 88 to
 93), as the lobby goes and the game comes in. Most of their time is outside
