@@ -1240,13 +1240,14 @@
     width: 0;
     height: 0;
     pointer-events: none;
-    /* (The face's light, as .frame has it; the states below set it on both.) */
+    /* (The face's light, as .frame has it; the states below set it on both.
+       It changes at once here, and eases on ::before, which a light just
+       come up starts without: eased here, it would ease in from a face
+       down's.) */
     --bs1: 16px 40px;
     --bs1-color: rgba(0, 0, 0, 0.6);
     transition:
       var(--tilt-transition, transform 0.35s var(--ease-out)),
-      --bs1 0.35s,
-      --bs1-color 0.35s,
       opacity 0.4s;
   }
   @keyframes pulse {
@@ -1283,6 +1284,7 @@
     --bs1: inherit;
     --bs1-color: inherit;
     box-shadow: 0 var(--bs1) var(--bs1-color);
+    transition: box-shadow 0.35s;
   }
   .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after,
   .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after {
@@ -1921,6 +1923,12 @@
     --bs1-color: rgba(255, 170, 90, 0.5);
     --bs2: 0px 0px;
     --bs2-color: transparent;
+  }
+  /* (Its light eases on its ::before, not here: see .pulse.) */
+  .card.chosen .pulse {
+    transition:
+      transform 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.15),
+      opacity 0.4s;
   }
   .card.dm.chosen .frame {
     border-color: #e88a74;
