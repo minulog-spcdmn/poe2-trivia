@@ -233,6 +233,9 @@
   .fossils {
     /* A rare one's gold: the gold seals' metal, a shade warmer to read as type on the dark. */
     --rare-gold: #d9b26a;
+    /* The stone's ink, as the fossil card's (bone now): the nodule, and the lines of the one chosen. One place, to follow the card's palette. */
+    --fossil-ink: #e6dcc6;
+    --fossil-hi: #f6f0e2;
     container: fossils / inline-size;
     min-width: 0;
   }
@@ -398,13 +401,13 @@
   }
   /* The one shown: its lines bright as bone, and a pale light round it. */
   .cell.on .socket {
-    --ink: #e6dcc6;
+    --ink: var(--fossil-ink);
     box-shadow:
-      0 0 0 1px rgba(246, 240, 226, 0.55),
-      0 0 10px rgba(246, 240, 226, 0.22);
+      0 0 0 1px color-mix(in srgb, var(--fossil-hi) 55%, transparent),
+      0 0 10px color-mix(in srgb, var(--fossil-hi) 22%, transparent);
   }
   .cell.on .socket:not(.got) {
-    background: radial-gradient(circle, rgba(230, 220, 198, 0.08) 0 40%, rgba(0, 0, 0, 0.55) 62%, rgba(0, 0, 0, 0.25) 74%, transparent 76%);
+    background: radial-gradient(circle, color-mix(in srgb, var(--fossil-ink) 8%, transparent) 0 40%, rgba(0, 0, 0, 0.55) 62%, rgba(0, 0, 0, 0.25) 74%, transparent 76%);
   }
   .cell.on.got .socket.rare {
     --ink: #fff0c8;
@@ -438,13 +441,13 @@
     opacity: 0.7;
   }
   .nodule {
-    color: #b9b09c;
+    color: color-mix(in srgb, var(--fossil-ink) 75%, #4a4438);
     opacity: 0.55;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
   .cell.on .nodule {
-    color: #e6dcc6;
+    color: var(--fossil-ink);
     opacity: 0.8;
   }
   .socket img {
