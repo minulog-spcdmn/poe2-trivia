@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CSS_BACKDROP, FLOOR, MARK, MOMENTS, PAGE_FLOOR, SLACK, WEBGL_SCENES, atRest, layerName, overBaseline, pageAtRest, readTrace, redraws, unread, withoutMark, type TraceEvent } from '../src/qa/redraws.ts';
+import { CSS_BACKDROP, FLOOR, MARK, MOMENTS, PAGE_FLOOR, WEBGL_SCENES, atRest, layerName, overBaseline, pageAtRest, readTrace, redraws, slackOf, unread, withoutMark, type TraceEvent } from '../src/qa/redraws.ts';
 import { SCREENS } from '../src/qa/scene.ts';
 
 test('a layer is named by its element, Svelte’s classes left out', () => {
@@ -148,6 +148,7 @@ test('CI runs the canary, and every moment has its window and a baseline at CI�
   assert.equal(baseline.size, 'desktop');
   for (const m of MOMENTS) {
     assert.ok(m.seconds > 0, `${m.key}’s window`);
+    assert.ok(m.slack > 1 && m.slack <= 1.25, `${m.key}’s slack: from how far it moves run to run, not a floor`);
     assert.equal(typeof baseline.moments[m.key], 'number', `${m.key}’s baseline`);
   }
 });
@@ -158,9 +159,10 @@ test('the CSS backdrop the check leaves undrawn without WebGL is still Backgroun
   assert.match(bg, /<div class="bg" class:css=\{!webgl\}/);
 });
 
-test('a moment fails past SLACK times its baseline, and in CI with none', () => {
-  assert.equal(overBaseline('deal', 22_000 * SLACK, 22_000), null);
-  assert.match(overBaseline('dig', 7_000, 5_000) ?? '', new RegExp(`7k px drawn again a 60th of a second, past ${SLACK}× its baseline of 5k px`), 'no floor: a cheap moment grown fails too');
+test('a moment fails past its slack times its baseline, and in CI with none', () => {
+  assert.equal(overBaseline('deal', 22_000 * slackOf('deal'), 22_000), null);
+  assert.ok(overBaseline('deal', 22_000 * slackOf('deal') + 1, 22_000));
+  assert.match(overBaseline('dig', 7_000, 5_000) ?? '', new RegExp(`7k px drawn again a 60th of a second, past ${slackOf('dig')}× its baseline of 5k px`), 'no floor: a cheap moment grown fails too');
   assert.equal(overBaseline('new', 1e9, undefined), null, 'none yet, here');
   assert.match(overBaseline('new', 1, undefined, true) ?? '', /no baseline at this size .* “new”/, 'none, in CI');
 });

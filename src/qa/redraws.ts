@@ -322,7 +322,7 @@ export const WEBGL_SCENES: { scene: string; why: string }[] = [
  * of the page's time from when it's set off, a window as long as the
  * moment with its pen's last stroke (written from script, so no animation
  * says when it's over), and the same length each run: what it draws again
- * a 60th of a second over that window, failed past SLACK times its
+ * a 60th of a second over that window, failed past `slack` times its
  * baseline (src/qa/redrawBaselines.json). A fixed window, so a moment that
  * grows longer (a fade added after it) can't thin what it draws over more
  * frames. On the card bench's stage (cards.html?stage) but the plate, on
@@ -333,24 +333,27 @@ export const WEBGL_SCENES: { scene: string; why: string }[] = [
  * which Chrome draws at the screen's rate, where the pen draws at its own
  * (lib/drawIn), so at 60 the two cost the same and only a fast screen
  * tells them apart.
+ *
+ * `slack`, from how far each moved in eight runs on CI, on virtual time
+ * from before the page loads with its chance and date seeded: the pick,
+ * the pointer and the plate within 0.4%, the dig within 2.3% of its
+ * baseline, so a tenth. The deal, with WebGL, by whole card faces: its
+ * faces' writes land a frame apart from run to run (frame 67 or 68), and
+ * a face (927 × 1145) drawn once more or less is 4.4k px a 60th of a
+ * second, so it read 59.9k to 72.6k; a quarter is two faces past the most
+ * it read. The least of October's stutters cost its moment 2.8 times its
+ * baseline (the plate's lines); the kindle, the deal's, 8.7 times.
  */
 export const MOMENTS = [
-  { key: 'deal', label: 'A deal of three cards', webgl: true, hz: 60, seconds: 3 },
-  { key: 'dig', label: 'A dig’s deal: the vein and the way out', webgl: false, hz: 60, seconds: 3 },
-  { key: 'pick', label: 'A card picked', webgl: false, hz: 60, seconds: 4 },
-  { key: 'glare', label: 'The pointer across a card', webgl: false, hz: 60, seconds: 2 },
-  { key: 'plate', label: 'A name plate drawn in, at 240 Hz', webgl: false, hz: 240, seconds: 3 },
+  { key: 'deal', label: 'A deal of three cards', webgl: true, hz: 60, seconds: 3, slack: 1.25 },
+  { key: 'dig', label: 'A dig’s deal: the vein and the way out', webgl: false, hz: 60, seconds: 3, slack: 1.1 },
+  { key: 'pick', label: 'A card picked', webgl: false, hz: 60, seconds: 4, slack: 1.1 },
+  { key: 'glare', label: 'The pointer across a card', webgl: false, hz: 60, seconds: 2, slack: 1.1 },
+  { key: 'plate', label: 'A name plate drawn in, at 240 Hz', webgl: false, hz: 240, seconds: 3, slack: 1.1 },
 ] as const;
 
-/**
- * How far past its baseline a moment may go. On virtual time from before
- * the page loads, with its chance and date seeded, a moment measures the
- * same run to run: in two runs on CI the pick, the pointer and the plate
- * never moved, the dig moved 0.7% and the deal (with WebGL) 1.7%. A tenth
- * is six times the widest of those; the least of October's stutters was
- * three times its moment's cost (the plate's lines).
- */
-export const SLACK = 1.1;
+/** How far past its baseline the moment `key` may go (MOMENTS' `slack`; a tenth for one not there). */
+export const slackOf = (key: string): number => MOMENTS.find((m) => m.key === key)?.slack ?? 1.1;
 
 /**
  * A moment's measure against its baseline: what's wrong, else null. With
@@ -359,7 +362,8 @@ export const SLACK = 1.1;
  */
 export function overBaseline(key: string, perFrame: number, baseline: number | undefined, required = false): string | null {
   if (baseline === undefined) return required ? `no baseline at this size in src/qa/redrawBaselines.json for “${key}”: add the measure from this job’s summary` : null;
-  return perFrame > SLACK * baseline ? `${kpx(perFrame)} drawn again a 60th of a second, past ${SLACK}× its baseline of ${kpx(baseline)} (src/qa/redrawBaselines.json, “${key}”)` : null;
+  const slack = slackOf(key);
+  return perFrame > slack * baseline ? `${kpx(perFrame)} drawn again a 60th of a second, past ${slack}× its baseline of ${kpx(baseline)} (src/qa/redrawBaselines.json, “${key}”)` : null;
 }
 
 /** Pixels, short: 1.2M px, 34k px. */
