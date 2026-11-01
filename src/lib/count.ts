@@ -128,11 +128,11 @@ function release(url: string, now: boolean, head = false) {
   else queue.push(url);
   drainTimer ??= setTimeout(drain, Math.random() * JITTER_MS);
 }
-/** What's counted as the page is hidden or left, ahead of the queue going (a game's frames, countGameFrames). */
-const onLeaving: (() => void)[] = [];
+/** What's counted as the page is hidden (`hidden`) or left, ahead of the queue going (a game's frames, countGameFrames). */
+const onLeaving: ((hidden: boolean) => void)[] = [];
 /** Sends what's counted as the page goes and all that waits. */
-function leaving() {
-  for (const f of onLeaving) f();
+function leaving(hidden: boolean) {
+  for (const f of onLeaving) f(hidden);
   if (drainTimer) clearTimeout(drainTimer);
   drainTimer = null;
   atHead = 0;
@@ -142,9 +142,9 @@ function leaving() {
 // (Where it counts at all, not only where it counts on loading: #toggle-goatcounter can switch counting on later.)
 // Hidden too: a phone often drops a tab switched away from without a pagehide.
 if (countsHere && typeof addEventListener !== 'undefined') {
-  addEventListener('pagehide', leaving);
+  addEventListener('pagehide', () => leaving(false));
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') leaving();
+    if (document.visibilityState === 'hidden') leaving(true);
   });
 }
 
@@ -703,8 +703,8 @@ export const noteSoftware = (drawsInSoftware: () => boolean) => void (software =
  * watching: each has frames of its own. Given each state the page takes on
  * (null: the game left), it measures while a game is under way (gameMoment)
  * and the page is seen, and counts it once, as it's decided or left, or the
- * page is hidden or left (onLeaving, so it's in the queue that goes then;
- * a game counted as the page was hidden counts no more). A game picked up
+ * page is left, or on a phone hidden (onLeaving, so it's in the queue that
+ * goes then; a game counted as the page was hidden counts no more). A game picked up
  * after a reload is measured from there. A computer drawing in software
  * counts only that (asksSoftware). Nothing measured where nothing counts.
  */
@@ -722,7 +722,14 @@ export function countGameFrames(s: GameState | null) {
       (v) => countEvent(framesEvent(device, device.startsWith('desktop') && software() ? SOFTWARE : v)),
     );
     document.addEventListener('visibilitychange', () => f.shown());
-    onLeaving.push(() => f.leave());
+    // Hidden, a phone's game counts there and then: a phone often drops a tab
+    // switched away from without a pagehide. A computer's waits for the page
+    // to be left, as it fires one then: a game switched away from at 25 s
+    // and counted there would be mostly its begin, and the rest never seen.
+    const phone = device === 'ios' || device === 'android';
+    onLeaving.push((hidden) => {
+      if (phone || !hidden) f.leave();
+    });
     frames = f;
   }
   // (Asked each time: the privacy page may have been used to opt out meanwhile.)
