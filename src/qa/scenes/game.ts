@@ -335,9 +335,9 @@ export function gameScenes(): Scene[] {
       t.s.delve!.dig = { strikes: 1, haul: [t.s.players[0].id], light: 6, struck: [] };
       return t;
     }),
-    // A fossil on a card (lib/fossils.ts): stone among the finds' light,
-    // saying only its tier ("Fossil", "Rare Fossil", a rare's nodule
-    // catching a gold light now and then), never which fossil. Alone, or
+    // A fossil on a card (lib/fossils.ts): the one card lit from behind,
+    // amber (CardEngraving `lit`), saying only its tier ("Fossil", "Rare
+    // Fossil", a rare's deeper and flecked with gold), never which. Alone, or
     // beside one or two finds (its note shortened to a line then, which with
     // the finds' notes and an unused stick's must fit a small phone's
     // browser, 375 x 635, and a phone on its side, 844 x 340); the first
@@ -380,6 +380,7 @@ export function gameScenes(): Scene[] {
         states: [
           { label: 'A fossil alone', values: {} },
           { label: 'A rare fossil alone', values: { rare: true } },
+          { label: 'A fossil beside an Azurite Vein', values: { beside: 'one' } },
           { label: 'A rare one beside an Azurite Vein', values: { beside: 'one', rare: true } },
           { label: 'Beside a vein and a Flare Cache, dynamite in the pack', values: { beside: 'two', held: true } },
           { label: 'The first fossil, at depth 5', values: { hook: true } },

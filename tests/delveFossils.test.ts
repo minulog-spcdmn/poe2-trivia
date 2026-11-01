@@ -6,6 +6,7 @@ import {
   FOSSILS,
   FOSSIL_COUNT,
   FOSSIL_DEAL,
+  FOSSIL_FROM,
   FOSSIL_IDS,
   dealFossil,
   drawFossil,
@@ -21,12 +22,12 @@ import {
   type FossilTaker,
   type FossilTier,
 } from '../src/lib/fossils.ts';
-import { FOSSILS_KEY, FOSSILS_VERSION, emptyFossils, foundToday, heldMask, heldOf, keepFossils, lastFoundDay, keepRunFossils, loadFossils, mergeFossils, parseFossils, resetFossils, serializeFossils, type FossilStore } from '../src/lib/fossilStore.ts';
-import { DELVE_RULESET, findOn, fossilOffer, fossilOn, fossilsOf, isWayOut, itemsWorkOn, livesOf, runFossils, shownDepth } from '../src/lib/delve.ts';
+import { FOSSILS_KEY, FOSSILS_VERSION, completedBy, emptyFossils, heldMask, keepFossils, keepRunFossils, loadFossils, mergeFossils, parseFossils, resetFossils, serializeFossils, type FossilStore } from '../src/lib/fossilStore.ts';
+import { DELVE_RULESET, findOn, fossilOffer, fossilOn, fossilsOf, isWayOut, itemsWorkOn, livesOf, missedFossils, runFossils, shownDepth } from '../src/lib/delve.ts';
 import type { DelveRun } from '../src/lib/delveRecord.ts';
 import type { GameState } from '../src/lib/game.ts';
 import { fossilEvents } from '../src/lib/count.ts';
-import { runFacts, usualLifted } from '../src/lib/recap.ts';
+import { runFacts, setProgress, usualLifted } from '../src/lib/recap.ts';
 import { FOSSIL_FLIGHT } from '../src/lib/fossilFlight.ts';
 import { parseClientMsg } from '../src/lib/protocol.ts';
 import { takeIn, takenNow } from '../src/lib/sync/shared.ts';
@@ -37,9 +38,9 @@ const store = new Map<string, string>();
 
 const COMMONS = FOSSILS.filter((f) => !f.rare).map((f) => f.id);
 const RARES = FOSSILS.filter((f) => f.rare).map((f) => f.id);
-const fresh: FossilTaker = { held: 0, run: 0, today: false };
-/** A taker past the hook (one common held, found on an earlier day), nothing given this run. */
-const started: FossilTaker = { held: fossilMask(['scorched']), run: 0, today: false };
+const fresh: FossilTaker = { held: 0, run: 0 };
+/** A taker past the common hook (one common held), nothing given this run. */
+const started: FossilTaker = { held: fossilMask(['scorched']), run: 0 };
 
 // ---- the set ----------------------------------------------------------------------
 
@@ -68,16 +69,18 @@ test('masks: one bit a fossil, every mask this build can read and no other', () 
 
 // ---- the chances ------------------------------------------------------------------
 
-test('commons: none above shown 5, then 1%, 0.2% more a depth, 6% from shown 30; 30% beside a find', () => {
+test('commons: none above shown 5, then 0.35%, 0.07% more a depth, 2% from shown 29; 20% beside a find', () => {
   const at = (shown: number, withFind = false) => fossilChance(false, shown + 1, withFind);
   assert.equal(at(4), 0);
   assert.equal(at(4, true), 0);
-  assert.equal(at(5), 0.01);
-  assert.equal(at(15), 0.03);
-  assert.equal(at(30), 0.06);
-  assert.equal(at(80), 0.06);
-  assert.equal(at(10, true), 0.3);
-  assert.equal(at(60, true), 0.3);
+  assert.equal(at(5), 0.0035);
+  assert.equal(at(15), 0.0105);
+  assert.equal(at(29), 0.02);
+  assert.equal(at(80), 0.02);
+  assert.equal(at(10, true), 0.2);
+  assert.equal(at(60, true), 0.2);
+  // Beside a find, every plain chance many times over: most fossil cards past 10 sit there.
+  for (let d = 10; d < 80; d++) assert.ok(at(d, true) >= 10 * at(d));
   assert.equal(shownDepth(FOSSIL_DEAL.common.from), 5);
   assert.equal(shownDepth(FOSSIL_DEAL.hookFrom), 5);
   // Never falling with depth.
@@ -100,7 +103,7 @@ test('rares: none above shown 25, then 1%, 0.1% more a depth, 4% from shown 55; 
 });
 
 test('the deal goes by the chances: a roll under the rares’ slice a rare, under the commons’ after it a common, else none', () => {
-  const d = 46; // shown 45: rares 3%, commons 6% (a plain offer)
+  const d = 46; // shown 45: rares 3%, commons 2% (a plain offer)
   const r = fossilChance(true, d, false);
   const c = fossilChance(false, d, false);
   const tier = (roll: number) => {
@@ -123,59 +126,58 @@ test('a slice its takers can’t take from finds nothing, and never feeds the ot
   const d = 46;
   const r = fossilChance(true, d, true);
   // Every common held: a roll in the commons' slice finds nothing (not a rare).
-  const allCommons: FossilTaker = { held: fossilMask(COMMONS), run: 0, today: false };
+  const allCommons: FossilTaker = { held: fossilMask(COMMONS), run: 0 };
   assert.equal(dealFossil(d, [allCommons], { fresh: true, withFind: true }, () => r + 0.001), null);
   assert.ok(dealFossil(d, [allCommons], { fresh: true, withFind: true }, () => 0));
   // Every rare held: a roll in the rares' slice finds nothing (not a common).
-  const allRares: FossilTaker = { held: fossilMask(['scorched', ...RARES]), run: 0, today: false };
+  const allRares: FossilTaker = { held: fossilMask(['scorched', ...RARES]), run: 0 };
   assert.equal(dealFossil(d, [allRares], { fresh: true, withFind: true }, () => 0), null);
   assert.ok(dealFossil(d, [allRares], { fresh: true, withFind: true }, () => r + 0.001));
 });
 
-test('one a day and one a run: once found today, or given this run, nothing more for that player, and no roll spent', () => {
+test('one a run: once the run gave a player one, nothing more for them, and no roll spent; no day cap', () => {
   assert.equal(FOSSIL_DEAL.perRun, 1);
-  assert.deepEqual(lackedBy({ ...started, today: true }, false), []);
-  assert.deepEqual(lackedBy({ ...started, today: true }, true), []);
+  assert.ok(!('day' in FOSSIL_DEAL) && !('perDay' in FOSSIL_DEAL));
   assert.deepEqual(lackedBy({ ...started, run: 1 }, false), []);
   assert.deepEqual(lackedBy({ ...started, run: 1 }, true), []);
   assert.equal(lackedBy(started, false).length, 16);
   assert.equal(lackedBy(started, true).length, 8);
   let rolled = 0;
-  assert.equal(dealFossil(60, [{ ...started, today: true }], { fresh: true, withFind: true }, () => (rolled++, 0)), null);
   assert.equal(dealFossil(60, [{ ...started, run: 1 }], { fresh: true, withFind: true }, () => (rolled++, 0)), null);
   assert.equal(rolled, 0);
-  // Not even the hook: a first fossil is the day's.
+  // Not even a hook.
   assert.equal(dealFossil(20, [{ ...fresh, run: 1 }], { fresh: true, withFind: false }, () => 0), null);
+  assert.equal(dealFossil(FOSSIL_DEAL.rareHookAt, [{ ...started, run: 1 }], { fresh: true, withFind: true }, () => 0.9999), null);
 });
 
 test('the deal says only a tier; the fossil is drawn for its taker, never one they hold', () => {
   const rng = seeded(5);
   const held = fossilMask([...COMMONS.slice(0, 15), ...RARES.slice(0, 6)]);
-  const t: FossilTaker = { held, run: 0, today: false };
+  const t: FossilTaker = { held, run: 0 };
   const tiers = new Set<FossilTier | null>();
   for (let i = 0; i < 2000; i++) tiers.add(dealFossil(80, [t], { fresh: false, withFind: true }, rng));
   assert.deepEqual([...tiers].map(String).sort(), ['common', 'null', 'rare']);
   const seen = new Set<FossilId>();
   for (let i = 0; i < 2000; i++) for (const tier of ['common', 'rare'] as const) seen.add(drawFossil(t, tier, rng)!);
   assert.deepEqual([...seen].sort(), [...COMMONS.slice(15), ...RARES.slice(6)].sort());
-  assert.equal(drawFossil({ held: fossilMask(COMMONS), run: 0, today: false }, 'common', rng), null);
+  assert.equal(drawFossil({ held: fossilMask(COMMONS), run: 0 }, 'common', rng), null);
   assert.equal(drawFossil({ ...t, run: 1 }, 'rare', rng), null);
 });
 
 test('together: a tier is dealt if any taker could be given one of it', () => {
-  const allCommons: FossilTaker = { held: fossilMask(COMMONS), run: 0, today: false };
-  const lacksOne: FossilTaker = { held: fossilMask(COMMONS.filter((id) => id !== 'deft')), run: 0, today: false };
-  const doneToday: FossilTaker = { held: fossilMask(['scorched']), run: 0, today: true };
+  const allCommons: FossilTaker = { held: fossilMask(COMMONS), run: 0 };
+  const lacksOne: FossilTaker = { held: fossilMask(COMMONS.filter((id) => id !== 'deft')), run: 0 };
+  const doneThisRun: FossilTaker = { held: fossilMask(['scorched']), run: 1 };
   const r = fossilChance(true, 46, false);
-  assert.equal(dealFossil(46, [allCommons, doneToday], { fresh: false, withFind: false }, () => r + 0.001), null);
-  assert.equal(dealFossil(46, [allCommons, doneToday, lacksOne], { fresh: false, withFind: false }, () => r + 0.001), 'common');
+  assert.equal(dealFossil(46, [allCommons, doneThisRun], { fresh: false, withFind: false }, () => r + 0.001), null);
+  assert.equal(dealFossil(46, [allCommons, doneThisRun, lacksOne], { fresh: false, withFind: false }, () => r + 0.001), 'common');
 });
 
-test('the hook: until a taker holds a fossil, a fresh depth’s first offer from shown 5 holds a common, certain', () => {
+test('the common hook: until a taker holds a common, a fresh depth’s first offer from shown 5 holds one, certain (shown 25 the rare hook’s)', () => {
   const rng = seeded(9);
   for (let d = 1; d < 6; d++) assert.equal(dealFossil(d, [fresh], { fresh: true, withFind: false }, rng), null, `before 5 (internal ${d})`);
   for (let d = 6; d < 60; d++) {
-    assert.equal(dealFossil(d, [fresh], { fresh: true, withFind: false }, () => 0.9999), 'common', `hook at ${d}`);
+    assert.equal(dealFossil(d, [fresh], { fresh: true, withFind: false }, () => 0.9999), d === FOSSIL_DEAL.rareHookAt ? 'rare' : 'common', `hook at ${d}`);
   }
   // Not on an offer after a miss at the depth: that one rolls as any.
   assert.equal(dealFossil(20, [fresh], { fresh: false, withFind: false }, () => 0.9999), null);
@@ -185,12 +187,35 @@ test('the hook: until a taker holds a fossil, a fresh depth’s first offer from
   assert.equal(dealFossil(20, [started, fresh], { fresh: true, withFind: false }, () => 0), 'common');
 });
 
+test('the rare hook: until a taker holds a rare, the first offer at shown 25 holds one, certain; by what they hold, so it waits', () => {
+  assert.equal(shownDepth(FOSSIL_DEAL.rareHookAt), 25);
+  const at = FOSSIL_DEAL.rareHookAt;
+  assert.equal(dealFossil(at, [started], { fresh: true, withFind: true }, () => 0.9999), 'rare');
+  // Only the first offer there, only at 25.
+  assert.equal(dealFossil(at, [started], { fresh: false, withFind: true }, () => 0.9999), null);
+  assert.equal(dealFossil(at + 1, [started], { fresh: true, withFind: true }, () => 0.9999), null);
+  // One rare held: rolls as any.
+  const oneRare: FossilTaker = { held: fossilMask(['scorched', 'gilded']), run: 0 };
+  assert.equal(dealFossil(at, [oneRare], { fresh: true, withFind: true }, () => 0.9999), null);
+  // The run's one spent: nothing, and the hook stays for a later run (it goes by what's held).
+  assert.equal(dealFossil(at, [{ ...started, run: 1 }], { fresh: true, withFind: true }, () => 0.9999), null);
+  // It wins over the common hook at 25, for one who holds neither.
+  assert.equal(dealFossil(at, [fresh], { fresh: true, withFind: true }, () => 0.9999), 'rare');
+  // Together: while anyone standing could take one.
+  assert.equal(dealFossil(at, [oneRare, started], { fresh: true, withFind: true }, () => 0.9999), 'rare');
+});
+
+test('the common hook goes by commons: a player holding only a rare still gets it', () => {
+  const onlyRare: FossilTaker = { held: fossilMask(['gilded']), run: 0 };
+  assert.equal(dealFossil(20, [onlyRare], { fresh: true, withFind: false }, () => 0.9999), 'common');
+});
+
 // ---- in the game ------------------------------------------------------------------
 
-/** A run alone at `depth` (internal); `held`: the mask the device says it holds, `day` the UTC day of its latest find (the room's clock starts on day 0). */
-function run(depth: number, o: { seed?: number; held?: number; day?: number | null; players?: string[] } = {}) {
+/** A run alone at `depth` (internal); `held`: the mask the device says it holds. */
+function run(depth: number, o: { seed?: number; held?: number; players?: string[] } = {}) {
   const h = room({ players: o.players ?? ['Ash'], seed: o.seed ?? 3 });
-  h.engine.setFossilsHeld((ids) => ids.map(() => ({ held: o.held ?? 0, day: o.day ?? null })));
+  h.engine.setFossilsHeld((ids) => ids.map(() => o.held ?? 0));
   h.edit((c) => (c.round = depth));
   const x = Object.assign(h, {
     /** Puts a fossil of `tier` on an ordinary card on offer, as a lucky roll would; its category. */
@@ -252,7 +277,7 @@ test('a miss on a fossil’s card costs a life as any miss, and the fossil is go
   assert.equal(h.s.delve!.fossils, undefined);
 });
 
-test('a tier all held, a second this run, or one more the same day gives nothing', () => {
+test('a tier all held, or a second this run, gives nothing; another run the same day does', () => {
   const held = run(12, { held: fossilMask(COMMONS) });
   held.pick(held.plant('common'));
   held.answer(true);
@@ -270,23 +295,20 @@ test('a tier all held, a second this run, or one more the same day gives nothing
   twice.act({ type: 'next' });
   assert.equal(fossilOffer(twice.s), null, 'and none dealt for them');
 
-  // One a day: found today (the device's latest find, UTC) and nothing; found yesterday, and it comes.
-  const day = 86_400_000;
-  for (const [last, gives] of [[4, false], [3, true]] as const) {
-    const h = run(40, { held: fossilMask(['scorched']), day: last });
-    h.clock.now = 4 * day + 3_600_000;
-    h.pick(h.plant('common'));
-    h.answer(true);
-    assert.equal(!!h.s.reveal!.fossil, gives, `latest find on day ${last}, now day 4`);
-  }
+  // No day cap: a find earlier today (the device's latest) doesn't hold the next run's back.
+  const again = run(40, { held: fossilMask(['scorched', 'jagged']) });
+  again.pick(again.plant('common'));
+  again.answer(true);
+  assert.equal(again.s.reveal!.fossil?.given.length, 1);
 });
 
-test('dynamite never fishes: a blast loses the fossil, and the new question is never one', () => {
+test('dynamite never fishes: a blast loses the fossil, says its tier went with the card, and the new question is never one', () => {
   const h = run(20, { held: fossilMask(['scorched']) });
   h.give('p0', { dynamite: 1 });
-  h.pick(h.plant('common'));
+  h.pick(h.plant('rare'));
   h.act({ type: 'blast', askedAt: h.s.question!.askedAt });
   assert.equal(h.s.question!.fossil, undefined);
+  assert.equal(h.s.question!.blast?.was.fossil, 'rare');
   h.act({ type: 'clock', askedAt: h.s.question!.askedAt });
   h.answer(true);
   assert.equal(h.s.reveal!.fossil, undefined);
@@ -318,8 +340,8 @@ test('dealt in play: never on a find’s card or the way out, at most one an off
         assert.ok(!isWayOut(f.category));
         assert.ok(!findOn(h.s, f.category), 'on a find’s card');
       }
-      // Nobody holds any (the device says none): every fresh depth from 5 holds the hook's common.
-      if (h.s.round >= 6 && !h.s.delve!.missedHere) assert.equal(f?.tier, 'common', `the hook at ${h.s.round}, seed ${seed}`);
+      // Nobody holds any (the device says none): every fresh depth from 5 holds the hook's common (shown 25 the rare hook's rare).
+      if (h.s.round >= 6 && !h.s.delve!.missedHere) assert.equal(f?.tier, h.s.round === FOSSIL_DEAL.rareHookAt ? 'rare' : 'common', `the hook at ${h.s.round}, seed ${seed}`);
       // Pass the fossil's card (never taking it), so the hook goes on.
       const cat = h.s.offered.find((c) => c !== f?.category && !findOn(h.s, c) && !isWayOut(c));
       if (!cat) break;
@@ -335,7 +357,7 @@ test('together: on the team’s right answer everyone standing who can take one 
   const h = run(20, { players: ['Ash', 'Brea', 'Cole'] });
   const lacks = (id: FossilId) => fossilMask(COMMONS.filter((c) => c !== id));
   // Ash lacks only Deft, Brea only Bound; Cole holds every common.
-  h.engine.setFossilsHeld((ids) => ids.map((id) => ({ held: id === 'p0' ? lacks('deft') : id === 'p1' ? lacks('bound') : fossilMask(COMMONS), day: null })));
+  h.engine.setFossilsHeld((ids) => ids.map((id) => (id === 'p0' ? lacks('deft') : id === 'p1' ? lacks('bound') : fossilMask(COMMONS))));
   const cat = h.plant('common');
   for (const p of ['p0', 'p1', 'p2']) h.act({ type: 'vote', category: cat }, p);
   if (h.s.phase === 'choosing') h.act({ type: 'expire' }, null);
@@ -352,7 +374,7 @@ test('together: on the team’s right answer everyone standing who can take one 
 
 test('together: nobody who can take one, nothing given', () => {
   const h = run(20, { players: ['Ash', 'Brea'] });
-  h.engine.setFossilsHeld((ids) => ids.map(() => ({ held: fossilMask(COMMONS), day: null })));
+  h.engine.setFossilsHeld((ids) => ids.map(() => fossilMask(COMMONS)));
   const cat = h.plant('common');
   for (const p of ['p0', 'p1']) h.act({ type: 'vote', category: cat }, p);
   if (h.s.phase === 'choosing') h.act({ type: 'expire' }, null);
@@ -380,6 +402,23 @@ test('counts: a fossil taken by tier, and a fossil card passed up for a find', (
   const before = p.s;
   p.pick(p.s.offered[0]);
   assert.deepEqual(fossilEvents(before, p.s), ['fossil/passed']);
+  // Seen: once an offer, as it is dealt, not again as the vote goes on.
+  const seen = run(30, { held: fossilMask(['scorched']) });
+  const plain = seen.s;
+  seen.plant('common');
+  assert.deepEqual(fossilEvents({ ...plain, phase: 'reveal' }, seen.s), ['fossil/seen']);
+  assert.deepEqual(fossilEvents(seen.s, { ...seen.s, version: seen.s.version + 1 }), [], 'once');
+  // Missed: a fossil card's question answered wrong; never an ordinary one's.
+  const cat2 = seen.s.delve!.fossil!.category;
+  seen.pick(cat2);
+  const q = seen.s;
+  seen.answer(false);
+  assert.deepEqual(fossilEvents(q, seen.s), ['fossil/missed']);
+  const plainMiss = run(30, { held: fossilMask(['scorched']) });
+  plainMiss.pick(plainMiss.s.offered.find((c) => !findOn(plainMiss.s, c) && !isWayOut(c) && plainMiss.s.delve!.fossil?.category !== c)!);
+  const q2 = plainMiss.s;
+  plainMiss.answer(false);
+  assert.deepEqual(fossilEvents(q2, plainMiss.s), []);
   p.answer(true);
   assert.deepEqual(fossilEvents(p.s, p.s), []);
 });
@@ -430,23 +469,9 @@ test('kept on this device, synced as taken-in data, and never written over a new
   store.clear();
 });
 
-test('the day of a device’s latest find: what the one a day goes by, from the found dates, which paired devices share', () => {
-  const day = 86_400_000;
-  const s: FossilStore = { found: { jagged: { at: 3 * day + 10, depth: 9 }, dense: { at: 5 * day + 99, depth: 7 } } };
-  assert.equal(lastFoundDay(s), 5);
-  assert.equal(lastFoundDay(emptyFossils()), null);
-  assert.deepEqual(heldOf(s), { held: fossilMask(['jagged', 'dense']), day: 5 });
-  assert.ok(foundToday(s, 5 * day + 80_000_000));
-  assert.ok(!foundToday(s, 6 * day + 1));
-});
-
-test('the hello carries the fossils a guest holds as a mask, and the day of its latest find; what isn’t is left out', () => {
+test('the hello carries the fossils a guest holds as a mask, and no day; what isn’t is left out', () => {
   const hello = { t: 'hello', secret: 'a'.repeat(24), name: 'Ash', v: 35 };
-  assert.equal((parseClientMsg({ ...hello, fossilDay: 20_400 }) as { fossilDay?: number }).fossilDay, 20_400);
-  for (const bad of [-1, 1.5, '20400', 2_000_000]) {
-    const m = parseClientMsg({ ...hello, fossilDay: bad });
-    assert.ok(m && !('fossilDay' in m), `fossilDay ${bad}`);
-  }
+  assert.ok(!('fossilDay' in parseClientMsg({ ...hello, fossilDay: 20_400 })!));
   assert.equal((parseClientMsg({ ...hello, fossils: fossilMask(['dense', 'gilded']) }) as { fossils?: number }).fossils, fossilMask(['dense', 'gilded']));
   for (const bad of [-1, ALL_FOSSILS + 1, 'x', 2.5]) {
     const m = parseClientMsg({ ...hello, fossils: bad });
@@ -471,16 +496,43 @@ test('the usual: named when a run lifts the runs chart’s usual depth, never wh
   assert.equal(usualLifted(two, two.at(-1)!.id, false, null), null);
 });
 
-test('the end screen names the run’s fossil, and that another can turn up tomorrow for the one it went to', () => {
+test('the run’s facts leave its fossils to the end screen’s own line (setProgress), and say no “tomorrow”', () => {
   const h = run(12, { held: fossilMask(['scorched']) });
-  h.engine.setFossilsHeld((ids) => ids.map(() => ({ held: fossilMask(COMMONS.filter((id) => id !== 'aberrant')), day: null })));
   h.pick(h.plant('common'));
   h.answer(true);
-  const text = (me: string | null) => runFacts(h.s, me).map((l) => l.parts.map((p) => (typeof p === 'string' ? p : 'n' in p ? String(p.n) : '')).join(''));
-  assert.ok(text('p0').includes('You found an Aberrant Fossil at depth 11. Another can turn up tomorrow.'), text('p0').join(' | '));
-  // The set complete: none can turn up tomorrow.
-  const all = runFacts(h.s, 'p0', true).map((l) => l.parts.map((p) => (typeof p === 'string' ? p : 'n' in p ? String(p.n) : '')).join(''));
-  assert.ok(all.includes('You found an Aberrant Fossil at depth 11.'), all.join(' | '));
+  const text = runFacts(h.s, 'p0').map((l) => l.parts.map((p) => (typeof p === 'string' ? p : 'n' in p ? String(p.n) : '')).join(''));
+  assert.ok(!text.some((l) => /fossil|tomorrow/i.test(l)), text.join(' | '));
+  assert.equal(setProgress(emptyFossils(), h.s, 'p0', false).run.length, 1);
+});
+
+test('a fossil card missed is kept in the run for the end screen: its depth, tier, and who could have taken one', () => {
+  const h = run(14, { held: fossilMask(['scorched']) });
+  h.pick(h.plant('rare'));
+  h.answer(false);
+  assert.deepEqual(missedFossils(h.s), [{ depth: 14, tier: 'rare', to: ['p0'] }]);
+  assert.deepEqual(setProgress(emptyFossils(), h.s, 'p0', false).missed, [{ depth: 14, tier: 'rare', to: ['p0'] }], 'in the recap');
+  assert.deepEqual(setProgress(emptyFossils(), h.s, 'p9', false).missed, [], 'not another player’s');
+  // A plain card missed, or a fossil card answered right: nothing.
+  const plain = run(14, { held: fossilMask(['scorched']) });
+  plain.pick(plain.s.offered.find((c) => !findOn(plain.s, c) && !isWayOut(c) && plain.s.delve!.fossil?.category !== c)!);
+  plain.answer(false);
+  assert.deepEqual(missedFossils(plain.s), []);
+  // Together, nobody right: everyone who could have taken one.
+  const t = run(20, { players: ['Ash', 'Brea'] });
+  t.engine.setFossilsHeld((ids) => ids.map((id) => (id === 'p1' ? fossilMask(COMMONS) : fossilMask(['scorched']))));
+  const cat = t.plant('common');
+  for (const p of ['p0', 'p1']) t.act({ type: 'vote', category: cat }, p);
+  if (t.s.phase === 'choosing') t.act({ type: 'expire' }, null);
+  t.act({ type: 'clock', askedAt: t.s.question!.askedAt });
+  const q = t.s.question!;
+  const wrongs = q.options.map((_, i) => i).filter((i) => i !== right(q));
+  t.act({ type: 'answer', index: wrongs[0], askedAt: q.askedAt }, 'p0');
+  if (t.s.phase !== 'reveal') t.act({ type: 'answer', index: wrongs[1], askedAt: q.askedAt }, 'p1');
+  assert.equal(t.s.phase, 'reveal');
+  assert.deepEqual(missedFossils(t.s), [{ depth: 20, tier: 'common', to: ['p0'] }]);
+  assert.deepEqual(setProgress(emptyFossils(), t.s, 'p1', false).missed, [], 'Brea held every common');
+  // Read sanely.
+  assert.deepEqual(missedFossils({ delve: { fossilsMissed: [{ depth: 3, tier: 'gold', to: [] }, null, { depth: 4, tier: 'rare', to: ['p0'] }] } } as unknown as GameState), [{ depth: 4, tier: 'rare', to: ['p0'] }]);
 });
 
 test('the flight: the tally is in its place before the piece sets off for it, the piece lands, then the tally goes', () => {
@@ -515,15 +567,15 @@ test('a run’s fossils are kept from its state: a guest that missed the reveal 
   store.clear();
 });
 
-test('the deal reads an away guest’s own fossils and day, not the host’s; the host’s only for its own players', () => {
-  const theirs = { held: fossilMask(['dense']), day: 12 };
-  const mine = { held: fossilMask(['jagged', 'gilded']), day: 14 };
+test('the deal reads an away guest’s own fossils, not the host’s; the host’s only for its own players', () => {
+  const theirs = fossilMask(['dense']);
+  const mine = fossilMask(['jagged', 'gilded']);
   const known = new Map([['p1', theirs]]);
   let reads = 0;
   const here = () => (reads++, mine);
   const own = (id: string) => id === 'p0' || id === 'p3';
   // p1 away (their link dropped, still standing): their last; p2 never heard from: none; p0 and p3 at the host's screen.
-  assert.deepEqual(heldFor(['p0', 'p1', 'p2', 'p3'], known, own, here), [mine, theirs, { held: 0, day: null }, mine]);
+  assert.deepEqual(heldFor(['p0', 'p1', 'p2', 'p3'], known, own, here), [mine, theirs, 0, mine]);
   assert.equal(reads, 1, 'this device’s store read once');
 });
 
@@ -541,5 +593,41 @@ test('erasing the codex erases the fossils, what was kept aside of them, and the
   const reset = codex.slice(codex.indexOf('function reset()'), codex.indexOf('confirmReset = false;'));
   assert.match(reset, /resetFossils\(\);[\s\S]*fossils = loadFossils\(\);/);
   assert.match(codex, /<CodexDelve [^>]*\{fossils\}/);
+  store.clear();
+});
+
+test('the set’s progress for every Delve end screen: found of all, each tier, complete, and what this run gave', () => {
+  const s = { delve: { fossils: [{ id: 'jagged', depth: 9, at: 1, to: ['p0'] }, { id: 'dense', depth: 12, at: 2, to: ['p1'] }] } } as unknown as GameState;
+  const store: FossilStore = { found: { jagged: { at: 1, depth: 9 }, gilded: { at: 1, depth: 30 }, scorched: { at: 1, depth: 6 } } };
+  assert.deepEqual(setProgress(store, s, 'p0', false), { found: 3, total: 25, common: { found: 2, total: 17 }, rare: { found: 1, total: 8 }, complete: false, run: ['jagged'], missed: [] });
+  assert.deepEqual(setProgress(store, s, null, true).run, ['jagged', 'dense']);
+  assert.deepEqual(setProgress(emptyFossils(), null, null, false).run, []);
+  const all: FossilStore = { found: Object.fromEntries(FOSSIL_IDS.map((id) => [id, { at: 1, depth: 30 }])) };
+  assert.ok(setProgress(all, null, null, false).complete);
+  assert.deepEqual(FOSSIL_FROM, { common: 5, rare: 25 });
+});
+
+test('in play: the first offer at shown 25 holds the Azurite Vein and, for one who holds no rare, a rare fossil beside it', () => {
+  for (const seed of [1, 2, 3, 4, 5]) {
+    const h = run(FOSSIL_DEAL.rareHookAt - 1, { seed, held: fossilMask(['scorched']) });
+    const cat = h.s.offered.find((c) => !findOn(h.s, c) && !isWayOut(c) && h.s.delve!.fossil?.category !== c)!;
+    h.pick(cat);
+    h.answer(true);
+    h.act({ type: 'next' });
+    assert.equal(h.s.round, FOSSIL_DEAL.rareHookAt);
+    assert.ok(findOn(h.s, h.s.offered.find((c) => findOn(h.s, c) === 'azurite') ?? '') === 'azurite', `the vein, seed ${seed}`);
+    assert.equal(fossilOffer(h.s)?.tier, 'rare', `the rare beside it, seed ${seed}`);
+  }
+});
+
+test('the set complete: said once, as the last of the 25 is kept on this device', () => {
+  store.clear();
+  const all24 = FOSSIL_IDS.slice(0, 24);
+  for (const id of all24) keepFossils([id], 30, false, 1000);
+  assert.equal(completedBy([]), false);
+  assert.equal(completedBy(['jagged']), false, '24 of 25');
+  const last = keepFossils([FOSSIL_IDS[24]], 40, false, 2000);
+  assert.ok(completedBy(last));
+  assert.equal(completedBy(keepFossils([FOSSIL_IDS[24]], 40, false, 3000)), false, 'not again');
   store.clear();
 });
