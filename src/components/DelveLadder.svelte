@@ -8,7 +8,8 @@
   import { drawDescent } from '../lib/descentDrawer';
   import { FIND_TEXT } from '../lib/difficultyText';
   import { unzoomRect, zoomOf } from '../lib/stage';
-  import { motion } from '../lib/motion.svelte';
+  import { fade } from 'svelte/transition';
+  import { calm, motion } from '../lib/motion.svelte';
   import ItemGlyph from './ItemGlyph.svelte';
 
   // The descent, engraved (lib/descentPlate draws it): Sol over the mouth of
@@ -101,12 +102,27 @@
    * (the page measured again), the last one stays.
    */
   let plate = $state.raw<Plate | null>(null);
+  /**
+   * Whose records the plate's stars and legend mark (`records`), in the legend's words as it was drawn for them
+   * (`legend`). A plate for other records (a second player joins, or the last one leaves, and the records turn to the
+   * co-op ones or back) brings its stars, their depths and the legend in fading over the old ones (records, below),
+   * already in their places: their entrance's delays less the time since the first plate (`shift`, s).
+   */
+  let records = $state('');
+  let legend = $state(untrack(() => KEY));
+  let shift = $state(0);
   $effect(() => {
     if (!(measured && w > 0 && h > 0)) return;
     const layout = $state.snapshot({ caption: cap, beside, callouts: shapes, nameW, legendW });
+    const these = `${deepest} ${last}`;
+    const words = untrack(() => KEY);
     let wanted = true;
     void drawDescent([w, h, deepest, $state.snapshot(metFinds), layout, last, seen]).then((p) => {
-      if (wanted) plate = p;
+      if (!wanted) return;
+      if (plate && these !== records) shift = (performance.now() - firstPlateAt) / 1000;
+      records = these;
+      legend = words;
+      plate = p;
     });
     return () => {
       wanted = false;
@@ -191,6 +207,8 @@
   /** The zones reached, as the plate charts them (descentPlate's `reached`). */
   const reached = $derived(ZONES.filter((z) => Math.max(best ?? 0, lastRun ?? 0, seen && seen > 0 ? Math.floor(seen) : 0) >= z.from).length);
   const sec = (s: number) => `${s.toFixed(3)}s`;
+  /** A delay of the stars' and the legend's, less the time since the first plate when they came with another (`shift`). */
+  const late = (s: number) => sec(s - shift);
   /** The legend's small stars. */
   const keyStar = star8([0, 0], KEY_R).outline;
 
@@ -412,16 +430,6 @@
 
     <!-- On the plate, but never cut round the stars. -->
     <svg class="marks" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
-      <!-- Which star is which, left of the ouroboros, half its radius from it. -->
-      <g class="legend" style:--d={sec(p.legend.delay)}>
-        {#each p.legend.rows as r (r.kind)}
-          <g class="key {r.kind}">
-            <path class="key-star" d={keyStar} transform="translate({f(p.legend.x + KEY_R)} {f(r.y)})" />
-            <text x={f(p.legend.x + 2 * KEY_R + 5)} y={f(r.y)}>{KEY[r.kind]}</text>
-          </g>
-        {/each}
-      </g>
-
       <!-- The finds you have met: a station on the wall where each first turns up, and that depth in the middle of its line. -->
       {#each p.stations as s (s.kind)}
         <circle class="station" cx={f(s.c[0])} cy={f(s.c[1])} r="1.1" style:--d={sec(s.delay)} />
@@ -519,58 +527,76 @@
       {/each}
     </svg>
 
-    <!-- The stars, on a layer of their own: eight-pointed, hatched down one side of each point, in a glory of fine rays that slowly turns.
-         The gold one (your deepest) comes down from the mouth; the red one (your last run) appears as it lands. One for both drifts
-         between the two colours. -->
-    <svg class="live" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
-      {#each [p.last, p.star] as s, i (i)}
-        {#if s}
-          <g class={s.both ? 'both-star' : i ? 'gold-star' : 'red-star'} style:--b={sec(s.delay + 0.25 + s.travel)} transform="translate({f(s.c[0])} {f(s.c[1])})">
-            <g
-              class="star"
-              class:travel={s.travel > 0}
-              class:into={!!s.mid}
-              style:--fx="{f(s.from[0])}px"
-              style:--fy="{f(s.from[1])}px"
-              style:--mx="{f(s.mid?.[0] ?? 0)}px"
-              style:--my="{f(s.mid?.[1] ?? 0)}px"
-              style:--d={sec(s.delay)}
-              style:--go={sec(s.delay + 0.25)}
-              style:--t={sec(s.travel)}
-            >
-              <circle class="halo" r={f(s.gloryR - 1)} />
-              <g class="turn">
-                <path class="glory draw" d={s.glory} pathLength="100" style:--d={sec(s.delay + 0.1)} style:--t="0.4s" />
+    <!-- Whose records: the stars, their depths and the legend. Turned to another's (the co-op ones as a second player joins,
+         or back), the new fade in over the old, which fade out where they stood: no star jumps, none comes down the wall again. -->
+    {#key records}
+      <div class="records" transition:fade={calm({ duration: 300 })}>
+        <!-- Which star is which, left of the ouroboros, half its radius from it. -->
+        <svg viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
+          <g class="legend" style:--d={late(p.legend.delay)}>
+            {#each p.legend.rows as r (r.kind)}
+              <g class="key {r.kind}">
+                <path class="key-star" d={keyStar} transform="translate({f(p.legend.x + KEY_R)} {f(r.y)})" />
+                <text x={f(p.legend.x + 2 * KEY_R + 5)} y={f(r.y)}>{legend[r.kind]}</text>
               </g>
-              <g class="stamp">
-                <path class="star-ground" d={s.outline} />
-                <path class="star-hatch" d={s.hatch} />
-                <path class="star-line" d={s.outline} />
-                <path class="star-ridge" d={s.ridges} />
-              </g>
-              {#if s.travel > 0}
-                <circle class="land-flare" r={f(s.gloryR)} style:--l={sec(s.delay + 0.25 + s.travel - 0.05)} />
-                {#if !s.inSnake}<circle class="land" r={f(s.gloryR)} style:--l={sec(s.delay + 0.25 + s.travel - 0.05)} />{/if}
-              {/if}
-              {#if i}
-                <!-- A glint crossing the star now and then, turned between its points. -->
-                <path
-                  class="twinkle"
-                  d="M0 {f(-s.r * 1.9)}L{f(s.r * 0.16)} 0L0 {f(s.r * 1.9)}L{f(-s.r * 0.16)} 0ZM{f(-s.r * 1.9)} 0L0 {f(s.r * 0.16)}L{f(s.r * 1.9)} 0L0 {f(-s.r * 0.16)}Z"
-                  style:--d={sec(s.delay + s.travel + 1.6)}
-                />
-              {/if}
-            </g>
+            {/each}
           </g>
-          {#if s.lastNum}
-            <text class="depth red-num" x={f(s.lastNum.x)} y={f(s.lastNum.y)} text-anchor="middle" style:font-size={s.lastNum.size < 1 ? `${f(13 * s.lastNum.size)}px` : null} style:--d={sec(s.delay + 0.25 + s.travel)}>{s.lastNum.text}</text>
-          {/if}
-          {#if s.num}
-            <text class="depth {i ? 'gold-num' : 'red-num'}" x={f(s.num.x)} y={f(s.num.y)} text-anchor={s.num.anchor} style:font-size={s.num.size < 1 ? `${f(13 * s.num.size)}px` : null} style:--d={sec(s.delay + 0.25 + s.travel)}>{s.num.text}</text>
-          {/if}
-        {/if}
-      {/each}
-    </svg>
+        </svg>
+
+        <!-- The stars, on a layer of their own: eight-pointed, hatched down one side of each point, in a glory of fine rays that slowly turns.
+             The gold one (your deepest) comes down from the mouth; the red one (your last run) appears as it lands. One for both drifts
+             between the two colours. -->
+        <svg class="live" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
+          {#each [p.last, p.star] as s, i (i)}
+            {#if s}
+              <g class={s.both ? 'both-star' : i ? 'gold-star' : 'red-star'} style:--b={late(s.delay + 0.25 + s.travel)} transform="translate({f(s.c[0])} {f(s.c[1])})">
+                <g
+                  class="star"
+                  class:travel={s.travel > 0}
+                  class:into={!!s.mid}
+                  style:--fx="{f(s.from[0])}px"
+                  style:--fy="{f(s.from[1])}px"
+                  style:--mx="{f(s.mid?.[0] ?? 0)}px"
+                  style:--my="{f(s.mid?.[1] ?? 0)}px"
+                  style:--d={late(s.delay)}
+                  style:--go={late(s.delay + 0.25)}
+                  style:--t={sec(s.travel)}
+                >
+                  <circle class="halo" r={f(s.gloryR - 1)} />
+                  <g class="turn">
+                    <path class="glory draw" d={s.glory} pathLength="100" style:--d={late(s.delay + 0.1)} style:--t="0.4s" />
+                  </g>
+                  <g class="stamp">
+                    <path class="star-ground" d={s.outline} />
+                    <path class="star-hatch" d={s.hatch} />
+                    <path class="star-line" d={s.outline} />
+                    <path class="star-ridge" d={s.ridges} />
+                  </g>
+                  {#if s.travel > 0}
+                    <circle class="land-flare" r={f(s.gloryR)} style:--l={late(s.delay + 0.25 + s.travel - 0.05)} />
+                    {#if !s.inSnake}<circle class="land" r={f(s.gloryR)} style:--l={late(s.delay + 0.25 + s.travel - 0.05)} />{/if}
+                  {/if}
+                  {#if i}
+                    <!-- A glint crossing the star now and then, turned between its points. -->
+                    <path
+                      class="twinkle"
+                      d="M0 {f(-s.r * 1.9)}L{f(s.r * 0.16)} 0L0 {f(s.r * 1.9)}L{f(-s.r * 0.16)} 0ZM{f(-s.r * 1.9)} 0L0 {f(s.r * 0.16)}L{f(s.r * 1.9)} 0L0 {f(-s.r * 0.16)}Z"
+                      style:--d={late(s.delay + s.travel + 1.6)}
+                    />
+                  {/if}
+                </g>
+              </g>
+              {#if s.lastNum}
+                <text class="depth red-num" x={f(s.lastNum.x)} y={f(s.lastNum.y)} text-anchor="middle" style:font-size={s.lastNum.size < 1 ? `${f(13 * s.lastNum.size)}px` : null} style:--d={late(s.delay + 0.25 + s.travel)}>{s.lastNum.text}</text>
+              {/if}
+              {#if s.num}
+                <text class="depth {i ? 'gold-num' : 'red-num'}" x={f(s.num.x)} y={f(s.num.y)} text-anchor={s.num.anchor} style:font-size={s.num.size < 1 ? `${f(13 * s.num.size)}px` : null} style:--d={late(s.delay + 0.25 + s.travel)}>{s.num.text}</text>
+              {/if}
+            {/if}
+          {/each}
+        </svg>
+      </div>
+    {/key}
   {/if}
 
   <!-- Stacked: each find's item and name on the plate's right, tied to the wall by its line once you have met it. -->
@@ -1093,6 +1119,11 @@
     fill: var(--red-num);
   }
 
+  /* The stars and the legend, as one, so another's records fade in over them. */
+  .records {
+    position: absolute;
+    inset: 0;
+  }
   /* The stars' layer is composited on its own, so what turns on it never repaints the plate under it. */
   .live {
     will-change: transform;

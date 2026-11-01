@@ -118,6 +118,11 @@ it a party of twelve may scroll (a 13- or 14-inch laptop, 725 and 790 tall,
 and the fullest run alone at 725): the team's plates never fold, so everyone
 who delved stays on the screen.
 
+A fit that comes after the screen is up (an achievement judged a moment late,
+the codex read again, a "+N" opened) never jumps: everything glides to its
+new place in 450 ms on the entrances' ease, the circle and the heart scaled
+with it, and a list's new places fade in where they land.
+
 Each column takes the first step that fits it, so a full panel never squeezes
 the column beside it. Phones and windows under 1081 px wide scroll instead.
 On the QA desk, "Any game, as set", "Any run alone, as set" and "Any run
@@ -345,10 +350,11 @@ the left and the buttons on the right.
   the Highlights' icons, text 10 px after it on the Highlights' text edge, so
   the status text never moves when someone joins.
   - "All 5 exiles still here" with a check (18 px), or "4 of 5 exiles still
-    here" with the offline mark, in the warm `#eab3a3`.
+    here" with the offline mark, in the warm `#eab3a3`. As someone leaves or
+    comes back, the old line fades out as the new one fades in over it.
   - Under it, when spectators will join: the watching eye (the scoreboard's
     "Watching" mark, drawn as a line icon in muted) and "Finn and Renly join
-    next".
+    next"; it opens out and closes up (250 ms) as they come and go.
   - Italic, muted, numbers in Cinzel bold gold. Hot-seat has no status.
 - **Guest:** centred, a gold pulse dot and "Waiting for Kalguur to start the
   next game…" (Delve: "…the next run…").
@@ -374,7 +380,8 @@ One column, 16 px gutters, scrolling:
 - **Your row below the fold:** when you did not win and your row is not on
   the first screen (seventh or lower), it rides on the dock's top edge as one
   opaque piece with it (`n-phone-twelve`), until the list scrolls it into
-  place. Nothing of the list shows between it and the dock.
+  place, rising out of the dock's edge as it comes and sinking back as it
+  goes. Nothing of the list shows between it and the dock.
 - The start page footer ends the page.
 
 ## Copy
