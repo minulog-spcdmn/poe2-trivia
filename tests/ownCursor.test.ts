@@ -1,8 +1,9 @@
-// The app's own pointer (lib/ownCursor.ts) in WebKit: there every element
-// inherits the cursor rather than naming the one handed down to it, as WebKit
-// makes a named picture cursor afresh at each restyle and restyles all the
-// element holds with it (app.css). Which browsers are WebKit, and the CSS as
-// the build makes it (themedCursors.ts).
+// The app's own pointer (lib/ownCursor.ts): every element inherits its
+// cursor (app.css), and the pressed pointer, set on one element alone, hands
+// that element's children the cursor handed down to them (themedCursors.ts),
+// so what they hold isn't restyled; not in WebKit, which makes a named picture
+// cursor afresh at each restyle and restyles all the element holds with it.
+// Which browsers are WebKit, and the CSS as the build makes it.
 import './asVite.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,7 +11,7 @@ import { readFileSync } from 'node:fs';
 import postcss, { type Rule } from 'postcss';
 import { themedCursors } from '../themedCursors.ts';
 
-const { rebuildsCursorImages } = await import('../src/lib/ownCursor.ts');
+const { rebuildsCursorImages, shield, unshield } = await import('../src/lib/ownCursor.ts');
 
 test('WebKit is Safari and every browser on iOS; not Chrome, Edge, Opera or Firefox', () => {
   const webkit = [
@@ -41,16 +42,14 @@ const ruleOf = (selector: string) => {
   return { i, cursor: cursorOf(rules[i]) };
 };
 
-test('as built, every element takes the cursor handed down to it, but in WebKit inherits it', () => {
-  const handed = ruleOf(':where(*)');
-  const inherited = ruleOf(':where(:root[data-cursor-inherited] *)');
-  assert.deepEqual(handed.cursor, ['cursor: var(--cursor-now, auto)']);
-  // (Left as it is by the build: handed down, it would name a picture again.)
-  assert.deepEqual(inherited.cursor, ['cursor: inherit']);
-  assert.ok(inherited.i > handed.i, 'the WebKit rule comes after the one it stands in for');
+test('as built, every element inherits its cursor; text fields and <html> hand theirs down', () => {
+  const every = ruleOf(':where(*)');
+  // (Left as it is by the build: handed down, it would name a picture on every element again.)
+  assert.deepEqual(every.cursor, ['cursor: inherit']);
+  assert.ok(!rules.some((r) => r.selector.includes('data-cursor-inherited')), 'no rule for WebKit alone');
   // Text fields keep their own (as specific, and later).
   const text = rules.findIndex((r) => /^:where\(input/.test(r.selector) && cursorOf(r).includes('cursor: var(--cursor-now)'));
-  assert.ok(text > inherited.i, 'text fields are styled after the WebKit rule');
+  assert.ok(text > every.i, 'text fields are styled after the rule for every element');
   assert.deepEqual(ruleOf('html').cursor, ['--cursor-now: var(--cursor, default)', 'cursor: var(--cursor-now)']);
 });
 
@@ -63,6 +62,45 @@ test('the build hands a cursor down, but leaves the CSS-wide keywords as they ar
   );
 });
 
-test('ownCursor marks WebKit with the attribute app.css reads', () => {
-  assert.match(readFileSync('src/lib/ownCursor.ts', 'utf8'), /setAttribute\('data-cursor-inherited', ''\)/);
+/** An element's inline style, as far as shield uses it. */
+function el(cursor = '') {
+  const props = new Map<string, string>(cursor ? [['cursor', cursor]] : []);
+  return {
+    style: {
+      getPropertyValue: (p: string) => props.get(p) ?? '',
+      setProperty: (p: string, v: string) => void props.set(p, v),
+      removeProperty: (p: string) => {
+        const was = props.get(p) ?? '';
+        props.delete(p);
+        return was;
+      },
+    },
+  };
+}
+
+test('pressed, an element’s children take the cursor handed down to them, and give it back on release', () => {
+  const plain = el();
+  const own = el('crosshair');
+  const kids = [plain, own, el(), {}];
+  const set = shield({ children: kids });
+  assert.equal(set.length, 2, 'the two with no inline cursor of their own');
+  assert.equal(plain.style.getPropertyValue('cursor'), 'var(--cursor-now, auto)');
+  assert.equal(own.style.getPropertyValue('cursor'), 'crosshair', 'one of its own is left as it is');
+  unshield(set);
+  assert.equal(plain.style.getPropertyValue('cursor'), '');
+  assert.equal(own.style.getPropertyValue('cursor'), 'crosshair');
+});
+
+test('release leaves a cursor set on a child since the press', () => {
+  const child = el();
+  const set = shield({ children: [child] });
+  child.style.setProperty('cursor', 'grabbing');
+  unshield(set);
+  assert.equal(child.style.getPropertyValue('cursor'), 'grabbing');
+});
+
+test('ownCursor no longer marks WebKit for app.css, and keeps WebKit’s pressed children as they are', () => {
+  const src = readFileSync('src/lib/ownCursor.ts', 'utf8');
+  assert.doesNotMatch(src, /data-cursor-inherited/);
+  assert.match(src, /rebuildsCursorImages\(navigator\.userAgent\) \? \[\] : shield\(target\)/);
 });

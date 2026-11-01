@@ -155,7 +155,7 @@ let wanted = false;
  * changing those restyles the whole page, a stall on a long one (the
  * codex's every tile) twice a click.
  */
-let dressed: { el: HTMLElement | SVGElement; was: string; priority: string } | null = null;
+let dressed: { el: HTMLElement | SVGElement; was: string; priority: string; shielded: Styled[] } | null = null;
 /** Windows' high contrast and the like: the system's own cursors, which follow the user's settings. */
 const forced = typeof matchMedia === 'function' ? matchMedia('(forced-colors: active)') : null;
 const VARS = ['--cursor', '--cursor-pointer', '--cursor-disabled', '--cursor-text', '--cursor-zoom', '--cursor-grab', '--cursor-grabbing'];
@@ -163,8 +163,9 @@ const VARS = ['--cursor', '--cursor-pointer', '--cursor-disabled', '--cursor-tex
 /**
  * Whether this is WebKit (Safari, and every browser on iOS), which makes a
  * picture cursor afresh each time an element that names one is restyled and
- * restyles all the element holds with it. There every element inherits the
- * cursor (app.css, data-cursor-inherited), not just takes the one handed down.
+ * restyles all the element holds with it. There the pressed element's
+ * children aren't given the cursor handed down (shield): naming it, each
+ * would restyle all it holds anyway.
  */
 export const rebuildsCursorImages = (userAgent: string) => /AppleWebKit\//.test(userAgent) && !/Chrome\/|Chromium\//.test(userAgent);
 
@@ -216,10 +217,39 @@ function pressedFor(el: Element): string | null {
   return null;
 }
 
+/** An element as shield sees it: its inline style. */
+type Styled = { style?: Pick<CSSStyleDeclaration, 'getPropertyValue' | 'setProperty' | 'removeProperty'> };
+
+/** The cursor handed down (themedCursors.ts): the one an element sets, else the nearest that its ancestors set. */
+const HANDED_DOWN = 'var(--cursor-now, auto)';
+
+/**
+ * Gives `el`'s children the cursor handed down to them as their own (not one
+ * with its own inline already), so a cursor set on `el` alone stays there:
+ * what they hold inherits theirs, unchanged, and isn't restyled, however
+ * much it is. Returns the children it set, for unshield.
+ */
+export function shield(el: { children: ArrayLike<unknown> }): Styled[] {
+  const set: Styled[] = [];
+  for (const c of Array.from(el.children) as Styled[]) {
+    if (!c.style || c.style.getPropertyValue('cursor')) continue;
+    c.style.setProperty('cursor', HANDED_DOWN);
+    set.push(c);
+  }
+  return set;
+}
+
+/** Takes back the cursors shield set, those still as it set them. */
+export function unshield(set: Styled[]) {
+  for (const c of set) if (c.style?.getPropertyValue('cursor').includes('--cursor-now')) c.style.removeProperty('cursor');
+}
+
 /**
  * Shows the pressed pointer on `target` (the element under it), and only
- * there: what it holds keeps the cursor handed down to it (themedCursors.ts),
- * so a big one (bare page, a long list's ground) costs no more than a button.
+ * there: every element inherits its cursor (app.css), so its children are
+ * given the one handed down to them for the press (shield), and what it
+ * holds isn't restyled: a big one (bare page, a long list's ground) costs
+ * about what a button does, the children alone restyled.
  * (Not in WebKit, where what it holds inherits it and is restyled with it,
  * as it was anyway: see rebuildsCursorImages.)
  * Not on <html>: a change on the root restyles the whole page whatever it
@@ -232,17 +262,19 @@ function dress(target: EventTarget | null) {
   undress();
   const v = pressedFor(target);
   if (!v) return;
-  dressed = { el: target, was: target.style.getPropertyValue('cursor'), priority: target.style.getPropertyPriority('cursor') };
+  const shielded = rebuildsCursorImages(navigator.userAgent) ? [] : shield(target);
+  dressed = { el: target, was: target.style.getPropertyValue('cursor'), priority: target.style.getPropertyPriority('cursor'), shielded };
   target.style.setProperty('cursor', v, 'important');
 }
 
-/** Gives the pressed element its own cursor back. */
+/** Gives the pressed element its own cursor back, and its children theirs. */
 function undress() {
   if (!dressed) return;
-  const { el, was, priority } = dressed;
+  const { el, was, priority, shielded } = dressed;
   dressed = null;
   if (was) el.style.setProperty('cursor', was, priority);
   else el.style.removeProperty('cursor');
+  unshield(shielded);
 }
 
 /** Shows the pointer in `color` from now on (old gold when none). */
@@ -273,8 +305,6 @@ export function installCursor() {
   const show = () => {
     if (wanted) return;
     wanted = true;
-    // (With the variables, in the one restyle of the whole page they make.)
-    if (rebuildsCursorImages(navigator.userAgent)) document.documentElement.setAttribute('data-cursor-inherited', '');
     apply(true);
     whenIdle(() => apply(), { timeout: 1000 });
     // The pressed looks drawn ahead, so the first press doesn't wait on them.

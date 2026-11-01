@@ -431,6 +431,22 @@ effect): find what holds the frame up.
      boxes in each animation frame anyway, so what measures something
      that has just mounted does it there (`src/lib/inFrame.ts`): laid out
      once by then, and still before the frame is painted.
+   - **Style at some 30 µs an element.** Not the selectors: matching is a
+     few percent of a new screen's style (SelectorStats, in
+     `disabled-by-default-blink.debug`, which slows style tenfold, so time
+     nothing with it on). It's `var()`: Chrome substitutes a declaration's
+     variables and parses the value again on every element at every
+     restyle, and the style cache doesn't spare it. The same value written
+     out, or `inherit`, costs next to nothing. A cursor picture named
+     through a variable on every element (an `image-set()` of three urls)
+     was a third of a question's style; every element inherits it now
+     (`app.css`, `lib/ownCursor.ts`). The rest is each component's own:
+     a card frame's transitions and gradients, an emblem's fit in
+     `calc(var())`, the backdrop's shadow variables. To weigh a kind of
+     declaration, strip it from every rule through the CSSOM and time the
+     style of a clone of the screen (`getComputedStyle` forces style
+     alone) against the rules as they are, alternated. A hidden browser
+     pane does for that: style needs no screen.
 3. **On the iPhone**, the same questions through its Web Inspector:
    `docs/iphone.md`. A scene on its own is `qa.html?frame&s=<scene
    key>&size=fit` in a `--qa` build. Without `&size=fit` the desk plays a
