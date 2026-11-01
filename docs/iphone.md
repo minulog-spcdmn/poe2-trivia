@@ -383,7 +383,7 @@ with its numbers in the comments.
   fine pointer and so draws the cursors; a phone draws none, but Safari on a
   Mac with a mouse does. Every element inherits the cursor now (`app.css`;
   in Chrome too, where a picture named on every element was a third of a
-  new screen's style), an inherited one being the parent's own,
+  question's style), an inherited one being the parent's own,
   unchanged: 0.2 ms, 32 paints (1.2 Mpx), 60.1 fps, as at `size=fit` with
   no cursors at all. A scene
   measured on the phone at `size=desktop` has the cursors; `size=fit` has
