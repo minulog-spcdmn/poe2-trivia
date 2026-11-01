@@ -140,7 +140,10 @@
       It shrinks with `scale`, not `transform`: Svelte pins a leaving chip in place with a transform, which a transform here would override (the chip would jump to the grid's first cell);
       that pin is measured on screen, so under the stage's zoom it is scaled back, each time the chip leaves (pinnedOut). */
   const kickOut = pinnedOut((node: Element) => {
-    const flare = removed.has((node as HTMLElement).dataset.id ?? '');
+    const id = (node as HTMLElement).dataset.id ?? '';
+    // Crossing to the other list: their ghost carries them from here (travel).
+    if (travelling.has(id)) return { duration: 0 };
+    const flare = removed.has(id);
     return {
       duration: 320,
       css: (t: number) =>
@@ -168,8 +171,6 @@
     void roster;
     untrack(() => listsWere.forEach((was, ul) => ul.isConnected && settle(ul as HTMLElement, was)));
   });
-  /** Lists a chip is travelling into from the other (moveIn): it comes from outside them, so they don't clip it as they open. */
-  const boarding = new WeakSet<Element>();
   /** The easing of a chip's own fly (Svelte's cubicOut), for what moves with it. */
   const CUBIC_OUT = 'cubic-bezier(0.33, 1, 0.68, 1)';
   const settling = new WeakMap<Element, Animation>();
@@ -185,38 +186,114 @@
     settling.get(el)?.cancel();
     const base = parseFloat(getComputedStyle(el).marginBottom) || 0;
     const from = was + (at - base) - now;
-    const clip = from < 0 && !boarding.has(el);
-    const a = el.animate(
-      [
-        { marginBottom: `${base + from}px`, ...(clip ? { clipPath: `inset(-100vh -100vw ${-from}px -100vw)` } : {}) },
-        { marginBottom: `${base}px`, ...(clip ? { clipPath: 'inset(-100vh -100vw 0px -100vw)' } : {}) },
-      ],
-      { duration: 350, easing: CUBIC_OUT },
-    );
-    settling.set(el, a);
-    a.finished.then(
-      () => boarding.delete(el),
-      () => {},
+    const clip = from < 0;
+    settling.set(
+      el,
+      el.animate(
+        [
+          { marginBottom: `${base + from}px`, ...(clip ? { clipPath: `inset(-100vh -100vw ${-from}px -100vw)` } : {}) },
+          { marginBottom: `${base}px`, ...(clip ? { clipPath: 'inset(-100vh -100vw 0px -100vw)' } : {}) },
+        ],
+        { duration: 350, easing: CUBIC_OUT },
+      ),
     );
   }
-  /** A chip or onlooker coming in: one who was in the other list a moment ago comes from where they stood there, the one they leave fading in its place (kickOut),
-      so it reads as the same person moving; anyone else comes in as `fallback`. Measured on screen and moved in the chip's own px, under the stage's zoom (lib/stage).
-      It moves by `translate`, as Svelte's flip and pin move by `transform`. Deferred, as Svelte makes the transition once the flush is done, so its new place is laid out. */
+  /** A line that goes as the party grows (the wait for a second exile): it fades where it stands, its words never moving, as its room closes
+      from below in the chip's 350ms and curve as the chip's opens, so what's below moves once. (Its bottom margin takes the top's back.) */
+  function fadeShut(node: Element) {
+    const el = node as HTMLElement;
+    const h = el.offsetHeight;
+    const cs = getComputedStyle(el);
+    const mt = parseFloat(cs.marginTop) || 0;
+    const mb = parseFloat(cs.marginBottom) || 0;
+    return calm({
+      duration: 350,
+      easing: cubicOut,
+      css: (t: number) => `opacity: ${t * t}; height: ${h * t}px; margin-bottom: ${mb * t - mt * (1 - t)}px; overflow: visible;`,
+    });
+  }
+
+  /** How long one moving between the party and a gallery takes to cross. */
+  const TRAVEL_MS = 420;
+  /** Those crossing between the party and a gallery right now: the chip they leave goes at once (kickOut), as their ghost carries them over (travel). */
+  const travelling = new Set<string>();
+  let partyEl = $state<HTMLElement>();
+  /**
+   * One who moves between the party and a gallery crosses as one person: a ghost of the chip they leave and one of the chip they come to,
+   * drawn over the party (outside the lists, so neither list scrolls or clips them), go together from the one place to the other,
+   * the first giving way to the second halfway, and grow or shrink from the one's size to the other's. The chip they come to waits
+   * unseen until they land; where it is is read each frame, as the lists around it open and close. Set in the party's own px, under the stage's zoom.
+   */
+  function travel(id: string, from: { at: DOMRect; el: Element }, toEl: HTMLElement) {
+    const box = partyEl;
+    if (!box) return travelling.delete(id);
+    const z = zoomOf(box);
+    const ghost = (li: Element, width: number) => {
+      // In a copy of its own list, for the list's styles; nothing of its place in it (Svelte's pin) but its colour.
+      const ul = li.parentElement?.cloneNode(false) as HTMLElement | undefined;
+      const copy = li.cloneNode(true) as HTMLElement;
+      const hue = (li as HTMLElement).style.getPropertyValue('--c');
+      copy.removeAttribute('style');
+      copy.removeAttribute('data-id');
+      if (hue) copy.style.setProperty('--c', hue);
+      const shell = ul ?? document.createElement('ul');
+      shell.removeAttribute('style');
+      shell.setAttribute('aria-hidden', 'true');
+      shell.style.cssText = `position: absolute; left: 0; top: 0; z-index: 3; display: block; width: ${width / z}px; min-height: 0; margin: 0; padding: 0; overflow: visible; pointer-events: none; transform-origin: 0 0;`;
+      shell.append(copy);
+      box.append(shell);
+      return shell;
+    };
+    const a = ghost(from.el, from.at.width);
+    const b = ghost(toEl, toEl.getBoundingClientRect().width);
+    toEl.style.opacity = '0';
+    let t0: number | undefined;
+    let frame = 0;
+    const done = () => {
+      cancelAnimationFrame(frame);
+      a.remove();
+      b.remove();
+      toEl.style.opacity = '';
+      travelling.delete(id);
+    };
+    const step = (now: number) => {
+      if (!box.isConnected || !toEl.isConnected) return done();
+      t0 ??= now;
+      // (A frame's time can be a little before the first step's.)
+      const u = Math.min(1, Math.max(0, (now - t0) / TRAVEL_MS));
+      const e = cubicOut(u);
+      const r = box.getBoundingClientRect();
+      const to = toEl.getBoundingClientRect();
+      const h = from.at.height + (to.height - from.at.height) * e;
+      // Left edges and middles meet, so the avatar leads the name across.
+      const x = (from.at.left + (to.left - from.at.left) * e - r.left) / z - box.clientLeft;
+      const mid = from.at.top + from.at.height / 2 + (to.top + to.height / 2 - from.at.top - from.at.height / 2) * e;
+      const y = (mid - h / 2 - r.top) / z - box.clientTop;
+      const swap = Math.min(1, Math.max(0, (e - 0.25) / 0.5));
+      a.style.transform = `translate(${x}px, ${y}px) scale(${h / from.at.height})`;
+      a.style.opacity = String(1 - swap);
+      b.style.transform = `translate(${x}px, ${y}px) scale(${h / to.height})`;
+      b.style.opacity = String(swap);
+      if (u < 1) frame = requestAnimationFrame(step);
+      else done();
+    };
+    step(performance.now());
+  }
+  /** A chip or onlooker coming in: one who was in the other list a moment ago crosses over from where they stood there (travel); anyone else comes in as `fallback`.
+      Deferred, as Svelte makes the transition once the flush is done, so its new place is laid out. */
   function moveIn(node: Element, fallback: () => TransitionConfig | (() => TransitionConfig)) {
     const id = (node as HTMLElement).dataset.id ?? '';
     const from = stood.get(id);
-    if (from && from.el !== node && node.parentElement) boarding.add(node.parentElement);
+    const crossing = !!from && from.el !== node && !motion.still;
+    // (Known in the flush, before the chip they leave starts its way out.)
+    if (crossing) travelling.add(id);
     return () => {
-      if (!from || from.el === node) {
+      if (!crossing) {
         const f = fallback();
         return typeof f === 'function' ? f() : f;
       }
-      const to = node.getBoundingClientRect();
-      const z = zoomOf(node);
-      // Left edges and middles meet, so the avatar travels with the name beside it.
-      const dx = (from.at.left - to.left) / z;
-      const dy = (from.at.top + from.at.height / 2 - (to.top + to.height / 2)) / z;
-      return calm({ duration: 420, easing: cubicOut, css: (t: number, u: number) => `opacity: ${Math.min(1, t * 1.6)}; translate: ${dx * u}px ${dy * u}px;` });
+      travel(id, from!, node as HTMLElement);
+      return { duration: 0 };
     };
   }
   /** A party chip coming in: from a gallery, or a newcomer's slide in from the left. */
@@ -571,7 +648,7 @@
         </section>
       {/if}
 
-      <section class="block party" data-cursor="party" in:fly={{ x: -30, duration: 500, delay: 100 }}>
+      <section class="block party" bind:this={partyEl} data-cursor="party" in:fly={{ x: -30, duration: 500, delay: 100 }}>
         <header>
           <h2>Party</h2>
           <!-- Every seat as a pip, filled as exiles take them: how many more can come, at a glance. -->
@@ -637,14 +714,14 @@
           <p class="watch-choice" data-cursor="watch"><WatchToggle /></p>
         {/if}
         {#if !local && !hereOnly && s.players.length < 2}
-          <p class="hint waiting" transition:slide={calm({ duration: 250 })}><span class="pulse"></span>{isHost ? 'Nobody else yet. Send your party the code or the link.' : 'Waiting for more exiles to join…'}</p>
+          <p class="hint waiting" in:slide={calm({ duration: 250 })} out:fadeShut><span class="pulse"></span>{isHost ? 'Nobody else yet. Send your party the code or the link.' : 'Waiting for more exiles to join…'}</p>
         {/if}
         {#if delve && !local && !hereOnly}
           <!-- Co-op is about the party, so it is told under it: in a team room, or one a second player can still join (on one device, Delve is for one). -->
           <div class="setting together" data-cursor="coop">
             <span class="label">Play co-op together</span>
             {#if !together}
-              <p class="together-when">Once a second exile joins this room:</p>
+              <p class="together-when" out:fadeShut>Once a second exile joins this room:</p>
             {/if}
             <ul class="rules coop">
               <li>{@render key('Cards')}<span>Everyone votes, then one is drawn from the votes.</span></li>
@@ -689,7 +766,7 @@
         <!-- The chosen mode's description, under a notch that points up at it. -->
         <div class="about" data-cursor="about" id="mode-blurb" style:--at={peek ? 1 : MODES.findIndex((m) => m.id === s.settings.mode)} class:peek>
           <span class="about-frame" aria-hidden="true"></span>
-          {#key peek ? 'peek' : s.settings.mode}
+          {#key peek ? 'peek' : delve ? `delve ${together}` : s.settings.mode}
             <div class="about-text" in:fly={{ y: -6, duration: 260 }}>
               {#if peek}
                 <p>Race is online only: everyone answers on their own device. Host a room to race.</p>
@@ -1059,6 +1136,10 @@
   }
 
   /* The game's own player chips (Scoreboard), so the party carries on into the game. */
+  /* (What the ghost of one crossing to or from a gallery is set in: travel.) */
+  .party {
+    position: relative;
+  }
   .chips {
     list-style: none;
     margin: 0;
