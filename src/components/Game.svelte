@@ -131,7 +131,7 @@
       if (introTimer) clearTimeout(introTimer);
       deathmatchMood(false);
       fireAmbience(false);
-      // A fossil's tally (lib/fossilFlight.ts) hangs on the page, not the game: it goes with the game.
+      // A fossil being unearthed (lib/fossilFlight.ts) hangs on the page, not the game: it goes with the game.
       stopFossilFlight();
     };
   });

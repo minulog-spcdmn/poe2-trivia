@@ -976,69 +976,152 @@ h3,
   --bs-fill-paint: transparent;
 }
 
-/* A fossil taken (lib/fossilFlight.ts): its piece, worn as its card wore it
-   (ChooseCategory's .fossil-mark: the fossil on its amber light), flying up
-   out of the answer to the tally under the header's right end, its slot and
-   the count of the codex's fossils. Both hang on the body, outside the
-   game's stage. */
-.fossil-flight {
+/* Find moment: a fossil unearthed (lib/fossilFlight.ts). The stone comes up
+   out of the right answer over the art, darkened behind it by a veil, is
+   struck and splits, the fossil in the hollow; its name and count come up
+   under it, and it flies to the line. All of it hangs on the body, outside
+   the game's stage, zoomed as the stage is (global for that). The stone is
+   engraved bone on unlit slate, as its card (design-direction.md). */
+.fossil-find {
   position: fixed;
-  z-index: 51;
-  width: 56px;
-  height: 56px;
-  display: grid;
-  place-items: center;
+  inset: 0;
+  z-index: 50;
   pointer-events: none;
 }
-.fossil-flight .glow {
+.fossil-find .ff-veil {
   position: absolute;
-  inset: -14px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 160, 50, 0.42), rgba(255, 140, 40, 0.12) 45%, transparent 70%);
+  opacity: 0;
+  image-rendering: pixelated;
+  background:
+    radial-gradient(closest-side, rgba(0, 0, 0, 0.45) 50%, transparent),
+    var(--dither);
 }
-.fossil-flight img {
-  position: relative;
+.fossil-find .ff-piece {
+  position: absolute;
+  opacity: 0;
+}
+.fossil-find .ff-stone,
+.fossil-find .ff-stone svg,
+.fossil-find .ff-art {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
+}
+/* The fossil, the stone's width: what it held. */
+.fossil-find .ff-art {
+  inset: 6%;
+  width: 88%;
+  height: 88%;
   object-fit: contain;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.75));
+}
+.fossil-find .ff-half {
+  overflow: visible;
   filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.7));
 }
-.fossil-tally {
-  position: fixed;
-  z-index: 50;
-  top: 64px;
-  right: max(14px, env(safe-area-inset-right));
+.fossil-find .ff-half :is(.rim, .ring, .seam, .hatch, .parting) {
+  fill: none;
+  stroke: #e6dcc6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.fossil-find .ff-half .rim {
+  stroke-width: 1.7;
+}
+.fossil-find .ff-half .ring {
+  stroke-width: 0.8;
+  stroke-opacity: 0.7;
+}
+/* The rings broken where the seam crosses them: the slate under it. */
+.fossil-find .ff-half .parting {
+  stroke: #0b0d10;
+  stroke-width: 2.4;
+}
+.fossil-find .ff-half .seam {
+  stroke-width: 0.6;
+  stroke-opacity: 0.5;
+}
+.fossil-find .ff-half .hatch {
+  stroke-width: 0.6;
+  stroke-opacity: 0.55;
+}
+.fossil-find .ff-strike {
+  overflow: visible;
+}
+.fossil-find .ff-strike .draw {
+  fill: none;
+  stroke: #f6f0e2;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  visibility: hidden;
+  filter: drop-shadow(0 0 2px rgba(255, 236, 200, 0.9));
+}
+.fossil-find .ff-label {
+  position: absolute;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 4px 12px 4px 6px;
-  border: 1px solid rgba(214, 150, 70, 0.7);
-  border-radius: 2px;
-  background: linear-gradient(#1f1407, #0b0804);
-  box-shadow:
-    inset 0 0 0 2px #0b0804,
-    inset 0 0 0 2.5px rgba(245, 180, 86, 0.45),
-    0 2px 8px rgba(0, 0, 0, 0.6);
-  pointer-events: none;
-}
-.fossil-tally .slot {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 160, 50, 0.38), transparent 70%);
-}
-.fossil-tally img {
-  width: 28px;
-  height: 28px;
-  object-fit: contain;
-}
-.fossil-tally .count {
-  font-family: var(--font-display);
-  font-size: 0.78rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #f2d29a;
+  gap: 1px;
+  opacity: 0;
+  transform: translate(-50%, 6px);
   white-space: nowrap;
+  text-align: center;
+}
+/* Named as a PoE tooltip names a currency item. */
+.fossil-find .ff-name {
+  font-family: var(--font-tooltip);
+  font-size: 1.3rem;
+  line-height: 1.15;
+  color: #aa9e82;
+  --drop-shadow: 0 1px 2px rgba(0, 0, 0, 0.95), 0 0 12px rgba(0, 0, 0, 0.85);
+  text-shadow: var(--drop-shadow-paint, var(--drop-shadow));
+}
+.fossil-find .ff-count,
+.fossil-find .ff-all {
+  font-family: var(--font-cinzel);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  color: #e6dcc6;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
+}
+.fossil-find .ff-all {
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #f6d688;
+}
+/* A rare's word, in gold, and the glint that crosses it once (as glint.ts's: a pale copy under a sliding stripe). */
+.fossil-find .ff-rare {
+  position: relative;
+  font-family: var(--font-cinzel);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #f6d688;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
+}
+.fossil-find .ff-rare .sheen {
+  position: absolute;
+  inset: 0;
+  color: #fff4cf;
+  text-shadow: none;
+  -webkit-mask-image: linear-gradient(105deg, transparent 40%, #000 50%, transparent 60%);
+  mask-image: linear-gradient(105deg, transparent 40%, #000 50%, transparent 60%);
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+  -webkit-mask-position: 100% 0;
+  mask-position: 100% 0;
+}
+@media (max-width: 640px), (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
+  .fossil-find .ff-name {
+    font-size: 1.1rem;
+  }
+  .fossil-find .ff-count {
+    font-size: 0.72rem;
+  }
 }

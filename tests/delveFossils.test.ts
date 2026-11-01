@@ -27,7 +27,7 @@ import type { DelveRun } from '../src/lib/delveRecord.ts';
 import type { GameState } from '../src/lib/game.ts';
 import { fossilEvents } from '../src/lib/count.ts';
 import { runFacts, usualLifted } from '../src/lib/recap.ts';
-import { FOSSIL_FLIGHT } from '../src/lib/fossilFlight.ts';
+import { FOSSIL_FIND } from '../src/lib/fossilFlight.ts';
 import { parseClientMsg } from '../src/lib/protocol.ts';
 import { takeIn, takenNow } from '../src/lib/sync/shared.ts';
 import { NONE, memoryStorage, right, room, seeded, wrong } from './helpers.ts';
@@ -483,12 +483,13 @@ test('the end screen names the run’s fossil, and that another can turn up tomo
   assert.ok(all.includes('You found an Aberrant Fossil at depth 11.'), all.join(' | '));
 });
 
-test('the flight: the tally is in its place before the piece sets off for it, the piece lands, then the tally goes', () => {
-  const f = FOSSIL_FLIGHT;
-  assert.ok(f.TALLY_IN < f.RISE + f.HANG, 'the slot is there before the flight');
-  assert.ok(f.RISE + f.HANG < f.LANDS);
-  assert.equal(f.LANDS, f.RISE + f.HANG + f.FLIGHT);
-  assert.ok(f.LANDS + 1500 < f.TALLY_FOR, 'the count is read a while after it lands');
+test('the unearthing: it comes up, hangs, is struck, splits, is named, held, then flies to the line', () => {
+  const f = FOSSIL_FIND;
+  const beats = [f.RISE, f.HANG, f.STRIKE, f.SPLIT, f.NAME, f.HOLD, f.FLY, f.LANDS];
+  assert.deepEqual([...beats].sort((a, b) => a - b), beats, 'in order');
+  assert.ok(f.HOLD - f.NAME >= 200 && f.FLY - f.HOLD >= 1000, 'its name is read a while before it flies');
+  assert.ok(f.LINE_LEAD < f.LANDS - f.FLY, 'the line’s words come in during the flight');
+  assert.deepEqual([f.STONE.desk, f.STONE.upright, f.STONE.flat], [96, 72, 56]);
 });
 
 test('a run’s fossils are read sanely from its state, and by whom', () => {
