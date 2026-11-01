@@ -28,7 +28,7 @@ import type { DelveRun } from '../src/lib/delveRecord.ts';
 import type { GameState } from '../src/lib/game.ts';
 import { fossilEvents } from '../src/lib/count.ts';
 import { runFacts, setProgress, usualLifted } from '../src/lib/recap.ts';
-import { FOSSIL_FLIGHT } from '../src/lib/fossilFlight.ts';
+import { FOSSIL_REVEAL } from '../src/lib/fossilReveal.ts';
 import { parseClientMsg } from '../src/lib/protocol.ts';
 import { takeIn, takenNow } from '../src/lib/sync/shared.ts';
 import { NONE, memoryStorage, right, room, seeded, wrong } from './helpers.ts';
@@ -535,12 +535,16 @@ test('a fossil card missed is kept in the run for the end screen: its depth, tie
   assert.deepEqual(missedFossils({ delve: { fossilsMissed: [{ depth: 3, tier: 'gold', to: [] }, null, { depth: 4, tier: 'rare', to: ['p0'] }] } } as unknown as GameState), [{ depth: 4, tier: 'rare', to: ['p0'] }]);
 });
 
-test('the flight: the tally is in its place before the piece sets off for it, the piece lands, then the tally goes', () => {
-  const f = FOSSIL_FLIGHT;
-  assert.ok(f.TALLY_IN < f.RISE + f.HANG, 'the slot is there before the flight');
-  assert.ok(f.RISE + f.HANG < f.LANDS);
-  assert.equal(f.LANDS, f.RISE + f.HANG + f.FLIGHT);
-  assert.ok(f.LANDS + 1500 < f.TALLY_FOR, 'the count is read a while after it lands');
+test('the reveal: the light rises, the fossil is there and goes sharp, is named, held, then flies to the line', () => {
+  const f = FOSSIL_REVEAL;
+  const beats = [f.RISE, f.LIT, f.NAME, f.COUNT, f.SHOWN, f.FLY, f.LANDS];
+  assert.deepEqual([...beats].sort((a, b) => a - b), beats, 'in order');
+  assert.ok(f.LIT < f.SWEPT && f.SWEPT <= f.SHARP && f.SHARP < f.COUNT, 'swept and sharp before its count comes');
+  assert.ok(f.LIT < f.GLINTS && f.GLINTS < f.SWEPT, 'its edges glint as the light crosses it');
+  assert.ok(f.RARE >= f.SWEPT && f.RARE < f.SHOWN, 'a rare’s second sweep follows the first, before the hold');
+  assert.ok(f.FLY - f.SHOWN >= 1000, 'its name is read a while before it flies');
+  assert.ok(f.LINE_LEAD < f.LANDS - f.FLY, 'the line’s words come in during the flight');
+  assert.deepEqual([f.SIZE.desk, f.SIZE.upright, f.SIZE.flat], [120, 88, 64]);
 });
 
 test('a run’s fossils are read sanely from its state, and by whom', () => {

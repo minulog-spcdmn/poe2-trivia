@@ -18,7 +18,7 @@
   import { questionCircle } from './gameCircles.svelte';
   import { switchedOff } from '../lib/switchedOff';
   import NamePlate from './NamePlate.svelte';
-  import { tick, untrack, type Snippet } from 'svelte';
+  import { untrack, type Snippet } from 'svelte';
   import { keyTap } from '../lib/pointerAnchor';
   import { motion } from '../lib/motion.svelte';
   import {
@@ -42,9 +42,9 @@
   import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, digOf, digRunsOn, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
   import { bankedText, blownText, buriedText, coopMissText, coopRevealText, flareText, inHandText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
-  import { FOSSIL_COUNT, aFossil, fossilArt, type FossilId } from '../lib/fossils';
+  import { FOSSIL_COUNT, fossilArt, fossilById, type FossilId } from '../lib/fossils';
   import { foundCount, loadFossils } from '../lib/fossilStore';
-  import { flyFossil } from '../lib/fossilFlight';
+  import { revealFossil } from '../lib/fossilFlight';
   import AnswerMark from './AnswerMark.svelte';
   import VerdictSign from './VerdictSign.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
@@ -297,17 +297,31 @@
   });
 
   /**
-   * Delve: the fossil a right answer to a fossil's card gave (lib/fossils.ts),
-   * in words: whose it is now. Together, everyone who could take one drew
-   * their own: this screen's player's, or else the first one given.
+   * Delve: the fossils a right answer to a fossil's card gave (lib/fossils.ts).
+   * `mine`: the one this screen's player kept, which the card never named
+   * (the moment shows it: lib/fossilFlight.ts); `rest`, in words, who else
+   * kept one (together, each drew their own; a run watched, its player).
    */
-  const fossilLine = $derived.by((): { id: FossilId; text: string } | null => {
+  const fossilLine = $derived.by((): { mine: FossilId | null; rest: string } | null => {
     const f = reveal?.correct ? reveal.fossil : undefined;
     if (!s.delve || !f?.given.length) return null;
-    const g = f.given.find((g) => g.to === me) ?? f.given[0];
-    const who = coop ? (g.to === me ? 'You' : nameOf(g.to)) : delveYou ? 'You' : active.name;
-    return { id: g.id, text: `${who} found ${aFossil(g.id)}.` };
+    const mine = session.mode === 'local' ? f.given[0] : f.given.find((g) => g.to === me);
+    const others = f.given.filter((g) => g !== mine).map((g) => g.to);
+    const verb = mine ? 'kept one too' : others.length > 1 ? 'each kept a fossil' : 'kept a fossil';
+    return { mine: mine?.id ?? null, rest: others.length ? `${namesOf(others, nameOf, me)} ${verb}.` : '' };
   });
+  /** How many fossils this device holds, the one kept now in it (set at the reveal: it is kept by then). */
+  let fossilCount = $state(0);
+  /** How far the moment has come: the line's words are due, then its picture has landed. */
+  let fossilPhase = $state<'none' | 'words' | 'landed'>('none');
+  /** The line's picture, where the fossil lands. */
+  let fossilSlot = $state<HTMLElement | null>(null);
+  let questionEl = $state<HTMLElement | null>(null);
+  /** The fossil's light on the question (a fossil card's), where the moment rises from. */
+  let markEl = $state<HTMLElement | null>(null);
+  /** Ends the moment under way, all of it going to the line (Delve Deeper pressed early, or the question going). */
+  let stopFind: (() => void) | null = null;
+  $effect(() => () => stopFind?.());
 
   // The verdict leads the result line at the reveal, beside Next.
   /**
@@ -927,20 +941,29 @@
       if (iWon && pill && fill && fxActive()) setTimeout(() => sfx('fill', { from: { from: optionEls[r.correctIndex], to: pill, seconds: FILL_LEAD / 1000 } }), FILL_START * 1000 - FILL_LEAD);
       // (A vein's ward dug out makes no sound of gain here: it is only in hand. The pack hears it as the
       // haul goes in, at the way out or as the dig ends, where its sparks land: Scoreboard.svelte.)
-      // A fossil this device's player took: it rises out of the right answer and flies to the codex's
-      // tally (lib/fossilFlight.ts), once the answer is marked. Kept already (session's noteFossil), so
-      // the count holds it.
-      const given = r.correct ? r.fossil?.given : undefined;
-      const fossil = given && (session.mode === 'local' ? given[0] : given.find((g) => g.to === me));
-      if (s.delve && fossil) {
-        const count = foundCount(loadFossils());
-        void tick().then(() => flyFossil(optionEls[r.correctIndex] ?? null, fossil.id, count, FOSSIL_COUNT, motion.still, FOSSIL_AT));
+      // A fossil this device's player kept: the light that waited on the question rises to the item, the
+      // fossil comes up in it, lit, shows which it is, and flies to the line (lib/fossilFlight.ts), once the
+      // answer is marked. Kept already (session's noteFossil), so the count holds it; counted in here should
+      // it not be yet.
+      const mine = fossilLine?.mine;
+      if (mine) {
+        const store = loadFossils();
+        fossilCount = foundCount(store) + (store.found[mine] ? 0 : 1);
+        stopFind = revealFossil({
+          id: mine,
+          count: fossilCount,
+          total: FOSSIL_COUNT,
+          from: markEl,
+          art: q.mode === 'art' ? null : artEl,
+          stage: questionEl,
+          to: () => fossilSlot,
+          size: upright.current ? 'upright' : flat.current ? 'flat' : 'desk',
+          still: motion.still,
+          onLine: (phase) => (fossilPhase = phase),
+        });
       }
     });
   });
-
-  /** ms from the reveal until a fossil taken rises out of the answer: once the answer is marked, before a find's sparks would fly. */
-  const FOSSIL_AT = 450;
 
   /** Frees the options should the host's word on an answer never come. */
   let fallback: ReturnType<typeof setTimeout> | undefined;
@@ -970,6 +993,8 @@
   }
 
   function next() {
+    // Pressed while a fossil is still coming: all of it goes to the line.
+    stopFind?.();
     sfx('click');
     session.dispatch({ type: 'next' });
   }
@@ -1071,9 +1096,43 @@
   {#if streak >= 2 && !(chipHeat > 0)}<span class="streak-words">{' '}{streak} in a row.</span>{/if}
 {/snippet}
 
-<!-- A fossil the answer gave (lib/fossils.ts): its own small picture, then whose it is now. -->
-{#snippet fossilWords(f: { id: FossilId; text: string })}
-  <span class="found-fossil"><img src={fossilArt(f.id, 128)} alt="" aria-hidden="true" />{f.text}</span>
+<!-- The fossils the answer gave (lib/fossils.ts). Yours lands here once
+     shown (lib/fossilFlight.ts): its picture, its name as a PoE tooltip
+     names it, the count. Until then, alone, that you keep one is said in
+     its place, the two crossing over in one cell so nothing moves. Then who
+     else kept one. -->
+{#snippet fossilWords(f: { mine: FossilId | null; rest: string })}
+  {#if f.mine}
+    <span class="found-fossil" class:words={fossilPhase !== 'none'} class:landed={fossilPhase === 'landed'}
+      >{#if !coop}<span class="before">You keep a fossil.</span>{/if}<span class="after"
+        ><img src={fossilArt(f.mine, 128)} alt="" aria-hidden="true" bind:this={fossilSlot} /><span class="fossil-name">{fossilById(f.mine).name}</span>; {fossilCount}
+        of {FOSSIL_COUNT}.</span
+      ></span
+    >
+  {/if}
+  {#if f.rest}{f.rest}{/if}
+{/snippet}
+
+<!-- A fossil's card answered wrong: the fossil is lost. -->
+{#snippet fossilLost()}
+  {#if s.delve && q.fossil}<span class="muted fossil-lost">The fossil is lost.</span>{/if}
+{/snippet}
+
+<!-- A fossil's card (Delve): its light waits on the question, lit amber as
+     the card's window, until the answer. A right one takes it up into the
+     moment (lib/fossilFlight.ts), a wrong one puts it out; dynamite shatters
+     it with the question (Game.svelte), and the new question has none. -->
+{#snippet fossilMark()}
+  {#if s.delve && q.fossil}
+    <span
+      class="fossil-mark"
+      class:rare={q.fossil === 'rare'}
+      class:taken={!!reveal && iWon}
+      class:out={!!reveal && !iWon}
+      aria-hidden="true"
+      bind:this={markEl}
+    ></span>
+  {/if}
 {/snippet}
 
 <!-- What the reveal says happened: the sentence beside the verdict, or on a phone upright over the art (the task line). -->
@@ -1127,6 +1186,7 @@
       {#if fossilLine}{@render fossilWords(fossilLine)}{/if}
       {@render streakWords()}
       {#if lines.length > 1}<span class="losses">{lines.slice(1).join(' ')}</span>{/if}
+      {#if !reveal.correct}{@render fossilLost()}{/if}
     {:else if s.delve}
       {@const you = delveYou}
       {@const who = you ? 'You' : active.name}
@@ -1192,6 +1252,7 @@
       {/if}
       <!-- A Dynamite Cache missed: what its blast destroyed of the pack (the phial shows it go). -->
       {#if !reveal.correct && reveal.blown}{blownText(reveal.blown, you ? 'your' : `${active.name}’s`)}{/if}
+      {#if !reveal.correct}{@render fossilLost()}{/if}
     {:else if reveal.correct}
       <b class="good">+1</b> for {active.name}!
       {@render streakWords()}
@@ -1307,7 +1368,7 @@
 
 <!-- data-cursor: where other players' pointers are placed (PeerCursors): the answers, the item and its art, the line over
      them and the row under them (a dock at the foot of a phone's screen, under the same name), and what's in those. -->
-<div class="question">
+<div class="question" bind:this={questionEl}>
   <!-- The turn's second line, under its banner, where the cards screen asks
        for a category (ChooseCategory's prompt): what to do now, and at its
        right end the timer, read with the question at a glance before the
@@ -1352,6 +1413,7 @@
       <div class="head" data-cursor="plate" style:--plate-scale={plateScale}>
         <!-- Lit from the start; a right answer's glint runs over it (a wrong one's is quiet), as when naming the art. -->
         <NamePlate fit bind:scale={plateScale} glint={!!(reveal && iWon)} />
+        {@render fossilMark()}
         <div class="head-text">
           <span class="iname" class:veiled={waiting} use:oneLine>{waiting || !q.prompt ? '\u00a0' : q.prompt}</span>
           <!-- Name over base, as every tooltip: the category until the reveal names the base. -->
@@ -1520,6 +1582,7 @@
               <span class="loading big" aria-label="Loading"></span>
             {/if}
           </div>
+          {@render fossilMark()}
           {#if reveal && item}
             <!-- Once answered, the art opens the item's details (ItemWindow). -->
             <button class="details" onclick={() => drawn && inspect(drawn)} aria-label="{item.name}: see its details" title="See its details" in:fade={{ duration: 200, delay: 120 }}>
@@ -2031,7 +2094,26 @@
     }
   }
 
-  /* Delve: a fossil found, its picture standing on the line's baseline as a find's engraving does. */
+  /* Delve: a fossil kept (lib/fossilFlight.ts). Until it lands, alone,
+     “You keep a fossil.” holds its cell; the line's words cross over it
+     as the fossil comes, and its picture shows as it lands (the flight's
+     piece taking its place), standing on the baseline as a find's engraving
+     does. */
+  .found-fossil {
+    display: inline-grid;
+    vertical-align: bottom;
+  }
+  .found-fossil > * {
+    grid-area: 1 / 1;
+    transition: opacity 0.26s ease-out;
+  }
+  .found-fossil .after,
+  .found-fossil.words .before {
+    opacity: 0;
+  }
+  .found-fossil.words .after {
+    opacity: 1;
+  }
   .found-fossil img {
     display: inline-block;
     width: 1.3em;
@@ -2040,16 +2122,97 @@
     vertical-align: -0.3em;
     object-fit: contain;
     filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
-    animation: fossil-in 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.25) 0.6s both;
+    opacity: 0;
   }
-  @keyframes fossil-in {
-    from {
-      opacity: 0;
-      scale: 0.2;
+  .found-fossil.landed img {
+    opacity: 1;
+  }
+  /* Named as a PoE tooltip names a currency item. */
+  .fossil-name {
+    font-family: var(--font-tooltip);
+    color: #aa9e82;
+  }
+  .fossil-lost {
+    margin-left: 0.25em;
+  }
+  /* A fossil card's light on the question: a small pane of the card's lit
+     amber (direction-a.md: core #ffd04a to edge #ec6a10, a resin rim), its
+     heart drifting as if a lamp passed behind it. It sits at the art's foot
+     (on the plate's, picking art). Small, so its glow can't band. */
+  .fossil-mark {
+    position: absolute;
+    left: 50%;
+    bottom: 6px;
+    z-index: 2;
+    width: 18px;
+    height: 18px;
+    margin-left: -9px;
+    overflow: hidden;
+    border-radius: 3px;
+    transform: rotate(45deg);
+    background: radial-gradient(circle at 50% 50%, #f0962a, #ec6a10 75%);
+    box-shadow:
+      inset 0 0 0 1px rgba(90, 32, 4, 0.9),
+      0 0 0 1px rgba(255, 208, 74, 0.35),
+      0 0 10px 2px rgba(240, 150, 42, 0.45);
+    transition:
+      opacity 0.3s ease-out,
+      filter 0.4s ease-out;
+    pointer-events: none;
+  }
+  .head > .fossil-mark {
+    bottom: -9px;
+  }
+  /* The light inside, drifting. */
+  .fossil-mark::before {
+    content: '';
+    position: absolute;
+    inset: -40%;
+    background: radial-gradient(circle at 50% 50%, #fff2c4, #ffd04a 22%, transparent 55%);
+    animation: fossil-mark-drift 5.2s ease-in-out infinite alternate;
+  }
+  .fossil-mark.rare {
+    background: radial-gradient(circle at 50% 50%, #ffb428, #c8300c 78%);
+    box-shadow:
+      inset 0 0 0 1px rgba(90, 20, 4, 0.9),
+      0 0 0 1px rgba(255, 180, 40, 0.4),
+      0 0 12px 3px rgba(200, 48, 12, 0.5);
+  }
+  .fossil-mark.rare::before {
+    background:
+      radial-gradient(circle at 30% 70%, #fff2c4 0 1px, transparent 2px),
+      radial-gradient(circle at 70% 35%, #fff2c4 0 1px, transparent 2px),
+      radial-gradient(circle at 50% 50%, #fff2c4, #ffb428 22%, transparent 55%);
+  }
+  /* Dynamite: it shatters into amber shards (Game.svelte), not flung whole with the question's pieces. */
+  :global(.blast-copy) .fossil-mark {
+    visibility: hidden;
+  }
+  /* Taken up into the moment: its light is what rises. */
+  .fossil-mark.taken {
+    opacity: 0;
+  }
+  /* Answered wrong: it goes out. */
+  .fossil-mark.out {
+    filter: grayscale(1) brightness(0.45);
+  }
+  .fossil-mark.out::before {
+    animation: none;
+    opacity: 0;
+  }
+  @keyframes fossil-mark-drift {
+    0% {
+      transform: translate(-14%, 10%);
+    }
+    50% {
+      transform: translate(8%, -12%);
+    }
+    100% {
+      transform: translate(14%, 8%);
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .found-fossil img {
+    .fossil-mark::before {
       animation: none;
     }
   }
