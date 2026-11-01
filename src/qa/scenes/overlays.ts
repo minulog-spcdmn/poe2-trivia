@@ -11,6 +11,7 @@ import { pid, player } from '../build/people.ts';
 import { Table } from '../build/play.ts';
 import { endScenes } from './over.ts';
 import type { Settings } from '../../lib/game.ts';
+import { METALS, TIERS, type Tier } from '../../lib/metals.ts';
 import type { Built, Scene, Seat, Step } from '../scene.ts';
 
 const THREE = ['Kalguur', 'Doryani', 'Una of the Vaal'];
@@ -59,6 +60,19 @@ export function overlayScenes(): Scene[] {
         { toast: 'Too quick to count: the question had only just reached you. Answer again.', kind: 'error' },
       ]),
     ),
+    // Achievements earned mid-question (lib/achievementToasts.ts): one alone, and several as one notice under the hardest's seal, in the metal picked.
+    {
+      ...overlay('achievement', 'Achievements earned during a question', [doryani], () => inGame([])),
+      controls: [{ kind: 'choice', key: 'tier', label: 'Metal', default: '3', options: TIERS.map((t) => ({ value: String(t), label: METALS[t].name })) }],
+      states: TIERS.map((t) => ({ label: METALS[t].name, values: { tier: String(t) } })),
+      build: (v) => {
+        const tier = Number(v?.tier ?? 3) as Tier;
+        return inGame([
+          { toast: 'Know Thy Enemy', opts: { title: 'Achievement earned', seal: { sign: 'eye', tier } } },
+          { toast: 'Far Sight • Steady Hand • Deep Roots', opts: { title: '3 achievements earned', seal: { sign: 'sol', tier } } },
+        ]);
+      },
+    },
     overlay('leave', 'Leaving a game: the dialog', [kalguur, doryani], () => inGame([{ click: 'button[aria-label="Leave game"]' }])),
     // The owner in someone else's room: the dialog offers to close it for everyone too.
     overlay('leave-owner', 'Leaving as the owner: Close room too', [doryani], () => inGame([{ click: 'button[aria-label="Leave game"]' }], false, 'Doryani')),
