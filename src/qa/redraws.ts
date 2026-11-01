@@ -331,15 +331,17 @@ export const WEBGL_SCENES: { scene: string; why: string }[] = [
  *
  * `slack`, from how far each moved in twelve runs on CI, on virtual time
  * from before the page loads with its chance and date seeded: the pick
- * within 1%, the pointer and the plate the same every run, the dig within
- * 2.3% of its baseline, so a tenth. The deal, with WebGL, by whole card
+ * within 5.2% in three runs since #353 (207k or 218k: the dark's arms,
+ * pictures Chrome rasters at most twice the size they show, so an arm
+ * first shown small is drawn once more as it grows past that, or not, as
+ * its sway falls on the runner's time), the pointer and the plate the same
+ * every run, the dig within 2.3% of its baseline, so a tenth. The deal, with WebGL, by whole card
  * faces: its faces' writes land a frame apart from run to run (frame 67
  * or 68), and a face (927 × 1145) drawn once more or less is 4.4k px a
  * 60th of a second, so it read 48.7k to 72.6k (the least on the run whose
  * heading's font came in before the watch, not in it); a quarter is two
  * faces past the most it read. The least of October's stutters cost its moment 2.8 times its
  * baseline (the plate's lines); the kindle, the deal's, 8.7 times.
-
  */
 export const MOMENTS = [
   { key: 'deal', label: 'A deal of three cards', webgl: true, hz: 60, seconds: 3, slack: 1.25 },
