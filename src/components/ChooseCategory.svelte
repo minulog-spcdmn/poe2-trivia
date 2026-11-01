@@ -370,7 +370,7 @@
   /** The notes can stand beside the cards (CSS, on a phone on its side): a dig's two, or up to two finds' (or a find's and a fossil's). */
   const beside = $derived(!!dig || (noteCols.length > 0 && noteCols.length <= 2 && !s.deathmatch));
   /** What a fossil is, said once for its card: whose codex it goes to, and that the run is the same either way. */
-  const fossilWhose = $derived(coop ? 'the codex of whoever names it' : mine ? 'your codex' : `${active.name}’s codex`);
+  const fossilWhose = $derived(coop ? 'each player’s codex' : mine ? 'your codex' : `${active.name}’s codex`);
   const uid = $props.id();
   /**
    * Whether the faces are drawn sharp (.sharp, below): only in Chromium (it
@@ -1075,7 +1075,7 @@
           <strong>A fossil.</strong> A collectible for {fossilWhose}; it doesn’t change {coop || !mine ? 'the' : 'your'} run.
         </p>
       {:else if fossilNote === 'line'}
-        <p class="note muted fossil-line" id="{uid}-note-fossil">The fossil: a collectible for {coop ? 'whoever names it' : fossilWhose}, nothing in the run.{held ? ` ${held.trim()}` : ''}</p>
+        <p class="note muted fossil-line" id="{uid}-note-fossil">The fossil: a collectible for {fossilWhose}, nothing in the run.{held ? ` ${held.trim()}` : ''}</p>
       {/if}
       {#if two && held && fossilNote !== 'line'}<p class="note muted">{held.trim()}</p>{/if}
     </div>

@@ -8,7 +8,7 @@
 // written over (keepAside.ts).
 
 import { clearAside, openStored } from './keepAside.ts';
-import { FOSSIL_IDS, fossilDay, fossilMask, isFossilId, type FossilId, type FossilsHeld } from './fossils.ts';
+import { FOSSIL_COUNT, FOSSIL_IDS, fossilMask, isFossilId, type FossilId } from './fossils.ts';
 import type { RunFossil } from './game.ts';
 import { removeStored, storeKey, tryReadStored, writeStored } from './storage.ts';
 
@@ -65,21 +65,11 @@ export const serializeFossils = (s: FossilStore) => JSON.stringify({ v: FOSSILS_
 /** The fossils in `s`, as a mask (fossils.ts fossilMask): what this device tells a host it holds. */
 export const heldMask = (s: FossilStore) => fossilMask(Object.keys(s.found).filter(isFossilId));
 
-/** The UTC day of the latest find in `s`, or null for none: whether today's fossil is found (fossils.ts, one a day). */
-export function lastFoundDay(s: FossilStore): number | null {
-  let at = 0;
-  for (const f of Object.values(s.found)) if (f && f.at > at) at = f.at;
-  return at ? fossilDay(at) : null;
-}
-
-/** What the deal goes by of `s` (fossils.ts FossilsHeld): its fossils and the day of its latest find. */
-export const heldOf = (s: FossilStore): FossilsHeld => ({ held: heldMask(s), day: lastFoundDay(s) });
-
-/** Whether `s` found a fossil on the UTC day of `now`, so no other turns up for it until the next. */
-export const foundToday = (s: FossilStore, now = Date.now()) => lastFoundDay(s) === fossilDay(now);
-
 /** How many fossils `s` holds. */
 export const foundCount = (s: FossilStore) => Object.keys(s.found).length;
+
+/** Whether the fossils just kept (`kept`, new ones only, as keepFossils says) made the set whole: true once, as the last comes ("fossil/complete"). */
+export const completedBy = (kept: readonly FossilId[], now: FossilStore = loadFossils()) => kept.length > 0 && foundCount(now) >= FOSSIL_COUNT;
 
 /** The earlier of two finds of one fossil (on a tie, the first). */
 const earlier = (a: FoundFossil, b: FoundFossil) => (b.at < a.at ? b : a);

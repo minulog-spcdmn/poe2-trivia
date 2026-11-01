@@ -1,9 +1,8 @@
 <script lang="ts">
   // The Codex's Delve page: the set of 25 fossils (lib/fossils.ts), the 17
   // common ones first and the 8 rare ones after, with a line on what they
-  // are (collectibles that don't change a run, one a day at most) and, once
-  // today's is found, that another can turn up tomorrow. One found shows its
-  // art; the rest stand as silhouettes.
+  // are (collectibles that don't change a run, one a run at most). One found
+  // shows its art; the rest stand as silhouettes.
   //
   // Choosing one shows it beside the grid (under it on a narrow screen) as
   // the game's tooltip would: its name in Fontin, whether it is one of the
@@ -15,8 +14,8 @@
   // show, every one of them laid in the same place with only the chosen one
   // seen, so nothing moves as the choice changes. Kept in this browser
   // (lib/fossilStore.ts), and on the devices it syncs with.
-  import { FOSSILS, FOSSIL_COUNT, FOSSIL_DEAL, fossilArt, type Fossil, type FossilId } from '../../lib/fossils';
-  import { FOSSILS_KEY, foundToday, loadFossils, type FossilStore } from '../../lib/fossilStore';
+  import { FOSSILS, FOSSIL_COUNT, FOSSIL_FROM, fossilArt, type Fossil, type FossilId } from '../../lib/fossils';
+  import { FOSSILS_KEY, loadFossils, type FossilStore } from '../../lib/fossilStore';
   import { onStoredElsewhere } from '../../lib/storage';
   import { shownDepth } from '../../lib/delve';
   import { backdropShadow } from '../../lib/backdropShadow';
@@ -29,8 +28,6 @@
   const kept = $derived(store ?? own);
   const found = $derived(kept.found);
   const count = $derived(FOSSILS.filter((f) => found[f.id]).length);
-  /** Today's found, and another left to find tomorrow. */
-  const today = $derived(foundToday(kept) && count < FOSSIL_COUNT);
 
   const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   /** The fossil chosen (the last a mouse rested on, or tapped); else the latest found. */
@@ -38,8 +35,8 @@
   const latest = $derived(FOSSILS.filter((f) => found[f.id]).sort((a, b) => found[b.id]!.at - found[a.id]!.at)[0] ?? null);
   const shown: Fossil | null = $derived(FOSSILS.find((f) => f.id === chosen) ?? latest);
   /** The depths players see where fossils start to turn up. */
-  const rareFrom = shownDepth(FOSSIL_DEAL.rare.from);
-  const commonFrom = shownDepth(FOSSIL_DEAL.common.from);
+  const rareFrom = FOSSIL_FROM.rare;
+  const commonFrom = FOSSIL_FROM.common;
   const uid = $props.id();
   /** Where a press began: a click that ends far from it was a drag or a scroll, and chooses nothing. */
   let pressed: { x: number; y: number } | null = null;
@@ -50,8 +47,7 @@
 <section class="panel fossils" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="{uid}-h">
   <header><h2 id="{uid}-h">Fossils</h2><span class="col-label"><span class="n">{count}</span> of <span class="n">{FOSSIL_COUNT}</span></span></header>
   <p class="about">
-    Collectibles for your codex, now and then on a Delve card; they don’t change a run. One a day at most.{#if today}
-      <strong>Today’s is found; another can turn up tomorrow.</strong>{/if}
+    Collectibles for your codex, now and then on a Delve card; they don’t change a run. One a run at most.
   </p>
   <div class="body">
     <ul class="grid" aria-label="The {FOSSIL_COUNT} fossils, {count} found">
@@ -152,11 +148,6 @@
     color: var(--muted);
     text-wrap: pretty;
   }
-  .about strong {
-    font-weight: 600;
-    color: #e2c48c;
-  }
-
   /* Narrow: five across the panel's width, the tooltip under them.
      Wide: the cells fill the room beside the tooltip, as many across as fit. */
   .body {
