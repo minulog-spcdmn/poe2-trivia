@@ -9,6 +9,10 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { fade, fly } from 'svelte/transition';
+  import { flip } from 'svelte/animate';
+  import { cubicOut } from 'svelte/easing';
+  import { calm } from '../lib/motion.svelte';
+  import { pinnedOut } from '../lib/stage';
   import { session } from '../lib/session.svelte';
   import { kickConfirm } from '../lib/kick';
   import KickButton from './KickButton.svelte';
@@ -24,6 +28,14 @@
   /** Rings shown in the line (the count says how many in all). */
   const SHOWN = 4;
   const names = $derived(spectators.map((o) => o.name).join(', '));
+
+  /** A ring joining the line grows into its place (its overlap taken back as it does), so the line widens with it; one leaving goes the same way. */
+  function ring(node: Element) {
+    const room = (node as HTMLElement).offsetWidth - ((node as HTMLElement).previousElementSibling ? 6 : 0);
+    return calm({ duration: 260, easing: cubicOut, css: (t: number) => `opacity: ${t}; scale: ${0.6 + 0.4 * t}; margin-right: ${-room * (1 - t)}px;` });
+  }
+  /** A row leaving the open list fades where it stood, the others closing up (flip), under the stage's zoom too. */
+  const rowOut = pinnedOut(fade);
 
   let open = $state(false);
   let root = $state<HTMLElement>();
@@ -65,15 +77,15 @@
     >
       <WatchEye />
       <span class="rings">
-        {#each spectators.slice(0, SHOWN) as o (o.id)}<OnlookerMark name={o.name} size={20} />{/each}
+        {#each spectators.slice(0, SHOWN) as o (o.id)}<span class="ring" transition:ring><OnlookerMark name={o.name} size={20} /></span>{/each}
       </span>
-      <span class="count">{spectators.length}<span class="word">&nbsp;watching</span></span>
+      <span class="count">{#key spectators.length}<span class="n" in:fade={calm({ duration: 200 })}>{spectators.length}</span>{/key}<span class="word">&nbsp;watching</span></span>
     </button>
     {#if session.spectating}<WatchToggle />{/if}
     {#if open}
       <ul class="list" id="{uid}-list" transition:fly={{ y: -6, duration: 180 }}>
         {#each spectators as o (o.id)}
-          <li class:armed={confirming === o.id}>
+          <li class:armed={confirming === o.id} animate:flip={{ duration: 300 }} in:fly={calm({ y: 6, duration: 250 })} out:rowOut={calm({ duration: 150 })}>
             <OnlookerMark name={o.name} size={24} />
             <span class="name"><PlayerName name={o.name} />{#if o.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}</span>
             <span class="when" class:next={!o.stay}>{o.stay ? 'Watching' : 'Next game'}</span>
@@ -168,7 +180,10 @@
     align-items: center;
   }
   /* Overlapping, each ring's dark face over the one before. */
-  .rings > :global(.onlooker + .onlooker) {
+  .ring {
+    display: inline-flex;
+  }
+  .ring + .ring {
     margin-left: -6px;
   }
   .count {
@@ -230,6 +245,10 @@
     border-radius: 2px;
     border: 1px solid var(--line);
     color: var(--muted);
+    transition:
+      color 0.3s,
+      border-color 0.3s,
+      background-color 0.3s;
   }
   .when.next {
     border-color: var(--gold-lo);

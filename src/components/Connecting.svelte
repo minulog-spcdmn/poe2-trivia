@@ -5,6 +5,7 @@
   // still going, so no one gives up early.
   import { onMount } from 'svelte';
   import { fade } from '../lib/transitions';
+  import { calm } from '../lib/motion.svelte';
   import { session } from '../lib/session.svelte';
   import { zoomOf } from '../lib/stage';
   import { connecting as portalFx } from '../lib/fx/moments';
@@ -26,9 +27,12 @@
 
 <div class="connecting" role="status" in:fade={{ duration: 200 }}>
   <span class="rune" use:portalOn aria-hidden="true"></span>
-  <span class="what" title={slow && joining ? 'Some networks take a little longer.' : undefined}>
-    {#if !joining}{slow ? 'Still opening the portal…' : 'Opening a portal…'}{:else if slow}Still on the way…{:else}Travelling to <span class="num">{session.code}</span>…{/if}
-  </span>
+  <!-- Saying it's still going, the new words fade in where the first stood. -->
+  {#key slow}
+    <span class="what" title={slow && joining ? 'Some networks take a little longer.' : undefined} in:fade={calm({ duration: 250 })}>
+      {#if !joining}{slow ? 'Still opening the portal…' : 'Opening a portal…'}{:else if slow}Still on the way…{:else}Travelling to <span class="num">{session.code}</span>…{/if}
+    </span>
+  {/key}
   <button class="btn small ghost" type="button" onclick={() => session.leave()}>Cancel</button>
 </div>
 

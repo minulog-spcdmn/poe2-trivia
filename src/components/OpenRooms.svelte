@@ -6,6 +6,7 @@
   import { joinable, roomMeta, watchable } from '../lib/roomInfo';
   import { PROTOCOL_VERSION } from '../lib/protocol';
   import { pinnedOut } from '../lib/stage';
+  import { calm } from '../lib/motion.svelte';
   import Connecting from './Connecting.svelte';
 
   /** A room leaving the list fades where it stood, under the stage's zoom too. */
@@ -224,13 +225,14 @@
         <path class="head" d="M18.15 6.8 15.6 2.15 13.2 8.7Z" />
       </svg>
     </button>
-    {#if enterable}<p class="note">{seatFree ? 'Anyone can join.' : 'No seat free: watch, and play once you can.'}</p>{/if}
+    <!-- Fading in with its count, and again as what it says changes. -->
+    {#if enterable}{#key seatFree}<p class="note" in:fade|global={calm({ duration: 200 })}>{seatFree ? 'Anyone can join.' : 'No seat free: watch, and play once you can.'}</p>{/key}{/if}
   </header>
 
   <!-- The list's own frame: the start page gives it a fixed height on a wide window, and a long list scrolls inside it. -->
   <div class="frame">
     {#if shown.length}
-      <ul>
+      <ul in:fade={calm({ duration: 200 })}>
         {#each shown as { room: r, door: d } (r.code)}
           <li class:dimmed={!!joining && r.code !== joining} animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fadeOut={{ duration: 150 }}>
             {#if r.code === joining}
@@ -239,7 +241,7 @@
             {:else}
               <div class="info">
                 <span class="host">{r.host}’s room</span>
-                <span class="meta">{roomMeta(r)}{r.spectators ? ` · ${r.spectators} watching` : ''}</span>
+                {#key `${roomMeta(r)}${r.spectators}`}<span class="meta" in:fade={calm({ duration: 200 })}>{roomMeta(r)}{r.spectators ? ` · ${r.spectators} watching` : ''}</span>{/key}
               </div>
               {#if d === 'join'}
                 <button class="btn small" {disabled} onclick={() => tap(r, 'join')}>Join</button>
@@ -258,13 +260,13 @@
       </ul>
     {:else if scanned && rooms.length && !failed}
       <!-- Kept up through the refreshes too, as the list would be: the rooms found stay known while the next scan runs. -->
-      <p class="empty">No room can be joined from here right now.</p>
+      <p class="empty" in:fade={calm({ duration: 200 })}>No room can be joined from here right now.</p>
     {:else if scanning || !scanned}
-      <p class="empty"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span> Searching for rooms…</p>
+      <p class="empty" in:fade={calm({ duration: 200 })}><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span> Searching for rooms…</p>
     {:else if failed}
-      <p class="empty">Couldn’t reach the matchmaking server. Try the refresh button.</p>
+      <p class="empty" in:fade={calm({ duration: 200 })}>Couldn’t reach the matchmaking server. Try the refresh button.</p>
     {:else}
-      <p class="empty">Nobody is waiting right now. Set your room to Public in its lobby and it shows up here.</p>
+      <p class="empty" in:fade={calm({ duration: 200 })}>Nobody is waiting right now. Set your room to Public in its lobby and it shows up here.</p>
     {/if}
   </div>
 </section>
