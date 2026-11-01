@@ -269,39 +269,54 @@
   // vote: one joining or refreshing into the question goes straight to it.
   // Set before the DOM updates, so the cards stay up rather than being
   // swapped for the question and back.
+  //
+  // Any other pick holds the cards for one frame too, the frame its tap (or
+  // the word of it) shows in: the question that takes their place comes in
+  // the frame after, mounted in a task of its own. Mounted with the pick, it
+  // made one task of the two, the longest of a game on an iPhone (#331).
   let raffle = $state<number | null>(null);
+  let swap = $state<number | null>(null);
   let phaseSeen = '';
   let raffleTimer: ReturnType<typeof setTimeout> | null = null;
   $effect.pre(() => {
     const key = `${s.turnCount}:${s.phase}`;
     const was = phaseSeen;
     phaseSeen = key;
-    if (!run || !group || s.phase !== 'question' || !s.question) {
+    if (s.phase !== 'question' || !s.question) {
       if (s.phase !== 'question') raffle = null;
       return;
     }
+    if (was !== `${s.turnCount}:choosing`) return;
+    const asked = s.question;
+    const qid = asked.askedAt;
     // Back after a dropped connection with the question's clock already
     // running: the draw would eat into it, so the question shows at once.
-    const asked = s.question;
     const running = asked.deadline !== null && asked.clockAt !== undefined && session.hostNow() > asked.clockAt;
-    if (was === `${s.turnCount}:choosing` && !running && untrack(() => raffle) === null) {
-      const qid = asked.askedAt;
+    if (run && group && !running && untrack(() => raffle) === null) {
       raffle = qid;
       // Should the draw never say it is done, the question shows anyway.
       if (raffleTimer) clearTimeout(raffleTimer);
       raffleTimer = setTimeout(() => raffle === qid && (raffle = null), 4000);
+      return;
     }
+    swap = qid;
+    const done = () => swap === qid && (swap = null);
+    requestAnimationFrame(() => setTimeout(done));
+    // (A hidden page draws no frames.)
+    setTimeout(done, 200);
   });
   $effect(() => () => {
     if (raffleTimer) clearTimeout(raffleTimer);
   });
   const drawing = $derived(raffle !== null && raffle === s.question?.askedAt && s.phase === 'question');
+  /** The cards still up over a question just picked: its draw playing on them, or the pick's own frame. */
+  const cardsHeld = $derived(drawing || (swap !== null && swap === s.question?.askedAt && s.phase === 'question'));
   /**
    * Delve: between a vein's strikes, its two cards up (and the team's draw
    * playing on them), the lamp stays in view, still at the light it has left
    * for the next strike, where the strike's clock will run it.
    */
-  const lampHeld = $derived(!!between || (drawing && inVein(s) && !!digOf(s)));
+  const lampHeld = $derived(!!between || (cardsHeld && inVein(s) && !!digOf(s)));
   /** Together: the vote drew a vein's way out, and its draw plays on the two cards before the team goes back to the light (Delve.leaving). */
   const leaving = $derived(!!run && group && s.phase === 'choosing' && s.delve?.leaving !== undefined);
 
@@ -489,7 +504,7 @@
 
 {#snippet timer()}
   <!-- There from the question's start, full while its clock waits for the art, so nothing jumps as it starts. -->
-  {#if lampHeld || (!drawing && q && (q.deadline || (s.phase === 'question' && seconds > 0)))}
+  {#if lampHeld || (!cardsHeld && q && (q.deadline || (s.phase === 'question' && seconds > 0)))}
     {#key q?.askedAt}
       <TimerRing deadline={lampHeld ? null : q!.deadline} total={seconds} stopped={s.phase === 'reveal'} {warnFrom} />
     {/key}
@@ -530,7 +545,7 @@
 
           <!-- The cards fade out over the question that takes their place (see cardsOut). -->
           <div class="turn-body">
-            {#if s.phase === 'choosing' || drawing}
+            {#if s.phase === 'choosing' || cardsHeld}
               <div class="cards-slot" use:outWithoutInert out:cardsOut>
                 <ChooseCategory
                   drawn={drawing ? (s.question?.category ?? null) : leaving ? WAY_OUT : null}
