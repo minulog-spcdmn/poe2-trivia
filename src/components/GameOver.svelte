@@ -5,6 +5,7 @@
   import { calm } from '../lib/motion.svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { engine, session } from '../lib/session.svelte';
+  import type { GameState } from '../lib/game';
   import { categoryGlyph, itemSrcset, itemThumb, playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
@@ -26,7 +27,7 @@
   import { countEvent } from '../lib/count';
   import { portal } from '../lib/portal';
   import { dock, flat, phone } from '../lib/layout';
-  import { FINDS_IN_ORDER, delveStandings, isGroupRun, shownDepth, teamDepth } from '../lib/delve';
+  import { FINDS_IN_ORDER, delveStandings, isGroupRun, runFossils, shownDepth, teamDepth } from '../lib/delve';
   import { FIND_RULES, FIND_TEXT, MODE_NAMES } from '../lib/difficultyText';
   import { loadRecords } from '../lib/delveRecord';
   import { GROUND_Y } from '../lib/runsPlate';
@@ -58,7 +59,7 @@
   // Read as the screen comes in, not a moment after, so what they fill (your lives, what you earned) is there in its first
   // frame instead of pushing the column down. (The game has loaded both by its end anyway.)
   import { loadCodex } from '../lib/codex';
-  import { FOSSIL_COUNT, fossilArt, fossilById } from '../lib/fossils';
+  import { FOSSIL_COUNT, FOSSIL_DEAL, fossilArt, fossilById, type FossilId } from '../lib/fossils';
   import { foundCount, loadFossils } from '../lib/fossilStore';
   import { achievementById, type Achievement } from '../lib/achievements';
   import { readsShellHeights } from '../lib/shellHeights.svelte';
@@ -66,6 +67,36 @@
 
   // Its styles read the shell's --header-h and --legal-h (App.svelte).
   readsShellHeights();
+
+  /** Where the set stands, as the fossil line says it (`count`: how many this device holds, this run's with them). */
+  type FossilFact =
+    | { kind: 'found'; id: FossilId; depth: number; count: number }
+    | { kind: 'missed'; depth: number; count: number }
+    | { kind: 'held' | 'none' | 'all'; count: number };
+  /** A line among the run's facts: the engine's, or the fossil line. */
+  type Fact = Line | { fossil: FossilFact };
+  const anOrA = (name: string) => (/^[AEIOU]/.test(name) ? 'an' : 'a');
+  /** The depth players see fossils start to turn up from. */
+  const FOSSILS_FROM = shownDepth(FOSSIL_DEAL.common.from);
+  /**
+   * A fossil's card picked and answered wrong this run, by whom and how deep (engine depth), as far as it reads sane.
+   * (The engine keeps it as delve.fossilMissed; none in older saves.)
+   */
+  const fossilsMissed = (st: GameState): { depth: number; by: string }[] => {
+    const all = (st.delve as { fossilMissed?: unknown } | null | undefined)?.fossilMissed;
+    if (!Array.isArray(all)) return [];
+    return all.filter((f): f is { depth: number; by: string } => !!f && typeof f === 'object' && Number.isFinite(f.depth) && typeof f.by === 'string');
+  };
+
+  // The nodule a fossil lies in, engraved (docs/arcane-style.md; the card's own in lib/findEngraving.ts): an exact
+  // ellipse with two growth rings, hatched on the side from the light (the lower right) between its rim and the
+  // outer ring, and the fine seam it splits along across it, the rings and the hatching stopping short of it.
+  const ellipse = (rx: number, ry: number) => `M${-rx} 0A${rx} ${ry} 0 1 0 ${rx} 0A${rx} ${ry} 0 1 0 ${-rx} 0Z`;
+  const NODULE_RIM = `${ellipse(8.8, 6.4)}${ellipse(6, 4.3)}`;
+  const NODULE_HATCH = Array.from({ length: 7 }, (_, i) => 3.4 + i * 1.35)
+    .map((c) => `M${(c - 11).toFixed(2)} 11L11 ${(c - 11).toFixed(2)}`)
+    .join('');
+  const NODULE_SEAM = 'M-8.8 0.5L-5.6 -0.5L-2.4 0.7L0.9 -0.6L4.2 0.6L8.8 -0.4';
 
   // The end of a game, as the lobby is laid out: on the left the result in
   // a rune circle, the eye or the monad, or after a Delve the moth (the
@@ -251,12 +282,45 @@
    * drop is never said.
    */
   const lifted = $derived(run && self && measured && chart.length >= 3 ? usualLifted(kept, run.startedAt, together, local ? null : self) : null);
-  const facts = $derived.by(() => {
-    if (!run) return [];
-    const out = runFacts(s, solo ? self : null, foundCount(loadFossils()) >= FOSSIL_COUNT);
-    if (lifted !== null) out.splice(1, 0, { icon: { usual: true }, parts: ['Your usual is now ', { n: lifted }, '.'] });
-    return out;
+  /**
+   * The fossils (lib/fossils.ts) as this device holds them, this run's with them (kept as it gave them, at the
+   * reveal): read as the screen comes in, and again with the codex, should the last one still have been on its way.
+   */
+  let fossils = $state.raw(loadFossils());
+  onMount(() => {
+    const t = setTimeout(() => (fossils = loadFossils()), 1500);
+    return () => clearTimeout(t);
   });
+  /**
+   * Every Delve end screen's fossil line, the set's progress in this device's codex: the one this run gave you (alone
+   * this device's; together yours), else one whose card you picked and answered wrong, else where the set stands.
+   */
+  const fossilLine = $derived.by((): FossilFact | null => {
+    if (!run) return null;
+    const count = foundCount(fossils);
+    const mine = runFossils(s).find((f) => local || (!!me && f.to.includes(me)));
+    if (mine) return { kind: 'found', id: mine.id, depth: shownDepth(mine.depth), count };
+    if (count >= FOSSIL_COUNT) return { kind: 'all', count };
+    const missed = fossilsMissed(s).find((f) => local || f.by === me);
+    if (missed) return { kind: 'missed', depth: shownDepth(missed.depth), count };
+    return { kind: count ? 'held' : 'none', count };
+  });
+  /** At most this many facts: as many as before every run had a fossil line, so the column is never taller. */
+  const MAX_FACTS = 5;
+  const facts = $derived.by((): Fact[] => {
+    if (!run) return [];
+    // (The engine's lines name a fossil the old way: the line below says it.)
+    const out: Fact[] = runFacts(s, solo ? self : null).filter((l) => !('fossil' in l.icon));
+    if (lifted !== null) out.splice(1, 0, { icon: { usual: true }, parts: ['Your usual is now ', { n: lifted }, '.'] });
+    if (!fossilLine) return out;
+    const kept = out.slice(0, MAX_FACTS - 1);
+    // Something the run did, under where it reached (and the usual); where the set stands, last.
+    if (fossilLine.kind === 'found' || fossilLine.kind === 'missed') kept.splice(lifted !== null ? 2 : 1, 0, { fossil: fossilLine });
+    else kept.push({ fossil: fossilLine });
+    return kept;
+  });
+  /** The first run's facts besides its fossil line: none, and it says what can be found instead. */
+  const runDid = $derived(facts.filter((f) => !('fossil' in f)).length);
   const lines = $derived<Line[]>(!run ? highlights(s) : solo && self ? soloHighlights(s, self, first) : partyHighlights(s));
 
   // ---- the start row ---------------------------------------------------------
@@ -304,6 +368,19 @@
   $effect(() => {
     if (itemOpen) return backGuard.layer(() => (open = null));
   });
+  /** The fossil set, over the screen (the fossil line opens it). */
+  let FossilsDialog = $state<typeof import('./FossilsDialog.svelte').default | null>(null);
+  let setOpen = $state(false);
+  $effect(() => {
+    if (setOpen) return backGuard.layer(() => (setOpen = false));
+  });
+  function openSet() {
+    void import('./FossilsDialog.svelte').then((m) => {
+      FossilsDialog = m.default;
+      fossils = loadFossils();
+      setOpen = true;
+    });
+  }
   function inspect(id: string) {
     const it = engine.byId.get(id);
     if (!it) return;
@@ -741,14 +818,65 @@
 {/snippet}
 
 <!-- Lines with an icon in front; folding under `key` (refit's fold). -->
-{#snippet lineList(list: Line[], key?: string, what = '')}
+{#snippet lineList(list: Fact[], key?: string, what = '')}
   {@const f = key ? folded(key, list) : { shown: list, more: 0 }}
   <ul class="fx" data-fold={key} data-unit="line">
     {#each f.shown as l, i (i)}
-      <li>{@render icon(l.icon)}<span class="txt">{@render say(l.parts)}</span></li>
+      {#if 'fossil' in l}
+        {@render fossilFact(l.fossil)}
+      {:else}
+        <li>{@render icon(l.icon)}<span class="txt">{@render say(l.parts)}</span></li>
+      {/if}
     {/each}
     {#if f.more && key}{@render moreLine(key, f.shown.length, f.more, what)}{/if}
   </ul>
+{/snippet}
+
+<!-- The fossil line: the set's progress, a plain link that opens the set (not gold: Delve again keeps the one gold
+     button). Its mark the fossil found, else the nodule it lies in, engraved in bone. -->
+{#snippet fossilFact(f: FossilFact)}
+  <li class="fossil-line" data-fossil={f.kind}>
+    <span class="ic" aria-hidden="true">
+      <span class="mini sign">
+        {#if f.kind === 'found'}
+          <img class="fossil-ic" src={fossilArt(f.id, 128)} alt="" />
+        {:else}
+          <svg class="nodule-ic" viewBox="-11 -11 22 22">
+            <defs>
+              <clipPath id="nodule-rim"><path clip-rule="evenodd" d={NODULE_RIM} /></clipPath>
+              <mask id="nodule-seam" maskUnits="userSpaceOnUse" x="-11" y="-11" width="22" height="22">
+                <rect x="-11" y="-11" width="22" height="22" fill="#fff" />
+                <path d={NODULE_SEAM} stroke="#000" stroke-width="2.2" fill="none" />
+              </mask>
+            </defs>
+            <g mask="url(#nodule-seam)">
+              <ellipse rx="8.8" ry="6.4" />
+              <ellipse class="ring" rx="6" ry="4.3" />
+              <ellipse class="ring" rx="3.3" ry="2.3" />
+              <path class="hatch" clip-path="url(#nodule-rim)" d={NODULE_HATCH} />
+            </g>
+            <path class="seam" d={NODULE_SEAM} />
+          </svg>
+        {/if}
+      </span>
+    </span>
+    <span class="txt">
+      <button class="set-link" onclick={openSet} aria-haspopup="dialog">
+        {#if f.kind === 'found'}
+          {@const name = fossilById(f.id).name}
+          You unearthed {anOrA(name)} <span class="fossil-name">{name}</span> at depth <b class="n">{f.depth}</b>; <span class="of"><b class="n">{f.count}</b> of <b class="n">{FOSSIL_COUNT}</b>.</span>
+        {:else if f.kind === 'missed'}
+          A fossil stayed in the stone at depth <b class="n">{f.depth}</b>; <span class="of"><b class="n">{f.count}</b> of <b class="n">{FOSSIL_COUNT}</b>.</span>
+        {:else if f.kind === 'held'}
+          Fossils: <span class="of"><b class="n">{f.count}</b> of <b class="n">{FOSSIL_COUNT}</b> in your codex.</span>
+        {:else if f.kind === 'all'}
+          <span class="of">Every fossil unearthed.</span>
+        {:else}
+          <span class="of">Fossils for your codex turn up on cards from depth <b class="n">{FOSSILS_FROM}</b>.</span>
+        {/if}
+      </button>
+    </span>
+  </li>
 {/snippet}
 
 <!-- A folded list's last place: how many more, opening it in place. A row of thumbs ends in a "+N" place, a list of
@@ -1041,7 +1169,7 @@
         {#if run}
           <div class="runs" data-cursor="runs">
             {#if first}
-              {#if facts.length > 1}
+              {#if runDid > 1}
                 <p class="cap">This run</p>
                 {@render lineList(facts.slice(1), 'facts', 'from this run')}
               {:else}
@@ -1057,6 +1185,7 @@
                       </span>
                     </li>
                   {/each}
+                  {#if fossilLine}{@render fossilFact(fossilLine)}{/if}
                 </ul>
               {/if}
             {:else if chart.length >= 2}
@@ -1118,6 +1247,9 @@
 
 {#if open && CodexItem && codex}
   <CodexItem item={open} {codex} onclose={() => (open = null)} onopen={(it) => (open = it)} />
+{/if}
+{#if setOpen && FossilsDialog}
+  <FossilsDialog store={fossils} onclose={() => (setOpen = false)} />
 {/if}
 
 <style>
@@ -1980,6 +2112,61 @@
     height: 78%;
     object-fit: contain;
     filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
+  }
+  /* The nodule a fossil lies in, engraved in bone (the fossil card's ink): no fossil found this run. */
+  .nodule-ic {
+    width: 82%;
+    height: 82%;
+    overflow: visible;
+    fill: none;
+    stroke: #e6dcc6;
+    stroke-width: 0.9;
+  }
+  .nodule-ic .ring {
+    stroke-width: 0.7;
+    opacity: 0.8;
+  }
+  .nodule-ic .hatch {
+    stroke-width: 0.55;
+    stroke-linecap: round;
+    opacity: 0.75;
+  }
+  .nodule-ic .seam {
+    stroke: #f6f0e2;
+    stroke-width: 0.5;
+    stroke-linejoin: round;
+  }
+  /* The fossil line: a plain link to the set, its words as any line's; the count lights as it's pointed at. */
+  .set-link {
+    display: inline;
+    padding: 0;
+    font: inherit;
+    line-height: inherit;
+    text-align: left;
+    color: inherit;
+    background: none;
+    border: 0;
+    cursor: pointer;
+  }
+  .set-link .of {
+    text-decoration: underline dotted rgba(230, 220, 198, 0.35);
+    text-underline-offset: 3px;
+    transition:
+      color 0.2s,
+      text-decoration-color 0.2s;
+  }
+  .set-link:hover .of,
+  .set-link:focus-visible .of {
+    color: #f6f0e2;
+    text-decoration-color: rgba(246, 240, 226, 0.75);
+  }
+  /* A fossil's name as PoE names a currency item (a fossil is one): its colour, in the tooltip's own type. */
+  .fossil-name {
+    font-family: var(--font-tooltip);
+    color: #aa9e82;
+  }
+  .fossil-line[data-fossil='missed'] .txt {
+    color: var(--muted);
   }
   /* The usual depth raised: the chart's dotted level, an arrow up from it, in its gold. */
   .usual-ic {

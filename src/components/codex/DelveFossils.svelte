@@ -21,8 +21,11 @@
   import { shownDepth } from '../../lib/delve';
   import { backdropShadow } from '../../lib/backdropShadow';
 
-  /** `store`: what to show instead of this browser's (the Codex's own, refreshed as it is erased; the QA desk's). */
-  let { store = undefined }: { store?: FossilStore } = $props();
+  /**
+   * `store`: what to show instead of this browser's (the Codex's own, refreshed as it is erased; the QA desk's).
+   * `embedded`: in a dialog over the end screen (FossilsDialog), which frames and titles it.
+   */
+  let { store = undefined, embedded = false }: { store?: FossilStore; embedded?: boolean } = $props();
 
   let own = $state.raw(loadFossils());
   $effect(() => onStoredElsewhere({ [FOSSILS_KEY]: () => (own = loadFossils()) }));
@@ -47,7 +50,7 @@
   const tapped = (e: MouseEvent) => !pressed || Math.hypot(e.clientX - pressed.x, e.clientY - pressed.y) <= TAP;
 </script>
 
-<section class="panel fossils" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="{uid}-h">
+<section class="fossils" class:panel={!embedded} class:embedded use:backdropShadow={{ fill: 'linear', off: embedded }} aria-labelledby="{uid}-h">
   <header><h2 id="{uid}-h">Fossils</h2><span class="col-label"><span class="n">{count}</span> of <span class="n">{FOSSIL_COUNT}</span></span></header>
   <p class="about">
     Collectibles for your codex, now and then on a Delve card; they don’t change a run. One a day at most.{#if today}
