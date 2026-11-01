@@ -48,16 +48,19 @@
         from,
         ms,
       );
-      // Hidden until its pen sets down: a dash of no length still draws its
-      // round caps, a dot at each line's end while it waits (#335). Hidden
-      // only at the very start, so the cap that leads the line is round from
-      // its first frame and nothing changes once it has drawn.
+      // Unseen until its pen sets down: a dash of no length still draws its
+      // round caps, a dot at each line's end while it waits (#335). Its
+      // opacity steps up as it starts, so the cap that leads the line is
+      // round from its first frame and nothing changes once it has drawn.
+      // (Not by visibility: a line made visible would show through the
+      // column, hidden till the name has its size.)
       paths.forEach((p, i) =>
         play(
           p,
           [
-            { strokeDashoffset: 100, visibility: 'hidden' },
-            { strokeDashoffset: 0, visibility: 'visible' },
+            { offset: 0, strokeDashoffset: 100 },
+            { offset: 0, opacity: 0, easing: 'steps(1, jump-start)' },
+            { offset: 1, strokeDashoffset: 0, opacity: 1 },
           ],
           { at: plan[i].delay, ms: plan[i].dur },
         ),

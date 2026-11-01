@@ -169,12 +169,15 @@
   // wobble on phones, it had the page round it painted again on every frame of
   // the spin. (Chrome at 2.625 and 1.5 turns the layer within a tenth of a
   // device pixel of the SVG's own turn, whatever the fraction it sits at.)
+  // The layer goes once it stops: kept, the icon would rest at its angle as
+  // its upright picture turned, softer than the lines drawn at that angle.
   const SPIN_SPEED = 0.4; // degrees per ms
   const SPIN_UP_MS = 350;
   const SPIN_DOWN_MS = 700;
   let angle = $state(0);
   let speed = 0;
   let spinFrame = 0;
+  let turning = $state(false);
 
   function spin(now: number, last: number) {
     const dt = Math.min(now - last, 50);
@@ -184,12 +187,15 @@
       : Math.max(0, speed - (SPIN_SPEED / SPIN_DOWN_MS) * dt);
     angle = (angle + speed * dt) % 360;
     spinFrame = speed > 0 || active ? requestAnimationFrame((t) => spin(t, now)) : 0;
+    turning = spinFrame !== 0;
   }
 
   $effect(() => {
     if (!scanning) return;
     const now = performance.now();
-    if (!spinFrame) spinFrame = requestAnimationFrame((t) => spin(t, now));
+    if (spinFrame) return;
+    turning = true;
+    spinFrame = requestAnimationFrame((t) => spin(t, now));
   });
 
   function sortRooms(list: RoomInfo[]) {
@@ -213,7 +219,7 @@
     {#if enterable}<span class="open" in:fade={{ duration: 200 }}><span class="num">{enterable}</span> open</span>{/if}
     <button class="refresh" class:busy={scanning} onclick={scan} disabled={scanning || disabled} aria-label="Refresh room list" title="Refresh">
       <!-- The arc is centred on the viewBox so the icon turns in place. -->
-      <svg viewBox="0 0 24 24" style:transform="rotate({angle}deg)">
+      <svg viewBox="0 0 24 24" class:turning style:transform="rotate({angle}deg)">
         <path d="M18.58 14.39A7 7 0 1 1 14.39 5.42" />
         <path class="head" d="M18.15 6.8 15.6 2.15 13.2 8.7Z" />
       </svg>
@@ -343,12 +349,14 @@
   .refresh svg {
     width: 20px;
     height: 20px;
-    will-change: transform;
     fill: none;
     stroke: currentColor;
     stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+  .refresh svg.turning {
+    will-change: transform;
   }
   .refresh svg .head {
     fill: currentColor;
