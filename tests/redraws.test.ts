@@ -99,9 +99,9 @@ test('a trace that doesn’t read as one always does fails, and the mark is left
     ['span.frame'],
   );
   assert.equal(r.px, 10000);
-  assert.match(unread(redraws([])) ?? '', /no the page’s renderer/, 'an empty trace');
-  assert.match(unread(redraws([snapshot(20, 1, [])])) ?? '', /no tile drawn/, 'layer trees, but no raster tasks');
-  assert.match(unread(redraws([raster(10, 1, '0xa'), snapshot(20, 1, [['0xa', 5, [0, 0, 100, 100]]])])) ?? '', /no mark/, 'tiles, but not the mark’s');
+  assert.match(unread(redraws([])) ?? '', /the trace has nothing of the page’s renderer/, 'an empty trace');
+  assert.match(unread(redraws([snapshot(20, 1, [])])) ?? '', /the trace has no tile drawn/, 'layer trees, but no raster tasks');
+  assert.match(unread(redraws([raster(10, 1, '0xa'), snapshot(20, 1, [['0xa', 5, [0, 0, 100, 100]]])])) ?? '', /the trace has no tile of the mark/, 'tiles, but not the mark’s');
 });
 
 test('at rest, a layer drawn again FLOOR px a frame or more, over the frames watched, fails', () => {

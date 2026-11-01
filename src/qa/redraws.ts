@@ -226,15 +226,15 @@ export const MARK = 'div#redraw-mark';
  */
 export function unread(r: Redraws): string | null {
   const missing = !r.read.renderer
-    ? 'the page’s renderer (no layer tree with the document)'
+    ? 'nothing of the page’s renderer (no layer tree with the document)'
     : !r.read.snapshots
-      ? 'layer tree'
+      ? 'no layer tree'
       : !r.read.tiles
-        ? 'tile drawn'
+        ? 'no tile drawn'
         : !r.layers.some((l) => l.name === MARK)
-          ? `mark (${MARK}), drawn in every watch`
+          ? `no tile of the mark (${MARK}), drawn in every watch`
           : null;
-  return missing && `the trace has no ${missing}: its format may have changed (an update to Chrome or Playwright); src/qa/redraws.ts reads it`;
+  return missing && `the trace has ${missing}: its format may have changed (an update to Chrome or Playwright); src/qa/redraws.ts reads it`;
 }
 
 /** `r` with the mark (MARK) left out: it's the sweep's, not the page's. */
