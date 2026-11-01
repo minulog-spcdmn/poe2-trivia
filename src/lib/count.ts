@@ -18,7 +18,7 @@
 // onCountToggle below reads it instead.
 
 import { CHANNEL, type Channel } from './channel.ts';
-import { findOffers, fossilOffer, nobodyStands, shownDepth, teamDepth } from './delve.ts';
+import { findOffers, fossilOffer, missedFossils, nobodyStands, shownDepth, teamDepth } from './delve.ts';
 import type { GameState } from './game.ts';
 import { COUNTER_ORIGIN } from './counter.ts';
 import { isoWeek } from './isoWeek.ts';
@@ -671,7 +671,8 @@ export function fossilEvents(prev: GameState | null, next: GameState): string[] 
     return ['fossil/seen'];
   const revealed = next.phase === 'reveal' && next.reveal && (prev.phase !== 'reveal' || prev.question?.askedAt !== next.question?.askedAt);
   if (revealed && next.reveal!.fossil) return [`fossil/${next.reveal!.fossil.tier}`];
-  if (revealed && !next.reveal!.correct && next.question?.fossil) return ['fossil/missed'];
+  // Missed: read from the run's own record of it (delve.ts missedFossils), which the end screen shows.
+  if (missedFossils(next).length > missedFossils(prev).length) return ['fossil/missed'];
   if (prev.phase === 'choosing' && next.phase === 'question' && next.question?.find && fossilOffer(prev) && findOffers(prev).some((f) => f.category === next.question!.category))
     return ['fossil/passed'];
   return [];
