@@ -492,10 +492,10 @@ async function frameDriver(context, page, ms = FRAME) {
         else return;
       }
     },
-    /** On to the next whole second of the page's own clock (performance.now: the same second each run, though work done in real time, a worker's, may tip where it comes to rest by one of SETTLE's frames). */
-    async toSecond() {
+    /** On to the next whole `ms` of the page's own clock (performance.now). */
+    async toWhole(ms) {
       const now = await page.evaluate(() => performance.now());
-      const left = Math.ceil(now / 1000) * 1000 - now;
+      const left = Math.ceil(now / ms) * ms - now;
       if (left >= 1) await frame(left, 'pauseIfNetworkFetchesPending');
     },
     /** Up to `most` frames, or, past `least`, until `until` (run in the page) says so: how many. */
@@ -724,15 +724,25 @@ function listenQuiet({ still, most }) {
 /**
  * The page's frames driven on until it's at rest (listenQuiet's, after the
  * half second that follows its coming to rest: a toast, a sound's first
- * beat, a rune circle's pen), then on to a whole second of its time: the
- * same point each run, in every light's cycle too.
+ * beat, a rune circle's pen), then on to a whole second of its time.
  */
 async function settled(page, drive) {
   await drive.settle(() => false, SETTLE);
   await page.evaluate(listenQuiet, { still: 1000, most: 15000 });
   await drive.settle(() => window.__quiet(), 20000, 'Coming to rest');
-  await drive.toSecond();
+  await drive.toWhole(1000);
 }
+
+/**
+ * Where a scene at rest starts being watched: on a whole 5 s of its time,
+ * GameOver's gleam's cycle and the window's length. A page comes to rest on
+ * the runner's time, its loading paced to real time, so a second or so apart
+ * from one run to the next (over/n-lost at 7 s, then 8); from the same 5 s,
+ * it's watched from the same point in the gleam's cycle all the same, and in
+ * the title's (7 s) and the rooms list's (20 s) whenever it came to rest
+ * within the same 5 s.
+ */
+const REST_CYCLE = 5000;
 
 /** A number for `text`, to seed a page's Math.random by. */
 const seedOf = (text) => [...text].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0, 2166136261);
@@ -788,6 +798,7 @@ async function scenesAtRest(base, firsts, browsers) {
             step('at rest');
             await settled(page, drive);
             step(`quiet at ${((await page.evaluate(() => performance.now())) / 1000).toFixed(1)} s of its time`);
+            await drive.toWhole(REST_CYCLE);
             const r = await watched(browser, page, () => drive.frames(AT_REST_FRAMES));
             step(`${r.frames} frames, traced (${(r.traced / 1e6).toFixed(0)} MB)`);
             const problems = [...r.layers.map((l) => atRest(l, r.frames)), pageAtRest(r.again, r.frames, r.layers)].filter(Boolean);
