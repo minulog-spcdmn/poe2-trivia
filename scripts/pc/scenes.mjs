@@ -30,7 +30,7 @@ for (const key of keys) {
   // Its deal, its art and its circles all in, and the shader cache warm.
   await sleep(7000);
   await mark(page, 'rest');
-  await sleep(Number(process.env.REST ?? 2000));
+  await sleep(Number(process.env.REST) || 2000);
   await mark(page, 'end');
   await end();
 }

@@ -20,7 +20,7 @@ kept = json.load(open(path + '.frames.json'))
 
 threads = {}
 marks = {}
-mark_pid = None
+mark_pids = {}  # the renderer each mark was made in
 raster = []  # (ts us, dur us) on CrGpuMain
 tasks = []  # (pid, tid, ts us, dur us): top-level tasks, for the page's main thread
 open_ = collections.defaultdict(list)
@@ -47,7 +47,7 @@ for line in open(path, encoding='utf-8', errors='replace'):
             threads[(e['pid'], e['tid'])] = e['args']['name']
     elif ph in ('R', 'I', 'n', 'i') and e.get('cat', '').startswith('blink.user_timing'):
         marks.setdefault(e['name'], e['ts'])
-        mark_pid = e['pid']
+        mark_pids.setdefault(e['name'], e['pid'])
     elif ph == 'X':
         done(e, e.get('dur', 0), e.get('args') or {})
     elif ph == 'B':
@@ -65,8 +65,8 @@ if common is None:
     sys.exit('no mark in both the trace and the page: was blink.user_timing traced?')
 offset = marks[common] / 1000 - dict((n, t) for t, n in page_marks)[common]
 gpu = [((ts / 1000) - offset, dur / 1000) for pid, tid, ts, dur in raster if threads.get((pid, tid)) == 'CrGpuMain']
-# The page's main thread: the renderer that made the marks.
-main = [((ts / 1000) - offset, dur / 1000) for pid, tid, ts, dur in tasks if pid == mark_pid and threads.get((pid, tid)) == 'CrRendererMain']
+# The page's main thread: the renderer that made the mark the times are set by.
+main = [((ts / 1000) - offset, dur / 1000) for pid, tid, ts, dur in tasks if pid == mark_pids[common] and threads.get((pid, tid)) == 'CrRendererMain']
 
 frames = kept['frames']
 end = frames[-1][0] if frames else 0
