@@ -1,4 +1,7 @@
 <script module lang="ts">
+  import { passingLight } from '../lib/glint';
+  import { METALS } from '../lib/metals';
+  import { motion } from '../lib/motion.svelte';
   // One observer for every engraving's size: its reports all read before any
   // engraving is drawn (what they set is drawn once they're all in). Watched
   // in device pixels where the browser can say them (not Safari), which a
@@ -66,6 +69,15 @@
       if (k >= 0) waiting.splice(k, 1);
     };
   }
+
+  /**
+   * The gold light that crosses a rare fossil's nodule now and then (its
+   * plate's `gleam`), as it crosses an earned gold seal (AchievementSeal,
+   * lib/metals.ts), a little less often: one light for every card, on the
+   * page clock (lib/glint.ts).
+   */
+  const GOLD = METALS[3];
+  const goldLight = passingLight(9000, GOLD.light.sweep);
 </script>
 
 <script lang="ts">
@@ -93,7 +105,20 @@
   // `front`: only what stands in front of the emblem (Plate.front), solid, laid over the category's item.
   // `print`: its still layers shown as prints of themselves (lib/platePrint), where Chrome rasters it at its laid-out size.
   // `hold`: how long it lies unseen once it's mounted (ms; a dealt card fades in late): a printed layer's svg isn't drawn so long while its print is pulled.
-  let { side, find = null, custom, front = false, print = false, hold = 0 }: { side: 'face' | 'back'; find?: FindKind | null; custom?: Variant; front?: boolean; print?: boolean; hold?: number } = $props();
+  /**
+   * `glint`: the light on the motif. `band` (most cards) crosses it all the
+   * time; `none` never (a common fossil's: stone has no light of its own);
+   * `gold` crosses only its `gleam` (the nodule), now and then (a rare fossil's).
+   */
+  let {
+    side,
+    find = null,
+    custom,
+    front = false,
+    print = false,
+    hold = 0,
+    glint: light = 'band',
+  }: { side: 'face' | 'back'; find?: FindKind | null; custom?: Variant; front?: boolean; print?: boolean; hold?: number; glint?: 'band' | 'none' | 'gold' } = $props();
   let w = $state(0);
   let h = $state(0);
   /** Its exact size: the glint's copy of the motif is drawn at it, as the lines stretch to it (w and h are whole pixels). */
@@ -210,6 +235,21 @@
      from when it started, and the band's and the drawing's fell out of
      step, the light's copy of the lines off the lines. -->
 {#snippet glint()}
+  {#if light === 'gold' && plate?.gleam}
+    {#if !motion.still}
+      <!-- A rare fossil's: gold light now and then over the nodule alone (its gleam), as over an earned gold seal (lib/glint.ts). -->
+      <span class="gleam" style:--gleam={GOLD.light.gleam} style:--band="{GOLD.light.band}%">
+        <span class="slit" use:goldLight.glint>
+          <svg viewBox="0 0 {w} {h}" style:width="{box?.width ?? w}px" style:height="{box?.height ?? h}px">
+            <defs><clipPath id="{uid}-gleam"><path d={plate.gleam} /></clipPath></defs>
+            <g clip-path="url(#{uid}-gleam)">
+              {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
+            </g>
+          </svg>
+        </span>
+      </span>
+    {/if}
+  {:else if light === 'band'}
   {#key travels ? Math.round(box?.width ?? w) : 0}
     <span class="glint" class:flicker={find === 'flare'} class:flash={find === 'dynamite'}>
       <span class="through" style:--w="{box?.width ?? w}px">
@@ -221,6 +261,7 @@
       </span>
     </span>
   {/key}
+  {/if}
 {/snippet}
 
 <span class="engraving" class:front data-find={find ?? undefined} use:sized aria-hidden="true">
@@ -595,6 +636,33 @@
     100% {
       transform: translateX(calc(var(--w) / -0.75));
     }
+  }
+  /* A rare fossil's gold light (see goldLight): a band slanted across the
+     card, its copy of the nodule skewed back to stay put, kept to the
+     nodule by its clip. Only the band's mask moves, and only as it passes. */
+  .gleam {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+  }
+  .gleam .slit {
+    position: absolute;
+    inset: 0;
+    -webkit-mask-image: linear-gradient(90deg, transparent calc(50% - var(--band) / 3), #000 50%, transparent calc(50% + var(--band) / 3));
+    mask-image: linear-gradient(90deg, transparent calc(50% - var(--band) / 3), #000 50%, transparent calc(50% + var(--band) / 3));
+    -webkit-mask-size: 300% 100%;
+    mask-size: 300% 100%;
+    -webkit-mask-repeat: no-repeat;
+    mask-repeat: no-repeat;
+    -webkit-mask-position: 100% 0;
+    mask-position: 100% 0;
+    transform: skewX(-20deg);
+  }
+  .gleam svg {
+    inset: 0 auto auto 0;
+    color: var(--gleam);
+    transform: skewX(20deg);
+    filter: drop-shadow(0 0 1px var(--gleam));
   }
   /* The flare's light doesn't travel: its motif flares up now and then;
      the dynamite's flashes with each swell of its glow. */

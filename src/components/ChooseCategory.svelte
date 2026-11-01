@@ -22,7 +22,7 @@
   import { FIND_TEXT, deathmatchText, digNote, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
   import { WAY_OUT_CARD as out } from '../lib/wayOut/lantern';
   import { digOf, expectedVoters, fossilOffer, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
-  import type { CardFossil } from '../lib/fossils';
+  import type { CardFossil, FossilTier } from '../lib/fossils';
   import { fossilVariant } from '../lib/findEngraving';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -268,7 +268,11 @@
       const kind = kindOf(category);
       if (frame && kind) onCards(() => findPicked(frame, card, others, kind));
       else if (frame && isWayOut(category)) onCards(() => outPicked(frame, card, others));
-      else if (frame) onCards(() => cardPicked(frame, card, others, false));
+      else if (frame)
+        onCards(() => {
+          cardPicked(frame, card, others, false);
+          if (fossilAt(category)) fossilPicked(frame);
+        });
       sfx(kind === 'azurite' ? 'veinStrike' : 'draw', { from: { from: card } });
     };
     // The cards in the draw: those with votes, in their order.
@@ -352,25 +356,26 @@
     else if (s.question?.fossil && !dealtFossil) dealtFossil = { category: s.question.category, tier: s.question.fossil };
     return dealtFossil;
   });
-  /** The tag of the fossil on a card, or null: only its tier, never which (that is drawn on the right answer). */
-  const fossilAt = (cat: string): string | null => (fossilShown?.category === cat ? (fossilShown.tier === 'rare' ? 'Rare Fossil' : 'Fossil') : null);
+  /** The tier of the fossil on a card, or null: never which fossil (that is drawn on the right answer). */
+  const fossilTierAt = (cat: string): FossilTier | null => (fossilShown?.category === cat ? fossilShown.tier : null);
+  /** The tag of the fossil on a card, or null. */
+  const fossilAt = (cat: string): string | null => (fossilTierAt(cat) === 'rare' ? 'Rare Fossil' : fossilTierAt(cat) ? 'Fossil' : null);
+  /** The light on a card's engraving (CardEngraving): a common fossil's none, stone having no light of its own; a rare's, gold now and then on its nodule. */
+  const glintAt = (cat: string) => (fossilTierAt(cat) === 'rare' ? 'gold' : fossilTierAt(cat) ? 'none' : 'band');
   /** The fossil's card on offer as dealt, while no dig or deathmatch hides the notes. */
   const fossilCol = $derived(fossilShown && !s.deathmatch ? s.offered.indexOf(fossilShown.category) : -1);
   /**
    * A fossil's note (lib/fossils.ts: what a fossil is, that it changes
    * nothing in the run): one of its own under (or beside) its card, as a
    * find's, beside at most one find's; beside two finds, which take both
-   * sides of the cards, a short line in the line under them instead (with
-   * what stays unused on the finds), as that line takes the lock rule's
-   * place there.
+   * sides of the cards, a short line under them instead, one line on a
+   * small phone.
    */
   const fossilNote = $derived(fossilCol < 0 || dig ? null : finds.length >= 2 ? 'line' : 'full');
   /** The columns of the notes that stand in the cards' columns (or at their sides): the finds' and a fossil's own. */
   const noteCols = $derived([...finds.map((f) => s.offered.indexOf(f.category)), ...(fossilNote === 'full' ? [fossilCol] : [])]);
   /** The notes can stand beside the cards (CSS, on a phone on its side): a dig's two, or up to two finds' (or a find's and a fossil's). */
   const beside = $derived(!!dig || (noteCols.length > 0 && noteCols.length <= 2 && !s.deathmatch));
-  /** What a fossil is, said once for its card: whose codex it goes to, and that the run is the same either way. */
-  const fossilWhose = $derived(coop ? 'the codex of whoever names it' : mine ? 'your codex' : `${active.name}’s codex`);
   const uid = $props.id();
   /**
    * Whether the faces are drawn sharp (.sharp, below): only in Chromium (it
@@ -483,6 +488,21 @@
     flare(lantern, { size: 44, streak: 380, life: 0.8, color: C.goldPale });
     glints(lantern, { count: 6, area: 'fill', color: C.goldPale, size: [4, 9] });
     light(lantern, { color: LAMP, radius: 440, intensity: 0.85, decay: 1.3 });
+  }
+
+  // A fossil's effects: none of a find's light or fire; it is stone. Dust
+  // falls from its nodule as it turns up; chosen, the plain pick, and the
+  // nodule glints in it.
+  const BONE: Vec3 = [2.3, 2.15, 1.85];
+  const DUST: Vec3 = [0.42, 0.4, 0.36];
+  const noduleOf = (frame: Element) => frame.querySelector('.fossil-mark') ?? frame;
+  function fossilRevealed(frame: Element) {
+    if (!fxActive()) return;
+    puffs(noduleOf(frame), { count: 6, area: 'fill', color: DUST, angle: Math.PI / 2, spread: 0.7, speed: [18, 54], size: [4, 9], life: [0.45, 0.6] });
+  }
+  function fossilPicked(frame: Element) {
+    if (!fxActive()) return;
+    glints(noduleOf(frame), { count: 4, area: 'fill', color: BONE, size: [4, 8], delay: [0.05, 0.35] });
   }
 
   let picked = $state<string | null>(null);
@@ -678,10 +698,11 @@
     // Read now: the cards may be fading out by the time it lands, their deriveds gone inert.
     const kind = kindOf(s.offered[i]);
     const out = isWayOut(s.offered[i]);
+    const fossil = !!fossilAt(s.offered[i]);
     const dm = !!s.deathmatch;
     const t = setTimeout(() => {
       const frame = node.querySelector('.frame') ?? node;
-      if (dealtAt !== null) onCards(() => (kind ? findRevealed(frame, kind) : out ? outRevealed(frame) : cardRevealed(frame, dm)));
+      if (dealtAt !== null) onCards(() => (kind ? findRevealed(frame, kind) : out ? outRevealed(frame) : fossil ? fossilRevealed(frame) : cardRevealed(frame, dm)));
       // The pointer may already rest on it, having come while it lay face down.
       if (waiting === i) ignite(i);
     }, (flipAt(i) + FLIP) * 1000);
@@ -709,6 +730,8 @@
     const frame = card?.querySelector('.frame');
     const kind = kindOf(s.offered[i]);
     const out = isWayOut(s.offered[i]);
+    // (A fossil's catches no fire: its card lifts and its rim brightens, no more.)
+    if (fossilAt(s.offered[i])) return;
     if (frame) burning = onCards(() => (kind ? findHover(frame, card, kind) : out ? outHover(frame, card) : cardHover(frame, card, !!s.deathmatch)));
   }
   function leave(e: PointerEvent) {
@@ -833,7 +856,11 @@
     const kind = kindOf(category);
     if (frame && kind) onCards(() => findPicked(frame, cardEls[i], others, kind));
     else if (frame && isWayOut(category)) onCards(() => outPicked(frame, cardEls[i], others));
-    else if (frame) onCards(() => cardPicked(frame, cardEls[i], others, !!s.deathmatch));
+    else if (frame)
+      onCards(() => {
+        cardPicked(frame, cardEls[i], others, !!s.deathmatch);
+        if (fossilAt(category)) fossilPicked(frame);
+      });
     sfx(kind === 'azurite' ? 'veinStrike' : 'pick', { from: { from: cardEls[i] } });
     session.dispatch({ type: 'pick', category });
     // Allow a retry if the host rejected the pick.
@@ -943,7 +970,7 @@
         class:out={isWayOut(cat)}
         style={isWayOut(cat) ? outInk : undefined}
         data-find={kindOf(cat)}
-        data-fossil={fossilAt(cat) ? '' : undefined}
+        data-fossil={fossilTierAt(cat) ?? undefined}
         aria-describedby={kindOf(cat) && !s.deathmatch ? `${uid}-note-${kindOf(cat)}` : fossilAt(cat) && !s.deathmatch ? `${uid}-note-fossil` : undefined}
         class:mine
         class:dim={dimmed}
@@ -968,7 +995,7 @@
           <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
             <span class="back" aria-hidden="true">
               <span class="grain"></span>
-              <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : fossilAt(cat) ? fossilVariant() : undefined} print={printed} hold={unseen(i, 'back')} />
+              <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : fossilAt(cat) ? fossilVariant() : undefined} glint={glintAt(cat)} print={printed} hold={unseen(i, 'back')} />
               {@render filigree()}
             </span>
             <span class="frame" data-sharp={sharp || undefined} use:backdropShadow={{ pulse: pulses[i] }}>
@@ -978,7 +1005,7 @@
                 <span class="rim shade"></span>
               {/if}
               <span class="grain"></span>
-              <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : fossilAt(cat) ? fossilVariant() : undefined} print={printed} hold={unseen(i, 'face')} />
+              <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : fossilAt(cat) ? fossilVariant() : undefined} glint={glintAt(cat)} print={printed} hold={unseen(i, 'face')} />
               <span class="glare"><span class="light"></span></span>
               <span class="sheen"></span>
               {@render filigree()}
@@ -1006,6 +1033,10 @@
                 {/if}
                 <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')" use:fineMask={maskOf(iconOf(cat))}></span></span>
               </span>
+              {#if fossilAt(cat)}
+                <!-- Where the nodule lies in the engraving: what its dust falls from and its glints shine on. -->
+                <span class="fossil-mark" aria-hidden="true"></span>
+              {/if}
               {#if kindOf(cat) === 'azurite'}
                 <!-- The vein's crystals in the corner stand in front of the item. -->
                 <CardEngraving side="face" find="azurite" front />
@@ -1072,10 +1103,18 @@
       {/each}
       {#if fossilNote === 'full'}
         <p class="note find-note" data-find="fossil" id="{uid}-note-fossil" style:--col={fossilCol + 1} data-side={sideOf(fossilCol, noteCols)}>
-          <strong>A fossil.</strong> A collectible for {fossilWhose}; it doesn’t change {coop || !mine ? 'the' : 'your'} run.
+          <strong>{fossilShown?.tier === 'rare' ? 'A rare fossil.' : 'A fossil.'}</strong>
+          {coop
+            ? 'Answer right and each of you missing one unearths one. It doesn’t change the run.'
+            : mine
+              ? 'Answer right to unearth it for your codex. It doesn’t change your run.'
+              : `Answered right, it’s unearthed for ${active.name}’s codex. It doesn’t change the run.`}
         </p>
       {:else if fossilNote === 'line'}
-        <p class="note muted fossil-line" id="{uid}-note-fossil">The fossil: a collectible for {coop ? 'whoever names it' : fossilWhose}, nothing in the run.{held ? ` ${held.trim()}` : ''}</p>
+        <!-- With what stays unused on the finds: on one line where there's room (a phone on its side), else under it. -->
+        <p class="note muted fossil-line" id="{uid}-note-fossil">
+          {coop ? 'Fossil: for each codex, not the run.' : mine ? 'Fossil: for your codex, not your run.' : `Fossil: for ${active.name}’s codex, not the run.`}{#if held}<span class="held">{held}</span>{/if}
+        </p>
       {/if}
       {#if two && held && fossilNote !== 'line'}<p class="note muted">{held.trim()}</p>{/if}
     </div>
@@ -2111,52 +2150,45 @@
     --f-glow: rgba(255, 120, 40, 0.2);
     --f-glyph: linear-gradient(180deg, #fbf3e6 0%, #c8b8a0 45%, #4a3a2a 100%);
   }
-  /* A fossil (lib/fossils.ts): amber, the resin fossils are kept in, lit
-     from inside: an orange honey, apart from a plain card's old gold and
-     dynamite's ash grey, its plate a resin brown. Its plate engraved with an
-     ammonite and the earth's sign (lib/findEngraving fossilVariant), and the
-     fossil itself lying in the window's corner, its mark (.fossil-mark). */
+  /* A fossil (lib/fossils.ts): still in the rock. Bone white on unlit
+     slate, the one card with no light of its own (the Delve's dark, which
+     the finds burn through): no warm glow in its window, a faint cold halo,
+     no swell (.pulse). Its plate engraved with strata in place of the glory,
+     a nodule half sunk in the floor, an ammonite and the earth's sign
+     (lib/findEngraving fossilVariant); never which fossil, only its tier. */
   .card[data-fossil] {
-    --ink: #e8963a;
-    --warm: #d8761a;
-    --f: #f5b456;
-    --f-hi: #ffe7bf;
-    --f-border: #a0601e;
-    --f-pulse: rgba(255, 150, 40, 0.34);
-    --f-glow: rgba(255, 150, 40, 0.24);
-    --f-glyph: linear-gradient(180deg, #fff1d2 0%, #f0a040 45%, #6a2e06 100%);
+    --ink: #e6dcc6;
+    --warm: #2c3440;
+    --f: #cfc6b2;
+    --f-hi: #f6f0e2;
+    --f-border: #6e6a62;
+    --f-pulse: rgba(190, 205, 225, 0.16);
+    --f-glow: rgba(190, 205, 225, 0.12);
+    --f-glyph: linear-gradient(180deg, #fbf7ee 0%, #cdc4b0 45%, #3c3832 100%);
   }
-  .card[data-fossil] .frame {
+  .card[data-fossil] .frame,
+  .card[data-fossil] .back {
     background:
       radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
-      linear-gradient(170deg, #2a1806, #0e0803 70%);
+      linear-gradient(170deg, #161a1f, #08090b 70%);
   }
-  /* The fossil, lying on the window's floor in its right corner on the amber
-     light it is kept in; what flies to the tally once it is taken wears the
-     same (app.css .fossil-flight). */
+  .card[data-fossil] .back {
+    --ring: rgba(110, 106, 98, 0.35);
+  }
+  .card[data-fossil] .find-tag,
+  .card[data-fossil] .find-tag-row {
+    color: var(--ink);
+  }
+  /* Where the nodule lies (lib/findEngraving noduleTall, on a face 218
+     wide): what its dust falls from, and its glints shine on. Nothing of
+     its own is drawn. */
   .fossil-mark {
     position: absolute;
-    right: 24px;
-    top: 186px;
-    width: 46px;
-    height: 46px;
-    display: grid;
-    place-items: center;
+    right: calc(26px + 1.83%);
+    top: 203px;
+    width: 21.1%;
+    height: 32px;
     pointer-events: none;
-  }
-  .fossil-mark .amber {
-    position: absolute;
-    inset: -12px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(255, 160, 50, 0.42), rgba(255, 140, 40, 0.12) 45%, transparent 70%);
-  }
-  .fossil-mark img {
-    position: relative;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    -webkit-user-select: none;
-    user-select: none;
   }
   .card.special .glyph {
     background: var(--f-glyph);
@@ -2186,6 +2218,11 @@
   }
   .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) {
     animation: pulse-paint 3.2s ease-in-out infinite;
+  }
+  /* (A fossil's never swells: stone has no light of its own.) */
+  .card.special.mine[data-fossil]:not(:global(.down)) .pulse,
+  .card.special.mine[data-fossil]:not(:global(.down)) .frame:not(:global([data-bs-on])) {
+    animation: none;
   }
   .card.special.mine:not(:global(.down)):hover .frame,
   .card.special.mine:not(:global(.down)):focus-visible .frame {
@@ -2262,8 +2299,9 @@
   .find-note[data-find='flare'] {
     color: #f7a3b3;
   }
-  .find-note[data-find='fossil'] {
-    color: #f2c47e;
+  /* A fossil's: plain, its lead in the bone of its card. */
+  .find-note[data-find='fossil'] strong {
+    color: #e6dcc6;
   }
   .find-note[data-find='dynamite'] {
     color: #eebf96;
@@ -2452,11 +2490,11 @@
         radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
         linear-gradient(170deg, #211912, #0d0a07 70%);
     }
+    /* (A fossil's has no light of its own, here neither.) */
     .card[data-fossil] .frame {
       background:
-        radial-gradient(circle at 62px 50%, color-mix(in srgb, var(--warm) 28%, transparent), transparent 74px),
         radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
-        linear-gradient(170deg, #2a1806, #0e0803 70%);
+        linear-gradient(170deg, #161a1f, #08090b 70%);
     }
     .card[data-find='flare'] .frame {
       background:
@@ -2511,17 +2549,21 @@
       -webkit-mask-size: 20px 20px;
       mask-size: 20px 20px;
     }
-    /* The vein's crystals rise at the row's far end, and a fossil lies there: the name keeps clear of them. */
-    .card[data-find='azurite'] .title,
-    .card[data-fossil] .title {
+    /* The vein's crystals rise at the row's far end, and a fossil's nodule lies there: the name keeps clear of them. */
+    .card[data-find='azurite'] .title {
       padding-right: 56px;
     }
+    .card[data-fossil] .title {
+      padding-right: 76px;
+    }
+    /* (lib/findEngraving noduleRow: its height and place by the row's height, its width by its own.) */
     .fossil-mark {
-      top: 50%;
-      right: 16px;
-      width: 40px;
-      height: 40px;
-      translate: 0 -50%;
+      top: 49.4%;
+      right: 0;
+      width: auto;
+      height: 44.3%;
+      aspect-ratio: 56 / 39;
+      translate: -28.6% 0;
     }
     .find-tag {
       display: none;
@@ -3088,17 +3130,21 @@
     .find-notes {
       gap: 0.25rem;
     }
-    /* Two finds' notes and the fossil's line under the cards: the rows a
-       little closer and slimmer, the notes tighter, so all five lines fit a
-       small phone's browser (375 x 635) without a scroll. */
+    /* Two finds' notes and the fossil's line under the cards, and what
+       stays unused on the finds: the rows a little closer and slimmer, the
+       notes tighter, so all six lines fit a small phone's browser
+       (375 x 635) without a scroll. */
     .choose.delve.fossil-line:not(.coop) .cards {
       gap: 0.3rem;
     }
     .choose.delve.fossil-line .frame {
-      padding-block: 12px;
+      padding-block: 8px;
     }
     .choose.delve.fossil-line .find-notes {
       gap: 0.1rem;
+    }
+    .fossil-line .held {
+      display: block;
     }
     /* The team's vote: its line on one line however many it waits for
        (the clock, then whom), and the lock rule under it read as one block

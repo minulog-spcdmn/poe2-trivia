@@ -148,6 +148,8 @@ export class Plate {
   knockout = '';
   /** The motif gilded, if it is (see Gilt). */
   gilt: Gilt | null = null;
+  /** A shape (path data) the motif's glint is kept inside, if it lights only part of the motif (a fossil's nodule). */
+  gleam = '';
   /**
    * While true, what is added stands in front of the emblem as well as the
    * plate (CardEngraving's front layer, over the category's item), solid:
@@ -692,5 +694,5 @@ const engraveAnew = (side: 'face' | 'back', w: number, h: number, v?: Variant) =
   }
   const rank = (s: Stroke) => (s.front ? 2 : s.motif ? 1 : 0);
   const strokes = [...by.values()].sort((a, b) => rank(a) - rank(b)).map(({ cls, d, motif, front }) => (front ? { cls, d, motif, front } : motif ? { cls, d, motif } : { cls, d }));
-  return { strokes, fade: p.fade, window: p.window, knockout: p.knockout || null, gilt: p.gilt, solid: p.solid || null };
+  return { strokes, fade: p.fade, window: p.window, knockout: p.knockout || null, gilt: p.gilt, solid: p.solid || null, gleam: p.gleam || null };
 };
