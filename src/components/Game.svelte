@@ -585,7 +585,7 @@
       <p class="dm-kicker">It’s a tie</p>
       <h1 use:introFx>Deathmatch</h1>
       <div class="dm-below">
-        <div class="dm-faces" use:evenFaces style:--n={dm.entrants.length}>
+        <div class="dm-faces" use:evenFaces style:--n={dm.entrants.filter(nameOf).length}>
           {#each dm.entrants as id, i (id)}
             {@const p = nameOf(id)}
             {#if p}
@@ -877,17 +877,20 @@
   }
   /* Each duelist as wide as the others (the longest name, evenFaces), so "vs" stands on the middle, level with their tokens. */
   .dm-faces {
+    /* The gap either side of a "vs", and its size (about as wide as that, the face's cap below counts on it). */
+    --dm-gap: calc(var(--R) * 0.03);
+    --vs-size: max(0.9rem, calc(var(--R) * 0.06));
     display: flex;
     flex-wrap: wrap;
     align-items: flex-start;
     justify-content: center;
-    gap: 0.4rem calc(var(--R) * 0.03);
+    gap: 0.4rem var(--dm-gap);
   }
   .face {
     width: max(calc(var(--face) * 2.1), var(--name-w, 0px));
     /* As many to a row as before, however long the names: the row shared between them, less the "vs" and its gaps between each two
        (a long name cut short only then); never narrower than the face's own width, past which they wrap as they always did. */
-    max-width: max(calc(var(--face) * 2.1), calc((100% - (var(--n) - 1) * (var(--R) * 0.06 + max(0.9rem, var(--R) * 0.06))) / var(--n)));
+    max-width: max(calc(var(--face) * 2.1), calc((100% - (var(--n) - 1) * (2 * var(--dm-gap) + var(--vs-size))) / var(--n)));
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -907,7 +910,7 @@
     display: grid;
     place-items: center;
     font-family: var(--font-display);
-    font-size: max(0.9rem, calc(var(--R) * 0.06));
+    font-size: var(--vs-size);
     font-style: italic;
     color: #ff7a5c;
   }
