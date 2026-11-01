@@ -354,13 +354,22 @@ effect): find what holds the frame up.
    `game.mjs` plays a solo Take-turns game of that many turns. `cards.mjs
    <url> <label> [deals] [finds|way-out|plain]` deals a hand on the card
    bench's stage (`cards.html?stage`) again and again, for a deal and the
-   hand at rest. `read.py` lists each step with:
+   hand at rest. `scenes.mjs <url> <label> <scene key> [...]` opens QA
+   scenes (`qa.html?frame&s=<key>&size=fit`) and lets each lie still, for
+   what a game only reaches now and then: a vein's finds, a duel's card.
+   `read.py` lists each step with:
    - its frames over 25 and 50 ms;
    - the GPU's raster time (`CrGpuMain` running the renderer's raster
      command buffer) and its longest task;
    - the raster in its last second, what the screen costs at rest;
+   - the page's thread, busy in that last second (ms a second), and the
+     frames drawn in it;
    - its long animation frames, naming the script that took most of the
      longest.
+
+   A step is marked as the pointer sets off for its button, so its last
+   second is the screen lying still; the pointer's travel, and the hover
+   it passes through, count to the next step.
 
    Run them against the dev server: the local channel counts nothing, and
    the live site would count the run as a player's game. Run one at a time:
@@ -381,6 +390,22 @@ effect): find what holds the frame up.
      Give it a layer (`will-change`), or animate a transform or opacity
      instead ("Frame hitches from redrawing" above;
      `docs/category-cards.md`, rules 7 and 8).
+   - **The page's thread busy at rest.** A custom property animated on an
+     element is a restyle of it and all inside it on every frame, and the
+     backdrop reads every lit element's style each frame: a find's or a
+     duel's card swelling its light (`--bs1`) on its face cost 4 to 5 ms a
+     frame. What swells now plays on an empty element beside it
+     (`docs/category-cards.md`, rule 9; `pulse` in
+     `src/lib/backdropShadow.ts`).
+   - **Raster at rest from something small.** A bar scaled every frame
+     from a script (the reveal's countdown to the next question) redraws
+     the button it sits in; a band of light moved by `background-position`
+     (the room code's gleam) redraws what it lies on. A layer for the bar;
+     a mask moved by a transform for the band.
+   - **Not to chase:** while the backdrop animates, the compositor draws
+     every render pass on the screen again each frame (the sharp faces'
+     filters among them), however still the page lies. That's the
+     backdrop's cost, not the page's; tiles redrawn are what to find.
    - **A burst of long frames as something draws in.** An SVG with a CSS
      animation is redrawn whole at the screen's rate ("Frame hitches from
      drawing in").

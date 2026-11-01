@@ -38,8 +38,10 @@
 
 <span class="glyphs" class:hidden class:selected={selected || press.lit} data-copy bind:this={glyphs} {@attach press.attach}>
   {#each code.split('') as ch, i (i)}
-    <!-- The letter in gold; its gleam is drawn from data-ch (a pseudo-element), so a copy gives each letter once. -->
-    <span class="glyph" use:landing={i} use:backdropShadow={{ fill: 'linear' }} style:animation-delay="{delay + i * 80}ms" style:--i={i} data-ch={hidden ? '•' : ch}><span class="ch">{hidden ? '•' : ch}</span></span>
+    <!-- The letter in gold; its gleam's copy of it is drawn from data-ch (a pseudo-element), so a copy gives each letter once. -->
+    <span class="glyph" use:landing={i} use:backdropShadow={{ fill: 'linear' }} style:animation-delay="{delay + i * 80}ms" style:--i={i}
+      ><span class="ch">{hidden ? '•' : ch}</span><span class="gleam" aria-hidden="true" data-ch={hidden ? '•' : ch}></span></span
+    >
   {/each}
 </span>
 <CopyNote {press} />
@@ -93,6 +95,8 @@
       --bs-fill-b 0.15s,
       --bs1-color 0.15s;
     animation: drop 0.6s var(--ease-back) both;
+    /* (Its width, which its gleam's band is measured in: see .gleam.) */
+    container-type: inline-size;
   }
   .selected .glyph {
     border-color: var(--gold);
@@ -112,35 +116,61 @@
     color: transparent;
   }
   /* Every few seconds a band of light passes along the code, as over the
-     title: on the letters' shapes only (a copy of each, drawn by the band),
-     one box after another as one sweep; its own layer, so the gold and the
-     box are never painted again for it. */
-  .glyph::after {
+     title: on the letters' shapes only, one box after another as one
+     sweep. The band is a mask three boxes wide (.gleam) moved across the
+     box by its transform, over a copy of the letter (its ::after) moved
+     back by just as much, so the letter holds still as the band passes:
+     each a layer of its own, and nothing is painted again for it. (The band
+     was the copy's background, moved by its position: Chrome painted the
+     copy again on every frame of every sweep, all six at the screen's
+     rate.) In the box's own width (cqw), both, so the two moves cancel to
+     the last bit and the copy never strays from the letter under it. */
+  .gleam {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 300cqw;
+    height: 100%;
+    pointer-events: none;
+    -webkit-mask-image: linear-gradient(100deg, transparent 40%, #000 50%, transparent 60%);
+    mask-image: linear-gradient(100deg, transparent 40%, #000 50%, transparent 60%);
+    transform: translateX(-300cqw);
+    will-change: transform;
+    animation: sheen 7s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+    animation-delay: calc(1.6s + var(--i, 0) * 0.11s);
+  }
+  .gleam::after {
     content: attr(data-ch);
     position: absolute;
-    inset: 0;
+    top: 0;
+    left: 0;
+    width: 100cqw;
+    height: 100%;
     display: grid;
     place-items: center;
-    pointer-events: none;
-    will-change: transform;
-    background-image: linear-gradient(100deg, transparent 40%, rgba(255, 251, 236, 0.95) 50%, transparent 60%);
-    background-repeat: no-repeat;
-    background-size: 300% 100%;
-    background-position: 150% 0;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    color: rgba(255, 251, 236, 0.95);
     text-shadow: none;
-    animation: sheen 7s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+    transform: translateX(300cqw);
+    will-change: transform;
+    animation: sheen-back 7s cubic-bezier(0.45, 0, 0.55, 1) infinite;
     animation-delay: calc(1.6s + var(--i, 0) * 0.11s);
   }
   @keyframes sheen {
     0% {
-      background-position: 150% 0;
+      transform: translateX(-300cqw);
     }
     10%,
     100% {
-      background-position: -50% 0;
+      transform: translateX(100cqw);
+    }
+  }
+  @keyframes sheen-back {
+    0% {
+      transform: translateX(300cqw);
+    }
+    10%,
+    100% {
+      transform: translateX(-100cqw);
     }
   }
   /* The box's top edge catches the light as the band crosses it. */
@@ -176,7 +206,7 @@
     background-image: linear-gradient(180deg, #fffaf0 22%, #f4d79a 60%, #c99c4f 92%);
   }
   @media (prefers-reduced-motion: reduce) {
-    .glyph::after,
+    .gleam,
     .glyph::before {
       animation: none;
       display: none;

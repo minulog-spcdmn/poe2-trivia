@@ -55,7 +55,7 @@ import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
 import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, livesOf, pausedUsed, standingIds, type CardFind, type FindKind } from './delve';
-import { GameCounts, Steps, countEvent, countFailure, countGameFrames, countStep, counting, markActive, type Failure, type JoinVia } from './count';
+import { GameCounts, RoomOff, Steps, countEvent, countFailure, countGameFrames, countStep, counting, hiddenSince, markActive, type Failure, type JoinVia } from './count';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
@@ -867,7 +867,19 @@ class Session {
       this.startPings();
       this.watchOwnPresence();
     });
+    // An open room off the signalling server, and back (count.ts RoomOff).
+    const off = new RoomOff();
+    peer.on('open', () => {
+      const back = this.peer === peer && off.back(Date.now());
+      if (back) countEvent(back);
+    });
     peer.on('disconnected', () => {
+      // (After the moment: a peer being destroyed, the room left, disconnects first.)
+      const hidden = hiddenSince(Date.now());
+      queueMicrotask(() => {
+        const event = !peer.destroyed && this.peer === peer && this.status === 'ready' && off.off(Date.now(), hidden);
+        if (event) countEvent(event);
+      });
       // Lost the signalling server; existing peer links keep working. (Not
       // again if the page coming back reconnected it meanwhile, nudge.)
       if (!peer.destroyed) setTimeout(() => !peer.destroyed && peer.disconnected && peer.reconnect(), 1500);

@@ -40,6 +40,9 @@ test('the counts land where the page shows them', () => {
       path('error/join-no-answer', [1, 0, 0]),
       path('error/host-no-connection', [0, 1, 0]),
       path('error/something-new', [0, 0, 2]),
+      path('room/off-hidden', [2, 0, 1]),
+      path('room/off-seen', [0, 1, 0]),
+      path('room/back-1m', [1, 1, 0]),
     ],
     DAYS,
   );
@@ -65,6 +68,8 @@ test('the counts land where the page shows them', () => {
   assert.deepEqual([l.daily.right, l.daily.wrong], [4, 2]);
   assert.deepEqual(l.joins.find((j) => j.via === 'invite-link'), { via: 'invite-link', tried: 3, joined: 2 });
   assert.equal(l.links.invite, 4);
+  // Rooms off the matchmaking server: not failures, a line of their own.
+  assert.deepEqual(l.roomsOff, { seen: 1, hidden: 3, back: { '10s': 0, '1m': 2, '5m': 0, later: 0 } });
   // Failures by count, host ones marked, an unknown one by its own name.
   assert.deepEqual(
     l.failures.map((f) => [f.key, f.host, f.count]),

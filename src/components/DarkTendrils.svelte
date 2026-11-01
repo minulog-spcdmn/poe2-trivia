@@ -143,6 +143,10 @@
         shown = p;
         const on = p > 0.001;
         el.style.visibility = on ? 'visible' : 'hidden';
+        // (Its arms and billows sway only while it shows. Swaying hidden,
+        // they had Chrome draw again what lies over the backdrop, a rune
+        // circle's lines, on every other frame: #339.)
+        el.style.setProperty('--sway', on ? 'running' : 'paused');
         // Faint while the clock has long to run (as the WebGL backdrop's).
         el.style.opacity = on ? Math.min(1, 3 * p).toFixed(3) : '0';
         // (Reaching further over the clock's last seconds, but leaving room
@@ -234,6 +238,7 @@
   }
   .tendrils {
     --reach: 0;
+    --sway: paused;
     visibility: hidden;
     overflow: hidden;
   }
@@ -274,6 +279,7 @@
     mask-image: radial-gradient(closest-side, #000 72%, transparent);
     will-change: transform, scale;
     animation: billow ease-in-out infinite alternate;
+    animation-play-state: var(--sway);
   }
   @keyframes billow {
     0% {
@@ -309,6 +315,7 @@
       center / 100% 100% no-repeat;
     will-change: transform, scale;
     animation: writhe ease-in-out infinite alternate;
+    animation-play-state: var(--sway);
   }
   @keyframes writhe {
     0% {
