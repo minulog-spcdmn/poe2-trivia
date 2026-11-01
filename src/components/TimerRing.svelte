@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, untrack } from 'svelte';
+  import { onDestroy, tick, untrack } from 'svelte';
   import { session } from '../lib/session.svelte';
   import { sfx } from '../lib/sound';
   import { timerGone, timerTick } from '../lib/fx/moments';
@@ -260,6 +260,19 @@
   const urgent = $derived(remaining <= warnFrom * 1000);
 
   let el = $state<HTMLElement>();
+  /** The number: an urgent one's throb, caught where it is as the clock stops, eases back to its size rather than snapping mid-beat. */
+  let num = $state<HTMLElement>();
+  let wasRunning = untrack(() => !stopped);
+  $effect.pre(() => {
+    const now = stopped;
+    // (Before the DOM takes .stopped, while the throb still runs: where it is now.)
+    if (now && wasRunning && num && !untrack(() => motion.still)) {
+      const from = getComputedStyle(num).transform;
+      const span = num;
+      if (from !== 'none') void tick().then(() => span.animate([{ transform: from }, { transform: 'none' }], { duration: 300, easing: 'ease-out' }));
+    }
+    wasRunning = !now;
+  });
 </script>
 
 <!-- data-cursor: where other players' pointers are placed (PeerCursors), wherever a layout puts the timer. -->
@@ -280,7 +293,7 @@
   <div class="ring">
     <svg viewBox="0 0 64 64"><circle class="fill" cx="32" cy="32" r={R} stroke-dasharray={C} stroke-dashoffset={C * (1 - frac)} /></svg>
   </div>
-  <span>{secs}</span>
+  <span bind:this={num}>{secs}</span>
 </div>
 
 <style>
@@ -290,6 +303,7 @@
     height: 64px;
     display: grid;
     place-items: center;
+    transition: opacity 0.4s;
   }
   svg {
     position: absolute;
@@ -416,6 +430,8 @@
       animation: none;
     }
   }
+  /* Stopped (the reveal): it dims behind the verdict, eased over 0.4s (.timer),
+     in step with a wrapper that dims it too (QuestionView's .clock.done). */
   .stopped {
     opacity: 0.4;
   }
