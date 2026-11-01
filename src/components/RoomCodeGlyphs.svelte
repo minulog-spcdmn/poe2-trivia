@@ -11,6 +11,8 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { CopyPress } from '../lib/copyPress.svelte';
   import CopyNote from './CopyNote.svelte';
+  import { untrack } from 'svelte';
+  import { motion } from '../lib/motion.svelte';
 
   let { code, hidden = false, sparks = false, delay = 0 }: { code: string; hidden?: boolean; sparks?: boolean; delay?: number } = $props();
 
@@ -26,6 +28,39 @@
 
   const press = new CopyPress(() => code, 'Room code copied');
 
+  /** Hiding or showing, each letter turns into its dot (or back) over EACH ms, the next STEP ms after the one before. */
+  const EACH = 220;
+  const STEP = 45;
+  const span = $derived(STEP * (code.length - 1) + EACH);
+  /**
+   * How far the turning has gone (ms along it, 0 shown, span hidden), as one wave over the six: each letter's own part of it
+   * is worked out in CSS (--wave). A click mid-way turns the wave round where it is, at the same pace, so the letters
+   * already turning turn back first and none waits on a delay.
+   */
+  const wave0 = untrack(() => (hidden ? STEP * (code.length - 1) + EACH : 0));
+  let wave = wave0;
+  let frame = 0;
+  $effect(() => {
+    const to = hidden ? span : 0;
+    const el = glyphs;
+    if (!el) return;
+    cancelAnimationFrame(frame);
+    if (motion.still || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      wave = to;
+      el.style.setProperty('--wave', String(wave));
+      return;
+    }
+    let then = performance.now();
+    const step = (now: number) => {
+      wave += Math.sign(to - wave) * Math.min(Math.abs(to - wave), Math.max(0, now - then));
+      then = now;
+      el.style.setProperty('--wave', String(wave));
+      if (wave !== to) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  });
+
   /** Svelte action: sparks as a letter lands (its drop is staggered by index). */
   function landing(node: HTMLElement, i: number) {
     if (!sparks) return;
@@ -36,7 +71,7 @@
 
 <svelte:document onselectionchange={selectionChanged} />
 
-<span class="glyphs" class:hidden class:selected={selected || press.lit} data-copy bind:this={glyphs} {@attach press.attach}>
+<span class="glyphs" class:hidden class:selected={selected || press.lit} style:--wave={wave0} style:--each={EACH} style:--step={STEP} data-copy bind:this={glyphs} {@attach press.attach}>
   {#each code.split('') as ch, i (i)}
     <!-- The letter in gold; its gleam's copy of it is drawn from data-ch (a pseudo-element), so a copy gives each letter once. -->
     <span class="glyph" use:landing={i} use:backdropShadow={{ fill: 'linear' }} style:animation-delay="{delay + i * 80}ms" style:--i={i}
@@ -202,39 +237,29 @@
     background-image: linear-gradient(180deg, #fffaf0 22%, #f4d79a 60%, #c99c4f 92%);
   }
   /* Each box holds its letter and its dot in one place: hidden, each letter in turn shrinks away as its dot swells in where it
-     stood, and back in the same order shown. (The letter stays to be copied; the dot, drawn by CSS, never is.) */
+     stood, and back in the same order shown, as far along as the wave is (--wave, ms: each letter's part of it, --h, from 0
+     shown to 1 hidden). (The letter stays to be copied; the dot, drawn by CSS, never is.) */
+  .glyph {
+    --h: clamp(0, (var(--wave, 0) - var(--i) * var(--step)) / var(--each), 1);
+  }
   .ch.letter,
   .ch.dot {
     grid-area: 1 / 1;
-    transition:
-      filter 0.15s,
-      opacity 0.22s var(--ease-out) calc(var(--i) * 45ms),
-      scale 0.22s var(--ease-out) calc(var(--i) * 45ms);
+  }
+  .ch.letter {
+    opacity: calc(1 - var(--h));
+    scale: calc(1 - 0.4 * var(--h));
   }
   .ch.dot {
     background-image: none;
     color: var(--gold-lo);
-    opacity: 0;
-    scale: 0.4;
+    opacity: var(--h);
+    scale: calc(0.4 + 0.6 * var(--h));
   }
   .ch.dot::before {
     content: '•';
   }
-  .hidden .ch.letter {
-    opacity: 0;
-    scale: 0.6;
-  }
-  .hidden .ch.dot {
-    opacity: 1;
-    scale: 1;
-  }
-  :global(html[data-still]) .ch:is(.letter, .dot) {
-    transition: filter 0.15s;
-  }
   @media (prefers-reduced-motion: reduce) {
-    .ch:is(.letter, .dot) {
-      transition: filter 0.15s;
-    }
     .gleam,
     .glyph::before {
       animation: none;

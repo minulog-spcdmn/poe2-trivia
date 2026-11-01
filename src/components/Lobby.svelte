@@ -353,17 +353,8 @@
   const canShare = typeof navigator !== 'undefined' && !!navigator.share && matchMedia('(pointer: coarse)').matches;
 
   let copiedTimer: ReturnType<typeof setTimeout> | undefined;
-  /** How long the invite button's words take to change: at once as it is clicked, slowly as they go back by themselves. */
+  /** How long the invite button's words take to change (the old out, then the new in): at once as it is clicked, slowly as they go back by themselves. */
   let labelMs = $state(200);
-  /**
-   * A word or line giving way to the next, which fades in where it stood: it fades out over it, out of the flow (so its box is
-   * only ever as tall as the new one, and the new one's height is what settles).
-   */
-  function fadeOver(node: Element, { duration }: { duration: number }) {
-    // Out of the flow at once, before the flush's heights are read (settle), not a frame later as its first style.
-    Object.assign((node as HTMLElement).style, { position: 'absolute', left: '0', right: '0', top: '0' });
-    return calm({ duration, css: (t: number) => `opacity: ${t};` });
-  }
   onMount(() => () => clearTimeout(copiedTimer));
   async function copy() {
     if (copyBtn) twinkle(copyBtn);
@@ -499,16 +490,20 @@
             ? 'Anyone can find this room under “Open rooms”.'
             : 'Only people with the code or link can join.',
   );
-  let hintBox = $state<HTMLElement>();
-  let hintWas: number | undefined;
-  $effect.pre(() => {
-    void visHint;
-    hintWas = untrack(() => hintBox)?.offsetHeight;
-  });
-  $effect(() => {
-    void visHint;
-    untrack(() => hintBox && hintWas !== undefined && settle(hintBox, hintWas));
-  });
+  /**
+   * The hint's box, its old line fading out where the new fades in (both in one cell), eases to its new height whenever it
+   * changes (settle): as a new one comes in taller, or the old one goes, however fast the switches are clicked.
+   */
+  function settles(node: HTMLElement) {
+    let was = node.offsetHeight;
+    const seen = new ResizeObserver(() => {
+      const now = node.offsetHeight;
+      if (now !== was) settle(node, was);
+      was = now;
+    });
+    seen.observe(node);
+    return { destroy: () => seen.disconnect() };
+  }
   // Where the panel is as tall as what's in it (below a desktop), a mode's settings and Delve's descent differ a little in height:
   // Begin glides from where it stood as the new ones fade in (their 260ms), rather than stepping. (A desktop pins it to the panel's foot.)
   let startEl = $state<HTMLElement>();
@@ -554,6 +549,8 @@
   });
   /** The invite button's word. */
   const inviteLabel = $derived(s.settings.locked ? 'Room locked' : closed ? 'Room full' : copied ? 'Link copied!' : canShare ? 'Share invite link' : 'Copy invite link');
+  /** All it can say, each kept in place (the button as wide and tall as ever): the one that holds shows. */
+  const INVITE_WORDS = ['Room locked', 'Room full', 'Link copied!', canShare ? 'Share invite link' : 'Copy invite link'];
   /** Host: what the note by Begin says, as one key: a new one fades in where the last stood. */
   const goKey = $derived(isHost ? [delveCrowded, hereOnly, atScreen, s.players.length, unready.length, missingNote(unready)].join('|') : '');
 </script>
@@ -633,9 +630,11 @@
           </div>
           <div class="invite-row">
             <!-- A locked room, or one with no seat and no room to watch, takes nobody new: the link isn't offered then, and the button says why. -->
-            <button class="btn invite" data-cursor="invite" class:accent={alone && isHost && !closed} bind:this={copyBtn} onclick={copy} disabled={closed}>
+            <button class="btn invite" data-cursor="invite" class:accent={alone && isHost && !closed} bind:this={copyBtn} onclick={copy} disabled={closed} aria-label={inviteLabel}>
               <!-- The new word fades in where the last stood; the button keeps its width (its row gives it). -->
-              {#key inviteLabel}<span class="invite-label" in:fade={calm({ duration: labelMs })} out:fadeOver={{ duration: labelMs }}>{inviteLabel}</span>{/key}
+              <span class="invite-words" style:--label-ms="{motion.still ? 0 : labelMs / 2}ms" aria-hidden="true"
+                >{#each INVITE_WORDS as w (w)}<span class="invite-label" class:shown={w === inviteLabel}>{w}</span>{/each}</span
+              >
             </button>
             <!-- Hiding the code (for a stream) sits with the other ways of handing it on. -->
             <button
@@ -692,8 +691,8 @@
           </div>
           {#if isHost}
             <!-- A hint that wraps longer or shorter opens or closes its room as it fades in, so the party below glides (settle). -->
-            <div class="vis-hint-box" bind:this={hintBox}>
-              {#key visHint}<p class="vis-hint" in:fade={calm({ duration: 250 })} out:fadeOver={{ duration: 250 }}>{visHint}</p>{/key}
+            <div class="vis-hint-box" use:settles>
+              {#key visHint}<p class="vis-hint" in:fade={calm({ duration: 150, delay: 120 })} out:fade={calm({ duration: 120 })}>{visHint}</p>{/key}
             </div>
           {/if}
         </section>
@@ -1108,9 +1107,12 @@
     font-size: 0.9rem;
     font-style: italic;
   }
-  /* (What a hint giving way fades over: fadeOver.) */
+  /* The old hint fades out where the new one comes, in one cell (settles). */
   .vis-hint-box {
-    position: relative;
+    display: grid;
+  }
+  .vis-hint-box > :global(*) {
+    grid-area: 1 / 1;
   }
   .block {
     min-width: 0;
@@ -1142,8 +1144,22 @@
   }
   .invite-row .invite {
     flex: 1;
-    /* (What its word giving way fades over: fadeOver, centred as the word was.) */
-    position: relative;
+  }
+  /* Every word the invite button can say, in one cell: the one that holds shows, so the button never changes size. Changing,
+     the old one fades out, then the new one in (never both at once, which reads as a smudge); a click mid-way turns each
+     back from where it is. */
+  .invite-words {
+    display: inline-grid;
+  }
+  .invite-label {
+    grid-area: 1 / 1;
+    justify-self: center;
+    opacity: 0;
+    transition: opacity var(--label-ms) linear;
+  }
+  .invite-label.shown {
+    opacity: 1;
+    transition-delay: var(--label-ms);
   }
   /* Alone in an open room, inviting is the next step: lit in gold, but not gold itself (Begin is). */
   .invite.accent {
