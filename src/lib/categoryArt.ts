@@ -65,10 +65,10 @@ const COMPANIONS: Record<string, [group: string, name: string][]> = {
   ],
 };
 // Gem art comes as square tiles on cloth, so lineage gems use a cut-out of
-// Oisín's Oath (public/icons/, from its upscaled art in public/items/ at the
-// same 4x as other one-cell items, background removed with rembg's
-// BiRefNet, given the same soft drop shadow as the poe2db item art, and
-// padded so it sits a little smaller), with a 128 px copy as the others have.
+// Oisín's Oath (public/icons/, scripts/cut-gem-icon.py: from its upscaled
+// art at the same 4x as other one-cell items, with the soft drop shadow the
+// poe2db item art has), with a 128 px copy as the others have. The card
+// fits the brooch alone (lib/iconFit); ICON_FIT's k sets its size there.
 const GEM_ICON = 'icons/lineage-gems.avif';
 const GEM_GLYPH = 'icons/128/lineage-gems.avif';
 
