@@ -1,6 +1,7 @@
 <script lang="ts">
   import { sfx } from '../lib/sound';
   import { cubicOut } from 'svelte/easing';
+  import { calm, motion } from '../lib/motion.svelte';
   import { fly } from '../lib/transitions';
   import { inFrame, onceFontsIn } from '../lib/inFrame';
   import { session } from '../lib/session.svelte';
@@ -79,7 +80,7 @@
     if (!tight || !boardEl) return;
     void s.turn;
     void s.phase;
-    boardEl.querySelector<HTMLElement>('li.active, li.you')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    boardEl.querySelector<HTMLElement>('li.active, li.you')?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: motion.still ? 'auto' : 'smooth' });
   });
   // And smaller, as far as it must (down to 70%) for every entry to fit the
   // row: it scrolls only past that. Again whenever the row's width or an
@@ -777,6 +778,20 @@
     return { duration: 400, easing: cubicOut, css: (_t: number, u: number) => `translate: ${u * dx}px ${u * dy}px` };
   }
 
+  /**
+   * A kicked player's entry fades out. It leaves the flow as it starts, so the
+   * others glide into the gap at once (the glide measures after this runs).
+   */
+  function leave(node: HTMLElement) {
+    node.style.cssText += `;position:absolute;left:${node.offsetLeft}px;top:${node.offsetTop}px;width:${node.offsetWidth}px;margin:0;pointer-events:none`;
+    return calm({ duration: 250, easing: cubicOut, css: (t: number) => `opacity: ${t}` });
+  }
+
+  /** The revive heart grows in from a small size and shrinks away (its own wrapper, so the beat is left alone). */
+  function bloom(_node: Element) {
+    return calm({ duration: 250, easing: cubicOut, css: (t: number) => `opacity: ${t}; scale: ${0.6 + 0.4 * t}` });
+  }
+
   // Stuck (phones upright): the strip sticks 1px above the top of the screen, so
   // once it has, it no longer fits in the view. Its background then covers
   // what the backdrop draws under the entries, so CSS paints their shadows.
@@ -841,7 +856,8 @@
         style:--heat={fire}
         style:--flame-rgb={flameOf(streakShown, !!run).css}
         class:armed={confirming === p.id}
-        class:active class:you={coop && p.id === me} class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
+        class:active class:you={coop && p.id === me} class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide out:leave style:--c={playerColor(p.hue)}>
+        <span class="armed-wash" aria-hidden="true"></span>
         <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={32} dim={!p.connected} wrong={out} />
         <div class="info">
           <span class="name-row">
@@ -895,6 +911,7 @@
                light in the entry, beating as the phial's lives do. -->
           <button
             class="revive"
+            transition:bloom
             class:open={asking === p.id}
             onclick={() => (asking = asking === p.id ? null : p.id)}
             aria-label="Revive {p.name}: give them one of your lives"
@@ -947,6 +964,7 @@
   }
   li {
     position: relative;
+    isolation: isolate;
     display: flex;
     align-items: center;
     gap: 0.6rem;
@@ -964,6 +982,8 @@
       --bs-ring 0.35s,
       --bs1-color 0.35s,
       transform 0.35s var(--ease-out),
+      background-color 0.35s,
+      filter 0.35s,
       opacity 0.35s;
   }
   li.active .name {
@@ -1003,14 +1023,22 @@
       opacity: 0.55;
     }
   }
-  li.active::after {
+  li::after {
     content: '';
     position: absolute;
     left: 50%;
     bottom: -10px;
-    translate: -50% 0;
+    translate: -50% -3px;
     border: 5px solid transparent;
     border-top-color: var(--c);
+    opacity: 0;
+    transition:
+      opacity 0.35s,
+      translate 0.35s var(--ease-out);
+  }
+  li.active::after {
+    opacity: 1;
+    translate: -50% 0;
   }
   /* The kick, as the lobby's (KickButton): a small seal on the entry's
      corner, shown while the entry is pointed at; pointed at itself, it and
@@ -1037,7 +1065,20 @@
   /* Armed: the whole entry asks, in the wrong-answer colours, the avatar dimmed. */
   li.armed {
     border-color: #8e4434;
+  }
+  /* The armed colours, cross-faded on a layer of their own (a gradient can't be transitioned). */
+  .armed-wash {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
     background: linear-gradient(90deg, rgba(78, 32, 22, 0.9), rgba(34, 15, 11, 0.92));
+    opacity: 0;
+    transition: opacity 0.35s;
+    pointer-events: none;
+  }
+  li.armed .armed-wash {
+    opacity: 1;
   }
   li.armed :global(.avatar:not(:has(> .face-down))) {
     filter: saturate(0.4) brightness(0.75);
@@ -1311,18 +1352,18 @@
      verdict's full colour (scoped, these never reach the avatar, its own
      component), and a ward's rim keeps its own flare. The transition as
      :where, so a child's own transition wins over it. */
-  li > :where(:not(.kick-at, .revive, .ward-rim)) {
+  li > :where(:not(.kick-at, .revive, .ward-rim, .armed-wash)) {
     transition: opacity 0.35s;
   }
   li.out {
     border-color: rgba(224, 85, 63, 0.45);
   }
-  li.out > :not(.kick-at, .revive, .ward-rim),
+  li.out > :not(.kick-at, .revive, .ward-rim, .armed-wash),
   li.out .kick-at > :global(.kick) {
     opacity: 0.75;
   }
   /* Perished as well: set back further, as the two together always were. */
-  li.out.fallen.revivable > :not(.kick-at, .revive, .ward-rim) {
+  li.out.fallen.revivable > :not(.kick-at, .revive, .ward-rim, .armed-wash) {
     opacity: calc(0.45 * 0.75);
   }
   .negative {
@@ -1598,6 +1639,21 @@
     }
     li.wide .info {
       min-width: 0;
+      /* Fades in just after the glide, as the entry opens. */
+      animation: info-in 0.25s 0.3s both;
+    }
+    @keyframes info-in {
+      from {
+        opacity: 0;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      li.wide .info {
+        animation: none;
+      }
+    }
+    :global(html[data-still]) li.wide .info {
+      animation: none;
     }
     /* Delve: a slimmer phial (and finds beside it) under the name, so the
        pill stands no taller than the avatars beside it. */
