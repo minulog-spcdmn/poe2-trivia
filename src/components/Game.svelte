@@ -512,11 +512,12 @@
    * Delve together, a life just given: the line saying so takes the place of
    * the one it answers (the hint naming whom to revive, or your own "you
    * perished", just above it). The old line fades out where it stands, out of
-   * the flow; the new one fades in in its room, so neither moves.
+   * the flow; the new one fades in in its room, so neither moves. Otherwise
+   * a line goes as it came: fading, or (`slide`) closing its room as it does.
    */
   const handedOver = $derived(revivable.length === 0 && revivedLines.length > 0);
-  function answered(node: HTMLElement) {
-    if (!handedOver) return slideFade(node, calm({ duration: 400 }));
+  function answered(node: HTMLElement, { slide }: { slide?: boolean } = {}) {
+    if (!handedOver) return slide ? slideFade(node, calm({ duration: 400 })) : fade(node);
     // Pinned where it stands (in a flex column, an absolute box left to itself goes to the column's top).
     const { offsetTop: top, offsetLeft: left, offsetWidth: width } = node;
     Object.assign(node.style, { position: 'absolute', top: `${top}px`, left: `${left}px`, width: `${width}px`, margin: '0' });
@@ -595,11 +596,11 @@
           </div>
 
           {#if myFall !== null}
-            <p class="delve-line muted" in:slideFade={calm({ duration: 400 })} out:answered>
+            <p class="delve-line muted" in:slideFade={calm({ duration: 400 })} out:answered={{ slide: true }}>
               You perished and are now watching.{#if canBeRevived}{' '}A teammate can give you a life between questions.{/if}
             </p>
           {:else if revivable.length && (s.phase === 'choosing' || s.phase === 'reveal')}
-            <p class="delve-line revive-hint" in:slideFade={calm({ duration: 400 })} out:answered>
+            <p class="delve-line revive-hint" in:fade out:answered>
               {revivable.length === 1
                 ? `Use the heart on ${revivable[0].name}’s entry to revive them with one of your lives.`
                 : 'Use the heart on an entry to revive that teammate with one of your lives.'}

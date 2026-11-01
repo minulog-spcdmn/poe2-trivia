@@ -208,7 +208,7 @@
     widthsWere = new Map();
     resizing = false;
     for (const [li, from] of was) {
-      if (!li.isConnected) continue;
+      if (!li.isConnected || leaving.has(li)) continue;
       const to = parseFloat(getComputedStyle(li).width);
       if (Math.abs(to - from) < 1) continue;
       li.animate([{ width: `${from}px`, minWidth: '0px' }, { width: `${to}px`, minWidth: '0px' }], { duration: 350, easing: 'cubic-bezier(0.33, 1, 0.68, 1)' });
@@ -816,19 +816,29 @@
   }
 
   /**
-   * A kicked player's entry closes its room as it fades (gone by halfway), the
-   * row's gap after it with it, so the others slide over as it goes and none
-   * passes over it while it's still there.
+   * A kicked player's entry fades out where it stands, then closes its room
+   * (the row's gap after it with it), the others sliding over in the row as
+   * it does: none passes over it while it's still there, and nothing of it is
+   * cut off, as it's gone from sight before it narrows. Svelte lifts a
+   * leaving entry out of the row and pins it in place with a transform
+   * (animate:glide's), which the entry's own transform transition would carry
+   * off, over its neighbour: that's undone first, so it stays in the row.
    */
+  const leaving = new WeakSet<Element>();
   function leave(node: HTMLElement) {
+    leaving.add(node);
+    Object.assign(node.style, { position: '', width: '', height: '', transform: '' });
     const cs = getComputedStyle(node);
     const [w, pl, pr] = [cs.width, cs.paddingLeft, cs.paddingRight].map(parseFloat);
     const gap = parseFloat(getComputedStyle(node.parentElement!).columnGap) || 0;
     return calm({
-      duration: 350,
-      easing: cubicOut,
-      css: (t: number, u: number) =>
-        `min-width: 0; width: ${t * w}px; padding-left: ${t * pl}px; padding-right: ${t * pr}px; border-width: ${t < 0.05 ? 0 : 1}px; margin-right: ${-u * gap}px; overflow: hidden; opacity: ${Math.max(0, 2 * t - 1)}; pointer-events: none`,
+      duration: 500,
+      css: (_t: number, u: number) => {
+        // u runs evenly from 0 to 1: the first 35% fades it out; from 30% its room closes, quick and then settling, as a glide does.
+        const shut = cubicOut(Math.max(0, (u - 0.3) / 0.7));
+        const k = 1 - shut;
+        return `min-width: 0; width: ${k * w}px; padding-left: ${k * pl}px; padding-right: ${k * pr}px; border-width: ${k < 0.05 ? 0 : 1}px; margin-right: ${-shut * gap}px; opacity: ${1 - cubicOut(Math.min(1, u / 0.35))}; pointer-events: none`;
+      },
     });
   }
 
