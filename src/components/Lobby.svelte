@@ -390,11 +390,19 @@
     void delve;
     untrack(() => {
       if (!startEl || startWas === undefined || motion.still) return;
+      const prev = startEl.previousElementSibling;
       settling.get(startEl)?.cancel();
+      if (prev) settling.get(prev)?.cancel();
       const d = startWas - startEl.offsetTop;
       if (!d) return;
       const base = parseFloat(getComputedStyle(startEl).marginTop) || 0;
-      settling.set(startEl, startEl.animate([{ marginTop: `${base + d}px` }, { marginTop: `${base}px` }], { duration: 260, easing: CUBIC_OUT }));
+      // In a block panel its margin collapses with the rules' over it (the larger wins), so the rules' is held at 0 meanwhile and Begin's carries the whole gap.
+      const block = startEl.parentElement && getComputedStyle(startEl.parentElement).display === 'block';
+      const prevBottom = prev && block ? parseFloat(getComputedStyle(prev).marginBottom) || 0 : 0;
+      const gap = Math.max(base, prevBottom);
+      const timing = { duration: 260, easing: CUBIC_OUT };
+      settling.set(startEl, startEl.animate([{ marginTop: `${gap + d}px` }, { marginTop: `${gap}px` }], timing));
+      if (prev && prevBottom) settling.set(prev, prev.animate([{ marginBottom: '0px' }, { marginBottom: '0px' }], timing));
     });
   });
   /** The invite button's word. */
