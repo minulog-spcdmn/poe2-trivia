@@ -1,9 +1,9 @@
 <script lang="ts">
   import { flushSync, onMount, tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
-  import { fade } from 'svelte/transition';
+  import { fade, slide } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
-  import { motion } from '../lib/motion.svelte';
+  import { calm, motion } from '../lib/motion.svelte';
   import { engine, savedName, session } from '../lib/session.svelte';
   import { nameUsable } from '../lib/names';
   import { CODEX_KEY, PRACTICE_KEY, RECENT, loadCodex, loadPractice, resetCodex, type Tally } from '../lib/codex';
@@ -407,6 +407,12 @@
     tab = 'items';
     turned = rising = true;
   }
+  /** The tabs going as it's erased: they close their room as they fade, the column's gap after them with it, so the page glides up. */
+  function closeTabs(node: HTMLElement) {
+    const gap = parseFloat(getComputedStyle(node.parentElement!).rowGap) || 0;
+    const s = slide(node, calm({ duration: 250 }));
+    return { ...s, css: (t: number, u: number) => `${s.css?.(t, u) ?? ''};opacity: ${t};margin-bottom: ${-u * gap}px` };
+  }
   /**
    * The sections near the screen as the last dialog opened, and those that
    * came near while it was up, whose tiles' shadows go behind it. Kept as it
@@ -572,7 +578,7 @@
   </header>
 
   {#if kept}
-    <div class="tabs" role="tablist" aria-label="Codex pages">
+    <div class="tabs" role="tablist" aria-label="Codex pages" out:closeTabs>
       {#each TABS as t (t.key)}
         <button
           {@attach tabRef(t.key)}
