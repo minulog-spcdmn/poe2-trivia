@@ -5,7 +5,6 @@
   // still going, so no one gives up early.
   import { onMount } from 'svelte';
   import { fade } from '../lib/transitions';
-  import { calm } from '../lib/motion.svelte';
   import { session } from '../lib/session.svelte';
   import { zoomOf } from '../lib/stage';
   import { connecting as portalFx } from '../lib/fx/moments';
@@ -27,12 +26,12 @@
 
 <div class="connecting" role="status" in:fade={{ duration: 200 }}>
   <span class="rune" use:portalOn aria-hidden="true"></span>
-  <!-- Saying it's still going, the new words fade in where the first stood. -->
-  {#key slow}
-    <span class="what" title={slow && joining ? 'Some networks take a little longer.' : undefined} in:fade={calm({ duration: 250 })}>
-      {#if !joining}{slow ? 'Still opening the portal…' : 'Opening a portal…'}{:else if slow}Still on the way…{:else}Travelling to <span class="num">{session.code}</span>…{/if}
-    </span>
-  {/key}
+  <!-- Both sayings share one cell from the start, as wide as the longer, so Cancel never moves:
+       saying it's still going (by itself, so slowly), the first fades out and the new words in where it stood. -->
+  <span class="what">
+    <span class="say" class:on={!slow} aria-hidden={slow}>{#if !joining}Opening a portal…{:else}Travelling to <span class="num">{session.code}</span>…{/if}</span>
+    <span class="say" class:on={slow} aria-hidden={!slow} title={joining ? 'Some networks take a little longer.' : undefined}>{joining ? 'Still on the way…' : 'Still opening the portal…'}</span>
+  </span>
   <button class="btn small ghost" type="button" onclick={() => session.leave()}>Cancel</button>
 </div>
 
@@ -55,10 +54,27 @@
     box-shadow: 0 0 16px rgba(201, 164, 92, 0.2);
   }
   .what {
+    display: inline-grid;
     font-family: var(--font-display);
     font-size: 17px;
     color: var(--gold-hi);
     white-space: nowrap;
+  }
+  .say {
+    grid-area: 1 / 1;
+    opacity: 0;
+    /* The faded one's title (the slow join's) stays out of the way. */
+    pointer-events: none;
+    transition: opacity 0.4s;
+  }
+  /* The new words once the old have mostly gone. */
+  .say.on {
+    opacity: 1;
+    pointer-events: auto;
+    transition: opacity 0.7s 0.3s;
+  }
+  :global(html[data-still]) .say {
+    transition: none;
   }
   .num {
     font-family: var(--font-cinzel);
