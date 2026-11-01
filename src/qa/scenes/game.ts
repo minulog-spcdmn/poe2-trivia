@@ -524,15 +524,35 @@ export function gameScenes(): Scene[] {
         } satisfies Built;
       },
     },
-    // The header's depth rolling over: a run at Depth 1, answered right,
-    // then on to the next, its number rising out as the next one rises in
-    // once its cards are dealt. (At depth 0 the line names no depth: the
-    // banner under it has the run's start line, Game.svelte.)
+    // The header's depth rolling over: a run at Depth 1 (or 9), answered
+    // right, then on to the next, its number rising out as the next one
+    // rises in once its cards are dealt. 1 to 2 keeps the line's width; 9 to
+    // 10, a figure more, eases it wider (and comes into a new zone, its card
+    // first). (At depth 0 the line names no depth: the banner under it has
+    // the run's start line, Game.svelte.)
     {
-      ...scene('delve-depth', 'Delve alone', 'Depth 1 answered, then on: the header’s depth rolling over to 2', [ALONE], delveAlone),
-      build: () => {
+      ...scene('delve-depth', 'Delve alone', 'A depth answered, then on: the header’s depth rolling over', [ALONE], delveAlone),
+      controls: [
+        {
+          kind: 'choice',
+          key: 'from',
+          label: 'Depth',
+          default: '1',
+          options: [
+            { value: '1', label: '1 to 2' },
+            { value: '9', label: '9 to 10' },
+          ],
+        },
+      ],
+      states: [
+        { label: '1 to 2: the same width', values: {} },
+        { label: '9 to 10: a figure more', values: { from: '9' } },
+      ],
+      build: (v = {}) => {
+        // (The round is a depth on: the line shows round 2 as Depth 1, shownDepth.)
+        const round = (v.from === '9' ? 9 : 1) + 1;
         const t = delveAlone()
-          .playTo((s) => s.round >= 2 && s.phase === 'choosing')
+          .playTo((s) => s.round >= round && s.phase === 'choosing')
           .pick();
         const shown = t.s;
         const at = t.clock.now + INTO;

@@ -401,12 +401,39 @@
     for (const c of node.children) if (c !== keep) c.animate([{ opacity: 0 }, { opacity: 1 }], { ...timing, easing: 'linear' });
     return { duration: META_MS };
   }
-  /** A number changing: the old one rises out as the new one rises in under it. */
-  function roll(node: Element, { out = false } = {}): TransitionConfig {
+  /**
+   * A number changing: the old one rises out as the new one rises in under
+   * it. Its figures are all as wide (.fig), so a number with as many keeps
+   * the line's width; one with more or fewer (9 to 10) eases the line to its
+   * new width as it rolls, rather than stepping there.
+   */
+  function roll(node: HTMLElement, { out = false } = {}): TransitionConfig {
     const { duration } = calm({ duration: 200 });
     const by = out ? -4 : 4;
+    if (!out) easeWidth(node, duration);
     return { duration, easing: cubicOut, css: (t, u) => `opacity: ${t}; transform: translateY(${u * by}px)` };
   }
+  /**
+   * What comes in (`node`) where something else is going, the two in one
+   * place: the place eases from the width of the one going to the width of
+   * the one coming, so the line about it moves there rather than stepping.
+   * (Not where the place has a width of its own, as the zone does on a phone,
+   * on a line of its own.)
+   */
+  function easeWidth(node: HTMLElement, duration: number) {
+    const box = node.parentElement;
+    const old = box && [...box.children].find((c): c is HTMLElement => c !== node && c instanceof HTMLElement);
+    if (!box || !old || !duration) return;
+    const [from, to] = [ownRect(old).width, ownRect(node).width];
+    if (Math.abs(from - to) < 0.5 || Math.abs(ownRect(box).width - Math.max(from, to)) > 0.5) return;
+    box.animate([{ width: `${from}px` }, { width: `${to}px` }], { duration, easing: 'cubic-bezier(0.33, 1, 0.68, 1)' });
+  }
+  /** A new zone's name: the place for it eases to its width as the last one fades, and it fades in once it's announced. */
+  function zoneIn(node: HTMLElement): TransitionConfig {
+    easeWidth(node, calm({ duration: 500 }).duration);
+    return plainFade(node, calm({ duration: 900, delay: 500 }));
+  }
+  const zoneOut = (node: Element) => plainFade(node, calm({ duration: 300 }));
   const showHeader = () => (headerOn = screen !== 'home');
   $effect(() => {
     if (screen !== 'home' === untrack(() => headerOn)) return;
@@ -716,9 +743,11 @@
               {/if}
               <!-- And the zone it's in, in its colour; a new one fades in as it's announced. -->
               {#if !folded || session.spectating || shownDepth(round) > 0}<span class="dot zone-dot">•</span>{/if}
-              {#key zoneAt(round)}
-                <span class="zone" style:--accent={accentAt(round)} in:fade={{ duration: 900, delay: 500 }}>{zoneAt(round)}</span>
-              {/key}
+              <span class="zone-box">
+                {#key zoneAt(round)}
+                  <span class="zone" style:--accent={accentAt(round)} in:zoneIn out:zoneOut>{zoneAt(round)}</span>
+                {/key}
+              </span>
             {:else if gs && metaFor === 'game'}
               {#if session.code && !session.hideCode && !folded}
                 <span data-keep>Room <b class="code" data-copy {@attach codePress.attach}>{session.code}</b></span>
@@ -860,7 +889,7 @@
 {#snippet rolled(n: number)}
   <span class="roll">
     {#key n}
-      <span in:roll out:roll={{ out: true }}>{n}</span>
+      <span in:roll out:roll={{ out: true }}>{#each [...String(n)] as d, i (i)}<span class="fig"><span>{d}</span></span>{/each}</span>
     {/key}
   </span>
 {/snippet}
@@ -1096,10 +1125,31 @@
     color: var(--gold-hi);
   }
   /* A number rolling over: the one going and the one coming in one place. */
+  /* The one going and the one coming centred in one place, which eases between their widths (roll()). */
   .roll {
     display: inline-grid;
+    justify-items: center;
   }
   .roll > span {
+    grid-area: 1 / 1;
+    white-space: nowrap;
+  }
+  /* Each figure as wide as the widest (Cinzel's digits differ in width): every digit,
+     unseen and of no height, laid in its place under it. So 1 to 2 or 14 to 15 never changes the line's width. */
+  .fig {
+    display: inline-grid;
+    justify-items: center;
+  }
+  /* (After the digit: the first item gives the box its baseline, the digit's.) */
+  .fig::after {
+    content: '0\A 1\A 2\A 3\A 4\A 5\A 6\A 7\A 8\A 9';
+    grid-area: 1 / 1;
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    white-space: pre;
+  }
+  .fig > span {
     grid-area: 1 / 1;
   }
   .dot {
@@ -1115,6 +1165,14 @@
     transition:
       color 1.2s,
       text-shadow 1.2s;
+  }
+  /* The zone's name, and while it changes the one going, in one place. */
+  .zone-box {
+    display: inline-grid;
+    justify-items: center;
+  }
+  .zone-box > .zone {
+    grid-area: 1 / 1;
   }
   .zone {
     color: color-mix(in srgb, var(--accent) 75%, var(--gold-hi));
@@ -1360,8 +1418,10 @@
     .zone-dot {
       display: none;
     }
-    .zone {
+    .zone-box {
       flex-basis: 100%;
+    }
+    .zone {
       text-align: center;
       font-size: 0.6rem;
       line-height: 1.2;
