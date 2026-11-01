@@ -32,7 +32,7 @@
   import { GROUND_Y } from '../lib/runsPlate';
   import { accentAt } from '../lib/descent';
   import { sigilOf, zoneAt } from '../lib/zoneSigils';
-  import { namesList } from '../lib/presence';
+  import { markOf, namesList } from '../lib/presence';
   import {
     FIND_BRIEF,
     chartRuns,
@@ -80,6 +80,22 @@
   /** Online and not in the game: watching it. */
   const watching = $derived(!local && !seated);
   const host = $derived(s.players.find((p) => p.id === s.hostId)?.name ?? 'the host');
+  /**
+   * A player's mark online (lib/presence.ts), as the lobby gives it: away, idle or offline (a slow link says nothing
+   * here). One at the host's screen stands as the host does.
+   */
+  const markFor = (p: (typeof s.players)[number]) => {
+    const m = local ? null : markOf(p.connected, session.standing[p.local ? (s.hostId ?? p.id) : p.id]);
+    return m === 'slow' ? null : m;
+  };
+  /** A guest's or a spectator's: the host is away or idle, and the next game waits on them alone. */
+  const hostGone = $derived.by(() => {
+    const p = session.isHost ? undefined : s.players.find((x) => x.id === s.hostId);
+    const m = p && markFor(p);
+    return m === 'away' || m === 'idle' ? m : null;
+  });
+  /** How a line waiting on the host ends: saying they seem to be gone, when they do. */
+  const goneTail = $derived(hostGone ? `; they seem to be ${hostGone}` : '');
   /** The marks in front of a line (the highlights, the run's facts): avatars, item thumbs and medallions, all this size. */
   const ICON = 26;
   /** A player by id: seated, or one the recap named who has since been removed (kicked before the end). */
@@ -784,14 +800,15 @@
     <p class="note spect" data-cursor="joining">
       <span class="ic"><span class="pulse"></span></span>
       <span
-        >{#if session.justWatching}You’re watching; <b class="host">{host}</b> starts the next {run ? 'run' : 'game'} without you.{:else if together}You join the next run once <b
+        >{#if session.justWatching && hostGone}You’re watching; <b class="host">{host}</b> seems to be {hostGone}.{:else if session.justWatching}You’re watching; <b class="host">{host}</b> starts the
+          next {run ? 'run' : 'game'} without you.{:else if together}You join the next run once <b class="host">{host}</b> starts it{goneTail}.{:else}You play in the next game once <b
             class="host">{host}</b
-          > starts it.{:else}You play in the next game once <b class="host">{host}</b> starts it.{/if}</span
+          > starts it{goneTail}.{/if}</span
       >
     </p>
     <WatchToggle />
   {:else}
-    <p class="waiting" data-cursor="actions"><span class="pulse"></span><span>Waiting for <b class="host">{host}</b> to start the next {run ? 'run' : 'game'}…</span></p>
+    <p class="waiting" data-cursor="actions"><span class="pulse"></span><span>Waiting for <b class="host">{host}</b> to start the next {run ? 'run' : 'game'}{goneTail}…</span></p>
   {/if}
 {/snippet}
 
@@ -799,10 +816,11 @@
 {#snippet rankRow(x: { p: (typeof s.players)[number]; rank: number }, pin = false)}
   {@const you = x.p.id === me}
   {@const gone = !local && !x.p.connected}
+  {@const mark = markFor(x.p)}
   <span class="rank">{x.rank}</span>
   <Avatar name={x.p.name} hue={x.p.hue} sigil={x.p.sigil} size={28} dim={gone} />
   <span class="name"><PlayerName name={x.p.name} />{#if you}<em class="you">&nbsp;(you)</em>{/if}</span>
-  {#if gone && !pin}<StandingMark mark="offline" />{/if}
+  {#if mark && !pin}<StandingMark {mark} />{/if}
   <span class="pts">{score(x.p.score)}</span>
 {/snippet}
 
