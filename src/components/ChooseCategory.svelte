@@ -659,6 +659,8 @@
   }
 
   let cardEls = $state<HTMLElement[]>([]);
+  /** Each card's light's swell (.pulse), beside its face (lib/backdropShadow, `pulse`). */
+  let pulses = $state<HTMLElement[]>([]);
   let burning: Handle | null = null;
   /** The face-down card the mouse rests on, to catch fire once it turns up. */
   let waiting: number | null = null;
@@ -937,7 +939,12 @@
               <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} hold={unseen(i, 'back')} />
               {@render filigree()}
             </span>
-            <span class="frame" data-sharp={sharp || undefined} use:backdropShadow>
+            <span class="frame" data-sharp={sharp || undefined} use:backdropShadow={{ pulse: pulses[i] }}>
+              {#if s.deathmatch}
+                <!-- The rim's ring and the shade over it, as every face has them in its box-shadow: here elements of their own, under all else, so the menace fades the ring as a layer. -->
+                <span class="rim ring"></span>
+                <span class="rim shade"></span>
+              {/if}
               <span class="grain"></span>
               <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} hold={unseen(i, 'face')} />
               <span class="glare"><span class="light"></span></span>
@@ -974,6 +981,7 @@
                   >{:else if isWayOut(cat)}<span class="find-tag-row">{out.tag(haul)}</span>{/if}{cardName(cat)}</span
               >
             </span>
+            <span class="pulse" aria-hidden="true" bind:this={pulses[i]}></span>
             {#if coop}
               <!-- The draw's light on this card (see the draw above). -->
               <span class="glow" aria-hidden="true"></span>
@@ -1209,6 +1217,52 @@
     background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .86 0 0 0 0 .62 .08 0 0 0 -.025'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E") 0 0 / 180px;
     pointer-events: none;
   }
+  /* What swells on a card's light (a find's, a duel's) plays here, beside
+     its face, read by the backdrop (lib/backdropShadow, `pulse`): animated
+     on the face, its light's properties had every part of the face restyled
+     on every frame (4 to 5 ms a frame at 4K, most of the page's thread),
+     however still the card lay. While CSS paints the light, the face swells
+     itself (pulse-paint), in step. docs/category-cards.md, rule 9. */
+  .pulse {
+    position: absolute;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+  }
+  @keyframes pulse {
+    50% {
+      --bs-pulse: 1;
+    }
+  }
+  @keyframes pulse-paint {
+    50% {
+      --bs1: var(--bs1-pulse);
+      --bs1-color: var(--bs1-pulse-color);
+    }
+  }
+  /* A duel's face: its rim's ring and the shade over it, the face's own
+     box-shadow on every other card, are elements of their own under all
+     else on it (as the grain), so the menace fades the ring as a layer and
+     never paints the face again. */
+  .card.dm .frame {
+    box-shadow: var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent), 0 var(--bs2, 0 0) var(--bs2-color, transparent));
+  }
+  .rim {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    /* The face's corner inside its border (8px, less 1px), as its box-shadow's. */
+    border-radius: 7px;
+    pointer-events: none;
+  }
+  .rim.ring {
+    --bs-ring: inherit;
+    box-shadow: inset 0 0 0 5px var(--bs-ring);
+  }
+  .rim.shade {
+    --bs-shade: inherit;
+    box-shadow: inset 0 0 0 4px var(--bs-shade);
+  }
   .back {
     position: absolute;
     inset: 0;
@@ -1426,6 +1480,10 @@
     .sharp .card.out :global(.engraving > :is(.window, .glow, .lines, .lamp, .gilt)) {
       will-change: filter, opacity;
     }
+    /* (A duel's ring, likewise, for as long as the menace plays.) */
+    .sharp .rim.ring {
+      will-change: opacity;
+    }
   }
   .turn:global(.dealt) .sheen::before {
     animation: sheen 0.8s var(--ease-out) calc(var(--face, 0ms) + 80ms) backwards;
@@ -1625,14 +1683,24 @@
       radial-gradient(ellipse 120% 90% at 50% 50%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #22110d, #0d0706 70%);
   }
+  /* Yours to pick, it menaces: its light swells red (by .pulse) as its
+     ring fades (a layer, .rim), together. */
   .card.dm.mine .frame {
+    --bs1-pulse: 0px 45px;
+    --bs1-pulse-color: rgba(224, 85, 63, 0.45);
+  }
+  .card.dm.mine:not(:global(.down)) .pulse {
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) {
+    animation: pulse-paint 2.4s ease-in-out infinite;
+  }
+  .card.dm.mine:not(:global(.down)) .rim.ring {
     animation: menace 2.4s ease-in-out infinite;
   }
   @keyframes menace {
     50% {
-      --bs-ring: transparent;
-      --bs1: 0px 45px;
-      --bs1-color: rgba(224, 85, 63, 0.45);
+      opacity: 0;
     }
   }
   /* While a card lies face down its face is turned away, but the backdrop
@@ -1641,9 +1709,6 @@
   .card:global(.down) .frame {
     --bs1-color: transparent;
     --bs2-color: transparent;
-  }
-  .card.dm:global(.down) .frame {
-    animation: none;
   }
   /* Only the side that faces up is shown. backface-visibility alone isn't
      enough in WebKit (every browser on iOS): the emblem, with a filter and
@@ -2026,17 +2091,16 @@
     --bs1: 0px 34px;
     --bs1-color: var(--f-glow);
   }
+  /* Yours to pick, its light swells and ebbs (by .pulse). */
   .card.special.mine .frame {
+    --bs1-pulse: 0px 46px;
+    --bs1-pulse-color: var(--f-pulse);
+  }
+  .card.special.mine:not(:global(.down)) .pulse {
     animation: pulse 3.2s ease-in-out infinite;
   }
-  @keyframes pulse {
-    50% {
-      --bs1: 0px 46px;
-      --bs1-color: var(--f-pulse);
-    }
-  }
-  .card.special:global(.down) .frame {
-    animation: none;
+  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) {
+    animation: pulse-paint 3.2s ease-in-out infinite;
   }
   .card.special.mine:not(:global(.down)):hover .frame,
   .card.special.mine:not(:global(.down)):focus-visible .frame {
