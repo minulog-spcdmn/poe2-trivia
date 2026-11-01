@@ -6,6 +6,7 @@ import {
   CLOCK_CAP_MIN_MS,
   COOP_DRAW_MS,
   DELVE_CLOCK_CAP_MS,
+  PICK_IN_MS,
   artFirst,
   blastedAway,
   capStrikes,
@@ -253,13 +254,29 @@ test("together, a question the vote drew holds its clock until the draw has play
   const asked = run({ phase: 'question', question: question(null) });
   assert.equal(drawHoldUntil(voting, asked), 100 + COOP_DRAW_MS);
   assert.ok(COOP_DRAW_MS >= 1950, 'the draw takes about two seconds');
-  // Re-asked (question to question), or alone: no hold.
+  // Re-asked (question to question): no hold.
   assert.equal(drawHoldUntil(asked, structuredClone(asked)), null);
+  // Alone, a pick's short hold rather than the draw's.
   const solo = structuredClone(asked);
   solo.delve!.entrants = ['a'];
+  solo.offered = ['Rings', 'Belts'];
   const soloPrev = structuredClone(voting);
   soloPrev.delve!.entrants = ['a'];
-  assert.equal(drawHoldUntil(soloPrev, solo), null);
+  assert.equal(drawHoldUntil(soloPrev, solo), 100 + PICK_IN_MS);
+});
+
+test('a pick from the cards, in every mode, holds its clock while the card taken lifts', () => {
+  const choosing = run({ delve: undefined, offered: ['Rings', 'Belts', 'Boots'] });
+  const asked = run({ delve: undefined, offered: ['Rings', 'Belts', 'Boots'], phase: 'question', question: question(null) });
+  assert.equal(drawHoldUntil(choosing, asked), 100 + PICK_IN_MS);
+  assert.ok(PICK_IN_MS > 0 && PICK_IN_MS <= 300, 'a short handover, well under a draw');
+  // Not from the cards (a race asks without any on offer): nothing to wait for.
+  assert.equal(drawHoldUntil(choosing, { ...asked, offered: [] }), null);
+  // Asked again in its place (its art failed) while the cards still hold: the hold stays; on the next turn it doesn't.
+  const until = drawHoldUntil(choosing, asked)!;
+  const again = { ...asked, question: { ...question(null), askedAt: 200 } };
+  assert.equal(drawHoldUntil(asked, again, { qid: 100, until }), until);
+  assert.equal(drawHoldUntil(asked, { ...again, turnCount: 1 }, { qid: 100, until }), null);
 });
 
 test('a question asked again in place of the one the vote drew keeps its draw hold', () => {

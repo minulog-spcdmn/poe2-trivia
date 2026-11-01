@@ -573,7 +573,7 @@ class Session {
   private clockSeen: { qid: number; clockAt?: number; at: number; before?: number } | null = null;
   /** Delve: how much of this question's clock was used before the host's reload held it still (pausedUsed). */
   private usedBefore: { qid: number; ms: number } | null = null;
-  /** Delve together: the question the team's vote just drew, and the earliest its clock may start (drawHoldUntil). */
+  /** The question just asked from the cards (picked, or drawn by the team's vote), and the earliest its clock may start (drawHoldUntil). */
   private drawHold: { qid: number; until: number } | null = null;
   /** The art failed this many times on this turn (turnCount), for the backoff. */
   private reaskFails = { turn: '', n: 0 };
@@ -1763,7 +1763,7 @@ class Session {
       const done = waited.every((l) => l.done);
       // The slowest of them still needs half a round trip for the last bytes and the key.
       const rtt = Math.max(0, ...waited.map((l) => honestRtt(l.g)));
-      // Together, after a vote: not before its draw has played out on the cards, theirs starting that half trip late.
+      // From the cards: not before the pick's moment (or a vote's draw) has played out on them, theirs starting that half trip late.
       const hold = this.drawHold?.qid === qid ? drawClockFrom(this.drawHold.until, rtt) : 0;
       if ((done || capped) && now >= hold - 500) {
         const late = capped ? waited.filter((l) => !l.done) : [];
