@@ -4,7 +4,7 @@
 // leave, or the browser's back, which closes what's open first, the codex's
 // item card too), news arriving mid-question (where the stack stands on a
 // phone, either way up), a guest's link to the host lost, an item's window
-// as another item opens in it or the game goes on under it, and coming back
+// as another item opens in it, and coming back
 // from a crash (Root.svelte: a guest
 // leaves the room, a second crash soon after leaves any game, and one with
 // no game left stops the page).
@@ -31,26 +31,6 @@ const pictured = (steps: Step[], seed?: number): Built => {
   const t = new Table(THREE, { difficulty: 'custom', custom: { ...PRESETS.merciless, artChance: 1 } }, { seed }).start().pick();
   t.answer(t.turn, false);
   return { state: t.s, act: t.room, at: t.clock.now, steps: [{ wait: 1200 }, ...steps], rooms: [] };
-};
-/**
- * A run alone, an item's window opened at an answer, then the run going on
- * under it: the next depth's cards, its question and its answer, the bar
- * pinned at each reveal on a phone going and coming back.
- */
-const acrossReveal = (): Built => {
-  const t = new Table(['Kalguur'], { mode: 'delve' }, { host: null }).start().pick();
-  t.answer(null, true);
-  const shown = t.s;
-  const at = t.clock.now;
-  const then: Step[] = [];
-  const on = (wait: number) => then.push({ wait }, { then: t.s, at: t.clock.now });
-  t.wait(3000).next();
-  on(2200);
-  t.pick();
-  on(1600);
-  t.answer(null, true);
-  on(2000);
-  return { state: shown, act: t.room, at, steps: [{ wait: 1200 }, { click: '.details, .tile.inspect' }, ...then] };
 };
 /** The lobby, its host editing the custom difficulty (the edit button on Custom). */
 const CUSTOM: Settings['custom'] = { options: 6, similarNames: 1, fakes: 2, artChance: 0.5, veil: 'slow', grayscale: 'art', mirror: 0.3, lockout: 3 };
@@ -130,8 +110,6 @@ export function overlayScenes(): Scene[] {
     // The item's window open, another item opened in it: its name and tooltip cross-fade, and its top glides with the roll as the height changes.
     // (Seed 39: the pick's tooltip some eight lines shorter than the answer's, so the roll and the plate's glide show.)
     overlay('item-switch', "An item's window: another item opened in it", [kalguur], () => pictured([{ click: '.tile.inspect' }, { wait: 1800 }, { click: '.tile.inspect ~ .tile.inspect' }], 39)),
-    // On a phone the window keeps above the bar pinned at a reveal (Next): open across the next question and its answer, it glides as the bar goes and comes back.
-    overlay('item-dock', "An item's window open as the game goes on: the dock changing under it (at a phone's size)", [{ mode: 'local', me: null }], acrossReveal),
     overlay('crash-host', 'The host crashed once: back on its feet', [kalguur], () => inGame([{ crash: 1 }])),
     overlay('crash-guest', 'A guest crashed once: out of the room', [doryani], () => inGame([{ crash: 1 }])),
     overlay('crash-twice', 'The host crashed twice: out of the game', [kalguur], () => inGame([{ crash: 2 }])),

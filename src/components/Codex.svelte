@@ -1403,8 +1403,7 @@
     color: var(--text);
     transition:
       color 0.2s,
-      background-color 0.2s,
-      box-shadow 0.08s;
+      background-color 0.2s;
   }
   .cat-name {
     display: flex;
