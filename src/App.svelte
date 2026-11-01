@@ -378,8 +378,29 @@
   $effect.pre(() => {
     if (shown !== null && shown !== 'home') metaFor = shown;
   });
-  /** A line going and the next coming, in the same place. */
-  const metaFade = (node: Element) => plainFade(node, calm({ duration: 250 }));
+  /** How long the header's line takes to change. */
+  const META_MS = 250;
+  /** A line going, fading where it stood (centred, as the next one is). */
+  const metaOut = (node: Element) => plainFade(node, calm({ duration: META_MS }));
+  /**
+   * The next line coming, fading in where it goes. What both lines say (the
+   * room code, Delve: marked data-keep) isn't faded out and in again a little
+   * way off: the old one is hidden and the new one glides there from where
+   * the old one stood, as the line grows or shrinks about it.
+   */
+  function metaIn(node: HTMLElement): TransitionConfig {
+    if (motion.still) return plainFade(node, calm({ duration: META_MS }));
+    const old = [...(node.parentElement?.children ?? [])].find((c) => c !== node && c.classList.contains('meta-line'));
+    const was = old?.querySelector<HTMLElement>('[data-keep]');
+    const keep = node.querySelector<HTMLElement>('[data-keep]');
+    if (!was || !keep || was.textContent !== keep.textContent) return plainFade(node, { duration: META_MS });
+    const dx = ownRect(was).left - ownRect(keep).left;
+    was.style.visibility = 'hidden';
+    const timing = { duration: META_MS, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' };
+    if (Math.abs(dx) > 0.5) keep.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], timing);
+    for (const c of node.children) if (c !== keep) c.animate([{ opacity: 0 }, { opacity: 1 }], { ...timing, easing: 'linear' });
+    return { duration: META_MS };
+  }
   /** A number changing: the old one rises out as the new one rises in under it. */
   function roll(node: Element, { out = false } = {}): TransitionConfig {
     const { duration } = calm({ duration: 200 });
@@ -670,15 +691,15 @@
       <div class="meta" data-cursor="meta" bind:this={metaEl}>
         <!-- Changed with the screen it is for (metaFor), the old line fading as the new one comes. -->
         {#key metaFor}
-          <div class="meta-line" in:metaFade out:metaFade>
+          <div class="meta-line" in:metaIn out:metaOut>
             {#if gs?.delve && (metaFor === 'game' || metaFor === 'over')}
               <!-- Delve: no target, just how deep. -->
               {#if folded}
                 <!-- (Folded: no room code, the depth and zone alone.) -->
               {:else if session.code && !session.hideCode}
-                <span>Room <b class="code" data-copy {@attach codePress.attach}>{session.code}</b></span>
+                <span data-keep>Room <b class="code" data-copy {@attach codePress.attach}>{session.code}</b></span>
               {:else}
-                <span>Delve</span>
+                <span data-keep>Delve</span>
               {/if}
               {#if session.spectating}
                 {#if !folded}<span class="dot">•</span>{/if}
@@ -700,7 +721,7 @@
               {/key}
             {:else if gs && metaFor === 'game'}
               {#if session.code && !session.hideCode && !folded}
-                <span>Room <b class="code" data-copy {@attach codePress.attach}>{session.code}</b></span>
+                <span data-keep>Room <b class="code" data-copy {@attach codePress.attach}>{session.code}</b></span>
                 <span class="dot">•</span>
               {/if}
               {#if session.spectating}
@@ -717,10 +738,10 @@
                 <span class="target">First to <b>{gs.settings.targetScore}</b></span>
               {/if}
             {:else if session.mode === 'local' || session.hereOnly}
-              <span>On this device</span>
+              <span data-keep>On this device</span>
             {:else if session.code && metaFor !== 'lobby'}
               <!-- The lobby shows the code in big letters. (Hidden for streaming, a copy still gives it.) -->
-              <span>Room <b class="code" data-copy {@attach codePress.attach}>{session.hideCode ? '••••••' : session.code}</b></span>
+              <span data-keep>Room <b class="code" data-copy {@attach codePress.attach}>{session.hideCode ? '••••••' : session.code}</b></span>
             {/if}
           </div>
         {/key}
@@ -1063,9 +1084,11 @@
     text-transform: uppercase;
     color: var(--muted);
   }
+  /* Centred in its place, the one going and the one coming alike, so neither moves as the other changes the width. */
   .meta-line {
     grid-area: 1 / 1;
     display: flex;
+    justify-content: center;
     gap: 0.55rem;
     align-items: center;
   }

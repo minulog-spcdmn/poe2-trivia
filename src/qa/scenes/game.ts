@@ -524,6 +524,29 @@ export function gameScenes(): Scene[] {
         } satisfies Built;
       },
     },
+    // The header's depth rolling over: a run at Depth 1, answered right,
+    // then on to the next, its number rising out as the next one rises in
+    // once its cards are dealt. (At depth 0 the line names no depth: the
+    // banner under it has the run's start line, Game.svelte.)
+    {
+      ...scene('delve-depth', 'Delve alone', 'Depth 1 answered, then on: the header’s depth rolling over to 2', [ALONE], delveAlone),
+      build: () => {
+        const t = delveAlone()
+          .playTo((s) => s.round >= 2 && s.phase === 'choosing')
+          .pick();
+        const shown = t.s;
+        const at = t.clock.now + INTO;
+        const answered = t.answer(null, true, INTO + BLOW_AFTER).s;
+        const answeredAt = t.clock.now;
+        t.wait(REVEAL_FOR).next();
+        return {
+          state: shown,
+          act: t.room,
+          at,
+          steps: [{ wait: BLOW_AFTER }, { then: answered, at: answeredAt }, { wait: REVEAL_FOR }, { then: t.s, at: t.clock.now }],
+        } satisfies Built;
+      },
+    },
     // A pick as it happens: a moment after the cards are up this device picks the
     // first by a click (the frame says what it would send), the room's question
     // comes back at once and the cards hold it a moment, the card lifting
