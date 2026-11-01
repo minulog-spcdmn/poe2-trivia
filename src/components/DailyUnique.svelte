@@ -27,6 +27,7 @@
   import { doused, reveal } from '../lib/fx/moments';
   import { whenIdle } from '../lib/idle';
   import { holdSettled } from '../lib/settled';
+  import { calm } from '../lib/motion.svelte';
   import { onStoredElsewhere } from '../lib/storage';
   import { turnOf } from '../lib/turns';
   import { loadPlate } from '../lib/plateStore.svelte';
@@ -348,6 +349,8 @@
   }
 
   const upper = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  /** The question being asked, as its answers are keyed: a new one (practice, or a new day) fades its words in. */
+  const asking = $derived(q.askedAt + ':' + q.itemId);
   /** What the item is, in the legend's line: "A shield", "An amulet or belt", "Gloves". */
   const topic = $derived(aTopic(questionTopic(q, true)));
 </script>
@@ -386,10 +389,15 @@
           <p class="line">{drawn?.base}</p>
         </div>
       {:else}
-        <h2 class="title">{practice ? 'Practice' : 'Today’s unique'}</h2>
-        <!-- The line always describes the item: what kind it is while asking (the
-             four answers and the caption say what to do), its base once answered. -->
-        <p class="line">{topic}{practice ? '.' : ', the same for every exile today.'}</p>
+        <!-- Each new question's words fade in as its answers fly in (practice, or a new day), not only the first. -->
+        {#key asking}
+          <div in:fade|global={calm({ duration: 300 })}>
+            <h2 class="title">{practice ? 'Practice' : 'Today’s unique'}</h2>
+            <!-- The line always describes the item: what kind it is while asking (the
+                 four answers and the caption say what to do), its base once answered. -->
+            <p class="line">{topic}{practice ? '.' : ', the same for every exile today.'}</p>
+          </div>
+        {/key}
       {/if}
     </div>
   </div>
@@ -427,15 +435,17 @@
 
   <div class="after" aria-live="polite">
     {#if !answered}
-      {#if practice}
-        <!-- Practice is apart from the day's question: say so, and when the next one comes. -->
-        <p class="caption">Practice doesn’t count<span class="more">{' '}toward your streak</span>; <span aria-live="off">{nextIn(now, 'daily')}</span>.</p>
-      {:else if graceOn(rec, today)}
-        <!-- Yesterday went unanswered and the run lives on by its grace (lib/daily GRACE_DAYS): say so before the answer that keeps it. -->
-        <p class="caption">You skipped a day; answer right to keep your streak.</p>
-      {:else}
-        <p class="caption">Watch for look-alikes: one name may be made up.</p>
-      {/if}
+      {#key asking}
+        {#if practice}
+          <!-- Practice is apart from the day's question: say so, and when the next one comes. -->
+          <p class="caption" in:fade|global={calm({ duration: 300 })}>Practice doesn’t count<span class="more">{' '}toward your streak</span>; <span aria-live="off">{nextIn(now, 'daily')}</span>.</p>
+        {:else if graceOn(rec, today)}
+          <!-- Yesterday went unanswered and the run lives on by its grace (lib/daily GRACE_DAYS): say so before the answer that keeps it. -->
+          <p class="caption" in:fade|global={calm({ duration: 300 })}>You skipped a day; answer right to keep your streak.</p>
+        {:else}
+          <p class="caption" in:fade|global={calm({ duration: 300 })}>Watch for look-alikes: one name may be made up.</p>
+        {/if}
+      {/key}
     {:else}
       <p class="tally" in:fade={{ duration: 300, delay: 150 }}>
         {#if practice}
@@ -603,6 +613,7 @@
       transform 0.25s var(--ease-out),
       border-color 0.3s,
       opacity 0.4s,
+      filter 0.4s,
       --bs-ring 0.3s,
       --bs1 0.3s,
       --bs1-color 0.3s,

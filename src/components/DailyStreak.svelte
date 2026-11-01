@@ -9,7 +9,9 @@
   // burning with the game's fire, in the colour of the run's step on the
   // ladder (lib/fx/streaks). Today's unique shows it under the answers; the
   // QA desk's streak bench (qa.html?b=streak) shows it on its own.
-  import { scale } from 'svelte/transition';
+  import { fly, scale } from 'svelte/transition';
+  import { cubicOut } from 'svelte/easing';
+  import { calm } from '../lib/motion.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { ablaze, newFlame, turnsBlue, twinkle } from '../lib/fx/moments';
   import { onFxChange, type Handle } from '../lib/fx/core';
@@ -24,6 +26,12 @@
     /** The run the fire burns for: yesterday's while today's answer lands, so it grows into `days` before the player's eyes. */
     burning?: number;
   } = $props();
+
+  /**
+   * The number the badge reads: yesterday's while its fire grows (`burning`),
+   * stepping to today's as the fire lands, so it is never ahead of its fire.
+   */
+  const shown = $derived(burning >= 1 && burning < days ? burning : days);
 
   /** How tall the fire may lick up from the badge: about half the scoreboard's, as the answers sit just above. */
   const FLAMES = 0.55;
@@ -86,7 +94,7 @@
 <span class="streak-at" style:--flame-rgb={dailyFlameOf(burning).css} style:--heat={dailyHeatOf(burning)}>
   <span class="smoulder" aria-hidden="true" use:backdropShadow></span>
   <b class="streak" use:burn={burning} use:backdropShadow in:scale={{ start: 0.5, duration: 400, delay: BADGE_IN_DELAY }}>
-    {#if days === 1}First day{:else}<span class="num">{days}</span> days in a row{/if}
+    {#if days === 1}First day{:else}<span class="num">{#key shown}<span in:fly={calm({ y: 8, duration: 300, easing: cubicOut })} out:fly={calm({ y: -8, duration: 300, easing: cubicOut })}>{shown}</span>{/key}</span> {shown === 1 ? 'day' : 'days'} in a row{/if}
   </b>
 </span>
 
@@ -168,5 +176,12 @@
     font-style: normal;
     font-weight: 700;
     font-size: 0.9em;
+    /* The digits step up in place: the old and the new share one cell, clipped to its line
+       (clip, not hidden, which would move its baseline). */
+    display: inline-grid;
+    overflow: clip;
+  }
+  .num > * {
+    grid-area: 1 / 1;
   }
 </style>
