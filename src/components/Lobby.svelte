@@ -378,6 +378,25 @@
     void visHint;
     untrack(() => hintBox && hintWas !== undefined && settle(hintBox, hintWas));
   });
+  // Where the panel is as tall as what's in it (below a desktop), a mode's settings and Delve's descent differ a little in height:
+  // Begin glides from where it stood as the new ones fade in (their 260ms), rather than stepping. (A desktop pins it to the panel's foot.)
+  let startEl = $state<HTMLElement>();
+  let startWas: number | undefined;
+  $effect.pre(() => {
+    void delve;
+    startWas = untrack(() => startEl)?.offsetTop;
+  });
+  $effect(() => {
+    void delve;
+    untrack(() => {
+      if (!startEl || startWas === undefined || motion.still) return;
+      settling.get(startEl)?.cancel();
+      const d = startWas - startEl.offsetTop;
+      if (!d) return;
+      const base = parseFloat(getComputedStyle(startEl).marginTop) || 0;
+      settling.set(startEl, startEl.animate([{ marginTop: `${base + d}px` }, { marginTop: `${base}px` }], { duration: 260, easing: CUBIC_OUT }));
+    });
+  });
   /** The invite button's word. */
   const inviteLabel = $derived(s.settings.locked ? 'Room locked' : closed ? 'Room full' : copied ? 'Link copied!' : canShare ? 'Share invite link' : 'Copy invite link');
   /** Host: what the note by Begin says, as one key: a new one fades in where the last stood. */
@@ -769,7 +788,7 @@
       {#if phone.current && isHost}
         <div class="dock" data-cursor="start" use:portal use:overPage use:dock in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>{@render startRow()}</div>
       {:else}
-        <div class="start" data-cursor="start" use:overPage={stickyStart.current}>{@render startRow()}</div>
+        <div class="start" data-cursor="start" bind:this={startEl} use:overPage={stickyStart.current}>{@render startRow()}</div>
       {/if}
     </section>
   </div>
