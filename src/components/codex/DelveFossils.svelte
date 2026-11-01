@@ -236,6 +236,9 @@
     /* The stone's ink, as the fossil card's (bone now): the nodule, and the lines of the one chosen. One place, to follow the card's palette. */
     --fossil-ink: #e6dcc6;
     --fossil-hi: #f6f0e2;
+    /* The light a found one sits in: a found fossil is a prize, lit; a rare one's the brightest. */
+    --fossil-glow: #ffb45a;
+    --fossil-glow-rare: #ffd27a;
     container: fossils / inline-size;
     min-width: 0;
   }
@@ -382,22 +385,33 @@
     color: var(--ink);
     background: radial-gradient(circle, rgba(0, 0, 0, 0.55) 0 62%, rgba(0, 0, 0, 0.25) 74%, transparent 76%);
   }
+  /* Found: lit from within the ring, the fossil glowing in it, the rings bright in the currency colour. */
   .socket.got {
-    --ink: #aa9e82;
+    --ink: #cbbd9b;
+    --light: var(--fossil-glow);
     background: radial-gradient(
       circle,
-      rgba(255, 186, 96, 0.2) 0 30%,
-      rgba(0, 0, 0, 0.55) 62%,
+      color-mix(in srgb, var(--light) 42%, transparent) 0 22%,
+      color-mix(in srgb, var(--light) 16%, rgba(0, 0, 0, 0.4)) 48%,
+      rgba(0, 0, 0, 0.55) 64%,
       rgba(0, 0, 0, 0.25) 74%,
       transparent 76%
     );
+    box-shadow: 0 0 12px color-mix(in srgb, var(--light) 18%, transparent);
   }
+  .socket.got .glow {
+    color: var(--light);
+    opacity: 0.4;
+  }
+  /* Rare: the brightest, its rings gold, its light warmer and wider. */
   .socket.got.rare {
     --ink: var(--gold);
+    --light: var(--fossil-glow-rare);
+    box-shadow: 0 0 18px color-mix(in srgb, var(--light) 30%, transparent);
   }
   .socket.got.rare .glow {
     color: var(--gold-sheen);
-    opacity: var(--gold-shine);
+    opacity: 0.7;
   }
   /* The one shown: its lines bright as bone, and a pale light round it. */
   .cell.on .socket {
@@ -405,6 +419,11 @@
     box-shadow:
       0 0 0 1px color-mix(in srgb, var(--fossil-hi) 55%, transparent),
       0 0 10px color-mix(in srgb, var(--fossil-hi) 22%, transparent);
+  }
+  .cell.on .socket.got {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--fossil-hi) 65%, transparent),
+      0 0 16px color-mix(in srgb, var(--light) 40%, transparent);
   }
   .cell.on .socket:not(.got) {
     background: radial-gradient(circle, color-mix(in srgb, var(--fossil-ink) 8%, transparent) 0 40%, rgba(0, 0, 0, 0.55) 62%, rgba(0, 0, 0, 0.25) 74%, transparent 76%);
@@ -436,13 +455,13 @@
   circle {
     stroke-linecap: round;
   }
-  /* Not yet found: a dull impression, the nodule faint inside it. */
+  /* Not yet found: a dull impression, the nodule faint inside it, quiet so the found ones stand out. */
   .socket:not(.got) svg {
-    opacity: 0.7;
+    opacity: 0.55;
   }
   .nodule {
     color: color-mix(in srgb, var(--fossil-ink) 75%, #4a4438);
-    opacity: 0.55;
+    opacity: 0.5;
     stroke-linecap: round;
     stroke-linejoin: round;
   }
@@ -460,7 +479,10 @@
     pointer-events: none;
     -webkit-user-select: none;
     user-select: none;
-    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
+    filter: drop-shadow(0 0 3px color-mix(in srgb, var(--light) 55%, transparent)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+  }
+  .rare img {
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--light) 75%, transparent)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
   }
 
   /* The glow: the same lines, wide and faint, under them (AchievementSeal's). */
