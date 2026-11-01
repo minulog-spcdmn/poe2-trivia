@@ -574,14 +574,46 @@
    * takes flat transforms, which Chrome rasters larger as it grows.
    */
   const printed = $derived(sharp && !rows.current);
-  /** How long card i's side lies unseen once it's dealt (ms), which its plate's prints may take without its strokes drawn: its back until it fades in, its face until it's turned halfway up. Held still, or shown without a deal (after a refresh), it's seen at once. */
-  const unseen = (i: number, side: 'back' | 'face') => (dealing ? Math.round((side === 'back' ? dealAt(i) : flipAt(i) + FLIP / 2) * 1000) : 0);
+  /** How long card i's side lies unseen once it's filled in (ms, see `filled`), which its plate's prints may take without its strokes drawn: its back until it fades in, its face until it's turned halfway up. Held still, or shown without a deal (after a refresh), it's seen at once. */
+  const unseen = (i: number, side: 'back' | 'face') => (dealing ? Math.max(0, Math.round((side === 'back' ? dealAt(i) : flipAt(i) + FLIP / 2) * 1000 - late)) : 0);
   /** When the deal began; null when the cards appeared without one (as after a refresh). */
   let dealtAt: number | null = null;
   /** Whether the cards are dealt (not held still, nor shown without a deal): a card lies unseen at first only then. */
   let dealing = $state(false);
   /** Whether card i lies face up yet (it can't be picked or catch fire before). */
   const faceUp = (i: number) => dealtAt === null || performance.now() - dealtAt >= (flipAt(i) + FLIP) * 1000;
+  /**
+   * Whether the cards' sides are filled in. A dealt hand's are made a frame
+   * after the cards, which lie unseen until they fade in (from 150 ms):
+   * made with the screen that deals them, they were half of what an iPhone
+   * mounted at Begin, all in the frame that shows it (#331). The cards and
+   * their sides' boxes come first, sized as ever, so nothing moves as
+   * they're filled, and the sheen, whose entrance keeps to the deal's clock;
+   * the engravings' holds are short of how late they're filled (`late`).
+   * Shown without a deal (held still, or after a refresh), or too near to
+   * being seen to wait a frame, they're filled in the frame that shows them.
+   */
+  let filled = $state(false);
+  /** How far into the deal (ms) the sides were filled: what their engravings' holds are short of. */
+  let late = $state(0);
+  $effect(() => {
+    // (In the animation frame of the frame the cards are first drawn in:
+    // their deal has begun by then, or there's none. Filled in the next
+    // one's, the frames' own times say how late. Only with a long frame's
+    // room to spare before the first fades in: the fade runs on the
+    // compositor, whatever holds the page.)
+    let asked = requestAnimationFrame((first) => {
+      if (!dealing || dealtAt === null || dealAt(0) * 1000 - (performance.now() - dealtAt) < 100) {
+        filled = true;
+        return;
+      }
+      asked = requestAnimationFrame((now) => {
+        late = now - first;
+        filled = true;
+      });
+    });
+    return () => cancelAnimationFrame(asked);
+  });
 
   // The transitions are global: the cards are created with the screen, which
   // a local transition skips. The card fades in, and its inner part moves:
@@ -941,45 +973,54 @@
         <!-- (The card's two sides together: what a dim card's filter goes on when its face is sharp.) -->
         <span class="sides">
           <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
+            <!-- What's on each side waits for `filled`, all but what lays a row out (the emblem's box, the name) and the sheen, whose entrance starts with the emblem's. -->
             <span class="back" aria-hidden="true">
-              <span class="grain"></span>
-              <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} hold={unseen(i, 'back')} />
-              {@render filigree()}
+              {#if filled}
+                <span class="grain"></span>
+                <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} hold={unseen(i, 'back')} />
+                {@render filigree()}
+              {/if}
             </span>
             <span class="frame" data-sharp={sharp || undefined} use:backdropShadow={{ pulse: pulses[i] }}>
-              {#if s.deathmatch}
-                <!-- The rim's ring and the shade over it, as every face has them in its box-shadow: here elements of their own, under all else, so the menace fades the ring as a layer. -->
-                <span class="rim ring"></span>
-                <span class="rim shade"></span>
+              {#if filled}
+                {#if s.deathmatch}
+                  <!-- The rim's ring and the shade over it, as every face has them in its box-shadow: here elements of their own, under all else, so the menace fades the ring as a layer. -->
+                  <span class="rim ring"></span>
+                  <span class="rim shade"></span>
+                {/if}
+                <span class="grain"></span>
+                <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} hold={unseen(i, 'face')} />
+                <span class="glare"><span class="light"></span></span>
               {/if}
-              <span class="grain"></span>
-              <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} hold={unseen(i, 'face')} />
-              <span class="glare"><span class="light"></span></span>
               <span class="sheen"></span>
-              {@render filigree()}
-              {#if kindOf(cat)}
-                {@const kind = kindOf(cat)!}
-                <span class="find-tag" data-zoom>{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span>
-              {:else if isWayOut(cat)}
-                <span class="find-tag out-tag" data-zoom>{out.tag(haul)}</span>
+              {#if filled}
+                {@render filigree()}
+                {#if kindOf(cat)}
+                  {@const kind = kindOf(cat)!}
+                  <span class="find-tag" data-zoom>{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span>
+                {:else if isWayOut(cat)}
+                  <span class="find-tag out-tag" data-zoom>{out.tag(haul)}</span>
+                {/if}
               {/if}
               <span class="icon" class:none={isWayOut(cat)}>
-                {#if heap}
-                  {@const at = heap.at}
-                  <span class="lit moons" style:--spread={heap.spread}>
-                    {#each categoryCompanions(cat) as c (c.url)}
-                      {#if at[c.kind]}
-                        {@const [x, y, k, turn] = at[c.kind]}
-                        <span class="moon" style:--mx={x} style:--my={y} style:--mk={k} style:--mr={turn}
-                          ><span class="glyph" class:fit={!!fits[c.url]} style={fitStyle(c.url, { k })} style:--src="url('{maskOf(c.url)}')" use:fineMask={maskOf(c.url)}></span></span
-                        >
-                      {/if}
-                    {/each}
-                  </span>
+                {#if filled}
+                  {#if heap}
+                    {@const at = heap.at}
+                    <span class="lit moons" style:--spread={heap.spread}>
+                      {#each categoryCompanions(cat) as c (c.url)}
+                        {#if at[c.kind]}
+                          {@const [x, y, k, turn] = at[c.kind]}
+                          <span class="moon" style:--mx={x} style:--my={y} style:--mk={k} style:--mr={turn}
+                            ><span class="glyph" class:fit={!!fits[c.url]} style={fitStyle(c.url, { k })} style:--src="url('{maskOf(c.url)}')" use:fineMask={maskOf(c.url)}></span></span
+                          >
+                        {/if}
+                      {/each}
+                    </span>
+                  {/if}
+                  <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')" use:fineMask={maskOf(iconOf(cat))}></span></span>
                 {/if}
-                <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')" use:fineMask={maskOf(iconOf(cat))}></span></span>
               </span>
-              {#if kindOf(cat) === 'azurite'}
+              {#if filled && kindOf(cat) === 'azurite'}
                 <!-- The vein's crystals in the corner stand in front of the item. -->
                 <CardEngraving side="face" find="azurite" front />
               {/if}
