@@ -8,7 +8,7 @@ import { addDays } from './zone';
 /** A period read: its days and the same many before, with what the start page's visitors came on and from. */
 export interface Read {
   /** The shape this was kept in: a read kept by an older build is read again. */
-  v: 11;
+  v: 12;
   /** The period's length; `from` is later where counting began inside it (counted). */
   span: number;
   from: string;

@@ -6,10 +6,11 @@
 // slowly growing, Today's unique only from the day it began, how far a visit
 // got and who came back only from the day the game began counting them, and
 // games under their older names (online and hot-seat apart) before hot seat
-// went, as the real account has them, and each device's frames, with a few
-// days iPhones stuttered more, as a bad deploy would show.
+// went, as the real account has them, and each device's frames (a few
+// computers' drawn in software), with a few days iPhones stuttered more,
+// as a bad deploy would show.
 
-import { MOMENTS, framesEvent } from '../lib/stutter.ts';
+import { MOMENTS, SOFTWARE, framesEvent } from '../lib/stutter.ts';
 import type { Named } from './api.ts';
 import { keptChanges } from './changes.ts';
 import { sameSites, spikesOf, stepsOf } from './insights.ts';
@@ -72,12 +73,12 @@ const REACH_FROM = '2026-09-01';
 const MODES_FROM = '2026-10-14';
 /** The day the made-up game began counting how smoothly a game's frames came (count.ts countGameFrames). */
 const FRAMES_FROM = '2026-10-01';
-/** The devices games are played on, how often a game stutters some and many on each, and the moment it most often does. */
+/** The devices games are played on, how often a game stutters some and many on each, the moment it most often does, and how often it's drawn in software (a computer's alone). */
 const DEVICE_MIX = [
-  { device: 'desktop-chrome', share: 0.46, some: 0.08, many: 0.02, mostly: 'question' },
-  { device: 'desktop-other', share: 0.09, some: 0.12, many: 0.03, mostly: 'deal' },
-  { device: 'ios', share: 0.27, some: 0.2, many: 0.05, mostly: 'reveal' },
-  { device: 'android', share: 0.18, some: 0.28, many: 0.1, mostly: 'deal' },
+  { device: 'desktop-chrome', share: 0.46, some: 0.08, many: 0.02, mostly: 'question', software: 0.03 },
+  { device: 'desktop-other', share: 0.09, some: 0.12, many: 0.03, mostly: 'deal', software: 0.01 },
+  { device: 'ios', share: 0.27, some: 0.2, many: 0.05, mostly: 'begin', software: 0 },
+  { device: 'android', share: 0.18, some: 0.28, many: 0.1, mostly: 'deal', software: 0 },
 ] as const;
 /** A made-up deploy that made iPhones stutter at the reveal, and the one that mended it: what a jump looks like. */
 const IOS_WORSE = ['2026-10-20', '2026-10-24'] as const;
@@ -86,10 +87,11 @@ const IOS_WORSE = ['2026-10-20', '2026-10-24'] as const;
 function framesPath(day: string, rnd: () => number): string {
   let pick = rnd();
   const d = DEVICE_MIX.find((m) => (pick -= m.share) < 0) ?? DEVICE_MIX[0];
+  if (rnd() < d.software) return framesEvent(d.device, SOFTWARE);
   const worse = d.device === 'ios' && day >= IOS_WORSE[0] && day < IOS_WORSE[1];
   const r = rnd() / (worse ? 2.4 : 1);
   const bucket = r < d.many ? 'many' : r < d.many + d.some ? 'some' : 'smooth';
-  const worst = bucket === 'smooth' ? null : worse ? 'reveal' : rnd() < 0.5 ? d.mostly : MOMENTS[Math.floor(rnd() * 3)];
+  const worst = bucket === 'smooth' ? null : worse ? 'reveal' : rnd() < 0.5 ? d.mostly : MOMENTS[Math.floor(rnd() * MOMENTS.length)];
   return framesEvent(d.device, { bucket, worst });
 }
 
@@ -314,7 +316,7 @@ export function demoRead(days: number, at = new Date()): Read {
   const now = countsOf(nowPaths, daysBetween(from, today), ZONE, until);
   const before = countsOf(pathsOf(daysBetween(fromBefore, toBefore), hoursSoFar), daysBetween(fromBefore, toBefore), ZONE, until);
   return {
-    v: 11,
+    v: 12,
     span: days,
     from,
     to: today,
