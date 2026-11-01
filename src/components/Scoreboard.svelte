@@ -112,6 +112,51 @@
       board.style.removeProperty('--board-zoom');
     };
   });
+  // Wrapped in rows (a desktop's full room), every name whole unless cutting
+  // the longest ones would save a row: then they're cut, but no further than
+  // that takes, and never below the 9.5rem they once were held to. Again
+  // whenever the row's width or an entry changes and once the fonts are in.
+  $effect(() => {
+    const board = boardEl;
+    if (tight || !board) return;
+    const rows = () => new Set([...board.children].map((li) => (li as HTMLElement).offsetTop)).size;
+    const capAt = (px: number) => board.style.setProperty('--name-cap', `${px}px`);
+    const fit = () => {
+      board.style.removeProperty('--name-cap');
+      if (getComputedStyle(board).flexWrap !== 'wrap') return;
+      const whole = rows();
+      const names = [...board.querySelectorAll<HTMLElement>('.name')].filter((n) => n.offsetParent);
+      if (whole < 2 || !names.length) return;
+      let lo = Math.round(9.5 * parseFloat(getComputedStyle(document.documentElement).fontSize));
+      let hi = Math.max(...names.map((n) => n.scrollWidth));
+      if (lo >= hi) return;
+      capAt(lo);
+      const fewest = rows();
+      if (fewest >= whole) {
+        board.style.removeProperty('--name-cap');
+        return;
+      }
+      // The widest cap that still saves the row(s).
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        capAt(mid);
+        if (rows() <= fewest) lo = mid;
+        else hi = mid;
+      }
+      capAt(lo);
+    };
+    fit();
+    void document.fonts?.ready.then(fit);
+    const ro = new ResizeObserver(fit);
+    ro.observe(board.parentElement!);
+    const mo = new MutationObserver(fit);
+    mo.observe(board, { subtree: true, childList: true, characterData: true, attributeFilter: ['class'] });
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+      board.style.removeProperty('--name-cap');
+    };
+  });
   const target = $derived(s.settings.targetScore);
   const race = $derived(s.settings.mode === 'race');
   const missed = $derived(new Set(s.question?.misses.map((m) => m.playerId) ?? []));
@@ -1300,8 +1345,9 @@
     line-height: 1.1;
     white-space: nowrap;
     overflow: hidden;
-    /* No width of its own: the name takes what the row has, and is cut short only once the row runs out. */
+    /* No width of its own: the name takes what the row has, and is cut short only once the row runs out, or where cutting saves a row (--name-cap, set above). */
     text-overflow: ellipsis;
+    max-width: var(--name-cap, none);
     /* Room for descenders (g, y) that overflow: hidden would clip at line-height 1.1 */
     padding-bottom: 0.2em;
     margin-bottom: -0.2em;
