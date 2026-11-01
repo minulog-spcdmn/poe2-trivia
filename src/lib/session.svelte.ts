@@ -97,7 +97,7 @@ import { helloRefusal, noPrivate, parseSaved, privateFrom, rememberSecret, soloH
 import { sawLine, START_LINES } from './delveStart';
 import { seenLines } from './delveStartSeen';
 import { keepAwake } from './wakeLock';
-import { AWAY_AFTER_MS, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
+import { AWAY_AFTER_MS, goneFromEnd, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
 import { markStarted } from './started';
 
 /** The room is told how its players stand at most this often (Session.updateStandingPaced). */
@@ -435,8 +435,9 @@ class Session {
    */
   idle = $state(false);
   /**
-   * Online, in the lobby: how each player who isn't simply ready stands
-   * (presence.ts), by id. The host works it out and tells everyone.
+   * Online, in the lobby and on the end screen: how each player who isn't
+   * simply ready stands (presence.ts), by id. The host works it out and tells
+   * everyone.
    */
   standing = $state.raw<Record<string, Standing>>({});
   /** Follows this device's presence (set up on the first room opened or joined): a guest tells the host, a host the room. */
@@ -1374,16 +1375,17 @@ class Session {
   }
 
   /**
-   * Host, in the lobby: works out how each player stands (presence.ts) and,
-   * when that changed, tells everyone. Players who are simply ready, and
-   * those offline (Player.connected says so), aren't listed.
+   * Host, in the lobby and on the end screen: works out how each player
+   * stands (presence.ts) and, when that changed, tells everyone. Players who
+   * are simply ready, and those offline (Player.connected says so), aren't
+   * listed.
    */
 
   private updateStanding() {
     const s = this.state;
     const now = Date.now();
     const next: Record<string, Standing> = {};
-    if (this.mode === 'host' && s?.phase === 'lobby') {
+    if (this.mode === 'host' && (s?.phase === 'lobby' || s?.phase === 'over')) {
       const links = new Map([...this.guests.values()].flatMap((g) => (g.playerId ? [[g.playerId, g] as const] : [])));
       for (const p of s.players) {
         const g = links.get(p.id);
@@ -2792,6 +2794,8 @@ class Session {
     // out), and its art goes out while the reveal plays, after the reveal's own last patches.
     if (patchesOut) this.drawAhead(next, patchesOut);
     this.scheduleTimers(next);
+    // Into or out of the lobby or the end screen: how everyone stands is told now, not at the next ping.
+    if (this.mode === 'host' && prev?.phase !== next.phase) this.updateStanding();
     this.syncBeacon(next);
     this.save();
   }
@@ -2821,12 +2825,22 @@ class Session {
   private syncBeacon(s: GameState) {
     const want = this.mode === 'host' && !this.roomless && !!s.settings.public;
     if (want && !this.beacon) {
-      this.beacon = new Beacon((challenge) => this.listing(challenge));
+      this.beacon = new Beacon((challenge) => (this.unlisted() ? null : this.listing(challenge)));
       this.beacon.start();
     } else if (!want && this.beacon) {
       this.beacon.stop();
       this.beacon = null;
     }
+  }
+
+  /**
+   * The room is left off the list for now: its host has gone from the end
+   * screen (presence.ts goneFromEnd), and only they can start the next game.
+   * It keeps its listing slot, and is listed again once they're back. An
+   * invite's screen is still told what the room is (probeDesk).
+   */
+  private unlisted() {
+    return this.state?.phase === 'over' && goneFromEnd(ownPresence(), Date.now());
   }
 
   private roomInfo(): RoomInfo | null {

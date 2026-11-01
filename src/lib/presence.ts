@@ -2,7 +2,8 @@
 // screen and in use (here), on screen but untouched for a while (idle), or
 // behind another tab or app, or a screen gone dark (away). The host adds
 // what it sees of each guest's link (slow), and tells everyone how each
-// player stands, so the lobby can show who is ready before the game begins.
+// player stands, so the lobby can show who is ready before the game begins,
+// and the end screen who is still there for the next.
 
 /** How this device's player is, by their own device. */
 export type Presence = 'here' | 'idle' | 'away';
@@ -37,6 +38,18 @@ export function standingOf(seen: Seen, slow: boolean, now: number): Standing | n
   if (seen.presence === 'idle') return 'idle';
   return slow ? 'slow' : null;
 }
+
+/**
+ * Gone from the screen this long on the end screen (or idle there), a host has
+ * their room left off the room list until they're back: only they can start
+ * the next game, so whoever joined would wait on nobody. Longer than
+ * AWAY_AFTER_MS, so a look at another tab between games doesn't take the room
+ * off the list and put it back.
+ */
+export const UNLISTED_AWAY_MS = 60_000;
+
+/** Whether a host on the end screen has gone from it, as far as the room list goes (UNLISTED_AWAY_MS). */
+export const goneFromEnd = (seen: Seen, now: number) => seen.presence === 'idle' || (seen.presence === 'away' && now - seen.since >= UNLISTED_AWAY_MS);
 
 /** Whether a guest's link is slow now, given whether it was (hysteresis, so it doesn't flicker), its round trip and how long since its last pong. */
 export function slowLink(was: boolean, rtt: number, sincePong: number): boolean {

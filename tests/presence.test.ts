@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AWAY_AFTER_MS, LATE_PONG_MS, SLOW_CLEAR_MS, SLOW_RTT_MS, greyed, markOf, missingNote, namesList, notReady, slowLink, standingOf } from '../src/lib/presence.ts';
+import { AWAY_AFTER_MS, LATE_PONG_MS, SLOW_CLEAR_MS, SLOW_RTT_MS, UNLISTED_AWAY_MS, goneFromEnd, greyed, markOf, missingNote, namesList, notReady, slowLink, standingOf } from '../src/lib/presence.ts';
 
 test('a player gone from the screen shows as away only once a quick look elsewhere is over', () => {
   const since = 1000;
@@ -12,6 +12,17 @@ test('a player gone from the screen shows as away only once a quick look elsewhe
   assert.equal(standingOf({ presence: 'idle', since }, true, since), 'idle');
   assert.equal(standingOf({ presence: 'here', since }, true, since), 'slow');
   assert.equal(standingOf({ presence: 'here', since }, false, since), null);
+});
+
+test('a host idle on the end screen, or away from it a minute, takes the room off the list; a look at another tab does not', () => {
+  const since = 1000;
+  assert.ok(UNLISTED_AWAY_MS > AWAY_AFTER_MS);
+  assert.equal(goneFromEnd({ presence: 'here', since }, since + 10 * UNLISTED_AWAY_MS), false);
+  assert.equal(goneFromEnd({ presence: 'away', since }, since + AWAY_AFTER_MS), false);
+  assert.equal(goneFromEnd({ presence: 'away', since }, since + UNLISTED_AWAY_MS - 1), false);
+  assert.equal(goneFromEnd({ presence: 'away', since }, since + UNLISTED_AWAY_MS), true);
+  // Idle is already two minutes untouched.
+  assert.equal(goneFromEnd({ presence: 'idle', since }, since), true);
 });
 
 test("a slow link doesn't flicker: it turns slow above one round trip and clears below a shorter one", () => {
