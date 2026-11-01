@@ -11,7 +11,7 @@
   import { fade } from './lib/transitions';
   import { cubicIn, cubicOut, quintOut } from 'svelte/easing';
   import { light } from './lib/lights';
-  import { motion } from './lib/motion.svelte';
+  import { calm, motion } from './lib/motion.svelte';
   import { session } from './lib/session.svelte';
   import { depthAmbience, getVolume, isMuted, setMuted, setVolume, sfx, veinAmbience } from './lib/sound';
   import { actionOf, keybinds, readLayout, typing } from './lib/keybinds.svelte';
@@ -57,6 +57,12 @@
   /** Shown again after a crash (Root.svelte). */
   let { recovered = false }: { recovered?: boolean } = $props();
 
+  // A game the page reloaded on is picked up before anything here reads the
+  // session, so the first screen is the game's own (`shown` below), coming in
+  // by itself, rather than the start page mounting and fading out for it.
+  // (Not after a crash (Root.svelte): what was there is still there, or was left on purpose.)
+  if (!untrack(() => recovered)) untrack(() => session.resume());
+
   // Beta and dev only: ?record keeps how this player plays, for the room bots (lib/recorder.ts).
   let recording = $state(wantsRecording());
   /** The room code in the header, copied as every code a player passes on is (one shows at a time). */
@@ -97,8 +103,6 @@
   }
 
   onMount(() => {
-    // (Not after a crash (Root.svelte): what was there is still there, or was left on purpose.)
-    if (!recovered) session.resume();
     // Camera shake moves the UI (#app clips it, so it can't add scrolling).
     // Anything fixed to the viewport must live outside .shell: App's own
     // overlays sit after it, and the screens' go to <body> with use:portal.
@@ -364,6 +368,24 @@
     if (screen !== 'home') headerFor = screen;
   });
   const headerPage = $derived(headerFor === 'codex' || headerFor === 'settings');
+  /**
+   * The screen the header's line (the round, the room) is for: the one
+   * showing, held while the last one goes and changed as the next arrives
+   * (arrive()), so it never runs ahead of the screen it describes. The start
+   * page has none: the header keeps the line it had as it goes.
+   */
+  let metaFor = $state(untrack(() => screen));
+  $effect.pre(() => {
+    if (shown !== null && shown !== 'home') metaFor = shown;
+  });
+  /** A line going and the next coming, in the same place. */
+  const metaFade = (node: Element) => plainFade(node, calm({ duration: 250 }));
+  /** A number changing: the old one rises out as the new one rises in under it. */
+  function roll(node: Element, { out = false } = {}): TransitionConfig {
+    const { duration } = calm({ duration: 200 });
+    const by = out ? -4 : 4;
+    return { duration, easing: cubicOut, css: (t, u) => `opacity: ${t}; transform: translateY(${u * by}px)` };
+  }
   const showHeader = () => (headerOn = screen !== 'home');
   $effect(() => {
     if (screen !== 'home' === untrack(() => headerOn)) return;
@@ -454,7 +476,7 @@
   // use, the codex. (All of it from here: anything queued as the page starts, before
   // App has mounted, would go ahead of the lobby.)
   onMount(() => {
-    const undo = [whenSettled(loadLobby), preloadPeerJs(), whenSettled(loadGamePages), preloadEd25519(), loadFontsAhead(), whenSettled(fetchCodexPage)];
+    const undo = [whenSettled(loadLobby), preloadPeerJs(), whenSettled(loadGamePages), preloadEd25519(), loadFontsAhead(), whenSettled(fetchCodexPage), whenSettled(loadSettingsPage)];
     return () => undo.forEach((f) => f());
   });
   // From the moment a room is being made or joined, while it still connects:
@@ -631,10 +653,12 @@
 <svelte:window bind:innerWidth={winW} bind:innerHeight={winH} onkeydown={anywhereKeys} />
 
 <div class="shell" class:swapping data-behind-dialog bind:this={shell}>
+  <!-- Back to the start page, the header and the links under the screen fade with the screen going (.leaving),
+       holding their place till it has gone, when they are taken away (showHeader) and the start page comes. -->
   {#if headerOn}
     <!-- (Out of reach while a zone's card covers it with its bar: no focus lands on what can't be seen.) -->
     <!-- data-cursor: where other players' pointers are placed (PeerCursors) over the header, the same on every screen. -->
-    <header data-cursor="header" class:folded class:full={folded && fullRoom(gs?.players.length ?? 0)} in:fade={{ duration: 300 }} bind:this={headerEl} bind:offsetHeight={headerHeight} use:heightVar={'header-h'} inert={!!zoneCard}>
+    <header data-cursor="header" class:folded class:full={folded && fullRoom(gs?.players.length ?? 0)} class:leaving={screen === 'home'} in:fade|global={calm({ duration: 300 })} bind:this={headerEl} bind:offsetHeight={headerHeight} use:heightVar={'header-h'} inert={!!zoneCard}>
       <button class="brand" data-cursor="brand" onclick={() => (page ? closePage() : askLeave())} title={headerPage ? 'Back to the start' : 'Leave game'}>
         <span class="brand-mark" aria-hidden="true">
           {#each ['', 'hot'] as cls (cls)}
@@ -644,57 +668,62 @@
         <span>PoE2.Quest{#if BETA}{' '}<small class="beta">Beta</small>{:else if LOCAL}{' '}<small class="beta">Local</small>{/if}</span>
       </button>
       <div class="meta" data-cursor="meta" bind:this={metaEl}>
-        {#if gs?.delve && (screen === 'game' || screen === 'over')}
-          <!-- Delve: no target, just how deep. -->
-          {#if folded}
-            <!-- (Folded: no room code, the depth and zone alone.) -->
-          {:else if session.code && !session.hideCode}
-            <span>Room <b class="code" data-copy {@attach codePress.attach}>{session.code}</b></span>
-          {:else}
-            <span>Delve</span>
-          {/if}
-          {#if session.spectating}
-            {#if !folded}<span class="dot">•</span>{/if}
-            <span class="spectating" title={session.justWatching ? "You’re watching without playing." : "You’ll play in the next game."}>Spectating</span>
-          {/if}
-          <!-- The depth as players count it (shownDepth). A run under way at 0
-               names none here: the banner below has its start line (Game.svelte),
-               too long for this line on a phone. -->
-          <!-- (Going down into a new zone, the depth before until its cards are dealt: lib/dealing.svelte.ts.) -->
-          {@const round = shownRound(gs)}
-          {#if screen !== 'game' || shownDepth(round) > 0}
-            {#if !folded || session.spectating}<span class="dot">•</span>{/if}
-            <span class="depth" style:--accent={accentAt(round)} in:fade={{ duration: 600 }}>Depth <b>{shownDepth(round)}</b></span>
-          {/if}
-          <!-- And the zone it's in, in its colour; a new one fades in as it's announced. -->
-          {#if !folded || session.spectating || shownDepth(round) > 0}<span class="dot zone-dot">•</span>{/if}
-          {#key zoneAt(round)}
-            <span class="zone" style:--accent={accentAt(round)} in:fade={{ duration: 900, delay: 500 }}>{zoneAt(round)}</span>
-          {/key}
-        {:else if gs && screen === 'game'}
-          {#if session.code && !session.hideCode && !folded}
-            <span>Room <b class="code" data-copy {@attach codePress.attach}>{session.code}</b></span>
-            <span class="dot">•</span>
-          {/if}
-          {#if session.spectating}
-            <span class="spectating" title={session.justWatching ? "You’re watching without playing." : "You’ll play in the next game."}>Spectating</span>
-            <span class="dot">•</span>
-          {/if}
-          {#if gs.deathmatch}
-            <span class="deathmatch"><DuelMark /> Deathmatch</span>
-            <span class="dot">•</span>
-            <span>Round {gs.deathmatch.round}</span>
-          {:else}
-            <span>{gs.settings.mode === 'race' ? 'Question' : 'Round'} {gs.round}</span>
-            <span class="dot target">•</span>
-            <span class="target">First to <b>{gs.settings.targetScore}</b></span>
-          {/if}
-        {:else if session.mode === 'local' || session.hereOnly}
-          <span>On this device</span>
-        {:else if session.code && screen !== 'lobby'}
-          <!-- The lobby shows the code in big letters. (Hidden for streaming, a copy still gives it.) -->
-          <span>Room <b class="code" data-copy {@attach codePress.attach}>{session.hideCode ? '••••••' : session.code}</b></span>
-        {/if}
+        <!-- Changed with the screen it is for (metaFor), the old line fading as the new one comes. -->
+        {#key metaFor}
+          <div class="meta-line" in:metaFade out:metaFade>
+            {#if gs?.delve && (metaFor === 'game' || metaFor === 'over')}
+              <!-- Delve: no target, just how deep. -->
+              {#if folded}
+                <!-- (Folded: no room code, the depth and zone alone.) -->
+              {:else if session.code && !session.hideCode}
+                <span>Room <b class="code" data-copy {@attach codePress.attach}>{session.code}</b></span>
+              {:else}
+                <span>Delve</span>
+              {/if}
+              {#if session.spectating}
+                {#if !folded}<span class="dot">•</span>{/if}
+                <span class="spectating" title={session.justWatching ? "You’re watching without playing." : "You’ll play in the next game."}>Spectating</span>
+              {/if}
+              <!-- The depth as players count it (shownDepth). A run under way at 0
+                   names none here: the banner below has its start line (Game.svelte),
+                   too long for this line on a phone. -->
+              <!-- (Going down into a new zone, the depth before until its cards are dealt: lib/dealing.svelte.ts.) -->
+              {@const round = shownRound(gs)}
+              {#if metaFor !== 'game' || shownDepth(round) > 0}
+                {#if !folded || session.spectating}<span class="dot">•</span>{/if}
+                <span class="depth" style:--accent={accentAt(round)} in:fade={{ duration: 600 }}>Depth <b>{@render rolled(shownDepth(round))}</b></span>
+              {/if}
+              <!-- And the zone it's in, in its colour; a new one fades in as it's announced. -->
+              {#if !folded || session.spectating || shownDepth(round) > 0}<span class="dot zone-dot">•</span>{/if}
+              {#key zoneAt(round)}
+                <span class="zone" style:--accent={accentAt(round)} in:fade={{ duration: 900, delay: 500 }}>{zoneAt(round)}</span>
+              {/key}
+            {:else if gs && metaFor === 'game'}
+              {#if session.code && !session.hideCode && !folded}
+                <span>Room <b class="code" data-copy {@attach codePress.attach}>{session.code}</b></span>
+                <span class="dot">•</span>
+              {/if}
+              {#if session.spectating}
+                <span class="spectating" title={session.justWatching ? "You’re watching without playing." : "You’ll play in the next game."}>Spectating</span>
+                <span class="dot">•</span>
+              {/if}
+              {#if gs.deathmatch}
+                <span class="deathmatch"><DuelMark /> Deathmatch</span>
+                <span class="dot">•</span>
+                <span>Round {@render rolled(gs.deathmatch.round)}</span>
+              {:else}
+                <span>{gs.settings.mode === 'race' ? 'Question' : 'Round'} {@render rolled(gs.round)}</span>
+                <span class="dot target">•</span>
+                <span class="target">First to <b>{gs.settings.targetScore}</b></span>
+              {/if}
+            {:else if session.mode === 'local' || session.hereOnly}
+              <span>On this device</span>
+            {:else if session.code && metaFor !== 'lobby'}
+              <!-- The lobby shows the code in big letters. (Hidden for streaming, a copy still gives it.) -->
+              <span>Room <b class="code" data-copy {@attach codePress.attach}>{session.hideCode ? '••••••' : session.code}</b></span>
+            {/if}
+          </div>
+        {/key}
         <CopyNote press={codePress} />
       </div>
       <div class="tools">
@@ -779,7 +808,7 @@
 
   <!-- The end of a game closes with the start page's footer, the legal links in it. -->
   {#if headerOn && screen !== 'over'}
-    <nav class="legal" class:hidden={legalHidden} aria-label="Legal" bind:this={legalNav} use:heightVar={'legal-h'}>
+    <nav class="legal" class:hidden={legalHidden} class:leaving={screen === 'home'} in:fade|global={calm({ duration: 300 })} aria-label="Legal" bind:this={legalNav} use:heightVar={'legal-h'}>
       {@render legalLinks()}
     </nav>
   {/if}
@@ -803,6 +832,15 @@
     <p>Part of the game couldn’t be loaded.</p>
     <button class="btn primary" onclick={() => location.reload()}>Reload</button>
   </div>
+{/snippet}
+
+<!-- A number in the header (the round, the depth) that rolls over as it changes. -->
+{#snippet rolled(n: number)}
+  <span class="roll">
+    {#key n}
+      <span in:roll out:roll={{ out: true }}>{n}</span>
+    {/key}
+  </span>
 {/snippet}
 
 {#snippet legalLinks()}
@@ -934,6 +972,13 @@
     padding: calc(0.8rem + env(safe-area-inset-top)) 1.25rem 0.8rem;
     border-bottom: 1px solid rgba(125, 99, 51, 0.22);
     background: linear-gradient(180deg, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0));
+    transition: opacity 0.3s;
+  }
+  /* Going with the screen, as fast (App's SCREEN_OUT_MS). */
+  header.leaving,
+  .legal.leaving {
+    opacity: 0;
+    transition: opacity 0.13s ease-in;
   }
   /* A gold hairline, brightest in the middle, over the header's lower edge. */
   header::after {
@@ -1007,9 +1052,9 @@
     }
   }
 
+  /* The line in it, and while it changes the one going, in the same place. */
   .meta {
-    display: flex;
-    gap: 0.55rem;
+    display: grid;
     align-items: center;
     font-family: var(--font-cinzel);
     font-size: 0.78rem;
@@ -1017,8 +1062,21 @@
     text-transform: uppercase;
     color: var(--muted);
   }
+  .meta-line {
+    grid-area: 1 / 1;
+    display: flex;
+    gap: 0.55rem;
+    align-items: center;
+  }
   .meta b {
     color: var(--gold-hi);
+  }
+  /* A number rolling over: the one going and the one coming in one place. */
+  .roll {
+    display: inline-grid;
+  }
+  .roll > span {
+    grid-area: 1 / 1;
   }
   .dot {
     color: var(--gold-lo);
@@ -1268,7 +1326,7 @@
     .brand span:last-child {
       display: none;
     }
-    .meta {
+    .meta-line {
       justify-content: center;
       flex-wrap: wrap;
       font-size: 0.66rem;
@@ -1302,7 +1360,7 @@
     header.folded .brand {
       visibility: hidden;
     }
-    header.folded .meta {
+    header.folded .meta-line {
       gap: 0.45rem;
       letter-spacing: 0.12em;
     }
