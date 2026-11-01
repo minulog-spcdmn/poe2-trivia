@@ -142,8 +142,8 @@ export const PAINTED: Painted[] = [
   },
   {
     file: 'src/lib/fossilFlight.ts',
-    animate: { in: ['flyFossil'], props: ['color'] },
-    why: 'Once a run at most, 0.9 s, as a fossil lands in its tally: the count’s few letters (“6 of 25”) take a warm light and give it back, drawn again only while it fades.',
+    animate: { in: ['revealFossil'], props: ['filter', '-webkit-mask-position', 'mask-position', 'color'] },
+    why: 'Once a run at most, about 1 s, as a fossil kept is shown: its picture (120 px at most) comes sharp out of a bright blur, a band of light slides across a copy of it once (twice for a rare), and its name’s letters, written in one by one, cool from a pale light to their colour.',
   },
   { file: 'src/spatialPage/Menu.svelte', animate: { in: ['flash'], props: ['box-shadow'] }, why: 'A dev page’s (spatial.html), never the game’s: 0.7 s, the shadow round an option or a score row as a sound plays from it.' },
   { file: 'src/components/zonecard/family.ts', animate: { in: ['enterDefault', 'exitDefault'], props: ['filter'] }, why: LETTERS },

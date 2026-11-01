@@ -976,140 +976,54 @@ h3,
   --bs-fill-paint: transparent;
 }
 
-/* Find moment: a fossil unearthed (lib/fossilFlight.ts). The stone comes up
-   out of the right answer over the art, darkened behind it by a veil, is
-   struck and splits, the fossil in the hollow; its name and count come up
-   under it, and it flies to the line. All of it hangs on the body, outside
-   the game's stage, zoomed as the stage is (global for that). The stone is
-   engraved bone on unlit slate, as its card (design-direction.md). */
-.fossil-find {
+/* Find moment: a fossil kept (lib/fossilFlight.ts), held to the lamp
+   (direction-a.md). The amber light that waited on the question rises to the
+   item; at its brightest the fossil is there, whole, in its own art; a band
+   of lamplight sweeps it and it goes sharp; its name is written in beneath,
+   its count under that, and it flies to the line. All of it hangs on the
+   body, outside the game's stage, zoomed as the stage is (global for that).
+   The big light round it is the backdrop's (lights.ts), dithered; the veil
+   is dithered too. */
+.fossil-reveal {
   position: fixed;
   inset: 0;
   z-index: 50;
   pointer-events: none;
 }
-.fossil-find .ff-veil {
+.fossil-reveal .fr-veil {
   position: absolute;
   opacity: 0;
   image-rendering: pixelated;
   background:
-    radial-gradient(closest-side, rgba(0, 0, 0, 0.45) 50%, transparent),
+    radial-gradient(closest-side, rgba(0, 0, 0, 0.68) 55%, transparent),
     var(--dither);
 }
-.fossil-find .ff-piece {
+/* The light as it rises: a small hot heart (small enough not to band). */
+.fossil-reveal .fr-heart {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0;
+  background: radial-gradient(closest-side, #fff2c4, #ffd04a 30%, rgba(236, 106, 16, 0.55) 60%, transparent);
+}
+.fossil-reveal .fr-piece {
   position: absolute;
   opacity: 0;
 }
-.fossil-find .ff-stone,
-.fossil-find .ff-stone svg,
-.fossil-find .ff-art {
+.fossil-reveal .fr-art,
+.fossil-reveal .fr-sweep {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-}
-/* The fossil, the stone's width: what it held. */
-.fossil-find .ff-art {
-  inset: 6%;
-  width: 88%;
-  height: 88%;
   object-fit: contain;
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.75));
 }
-.fossil-find .ff-half {
-  overflow: visible;
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.7));
+.fossil-reveal .fr-art {
+  filter: brightness(2.3) saturate(0.8) blur(3px);
 }
-.fossil-find .ff-half :is(.rim, .ring, .seam, .hatch, .parting) {
-  fill: none;
-  stroke: #e6dcc6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.fossil-find .ff-half .rim {
-  stroke-width: 1.7;
-}
-.fossil-find .ff-half .ring {
-  stroke-width: 0.8;
-  stroke-opacity: 0.7;
-}
-/* The rings broken where the seam crosses them: the slate under it. */
-.fossil-find .ff-half .parting {
-  stroke: #0b0d10;
-  stroke-width: 2.4;
-}
-.fossil-find .ff-half .seam {
-  stroke-width: 0.6;
-  stroke-opacity: 0.5;
-}
-.fossil-find .ff-half .hatch {
-  stroke-width: 0.6;
-  stroke-opacity: 0.55;
-}
-.fossil-find .ff-strike {
-  overflow: visible;
-}
-.fossil-find .ff-strike .draw {
-  fill: none;
-  stroke: #f6f0e2;
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-dasharray: 100;
-  stroke-dashoffset: 100;
-  visibility: hidden;
-  filter: drop-shadow(0 0 2px rgba(255, 236, 200, 0.9));
-}
-.fossil-find .ff-label {
-  position: absolute;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1px;
+/* The band of lamplight: the fossil again, overbright, under a stripe that slides across it (as glint.ts's). */
+.fossil-reveal .fr-sweep {
   opacity: 0;
-  transform: translate(-50%, 6px);
-  white-space: nowrap;
-  text-align: center;
-}
-/* Named as a PoE tooltip names a currency item. */
-.fossil-find .ff-name {
-  font-family: var(--font-tooltip);
-  font-size: 1.3rem;
-  line-height: 1.15;
-  color: #aa9e82;
-  --drop-shadow: 0 1px 2px rgba(0, 0, 0, 0.95), 0 0 12px rgba(0, 0, 0, 0.85);
-  text-shadow: var(--drop-shadow-paint, var(--drop-shadow));
-}
-.fossil-find .ff-count,
-.fossil-find .ff-all {
-  font-family: var(--font-cinzel);
-  font-size: 0.8rem;
-  letter-spacing: 0.08em;
-  color: #e6dcc6;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
-}
-.fossil-find .ff-all {
-  font-size: 0.7rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: #f6d688;
-}
-/* A rare's word, in gold, and the glint that crosses it once (as glint.ts's: a pale copy under a sliding stripe). */
-.fossil-find .ff-rare {
-  position: relative;
-  font-family: var(--font-cinzel);
-  font-size: 0.7rem;
-  font-weight: 600;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  color: #f6d688;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
-}
-.fossil-find .ff-rare .sheen {
-  position: absolute;
-  inset: 0;
-  color: #fff4cf;
-  text-shadow: none;
+  filter: brightness(2.2) saturate(1.3);
   -webkit-mask-image: linear-gradient(105deg, transparent 40%, #000 50%, transparent 60%);
   mask-image: linear-gradient(105deg, transparent 40%, #000 50%, transparent 60%);
   -webkit-mask-size: 300% 100%;
@@ -1117,11 +1031,62 @@ h3,
   -webkit-mask-position: 100% 0;
   mask-position: 100% 0;
 }
+/* A rare's second sweep, red-gold. */
+.fossil-reveal .fr-sweep.red {
+  filter: brightness(1.9) sepia(1) saturate(4) hue-rotate(-18deg);
+}
+/* A rare's ring of light, running out over the stage. */
+.fossil-reveal .fr-ring {
+  position: absolute;
+  opacity: 0;
+  border-radius: 50%;
+  border: 2px solid #ffd27a;
+  box-shadow:
+    0 0 8px 1px rgba(255, 140, 40, 0.85),
+    inset 0 0 8px 1px rgba(200, 48, 12, 0.85);
+  transform: translate(-50%, -50%);
+}
+.fossil-reveal .fr-label {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  opacity: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  text-align: center;
+}
+/* Named as a PoE tooltip names a currency item. */
+.fossil-reveal .fr-name {
+  font-family: var(--font-tooltip);
+  font-size: 1.3rem;
+  line-height: 1.15;
+  color: #aa9e82;
+  --drop-shadow: 0 1px 2px rgba(0, 0, 0, 0.95), 0 0 12px rgba(0, 0, 0, 0.85);
+  text-shadow: var(--drop-shadow-paint, var(--drop-shadow));
+}
+.fossil-reveal .fr-count,
+.fossil-reveal .fr-rare {
+  opacity: 0;
+  font-family: var(--font-cinzel);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  color: #e6dcc6;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
+}
+.fossil-reveal .fr-rare {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: #ffb428;
+}
 @media (max-width: 640px), (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
-  .fossil-find .ff-name {
+  .fossil-reveal .fr-name {
     font-size: 1.1rem;
   }
-  .fossil-find .ff-count {
+  .fossil-reveal .fr-count {
     font-size: 0.72rem;
   }
 }

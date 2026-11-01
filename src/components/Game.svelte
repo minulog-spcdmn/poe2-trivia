@@ -40,7 +40,7 @@
   import { backdropDropShadow } from '../lib/backdropDropShadow';
   import { outWithoutInert } from '../lib/leaving';
   import { switchedOff } from '../lib/switchedOff';
-  import { stopFossilFlight } from '../lib/fossilFlight';
+  import { shatterFossilMark, stopFossilFlight } from '../lib/fossilFlight';
 
   const s = $derived(session.state!);
   // The circles behind the coming question and at the game's end, built ahead away from the page.
@@ -131,7 +131,7 @@
       if (introTimer) clearTimeout(introTimer);
       deathmatchMood(false);
       fireAmbience(false);
-      // A fossil being unearthed (lib/fossilFlight.ts) hangs on the page, not the game: it goes with the game.
+      // A fossil being shown (lib/fossilFlight.ts) hangs on the page, not the game: it goes with the game.
       stopFossilFlight();
     };
   });
@@ -416,7 +416,11 @@
       const still = motion.still;
       // Blown apart as it still shows (the DOM is the old question's until this flush ends).
       const old = document.querySelector<HTMLElement>('.questions .q-slot');
-      if (!still && old) blastAway({ node: old, side: b.side, mine: !!b.by && (b.by === session.myPlayerId || session.mode === 'local') });
+      if (!still && old) {
+        // A fossil card's light on it shatters with it, in amber (lib/fossilFlight.ts).
+        shatterFossilMark(old);
+        blastAway({ node: old, side: b.side, mine: !!b.by && (b.by === session.myPlayerId || session.mode === 'local') });
+      }
       // A fresh question, as on a new turn: back up to its art (on phones the
       // button was often pressed scrolled down, under the answers).
       if (pageScroll()[1] > 0) window.scrollTo({ top: 0, behavior: 'smooth' });

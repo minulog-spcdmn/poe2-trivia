@@ -71,7 +71,7 @@ const asked = (v: Values): Partial<Settings> => {
 /** How far into a question its scene stands (ms). */
 const INTO = 3000;
 /**
- * The fossils this device holds before a fossil is unearthed in a scene: the
+ * The fossils this device holds before a fossil is kept in a scene: the
  * first `n` (commons and rares mixed in as the codex's scenes have them),
  * always leaving one of `tier` to find (at 24, the last of the set).
  */
@@ -103,9 +103,10 @@ const FOSSIL_TIER: Control = {
 };
 const FOSSILS_HELD: Control = { kind: 'range', key: 'held', label: 'Fossils held before', min: 0, max: 24, step: 1, default: 6 };
 const FOSSIL_RIGHT: Control = { kind: 'toggle', key: 'right', label: 'Answered right', default: true };
-const DEEPER_EARLY: Control = { kind: 'toggle', key: 'early', label: 'Delve Deeper pressed early', default: false };
-/** Delve Deeper, pressed once the moment is under way (as the stone hangs). */
-const pressedEarly = (v: Values): Step[] => (v.early ? [{ wait: 1000 }, { click: '[data-cursor="next"]' }] : []);
+const DEEPER_EARLY: Control = { kind: 'toggle', key: 'early', label: 'Delve Deeper mid-flight', default: false };
+const FOSSIL_BLAST: Control = { kind: 'toggle', key: 'blast', label: 'Dynamite instead', default: false };
+/** Delve Deeper, pressed as the fossil flies to the line (lib/fossilFlight.ts, FOSSIL_REVEAL: 2.7 to 3.36 s). */
+const pressedEarly = (v: Values): Step[] => (v.early ? [{ wait: 2950 }, { click: '[data-cursor="next"]' }] : []);
 
 /** How long a scene played on from a question shows it before it moves on (ms). */
 const BLOW_AFTER = 1200;
@@ -420,30 +421,34 @@ export function gameScenes(): Scene[] {
       },
     ),
     // A fossil's question answered, played as it happens (lib/fossilFlight.ts):
-    // right, its stone comes up out of the answer, splits, shows which fossil
-    // the card never named, and flies to the line; wrong, it stays in the stone.
+    // its light waits on the question; right, it rises to the item and the
+    // fossil the card never named is there in it, lit, named, then flown to
+    // the line; wrong, the light goes out and the fossil is lost; dynamite
+    // shatters the light with the question.
     {
-      ...scene('delve-fossil-found', 'Delve alone', 'A fossil’s question answered right: unearthed, which one shown, flown to the line', [ALONE], delveAlone, {
-        controls: [FOSSIL_TIER, FOSSILS_HELD, FOSSIL_RIGHT, DEEPER_EARLY],
+      ...scene('delve-fossil-found', 'Delve alone', 'A fossil’s question answered right: kept, which one shown, flown to the line', [ALONE], delveAlone, {
+        controls: [FOSSIL_TIER, FOSSILS_HELD, FOSSIL_RIGHT, DEEPER_EARLY, FOSSIL_BLAST],
         states: [
-          { label: 'A common unearthed', values: {} },
-          { label: 'A rare unearthed', values: { tier: 'rare' } },
+          { label: 'A common kept', values: {} },
+          { label: 'A rare kept', values: { tier: 'rare' } },
           { label: 'The first fossil', values: { held: 0 } },
           { label: 'The 25th: the set complete', values: { held: 24, tier: 'rare' } },
-          { label: 'Answered wrong: it stays in the stone', values: { right: false } },
-          { label: 'Delve Deeper pressed early', values: { early: true } },
+          { label: 'Answered wrong: the fossil lost', values: { right: false } },
+          { label: 'Delve Deeper mid-flight', values: { early: true } },
+          { label: 'Dynamite: its light shatters', values: { blast: true } },
         ],
       }),
       build: (v = {}) => {
         const tier = v.tier === 'rare' ? 'rare' : 'common';
         const held = heldBefore(Number(v.held ?? 6), tier);
         const t = delveAlone();
-        t.engine.setFossilsHeld((ids) => ids.map(() => ({ held: fossilMask(held), day: null })));
+        t.engine.setFossilsHeld((ids) => ids.map(() => fossilMask(held)));
         t.s.delve!.fossil = { category: t.s.offered[0], tier };
+        if (v.blast) t.s = { ...t.s, delve: { ...t.s.delve!, inventory: { [pid('Kalguur')]: { wards: 0, flares: 0, dynamite: 1 } } } };
         t.pick();
         const shown = t.s;
         const at = t.clock.now + INTO;
-        const answered = t.answer(null, v.right !== false, INTO + BLOW_AFTER).s;
+        const answered = v.blast ? t.wait(INTO + BLOW_AFTER).act({ type: 'blast', askedAt: t.q.askedAt }, null).s : t.answer(null, v.right !== false, INTO + BLOW_AFTER).s;
         return {
           state: shown,
           act: t.room,
@@ -661,15 +666,16 @@ export function gameScenes(): Scene[] {
       ...scene(
         'delve-together-fossil-found',
         'Delve together',
-        'A fossil’s question answered right: everyone standing unearths one of their own, each seeing theirs',
+        'A fossil’s question answered right: everyone standing keeps one of their own, each seeing theirs',
         [host('Kalguur'), guest('Doryani'), WATCHER],
         (v) => delveTogether(v),
         {
           controls: [players(2, 3), FOSSIL_TIER, FOSSIL_RIGHT, { kind: 'toggle', key: 'taken', label: 'Doryani’s found one this run', default: false }],
           states: [
-            { label: 'Each unearths their own', values: {} },
+            { label: 'Each keeps their own', values: {} },
+            { label: 'A rare, each their own', values: { tier: 'rare' } },
             { label: 'Doryani’s found one this run', values: { taken: true } },
-            { label: 'Answered wrong: it stays in the stone', values: { right: false } },
+            { label: 'Answered wrong: the fossil lost', values: { right: false } },
           ],
         },
       ),
@@ -677,7 +683,7 @@ export function gameScenes(): Scene[] {
         const tier = v.tier === 'rare' ? 'rare' : 'common';
         const held = heldBefore(6, tier);
         const t = delveTogether(v);
-        t.engine.setFossilsHeld((ids) => ids.map(() => ({ held: fossilMask(held), day: null })));
+        t.engine.setFossilsHeld((ids) => ids.map(() => fossilMask(held)));
         if (v.taken) t.s.delve!.fossils = [{ id: 'scorched', depth: 2, at: t.clock.now - 90_000, to: [pid('Doryani')] }];
         t.s.delve!.fossil = { category: t.s.offered[0], tier };
         for (const p of t.s.players) t.act({ type: 'vote', category: t.s.offered[0] }, p.name);

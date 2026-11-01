@@ -1,177 +1,78 @@
-// A fossil unearthed (docs/gameplay.md, Delve, "Fossils"). Its card said
-// only that a fossil was in the stone; a right answer is the payoff, the
-// moment it is split out and which one it is shows. The nodule (the card's
-// stone: an exact ellipse, two growth rings, hatched on the side turned from
-// the light, a fine seam across) comes up out of the right answer to the
-// middle of the item's art, is struck, splits along its seam, and the
-// fossil lies in the hollow in its own art and colours, the first amber the
-// player sees. Its name comes up under it, then it flies to its place in
-// the line under the title (QuestionView's .found-fossil), where it stays
-// for the rest of the question.
+// A fossil kept (docs/gameplay.md, Delve, "Fossils"): the reveal, held to
+// the lamp. The card never said which fossil; a right answer is the payoff,
+// the biggest moment a right answer has in Delve. The amber light that waited
+// at the stage's foot while the question was up (QuestionView's
+// .fossil-mark) swells up beside the item; at its brightest the fossil is
+// there, whole and lit, in its own art; a band of lamplight sweeps across it
+// and its shape goes sharp, glints ringing off its edges; its name is written
+// in beneath, letter by letter, as the pen writes a circle's script. A rare
+// gets a second sweep in red-gold and a ring of light out over the stage.
+// Then it flies to its place in the line under the title (QuestionView's
+// .found-fossil), where it stays for the rest of the question.
 //
 // The motion, in order (ms from the verdict, which marks the answer and
-// flares the circle first):
-//   450 to 830    it comes up: out of the right answer to the art's middle,
-//                 growing from 0.35, fast and then slowing, as a thing lifted
-//                 out; a veil darkens the art behind it;
-//   830 to 950    it hangs, settling 4 px, its weight felt;
-//   950 to 1110   the strike: the stone jolts, the seam is drawn across by
-//                 the pen, bright;
-//   1110 to 1430  it splits along the seam: the upper half tips off to the
-//                 right, the lower drops away to the left (16 px out, 14
-//                 degrees, falling 10, fading), stone shards and dust fly, a
-//                 warm light behind; the fossil grows from 0.85 between them;
-//   1430 to 1700  its name (Fontin SmallCaps, the currency colour) rises
-//                 6 px under it as it fades in, the count under that in
-//                 Cinzel, "Rare" for a rare, catching the gold glint once;
-//   1700 to 2900  held;
-//   2900 to 3560  it flies to the line along an arc that rises before it
+// flares the circle first; green stays the right answer's):
+//   300 to 450    the light rises from the stage's foot to the item's middle,
+//                 swelling as it comes, fast and then slowing;
+//   450           at its brightest the fossil is there, whole: it comes up
+//                 overbright and soft and settles to its own light and edge
+//                 by 900, as the band of lamplight sweeps across it (450 to
+//                 820); the light it came in goes out into it;
+//   560           glints ring off its edges, a warm light flashes behind;
+//   700 to 1300   its name is written in beneath, letter by letter;
+//   1300 to 1550  its count comes in under it ("7 of 25"; "Rare" for a rare);
+//   900 to 1300   a rare: the second sweep, red-gold, and a ring of light
+//                 running out over the stage;
+//   1550 to 2700  held;
+//   2700 to 3360  it flies to the line along an arc that rises before it
 //                 falls, shrinking to the line's picture; the name and count
-//                 fade here as the line's fade in there; the veil lifts;
-//   3560          it lands: the line's picture takes it with a short swell.
-// With reduced motion, nothing comes up: the line alone, at 450 ms.
+//                 fade here as the line's come in there; the veil lifts;
+//   3360          it lands: the line's picture takes it with a short swell.
+// With reduced motion, nothing moves: the line alone, at 450 ms.
 //
 // It all hangs on the page's body (fixed, outside the game's transformed
 // stage), zoomed as the stage is, built and taken away here.
 
 import { backdropDropShadow } from './backdropDropShadow.ts';
-import { drawIn } from './drawIn.ts';
 import { glints, puffs, shards } from './fx/effects.ts';
 import type { Vec3 } from './fx/core.ts';
-import { light } from './lights.ts';
+import { holdLight, light } from './lights.ts';
 import { sfx } from './sound.ts';
 import { zoomOf } from './stage.ts';
 import { fossilArt, fossilById, type FossilId } from './fossils.ts';
+import { FOSSIL_REVEAL, type FindSize } from './fossilReveal.ts';
 
-/** When each beat starts (ms from the verdict). */
-const RISE = 450;
-const HANG = 830;
-const STRIKE = 950;
-const SPLIT = 1110;
-const NAME = 1430;
-const HOLD = 1700;
-const FLY = 2900;
-const LANDS = 3560;
+const { RISE, LIT, SWEPT, SHARP, GLINTS, NAME, COUNT, SHOWN, FLY, LANDS, RARE, RARE_SWEEP, RING, LINE_LEAD } = FOSSIL_REVEAL;
 
-/** The line's words fade in this long before the fossil lands in it. */
-const LINE_LEAD = 260;
-
-/** Shards of the stone (bone) and of what it held (amber), for the fx (HDR). */
-const SHARD_BONE: Vec3 = [1.9, 1.8, 1.6];
-const SHARD_AMBER: Vec3 = [2.6, 1.35, 0.45];
-const DUST: Vec3 = [0.34, 0.32, 0.28];
+/** Amber's light (direction-a.md), for the fx and the lights (HDR). */
+const AMBER: Vec3 = [1, 0.62, 0.22];
+const AMBER_HOT: Vec3 = [3.1, 2.2, 0.9];
+const RED_GOLD: Vec3 = [3.0, 1.2, 0.35];
+const EMBER: Vec3 = [0.5, 0.22, 0.05];
 
 /** The art box (stage px) under which the fossil comes up over the whole question instead. */
 const ART_MIN = 120;
 
-export type FindSize = 'desk' | 'upright' | 'flat';
-/** The stone's size (stage px): 96 on a desk, 72 on a phone upright, 56 on its side. */
-const STONE: Record<FindSize, number> = { desk: 96, upright: 72, flat: 56 };
-
-// ---- the stone ------------------------------------------------------------
-
-/**
- * The stone, as its card engraves it (findEngraving.ts nodule: the same
- * proportions, rings, shading and seam, so the stone that comes up is the
- * one the card showed), in a 100-unit box: an exact ellipse, 23 across to 16
- * down; two growth rings about a core a little toward the light (the upper
- * left); lines leaning 28 degrees over the side turned from it; and the seam
- * across, 8 degrees aslant (its right end the higher), kinked three times.
- */
-const CX = 50;
-const CY = 50;
-const RX = 44;
-const RY = (RX * 16) / 23;
-type P = [number, number];
-const rad = (d: number) => (d * Math.PI) / 180;
-const SEAM_TILT = -8;
-const SEAM_KINKS: P[] = [
-  [0.22, 0.09],
-  [0.48, -0.07],
-  [0.74, 0.05],
-];
-/** The seam's points, left end to right, on the rim at either end. */
-const SEAM: P[] = (() => {
-  const u: P = [Math.cos(rad(SEAM_TILT)), Math.sin(rad(SEAM_TILT))];
-  const v: P = [-u[1], u[0]];
-  const k = 1 / Math.hypot(u[0] / RX, u[1] / RY);
-  const along = (t: number, off: number): P => [CX + u[0] * k * (2 * t - 1) + v[0] * off * RY, CY + u[1] * k * (2 * t - 1) + v[1] * off * RY];
-  return [along(0, 0), ...SEAM_KINKS.map(([t, off]) => along(t, off)), along(1, 0)];
-})();
-const f = (n: number) => n.toFixed(2);
-const pathOf = (pts: P[]) => `M${pts.map(([x, y]) => `${f(x)} ${f(y)}`).join('L')}`;
-const SEAM_D = pathOf(SEAM);
-/** The seam run on past the rim either way, along its own slant, to cut the halves apart. */
-const SEAM_CUT: P[] = (() => {
-  const [a, b] = [SEAM[0], SEAM.at(-1)!];
-  const u: P = [Math.cos(rad(SEAM_TILT)), Math.sin(rad(SEAM_TILT))];
-  return [[a[0] - u[0] * 30, a[1] - u[1] * 30], ...SEAM, [b[0] + u[0] * 30, b[1] + u[1] * 30]];
-})();
-const ellipse = (cx: number, cy: number, rx: number, ry: number, cls: string, more = '') =>
-  `<ellipse cx="${f(cx)}" cy="${f(cy)}" rx="${f(rx)}" ry="${f(ry)}" class="${cls}"${more}/>`;
-
-let uid = 0;
-
-/**
- * One half of the stone (`side` -1 the upper, 1 the lower) as an SVG: the
- * whole stone drawn and cut along the seam. Engraved bone on unlit slate;
- * the rings break where the seam crosses them (a slate line under it).
- */
-function half(side: -1 | 1): SVGSVGElement {
-  const id = `ff${++uid}`;
-  const cut = `${pathOf(SEAM_CUT)}L${side < 0 ? '130 -30L-30 -30' : '130 130L-30 130'}Z`;
-  const lean: P = [Math.sin(rad(28)), Math.cos(rad(28))];
-  let hatch = '';
-  for (let o = -90; o <= 90; o += 2.3) {
-    const m: P = [CX + lean[1] * o, CY - lean[0] * o];
-    hatch += `M${f(m[0] - lean[0] * 80)} ${f(m[1] - lean[1] * 80)}L${f(m[0] + lean[0] * 80)} ${f(m[1] + lean[1] * 80)}`;
-  }
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 100 100');
-  svg.setAttribute('class', `ff-half ${side < 0 ? 'up' : 'down'}`);
-  svg.innerHTML = `<defs>
-    <clipPath id="${id}c"><path d="${cut}"/></clipPath>
-    <linearGradient id="${id}g" x1="0.25" y1="0" x2="0.75" y2="1"><stop offset="0" stop-color="#1b2027"/><stop offset="0.7" stop-color="#08090b"/></linearGradient>
-    <mask id="${id}m" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">
-      ${ellipse(CX, CY, RX - 2.2, RY - 2.2, '', ' fill="#fff"')}
-      ${ellipse(CX - RX * 0.2, CY - RY * 0.26, RX * 0.98, RY * 0.94, '', ' fill="#000"')}
-    </mask>
-  </defs>
-  <g clip-path="url(#${id}c)">
-    ${ellipse(CX, CY, RX, RY, 'body', ` fill="url(#${id}g)"`)}
-    <path d="${hatch}" mask="url(#${id}m)" class="hatch"/>
-    ${[0.66, 0.36].map((g) => ellipse(CX - RX * 0.04 * (1 - g), CY - RY * 0.06 * (1 - g), RX * g, RY * g, 'ring')).join('')}
-    <path d="${SEAM_D}" class="parting"/>
-    <path d="${SEAM_D}" class="seam"/>
-    ${ellipse(CX, CY, RX, RY, 'rim')}
-  </g>`;
-  return svg;
-}
-
-/** The seam struck, drawn across by the pen (drawIn.ts) from `at` (s into the moment), bright. */
-function strikeLine(at: number): SVGSVGElement {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 100 100');
-  svg.setAttribute('class', 'ff-strike');
-  svg.innerHTML = `<path d="${SEAM_D}" pathLength="100" class="draw" style="--d: ${at}; --t: ${(SPLIT - STRIKE) / 1000}"/>`;
-  return svg;
-}
-
-// ---- the moment -------------------------------------------------------------
+const SIZE = FOSSIL_REVEAL.SIZE;
 
 let current: { stop: () => void } | null = null;
 
 const easeInOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 const OUT = 'cubic-bezier(0.22, 1, 0.36, 1)';
+/** A band of light across the fossil: its copy's mask slides from off the left to off the right (as glint.ts's stripe). */
+const SWEEP: Keyframe[] = [
+  { opacity: 1, maskPosition: '100% 0', webkitMaskPosition: '100% 0' },
+  { opacity: 1, maskPosition: '0% 0', webkitMaskPosition: '0% 0' },
+] as Keyframe[];
 
-export type Unearthing = {
+export type Reveal = {
   id: FossilId;
   /** The fossils held now, this one in it, of `total`. */
   count: number;
   total: number;
-  /** The right answer it comes up out of (null: it comes up where it hangs). */
+  /** The light that waited at the stage's foot (the question's mark), where it rises from (null: the art's foot). */
   from: Element | null;
-  /** The item's art, whose middle it hangs over, and the question, for art too small or gone. */
+  /** The item's art, whose middle it comes to, and the question, for art too small or gone. */
   art: Element | null;
   stage: Element | null;
   /** Its place in the line, once there is one to fly to. */
@@ -186,11 +87,21 @@ export type Unearthing = {
 /** A box in the overlay's own px (the page's over `z`). */
 const own = (r: DOMRect, z: number) => ({ x: r.left / z, y: r.top / z, w: r.width / z, h: r.height / z });
 
+/** The fossil's art as an image, `cls` its part. */
+function picture(id: FossilId, cls: string) {
+  const img = document.createElement('img');
+  img.className = cls;
+  img.src = fossilArt(id, 256);
+  img.alt = '';
+  img.draggable = false;
+  return img;
+}
+
 /**
  * Plays it from now, the verdict. Says what stops it (a new one, the
  * question going, Delve Deeper pressed early): all of it goes to the line.
  */
-export function unearth(u: Unearthing): () => void {
+export function revealFossil(u: Reveal): () => void {
   current?.stop();
   const t0 = performance.now();
   const timers: ReturnType<typeof setTimeout>[] = [];
@@ -203,11 +114,14 @@ export function unearth(u: Unearthing): () => void {
     u.onLine(phase);
   };
   let root: HTMLElement | null = null;
-  let pen: ReturnType<typeof drawIn> | null = null;
   let shadow: { destroy(): void } | null = null;
+  let lamp: ReturnType<typeof holdLight> | null = null;
+  let glow = 0;
   const stop = () => {
     for (const t of timers) clearTimeout(t);
-    pen?.stop();
+    cancelAnimationFrame(glow);
+    lamp?.release();
+    lamp = null;
     shadow?.destroy();
     root?.remove();
     root = null;
@@ -217,69 +131,71 @@ export function unearth(u: Unearthing): () => void {
   current = { stop };
 
   if (u.still) {
-    at(RISE, () => say('landed'));
+    at(LIT, () => say('landed'));
     return stop;
   }
 
   at(RISE, () => {
-    const answer = u.from?.getBoundingClientRect();
     const artBox = u.art?.getBoundingClientRect();
     const over = artBox && u.art && artBox.height / zoomOf(u.art) >= ART_MIN ? u.art : u.stage;
     const overBox = over?.getBoundingClientRect();
     if (!overBox || !overBox.width) return stop();
     const z = zoomOf(over!);
     const box = own(overBox, z);
-    const n = STONE[u.size];
+    const n = SIZE[u.size];
     const fossil = fossilById(u.id);
 
     root = document.createElement('div');
-    root.className = 'fossil-find';
+    root.className = 'fossil-reveal';
     root.setAttribute('aria-hidden', 'true');
     root.style.zoom = String(z);
     const veil = document.createElement('div');
-    veil.className = 'ff-veil';
+    veil.className = 'fr-veil';
     Object.assign(veil.style, { left: `${box.x}px`, top: `${box.y}px`, width: `${box.w}px`, height: `${box.h}px` });
 
-    const label = document.createElement('div');
-    label.className = 'ff-label';
-    label.classList.toggle('rare', fossil.rare);
-    const name = document.createElement('span');
-    name.className = 'ff-name';
-    name.textContent = fossil.name;
-    const count = document.createElement('span');
-    count.className = 'ff-count';
-    count.textContent = `${u.count} of ${u.total}`;
-    label.append(name, count);
-    if (fossil.rare) {
-      const rare = document.createElement('span');
-      rare.className = 'ff-rare';
-      rare.innerHTML = '<span class="word">Rare</span><span class="sheen" aria-hidden="true">Rare</span>';
-      label.append(rare);
-    }
-    if (u.count >= u.total) {
-      const all = document.createElement('span');
-      all.className = 'ff-all';
-      all.textContent = 'Every fossil unearthed';
-      label.append(all);
-    }
+    // The fossil, lit; the band of lamplight that sweeps it (a copy of it, overbright, under a sliding stripe); a rare's red-gold one.
     const piece = document.createElement('div');
-    piece.className = 'ff-piece';
-    const stone = document.createElement('div');
-    stone.className = 'ff-stone';
-    const art = document.createElement('img');
-    art.className = 'ff-art';
-    art.src = fossilArt(u.id, 256);
-    art.alt = '';
-    art.draggable = false;
-    const upper = half(-1);
-    const lower = half(1);
-    const seam = strikeLine(STRIKE / 1000);
-    stone.append(lower, upper, seam);
-    piece.append(art, stone);
-    root.append(veil, piece, label);
+    piece.className = 'fr-piece';
+    const art = picture(u.id, 'fr-art');
+    const sweep = picture(u.id, 'fr-sweep');
+    piece.append(art, sweep);
+    const sweep2 = fossil.rare ? picture(u.id, 'fr-sweep red') : null;
+    if (sweep2) piece.append(sweep2);
+
+    // Its name, each letter on its own to be written in; its count; a rare's word.
+    const label = document.createElement('div');
+    label.className = 'fr-label';
+    const name = document.createElement('span');
+    name.className = 'fr-name';
+    const letters = [...fossil.name].map((ch) => {
+      const l = document.createElement('span');
+      l.textContent = ch;
+      return l;
+    });
+    name.append(...letters);
+    const count = document.createElement('span');
+    count.className = 'fr-count';
+    count.textContent = u.count >= u.total ? `${u.count} of ${u.total} • every fossil kept` : `${u.count} of ${u.total}`;
+    label.append(name, count);
+    let rareWord: HTMLElement | null = null;
+    if (fossil.rare) {
+      rareWord = document.createElement('span');
+      rareWord.className = 'fr-rare';
+      rareWord.textContent = 'Rare';
+      label.append(rareWord);
+    }
+    const ring = fossil.rare ? document.createElement('div') : null;
+    if (ring) ring.className = 'fr-ring';
+
+    // The light that rises: a small bright heart (the big light round it is the backdrop's, dithered: lights.ts).
+    const heart = document.createElement('div');
+    heart.className = 'fr-heart';
+
+    root.append(veil, ...(ring ? [ring] : []), heart, piece, label);
     document.body.append(root);
-    // The stone and its words centred on the art together (its words measured as laid out), kept inside it.
-    const gap = Math.max(4, n * 0.06);
+
+    // The fossil and its words centred on the art together (its words measured as laid out), kept inside it.
+    const gap = Math.max(4, n * 0.05);
     const group = n + gap + label.offsetHeight;
     const cx = box.x + box.w / 2;
     const top = box.y + Math.max(0, (box.h - group) / 2);
@@ -287,98 +203,121 @@ export function unearth(u: Unearthing): () => void {
     Object.assign(piece.style, { left: `${cx - n / 2}px`, top: `${top}px`, width: `${n}px`, height: `${n}px` });
     label.style.left = `${cx}px`;
     label.style.top = `${top + n + gap}px`;
+    if (ring) Object.assign(ring.style, { left: `${cx}px`, top: `${cy}px`, width: `${n * 1.2}px`, height: `${n * 1.2}px` });
     shadow = backdropDropShadow(name);
-    pen = drawIn(t0);
-    pen.add(seam);
 
-    // It comes up out of the answer, growing, fast and then slowing; the veil comes with it.
-    const a = answer && answer.width ? own(answer, z) : { x: cx, y: cy + n, w: 0, h: 0 };
-    const dx = a.x + a.w / 2 - cx;
-    const dy = a.y + a.h / 2 - cy;
-    veil.animate([{ opacity: 0 }, { opacity: 1 }], { duration: HANG - RISE, easing: 'ease-out', fill: 'forwards' });
-    piece.animate(
+    // ---- the light rises from the stage's foot, swelling, to the item's middle ----
+    const fromBox = u.from?.getBoundingClientRect();
+    const f = fromBox && fromBox.width ? own(fromBox, z) : { x: cx, y: box.y + box.h - 16, w: 0, h: 0 };
+    const hs = n * 0.5;
+    Object.assign(heart.style, { left: `${cx - hs / 2}px`, top: `${cy - hs / 2}px`, width: `${hs}px`, height: `${hs}px` });
+    const dx = f.x + f.w / 2 - cx;
+    const dy = f.y + f.h / 2 - cy;
+    const risen = (LIT - RISE) / (LIT + 250 - RISE);
+    heart.animate(
       [
-        { opacity: 0, transform: `translate(${dx}px, ${dy}px) scale(0.35)`, easing: 'cubic-bezier(0.15, 0.85, 0.35, 1)' },
-        { opacity: 1, transform: 'translate(0, 0) scale(1)', offset: (HANG - RISE) / (STRIKE - RISE), easing: 'ease-in-out' },
-        { opacity: 1, transform: 'translate(0, 4px) scale(1)' },
+        { opacity: 0.85, transform: `translate(${dx}px, ${dy}px) scale(0.35)`, easing: 'cubic-bezier(0.3, 0.7, 0.4, 1)' },
+        { opacity: 1, transform: 'translate(0, 0) scale(1.6)', offset: risen, easing: 'ease-in' },
+        { opacity: 0, transform: 'translate(0, 0) scale(2.1)' },
       ],
-      { duration: STRIKE - RISE, fill: 'forwards' },
+      { duration: LIT + 250 - RISE, fill: 'forwards' },
     );
-    art.animate([{ opacity: 0, transform: 'scale(0.85)' }], { duration: 1, fill: 'forwards' });
+    veil.animate([{ opacity: 0 }, { opacity: 1 }], { duration: LIT - RISE + 150, easing: 'ease-out', fill: 'forwards' });
+    // The backdrop's light follows the heart up and swells with it, then settles on the fossil while it's shown.
+    lamp = holdLight(heart, AMBER, n * 1.4);
+    const lit = performance.now();
+    const breathe = () => {
+      const t = performance.now() - lit;
+      const up = Math.min(1, t / (LIT - RISE));
+      const k = t < LIT - RISE ? 0.25 + 0.55 * up * up : Math.max(0.32, 0.8 - ((t - (LIT - RISE)) / 900) * 0.48);
+      lamp?.set(k, n * (1.4 + 1.2 * up));
+      if (root && lamp) glow = requestAnimationFrame(breathe);
+    };
+    glow = requestAnimationFrame(breathe);
+    puffs(heart, { count: 4, color: EMBER, speed: [10, 40], size: [8, 16], area: 'centre' });
 
-    // The strike: the stone jolts under it as the seam runs across.
-    at(STRIKE, () => {
-      sfx('veinStrike');
-      stone.animate(
-        [{ transform: 'none' }, { transform: 'translate(1.5px, 1px) rotate(1.5deg)', offset: 0.2 }, { transform: 'translate(-1px, 0) rotate(-1deg)', offset: 0.55 }, { transform: 'none' }],
-        { duration: SPLIT - STRIKE, easing: 'ease-out' },
-      );
-    });
-
-    // It splits along the seam: the upper half tips off to the right, the lower drops away to the left, both falling; what it held lies between.
-    at(SPLIT, () => {
-      // The halves are seen to part whole, and only then fade; what they held comes up between them.
-      const open = { duration: NAME - SPLIT, easing: OUT, fill: 'forwards' as const };
-      const gone = { duration: 170, delay: 150, easing: 'ease-in', fill: 'forwards' as const };
-      upper.animate([{ transform: 'none' }, { transform: 'translate(16px, 10px) rotate(14deg)' }], open);
-      lower.animate([{ transform: 'none' }, { transform: 'translate(-16px, 10px) rotate(-14deg)' }], open);
-      for (const h of [upper, lower]) h.animate([{ opacity: 1 }, { opacity: 0 }], gone);
-      seam.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 120, fill: 'forwards' });
+    // ---- at its brightest, the fossil is there, whole; the lamplight sweeps it and it goes sharp ----
+    at(LIT, () => {
+      sfx('findReward');
+      piece.animate([{ opacity: 0, transform: 'scale(0.92)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 160, easing: OUT, fill: 'forwards' });
       art.animate(
         [
-          { opacity: 0, transform: 'scale(0.85)' },
-          { opacity: 1, transform: 'scale(0.93)', offset: 0.45 },
-          { opacity: 1, transform: 'scale(1)' },
+          { filter: 'brightness(2.3) saturate(0.8) blur(3px)' },
+          { filter: 'brightness(1.35) blur(0.6px)', offset: 0.55 },
+          { filter: 'brightness(1) blur(0)' },
         ],
-        { ...open, delay: 40, duration: NAME - SPLIT - 40 },
+        { duration: SHARP - LIT, easing: 'ease-out', fill: 'forwards' },
       );
-      shards(stone, { count: 12, colors: [SHARD_BONE, SHARD_BONE, SHARD_AMBER], cool: [0.3, 0.27, 0.22], speed: [60, 240], size: [2, 4.5], area: 'centre' });
-      puffs(stone, { count: 5, color: DUST, speed: [10, 50], size: [8, 16] });
-      light(piece, { color: [1, 0.62, 0.26], radius: 140, intensity: 0.5, hold: 0.5, decay: 1.4 });
+      sweep.animate(SWEEP, { duration: SWEPT - LIT, easing: 'cubic-bezier(0.45, 0, 0.3, 1)', fill: 'forwards' });
+      light(piece, { color: AMBER, radius: n * 2.4, intensity: 0.65, hold: 0.25, decay: 1.2 });
     });
+    at(GLINTS, () => glints(art, { count: 7, color: AMBER_HOT, area: 'edge', size: [4, 9], life: [0.5, 0.9], delay: [0, 0.22] }));
 
-    // Its name, the count under it; a rare's word catches the gold glint once.
+    // ---- its name, written in letter by letter; then its count ----
     at(NAME, () => {
-      sfx('findReward');
-      label.animate([{ opacity: 0, transform: 'translate(-50%, 6px)' }, { opacity: 1, transform: 'translate(-50%, 0)' }], { duration: HOLD - NAME, easing: OUT, fill: 'forwards' });
-      const sheen = label.querySelector<HTMLElement>('.ff-rare .sheen');
-      if (sheen) {
-        sheen.animate([{ maskPosition: '100% 0', webkitMaskPosition: '100% 0' }, { maskPosition: '0% 0', webkitMaskPosition: '0% 0' }] as Keyframe[], {
-          duration: 1100,
-          delay: 250,
-          easing: 'ease-in-out',
-          fill: 'both',
-        });
-        const word = label.querySelector('.ff-rare .word');
-        if (word) at(NAME + 250 + 600, () => glints(word, { count: 1, color: [2.7, 1.95, 0.85], area: 'edge', size: [5, 8] }));
-      }
+      label.style.opacity = '1';
+      const each = (COUNT - NAME - 300) / Math.max(1, letters.length - 1);
+      letters.forEach((l, i) =>
+        l.animate(
+          [
+            { opacity: 0, color: '#fff4cf' },
+            { opacity: 1, color: '#fff4cf', offset: 0.3 },
+            { opacity: 1, color: '#aa9e82' },
+          ],
+          { duration: 420, delay: i * each, easing: 'ease-out', fill: 'backwards' },
+        ),
+      );
+    });
+    at(COUNT, () => {
+      for (const el of [count, rareWord]) el?.animate([{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], { duration: SHOWN - COUNT, easing: OUT, fill: 'forwards' });
+      if (rareWord) at(COUNT + 200, () => glints(rareWord!, { count: 2, color: RED_GOLD, area: 'edge', size: [5, 8] }));
     });
 
-    // It flies to its place in the line; the name and count fade here as the line's come in there.
+    // ---- a rare: the second sweep, red-gold, and a ring of light out over the stage ----
+    if (sweep2 && ring) {
+      at(RARE, () => {
+        sweep2.animate(SWEEP, { duration: RARE_SWEEP, easing: 'cubic-bezier(0.45, 0, 0.3, 1)', fill: 'forwards' });
+        const reach = Math.max(box.w, box.h) / (n * 1.2);
+        ring.animate(
+          [
+            { opacity: 0, transform: 'translate(-50%, -50%) scale(0.6)' },
+            { opacity: 1, transform: 'translate(-50%, -50%) scale(0.9)', offset: 0.12 },
+            { opacity: 0, transform: `translate(-50%, -50%) scale(${(reach * 1.3).toFixed(2)})` },
+          ],
+          { duration: RING, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)', fill: 'forwards' },
+        );
+        light(piece, { color: [1, 0.42, 0.14], radius: n * 3.2, intensity: 0.5, hold: 0.15, decay: 1 });
+        glints(veil, { count: 8, color: RED_GOLD, area: 'fill', size: [3, 7], delay: [0.05, 0.4] });
+      });
+    }
+
+    // ---- it flies to the line; the name and count fade here as the line's come in there ----
     at(FLY, () => {
       const dest = u.to()?.getBoundingClientRect();
       label.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, easing: 'ease-in', fill: 'forwards' });
       veil.animate([{ opacity: 1 }, { opacity: 0 }], { duration: LANDS - FLY, easing: 'ease-in-out', fill: 'forwards' });
+      lamp?.release();
+      lamp = null;
       if (!dest || !dest.width) {
         piece.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 400, fill: 'forwards' });
         at(FLY + 400, () => stop());
         return;
       }
       const d = own(dest, z);
-      const start = { x: 0, y: 4 };
       const end = { x: d.x + d.w / 2 - cx, y: d.y + d.h / 2 - cy };
-      const ctrl = { x: (start.x + end.x) / 2, y: Math.min(start.y, end.y) - Math.max(50, Math.abs(end.x - start.x) * 0.25) };
+      const ctrl = { x: end.x / 2, y: Math.min(0, end.y) - Math.max(50, Math.abs(end.x) * 0.25) };
       const k = d.w / n;
       const frames: Keyframe[] = [];
       const steps = 24;
       for (let i = 0; i <= steps; i++) {
         const t = easeInOut(i / steps);
         const v = 1 - t;
-        const x = v * v * start.x + 2 * v * t * ctrl.x + t * t * end.x;
-        const y = v * v * start.y + 2 * v * t * ctrl.y + t * t * end.y;
+        const x = 2 * v * t * ctrl.x + t * t * end.x;
+        const y = 2 * v * t * ctrl.y + t * t * end.y;
         frames.push({ transform: `translate(${x}px, ${y}px) scale(${1 + (k - 1) * t}) rotate(${-8 * Math.sin(Math.PI * t)}deg)` });
       }
       piece.getAnimations().forEach((x) => x.cancel());
+      piece.style.opacity = '1';
       piece.animate(frames, { duration: LANDS - FLY, easing: 'linear', fill: 'forwards' });
     });
     at(LANDS - LINE_LEAD, () => say('words'));
@@ -394,5 +333,12 @@ export function unearth(u: Unearthing): () => void {
 /** Stops one under way, all of it going to the line (the game screen going: Game.svelte). */
 export const stopFossilFlight = () => current?.stop();
 
-/** The moment's timing, for the benches and tests (ms from the verdict). */
-export const FOSSIL_FIND = { RISE, HANG, STRIKE, SPLIT, NAME, HOLD, FLY, LANDS, LINE_LEAD, STONE } as const;
+/**
+ * Dynamite: the fossil's light on the question shatters with it, in amber
+ * shards (Game.svelte, as the blast takes the question in `node`).
+ */
+export function shatterFossilMark(node: Element) {
+  const box = node.querySelector('.fossil-mark')?.getBoundingClientRect();
+  if (!box?.width) return;
+  shards(box, { count: 14, colors: [AMBER_HOT, [2.6, 1.2, 0.3], [1.6, 0.6, 0.12]], cool: [0.4, 0.14, 0.03], speed: [120, 380], size: [2.5, 5.5], area: 'centre' });
+}
