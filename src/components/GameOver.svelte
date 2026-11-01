@@ -19,6 +19,7 @@
   import SiteFooter from './SiteFooter.svelte';
   import AchievementSeal from './AchievementSeal.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
+  import { backdropDropShadow } from '../lib/backdropDropShadow';
   import { fxActive, fxUserOn, onFxChange, overPage } from '../lib/fx/core';
   import { victory, winnerIgnites } from '../lib/fx/moments';
   import { fallen } from '../lib/fx/delveEnd';
@@ -812,30 +813,37 @@
   </ul>
 {/snippet}
 
-<!-- The fossil line: the set's progress, a plain link that opens the set (not gold: Delve again keeps the one gold
-     button). Its mark the fossil found; none, its place kept, when none was. -->
+<!-- The fossil line, every Delve run's: the set's progress in amber, a link that opens the set (not gold: Delve again
+     keeps the one gold button). A fossil kept this run is its prize: its icon lit from behind, and its name. -->
 {#snippet fossilFact(f: FossilFact)}
-  <li class="fossil-line" data-fossil={f.kind}>
-    <span class="ic" aria-hidden="true">
-      {#if f.kind === 'found'}<span class="mini sign"><img class="fossil-ic" src={fossilArt(f.id, 128)} alt="" /></span>{/if}
-    </span>
-    <span class="txt">
-      <button class="set-link" onclick={openSet} aria-haspopup="dialog">
-        {#if f.kind === 'found'}
-          {@const name = fossilById(f.id).name}
-          You unearthed {anOrA(name)} <span class="fossil-name">{name}</span> at depth <b class="n">{f.depth}</b>; <span class="of"><b class="n">{f.count}</b> of <b class="n">{f.total}</b>.</span>
-        {:else if f.kind === 'missed'}
-          A fossil got away at depth <b class="n">{f.depth}</b>; <span class="of"><b class="n">{f.count}</b> of <b class="n">{f.total}</b>.</span>
+  {#snippet count(f: FossilFact, words: string)}<button class="set-link" onclick={openSet} aria-haspopup="dialog"
+      >{#if words}{words}{:else}<b class="n">{f.count}</b> of <b class="n">{f.total}</b> fossils{/if}</button
+    >{/snippet}
+  {#if f.kind === 'found'}
+    {@const fossil = fossilById(f.id)}
+    <li class="fossil-line prize" class:rare={fossil.rare} data-fossil="found">
+      <span class="ic" aria-hidden="true"><img class="kept-ic" src={fossilArt(f.id, 128)} alt="" use:backdropDropShadow /></span>
+      <span class="txt">
+        <span class="kept">Kept {anOrA(fossil.name)} <span class="fossil-name">{fossil.name}</span></span>
+        <span class="kept-at">at depth <b class="n">{f.depth}</b>; {@render count(f, '')}.</span>
+      </span>
+    </li>
+  {:else}
+    <li class="fossil-line" data-fossil={f.kind}>
+      <span class="ic" aria-hidden="true"></span>
+      <span class="txt">
+        {#if f.kind === 'missed'}
+          Missed a fossil at depth <b class="n">{f.depth}</b>; {@render count(f, '')}.
         {:else if f.kind === 'held'}
-          Fossils: <span class="of"><b class="n">{f.count}</b> of <b class="n">{f.total}</b> in your codex.</span>
+          {@render count(f, '')} in your codex.
         {:else if f.kind === 'all'}
-          <span class="of">Every fossil unearthed.</span>
+          {@render count(f, `All ${f.total} fossils`)} kept.
         {:else}
-          <span class="of">Fossils for your codex turn up on cards from depth <b class="n">{FOSSIL_FROM.common}</b>.</span>
+          {@render count(f, 'Fossils')} for your codex turn up on cards from depth <b class="n">{FOSSIL_FROM.common}</b>.
         {/if}
-      </button>
-    </span>
-  </li>
+      </span>
+    </li>
+  {/if}
 {/snippet}
 
 <!-- A folded list's last place: how many more, opening it in place. A row of thumbs ends in a "+N" place, a list of
@@ -2072,36 +2080,78 @@
     object-fit: contain;
     filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
   }
-  /* The fossil line: a plain link to the set, its words as any line's; the count lights as it's pointed at. */
+  /* The fossil line's amber (the fossil card's note, lib/fossils): the set's count, a link to the set; its numbers too. */
   .set-link {
     display: inline;
     padding: 0;
     font: inherit;
     line-height: inherit;
     text-align: left;
-    color: inherit;
+    color: #ff9a3c;
     background: none;
     border: 0;
     cursor: pointer;
-  }
-  .set-link .of {
-    text-decoration: underline dotted color-mix(in srgb, currentColor 40%, transparent);
+    text-decoration: underline dotted rgba(255, 154, 60, 0.4);
     text-underline-offset: 3px;
     transition:
       color 0.2s,
       text-decoration-color 0.2s;
   }
-  .set-link:hover .of,
-  .set-link:focus-visible .of {
-    color: #f4ecdf;
-    text-decoration-color: color-mix(in srgb, currentColor 75%, transparent);
+  .set-link .n {
+    color: inherit;
   }
-  /* A fossil's name as PoE names a currency item (a fossil is one): its colour, in the tooltip's own type. */
+  .set-link:hover,
+  .set-link:focus-visible {
+    color: #ffc06a;
+    text-decoration-color: rgba(255, 192, 106, 0.8);
+  }
+  /*
+   * A fossil kept: its icon, larger than the line's marks (it reaches out of their column), lit from behind as amber
+   * held to a lamp. The light is its own shape's, drawn dithered by the backdrop (lib/backdropDropShadow.ts); CSS
+   * paints it where the backdrop can't, small enough not to band.
+   */
+  .prize {
+    min-height: 38px;
+    align-items: center;
+  }
+  .prize .ic {
+    position: relative;
+    align-self: stretch;
+  }
+  .kept-ic {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 38px;
+    height: 38px;
+    translate: -50% -50%;
+    object-fit: contain;
+    --drop-shadow: 0 0 3px rgba(255, 208, 74, 0.85), 0 0 12px rgba(236, 106, 16, 0.6);
+  }
+  .kept-ic:not([data-bs-drop]) {
+    filter: drop-shadow(0 0 3px rgba(255, 208, 74, 0.85)) drop-shadow(0 0 12px rgba(236, 106, 16, 0.6));
+  }
+  .rare .kept-ic {
+    --drop-shadow: 0 0 3px rgba(255, 180, 40, 0.95), 0 0 14px rgba(200, 48, 12, 0.7);
+  }
+  .rare .kept-ic:not([data-bs-drop]) {
+    filter: drop-shadow(0 0 3px rgba(255, 180, 40, 0.95)) drop-shadow(0 0 14px rgba(200, 48, 12, 0.7));
+  }
+  .prize .txt {
+    display: flex;
+    flex-direction: column;
+    padding-top: 0;
+  }
+  /* Its name as PoE's tooltip names it, in its own type, the amber's light. */
   .fossil-name {
     font-family: var(--font-tooltip);
-    color: #aa9e82;
+    color: #ffd27a;
   }
-  .fossil-line[data-fossil='missed'] .txt {
+  .rare .fossil-name {
+    color: #ffb46a;
+  }
+  .kept-at {
+    font-size: 0.9em;
     color: var(--muted);
   }
   /* The usual depth raised: the chart's dotted level, an arrow up from it, in its gold. */
