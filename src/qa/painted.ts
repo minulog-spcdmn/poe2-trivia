@@ -116,13 +116,7 @@ export const PAINTED: Painted[] = [
     file: 'src/components/ChooseCategory.svelte',
     keyframes: ['pulse'],
     selectors: ['.card.dm.mine:not(:global(.down)) .pulse', '.card.special.mine:not(:global(.down)) .pulse'],
-    why: 'A card you can pick swells, 2.4 s a breath (a duel’s) or 3.2 s (a find’s), for as long as the cards lie there: on a span of no size beside its face (--bs-pulse), which the WebGL backdrop reads for the card’s light (lib/backdropShadow), so Chrome paints nothing for it.',
-  },
-  {
-    file: 'src/components/ChooseCategory.svelte',
-    keyframes: ['pulse-paint'],
-    selectors: ['.card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on]))', '.card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on]))'],
-    why: 'The same swell where CSS paints the card’s light, without WebGL (no data-bs-on): the face’s own shadow (--bs1), so the face is drawn again each frame it runs, where faces are sharp its own layer at twice its size. Only on the cards yours to pick, face up; not measured, as no scene the redraw check watches has one (each scene’s faces read 0 px at rest). A layer of its own can’t make it smaller: the shadow is the face’s own.',
+    why: 'A card you can pick swells, 2.4 s a breath (a duel’s) or 3.2 s (a find’s), for as long as the cards lie there: on a span beside its face (--bs-pulse), which the WebGL backdrop reads for the card’s light (lib/backdropShadow), so Chrome paints nothing for it. Of no size while the backdrop draws the light; where CSS paints it, the span holds it on its ::before and ::after, layers of their own whose opacities swell, and --bs-pulse is read by nothing it paints.',
   },
   // ---- played from a script (element.animate)
   {
