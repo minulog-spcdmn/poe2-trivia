@@ -1732,10 +1732,14 @@
     align-items: baseline;
     column-gap: 0.6em;
     line-height: 1.15;
+    /* A line that wraps, where the plate is narrow (a phone on its side, six
+       answers beside it), keeps to the middle as the others do, in lines of
+       about one length. */
+    text-align: center;
+    text-wrap: balance;
   }
   .head-text .iname {
     flex-basis: 100%;
-    text-align: center;
   }
   .iname {
     font-family: var(--font-display);
