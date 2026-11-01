@@ -6,7 +6,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { calm } from '../lib/motion.svelte';
   import { engine } from '../lib/session.svelte';
   import { livesCost, type Codex, type Tally } from '../lib/codex';
   import { accuracy } from '../lib/codexStats';
@@ -155,7 +154,7 @@
       <div class="head">
         <NamePlate end="empty" />
         {#key item.id}
-          <div class="head-text" in:fade={calm({ duration: 250 })}>
+          <div class="head-text" in:fade={{ duration: 250 }}>
             <span class="iname" id="codex-item-name">{item.name}</span>
             <span class="ibase">{drawn.base}</span>
           </div>
@@ -193,20 +192,12 @@
       <!-- Both faces in one place, the card as tall as the one shown: switching grows or shrinks it. -->
       <div class="faces" style:height={faceH ? `${faceH}px` : undefined}>
         <div class="body face" class:on={view === 'item'} id="codex-item-face-item" role="tabpanel" aria-labelledby="codex-item-tab-item" inert={view !== 'item'} bind:offsetHeight={itemH}>
-          <!-- A variant picked or another item opened: its tooltip fades in as its art does. -->
           {#key drawn.art}
-            <div in:fade={calm({ duration: 250 })}>
-              <ItemDetails item={drawn} />
-            </div>
+            <ItemDetails item={drawn} />
           {/key}
         </div>
         <div class="body face" class:on={view === 'record'} id="codex-item-face-record" role="tabpanel" aria-labelledby="codex-item-tab-record" inert={view !== 'record'} bind:offsetHeight={recordH}>
-          <!-- Another item opened from its pills: its record fades in with its name. -->
-          {#key item.id}
-            <div in:fade={calm({ duration: 250 })}>
-              {@render record()}
-            </div>
-          {/key}
+          {@render record()}
         </div>
       </div>
     </div>
