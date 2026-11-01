@@ -510,6 +510,8 @@ test('a fossil card missed is kept in the run for the end screen: its depth, tie
   h.pick(h.plant('rare'));
   h.answer(false);
   assert.deepEqual(missedFossils(h.s), [{ depth: 14, tier: 'rare', to: ['p0'] }]);
+  assert.deepEqual(setProgress(emptyFossils(), h.s, 'p0', false).missed, [{ depth: 14, tier: 'rare', to: ['p0'] }], 'in the recap');
+  assert.deepEqual(setProgress(emptyFossils(), h.s, 'p9', false).missed, [], 'not another player’s');
   // A plain card missed, or a fossil card answered right: nothing.
   const plain = run(14, { held: fossilMask(['scorched']) });
   plain.pick(plain.s.offered.find((c) => !findOn(plain.s, c) && !isWayOut(c) && plain.s.delve!.fossil?.category !== c)!);
@@ -528,6 +530,7 @@ test('a fossil card missed is kept in the run for the end screen: its depth, tie
   if (t.s.phase !== 'reveal') t.act({ type: 'answer', index: wrongs[1], askedAt: q.askedAt }, 'p1');
   assert.equal(t.s.phase, 'reveal');
   assert.deepEqual(missedFossils(t.s), [{ depth: 20, tier: 'common', to: ['p0'] }]);
+  assert.deepEqual(setProgress(emptyFossils(), t.s, 'p1', false).missed, [], 'Brea held every common');
   // Read sanely.
   assert.deepEqual(missedFossils({ delve: { fossilsMissed: [{ depth: 3, tier: 'gold', to: [] }, null, { depth: 4, tier: 'rare', to: ['p0'] }] } } as unknown as GameState), [{ depth: 4, tier: 'rare', to: ['p0'] }]);
 });
@@ -596,7 +599,7 @@ test('erasing the codex erases the fossils, what was kept aside of them, and the
 test('the set’s progress for every Delve end screen: found of all, each tier, complete, and what this run gave', () => {
   const s = { delve: { fossils: [{ id: 'jagged', depth: 9, at: 1, to: ['p0'] }, { id: 'dense', depth: 12, at: 2, to: ['p1'] }] } } as unknown as GameState;
   const store: FossilStore = { found: { jagged: { at: 1, depth: 9 }, gilded: { at: 1, depth: 30 }, scorched: { at: 1, depth: 6 } } };
-  assert.deepEqual(setProgress(store, s, 'p0', false), { found: 3, total: 25, common: { found: 2, total: 17 }, rare: { found: 1, total: 8 }, complete: false, run: ['jagged'] });
+  assert.deepEqual(setProgress(store, s, 'p0', false), { found: 3, total: 25, common: { found: 2, total: 17 }, rare: { found: 1, total: 8 }, complete: false, run: ['jagged'], missed: [] });
   assert.deepEqual(setProgress(store, s, null, true).run, ['jagged', 'dense']);
   assert.deepEqual(setProgress(emptyFossils(), null, null, false).run, []);
   const all: FossilStore = { found: Object.fromEntries(FOSSIL_IDS.map((id) => [id, { at: 1, depth: 30 }])) };

@@ -8,10 +8,10 @@
 // items in their own type: plain text, a number, a player (marked "(you)"
 // for the viewer), an item or a category.
 
-import { DELVE_LIVES, DELVE_RULESET, FLARE_MS, delveStandings, isGroupRun, runFossils, shownDepth, teamDepth, type FindKind } from './delve.ts';
+import { DELVE_LIVES, DELVE_RULESET, FLARE_MS, delveStandings, isGroupRun, missedFossils, runFossils, shownDepth, teamDepth, type FindKind } from './delve.ts';
 import { FOSSILS, type FossilId } from './fossils.ts';
 import type { FossilStore } from './fossilStore.ts';
-import type { GameState, RecapItem } from './game.ts';
+import type { GameState, MissedFossil, RecapItem } from './game.ts';
 import { stratumName } from './descent.ts';
 import { counts, isTogether, type DelveRun } from './delveRecord.ts';
 import type { Answer } from './codex.ts';
@@ -349,6 +349,8 @@ export interface SetProgress {
   complete: boolean;
   /** Those this run gave this device's player (in `found` already, once kept), oldest first. */
   run: FossilId[];
+  /** The fossil cards this run missed that this device's player could have taken one from, oldest first (delve.ts missedFossils). */
+  missed: MissedFossil[];
 }
 
 /**
@@ -365,8 +367,10 @@ export function setProgress(store: FossilStore, s: GameState | null, me: string 
   const rare = tier(true);
   const found = common.found + rare.found;
   const total = common.total + rare.total;
-  const run = s ? runFossils(s).filter((f) => local || (me !== null && f.to.includes(me))).map((f) => f.id) : [];
-  return { found, total, common, rare, complete: found >= total, run };
+  const mine = (to: string[]) => local || (me !== null && to.includes(me));
+  const run = s ? runFossils(s).filter((f) => mine(f.to)).map((f) => f.id) : [];
+  const missed = s ? missedFossils(s).filter((f) => mine(f.to)) : [];
+  return { found, total, common, rare, complete: found >= total, run, missed };
 }
 
 /**
