@@ -130,15 +130,20 @@ never changes a day already played. `npm run deal` keeps every row before
 the cutoff as the live site has them (a week ahead, or a week from tomorrow
 in the last two hours of a UTC day: `cutoffDay` in `src/lib/daily.ts`) and
 deals the rest again from the item data as it is, so new items reach the
-days to come. The live site's rows are those of the newest github-pages
-deployment that went up (`scripts/live-dailies.mjs`, through the GitHub
-CLI; `origin/main`'s when that can't be reached). Run it last, after
+days to come. Each day is dealt from the answers of the days before it: an
+answer isn't asked again until as many days have gone by as three quarters
+of the items the daily may ask (`repeatGap`, about ten months), nor its
+twins (`TWINS`, the same picture turned or recoloured). The live
+site's rows are those of the newest github-pages deployment that went up
+(`scripts/live-dailies.mjs`, through the GitHub CLI; `origin/main`'s when
+that can't be reached). Run it last, after
 `fakes.json` and `dailyArt.json` are up to date. `tests/dailies.test.ts`
 holds it to that:
 
 - The rows from the cutoff on must be what a deal from the current data and
   code gives, so a forgotten deal, or a change to how the daily deals, fails
   until `npm run deal` is run.
+- No answer from the cutoff on may come back within `repeatGap` days.
 - No row before the cutoff may differ from the live site's. A merge that
   slipped past its cutoff fails the deploy, and the site stays as it was:
   run `npm run deal` on `main`, which puts those days back as the live site
@@ -230,7 +235,12 @@ renewed, within six hours.
 ## Deploying
 
 `.github/workflows/deploy.yml` builds and deploys to GitHub Pages on every push
-to `main`, served on **poe2.quest** (`public/CNAME`).
+to `main`, served on **poe2.quest** (`public/CNAME`). Every pull request into
+`main` runs two required checks first. Tests (`.github/workflows/tests.yml`)
+runs the types and the tests, as the deploy does once it's merged. Redraws
+(`.github/workflows/redraws.yml`) fails on something big Chrome draws again at
+rest, or a moment (a deal, a pick, the pointer over a card, a name plate drawn
+in) drawing more than it did ([docs/qa.md](docs/qa.md), “Redraws”).
 
 ### Beta
 
@@ -242,6 +252,11 @@ live. It has its own rooms, saves and invite links (`VITE_CHANNEL=beta`).
   deploys of `main` keep showing it.
 - **Ship it:** merge the branch into `main`. The beta stays as it is until the
   next one goes up.
+- **Check it on the QA desk:** **poe2.quest/beta/qa.html**. The deploy also
+  builds the code before the change (main where the branch left it) at
+  `/beta/before/` (`scripts/qa-before.mjs`), so **B** (`&cmp=1`) shows it live
+  beside the branch's; marking what differs takes the dev server
+  (`docs/qa.md`).
 - **Stack changes:** the beta shows one commit at a time. To test a change with
   the one already there, start its branch from the newest `beta` deployment.
 

@@ -14,6 +14,7 @@ import { valuesOf, type Control, type State, type Values } from '../bench.ts';
 import type { Scene, Seat } from '../scene.ts';
 import type { PlateName } from '../../lib/plates/index.ts';
 import type { SizeKey } from '../sizes.ts';
+import type { Standing } from '../../lib/presence.ts';
 
 export { pid };
 export type Mode = 'host' | 'client' | 'local';
@@ -40,6 +41,8 @@ export interface EndScene {
   runs?: DelveRun[];
   /** Items this device met before, besides its log (../scene.ts' met). */
   met?: string[] | number;
+  /** Who isn't simply there, as the host tells the room (../scene.ts' standing). */
+  standing?: Record<string, Standing>;
   /** What can be set in it (../bench.ts' Control), its named states, and the game as they set it. */
   controls?: Control[];
   states?: State[];
@@ -464,6 +467,9 @@ export function endScenes(): EndScene[] {
     { key: 'n-phone-twelve', group: 'Normal games', label: '12 on a phone: your row on the dock', boards: { phone: 'n-phone-twelve' }, view: P, mode: 'client', me: pid('Oswin'), state: twelve() },
     { key: 'n-hot', group: 'Normal games', label: 'Hot-seat', boards: { desktop: 'n-hot' }, view: D, mode: 'local', me: null, state: hotSeat() },
     { key: 'n-spec', group: 'Normal games', label: 'A spectator who plays next', boards: { desktop: 'n-spec' }, view: D, mode: 'client', me: pid('Watcher'), state: watched(won()) },
+    // The host gone from the screen (the room is off the list meanwhile): the line under the game says so, their row has the lobby's mark.
+    { key: 'n-host-away', group: 'Normal games', label: 'Host away: a spectator who plays next', view: D, mode: 'client', me: pid('Watcher'), state: watched(won()), standing: { [K]: 'away', [pid('Rog')]: 'idle' } },
+    { key: 'n-host-idle', group: 'Normal games', label: 'Host idle: a guest waits (phone)', view: P, mode: 'client', me: una(), state: lost(), standing: { [K]: 'idle' } },
     { key: 'd-solo', group: 'Delve', label: 'Alone: four short of the best', boards: { desktop: 'd-solo', air13: 'd-air13', phone: 'd-phone-full' }, view: D, mode: 'local', me: null, state: solo(), ...solo23() },
     {
       key: 'd-first',

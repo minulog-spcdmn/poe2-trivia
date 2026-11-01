@@ -7,7 +7,8 @@
   import { arrival, beginArrival, endArrival } from './lib/zoneArrival.svelte';
   import { ownRect, stageZoom } from './lib/stage';
   import { onMount, untrack, type Component } from 'svelte';
-  import { fade, type TransitionConfig } from 'svelte/transition';
+  import { fade as plainFade, type TransitionConfig } from 'svelte/transition';
+  import { fade } from './lib/transitions';
   import { cubicIn, cubicOut, quintOut } from 'svelte/easing';
   import { light } from './lib/lights';
   import { motion } from './lib/motion.svelte';
@@ -293,7 +294,7 @@
     swapping = true;
     hold(node, true);
     // Held still (lib/motion.svelte.ts): a plain fade, no light.
-    if (motion.still) return fade(node, { duration: 120 });
+    if (motion.still) return plainFade(node, { duration: 120 });
     const grow = back ? -0.02 : 0.025;
     light({ x: innerWidth / 2, y: innerHeight * 0.45 }, { color: [1, 0.64, 0.3], radius: Math.hypot(innerWidth, innerHeight) * 0.3, intensity: 0.2, attack: 0.24, hold: 0.04, decay: 0.9 });
     return { duration: SCREEN_OUT_MS, easing: cubicIn, css: (t, u) => `opacity: ${t}; transform: scale(${1 + grow * u}); transform-origin: 50% 45%` };
@@ -302,7 +303,7 @@
     // (Coming as the last goes: the empty one standing in.)
     if (!swapped || shown === null) return {};
     hold(node, true);
-    if (motion.still) return fade(node, { duration: 200 });
+    if (motion.still) return plainFade(node, { duration: 200 });
     const from = back ? 0.02 : -0.02;
     return {
       duration: SCREEN_IN_MS,

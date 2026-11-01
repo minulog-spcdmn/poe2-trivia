@@ -7,7 +7,7 @@ import { appShare, backShare, beforeShare, beyondChanceOf, comersOf, failureRate
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
 import { apartFrom, countsIn, depthCalls, depthsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
-import { currentName, isoWeek, underNamesNow, weekMonday, busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, countedSpan, dayAverageHours, dayAverages, firstCounted, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, usualByNow, usualByNowUtc, USUAL_DAYS, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
+import { currentName, isoWeek, underNamesNow, weekMonday, busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, countedSpan, dayAverageHours, dayAverages, firstCounted, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, stutterTop, usualByNow, usualByNowUtc, USUAL_DAYS, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
 const path = (p: string, perDay: number[], event = true): PathCount => ({
@@ -40,6 +40,9 @@ test('the counts land where the page shows them', () => {
       path('error/join-no-answer', [1, 0, 0]),
       path('error/host-no-connection', [0, 1, 0]),
       path('error/something-new', [0, 0, 2]),
+      path('room/off-hidden', [2, 0, 1]),
+      path('room/off-seen', [0, 1, 0]),
+      path('room/back-1m', [1, 1, 0]),
     ],
     DAYS,
   );
@@ -65,6 +68,8 @@ test('the counts land where the page shows them', () => {
   assert.deepEqual([l.daily.right, l.daily.wrong], [4, 2]);
   assert.deepEqual(l.joins.find((j) => j.via === 'invite-link'), { via: 'invite-link', tried: 3, joined: 2 });
   assert.equal(l.links.invite, 4);
+  // Rooms off the matchmaking server: not failures, a line of their own.
+  assert.deepEqual(l.roomsOff, { seen: 1, hidden: 3, back: { '10s': 0, '1m': 2, '5m': 0, later: 0 } });
   // Failures by count, host ones marked, an unknown one by its own name.
   assert.deepEqual(
     l.failures.map((f) => [f.key, f.host, f.count]),
@@ -1224,4 +1229,37 @@ test('a share says what it rests on while that is little', () => {
   assert.equal(restsOn(30, 100), '');
   assert.equal(restsOn(30, 100, '2026-10-22'), ' (since Oct 22)');
   assert.equal(restsOn(3, 10, '2026-10-22'), ' (3 of 10, since Oct 22)');
+});
+
+test("games' frames are read by kind of device, a day each, a stutter's moment over the period, those drawn in software apart", () => {
+  const l = countsOf(
+    [
+      path('frames2/ios/smooth', [3, 4, 0]),
+      path('frames2/ios/some/reveal', [1, 0, 2]),
+      path('frames2/ios/many/reveal', [0, 1, 0]),
+      path('frames2/ios/some/deal', [1, 0, 0]),
+      path('frames2/ios/some/begin', [0, 0, 1]),
+      path('frames2/desktop-chrome/smooth', [5, 5, 5]),
+      path('frames2/desktop-chrome/software', [1, 0, 2]),
+      path('frames2/toaster/smooth', [9, 9, 9]),
+      // The older generation, counted by other rules (stutter.ts FRAMES): never mixed in.
+      path('frames/ios/many/deal', [7, 7, 7]),
+      path('frames/desktop-chrome/smooth', [7, 7, 7]),
+      path('play/race', [2, 2, 2]),
+    ],
+    DAYS,
+  );
+  assert.deepEqual(l.frames.ios, { games: [5, 5, 3], stuttered: [2, 1, 3], some: [2, 0, 3], many: [0, 1, 0], worst: { begin: 1, deal: 1, question: 0, reveal: 4 }, software: 0 });
+  assert.deepEqual(l.frames['desktop-chrome'].games, [5, 5, 5], 'a game drawn in software is in none of the shares');
+  assert.equal(l.frames['desktop-chrome'].software, 3);
+  assert.deepEqual(l.frames.android, { games: [0, 0, 0], stuttered: [0, 0, 0], some: [0, 0, 0], many: [0, 0, 0], worst: { begin: 0, deal: 0, question: 0, reveal: 0 }, software: 0 });
+  // Nothing else reads them as games.
+  assert.equal(l.games.started, 6);
+});
+
+test("every device's stutter shares fit under one axis, a share resting on few games left out", () => {
+  const l = countsOf([path('frames2/ios/smooth', [3, 4, 0]), path('frames2/ios/some/reveal', [2, 1, 2]), path('frames2/android/smooth', [8, 0, 0]), path('frames2/android/many/deal', [2, 0, 0])], DAYS);
+  // iOS: 40% of 5, 20% of 5, and 100% of 2 (too few to set the axis); Android 20% of 10.
+  assert.equal(stutterTop(Object.values(l.frames), DAYS, false), 40);
+  assert.equal(stutterTop([], DAYS, false), 10);
 });

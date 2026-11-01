@@ -233,3 +233,11 @@ More players' recordings make for more kinds of hands.
 served to it on the home network, the codex or a game played in its Chrome,
 its frames, layers and profile measured, screenshots. `docs/iphone.md` has
 the setup, the scripts and what they found.
+
+## Traces on the PC
+
+`scripts/pc/` plays a game (`game.mjs`) or deals the category cards again
+and again (`cards.mjs`) in Chrome on this PC's screen, traced, and
+`read.py` says what each step cost: slow frames, the GPU's raster time, at
+rest too, and long animation frames. `docs/development.md`, "Finding a
+stutter", has how to run them and what their numbers have meant.

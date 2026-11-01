@@ -10,7 +10,7 @@
 // teammate with lives to spare can bring back one who perished.
 
 import type { DifficultyRules, Dig, GameState, Player, Preset, Question, RunFossil } from './game.ts';
-import { isFossilId, type CardFossil, type FossilId } from './fossils.ts';
+import { isFossilId, isFossilTier, type CardFossil, type FossilId, type FossilTier } from './fossils.ts';
 import { veilSpan, type VeilPlan } from './patches.ts';
 
 export const DELVE_LIVES = 3;
@@ -829,15 +829,15 @@ export const findOn = (s: GameState, category: string): FindKind | null => findO
  */
 export function fossilOffer(s: GameState): CardFossil | null {
   const f = s.delve?.fossil;
-  if (!f || s.phase !== 'choosing' || typeof f !== 'object' || !isFossilId(f.id) || typeof f.category !== 'string') return null;
+  if (!f || s.phase !== 'choosing' || typeof f !== 'object' || !isFossilTier(f.tier) || typeof f.category !== 'string') return null;
   if (!s.offered.includes(f.category) || isWayOut(f.category) || findOffers(s).some((o) => o.category === f.category)) return null;
-  return { category: f.category, id: f.id };
+  return { category: f.category, tier: f.tier };
 }
 
-/** The fossil on a card on offer, or null for any other card. */
-export const fossilOn = (s: GameState, category: string): FossilId | null => {
+/** The tier of the fossil on a card on offer, or null for any other card. */
+export const fossilOn = (s: GameState, category: string): FossilTier | null => {
   const f = fossilOffer(s);
-  return f?.category === category ? f.id : null;
+  return f?.category === category ? f.tier : null;
 };
 
 /** The fossils the run gave so far, oldest first, as far as they read sane (none outside Delve and in older saves). */

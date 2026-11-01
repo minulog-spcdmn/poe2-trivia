@@ -7,8 +7,9 @@
 // completed, and at most one a run and one a day (UTC), so it takes weeks
 // of coming back.
 //
-// Which offer holds one, and which, is dealt by dealFossil alone, every
-// number of it in FOSSIL_DEAL. Only types come from game.ts, so the engine
+// Which offer holds one, and of which tier, is dealt by dealFossil, every
+// number of it in FOSSIL_DEAL; which fossil it is, only on the right answer
+// (drawFossil), so the card never says. Only types come from game.ts, so the engine
 // can import this module without a cycle.
 
 /** A fossil, by the one word of its name. */
@@ -235,32 +236,43 @@ export function lackedBy(t: FossilTaker, rare: boolean): FossilId[] {
 /** Whether the first-fossil hook holds for `t`: they hold none yet. */
 export const hooked = (t: FossilTaker) => t.held === 0 && open(t);
 
+/** A fossil's tier: one of the 17 common ones or of the 8 rare ones. All an offer's card says of its fossil. */
+export type FossilTier = 'common' | 'rare';
+export const isFossilTier = (v: unknown): v is FossilTier => v === 'common' || v === 'rare';
+export const tierOf = (id: FossilId): FossilTier => (fossilById(id).rare ? 'rare' : 'common');
+
 /**
- * The fossil an offer at depth `d` holds, or null: the whole deal (see
- * FOSSIL_DEAL). `takers`: alone the player on turn, together everyone
- * standing. `fresh`: the depth's first offer (not one after a miss there);
- * `withFind`: the offer holds a find. `rng` in [0, 1). The fossil is drawn
- * from those of its tier that any taker its slice counts lacks.
+ * The tier of the fossil an offer at depth `d` holds, or null: the whole
+ * deal (see FOSSIL_DEAL). Which fossil it is isn't dealt: that is drawn on
+ * the right answer, for each taker from those they lack (drawFossil).
+ * `takers`: alone the player on turn, together everyone standing.
+ * `fresh`: the depth's first offer (not one after a miss there);
+ * `withFind`: the offer holds a find. `rng` in [0, 1). A tier is dealt only
+ * while some taker its slice counts lacks one of it.
  */
-export function dealFossil(d: number, takers: FossilTaker[], opts: { fresh: boolean; withFind: boolean }, rng: () => number): FossilId | null {
-  const pool = (rare: boolean, who = takers) => [...new Set(who.flatMap((t) => lackedBy(t, rare)))].sort((a, b) => FOSSIL_IDS.indexOf(a) - FOSSIL_IDS.indexOf(b));
-  const draw = (ids: FossilId[]) => (ids.length ? ids[Math.min(ids.length - 1, Math.floor(rng() * ids.length))] : null);
+export function dealFossil(d: number, takers: FossilTaker[], opts: { fresh: boolean; withFind: boolean }, rng: () => number): FossilTier | null {
+  const lacking = (rare: boolean, who = takers) => who.some((t) => lackedBy(t, rare).length > 0);
   const hook = takers.filter(hooked);
-  if (opts.fresh && depthOf(d) >= FOSSIL_DEAL.hookFrom && hook.length) return draw(pool(false, hook));
+  if (opts.fresh && depthOf(d) >= FOSSIL_DEAL.hookFrom && lacking(false, hook)) return 'common';
   // Nobody it could go to (each found today's, or took this run's): no roll at all.
   if (!takers.some(open)) return null;
   const rare = fossilChance(true, d, opts.withFind);
   const common = fossilChance(false, d, opts.withFind);
   if (rare + common <= 0) return null;
   const r = rng();
-  if (r < rare) return draw(pool(true));
-  if (r < rare + common) return draw(pool(false));
+  if (r < rare) return lacking(true) ? 'rare' : null;
+  if (r < rare + common) return lacking(false) ? 'common' : null;
   return null;
 }
 
-/** A fossil on one of the cards on offer (Delve.fossil). */
-export interface CardFossil {
-  category: string;
-  id: FossilId;
+/** The fossil a right answer to a card of `tier` gives `t`: drawn from those of the tier they lack, or null when they can take none. */
+export function drawFossil(t: FossilTaker, tier: FossilTier, rng: () => number): FossilId | null {
+  const ids = lackedBy(t, tier === 'rare');
+  return ids.length ? ids[Math.min(ids.length - 1, Math.floor(rng() * ids.length))] : null;
 }
 
+/** A fossil on one of the cards on offer (Delve.fossil): its card and its tier, never which fossil. */
+export interface CardFossil {
+  category: string;
+  tier: FossilTier;
+}

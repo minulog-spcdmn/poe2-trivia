@@ -655,12 +655,22 @@ const TREMOR_MIN = 0.05;
  */
 export type Tremor = (nowMs: number) => number | null;
 
+/** Whether the shake's targets are on layers of their own (see applyShake). */
+let layered = false;
+
+/** Whether a tremor may move the view, quiet as it may be now (effects off or the tab away, it can't). */
+function mayTremble() {
+  return shake.tremor !== null && fxActive() && !hidden;
+}
+
 /** Registers an element that moves with camera shake, `k` times as far. */
 export function shakeTarget(el: HTMLElement, k = 1) {
   shake.targets.push({ el, k });
+  if (layered) el.style.willChange = 'translate';
   return () => {
     shake.targets = shake.targets.filter((t) => t.el !== el);
     el.style.translate = '';
+    el.style.willChange = '';
   };
 }
 
@@ -726,7 +736,7 @@ function advanceShake(nowMs: number) {
     shake.tremorPx = px !== null && px > TREMOR_MIN && fxActive() && !hidden ? px : 0;
   }
   if (!shaking()) {
-    if (shake.x || shake.y) applyShake(0, 0);
+    if (shake.x || shake.y || (layered && !mayTremble())) applyShake(0, 0);
     return;
   }
   let x = 0;
@@ -753,11 +763,24 @@ function wearJolt(dt: number) {
   shake.trauma = Math.max(0, shake.trauma - dt * JOLT_FADE);
 }
 
-/** Moves the view by (x, y). */
+/**
+ * Moves the view by (x, y). While it moves, and for as long as a tremor may
+ * move it again (a vein's, quiet now and then), each target is on a layer of
+ * its own, so the compositor moves it: moved by a translate with none, the
+ * whole page was drawn again every frame (a vein's tremor held Chrome's GPU
+ * a quarter of the time at 4K, and a deal in it three times over). Not at
+ * rest: the layer would make it the containing block of anything fixed in
+ * it, as the translate does only while it moves.
+ */
 function applyShake(x: number, y: number) {
   shake.x = x;
   shake.y = y;
-  for (const t of shake.targets) t.el.style.translate = x || y ? `${(x * t.k).toFixed(2)}px ${(y * t.k).toFixed(2)}px` : '';
+  const layer = !!(x || y) || mayTremble();
+  for (const t of shake.targets) {
+    t.el.style.translate = x || y ? `${(x * t.k).toFixed(2)}px ${(y * t.k).toFixed(2)}px` : '';
+    if (layer !== layered) t.el.style.willChange = layer ? 'translate' : '';
+  }
+  layered = layer;
 }
 
 // Smooth 1D noise for the shake path, so it rolls rather than jitters.

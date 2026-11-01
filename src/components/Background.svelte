@@ -6,6 +6,7 @@
   import { stopsOf } from '../lib/backdropData';
   import DarkTendrils from './DarkTendrils.svelte';
   import { onVein, veinOn } from '../lib/vein';
+  import { bitmapBackground } from '../lib/bitmapBackground';
 
   // Ambient backdrop: warm glow, vignette and slowly rising embers. The WebGL
   // backdrop draws its own embers; these CSS ones are for the fallback.
@@ -119,7 +120,8 @@
     <div class="vein" class:on={vein}></div>
     <!-- And a question's clock running down: the dark reaching in (lib/darkness.ts). -->
     <DarkTendrils />
-    <div class="grain"></div>
+    <!-- (Its SVG shown from a bitmap of it: an SVG background Chrome draws again, the whole screen, lib/bitmapBackground.ts.) -->
+    <div class="grain" use:bitmapBackground></div>
     <div class="embers">
     {#each embers as e, i (i)}
       {@const l = emberLooks[i < turned ? 1 : 0]}

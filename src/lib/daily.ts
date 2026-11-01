@@ -1,11 +1,12 @@
 // Today's unique: one question a day, the same for every exile. No server:
 // each day's question is written down ahead (lib/dailyRows.ts), dealt with
-// the day (UTC) as the engine's seed; a day past the last row is dealt here
-// the same way, alike in every browser on the same item data. The days
-// answered, and the run of them answered right, stay in this browser and the
-// player's own devices paired to sync (lib/sync: absorbDays, absorbDaily).
+// the day (UTC) as the engine's seed and the answers of the days before it; a
+// day past the last row is dealt here the same way, alike in every browser on
+// the same rows and item data. The days answered, and the run of them
+// answered right, stay in this browser and the player's own devices paired to
+// sync (lib/sync: absorbDays, absorbDaily).
 
-import { Engine, allArt, answerDrawn, createGame, DEFAULT_SETTINGS, type Item, type Knobs, type Question } from './game.ts';
+import { Engine, TWINS, allArt, answerDrawn, createGame, DEFAULT_SETTINGS, type Item, type Knobs, type Question } from './game.ts';
 import { DAILY_LAUNCH } from './dailyLaunch.ts';
 import { seededRandom } from './patches.ts';
 import { openStored } from './keepAside.ts';
@@ -13,7 +14,7 @@ import { readStored, storeKey, writeStored } from './storage.ts';
 import dailyArt from '../data/dailyArt.json' with { type: 'json' };
 import itemData from '../data/items.json' with { type: 'json' };
 import fakeData from '../data/fakes.json' with { type: 'json' };
-import { dailyRow } from './dailyRows.ts';
+import { ROWS_FROM, ROWS_TO, ROW_ANSWERS, dailyRow } from './dailyRows.ts';
 
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
@@ -86,7 +87,7 @@ export const TOO_THIN: ReadonlySet<string> = new Set(dailyArt.thin);
 
 /** Whether the question's picture is too thin for the start page (the art it draws the answer with). */
 const thin = (engine: Engine, q: Question) => TOO_THIN.has(answerDrawn(engine.byId.get(q.itemId)!, q).art);
-/** Draws past this many thin items in a row are given up on (they can't all be). */
+/** Draws past this many thin (or recent, askOne) items in a row are given up on (they can't all be). */
 const THIN_TRIES = 12;
 
 /** A string's 32-bit FNV-1a hash, to seed from. */
@@ -96,14 +97,27 @@ function hash(s: string): number {
   return h >>> 0;
 }
 
+/** The items the daily may ask: no gems, and a picture fit to show (a thin picture of one is drawn again in askOne). */
+const poolOf = (items: Item[]) => askable(items).filter((it) => allArt(it).some((a) => !TOO_THIN.has(a.art)));
+
+/**
+ * How many days an answer of Today's unique isn't asked again for: as many
+ * as three quarters of the items it may ask, so each day still draws from
+ * a quarter of them (about ten months, with 417).
+ */
+export const repeatGap = (items: Item[]) => Math.floor((poolOf(items).length * 3) / 4);
+
 /**
  * Asks a question in the category of an item drawn from `items`, so a
- * category comes up as often as it has items (those not too thin). `rng`
- * draws the item and is the engine's too.
+ * category comes up as often as it has items (those not too thin, nor in
+ * `recent`). `rng` draws the item and is the engine's too. `recent`:
+ * answers not to ask (the days' recent ones, which the engine keeps out
+ * too: dailyEngine).
  */
-export function askOne(engine: Engine, game = dailyGame(), rng: () => number = Math.random): Question {
-  // Items with a picture fit to show (a thin picture of one is drawn again below).
-  const pool = askable(engine.items).filter((it) => allArt(it).some((a) => !TOO_THIN.has(a.art)));
+export function askOne(engine: Engine, game = dailyGame(), rng: () => number = Math.random, recent: ReadonlySet<string> = new Set()): Question {
+  const all = poolOf(engine.items);
+  const fresh = all.filter((it) => !recent.has(it.id));
+  const pool = fresh.length ? fresh : all;
   let q: Question;
   let tries = 0;
   do {
@@ -111,8 +125,8 @@ export function askOne(engine: Engine, game = dailyGame(), rng: () => number = M
     q = engine.makeQuestion(game, category);
     // As the game does: an answer isn't asked again, nor offered as a decoy, until its category starts over.
     game.used.push(q.itemId);
-    // A thin one is put by (used, so not asked again) and another drawn.
-  } while (thin(engine, q) && ++tries < THIN_TRIES);
+    // A thin one, or a recent one that was all the category could ask, is put by (used, so not asked again) and another drawn.
+  } while ((thin(engine, q) || recent.has(q.itemId)) && ++tries < THIN_TRIES);
   return q;
 }
 
@@ -120,21 +134,55 @@ export function askOne(engine: Engine, game = dailyGame(), rng: () => number = M
  * An engine that asks as Today's unique does. Twins (game.ts TWINS) may meet
  * in it, as they could from its first day, and practice asks the same way.
  */
-export const dailyEngine = (items: Item[], fakes: Record<string, string[]>, opts: { rng?: () => number; now?: () => number } = {}) =>
+export const dailyEngine = (items: Item[], fakes: Record<string, string[]>, opts: { rng?: () => number; now?: () => number; mayAsk?: (id: string) => boolean } = {}) =>
   new Engine(items, { ...opts, fakes, twins: false });
 
 /**
  * A day's question dealt from these items and made-up names, the same
  * everywhere for the same ones: how npm run deal writes the rows, and how a
- * day past the last row is asked.
+ * day past the last row is asked. `asked`: the answers of the days before
+ * it, oldest first, of which the last repeatGap aren't asked again, nor
+ * their twins (game.ts TWINS: the same picture turned or recoloured, which
+ * reads as the same item). Each day was dealt on its own once, and an
+ * answer came back after six days.
  */
-export function dealLive(items: Item[], fakes: Record<string, string[]>, day: number): Question {
+export function dealLive(items: Item[], fakes: Record<string, string[]>, day: number, asked: readonly string[] = []): Question {
   const rng = seededRandom(hash(`poe2.quest daily ${day}`));
-  return askOne(dailyEngine(items, fakes, { rng, now: () => day * DAY_MS }), dailyGame(), rng);
+  const recent = new Set(asked.slice(Math.max(0, asked.length - repeatGap(items))));
+  const byName = new Map(items.map((it) => [it.name, it.id]));
+  for (const { names } of TWINS) {
+    const ids = names.flatMap((n) => byName.get(n) ?? []);
+    if (ids.some((id) => recent.has(id))) for (const id of ids) recent.add(id);
+  }
+  const engine = dailyEngine(items, fakes, { rng, now: () => day * DAY_MS, mayAsk: (id) => !recent.has(id) });
+  return askOne(engine, dailyGame(), rng, recent);
 }
 
+/**
+ * The days past the last row, dealt here in turn from the day after it
+ * (each from the answers before it). The rows reach a year past the last
+ * deal, so only a site left that long without one, or a clock running
+ * that far ahead, comes here; further than BEYOND_MAX days past them, a day
+ * is dealt on its own rather than freeze the page dealing the days between.
+ */
+const beyond: Question[] = [];
+/** Every answer from the first row's day to the last of `beyond`'s, oldest first. */
+const beyondAsked: string[] = [...ROW_ANSWERS];
+const BEYOND_MAX = 400;
+
 /** The day's question: its row, or past the last row dealt from the item data. */
-export const dailyQuestion = (day: number): Question => dailyRow(day) ?? dealLive(itemData as Item[], fakeData, day);
+export function dailyQuestion(day: number): Question {
+  const row = dailyRow(day);
+  if (row) return row;
+  // (A day before the first, or a broken clock's, each on its own.)
+  if (day < ROWS_FROM || day > ROWS_TO + BEYOND_MAX) return dealLive(itemData as Item[], fakeData, day);
+  while (ROWS_TO + beyond.length < day) {
+    const q = dealLive(itemData as Item[], fakeData, ROWS_TO + beyond.length + 1, beyondAsked);
+    beyond.push(q);
+    beyondAsked.push(q.itemId);
+  }
+  return structuredClone(beyond[day - ROWS_TO - 1]);
+}
 
 /**
  * The first day a deal may write again (scripts/deal.mjs): a week from

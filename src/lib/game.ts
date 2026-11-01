@@ -69,7 +69,7 @@ import {
   type ItemKind,
 } from './delve.ts';
 import { pickLine, START_LINES } from './delveStart.ts';
-import { NO_FOSSILS, dealFossil, fossilById, fossilDay, fossilMask, lackedBy, type CardFossil, type FossilId, type FossilTaker, type FossilsHeld } from './fossils.ts';
+import { NO_FOSSILS, dealFossil, drawFossil, fossilDay, fossilMask, type CardFossil, type FossilId, type FossilTaker, type FossilTier, type FossilsHeld } from './fossils.ts';
 
 export interface Item {
   id: string;
@@ -522,8 +522,9 @@ export interface Delve {
   find?: { category: string; kind: FindKind } | null;
   /**
    * The fossil on one of the cards on offer (fossils.ts dealFossil; delve.ts
-   * fossilOffer): never on a find's card, at most one an offer. Missing for
-   * none, and in older saves.
+   * fossilOffer): its card and its tier only, never which fossil (that is
+   * drawn on the right answer). Never on a find's card, at most one an
+   * offer. Missing for none, and in older saves.
    */
   fossil?: CardFossil;
   /** The fossils this run gave, oldest first (missing for none, and in older saves). */
@@ -579,7 +580,7 @@ export interface Delve {
   leaving?: number;
 }
 
-/** A fossil a Delve run gave (fossils.ts): which, at which depth and when (host clock), and to whom (the one whose right answer it was, alone or together). */
+/** A fossil a Delve run gave (fossils.ts): which, at which depth and when (host clock), and to whom (one player each: together, every taker draws their own). */
 export interface RunFossil {
   id: FossilId;
   depth: number;
@@ -794,10 +795,10 @@ export interface Question {
   find?: FindKind;
   /**
    * Delve: asked from a fossil's card (fossils.ts), an ordinary question of
-   * the depth; a right answer gives the fossil. Kept through a reask; never
-   * on a question a blast asked.
+   * the depth, and the tier of its fossil; a right answer gives one of it.
+   * Kept through a reask; never on a question a blast asked.
    */
-  fossil?: FossilId;
+  fossil?: FossilTier;
   /**
    * Delve, an Azurite Vein's: which strike of the dig it is (delve.ts, the
    * dig), asked from veinDeeper(strike) further down. Missing: strike 1.
@@ -898,11 +899,12 @@ export interface Reveal {
   /** Delve: the item this right answer to a find earned. */
   gained?: ItemKind;
   /**
-   * Delve: the fossil this right answer to a fossil's card gave, and to whom:
-   * the one whose answer it was, alone or together, if they lacked it and
-   * could take one (Engine.giveFossil). Missing when it gave none.
+   * Delve: the fossils this right answer to a fossil's card gave, one per
+   * taker, each drawn from those of the card's tier they lacked
+   * (Engine.giveFossil): alone the answerer's, together everyone standing
+   * who could take one. Missing when it gave none.
    */
-  fossil?: { id: FossilId; to: string[] };
+  fossil?: { tier: FossilTier; given: { id: FossilId; to: string }[] };
   /**
    * Delve co-op, with `gained`: who took the item. The winner, if they had
    * room for it; otherwise the first standing teammate in seat order who had.
@@ -1430,6 +1432,8 @@ export class Engine {
   private readonly twins: { items: Item[]; depth: number; colour?: true }[];
   /** Every question's clock starts as it is asked (see the constructor). */
   private readonly autoClock: boolean;
+  /** Which items may be an answer (see the constructor). */
+  private readonly mayAsk: (id: string) => boolean;
   /** What each player's device has shown of Delve's start lines (see setStartLines). */
   private seenLines: ((ids: string[]) => number[][]) | null = null;
   /** The fossils each player's device holds, as masks (see setFossilsHeld). */
@@ -1443,10 +1447,13 @@ export class Engine {
    * played without a session (tests, tools). A session leaves it off: it
    * starts the clock itself ('clock'), once the art has reached those
    * answering.
+   * `mayAsk`: which items may be an answer (Today's unique keeps the days'
+   * recent answers out); any may still be a decoy. When none of a
+   * category's fit, one that doesn't is asked all the same.
    */
   constructor(
     items: Item[],
-    opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]>; looks?: Looks | null; twins?: boolean; autoClock?: boolean } = {},
+    opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]>; looks?: Looks | null; twins?: boolean; autoClock?: boolean; mayAsk?: (id: string) => boolean } = {},
   ) {
     this.items = items;
     this.byId = new Map(items.map((it) => [it.id, it]));
@@ -1462,6 +1469,7 @@ export class Engine {
     this.now = opts.now ?? Date.now;
     this.looks = opts.looks ?? null;
     this.autoClock = !!opts.autoClock;
+    this.mayAsk = opts.mayAsk ?? (() => true);
     const byName = new Map(items.map((it) => [it.name, it]));
     this.twins = opts.twins === false ? [] : TWINS.map(({ names, ...when }) => ({ items: names.flatMap((n) => byName.get(n) ?? []), ...when })).filter((t) => t.items.length > 1);
   }
@@ -1507,18 +1515,24 @@ export class Engine {
   }
 
   /**
-   * A right answer to a fossil's card (`q`), by `winner`: the fossil is
-   * theirs if they lack it, found none today and the run gave them none
-   * (fossils.ts lackedBy). Together, only the one whose answer it was gets
-   * it. Says what it gave, for the reveal.
+   * A right answer to a fossil's card (`q`): each of `takers` (alone the
+   * answerer, together everyone standing) who can take one of its tier
+   * (none found today, none given this run, one of the tier lacked) is
+   * given one, drawn from their own missing ones (fossils.ts drawFossil).
+   * Says what it gave, for the reveal.
    */
-  private giveFossil(s: GameState, q: Question, winner: string): Reveal['fossil'] {
-    const id = q.fossil;
-    if (!s.delve || !id) return undefined;
-    const [taker] = this.fossilTakers(s, [winner]);
-    if (!lackedBy(taker, fossilById(id).rare).includes(id)) return undefined;
-    (s.delve.fossils ??= []).push({ id, depth: s.round, at: this.now(), to: [winner] });
-    return { id, to: [winner] };
+  private giveFossil(s: GameState, q: Question, takers: string[]): Reveal['fossil'] {
+    const tier = q.fossil;
+    if (!s.delve || !tier) return undefined;
+    const at = this.now();
+    const given: { id: FossilId; to: string }[] = [];
+    this.fossilTakers(s, takers).forEach((t, i) => {
+      const id = drawFossil(t, tier, this.rng);
+      if (id) given.push({ id, to: takers[i] });
+    });
+    if (!given.length) return undefined;
+    (s.delve.fossils ??= []).push(...given.map((g) => ({ id: g.id, depth: s.round, at, to: [g.to] })));
+    return { tier, given };
   }
 
   /**
@@ -1532,8 +1546,8 @@ export class Engine {
     const finds = (dm.finds ?? []).map((f) => f.category);
     const free = s.offered.filter((c) => !finds.includes(c) && !isWayOut(c));
     if (!free.length) return undefined;
-    const id = dealFossil(s.round, this.fossilTakers(s, takers), { fresh, withFind: finds.length > 0 }, this.rng);
-    return id ? { category: sample(free, 1, this.rng)[0], id } : undefined;
+    const tier = dealFossil(s.round, this.fossilTakers(s, takers), { fresh, withFind: finds.length > 0 }, this.rng);
+    return tier ? { category: sample(free, 1, this.rng)[0], tier } : undefined;
   }
 
   /**
@@ -1936,7 +1950,7 @@ export class Engine {
             const reward = s.delve && q.find ? findReward(q.find, inventoryOf(s, active.id)) : null;
             if (reward) gained = this.gain(s, active.id, reward);
           }
-          fossil = this.giveFossil(s, q, active.id);
+          fossil = this.giveFossil(s, q, [active.id]);
         } else if (s.delve) {
           const buried = this.caveInDig(s);
           if (buried) vein.buried = buried;
@@ -2334,7 +2348,7 @@ export class Engine {
    */
   private takePick(s: GameState, active: Player | null, category: string) {
     let kind: Pick<Question, 'find' | 'strike' | 'light'> = {};
-    let fossil: FossilId | null = null;
+    let fossil: FossilTier | null = null;
     if (s.delve) {
       delete s.delve.banked;
       // Whatever was picked, a way out's draw (closeVote) is over: left set, it would hold every later vote.
@@ -2355,7 +2369,7 @@ export class Engine {
       }
       const find = findOn(s, category);
       if (find) kind = dig && find === 'azurite' ? { find, strike: dig.strikes + 1, light: dig.light } : { find };
-      // A fossil's card asks the depth's own question (fossils.ts); a right answer gives the fossil.
+      // A fossil's card asks the depth's own question (fossils.ts); a right answer gives one of its tier.
       fossil = fossilOn(s, category);
     } else if (active && !s.deathmatch) {
       active.recent = lastPicks([...active.recent, category], rulesFor(s.settings).lockout);
@@ -2900,7 +2914,8 @@ export class Engine {
       // first standing teammate in seat order who has: it was offered as
       // anyone standing had room, so it never pays nothing. A vein's goes
       // into the dig's haul, in hand, the same way.
-      fossil = this.giveFossil(s, q, winner.id);
+      // A fossil's card gives everyone standing who can take one their own.
+      fossil = this.giveFossil(s, q, standingIds(s));
       if (q.find === 'azurite') {
         const by = this.strikeRight(s, q, [winner.id, ...standingIds(s).filter((id) => id !== winner.id)]);
         if (by) {
@@ -3247,6 +3262,21 @@ export class Engine {
 
   private simCache = new Map<string, number>();
 
+  /**
+   * How alike `category`'s names look, pair by pair (similarity), worked
+   * out a step at a time ahead of the pick that may want them, each step one
+   * item against those after it. Left to the pick, a category's first
+   * question scored its pairs as it was asked: in a trace at 4K, 4 to 7 ms
+   * of the frame the question came in with (#331).
+   */
+  *likenessSteps(category: string): Generator<void> {
+    const items = this.byCategory.get(category) ?? [];
+    for (let i = 0; i < items.length; i++) {
+      for (let j = i + 1; j < items.length; j++) this.similarity(items[i], items[j]);
+      yield;
+    }
+  }
+
   private similarity(a: Item, b: Item): number {
     const key = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
     let v = this.simCache.get(key);
@@ -3412,7 +3442,9 @@ export class Engine {
       unused = this.unusedIn(s, category);
       candidates = answerable(unused);
     }
-    const answer = this.weightedPick(candidates.length ? candidates : unused.length ? unused : inCat);
+    const list = candidates.length ? candidates : unused.length ? unused : inCat;
+    const askable = list.filter((it) => this.mayAsk(it.id));
+    const answer = this.weightedPick(askable.length ? askable : list);
     // Fewer for a rare group's item (RARE_MAX_OPTIONS), and its made-up names to match.
     const count = optionsFor(answer, rules.options);
     const need = count - 1;

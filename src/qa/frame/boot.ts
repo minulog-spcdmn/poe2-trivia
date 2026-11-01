@@ -163,6 +163,7 @@ export async function boot(asked: URLSearchParams) {
   session.hideCode = false;
   session.delveResult = built.delveResult ?? null;
   session.bestAtStart = built.bestAtStart ?? null;
+  session.standing = built.standing ?? {};
   session.earned = built.earned && state?.startedAt !== undefined ? { game: state.startedAt, ids: built.earned } : null;
   // A guest or a spectator holds the room as the host sends it: what's still to guess left out.
   session.state = state && seat.mode === 'client' ? game.publicView(state) : state;

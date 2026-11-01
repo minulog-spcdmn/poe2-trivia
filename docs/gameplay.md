@@ -888,12 +888,19 @@ they're worth more sigils than are unlocked already. Kept in this browser (`src/
     hid it for streaming.
   - After a game, the host can **Play again** (same settings, starts right
     away, spectators included) or **Change settings** (back to the lobby).
+    The end screen's ranking carries the lobby's away and idle marks too,
+    and a guest or spectator waiting on an away or idle host is told so
+    ("You play in the next game once Kai starts it; they seem to be away.").
   - Very strict networks (some corporate or mobile networks) can block
     WebRTC. Then everyone can still play at the host's screen.
 - **Open rooms:** a host can set their room to **Public**, which lists it
   under "Open rooms" on the start page. A first-time host's room starts
   public (and in Delve); after that the room starts the way the host left
-  the last one.
+  the last one. A room whose host has gone from the end screen (idle there,
+  or away from it for a minute) is left off the list until they're back,
+  since only they can start the next game; it keeps its listing number
+  meanwhile, and its invite link still says whose room it is
+  (`src/lib/presence.ts` goneFromEnd).
   Without a server there's no central list, so a public room claims the
   lowest free numbered listing ID on the matchmaking service
   (`…-pub-1`, `…-pub-2`, …), and the start page checks those numbers in

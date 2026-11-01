@@ -5,9 +5,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { isFake, type Item, type Question } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, cutoffDay, dailyQuestion, dealLive, utcDay } from '../src/lib/daily.ts';
-import { ROWS_FROM, ROWS_TO, dailyRow } from '../src/lib/dailyRows.ts';
+import { TWINS, isFake, type Item, type Question } from '../src/lib/game.ts';
+import { DAILY_LAUNCH, cutoffDay, dailyQuestion, dealLive, repeatGap, utcDay } from '../src/lib/daily.ts';
+import { ROWS_FROM, ROWS_TO, ROW_ANSWERS, dailyRow } from '../src/lib/dailyRows.ts';
 import { FILE, deal, fileOf, rowsOf } from '../scripts/deal.mjs';
 import { liveDailies } from '../scripts/live-dailies.mjs';
 import { fakes, items } from './helpers.ts';
@@ -25,14 +25,33 @@ test('the rows run from the first day, a day each, and a day with one asks it', 
   assert.equal(dailyRow(ROWS_FROM - 1), null);
   assert.equal(dailyRow(ROWS_TO + 1), null);
   for (const day of [ROWS_FROM, today, ROWS_TO]) assert.equal(JSON.stringify(dailyQuestion(day)), rows[day - ROWS_FROM]);
-  // Past the last row, the day is dealt from the item data.
-  assert.deepEqual(dailyQuestion(ROWS_TO + 1), dealLive(items, fakes, ROWS_TO + 1));
+  // Past the last row, each day is dealt from the item data and the answers before it.
+  const next = dealLive(items, fakes, ROWS_TO + 1, ROW_ANSWERS);
+  assert.deepEqual(dailyQuestion(ROWS_TO + 1), next);
+  assert.deepEqual(dailyQuestion(ROWS_TO + 2), dealLive(items, fakes, ROWS_TO + 2, [...ROW_ANSWERS, next.itemId]));
 });
 
 test('the days still to come are dealt from the item data and code as they are (run `npm run deal`)', () => {
   // A deal forgotten after a refresh, or a change to how the daily deals, or a merge that kept another branch's rows.
   for (let day = cutoff; day <= ROWS_TO; day++) {
-    assert.equal(rows[day - ROWS_FROM], JSON.stringify(dealLive(items, fakes, day)), `day ${day}: run \`npm run deal\``);
+    const asked = ROW_ANSWERS.slice(0, day - ROWS_FROM);
+    assert.equal(rows[day - ROWS_FROM], JSON.stringify(dealLive(items, fakes, day, asked)), `day ${day}: run \`npm run deal\``);
+  }
+});
+
+test('no answer comes back from the cutoff on until repeatGap days have gone by', () => {
+  // The days before the cutoff were dealt each on its own, and one came back after six days (2026-10-31).
+  const gap = repeatGap(items);
+  assert.ok(gap >= 300, `a gap of ${gap} days`);
+  const last = new Map<string, number>();
+  for (let day = ROWS_FROM; day <= ROWS_TO + 30; day++) {
+    // Twins (the same picture turned or recoloured) count as one.
+    const id = dailyQuestion(day).itemId;
+    const name = items.find((it) => it.id === id)?.name ?? id;
+    const key = TWINS.find((t) => t.names.includes(name))?.names[0] ?? id;
+    const was = last.get(key);
+    if (day >= cutoff && was !== undefined) assert.ok(day - was > gap, `day ${day} asks ${name} again after ${day - was} days`);
+    last.set(key, day);
   }
 });
 
@@ -63,7 +82,9 @@ test('a deal puts the days before the cutoff back as the live site has them (a m
   for (const day of [today + 1, cutoff - 1]) moved[day - ROWS_FROM] = JSON.stringify({ ...JSON.parse(moved[day - ROWS_FROM]), itemId: 'moved' });
   const { text: fixed, restored } = deal(fileOf(ROWS_FROM, moved), items, fakes, Date.now(), { live: text });
   assert.equal(restored, 2);
-  assert.equal(fixed, text);
+  // (Over the days the file has: a deal reaches a year past the cutoff, a day further each day it moves on, from
+  // 22:00 UTC, before the file is dealt again.)
+  assert.deepEqual(rowsOf(fixed).rows.slice(0, rows.length), rows);
 });
 
 test('a refresh that adds, removes and renames an item moves no day before the cutoff, and new items reach the days to come', () => {

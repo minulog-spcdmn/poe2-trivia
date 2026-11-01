@@ -105,7 +105,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: beta-dist
-          key: beta-dist-v2-${{ steps.find.outputs.sha }}
+          key: beta-dist-v3-${{ steps.find.outputs.sha }}
           lookup-only: true
 
   beta:
@@ -144,11 +144,22 @@ jobs:
             LIVE_DAILIES=/dev/null npm test
           fi
           VITE_CHANNEL=beta npm run build
+      # The QA desk's before and after (docs/qa.md, B): main where the beta
+      # left it, with the beta's src/qa/ laid over it, at /beta/before/. A
+      # beta that can't build it goes up all the same, its desk saying there's
+      # no code before; one from before the script has none.
+      - name: Build the code before the beta's change, for the QA desk
+        continue-on-error: true
+        run: |
+          if [ -f scripts/qa-before.mjs ] && [ -f dist/qa.html ]; then
+            VITE_CHANNEL=beta node scripts/qa-before.mjs dist/before
+          fi
       - name: List the files the beta changes, for the QA desk's "This change"
         run: |
           base=$(git merge-base origin/main HEAD 2>/dev/null || true)
           if [ -n "$base" ] && [ -f dist/qa.html ]; then
-            git diff --name-only "$base" HEAD | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => process.stdout.write(JSON.stringify({ base: process.argv[1], files: s.split(/\r?\n/).filter(Boolean) })))' "$base" > dist/qa-change.json
+            before=$([ -f dist/before/qa.html ] && echo before/ || true)
+            git diff --name-only "$base" HEAD | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => process.stdout.write(JSON.stringify({ base: process.argv[1], files: s.split(/\r?\n/).filter(Boolean), ...(process.argv[2] ? { before: process.argv[2] } : {}) })))' "$base" "$before" > dist/qa-change.json
           fi
       - uses: actions/upload-artifact@v4
         with:
@@ -229,7 +240,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: beta-dist
-          key: beta-dist-v2-${{ needs.find-beta.outputs.sha }}
+          key: beta-dist-v3-${{ needs.find-beta.outputs.sha }}
           fail-on-cache-miss: true
       - if: steps.pick.outputs.from == 'build'
         uses: actions/download-artifact@v4
@@ -240,7 +251,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: beta-dist
-          key: beta-dist-v2-${{ needs.find-beta.outputs.sha }}
+          key: beta-dist-v3-${{ needs.find-beta.outputs.sha }}
       - if: steps.pick.outputs.from
         run: cp -r beta-dist dist/beta
       - uses: actions/upload-pages-artifact@v3

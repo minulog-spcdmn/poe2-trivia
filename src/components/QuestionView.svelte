@@ -2,6 +2,7 @@
   import { fly, fade, scale, slide } from '../lib/transitions';
   import { session, engine } from '../lib/session.svelte';
   import { glare } from '../lib/glare';
+  import { onceFontsIn } from '../lib/inFrame';
   import { AUTO_NEXT_MS, answerDrawn, autoNextLeft, clockMs, clockRuns, drawnAs, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
   import { FINALE_MS, materialize, warmBurns, type BurnParams } from '../lib/materialize';
@@ -128,8 +129,12 @@
     run();
     // Again once the display font is in, and whenever the plate's width changes (a phone turned). Only while it is on: off,
     // run() measures nothing, and asking for the fonts' readiness lays the whole page out there and then (Chrome), in the
-    // middle of a reveal coming in (12 ms in a trace).
-    const fonts = () => void document.fonts?.ready.then(run);
+    // middle of a reveal coming in (12 ms in a trace). Asked in the frame's animation frame for that too (lib/inFrame.ts).
+    let fontsIn = () => {};
+    const fonts = () => {
+      fontsIn();
+      fontsIn = onceFontsIn(run);
+    };
     if (on) fonts();
     const ro = new ResizeObserver(run);
     const head = node.closest('.head');
@@ -153,6 +158,7 @@
         if (on && !was) fonts();
       },
       destroy: () => {
+        fontsIn();
         ro.disconnect();
         mo.disconnect();
       },
@@ -199,12 +205,14 @@
     const tile = node.closest('.tile');
     if (tile) ro.observe(tile);
     else run();
-    void document.fonts?.ready.then(run);
+    // (Asked in the frame's animation frame: asking as each tile mounted laid the page out for each, lib/inFrame.ts.)
+    const fontsIn = onceFontsIn(run);
     // And when the name changes: once its new words are in (before the next paint).
     const mo = new MutationObserver(run);
     mo.observe(node, { characterData: true, childList: true, subtree: true });
     return {
       destroy: () => {
+        fontsIn();
         ro.disconnect();
         mo.disconnect();
       },
@@ -290,14 +298,15 @@
 
   /**
    * Delve: the fossil a right answer to a fossil's card gave (lib/fossils.ts),
-   * in words: whose it is now. Together, only the one who answered it gets it.
+   * in words: whose it is now. Together, everyone who could take one drew
+   * their own: this screen's player's, or else the first one given.
    */
   const fossilLine = $derived.by((): { id: FossilId; text: string } | null => {
     const f = reveal?.correct ? reveal.fossil : undefined;
-    if (!s.delve || !f) return null;
-    const by = f.to[0];
-    const who = coop ? (by === me ? 'You' : nameOf(by)) : delveYou ? 'You' : active.name;
-    return { id: f.id, text: `${who} found ${aFossil(f.id)}.` };
+    if (!s.delve || !f?.given.length) return null;
+    const g = f.given.find((g) => g.to === me) ?? f.given[0];
+    const who = coop ? (g.to === me ? 'You' : nameOf(g.to)) : delveYou ? 'You' : active.name;
+    return { id: g.id, text: `${who} found ${aFossil(g.id)}.` };
   });
 
   // The verdict leads the result line at the reveal, beside Next.
@@ -921,8 +930,9 @@
       // A fossil this device's player took: it rises out of the right answer and flies to the codex's
       // tally (lib/fossilFlight.ts), once the answer is marked. Kept already (session's noteFossil), so
       // the count holds it.
-      const fossil = r.correct ? r.fossil : undefined;
-      if (s.delve && fossil && (session.mode === 'local' || fossil.to.includes(me ?? ''))) {
+      const given = r.correct ? r.fossil?.given : undefined;
+      const fossil = given && (session.mode === 'local' ? given[0] : given.find((g) => g.to === me));
+      if (s.delve && fossil) {
         const count = foundCount(loadFossils());
         void tick().then(() => flyFossil(optionEls[r.correctIndex] ?? null, fossil.id, count, FOSSIL_COUNT, motion.still, FOSSIL_AT));
       }
@@ -1340,7 +1350,8 @@
     <div class="tooltip wide" data-cursor="item" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
       {@render rims()}
       <div class="head" data-cursor="plate" style:--plate-scale={plateScale}>
-        <NamePlate fit bind:scale={plateScale} />
+        <!-- Lit from the start; a right answer's glint runs over it (a wrong one's is quiet), as when naming the art. -->
+        <NamePlate fit bind:scale={plateScale} glint={!!(reveal && iWon)} />
         <div class="head-text">
           <span class="iname" class:veiled={waiting} use:oneLine>{waiting || !q.prompt ? '\u00a0' : q.prompt}</span>
           <!-- Name over base, as every tooltip: the category until the reveal names the base. -->
@@ -1452,8 +1463,8 @@
       <div class="tooltip" data-cursor="item" use:backdropShadow={{ fill: 'linear' }} class:good={reveal && iWon} class:bad={reveal && !iWon}>
         {@render rims()}
         <div class="head" data-cursor="plate" style:--plate-scale={plateScale}>
-          <!-- The gems stay dark until the item is identified. -->
-          <NamePlate fit bind:scale={plateScale} lit={!!(reveal && item)} />
+          <!-- The gems stay dark until the item is identified; lit by a right answer, with its glint, by a wrong one quietly. -->
+          <NamePlate fit bind:scale={plateScale} lit={!!(reveal && item)} glint={!!(reveal && iWon)} />
           {#if reveal && item}
             <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
               <span class="iname" use:oneLine={flat.current || upright.current}>{item.name}</span>
@@ -1765,10 +1776,14 @@
     align-items: baseline;
     column-gap: 0.6em;
     line-height: 1.15;
+    /* A line that wraps, where the plate is narrow (a phone on its side, six
+       answers beside it), keeps to the middle as the others do, in lines of
+       about one length. */
+    text-align: center;
+    text-wrap: balance;
   }
   .head-text .iname {
     flex-basis: 100%;
-    text-align: center;
   }
   .iname {
     font-family: var(--font-display);
@@ -2954,6 +2969,9 @@
     filter: none;
     color: var(--muted);
   }
+  /* The countdown to the next, shrunk every frame (autoLeft): on a layer of
+     its own, or Chrome draws the whole button again with each step, all
+     the reveal long. */
   .auto {
     position: absolute;
     left: 0;
@@ -2962,6 +2980,7 @@
     width: 100%;
     background: var(--gold-hi);
     transform-origin: left;
+    will-change: transform;
   }
   /* Race avatars: an overlapping stack, out of the flow so they never squeeze
      or rewrap the answer as guesses come in and at the reveal. */

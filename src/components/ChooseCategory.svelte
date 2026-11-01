@@ -1,8 +1,12 @@
 <script module lang="ts">
+  import { warmPrints } from '../lib/platePrint.svelte';
   /** How a card turns over as it is dealt: seconds, its lift off the table and swell (px, share), its perspective (px), and the screens it turns across on (stacked as wide rows: narrow screens, but not a phone on its side, too short for three rows; always a phone's width, though, too narrow for three tall cards) rather than sideways. The card bench turns them the same way. */
   /** Whether this browser registers custom properties (@property, app.css): without, the kindle animates the emblem's filter and opacity themselves (see .plain below). */
   const registered = typeof CSS !== 'undefined' && 'registerProperty' in CSS;
   export const TURN = { seconds: 0.46, lift: 16, swell: 0.05, perspective: 1200, across: '(max-width: 560px), (max-width: 700px) and (orientation: portrait), (max-width: 700px) and (min-height: 501px)' };
+  // Where the plates are printed (the sharp faces, below), the workers that
+  // print them start as the game's screens are loaded ahead (App).
+  if (typeof navigator !== 'undefined' && 'userAgentData' in navigator && !matchMedia(TURN.across).matches) warmPrints();
 </script>
 
 <script lang="ts">
@@ -18,7 +22,7 @@
   import { FIND_TEXT, deathmatchText, digNote, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
   import { WAY_OUT_CARD as out } from '../lib/wayOut/lantern';
   import { digOf, expectedVoters, fossilOffer, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
-  import { fossilArt, fossilById, type CardFossil, type FossilId } from '../lib/fossils';
+  import type { CardFossil } from '../lib/fossils';
   import { fossilVariant } from '../lib/findEngraving';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -27,6 +31,7 @@
   import { C, embers, emitter, flare, glints, outline, puffs, ring, shards, sparks } from '../lib/fx/effects';
   import { light } from '../lib/lights';
   import CardEngraving from './CardEngraving.svelte';
+  import { MediaQuery } from 'svelte/reactivity';
   import Avatar from './Avatar.svelte';
   import { actionOf, typing } from '../lib/keybinds.svelte';
   import { optionIndex } from '../lib/keys';
@@ -344,13 +349,11 @@
   let dealtFossil: CardFossil | null = null;
   const fossilShown = $derived.by(() => {
     if (s.phase === 'choosing') dealtFossil = fossilOffer(s);
-    else if (s.question?.fossil && !dealtFossil) dealtFossil = { category: s.question.category, id: s.question.fossil };
+    else if (s.question?.fossil && !dealtFossil) dealtFossil = { category: s.question.category, tier: s.question.fossil };
     return dealtFossil;
   });
-  /** The name of the fossil on a card, or null. */
-  const fossilAt = (cat: string): string | null => (fossilShown?.category === cat ? fossilById(fossilShown.id).name : null);
-  /** The fossil on a card, or null. */
-  const fossilIdAt = (cat: string): FossilId | null => (fossilShown?.category === cat ? fossilShown.id : null);
+  /** The tag of the fossil on a card, or null: only its tier, never which (that is drawn on the right answer). */
+  const fossilAt = (cat: string): string | null => (fossilShown?.category === cat ? (fossilShown.tier === 'rare' ? 'Rare Fossil' : 'Fossil') : null);
   /** The fossil's card on offer as dealt, while no dig or deathmatch hides the notes. */
   const fossilCol = $derived(fossilShown && !s.deathmatch ? s.offered.indexOf(fossilShown.category) : -1);
   /**
@@ -592,10 +595,21 @@
   const FLIP = TURN.seconds;
   const dealAt = (i: number) => 0.15 + i * 0.07;
   const flipAt = (i: number) => 0.62 + i * 0.12;
-  /** Cards turn over their longer side: across when stacked as wide rows (narrow screens), else sideways. */
-  const narrow = matchMedia(TURN.across);
+  /** Whether the cards are stacked as wide rows (narrow screens), which turn over their longer side: across, else sideways. */
+  const rows = new MediaQuery(TURN.across);
+  /**
+   * Whether the plates are shown as prints (lib/platePrint): where the faces
+   * are sharp, as Chrome rasters a card under its 3D transform at its
+   * laid-out size, which a print is drawn at pixel for pixel. A row's face
+   * takes flat transforms, which Chrome rasters larger as it grows.
+   */
+  const printed = $derived(sharp && !rows.current);
+  /** How long card i's side lies unseen once it's dealt (ms), which its plate's prints may take without its strokes drawn: its back until it fades in, its face until it's turned halfway up. Held still, or shown without a deal (after a refresh), it's seen at once. */
+  const unseen = (i: number, side: 'back' | 'face') => (dealing ? Math.round((side === 'back' ? dealAt(i) : flipAt(i) + FLIP / 2) * 1000) : 0);
   /** When the deal began; null when the cards appeared without one (as after a refresh). */
   let dealtAt: number | null = null;
+  /** Whether the cards are dealt (not held still, nor shown without a deal): a card lies unseen at first only then. */
+  let dealing = $state(false);
   /** Whether card i lies face up yet (it can't be picked or catch fire before). */
   const faceUp = (i: number) => dealtAt === null || performance.now() - dealtAt >= (flipAt(i) + FLIP) * 1000;
 
@@ -610,6 +624,7 @@
   function deal(node: Element, { i, n }: { i: number; n: number }) {
     if (motion.still) return {};
     dealtAt ??= performance.now();
+    dealing = true;
     // The face's own entrance (see .dealt below) plays with the deal only;
     // the emblem reads the kindle's numbers while it kindles, and no longer.
     node.classList.add('dealt', 'kindling');
@@ -632,7 +647,7 @@
     const total = turn + FLIP;
     let down = true;
     const rot = (i - (n - 1) / 2) * 7;
-    const axis = narrow.matches ? 'X' : 'Y';
+    const axis = rows.current ? 'X' : 'Y';
     return {
       delay: Math.round(start * 1000),
       duration: Math.round(total * 1000),
@@ -674,6 +689,8 @@
   }
 
   let cardEls = $state<HTMLElement[]>([]);
+  /** Each card's light's swell (.pulse), beside its face (lib/backdropShadow, `pulse`). */
+  let pulses = $state<HTMLElement[]>([]);
   let burning: Handle | null = null;
   /** The face-down card the mouse rests on, to catch fire once it turns up. */
   let waiting: number | null = null;
@@ -777,10 +794,25 @@
     const x = (e.clientX - r.left) / r.width;
     const y = (e.clientY - r.top) / r.height;
     tiltTo(frame, (0.5 - y) * 20, (x - 0.5) * 24);
-    // (On the glare itself: set on the frame, every part of the card would be restyled with it.)
-    const glare = frame.querySelector<HTMLElement>('.glare');
-    glare?.style.setProperty('--gx', `${(x * 100).toFixed(1)}%`);
-    glare?.style.setProperty('--gy', `${(y * 100).toFixed(1)}%`);
+    const light = frame.querySelector<HTMLElement>('.glare > .light');
+    if (light) glareAt(light, x, y);
+  }
+  /** How far the glare reaches: it fades out this far towards the card's farthest corner from it. */
+  const GLARE_REACH = 0.45;
+  /**
+   * Moves the glare's light to `x`, `y` (across and down the card, 0 to 1)
+   * and sizes it as a radial gradient there would be, by its transform only:
+   * the face it lies on is never drawn again (see .glare).
+   */
+  function glareAt(light: HTMLElement, x: number, y: number) {
+    const box = light.parentElement!;
+    // (The card's height in its widths, the same whatever its zoom; the light's side in the card's widths.)
+    const k = box.offsetHeight / box.offsetWidth;
+    const side = 2 * GLARE_REACH * Math.hypot(1, k);
+    const width = `${(100 * side).toFixed(1)}%`;
+    if (light.style.width !== width) light.style.width = width;
+    const far = Math.hypot(Math.max(x, 1 - x), Math.max(y, 1 - y) * k);
+    light.style.transform = `translate(${((100 * x) / side - 50).toFixed(2)}%, ${((100 * y * k) / side - 50).toFixed(2)}%) scale(${(far / Math.hypot(1, k)).toFixed(4)})`;
   }
   $effect(() => () => {
     for (const t of tilts.values()) t.stop();
@@ -936,13 +968,18 @@
           <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
             <span class="back" aria-hidden="true">
               <span class="grain"></span>
-              <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : fossilAt(cat) ? fossilVariant() : undefined} />
+              <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : fossilAt(cat) ? fossilVariant() : undefined} print={printed} hold={unseen(i, 'back')} />
               {@render filigree()}
             </span>
-            <span class="frame" data-sharp={sharp || undefined} use:backdropShadow>
+            <span class="frame" data-sharp={sharp || undefined} use:backdropShadow={{ pulse: pulses[i] }}>
+              {#if s.deathmatch}
+                <!-- The rim's ring and the shade over it, as every face has them in its box-shadow: here elements of their own, under all else, so the menace fades the ring as a layer. -->
+                <span class="rim ring"></span>
+                <span class="rim shade"></span>
+              {/if}
               <span class="grain"></span>
-              <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : fossilAt(cat) ? fossilVariant() : undefined} />
-              <span class="glare"></span>
+              <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : fossilAt(cat) ? fossilVariant() : undefined} print={printed} hold={unseen(i, 'face')} />
+              <span class="glare"><span class="light"></span></span>
               <span class="sheen"></span>
               {@render filigree()}
               {#if kindOf(cat)}
@@ -969,11 +1006,6 @@
                 {/if}
                 <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')" use:fineMask={maskOf(iconOf(cat))}></span></span>
               </span>
-              {#if fossilIdAt(cat)}
-                <!-- The fossil itself, its mark: lying on the window's floor in the corner (at a row's far end), on its amber light.
-                     What flies to the tally once it is taken (lib/fossilFlight.ts) wears the same. -->
-                <span class="fossil-mark" aria-hidden="true"><span class="amber"></span><img src={fossilArt(fossilIdAt(cat)!, 128)} alt="" draggable="false" /></span>
-              {/if}
               {#if kindOf(cat) === 'azurite'}
                 <!-- The vein's crystals in the corner stand in front of the item. -->
                 <CardEngraving side="face" find="azurite" front />
@@ -983,6 +1015,7 @@
                   >{:else if fossilAt(cat)}<span class="find-tag-row">{fossilAt(cat)}</span>{:else if isWayOut(cat)}<span class="find-tag-row">{out.tag(haul)}</span>{/if}{cardName(cat)}</span
               >
             </span>
+            <span class="pulse" aria-hidden="true" bind:this={pulses[i]}></span>
             {#if coop}
               <!-- The draw's light on this card (see the draw above). -->
               <span class="glow" aria-hidden="true"></span>
@@ -1222,6 +1255,52 @@
     background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .86 0 0 0 0 .62 .08 0 0 0 -.025'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E") 0 0 / 180px;
     pointer-events: none;
   }
+  /* What swells on a card's light (a find's, a duel's) plays here, beside
+     its face, read by the backdrop (lib/backdropShadow, `pulse`): animated
+     on the face, its light's properties had every part of the face restyled
+     on every frame (4 to 5 ms a frame at 4K, most of the page's thread),
+     however still the card lay. While CSS paints the light, the face swells
+     itself (pulse-paint), in step. docs/category-cards.md, rule 9. */
+  .pulse {
+    position: absolute;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+  }
+  @keyframes pulse {
+    50% {
+      --bs-pulse: 1;
+    }
+  }
+  @keyframes pulse-paint {
+    50% {
+      --bs1: var(--bs1-pulse);
+      --bs1-color: var(--bs1-pulse-color);
+    }
+  }
+  /* A duel's face: its rim's ring and the shade over it, the face's own
+     box-shadow on every other card, are elements of their own under all
+     else on it (as the grain), so the menace fades the ring as a layer and
+     never paints the face again. */
+  .card.dm .frame {
+    box-shadow: var(--bs-soft-paint, 0 var(--bs1, 0 0) var(--bs1-color, transparent), 0 var(--bs2, 0 0) var(--bs2-color, transparent));
+  }
+  .rim {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    /* The face's corner inside its border (8px, less 1px), as its box-shadow's. */
+    border-radius: 7px;
+    pointer-events: none;
+  }
+  .rim.ring {
+    --bs-ring: inherit;
+    box-shadow: inset 0 0 0 5px var(--bs-ring);
+  }
+  .rim.shade {
+    --bs-shade: inherit;
+    box-shadow: inset 0 0 0 4px var(--bs-shade);
+  }
   .back {
     position: absolute;
     inset: 0;
@@ -1422,6 +1501,28 @@
   .turn:global(.kindling.plain) .icon {
     animation-name: kindle-plain;
   }
+  /* (Chromium: the emblem on a layer of its own, always, so the kindle's
+     filter, changed every frame, never redraws the face round it. A sharp
+     face is drawn at twice its size through a filter; redrawn each frame of
+     three cards' kindles, it held the GPU most of a deal, and every turn
+     stuttered. Always, not while it kindles: a layer let go after it would
+     redraw the face once more. Already filtered and placed absolutely, it
+     lays out the same. Not WebKit: see the kindle above. Only where the
+     faces are sharp, as the sharp block below: the rows never are.) */
+  @media (min-width: 701px), (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
+    .sharp .icon {
+      will-change: filter, opacity;
+    }
+    /* (The way out's, likewise: its gilt's kindle, the swell and the lamp's
+       breath, which goes on for as long as the card lies there.) */
+    .sharp .card.out :global(.engraving > :is(.window, .glow, .lines, .lamp, .gilt)) {
+      will-change: filter, opacity;
+    }
+    /* (A duel's ring, likewise, for as long as the menace plays.) */
+    .sharp .rim.ring {
+      will-change: opacity;
+    }
+  }
   .turn:global(.dealt) .sheen::before {
     animation: sheen 0.8s var(--ease-out) calc(var(--face, 0ms) + 80ms) backwards;
   }
@@ -1620,14 +1721,24 @@
       radial-gradient(ellipse 120% 90% at 50% 50%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #22110d, #0d0706 70%);
   }
+  /* Yours to pick, it menaces: its light swells red (by .pulse) as its
+     ring fades (a layer, .rim), together. */
   .card.dm.mine .frame {
+    --bs1-pulse: 0px 45px;
+    --bs1-pulse-color: rgba(224, 85, 63, 0.45);
+  }
+  .card.dm.mine:not(:global(.down)) .pulse {
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) {
+    animation: pulse-paint 2.4s ease-in-out infinite;
+  }
+  .card.dm.mine:not(:global(.down)) .rim.ring {
     animation: menace 2.4s ease-in-out infinite;
   }
   @keyframes menace {
     50% {
-      --bs-ring: transparent;
-      --bs1: 0px 45px;
-      --bs1-color: rgba(224, 85, 63, 0.45);
+      opacity: 0;
     }
   }
   /* While a card lies face down its face is turned away, but the backdrop
@@ -1636,9 +1747,6 @@
   .card:global(.down) .frame {
     --bs1-color: transparent;
     --bs2-color: transparent;
-  }
-  .card.dm:global(.down) .frame {
-    animation: none;
   }
   /* Only the side that faces up is shown. backface-visibility alone isn't
      enough in WebKit (every browser on iOS): the emblem, with a filter and
@@ -1708,16 +1816,32 @@
     transform: none;
     filter: none;
   }
-  /* A soft highlight that follows the pointer across the card. */
+  /* A soft highlight that follows the pointer across the card: a light of
+     its own, drawn once and moved and sized by its transform (see glareAt),
+     as wide as a gradient at the pointer reaching to the card's farthest
+     corner. Its gradient was the face's, drawn again at every move, and
+     Chrome drew the whole face again with it (a third of the GPU's time
+     while the pointer moved over a card). Placed here at rest at the top's
+     middle, where the light stood before the pointer moved. */
   .glare {
     position: absolute;
     inset: 0;
     border-radius: inherit;
-    background: radial-gradient(circle at var(--gx, 50%) var(--gy, 30%), rgba(255, 226, 170, 0.07), transparent 45%);
+    overflow: clip;
     mix-blend-mode: screen;
     opacity: 0;
     transition: opacity 0.35s;
     pointer-events: none;
+  }
+  .glare > .light {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 152.4%;
+    aspect-ratio: 1;
+    background: radial-gradient(circle closest-side, rgba(255, 226, 170, 0.07), transparent);
+    transform: translate(-17.2%, -23.1%) scale(0.637);
+    will-change: transform;
   }
   .card.mine:not(:global(.down)):hover .glare {
     opacity: 1;
@@ -2052,17 +2176,16 @@
     --bs1: 0px 34px;
     --bs1-color: var(--f-glow);
   }
+  /* Yours to pick, its light swells and ebbs (by .pulse). */
   .card.special.mine .frame {
+    --bs1-pulse: 0px 46px;
+    --bs1-pulse-color: var(--f-pulse);
+  }
+  .card.special.mine:not(:global(.down)) .pulse {
     animation: pulse 3.2s ease-in-out infinite;
   }
-  @keyframes pulse {
-    50% {
-      --bs1: 0px 46px;
-      --bs1-color: var(--f-pulse);
-    }
-  }
-  .card.special:global(.down) .frame {
-    animation: none;
+  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) {
+    animation: pulse-paint 3.2s ease-in-out infinite;
   }
   .card.special.mine:not(:global(.down)):hover .frame,
   .card.special.mine:not(:global(.down)):focus-visible .frame {
