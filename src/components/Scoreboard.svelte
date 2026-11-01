@@ -1300,8 +1300,8 @@
     line-height: 1.1;
     white-space: nowrap;
     overflow: hidden;
+    /* No width of its own: the name takes what the row has, and is cut short only once the row runs out. */
     text-overflow: ellipsis;
-    max-width: 9.5rem;
     /* Room for descenders (g, y) that overflow: hidden would clip at line-height 1.1 */
     padding-bottom: 0.2em;
     margin-bottom: -0.2em;
@@ -1487,6 +1487,7 @@
     li:not(.wide) .info {
       position: absolute;
       width: 1px;
+      min-width: 0;
       height: 1px;
       overflow: hidden;
       clip-path: inset(50%);
@@ -1563,7 +1564,6 @@
       font-size: 1.05rem;
     }
     .name {
-      max-width: 6rem;
       font-size: 0.85rem;
     }
     .score {
