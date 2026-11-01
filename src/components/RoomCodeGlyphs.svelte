@@ -86,7 +86,7 @@
   {#each code.split('') as ch, i (i)}
     <!-- The letter in gold; its gleam's copy of it is drawn from data-ch (a pseudo-element), so a copy gives each letter once. -->
     <span class="glyph" use:landing={i} use:backdropShadow={{ fill: 'linear' }} style:animation-delay="{delay + i * 80}ms" style:--i={i} style:--h={h0}
-      ><span class="ch letter">{ch}</span><span class="ch dot" aria-hidden="true"></span><span class="gleam" aria-hidden="true" data-ch={hidden ? '•' : ch}></span></span
+      ><span class="ch letter" aria-hidden={hidden}>{ch}</span><span class="ch dot" aria-hidden={!hidden}></span><span class="gleam" aria-hidden="true" data-ch={hidden ? '•' : ch}></span></span
     >
   {/each}
 </span>

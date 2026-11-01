@@ -505,7 +505,7 @@
           fillSeen?.unobserve(e.target);
         }
       },
-      { rootMargin: '0px 0px -8% 0px' },
+      { threshold: 0.5 },
     );
     for (const el of codexEl.querySelectorAll<HTMLElement | SVGElement>('.panel .fill, .seal .done')) {
       if (filled.has(el)) continue;

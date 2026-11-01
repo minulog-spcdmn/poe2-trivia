@@ -244,7 +244,7 @@
   $effect(() => {
     const c = zoneCard;
     if (!c) return;
-    const shut = c.t0 + (c.tl.mode === 'still' ? 900 : ZONE_T.BARS + ZONE_T.BARS_MS) + 50;
+    const shut = c.t0 + (c.tl.mode !== 'full' ? 900 : ZONE_T.BARS + ZONE_T.BARS_MS) + 50;
     const t = setTimeout(() => (barsShut = c.key), Math.max(0, shut - performance.now()));
     return () => clearTimeout(t);
   });
