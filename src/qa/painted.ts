@@ -48,12 +48,6 @@ export const PAINTED: Painted[] = [
   },
   { file: 'src/components/codex/CodexMedallion.svelte', keyframes: ['fill-arc'], selectors: ['.arc'], why: 'Once, 1.6 s, as a medallion’s arc fills in the codex: a ring of a few dozen px.' },
   { file: 'src/components/DailyStreak.svelte', keyframes: ['warm'], selectors: ['.streak'], why: 'Once, 0.45 s, as the streak warms on the start page: the streak’s own small box.' },
-  {
-    file: 'src/components/NamePlate.svelte',
-    keyframes: ['spark'],
-    selectors: ['.lit.glint .spark'],
-    why: 'Once, about a second, as a right answer’s spark runs along a name plate’s rules: thin strokes, but at the screen’s rate (181k px a 60th of a second at 240 Hz, the plate moment with it): #340.',
-  },
   { file: 'src/components/Inventory.svelte', keyframes: ['lit', 'crumble'], selectors: ['.count.lit .grow', '.count.blown .grow', '.count.blown.left .grow'], why: 'Once, about a second, as a find in the pack lights up or crumbles: its count’s small icon.' },
   { file: 'src/components/RunsChart.svelte', keyframes: ['sink'], selectors: ['.shaft'], why: 'Once, as the chart’s shafts sink in on the end screen: each shaft its own clip.' },
   { file: 'src/components/Scoreboard.svelte', keyframes: ['down', 'bump'], selectors: ['.down', '.bump'], why: 'Once, 0.7 s, as a score changes: one number’s colour and glow.' },
@@ -121,14 +115,14 @@ export const PAINTED: Painted[] = [
   {
     file: 'src/components/ChooseCategory.svelte',
     keyframes: ['pulse'],
-    selectors: ['.card.special.mine .frame'],
-    why: 'A find’s card you can pick breathes, 3.2 s a breath, for as long as the cards lie there: its soft shadow alone (--bs1), which the WebGL backdrop draws (data-bs-on swaps Chrome’s copy for none), so Chrome draws nothing; without WebGL, Chrome draws the shadow round the card.',
+    selectors: ['.card.dm.mine:not(:global(.down)) .pulse', '.card.special.mine:not(:global(.down)) .pulse'],
+    why: 'A card you can pick swells, 2.4 s a breath (a duel’s) or 3.2 s (a find’s), for as long as the cards lie there: on a span of no size beside its face (--bs-pulse), which the WebGL backdrop reads for the card’s light (lib/backdropShadow), so Chrome paints nothing for it.',
   },
   {
     file: 'src/components/ChooseCategory.svelte',
-    keyframes: ['menace'],
-    selectors: ['.card.dm.mine .frame'],
-    why: 'A deathmatch card you can pick throbs, 2.4 s a breath, for as long as the cards lie there: its shadow (the WebGL backdrop’s) and the ring inset in its face (--bs-ring, Chrome’s), so the face is drawn again each frame: where faces are sharp, its own layer (its 3D transform) at twice its size; elsewhere, what it lies on. Not yet measured by the redraw check; a layer of its own can’t make it smaller, as the ring is the face’s own.',
+    keyframes: ['pulse-paint'],
+    selectors: ['.card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on]))', '.card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on]))'],
+    why: 'The same swell where CSS paints the card’s light, without WebGL (no data-bs-on): the face’s own shadow (--bs1), so the face is drawn again each frame it runs, where faces are sharp its own layer at twice its size. Only on the cards yours to pick, face up; not measured, as no scene the redraw check watches has one (each scene’s faces read 0 px at rest). A layer of its own can’t make it smaller: the shadow is the face’s own.',
   },
   // ---- played from a script (element.animate)
   {
@@ -166,9 +160,9 @@ export const PAINTED: Painted[] = [
   },
   {
     file: 'src/components/zonecard/ZoneCard.svelte',
-    animate: { in: ['animate'], props: ['stroke-dashoffset'] },
+    animate: { in: ['animate'], props: ['stroke-dashoffset', 'stroke-dasharray'] },
     why: 'Once, 0.4 to 0.6 s, as a zone’s title card’s divider is struck out under the name: its rules, an svg 12 px tall.',
   },
-  { file: 'src/components/zonecard/ZoneSeal.svelte', animate: { in: ['draw'], props: ['stroke-dashoffset'] }, why: 'Once, about 1.3 s, as a zone’s seal draws itself on its title card: its rings and sigil, an svg 36 to 72 px across.' },
-  { file: 'src/components/zonecard/NewsMark.svelte', animate: { in: ['onMount'], props: ['stroke-dashoffset'] }, why: 'Once, 0.3 s, as what’s new on a zone’s title card gets its mark: the mark’s rings, a small svg in a box 6.5 rem wide.' },
+  { file: 'src/components/zonecard/ZoneSeal.svelte', animate: { in: ['draw'], props: ['stroke-dashoffset', 'stroke-dasharray'] }, why: 'Once, about 1.3 s, as a zone’s seal draws itself on its title card: its rings and sigil, an svg 36 to 72 px across.' },
+  { file: 'src/components/zonecard/NewsMark.svelte', animate: { in: ['onMount'], props: ['stroke-dashoffset', 'stroke-dasharray'] }, why: 'Once, 0.3 s, as what’s new on a zone’s title card gets its mark: the mark’s rings, a small svg in a box 6.5 rem wide.' },
 ];

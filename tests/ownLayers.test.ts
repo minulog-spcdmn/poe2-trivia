@@ -505,17 +505,63 @@ const changed = (n: ts.Node) =>
   (ts.isBinaryExpression(n.parent) && n.parent.left === n && n.parent.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && n.parent.operatorToken.kind <= ts.SyntaxKind.LastAssignment) ||
   ((ts.isPrefixUnaryExpression(n.parent) || ts.isPostfixUnaryExpression(n.parent)) && (n.parent.operator === ts.SyntaxKind.PlusPlusToken || n.parent.operator === ts.SyntaxKind.MinusMinusToken)) ||
   ts.isDeleteExpression(n.parent);
+/** The scripts calls() reads, where an import is looked for. */
+let reading: Script[] = [];
+const sameFile = (a: string, b: string) => a === b || a.replace(/\.(ts|svelte)$/, '') === b || b.replace(/\.(ts|svelte)$/, '') === a;
+/** The const an import names, where its file exports one by that name. */
+function exported(b: { from: string; name: string }, by: string): Binding | null {
+  const file = importedFile(b.from, by);
+  for (const s of reading.filter((s) => sameFile(s.file, file)))
+    for (const st of s.ast.statements)
+      if (ts.isVariableStatement(st) && st.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword))
+        for (const decl of st.declarationList.declarations)
+          if (ts.isIdentifier(decl.name) && decl.name.text === b.name) return { kind: 'var', decl, scope: s.ast, isConst: Boolean(st.declarationList.flags & ts.NodeFlags.Const) };
+  return null;
+}
+/** Where each file that imports an exported const reads it. */
+function imported(decl: ts.VariableDeclaration): ts.Identifier[] {
+  const st = decl.parent.parent;
+  if (!ts.isVariableStatement(st) || !st.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword) || !ts.isIdentifier(decl.name)) return [];
+  const name = decl.name.text;
+  const file = decl.getSourceFile().fileName;
+  const out: ts.Identifier[] = [];
+  for (const s of reading) {
+    // (The names it's imported as here, then each read of one that's that import.)
+    const local = new Set(
+      s.ast.statements.flatMap((i) =>
+        ts.isImportDeclaration(i) && ts.isStringLiteral(i.moduleSpecifier) && sameFile(importedFile(i.moduleSpecifier.text, s.file), file) && i.importClause?.namedBindings && ts.isNamedImports(i.importClause.namedBindings)
+          ? i.importClause.namedBindings.elements.filter((e) => (e.propertyName ?? e.name).text === name).map((e) => e.name.text)
+          : [],
+      ),
+    );
+    if (!local.size) continue;
+    const walk = (n: ts.Node): void => {
+      if (ts.isIdentifier(n) && local.has(n.text) && !ts.isImportSpecifier(n.parent) && !(ts.isPropertyAccessExpression(n.parent) && n.parent.name === n) && !(ts.isPropertyAssignment(n.parent) && n.parent.name === n) && resolve(n)?.kind === 'import') out.push(n);
+      ts.forEachChild(n, walk);
+    };
+    walk(s.ast);
+  }
+  return out;
+}
 /**
  * A const's keyframes: its value, what's pushed onto it, and what's set on
  * it (a key of a keyframe); read by `as`. Changed any other way, or handed
- * to anything but what plays it, UNREAD.
+ * to anything but what plays it, UNREAD. Imported, the one its file
+ * exports, and each file that imports it may only hand it to what plays it.
  */
 function variable(id: ts.Identifier, seen: Set<ts.Node>, as: (e: ts.Expression, seen: Set<ts.Node>) => Props): Props {
-  const b = resolve(id);
+  const at = resolve(id);
+  const b = at?.kind === 'import' ? exported(at, id.getSourceFile().fileName) : at;
   if (b?.kind !== 'var' || !b.isConst || !b.decl.initializer) return UNREAD;
   if (seen.has(b.decl)) return new Set();
   seen = new Set([...seen, b.decl]);
   const out: Props[] = [as(b.decl.initializer, seen)];
+  for (const use of imported(b.decl)) {
+    const p = use.parent;
+    const callee = ts.isCallExpression(p) && p.arguments.some((a) => a === use) ? unwrapExpr(p.expression) : null;
+    const name = callee && (ts.isPropertyAccessExpression(callee) ? callee.name.text : ts.isIdentifier(callee) ? callee.text : '');
+    if (!name || !animators.has(name)) out.push(UNREAD);
+  }
   for (const use of uses(b.decl, b.scope)) {
     const p = use.parent;
     // How far up a chain of reads off it (x.a[0].b) it goes, and whether the end of that is changed.
@@ -589,6 +635,7 @@ type Call = { file: string; line: number; in: string; props: string[] | null; ca
 
 /** Every element.animate() of what's painted, through the functions that pass keyframes on to it as well. */
 function calls(list = scripts, texts = all): Call[] {
+  reading = list;
   const wrappers: Wrapper[] = [];
   // Where a call plays keyframes: animate()'s own, or a wrapper's (by its name; through an import, the file's that has it).
   const played = (c: ts.CallExpression, script: Script): { frames: number; el: ts.Expression | null }[] => {
@@ -662,7 +709,8 @@ test('the animations of what is painted are found', () => {
   // (The emblems' kindle and the timer's lamp, at least.)
   assert.ok(found.some((f) => f.file === 'src/components/ChooseCategory.svelte' && f.keyframes === 'kindle'), 'found the kindle');
   assert.ok(found.some((f) => f.file === 'src/components/TimerRing.svelte' && f.keyframes === 'lamp'), 'found the timer’s lamp');
-  assert.ok(found.filter((f) => f.layered).length >= 5, 'found the ones with a layer of their own');
+  assert.ok(found.some((f) => f.file === 'src/components/Settings.svelte' && f.keyframes === 'breathe' && f.layered), 'found the seal’s breath on a layer of its own');
+  assert.ok(found.some((f) => f.file === 'src/components/GameOver.svelte' && f.keyframes === 'gleam' && f.layered), 'and GameOver’s gleam');
   // (The ladder's holes, named through a var() its markup sets; a picture's veil, a filter played from its script.)
   assert.ok(found.some((f) => f.file === 'src/components/DelveLadder.svelte' && f.keyframes === 'var(--holes)'), 'found the ladder’s holes');
   assert.ok(played.some((c) => c.file === 'src/components/QuestionView.svelte' && c.props?.includes('filter')), 'found the veil’s flash');
@@ -722,6 +770,13 @@ test('what a script animates is read from it', () => {
     ['enter: -webkit-mask-position'],
     'a wrapper’s keyframes are its callers’',
   );
+  const two = (a: string, b: string) => {
+    const texts = [{ file: 'src/k.ts', src: a }, { file: 'src/a.ts', src: b }];
+    return calls(scriptsOf(texts), texts).map((c) => `${c.in}: ${c.props?.join(', ') ?? '?'}`);
+  };
+  const K = `export const K = [{ strokeDashoffset: 100, opacity: 0 }, { strokeDashoffset: 0, opacity: 1 }];`;
+  assert.deepEqual(two(K, `import { K } from './k'; function go(el) { el.animate(K, 1); }`), ['go: stroke-dashoffset'], 'keyframes another file exports');
+  assert.deepEqual(two(K, `import { K as L } from './k'; function go(el) { L.push({ color: 'red' }); el.animate(L, 1); }`), ['go: ?'], 'but not where a file that imports them changes them');
   assert.deepEqual(read(`<script>let el; onMount(() => el.animate(Array.from({ length: 3 }, (_, i) => ({ color: 'red', offset: i / 2 })), 1));</script>`, 'src/t.svelte'), ['onMount: color'], 'Array.from()’s, in a component');
   assert.deepEqual(read(`<button onclick={(e) => e.currentTarget.animate(k, 1)}></button>`, 'src/t.svelte'), ['(markup): ?'], 'and one in the markup taken as painted');
 });
