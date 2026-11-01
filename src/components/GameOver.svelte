@@ -26,7 +26,7 @@
   import { countEvent } from '../lib/count';
   import { portal } from '../lib/portal';
   import { dock, flat, phone } from '../lib/layout';
-  import { FINDS_IN_ORDER, delveStandings, isGroupRun, missedFossils, runFossils, shownDepth, teamDepth } from '../lib/delve';
+  import { FINDS_IN_ORDER, delveStandings, isGroupRun, runFossils, shownDepth, teamDepth } from '../lib/delve';
   import { FIND_RULES, FIND_TEXT, MODE_NAMES } from '../lib/difficultyText';
   import { loadRecords } from '../lib/delveRecord';
   import { GROUND_Y } from '../lib/runsPlate';
@@ -291,7 +291,7 @@
     const mine = set.run.length ? runFossils(s).find((f) => f.id === set.run[0]) : undefined;
     if (mine) return { kind: 'found', id: mine.id, depth: shownDepth(mine.depth), ...at };
     if (set.complete) return { kind: 'all', ...at };
-    const missed = missedFossils(s).find((f) => local || (!!me && f.to.includes(me)));
+    const missed = set.missed[0];
     if (missed) return { kind: 'missed', depth: shownDepth(missed.depth), ...at };
     return { kind: set.found ? 'held' : 'none', ...at };
   });
