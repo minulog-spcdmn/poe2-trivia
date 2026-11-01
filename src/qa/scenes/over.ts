@@ -591,7 +591,7 @@ export function endScenes(): EndScene[] {
     asSet('game', 'Normal games', 'Any game, as set', GAME_CONTROLS, [
       { label: 'Any game, as set', values: {} },
       { label: 'The fullest game: twelve players, 24 missed, eight earned', values: { players: 12, place: 'second', missed: 24, earned: 8, joining: 3 } },
-      { label: 'The fullest game, its last achievement judged a moment late', values: { players: 12, place: 'second', missed: 24, earned: 8, joining: 3, late: 'feat' } },
+      { label: 'An achievement judged a moment late: the column steps tighter, the circle and all glide there', values: { players: 3, place: 'second', missed: 6, earned: 1, late: 'feat' } },
       { label: 'The fullest game, the missed list’s +N pressed: it opens, what’s below glides down', values: { players: 12, place: 'second', missed: 24, earned: 8, joining: 3, pressed: 'missed' } },
       { label: 'The fullest hot-seat: six players, 30 missed', values: { kind: 'hot', players: 6, missed: 30 } },
     ], anyGame),
