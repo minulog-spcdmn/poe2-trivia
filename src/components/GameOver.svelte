@@ -77,15 +77,6 @@
   type Fact = Line | { fossil: FossilFact };
   const anOrA = (name: string) => (/^[AEIOU]/.test(name) ? 'an' : 'a');
 
-  // The nodule a fossil lies in, engraved (docs/arcane-style.md; the card's own in lib/findEngraving.ts): an exact
-  // ellipse, tilted, with two growth rings off its centre toward the light, hatched on the side from the light (the lower right) between its rim and the
-  // outer ring, and the fine seam it splits along across it, the rings and the hatching stopping short of it.
-  const ellipse = (rx: number, ry: number, cx = 0, cy = 0) => `M${cx - rx} ${cy}A${rx} ${ry} 0 1 0 ${cx + rx} ${cy}A${rx} ${ry} 0 1 0 ${cx - rx} ${cy}Z`;
-  const NODULE_RIM = `${ellipse(8.8, 6.4)}${ellipse(6, 4.3, -0.5, -0.3)}`;
-  const NODULE_HATCH = Array.from({ length: 7 }, (_, i) => 3.4 + i * 1.35)
-    .map((c) => `M${(c - 11).toFixed(2)} 11L11 ${(c - 11).toFixed(2)}`)
-    .join('');
-  const NODULE_SEAM = 'M-8.8 0.5L-5.6 -0.5L-2.4 0.7L0.9 -0.6L4.2 0.6L8.8 -0.4';
 
   // The end of a game, as the lobby is laid out: on the left the result in
   // a rune circle, the eye or the monad, or after a Delve the moth (the
@@ -822,34 +813,11 @@
 {/snippet}
 
 <!-- The fossil line: the set's progress, a plain link that opens the set (not gold: Delve again keeps the one gold
-     button). Its mark the fossil found, else the nodule it lies in, engraved in bone. -->
+     button). Its mark the fossil found; none, its place kept, when none was. -->
 {#snippet fossilFact(f: FossilFact)}
   <li class="fossil-line" data-fossil={f.kind}>
     <span class="ic" aria-hidden="true">
-      <span class="mini sign">
-        {#if f.kind === 'found'}
-          <img class="fossil-ic" src={fossilArt(f.id, 128)} alt="" />
-        {:else}
-          <svg class="nodule-ic" viewBox="-11 -11 22 22">
-            <defs>
-              <clipPath id="nodule-rim"><path clip-rule="evenodd" d={NODULE_RIM} /></clipPath>
-              <mask id="nodule-seam" maskUnits="userSpaceOnUse" x="-11" y="-11" width="22" height="22">
-                <rect x="-11" y="-11" width="22" height="22" fill="#fff" />
-                <path d={NODULE_SEAM} stroke="#000" stroke-width="2.2" fill="none" />
-              </mask>
-            </defs>
-            <g transform="rotate(-16)">
-              <g mask="url(#nodule-seam)">
-                <ellipse rx="8.8" ry="6.4" />
-                <ellipse class="ring" cx="-0.5" cy="-0.3" rx="6" ry="4.3" />
-                <ellipse class="ring" cx="-1.1" cy="-0.6" rx="3.1" ry="2.1" />
-                <path class="hatch" clip-path="url(#nodule-rim)" d={NODULE_HATCH} />
-              </g>
-              <path class="seam" d={NODULE_SEAM} />
-            </g>
-          </svg>
-        {/if}
-      </span>
+      {#if f.kind === 'found'}<span class="mini sign"><img class="fossil-ic" src={fossilArt(f.id, 128)} alt="" /></span>{/if}
     </span>
     <span class="txt">
       <button class="set-link" onclick={openSet} aria-haspopup="dialog">
@@ -857,7 +825,7 @@
           {@const name = fossilById(f.id).name}
           You unearthed {anOrA(name)} <span class="fossil-name">{name}</span> at depth <b class="n">{f.depth}</b>; <span class="of"><b class="n">{f.count}</b> of <b class="n">{f.total}</b>.</span>
         {:else if f.kind === 'missed'}
-          A fossil stayed in the stone at depth <b class="n">{f.depth}</b>; <span class="of"><b class="n">{f.count}</b> of <b class="n">{f.total}</b>.</span>
+          A fossil got away at depth <b class="n">{f.depth}</b>; <span class="of"><b class="n">{f.count}</b> of <b class="n">{f.total}</b>.</span>
         {:else if f.kind === 'held'}
           Fossils: <span class="of"><b class="n">{f.count}</b> of <b class="n">{f.total}</b> in your codex.</span>
         {:else if f.kind === 'all'}
@@ -2104,37 +2072,6 @@
     object-fit: contain;
     filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
   }
-  /*
-   * The fossil card's ink, for the line's nodule and its link: --fossil-ink and --fossil-ink-hi where the card's
-   * palette sets them for the page (app.css), else bone.
-   */
-  .fossil-line {
-    --ink: var(--fossil-ink, #e6dcc6);
-    --ink-hi: var(--fossil-ink-hi, #f6f0e2);
-  }
-  /* The nodule a fossil lies in, engraved in the card's ink: no fossil found this run. */
-  .nodule-ic {
-    width: 82%;
-    height: 82%;
-    overflow: visible;
-    fill: none;
-    stroke: var(--ink);
-    stroke-width: 0.9;
-  }
-  .nodule-ic .ring {
-    stroke-width: 0.7;
-    opacity: 0.8;
-  }
-  .nodule-ic .hatch {
-    stroke-width: 0.55;
-    stroke-linecap: round;
-    opacity: 0.75;
-  }
-  .nodule-ic .seam {
-    stroke: var(--ink-hi);
-    stroke-width: 0.5;
-    stroke-linejoin: round;
-  }
   /* The fossil line: a plain link to the set, its words as any line's; the count lights as it's pointed at. */
   .set-link {
     display: inline;
@@ -2148,7 +2085,7 @@
     cursor: pointer;
   }
   .set-link .of {
-    text-decoration: underline dotted color-mix(in srgb, var(--ink) 35%, transparent);
+    text-decoration: underline dotted color-mix(in srgb, currentColor 40%, transparent);
     text-underline-offset: 3px;
     transition:
       color 0.2s,
@@ -2156,8 +2093,8 @@
   }
   .set-link:hover .of,
   .set-link:focus-visible .of {
-    color: var(--ink-hi);
-    text-decoration-color: color-mix(in srgb, var(--ink-hi) 75%, transparent);
+    color: #f4ecdf;
+    text-decoration-color: color-mix(in srgb, currentColor 75%, transparent);
   }
   /* A fossil's name as PoE names a currency item (a fossil is one): its colour, in the tooltip's own type. */
   .fossil-name {
