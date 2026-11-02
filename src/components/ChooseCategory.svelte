@@ -18,6 +18,7 @@
   import { categoryCompanions, categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
   import { MAX_H, MAX_W, PAD, WEIGHT, fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
   import { fineMask } from '../lib/fineMask';
+  import { inclusion } from '../lib/inclusion';
   import { activeRules, difficultyOf } from '../lib/game';
   import { FIND_TEXT, deathmatchText, digNote, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
   import { WAY_OUT_CARD as out } from '../lib/wayOut/lantern';
@@ -1060,8 +1061,14 @@
                     {/each}
                   </span>
                 {/if}
-                <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')" use:fineMask={maskOf(iconOf(cat))}></span></span>
+                <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')" use:fineMask={maskOf(iconOf(cat))} use:inclusion={fossilTierAt(cat) ? { url: maskOf(iconOf(cat)), part: 'body' } : null}></span></span>
               </span>
+              {#if fossilTierAt(cat)}
+                <!-- A fossil's emblem again, only the light along its edge toward the lamp: screened, where the emblem itself is multiplied. -->
+                <span class="icon rimlight" aria-hidden="true"
+                  ><span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')" use:fineMask={maskOf(iconOf(cat))} use:inclusion={{ url: maskOf(iconOf(cat)), part: 'rim' }}></span></span
+                ></span>
+              {/if}
               {#if kindOf(cat) === 'azurite'}
                 <!-- The vein's crystals in the corner stand in front of the item. -->
                 <CardEngraving side="face" find="azurite" front />
@@ -2220,18 +2227,22 @@
     opacity: 0.8;
   }
   /* Its emblem caught in the amber, as the creature in a fossil's icon:
-     olive-brown, multiplied over the amber so its light and flows show
-     through it (one colour: the amber's light under it shades it, dithered,
-     where a gradient of its own would band); soft at its edge, where it
-     thins and the light comes through, and where it lies a little deep. No glow, no shadow: it's in
-     the slab, not on it (its kindle, too, only brightens it). */
+     olive-brown, thick and dark at its core, thinner toward its edges and
+     up toward the lamp, multiplied over the amber so its light and planes
+     show through it; along its edge toward the lamp, a hair of the light
+     (its twin, .rimlight, screened). No glow, no shadow: it's in the slab,
+     not on it (its kindle, too, only brightens it). */
   .card[data-fossil] .icon,
   .card[data-fossil] .turn:global(.kindling) .icon {
     filter: brightness(var(--kindle-lum, 1));
     mix-blend-mode: multiply;
   }
+  .card[data-fossil] .icon.rimlight,
+  .card[data-fossil] .turn:global(.kindling) .icon.rimlight {
+    mix-blend-mode: screen;
+  }
   .card[data-fossil] .lit {
-    filter: blur(0.3px);
+    filter: none;
   }
   /* Lifted toward the player, it's held nearer the lamp: the light reaching
      further across it, its heart brighter. */
@@ -2249,13 +2260,20 @@
   .card.special .glyph {
     background: var(--f-glyph);
   }
-  /* A fossil's emblem mottled, as a creature in the resin is: and its grain,
-     stirred into it before it's multiplied, keeps the amber's light under it
-     from banding (the amber's own dither, darkened through it, rounds to the
-     same level in runs). An image of its own, written out, beside a colour. */
+  /* A fossil's emblem as the amber caught it (lib/inclusion: its body and
+     its rim painted from its mask, dithered, each its own element's image,
+     written from the script): laid as its mask is, so the two meet. */
   .card[data-fossil] .glyph {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .36 0 0 0 -.12'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-    background-size: 120px;
+    background-position: center;
+    background-size: contain;
+    background-repeat: no-repeat;
+  }
+  .card[data-fossil] .glyph.fit {
+    background-size: calc(var(--e-iw) * var(--u)) calc(var(--e-ih) * var(--u));
+    background-position: calc(var(--e-x) * var(--u) * -1) calc(var(--e-y) * var(--u) * -1);
+  }
+  .card[data-fossil] .rimlight .glyph {
+    background-color: #000;
   }
   .card.special .title {
     color: var(--f-hi);
@@ -2592,6 +2610,10 @@
     .card[data-fossil] .glyph:not(.fit) {
       width: 64px;
       height: 64px;
+    }
+    /* (Its rim's twin over it, laid out as it is and taking no room: back by its width and the row's gap.) */
+    .card[data-fossil] .rimlight {
+      margin-left: calc(-80px - 32px);
     }
     /* A row has no room for an item to grow. */
     .glyph.fit {
