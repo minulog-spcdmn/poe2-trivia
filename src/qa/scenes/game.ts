@@ -386,7 +386,9 @@ export function gameScenes(): Scene[] {
     // the finds' notes and an unused stick's must fit a small phone's
     // browser, 375 x 635, and a phone on its side, 844 x 340); the first
     // one, the hook, on the first offer at depth 5; and a rare beside the
-    // Azurite Vein at 25, as the rare's hook stages it.
+    // Azurite Vein at 25, as the rare's hook stages it. Its card shows its
+    // category's emblem caught in the amber, so any category can carry it:
+    // the gems' cut brooch, or an item with others of its kinds behind it.
     scene(
       'delve-fossil',
       'Delve alone',
@@ -394,7 +396,10 @@ export function gameScenes(): Scene[] {
       [ALONE],
       (v) => {
         const beside = String(v.beside ?? 'none');
+        const cat = String(v.cat ?? 'dealt');
         const t = v.hook ? delveAlone().playTo((s) => s.round >= 6 && s.phase === 'choosing') : delveAlone();
+        // The chosen category on the middle card, swapped with the card that held it if it was dealt.
+        if (cat !== 'dealt') t.s.offered = t.s.offered.map((c, i) => (i === 1 ? cat : c === cat ? t.s.offered[1] : c));
         const [first, middle, last] = t.s.offered;
         t.s.delve!.finds = [
           ...(beside === 'none' ? [] : [{ category: first, kind: 'azurite' as const }]),
@@ -415,6 +420,27 @@ export function gameScenes(): Scene[] {
               { value: 'none', label: 'None' },
               { value: 'one', label: 'A vein' },
               { value: 'two', label: 'A vein and a flare' },
+            ],
+          },
+          {
+            kind: 'choice',
+            key: 'cat',
+            label: 'Its category',
+            default: 'dealt',
+            options: [
+              { value: 'dealt', label: 'As dealt' },
+              ...[
+                'One-Handed Weapons',
+                'Two-Handed Weapons',
+                'Off-Hands',
+                'Body Armours',
+                'Helmets',
+                'Gloves & Boots',
+                'Rings',
+                'Amulets & Belts',
+                'Flasks, Charms, Jewels, Relics & Tablets',
+                'Lineage Gems',
+              ].map((c) => ({ value: c, label: c })),
             ],
           },
           { kind: 'toggle', key: 'rare', label: 'A rare one', default: false },
