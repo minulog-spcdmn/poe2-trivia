@@ -190,7 +190,8 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   (`applyShake` in `src/lib/fx/core.ts`). To find the next one, sum the
   raster tasks per frame; the categories `cc` and
   `disabled-by-default-devtools.timeline.invalidationTracking` add which
-  layer was redrawn and what invalidated it.
+  layer was redrawn and what invalidated it. The redraw check
+  (`docs/qa.md`, “Redraws”) does that in CI on every pull request.
 - **Frame hitches on iOS** are measured on the owner's iPhone, driven from
   the PC (`docs/iphone.md`, with what it found: layers composited after an
   animation WebKit can't bound, filters redrawn under a dialog, work that
@@ -372,7 +373,12 @@ effect): find what holds the frame up.
 
    Run them against the dev server: the local channel counts nothing, and
    the live site would count the run as a player's game. Run one at a time:
-   it takes the screen and slows every other session. The first run on the
+   it slows every other session. Its window opens behind the others and
+   gives the keyboard back (`scripts/pc/behind.ps1`; Chrome draws every
+   frame there all the same), so it doesn't take the screen from whoever
+   works at the PC; `FRONT=1` keeps it in front. It's muted too
+   (`--mute-audio`: the sound still plays in the page, only not out of the
+   speakers). The first run on the
    fresh profile (`.pc/profile`) has a cold shader cache, so run each
    variant twice. Parts come away without editing code through `CSS=` (a
    style sheet added), `INIT=` (a script run first) and the `?off=`
@@ -425,6 +431,22 @@ effect): find what holds the frame up.
      boxes in each animation frame anyway, so what measures something
      that has just mounted does it there (`src/lib/inFrame.ts`): laid out
      once by then, and still before the frame is painted.
+   - **Style at some 30 µs an element.** Not the selectors: matching is a
+     few percent of a new screen's style (SelectorStats, in
+     `disabled-by-default-blink.debug`, which slows style tenfold, so time
+     nothing with it on). It's `var()`: Chrome substitutes a declaration's
+     variables and parses the value again on every element at every
+     restyle, and the style cache doesn't spare it. The same value written
+     out, or `inherit`, costs next to nothing. A cursor picture named
+     through a variable on every element (an `image-set()` of three urls)
+     was a third of a question's style; every element inherits it now
+     (`app.css`, `lib/ownCursor.ts`). The rest is each component's own:
+     a card frame's transitions and gradients, an emblem's fit in
+     `calc(var())`, the backdrop's shadow variables. To weigh a kind of
+     declaration, strip it from every rule through the CSSOM and time the
+     style of a clone of the screen (`getComputedStyle` forces style
+     alone) against the rules as they are, alternated. A hidden browser
+     pane does for that: style needs no screen.
 3. **On the iPhone**, the same questions through its Web Inspector:
    `docs/iphone.md`. A scene on its own is `qa.html?frame&s=<scene
    key>&size=fit` in a `--qa` build. Without `&size=fit` the desk plays a
@@ -475,7 +497,25 @@ stops when:
 
 A new item poe2db has no tooltip for is left out of this refresh rather than
 shipped without one. The run ends with a summary of what was added, renamed,
-dropped, changed and left out. `src/data/fakes.json` is by name: a new or
+dropped, changed and left out.
+
+Each item new in a run is stamped with the run's UTC day, `added` in
+`items.json` (`firstSeen` in `scripts/refresh-plan.mjs`), and keeps it
+through every later refresh, a rename too (it keeps its id). The items
+listed before the stamps began (every item before 1.0) have none. The start page
+counts the items of the newest release in `src/lib/releases.ts` by it:
+those first listed on the release's day or after, while any is still to
+meet ("39 came with 1.0", `docs/gameplay.md`, "Codex"). So:
+
+- run 1.0's refresh on or after its day, 2026-12-11 (a run before stamps
+  its items with a day before 1.0's, and they never count as its);
+- a new league's refresh adds the league's row to `RELEASES` first (its
+  name as players call it, its first day); without it the league's items
+  would count as 1.0's. The 1.0 line then gives way to the league's.
+
+An item left out for want of a tooltip is stamped on the run that lists
+it. Nothing else reads `added`: the Daily's rows and Delve's rules don't
+move with it. `src/data/fakes.json` is by name: a new or
 renamed item needs its two fakes there (`tests/fakes.test.ts`).
 
 Each item's tooltip (properties, requirements, mods, flavour text) comes from

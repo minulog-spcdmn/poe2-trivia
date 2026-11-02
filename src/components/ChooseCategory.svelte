@@ -612,14 +612,46 @@
    * takes flat transforms, which Chrome rasters larger as it grows.
    */
   const printed = $derived(sharp && !rows.current);
-  /** How long card i's side lies unseen once it's dealt (ms), which its plate's prints may take without its strokes drawn: its back until it fades in, its face until it's turned halfway up. Held still, or shown without a deal (after a refresh), it's seen at once. */
-  const unseen = (i: number, side: 'back' | 'face') => (dealing ? Math.round((side === 'back' ? dealAt(i) : flipAt(i) + FLIP / 2) * 1000) : 0);
+  /** How long card i's side lies unseen once it's filled in (ms, see `filled`), which its plate's prints may take without its strokes drawn: its back until it fades in, its face until it's turned halfway up. Held still, or shown without a deal (after a refresh), it's seen at once. */
+  const unseen = (i: number, side: 'back' | 'face') => (dealing ? Math.max(0, Math.round((side === 'back' ? dealAt(i) : flipAt(i) + FLIP / 2) * 1000 - late)) : 0);
   /** When the deal began; null when the cards appeared without one (as after a refresh). */
   let dealtAt: number | null = null;
   /** Whether the cards are dealt (not held still, nor shown without a deal): a card lies unseen at first only then. */
   let dealing = $state(false);
   /** Whether card i lies face up yet (it can't be picked or catch fire before). */
   const faceUp = (i: number) => dealtAt === null || performance.now() - dealtAt >= (flipAt(i) + FLIP) * 1000;
+  /**
+   * Whether the cards' sides are filled in. A dealt hand's are made a frame
+   * after the cards, which lie unseen until they fade in (from 150 ms):
+   * made with the screen that deals them, they were half of what an iPhone
+   * mounted at Begin, all in the frame that shows it (#331). The cards and
+   * their sides' boxes come first, sized as ever, so nothing moves as
+   * they're filled, and the sheen, whose entrance keeps to the deal's clock;
+   * the engravings' holds are short of how late they're filled (`late`).
+   * Shown without a deal (held still, or after a refresh), or too near to
+   * being seen to wait a frame, they're filled in the frame that shows them.
+   */
+  let filled = $state(false);
+  /** How far into the deal (ms) the sides were filled: what their engravings' holds are short of. */
+  let late = $state(0);
+  $effect(() => {
+    // (In the animation frame of the frame the cards are first drawn in:
+    // their deal has begun by then, or there's none. Filled in the next
+    // one's, the frames' own times say how late. Only with a long frame's
+    // room to spare before the first fades in: the fade runs on the
+    // compositor, whatever holds the page.)
+    let asked = requestAnimationFrame((first) => {
+      if (!dealing || dealtAt === null || dealAt(0) * 1000 - (performance.now() - dealtAt) < 100) {
+        filled = true;
+        return;
+      }
+      asked = requestAnimationFrame((now) => {
+        late = now - first;
+        filled = true;
+      });
+    });
+    return () => cancelAnimationFrame(asked);
+  });
 
   // The transitions are global: the cards are created with the screen, which
   // a local transition skips. The card fades in, and its inner part moves:
@@ -727,9 +759,13 @@
     if (!frame) return;
     tilts.get(frame)?.stop();
     tilts.delete(frame);
-    frame.style.removeProperty('--tilt-x');
-    frame.style.removeProperty('--tilt-y');
+    for (const el of [frame, twinOf(frame)]) {
+      el?.style.removeProperty('--tilt-x');
+      el?.style.removeProperty('--tilt-y');
+    }
   }
+  /** The face's twin that holds its light while CSS paints it (.pulse), tilted with it. */
+  const twinOf = (frame: HTMLElement) => frame.parentElement?.querySelector<HTMLElement>(':scope > .pulse') ?? null;
   /**
    * The tilt eases after the pointer in script, a frame at a time, once the
    * hover's own lift is over (.tilting): a CSS transition begun afresh on
@@ -742,9 +778,12 @@
   type Tilt = { since: number; rx: number; ry: number; to: [number, number]; frame: number; stop: () => void };
   const tilts = new Map<HTMLElement, Tilt>();
   function tiltTo(frame: HTMLElement, rx: number, ry: number) {
+    const twin = twinOf(frame);
     const put = (t: Tilt) => {
-      frame.style.setProperty('--tilt-x', `${t.rx.toFixed(3)}deg`);
-      frame.style.setProperty('--tilt-y', `${t.ry.toFixed(3)}deg`);
+      for (const el of [frame, twin]) {
+        el?.style.setProperty('--tilt-x', `${t.rx.toFixed(3)}deg`);
+        el?.style.setProperty('--tilt-y', `${t.ry.toFixed(3)}deg`);
+      }
     };
     let t = tilts.get(frame);
     if (!t) {
@@ -977,45 +1016,54 @@
         <!-- (The card's two sides together: what a dim card's filter goes on when its face is sharp.) -->
         <span class="sides">
           <span class="turn" in:deal|global={{ i, n: s.offered.length }}>
+            <!-- What's on each side waits for `filled`, all but what lays a row out (the emblem's box, the name) and the sheen, whose entrance starts with the emblem's. -->
             <span class="back" aria-hidden="true">
-              <span class="grain"></span>
-              <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} hold={unseen(i, 'back')} />
-              {@render filigree()}
+              {#if filled}
+                <span class="grain"></span>
+                <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} hold={unseen(i, 'back')} />
+                {@render filigree()}
+              {/if}
             </span>
             <span class="frame" data-sharp={sharp || undefined} use:backdropShadow={{ pulse: pulses[i] }}>
-              {#if s.deathmatch}
-                <!-- The rim's ring and the shade over it, as every face has them in its box-shadow: here elements of their own, under all else, so the menace fades the ring as a layer. -->
-                <span class="rim ring"></span>
-                <span class="rim shade"></span>
+              {#if filled}
+                {#if s.deathmatch}
+                  <!-- The rim's ring and the shade over it, as every face has them in its box-shadow: here elements of their own, under all else, so the menace fades the ring as a layer. -->
+                  <span class="rim ring"></span>
+                  <span class="rim shade"></span>
+                {/if}
+                <span class="grain"></span>
+                <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} hold={unseen(i, 'face')} />
+                <span class="glare"><span class="light"></span></span>
               {/if}
-              <span class="grain"></span>
-              <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} hold={unseen(i, 'face')} />
-              <span class="glare"><span class="light"></span></span>
               <span class="sheen"></span>
-              {@render filigree()}
-              {#if kindOf(cat)}
-                {@const kind = kindOf(cat)!}
-                <span class="find-tag" data-zoom>{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span>
-              {:else if isWayOut(cat)}
-                <span class="find-tag out-tag" data-zoom>{out.tag(haul)}</span>
+              {#if filled}
+                {@render filigree()}
+                {#if kindOf(cat)}
+                  {@const kind = kindOf(cat)!}
+                  <span class="find-tag" data-zoom>{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span>
+                {:else if isWayOut(cat)}
+                  <span class="find-tag out-tag" data-zoom>{out.tag(haul)}</span>
+                {/if}
               {/if}
               <span class="icon" class:none={isWayOut(cat)}>
-                {#if heap}
-                  {@const at = heap.at}
-                  <span class="lit moons" style:--spread={heap.spread}>
-                    {#each categoryCompanions(cat) as c (c.url)}
-                      {#if at[c.kind]}
-                        {@const [x, y, k, turn] = at[c.kind]}
-                        <span class="moon" style:--mx={x} style:--my={y} style:--mk={k} style:--mr={turn}
-                          ><span class="glyph" class:fit={!!fits[c.url]} style={fitStyle(c.url, { k })} style:--src="url('{maskOf(c.url)}')" use:fineMask={maskOf(c.url)}></span></span
-                        >
-                      {/if}
-                    {/each}
-                  </span>
+                {#if filled}
+                  {#if heap}
+                    {@const at = heap.at}
+                    <span class="lit moons" style:--spread={heap.spread}>
+                      {#each categoryCompanions(cat) as c (c.url)}
+                        {#if at[c.kind]}
+                          {@const [x, y, k, turn] = at[c.kind]}
+                          <span class="moon" style:--mx={x} style:--my={y} style:--mk={k} style:--mr={turn}
+                            ><span class="glyph" class:fit={!!fits[c.url]} style={fitStyle(c.url, { k })} style:--src="url('{maskOf(c.url)}')" use:fineMask={maskOf(c.url)}></span></span
+                          >
+                        {/if}
+                      {/each}
+                    </span>
+                  {/if}
+                  <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')" use:fineMask={maskOf(iconOf(cat))}></span></span>
                 {/if}
-                <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')" use:fineMask={maskOf(iconOf(cat))}></span></span>
               </span>
-              {#if kindOf(cat) === 'azurite'}
+              {#if filled && kindOf(cat) === 'azurite'}
                 <!-- The vein's crystals in the corner stand in front of the item. -->
                 <CardEngraving side="face" find="azurite" front />
               {/if}
@@ -1289,23 +1337,79 @@
      its face, read by the backdrop (lib/backdropShadow, `pulse`): animated
      on the face, its light's properties had every part of the face restyled
      on every frame (4 to 5 ms a frame at 4K, most of the page's thread),
-     however still the card lay. While CSS paints the light, the face swells
-     itself (pulse-paint), in step. docs/category-cards.md, rule 9. */
+     however still the card lay. While CSS paints the light, .pulse holds it
+     itself, as the face's twin: laid out and moved as the face is (the
+     rules below that move the face move it too), its light on two layers
+     of its own (::before at rest, ::after swollen) whose opacities trade
+     places, in step. Swollen on the face itself, the face was drawn again
+     every frame (Firefox, Safari), or not at all (Chrome, where the light
+     then never swelled). docs/category-cards.md, rule 9. */
   .pulse {
     position: absolute;
     width: 0;
     height: 0;
     pointer-events: none;
+    /* (The face's light, as .frame has it; the states below set it on both.
+       It changes at once here, and eases on ::before, which a light just
+       come up starts without: eased here, it would ease in from a face
+       down's.) */
+    --bs1: 16px 40px;
+    --bs1-color: rgba(0, 0, 0, 0.6);
+    transition:
+      var(--tilt-transition, transform 0.35s var(--ease-out)),
+      opacity 0.4s;
   }
   @keyframes pulse {
     50% {
       --bs-pulse: 1;
     }
   }
-  @keyframes pulse-paint {
+  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])),
+  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) {
+    /* (Its own light without its first shadow, which .pulse holds.) */
+    --bs-soft-paint: 0 var(--bs2, 0 0) var(--bs2-color, transparent);
+  }
+  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse,
+  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse {
+    inset: 0;
+    width: auto;
+    height: auto;
+    border-radius: 8px;
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+  }
+  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::before,
+  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after,
+  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::before,
+  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    will-change: opacity;
+  }
+  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::before,
+  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::before {
+    --bs1: inherit;
+    --bs1-color: inherit;
+    box-shadow: 0 var(--bs1) var(--bs1-color);
+    transition: box-shadow 0.35s;
+  }
+  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after,
+  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after {
+    --bs1-pulse: inherit;
+    --bs1-pulse-color: inherit;
+    box-shadow: 0 var(--bs1-pulse) var(--bs1-pulse-color);
+    opacity: 0;
+  }
+  @keyframes light-ebb {
     50% {
-      --bs1: var(--bs1-pulse);
-      --bs1-color: var(--bs1-pulse-color);
+      opacity: 0;
+    }
+  }
+  @keyframes light-swell {
+    50% {
+      opacity: 1;
     }
   }
   /* A duel's face: its rim's ring and the shade over it, the face's own
@@ -1753,15 +1857,19 @@
   }
   /* Yours to pick, it menaces: its light swells red (by .pulse) as its
      ring fades (a layer, .rim), together. */
-  .card.dm.mine .frame {
+  .card.dm.mine .frame,
+  .card.dm.mine .pulse {
     --bs1-pulse: 0px 45px;
     --bs1-pulse-color: rgba(224, 85, 63, 0.45);
   }
   .card.dm.mine:not(:global(.down)) .pulse {
     animation: pulse 2.4s ease-in-out infinite;
   }
-  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) {
-    animation: pulse-paint 2.4s ease-in-out infinite;
+  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::before {
+    animation: light-ebb 2.4s ease-in-out infinite;
+  }
+  .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after {
+    animation: light-swell 2.4s ease-in-out infinite;
   }
   .card.dm.mine:not(:global(.down)) .rim.ring {
     animation: menace 2.4s ease-in-out infinite;
@@ -1794,7 +1902,9 @@
     cursor: not-allowed;
   }
   .card.mine:not(:global(.down)):hover .frame,
-  .card.mine:not(:global(.down)):focus-visible .frame {
+  .card.mine:not(:global(.down)):focus-visible .frame,
+  .card.mine:not(:global(.down)):hover .pulse,
+  .card.mine:not(:global(.down)):focus-visible .pulse {
     transform: perspective(900px) rotateX(var(--tilt-x)) rotateY(var(--tilt-y)) translateY(-10px) scale(1.04);
     border-color: var(--gold);
     --bs-ring: rgba(201, 164, 92, 0.6);
@@ -1816,7 +1926,8 @@
     initial-value: 0deg;
   }
   /* Lifted, it tilts by script (tiltTo): its own transform takes no transition. */
-  .card.mine:not(:global(.down)):not(.chosen):hover .frame:global(.tilting) {
+  .card.mine:not(:global(.down)):not(.chosen):hover .frame:global(.tilting),
+  .card.mine:not(:global(.down)):not(.chosen):hover .frame:global(.tilting) ~ .pulse {
     --tilt-transition: transform 0s;
   }
   .card.dm.mine:not(:global(.down)):hover .frame,
@@ -1900,7 +2011,8 @@
   }
   /* Lifted and grown a little: no more than keeps it clear of the line over
      the cards on a short window and inside a phone's margins. */
-  .card.chosen .frame {
+  .card.chosen .frame,
+  .card.chosen .pulse {
     transform: translateY(-4px) scale(1.05);
     transition:
       transform 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.15),
@@ -1921,12 +2033,19 @@
     --bs2: 0px 0px;
     --bs2-color: transparent;
   }
+  /* (Its light eases on its ::before, not here: see .pulse.) */
+  .card.chosen .pulse {
+    transition:
+      transform 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.15),
+      opacity 0.4s;
+  }
   .card.dm.chosen .frame {
     border-color: #e88a74;
   }
   /* The others give way: they sink back and fade (opacity and transform
      only, as a filter would redraw the whole card every frame). */
-  .card.faded .frame {
+  .card.faded .frame,
+  .card.faded .pulse {
     opacity: 0.16;
     transform: scale(0.92) translateY(8px);
     transition:
@@ -1978,8 +2097,21 @@
     /* The shrink, in a rule of its own: beside the transform, the build's
        minifier drops it and the live cards come out twice their size
        (tests/minifiedTransforms). */
-    .sharp .turn > .frame {
+    .sharp .turn > .frame,
+    .sharp .turn > .pulse {
       scale: 0.5;
+    }
+    /* The face's twin that holds its light while CSS paints it (.pulse):
+       laid out, turned and shrunk as the face is, so the two lie in one
+       plane and its light over the face's own shadow, as the face's first
+       shadow lay over its second. */
+    .sharp .pulse {
+      transform: perspective(900px) rotateX(0.01deg) rotateY(0deg) translateY(0) scale(1);
+    }
+    .sharp .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse,
+    .sharp .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse {
+      zoom: 2;
+      inset: -75px -50%;
     }
     /* (Its soft shadow drawn by the backdrop, not round it: the filter needs no room for it.) */
     .sharp .frame:global([data-bs-on]) {
@@ -2004,17 +2136,22 @@
       filter: none;
     }
     .sharp .card.mine:not(:global(.down)):hover .frame,
-    .sharp .card.mine:not(:global(.down)):focus-visible .frame {
+    .sharp .card.mine:not(:global(.down)):focus-visible .frame,
+    .sharp .card.mine:not(:global(.down)):hover .pulse,
+    .sharp .card.mine:not(:global(.down)):focus-visible .pulse {
       transform: perspective(900px) rotateX(calc(var(--tilt-x) + 0.01deg)) rotateY(var(--tilt-y)) translateY(-10px) scale(1.04);
     }
-    .sharp .card.chosen .frame {
+    .sharp .card.chosen .frame,
+    .sharp .card.chosen .pulse {
       transform: perspective(900px) rotateX(0.01deg) rotateY(0deg) translateY(-4px) scale(1.05);
     }
-    .sharp .card.faded .frame {
+    .sharp .card.faded .frame,
+    .sharp .card.faded .pulse {
       /* (scale(0.92) translateY(8px), in this order.) */
       transform: perspective(900px) rotateX(0.01deg) rotateY(0deg) translateY(7.36px) scale(0.92);
     }
-    .sharp .card.voted .frame {
+    .sharp .card.voted .frame,
+    .sharp .card.voted .pulse {
       transform: perspective(900px) rotateX(0.01deg) rotateY(0deg) translateY(-8px) scale(1);
     }
   }
@@ -2127,7 +2264,8 @@
       radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
       linear-gradient(170deg, #26110f, #0e0607 70%);
   }
-  .card.special[data-find='flare']:not(:global(.down)) .frame {
+  .card.special[data-find='flare']:not(:global(.down)) .frame,
+  .card.special[data-find='flare']:not(:global(.down)) .pulse {
     --bs1: 0px 44px;
   }
   /* Black powder: the ink an ash grey, the window lit by its ember. */
@@ -2155,28 +2293,36 @@
     --bs-ring: color-mix(in srgb, var(--f-border) 45%, transparent);
   }
   /* Its light, once it lies face up (face down, the back has a shadow of its own). */
-  .card.special:not(:global(.down)) .frame {
+  .card.special:not(:global(.down)) .frame,
+  .card.special:not(:global(.down)) .pulse {
     --bs1: 0px 34px;
     --bs1-color: var(--f-glow);
   }
   /* Yours to pick, its light swells and ebbs (by .pulse). */
-  .card.special.mine .frame {
+  .card.special.mine .frame,
+  .card.special.mine .pulse {
     --bs1-pulse: 0px 46px;
     --bs1-pulse-color: var(--f-pulse);
   }
   .card.special.mine:not(:global(.down)) .pulse {
     animation: pulse 3.2s ease-in-out infinite;
   }
-  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) {
-    animation: pulse-paint 3.2s ease-in-out infinite;
+  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::before {
+    animation: light-ebb 3.2s ease-in-out infinite;
+  }
+  .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after {
+    animation: light-swell 3.2s ease-in-out infinite;
   }
   .card.special.mine:not(:global(.down)):hover .frame,
-  .card.special.mine:not(:global(.down)):focus-visible .frame {
+  .card.special.mine:not(:global(.down)):focus-visible .frame,
+  .card.special.mine:not(:global(.down)):hover .pulse,
+  .card.special.mine:not(:global(.down)):focus-visible .pulse {
     border-color: var(--f);
     --bs-ring: color-mix(in srgb, var(--f) 60%, transparent);
     --bs1-color: var(--f-pulse);
   }
-  .card.special.chosen .frame {
+  .card.special.chosen .frame,
+  .card.special.chosen .pulse {
     border-color: var(--f);
     --bs1-color: var(--f-pulse);
   }
@@ -2303,7 +2449,8 @@
     border-radius: 11px;
   }
   /* The card you voted for stands a little proud of the others, lit at its rim. */
-  .card.voted .frame {
+  .card.voted .frame,
+  .card.voted .pulse {
     transform: translateY(-8px);
     border-color: var(--gold-hi);
     --bs-ring: rgba(241, 217, 155, 0.55);
@@ -2512,7 +2659,8 @@
     .back {
       transform: rotateX(180deg);
     }
-    .card.mine:not(:global(.down)):hover .frame {
+    .card.mine:not(:global(.down)):hover .frame,
+    .card.mine:not(:global(.down)):hover .pulse {
       transform: translateX(6px);
     }
     /* Rows: the votes hang off the row's lower right edge, and the rows part a little more for them. */

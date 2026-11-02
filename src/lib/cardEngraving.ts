@@ -664,16 +664,20 @@ const KEEP = 12;
  * after the plate's, and `knockout` is where the plate's are left out.
  * Shared: not to be changed.
  */
-export const engrave = (side: 'face' | 'back', w: number, h: number, v?: Variant): Engraved => {
+export const engrave = (side: 'face' | 'back', w: number, h: number, v?: Variant): Engraved => engravedAt(side, w, h, v) ?? keep(side, w, h, v, engraveAnew(side, w, h, v));
+
+/** The plate engrave() keeps for this side, size and variant, if it has one. */
+export const engravedAt = (side: 'face' | 'back', w: number, h: number, v?: Variant): Engraved | undefined => engraved.get(v ?? PLAIN)?.get(`${side} ${w} ${h}`);
+
+/** Keeps `plate` as engrave()'s for this side, size and variant (one engraved in a worker: lib/engraveAhead), unless it has one already; gives back the one kept. */
+export const keep = (side: 'face' | 'back', w: number, h: number, v: Variant | undefined, plate: Engraved): Engraved => {
   let sizes = engraved.get(v ?? PLAIN);
   if (!sizes) engraved.set(v ?? PLAIN, (sizes = new Map()));
   const key = `${side} ${w} ${h}`;
-  let plate = sizes.get(key);
-  if (!plate) {
-    plate = engraveAnew(side, w, h, v);
-    if (sizes.size >= KEEP) sizes.delete(sizes.keys().next().value!);
-    sizes.set(key, plate);
-  }
+  const was = sizes.get(key);
+  if (was) return was;
+  if (sizes.size >= KEEP) sizes.delete(sizes.keys().next().value!);
+  sizes.set(key, plate);
   return plate;
 };
 

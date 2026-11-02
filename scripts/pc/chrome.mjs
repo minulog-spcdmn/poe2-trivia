@@ -7,13 +7,18 @@
 // (a warm shader cache, as a player's), and has the page keep every frame's
 // time, its long animation frames and the scripts' marks; trace() streams a
 // Chrome trace into .pc/runs/<label>.json, one event per line, for read.py.
-// It takes the screen while it runs, and slows every other session on this
-// machine, so one run at a time, and only for what nothing else settles.
+// Its window opens behind the others and gives the keyboard back
+// (behind.ps1), drawing every frame all the same; FRONT=1 keeps it in front.
+// It's muted: the sound still plays in the page, so it costs what a
+// player's does, but never reaches the speakers.
+// It slows every other session on this machine, so one run at a time, and
+// only for what nothing else settles.
 //
 // Variants, without editing the code: CSS="<rules>" adds a style sheet once
 // the page is up, INIT="<js>" runs before the page's own scripts, and
 // CATS="<categories>" picks the trace's categories.
 
+import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { createWriteStream, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -38,10 +43,30 @@ const RECORD = `window.__frames = []; window.__loaf = []; window.__marks = [];
   } catch {}
 })();`;
 
-/** Chrome on the screen, its first tab, and the page's records set up. */
+/**
+ * On Windows, behind.ps1 waiting for Chrome's window, to put it behind the
+ * others and give the foreground back; resolved once it knows which window
+ * that is, so Chrome starts after. Not with FRONT=1.
+ */
+function behind() {
+  if (process.platform !== 'win32' || process.env.FRONT) return Promise.resolve();
+  const ps = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', fileURLToPath(new URL('behind.ps1', import.meta.url))], { stdio: ['ignore', 'pipe', 'inherit'] });
+  ps.unref();
+  return new Promise((ready) => {
+    ps.stdout.on('data', (d) => {
+      if (String(d).includes('ready')) ready();
+      if (String(d).includes('no window')) console.warn('behind.ps1: no Chrome window found to put behind');
+    });
+    ps.on('error', () => ready());
+    ps.on('exit', () => ready());
+  });
+}
+
+/** Chrome on the screen (behind the other windows: behind.ps1), its first tab, and the page's records set up. */
 export async function open() {
   mkdirSync(runs, { recursive: true });
-  const ctx = await chromium.launchPersistentContext(join(work, 'profile'), { channel: 'chrome', headless: false, viewport: null, args: ['--start-maximized'] });
+  await behind();
+  const ctx = await chromium.launchPersistentContext(join(work, 'profile'), { channel: 'chrome', headless: false, viewport: null, args: ['--start-maximized', '--mute-audio'] });
   await ctx.addInitScript(RECORD);
   if (process.env.INIT) await ctx.addInitScript(process.env.INIT);
   if (process.env.CSS) await ctx.addInitScript(`document.addEventListener('DOMContentLoaded', () => { const st = document.createElement('style'); st.textContent = ${JSON.stringify(process.env.CSS)}; document.head.append(st); });`);

@@ -14,6 +14,9 @@
 // that is no longer on poe2db stops it, unless the run says what became of
 // it (scripts/refresh-plan.mjs): renamed, keeping its id, or dropped. It
 // ends by saying what was added, renamed, dropped, changed and left out.
+// An item new in the run is stamped with its UTC day (`added`), kept by
+// later runs: the start page counts a release's new items by it
+// (src/lib/releases.ts).
 //
 // Usage: npm run fetch-data
 //   -- --rename "Old=>New"  Old is now called New: it keeps Old's id (codexes
@@ -35,7 +38,7 @@ import {
   statsReport,
   writeStats,
 } from './fetch-stats.mjs';
-import { artPlan, changedItems, reconcile, refreshArgs, summaryLines, withoutTooltip } from './refresh-plan.mjs';
+import { artPlan, changedItems, firstSeen, reconcile, refreshArgs, summaryLines, withoutTooltip } from './refresh-plan.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -277,6 +280,9 @@ async function main() {
     }
     out.push({ id, name, base, group, category, kind, w, h, ...(more.length ? { variants: more } : {}) });
   }
+  // Each item's first day (`added`), kept from before; today's (UTC) for one new in this run.
+  const day = new Date().toISOString().slice(0, 10);
+  firstSeen(beforeItems, out, day);
 
   // Now the writing: the art, then the items and their tooltips.
   await mkdir(IMG_DIR, { recursive: true });
@@ -303,7 +309,7 @@ async function main() {
   console.table(perCat);
   for (const line of statsReport(listed, found)) console.log(line);
   if (missing.length) console.warn(`${missing.length} items have no upscaled art yet: run scripts/upscale-art.py (see its header).`);
-  for (const line of summaryLines({ added, renamed: plan.renamed, dropped: plan.dropped, changed: changedItems(beforeItems, out), leftOut, newArt }))
+  for (const line of summaryLines({ added, renamed: plan.renamed, dropped: plan.dropped, changed: changedItems(beforeItems, out), leftOut, newArt, day }))
     console.log(line);
   if (plan.renamed.length || added.length) console.log('src/data/fakes.json is by name: a new or renamed item needs its two fakes (tests/fakes.test.ts).');
 }

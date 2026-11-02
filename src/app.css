@@ -181,19 +181,17 @@ html[data-fullscreen]::-webkit-scrollbar {
   display: none;
 }
 
-/* Every element takes the cursor handed down to it (themedCursors.ts), rather
-   than inheriting its parent's: one set on an element alone stays there. */
+/* Every element inherits the cursor (over the browser's own for links and
+   fields), the parent's own value, unchanged. One named through a variable
+   is a picture read afresh on every element at every restyle: named on every
+   element (cursor: var(--cursor-now), as it was), it was a third of a
+   question's style in Chrome. And WebKit counts a named picture
+   changed each time, so it restyles all the element holds: a vein's tremor
+   (a translate on .shell, every frame) restyled the whole game and repainted
+   every card, 46 Mpx in 2.5 s on an iPhone with a desktop's pointer. The
+   pressed pointer, set on one element alone, keeps off what that element
+   holds by handing its children the cursor themselves (lib/ownCursor.ts). */
 :where(*) {
-  cursor: var(--cursor-now, auto);
-}
-/* In WebKit (lib/ownCursor.ts marks it) every element inherits it instead.
-   WebKit makes a picture cursor afresh each time an element that names one is
-   restyled, and counts it changed, so everything the element holds is
-   restyled with it: with one named on every element, a vein's tremor (a
-   translate on .shell, every frame) restyled the whole game and repainted
-   every card, 46 Mpx in 2.5 s on an iPhone with a desktop's pointer. An
-   inherited one is the parent's own, unchanged. */
-:where(:root[data-cursor-inherited] *) {
   cursor: inherit;
 }
 
@@ -456,7 +454,11 @@ input {
   text-transform: uppercase;
   color: var(--gold-hi);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
-  background: linear-gradient(180deg, #3f301c 0%, #251b10 52%, #1a120a 100%);
+  /* Dithered (--dither-step, below): each stop a level up, which the
+     dither's 0 to 2 taken off evens out. */
+  background: var(--dither-step), linear-gradient(180deg, #40311d 0%, #261c11 52%, #1b130b 100%);
+  background-blend-mode: difference, normal;
+  image-rendering: pixelated;
   border: 1px solid var(--gold-lo);
   border-radius: 3px;
   cursor: pointer;
@@ -473,6 +475,12 @@ input {
     text-shadow 0.25s,
     filter 0.25s;
   white-space: nowrap;
+}
+/* (Only the dither is drawn pixelated: what's in the button is drawn as usual.) */
+.btn > *,
+.btn::before,
+.btn::after {
+  image-rendering: auto;
 }
 /* A band of light that sweeps across on hover. */
 .btn::before {
@@ -540,7 +548,7 @@ input {
   filter: saturate(0.5);
 }
 .btn.primary {
-  background: linear-gradient(180deg, #b0742c 0%, #86521b 38%, #5a340f 72%, #43260a 100%);
+  background: var(--dither-step), linear-gradient(180deg, #b1752d 0%, #87531c 38%, #5b3510 72%, #44270b 100%);
   border-color: #d8b56e;
   color: #fff6de;
   text-shadow:
@@ -624,7 +632,7 @@ input {
 }
 /* For what can't be undone: the primary button in crimson. */
 .btn.danger {
-  background: linear-gradient(180deg, #a8392a 0%, #7c2519 38%, #551710 72%, #3e0f0a 100%);
+  background: var(--dither-step), linear-gradient(180deg, #a93a2b 0%, #7d261a 38%, #561811 72%, #3f100b 100%);
   border-color: #e0806a;
   color: #fff0ea;
   text-shadow:
@@ -657,6 +665,7 @@ input {
 }
 .btn.ghost {
   background: rgba(0, 0, 0, 0.2);
+  background-blend-mode: normal;
   border-color: var(--line);
   color: var(--muted);
   box-shadow: none;
@@ -843,7 +852,14 @@ h3,
    styled from JS imports the tile itself, as zonecard/fume.ts does). */
 :root {
   --dither: url('./assets/dither.png');
+  --dither-step: url('./assets/dither-step.png');
 }
+/* A bright gradient (a button's) the near-black tile can't stir evenly: it
+   takes up to 7 levels off a bright colour and next to none off a dark one.
+   --dither-step is opaque, 0, 1 or 2 of 255 a pixel (white noise, seeded),
+   laid first over the gradient with background-blend-mode: difference, so
+   it takes 0 to 2 levels off every channel alike, whatever its brightness;
+   the gradient's stops each a level up even that out. Pixelated too. */
 
 /* Soft outer shadows the WebGL backdrop can draw (see lib/backdropShadow.ts).
    An element declares up to two as `0 var(--bsN) var(--bsN-color)` (y offset,

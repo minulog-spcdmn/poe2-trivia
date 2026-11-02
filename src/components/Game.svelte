@@ -277,6 +277,10 @@
   // only then the question rises into their place (swingIn), PICK_IN_MS
   // after the pick, its clock held as long (drawHoldUntil), so the handover
   // costs no answer time. No moment of nothing: something moves throughout.
+  // The cards are held for the frame its tap (or the word of it) shows in:
+  // the question comes in the frame after, mounted in a task of its own.
+  // Mounted with the pick, it made one task of the two, the longest of a
+  // game on an iPhone (#331).
   /** Whether the cards' choosing is the team's vote (Delve together), drawn on the cards, rather than one player's pick. */
   const voted = $derived(!!run && group);
   let raffle = $state<number | null>(null);
@@ -290,27 +294,35 @@
     const was = phaseSeen;
     phaseSeen = key;
     if (s.phase !== 'question' || !s.question) {
-      raffle = null;
+      if (s.phase !== 'question') raffle = null;
       pickOut = pickIn = false;
       return;
     }
+    if (was !== `${s.turnCount}:choosing`) return;
+    const asked = s.question;
+    const qid = asked.askedAt;
     // Back after a dropped connection with the question's clock already
     // running: the draw would eat into it, so the question shows at once.
-    const asked = s.question;
     const running = asked.deadline !== null && asked.clockAt !== undefined && session.hostNow() > asked.clockAt;
-    if (was === `${s.turnCount}:choosing` && !running && untrack(() => raffle) === null && s.offered.includes(asked.category)) {
-      const qid = asked.askedAt;
-      raffle = qid;
+    if (running || untrack(() => raffle) !== null || !s.offered.includes(asked.category)) return;
+    raffle = qid;
+    if (raffleTimer) clearTimeout(raffleTimer);
+    pickOut = pickIn = !voted;
+    const done = () => raffle === qid && (raffle = null);
+    if (voted) {
       // Should the draw never say it is done, the question shows anyway.
-      if (raffleTimer) clearTimeout(raffleTimer);
-      // (A pick: no longer than it takes the cards to be marked, before the page is next drawn.)
-      pickOut = pickIn = !voted;
-      raffleTimer = setTimeout(() => raffle === qid && (raffle = null), voted ? 4000 : 0);
+      raffleTimer = setTimeout(done, 4000);
+      return;
     }
+    // A pick: the frame its card is marked in, then the question in a task of its own.
+    requestAnimationFrame(() => setTimeout(done));
+    // (A hidden page draws no frames.)
+    raffleTimer = setTimeout(done, 200);
   });
   $effect(() => () => {
     if (raffleTimer) clearTimeout(raffleTimer);
   });
+  /** The cards still up over a question just picked: its draw playing on them, or the pick's own frame. */
   const drawing = $derived(raffle !== null && raffle === s.question?.askedAt && s.phase === 'question');
   /**
    * Delve: between a vein's strikes, its two cards up (and the team's draw

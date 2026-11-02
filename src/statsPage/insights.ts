@@ -224,6 +224,8 @@ export const FIRST_JOURNEY: readonly { step: First; name: string }[] = [
   { step: 'lobby', name: 'Entered a game' },
   { step: 'played', name: 'Started a game' },
   { step: 'finished', name: 'Saw one to its end' },
+  { step: 'games-2', name: 'Started a second game in one page load' },
+  { step: 'games-5', name: 'Started a fifth game in one page load' },
 ];
 
 /** How far the visits that found no save got: of them, from the first day those were counted. */

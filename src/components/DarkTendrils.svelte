@@ -3,6 +3,7 @@
   import { motion } from '../lib/motion.svelte';
   import { CLOCK_PEAK, OVERSHOOT, onPressure, pressing, pressureLevel } from '../lib/darkness';
   import { whenIdle } from '../lib/idle';
+  import dither from '../assets/dither.png';
 
   // Delve, on the CSS backdrop (Background.svelte, without WebGL): the dark
   // of a question's clock running down (lib/darkness.ts), as the WebGL
@@ -19,7 +20,10 @@
   // right answer's light, past the dark it drove off, warms the scene a
   // touch for a moment. Only opacity, a custom property and transforms
   // change, so nothing is laid out again; holding still it follows the
-  // clock in steps of a twentieth.
+  // clock in steps of a twentieth. Each arm and billow is a picture drawn
+  // once (an img): Chrome scales a layer that's one picture as it is, where
+  // one painted in CSS it drew again at each step of the reach, 400k px a
+  // 60th of a second as a question came in (#353).
 
   type Side = 'top' | 'right' | 'bottom' | 'left';
   /**
@@ -128,6 +132,47 @@
     return blob ? URL.createObjectURL(blob) : null;
   }
 
+  /**
+   * Draws a billow once, as the CSS below draws one without it (.billow),
+   * `px` across (its size at the screen's resolution): its smoke over the
+   * dither (`tile`, at `scale` device pixels a pixel of it) and the edge it
+   * fades out at. A URL of it, or null where it can't be drawn.
+   */
+  async function billow(rgb: string, px: number, scale: number, tile: HTMLImageElement): Promise<string | null> {
+    const c = document.createElement('canvas');
+    c.width = c.height = px;
+    const g = c.getContext('2d');
+    if (!g) return null;
+    const r = px / 2;
+    const round = (stops: [number, string][]) => {
+      const f = g.createRadialGradient(r, r, 0, r, r, r);
+      for (const [at, colour] of stops) f.addColorStop(at, colour);
+      return f;
+    };
+    g.imageSmoothingEnabled = false;
+    const under = g.createPattern(tile, 'repeat');
+    if (!under) return null;
+    under.setTransform(new DOMMatrix().scale(scale));
+    g.fillStyle = under;
+    g.fillRect(0, 0, px, px);
+    // (Its last stop its own colour gone clear, as CSS fades to transparent.)
+    g.fillStyle = round([
+      [0, `rgba(${rgb}, 0.38)`],
+      [0.4, `rgba(${rgb}, 0.24)`],
+      [0.72, `rgba(${rgb}, 0.08)`],
+      [1, `rgba(${rgb}, 0)`],
+    ]);
+    g.fillRect(0, 0, px, px);
+    g.globalCompositeOperation = 'destination-in';
+    g.fillStyle = round([
+      [0.72, '#000'],
+      [1, 'rgba(0, 0, 0, 0)'],
+    ]);
+    g.fillRect(0, 0, px, px);
+    const blob = await new Promise<Blob | null>((done) => c.toBlob(done));
+    return blob ? URL.createObjectURL(blob) : null;
+  }
+
   let el: HTMLDivElement;
   let dim: HTMLDivElement;
   let lift: HTMLDivElement;
@@ -152,7 +197,12 @@
         // (Reaching further over the clock's last seconds, but leaving room
         // for a miss, which swallows the scene, to surge much further.)
         el.style.setProperty('--reach', on ? reachOf(p).toFixed(3) : '0');
+        // (Each on a layer of its own, the dimming always (its CSS) and the
+        // lift while it shows: its opacity, written as the clock runs, had
+        // Chrome draw the CSS backdrop under it again, the whole screen, at
+        // each write.)
         dim.style.opacity = on ? (0.3 * p).toFixed(3) : '0';
+        lift.style.willChange = p < -0.001 ? 'opacity' : '';
         lift.style.opacity = p < -0.001 ? Math.min(1, -p / OVERSHOOT).toFixed(3) : '0';
         if (on) draw();
       }
@@ -161,13 +211,15 @@
     const wake = () => {
       if (!raf) raf = requestAnimationFrame(frame);
     };
-    // The arms' drawing, made once (nothing shows it before the clock runs):
-    // in an idle moment, or as the dark first comes in if that's sooner, not
-    // as the backdrop mounts.
+    // The arms' and billows' drawings, made once (nothing shows them before
+    // the clock runs): in an idle moment, or as the dark first comes in if
+    // that's sooner, not as the backdrop mounts. The billows' again when the
+    // screen's size or resolution changes, so the dither keeps to its pixels.
     let url: string | null = null;
+    const billowUrls: (string | null)[] = BILLOWS.map(() => null);
     let gone = false;
     let drawn = false;
-    const stopIdle = whenIdle(draw, { timeout: 2000 });
+    let stopIdle = whenIdle(draw, { timeout: 2000 });
     function draw() {
       if (drawn) return;
       drawn = true;
@@ -179,18 +231,51 @@
             return;
           }
           url = u;
-          if (u) el.style.setProperty('--tentacle', `url("${u}")`);
+          if (u) for (const arm of el.querySelectorAll<HTMLImageElement>('.arm')) arm.src = u;
         })
         .catch(() => {});
+      drawBillows();
     }
+    let tile: Promise<HTMLImageElement> | null = null;
+    let bake = 0;
+    function drawBillows() {
+      const mine = ++bake;
+      tile ??= new Promise((done, fail) => {
+        const t = new Image();
+        t.onload = () => done(t);
+        t.onerror = fail;
+        t.src = dither;
+      });
+      const scale = devicePixelRatio;
+      el.querySelectorAll<HTMLImageElement>('.billow').forEach((img, i) => {
+        tile!
+          .then((t) => billow(BILLOWS[i].rgb, Math.max(1, Math.round(img.offsetWidth * scale)), scale, t))
+          .then((u) => {
+            if (!u) return;
+            if (gone || mine !== bake) return URL.revokeObjectURL(u);
+            const was = billowUrls[i];
+            billowUrls[i] = u;
+            img.src = u;
+            if (was) URL.revokeObjectURL(was);
+          })
+          .catch(() => {});
+      });
+    }
+    const resized = () => {
+      if (!drawn) return;
+      stopIdle();
+      stopIdle = whenIdle(drawBillows, { timeout: 1000 });
+    };
+    addEventListener('resize', resized);
     const off = onPressure(wake);
     wake();
     return () => {
       gone = true;
       stopIdle();
+      removeEventListener('resize', resized);
       off();
       cancelAnimationFrame(raf);
-      if (url) URL.revokeObjectURL(url);
+      for (const u of [url, ...billowUrls]) if (u) URL.revokeObjectURL(u);
     };
   });
 </script>
@@ -200,8 +285,9 @@
 <div class="tendrils" bind:this={el} aria-hidden="true">
   <div class="rim"></div>
   {#each BILLOWS as b, i (i)}
-    <span
+    <img
       class="billow"
+      alt=""
       style:left="{b.x}%"
       style:top="{b.y}%"
       style:width="{b.size}vmin"
@@ -209,12 +295,13 @@
       style:--smoke={b.rgb}
       style:animation-duration="{b.dur}s"
       style:animation-delay="{b.delay}s"
-    ></span>
+    />
   {/each}
   {#each ARMS as f, i (i)}
     {@const at = place(f)}
-    <span
+    <img
       class="arm"
+      alt=""
       style:left={at.left}
       style:top={at.top}
       style:width={at.width}
@@ -223,7 +310,7 @@
       style:--flip={f.flip ? -1 : 1}
       style:animation-duration="{f.dur}s"
       style:animation-delay="{f.delay}s"
-    ></span>
+    />
   {/each}
 </div>
 
@@ -242,9 +329,13 @@
     visibility: hidden;
     overflow: hidden;
   }
-  /* Toward a deep blue-black rather than black. */
+  /* Toward a deep blue-black rather than black. On a layer of its own
+     always: taken only while it showed, it had Chrome draw the backdrop's
+     floor again, the whole screen, as it came and as it went (#361). One
+     colour, the layer has nothing to draw. */
   .dimmed {
     background: #04030c;
+    will-change: opacity;
   }
   /* A right answer's light, past the dark it drove off: the scene a touch
      warmer and brighter for a moment, most at its middle. */
@@ -265,21 +356,24 @@
   }
   /* A billow of the dark's smoke, rolling in from the edge it sits on: more
      of it, and nearer, as the dark comes in. So soft a shade this big bands,
-     so it's dithered (app.css), the dither faded out with it. */
+     so it's dithered (app.css), the dither faded out with it. Its drawing is
+     billow() above, the same; till it's made, it's drawn here. */
   .billow {
     position: absolute;
     translate: -50% -50%;
     scale: calc(0.6 + 0.4 * var(--reach));
-    border-radius: 50%;
     image-rendering: pixelated;
+    will-change: transform, scale;
+    animation: billow ease-in-out infinite alternate;
+    animation-play-state: var(--sway);
+  }
+  .billow:not([src]) {
+    border-radius: 50%;
     background:
       radial-gradient(closest-side, rgba(var(--smoke), 0.38), rgba(var(--smoke), 0.24) 40%, rgba(var(--smoke), 0.08) 72%, transparent),
       var(--dither);
     -webkit-mask-image: radial-gradient(closest-side, #000 72%, transparent);
     mask-image: radial-gradient(closest-side, #000 72%, transparent);
-    will-change: transform, scale;
-    animation: billow ease-in-out infinite alternate;
-    animation-play-state: var(--sway);
   }
   @keyframes billow {
     0% {
@@ -299,23 +393,22 @@
     translate: -50% 0;
     transform-origin: 50% 0;
     scale: calc(var(--flip) * (0.35 + 0.65 * var(--reach))) calc(0.08 + 0.92 * var(--reach));
-    background: var(
-        --tentacle,
-        radial-gradient(
-          26% 100% at 50% 0%,
-          rgba(5, 4, 18, 0.85),
-          rgba(5, 4, 18, 0.75) 15%,
-          rgba(6, 5, 22, 0.51) 30%,
-          rgba(6, 5, 22, 0.27) 45%,
-          rgba(6, 5, 22, 0.11) 60%,
-          rgba(6, 5, 22, 0.03) 75%,
-          transparent
-        )
-      )
-      center / 100% 100% no-repeat;
     will-change: transform, scale;
     animation: writhe ease-in-out infinite alternate;
     animation-play-state: var(--sway);
+  }
+  .arm:not([src]) {
+    background: radial-gradient(
+        26% 100% at 50% 0%,
+        rgba(5, 4, 18, 0.85),
+        rgba(5, 4, 18, 0.75) 15%,
+        rgba(6, 5, 22, 0.51) 30%,
+        rgba(6, 5, 22, 0.27) 45%,
+        rgba(6, 5, 22, 0.11) 60%,
+        rgba(6, 5, 22, 0.03) 75%,
+        transparent
+      )
+      center / 100% 100% no-repeat;
   }
   @keyframes writhe {
     0% {

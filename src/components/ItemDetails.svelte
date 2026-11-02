@@ -161,6 +161,8 @@
    * flavour text in slanted small capitals, a gem's description in Fontin's
    * italic. Its colours are the game's (as poe2db has them), fire and cold
    * lifted a little: theirs are too dark to read at this size on our black.
+   * No ligatures: both Fontin faces map "ffi" (on by default), "st", ½ and ¼
+   * to glyphs with no outline, so "Efficiency" showed as "E   ciency".
    */
   .tooltip-body {
     --tt-grey: #8c8c8c;
@@ -171,6 +173,7 @@
     font-family: var(--font-tooltip);
     font-weight: 400;
     font-variant-numeric: lining-nums;
+    font-variant-ligatures: none;
   }
   .section {
     display: flex;

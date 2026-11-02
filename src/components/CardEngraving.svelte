@@ -1,4 +1,10 @@
 <script module lang="ts">
+  import { engraveAhead, warmEngraving } from '../lib/engraveAhead';
+
+  // The worker a dealt hand's plates are engraved in (below) starts as the
+  // game's screens are loaded ahead (App), so the first hand's don't wait for it.
+  if (typeof window !== 'undefined') warmEngraving();
+
   // One observer for every engraving's size: its reports all read before any
   // engraving is drawn (what they set is drawn once they're all in). Watched
   // in device pixels where the browser can say them (not Safari), which a
@@ -20,6 +26,58 @@
     return () => {
       reports.delete(node);
       observer?.unobserve(node);
+    };
+  }
+
+  // A dealt card's side lies unseen a while (its `hold`), and its first size
+  // is drawn in that while rather than as it's reported, in the frame that
+  // shows the new hand: there, on an iPhone, every side's plate and strokes
+  // were worked out, laid out and drawn along with the whole screen (#331).
+  // One side a task, each in the frame after the last, soonest seen first;
+  // its plate engraved in a worker meanwhile (lib/engraveAhead), and the
+  // side drawn once it's in. One still not in as it's about to be seen is
+  // engraved on the page, as before.
+  const waiting: { at: number; draw: () => void; ready: boolean }[] = [];
+  let asked = false;
+  /** Draws the next whose plate is in if `next`, and every one to be seen within `ms`. */
+  function drawUpTo(ms: number, next: boolean) {
+    const now = performance.now();
+    const k = next ? waiting.findIndex((w) => w.ready) : -1;
+    if (k >= 0) waiting.splice(k, 1)[0].draw();
+    while (waiting.length && waiting[0].at - now < ms) waiting.shift()!.draw();
+  }
+  function ask() {
+    if (asked) return;
+    asked = true;
+    requestAnimationFrame(() => {
+      // (Any to be seen in this frame, as after a while hidden, which draws no frames.)
+      drawUpTo(0, false);
+      setTimeout(() => {
+        asked = false;
+        // The next, and any that would be seen before the next could be drawn.
+        drawUpTo(50, true);
+        if (waiting.length) ask();
+      });
+    });
+  }
+  /** Runs `draw` before `at` (a time on performance.now()'s clock), in its turn once what `ready` starts is settled, or at once if that's too soon to wait for; returns what takes it back. */
+  function beforeSeen(at: number, draw: () => void, ready: () => Promise<void>): () => void {
+    // (Two frames' room, at least.)
+    if (at - performance.now() < 50) {
+      draw();
+      return () => {};
+    }
+    const one = { at, draw, ready: false };
+    void ready().then(() => {
+      one.ready = true;
+      ask();
+    });
+    const k = waiting.findIndex((w) => w.at > at);
+    waiting.splice(k < 0 ? waiting.length : k, 0, one);
+    ask();
+    return () => {
+      const k = waiting.indexOf(one);
+      if (k >= 0) waiting.splice(k, 1);
     };
   }
 </script>
@@ -66,18 +124,35 @@
    * frame it is laid out in, before that is painted.
    */
   function sized(node: HTMLElement) {
-    return {
-      destroy: sizes(node, (rect, size) => {
-        w = node.clientWidth;
-        h = node.clientHeight;
+    // The first, while it lies unseen, is drawn before it's seen (beforeSeen,
+    // above). (Its hold is known by then: the deal that sets it starts as
+    // the hand mounts.)
+    const mounted = performance.now();
+    let first = true;
+    let unwait: (() => void) | undefined;
+    const stop = sizes(node, (rect, size) => {
+      const [cw, ch] = [node.clientWidth, node.clientHeight];
+      // (Its style is up to date here, after layout: no cost to read.)
+      const [zoom, color] = front ? [z, ink] : [layoutZoomOf(node) * devicePixelRatio, getComputedStyle(node).color];
+      const set = () => {
+        w = cw;
+        h = ch;
         box = rect;
         px = size;
-        // (Its style is up to date here, after layout: no cost to read.)
-        if (!front) {
-          z = layoutZoomOf(node) * devicePixelRatio;
-          ink = getComputedStyle(node).color;
-        }
-      }),
+        z = zoom;
+        ink = color;
+      };
+      unwait?.();
+      unwait = undefined;
+      if (first && hold) unwait = beforeSeen(mounted + hold, set, () => (front ? Promise.resolve() : engraveAhead(side, cw, ch, variant)));
+      else set();
+      first = false;
+    });
+    return {
+      destroy() {
+        unwait?.();
+        stop();
+      },
     };
   }
   // (custom: a card of its own, the way out of a vein: lib/wayOut.)

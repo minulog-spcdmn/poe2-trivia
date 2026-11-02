@@ -234,7 +234,12 @@ renewed, within six hours.
 ## Deploying
 
 `.github/workflows/deploy.yml` builds and deploys to GitHub Pages on every push
-to `main`, served on **poe2.quest** (`public/CNAME`).
+to `main`, served on **poe2.quest** (`public/CNAME`). Every pull request into
+`main` runs two required checks first. Tests (`.github/workflows/tests.yml`)
+runs the types and the tests, as the deploy does once it's merged. Redraws
+(`.github/workflows/redraws.yml`) fails on something big Chrome draws again at
+rest, or a moment (a deal, a pick, the pointer over a card, a name plate drawn
+in) drawing more than it did ([docs/qa.md](docs/qa.md), “Redraws”).
 
 ### Beta
 

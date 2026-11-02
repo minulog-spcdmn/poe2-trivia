@@ -12,6 +12,11 @@ function filled(steps: Step[] = [], depths = [8, 14, 27, 19, 33, 23, 41]): Built
   return { state: null, hash: '#codex', met: 140, runs, steps };
 }
 
+/** Uniques whose tooltips have "ffi" in a line. */
+const FFI = ['Prism Guardian', 'Heart of the Well', 'The Infinite Pursuit', "Zerphi's Genesis"];
+/** The codex with only `name` met, found by its search (a tile far down is drawn in later) and its card open. */
+const ffi = (name: string): Built => ({ state: null, hash: '#codex', met: [name], steps: [{ fill: 'input.search', text: name }, { click: `button.tile[aria-label^="${name}"]` }] });
+
 const codex = (key: string, label: string, build: () => Built): Scene => ({ key: `codex/${key}`, screen: 'codex', group: 'Codex', label, seats: [{ mode: 'none', me: null }], build });
 
 export function codexScenes(): Scene[] {
@@ -35,6 +40,13 @@ export function codexScenes(): Scene[] {
     })),
     // Asked, then erased: the blank codex's plate rising in as a turned page. (The frame's storage is its own, cleared as it closes.)
     codex('erase', 'Erasing it: asked, then erased', () => filled([{ wait: 600 }, { click: 'footer.end .btn.danger' }, { wait: 1600 }, { click: '.confirm .btn.danger' }])),
+    // Tooltips with "ffi" in a line (Efficiency, suffix, afflicted): Fontin's ffi ligature has no outline, so ItemDetails sets none (#376).
+    {
+      ...codex('item-ffi', 'An item open, “ffi” in its tooltip', () => ffi('Prism Guardian')),
+      controls: [{ kind: 'choice', key: 'item', label: 'Item', default: 'Prism Guardian', options: FFI.map((n) => ({ value: n, label: n })) }],
+      states: FFI.map((n) => ({ label: n, values: { item: n } })),
+      build: (v) => ffi(String(v?.item ?? 'Prism Guardian')),
+    },
     codex('delve', 'The Delve page', () => filled([{ click: '#codex-tab-delve' }])),
     codex('delve-none', 'The Delve page, never delved', () => filled([{ click: '#codex-tab-delve' }], [])),
     // More runs than its short list: all of them shown (the new rows fading in), then the short list again from the button, which stays where it was.

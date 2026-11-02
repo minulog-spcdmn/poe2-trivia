@@ -1,0 +1,135 @@
+name: Redraws
+run-name: "Redraws: ${{ github.event.pull_request.title || github.ref_name }}"
+
+# The redraw check (docs/qa.md, "Redraws"), on every pull request into main
+# and in the merge queue: each QA scene at rest and the moments
+# (src/qa/redraws.ts MOMENTS), traced in Chrome's headless shell on fixed
+# frames (each 1/60 s of the page's own time, which is virtual from before
+# it loads, however long a frame takes to draw here), so it plays as at
+# 60 fps on any machine, the same run to run. It fails on a layer drawn
+# again 50k px a frame or more at rest, or the page 100k, its layers
+# together; on a moment past its baseline (src/qa/redrawBaselines.json);
+# and on a trace it can't read. Every stutter of October 2026 was one of
+# those. A canary, a box drawn again every frame, has to fail, or the
+# check is reading its traces wrong.
+#
+# The scenes run with WebGL refused (its canvases draw nothing Chrome draws
+# again, and in software they're the slowest part of a frame), split over
+# ten jobs. One scene of each screen whose effects change the page
+# (src/qa/redraws.ts WEBGL_SCENES says why each) runs with it, and so does
+# the deal.
+#
+# A title or description edit runs it again too (edited, for a pull request
+# moved onto main): skipped, it would leave a skipped Redraws, which GitHub
+# counts as passed. On a push to main only the caches are made, so a pull
+# request finds the packages and the shell there.
+#
+# Run it by hand (Run workflow) on any branch, and the job's summary lists
+# what it found and the moments as measured, to commit as the baseline when
+# a change means them to cost more or less.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+  merge_group:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: redraws-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # On main: the npm packages and the headless shell put in the caches, which pull requests read from.
+  caches:
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - id: playwright
+        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-shell-${{ steps.playwright.outputs.version }}
+      - run: npx playwright-core install --only-shell chromium
+
+  redraws:
+    if: ${{ github.event_name != 'push' }}
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'At rest, 1 of 10', args: '--shard 1/10' }
+          - { name: 'At rest, 2 of 10', args: '--shard 2/10' }
+          - { name: 'At rest, 3 of 10, and the canary', args: '--shard 3/10', canary: true }
+          - { name: 'At rest, 4 of 10', args: '--shard 4/10' }
+          - { name: 'At rest, 5 of 10', args: '--shard 5/10' }
+          - { name: 'At rest, 6 of 10', args: '--shard 6/10' }
+          - { name: 'At rest, 7 of 10', args: '--shard 7/10' }
+          - { name: 'At rest, 8 of 10', args: '--shard 8/10' }
+          - { name: 'At rest, 9 of 10', args: '--shard 9/10' }
+          - { name: 'At rest, 10 of 10', args: '--shard 10/10' }
+          # (A frame with WebGL takes a runner one to four seconds here: each alone.)
+          - { name: 'With WebGL: game/delve-dig', args: '--webgl --only "^game/delve-dig$"' }
+          - { name: 'With WebGL: lobby/room', args: '--webgl --only "^lobby/room$"' }
+          - { name: 'With WebGL: codex/item', args: '--webgl --only "^codex/item$"' }
+          - { name: 'With WebGL: over/n-lost', args: '--webgl --only "^over/n-lost$"' }
+          - { name: 'With WebGL: home/returning', args: '--webgl --only "^home/returning$"' }
+          - { name: 'With WebGL: settings/key', args: '--webgl --only "^settings/key$"' }
+          - { name: 'Moments: the deal, with WebGL', args: '--moments --only "^deal$"' }
+          - { name: 'Moments: the dig and the pick', args: '--moments --only "^(dig|pick)$"' }
+          - { name: 'Moments: the pointer and the plate', args: '--moments --only "^(glare|plate)$"' }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Chrome's headless shell as playwright-core's version has it, kept between runs.
+      - id: playwright
+        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-shell-${{ steps.playwright.outputs.version }}
+      - run: npx playwright-core install --with-deps --only-shell chromium
+      - run: npm run sweep -- --redraws ${{ matrix.args }}
+      # A box drawn again every frame, which has to fail: the trace still read right (a playwright-core bump can change it).
+      - if: ${{ matrix.canary }}
+        run: npm run sweep -- --redraws --canary --no-build --only "^settings/key$"
+      # (The report is for reading a failure: GitHub's artifact store timing out, as it does now and then, fails nothing.)
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        with:
+          name: redraws-${{ strategy.job-index }}
+          path: screens/redraws-*/report.json
+          retention-days: 14
+
+  # The one check to require on main: it passes only when every job above did.
+  verdict:
+    name: Redraws
+    needs: redraws
+    if: ${{ always() && github.event_name != 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.redraws.result }}" = success
