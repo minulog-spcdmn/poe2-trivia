@@ -110,7 +110,7 @@ export const seg = (p: Pt, q: Pt, s: Shields = NONE) =>
   line(p, q, { holes: s.holes, cuts: s.polys.map((ps) => inPoly(p, q, ps)).filter((c): c is Cut => !!c) });
 
 /** Lines across the quadrilateral `a`, `b`, `c`, `d` parallel to its side `a` to `b`, stepping toward `d` to `c`, `gap` apart, kept 0.5 in from its ends. */
-function hatchQuad(a: Pt, b: Pt, c: Pt, d: Pt, gap: number, s: Shields = NONE) {
+export function hatchQuad(a: Pt, b: Pt, c: Pt, d: Pt, gap: number, s: Shields = NONE) {
   const n = Math.floor(Math.max(Math.hypot(d[0] - a[0], d[1] - a[1]), Math.hypot(c[0] - b[0], c[1] - b[1])) / gap);
   let out = '';
   for (let i = 1; i <= n; i++) {
@@ -125,7 +125,7 @@ function hatchQuad(a: Pt, b: Pt, c: Pt, d: Pt, gap: number, s: Shields = NONE) {
 }
 
 /** Lines across the triangle `o`, `l`, `t` parallel to its side `o` to `t`, stepping toward `l`. */
-function hatchTri(o: Pt, l: Pt, t: Pt, gap: number, s: Shields = NONE) {
+export function hatchTri(o: Pt, l: Pt, t: Pt, gap: number, s: Shields = NONE) {
   const n = Math.floor(Math.hypot(l[0] - o[0], l[1] - o[1]) / gap);
   let out = '';
   for (let i = 1; i <= n; i++) {
@@ -489,7 +489,7 @@ function flareTall(p: Plate, g: TallLayout) {
 }
 
 /** The ring a sun's rays stand on, drawn double round the emblem, shaded inside on the right, away from the light. */
-function sunRing(p: Plate, c: Pt, r: number) {
+export function sunRing(p: Plate, c: Pt, r: number) {
   p.add(arc(c, r - 0.4, 0, 360), 'thin');
   p.add(arc(c, r - 2, 0, 360), 'hair');
   let h = '';
@@ -703,7 +703,7 @@ const rayShadows = (c: Pt, r: number) =>
   }).join('');
 
 /** A disc, as path data. */
-const disc = (c: Pt, r: number) => `M${pt([c[0] + r, c[1]])}A${r} ${r} 0 1 1 ${pt([c[0] - r, c[1]])}A${r} ${r} 0 1 1 ${pt([c[0] + r, c[1]])}Z`;
+export const disc = (c: Pt, r: number) => `M${pt([c[0] + r, c[1]])}A${r} ${r} 0 1 1 ${pt([c[0] - r, c[1]])}A${r} ${r} 0 1 1 ${pt([c[0] + r, c[1]])}Z`;
 
 /** The spandrels of a find's tall face: its seal in Sol's place, its alchemical sign in Luna's. */
 function spandrels(kind: FindKind, p: Plate, sol: Hole, luna: Hole, w: number) {

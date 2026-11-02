@@ -393,8 +393,9 @@ export function gameScenes(): Scene[] {
         const t = v.hook ? delveAlone().playTo((s) => s.round >= 6 && s.phase === 'choosing') : delveAlone();
         const [first, middle, last] = t.s.offered;
         t.s.delve!.finds = [
-          ...(beside === 'none' ? [] : [{ category: first, kind: 'azurite' as const }]),
+          ...(beside === 'one' || beside === 'two' ? [{ category: first, kind: 'azurite' as const }] : []),
           ...(beside === 'two' ? [{ category: last, kind: 'flare' as const }] : []),
+          ...(beside === 'dynamite' ? [{ category: first, kind: 'dynamite' as const }] : []),
         ];
         t.s.delve!.fossil = { category: middle, tier: v.rare ? 'rare' : 'common' };
         if (v.held) t.s.delve!.inventory = { [pid('Kalguur')]: { wards: 0, flares: 0, dynamite: 1 } };
@@ -411,6 +412,7 @@ export function gameScenes(): Scene[] {
               { value: 'none', label: 'None' },
               { value: 'one', label: 'A vein' },
               { value: 'two', label: 'A vein and a flare' },
+              { value: 'dynamite', label: 'A Dynamite Cache' },
             ],
           },
           { kind: 'toggle', key: 'rare', label: 'A rare one', default: false },

@@ -85,6 +85,8 @@
   // Chrome draws for a fraction of what their strokes cost it.
   import { engrave } from '../lib/cardEngraving';
   import { findVariant } from '../lib/findEngraving';
+  import { fossilVariant } from '../lib/fossilEngraving';
+  import AmberStone from './AmberStone.svelte';
   import { leftKey, printing, pull, pulled, type At, type Layer } from '../lib/platePrint.svelte';
   import { layoutZoomOf } from '../lib/stage';
   import type { FindKind } from '../lib/delve';
@@ -93,7 +95,9 @@
   // `front`: only what stands in front of the emblem (Plate.front), solid, laid over the category's item.
   // `print`: its still layers shown as prints of themselves (lib/platePrint), where Chrome rasters it at its laid-out size.
   // `hold`: how long it lies unseen once it's mounted (ms; a dealt card fades in late): a printed layer's svg isn't drawn so long while its print is pulled.
-  // `lit`: a fossil's card (ChooseCategory), its pane (Plate.pane) lit from behind, a rare's deeper and flecked with gold.
+  // `lit`: a fossil's card (ChooseCategory, lib/fossilEngraving), a stone of amber round its emblem or at its back's heart, a rare's deeper.
+  // `amber`: only that stone's amber (AmberStone), lying over the plate (or on the back, all of it), apart
+  // from the plate's own opacity; `front` draws the stone's surface over the emblem.
   let {
     side,
     find = null,
@@ -102,7 +106,8 @@
     print = false,
     hold = 0,
     lit = null,
-  }: { side: 'face' | 'back'; find?: FindKind | null; custom?: Variant; front?: boolean; print?: boolean; hold?: number; lit?: 'common' | 'rare' | null } = $props();
+    amber = false,
+  }: { side: 'face' | 'back'; find?: FindKind | null; custom?: Variant; front?: boolean; print?: boolean; hold?: number; lit?: 'common' | 'rare' | null; amber?: boolean } = $props();
   let w = $state(0);
   let h = $state(0);
   /** Its exact size: the glint's copy of the motif is drawn at it, as the lines stretch to it (w and h are whole pixels). */
@@ -128,7 +133,9 @@
     const stop = sizes(node, (rect, size) => {
       const [cw, ch] = [node.clientWidth, node.clientHeight];
       // (Its style is up to date here, after layout: no cost to read.)
-      const [zoom, color] = front ? [z, ink] : [layoutZoomOf(node) * devicePixelRatio, getComputedStyle(node).color];
+      // (The amber's paint at the screen's own pixels, past a sharp face's twice-size drawing: the face's
+      // filter keeps no detail finer than those, the paint's dither with it, and bands what's left.)
+      const [zoom, color] = front ? [z, ink] : amber ? [(layoutZoomOf(node) * devicePixelRatio) / sharpZoom(node), ink] : [layoutZoomOf(node) * devicePixelRatio, getComputedStyle(node).color];
       const set = () => {
         w = cw;
         h = ch;
@@ -150,8 +157,13 @@
       },
     };
   }
+  /** How much larger than it's seen a sharp face draws it (ChooseCategory's .sharp): 2, or 1 elsewhere. */
+  const sharpZoom = (node: Element) => {
+    const face = node.closest('[data-sharp]');
+    return face ? parseFloat(getComputedStyle(face).zoom) || 1 : 1;
+  };
   // (custom: a card of its own, the way out of a vein: lib/wayOut.)
-  const variant = $derived(custom ?? (find ? findVariant(find) : undefined));
+  const variant = $derived(custom ?? (find ? findVariant(find) : lit ? fossilVariant(lit) : undefined));
   const plate = $derived(w && h ? engrave(side, w, h, variant) : null);
   /** The shapes the plate's lines stop short of, one path each (overlapping shapes of one path would cancel out). */
   const knockout = $derived(plate?.knockout ? plate.knockout.split(/(?<=Z)(?=M)/) : []);
@@ -161,28 +173,11 @@
   /** Whether the glint's light travels across the card (the flare's and the dynamite's flare up in place). */
   const travels = $derived(find !== 'flare' && find !== 'dynamite');
   const uid = $props.id();
-  /**
-   * A rare's gold flecks in the resin, where they lie round the pane's
-   * middle (a heading in degrees, a distance in its reaches) and when each
-   * winks (s into its round): scattered by eye, none on the emblem's heart.
-   */
-  const FLECKS: [number, number, number][] = [
-    [-128, 0.62, 0],
-    [-62, 0.78, 1.7],
-    [-18, 0.52, 3.1],
-    [34, 0.7, 0.8],
-    [76, 0.88, 2.4],
-    [112, 0.58, 4],
-    [150, 0.82, 1.2],
-    [-168, 0.74, 3.6],
-    [196, 0.46, 2.9],
-  ];
-
   const LAYERS: Layer[] = ['glow', 'lines'];
   /** The still layers' svgs, which their prints are pulled from. */
   const svgs: Partial<Record<Layer, SVGSVGElement>> = $state({});
   /** How it's drawn, if it's printed. */
-  const at = $derived<At | null>(print && printing.on && !front && plate && box && px && ink ? { w, h, cw: box.width, ch: box.height, z, W: px[0], H: px[1] } : null);
+  const at = $derived<At | null>(print && printing.on && !front && !amber && plate && box && px && ink ? { w, h, cw: box.width, ch: box.height, z, W: px[0], H: px[1] } : null);
   /** A print pulled since it last looked: look again. */
   let pulls = $state(0);
   /** Each still layer's print at this size, if it's been pulled: shown in place of its svg. */
@@ -248,7 +243,15 @@
   {/key}
 {/snippet}
 
-<span class="engraving" class:front data-find={find ?? undefined} use:sized aria-hidden="true">
+{#if amber}
+  <!-- A fossil's amber, apart from the plate: over its lines on a face (the emblem over it), all of it on the back. -->
+  <span class="amber-engraving" use:sized aria-hidden="true">
+    {#if plate?.stone && lit}
+      <AmberStone stone={plate.stone} tier={lit} {w} {h} {z} part={side === 'back' ? 'whole' : 'body'} />
+    {/if}
+  </span>
+{:else}
+<span class="engraving" class:front data-find={find ?? undefined} data-fossil={lit ?? undefined} use:sized aria-hidden="true">
   {#if plate && front}
     {#if plate.solid}
       <!-- Solid: whatever lies behind (the item, the plate) is hidden, the crystal's body faintly its colour. -->
@@ -264,6 +267,9 @@
     {/each}
     {#if motif.length}
       {@render glint()}
+    {/if}
+    {#if plate.stone && lit}
+      <AmberStone stone={plate.stone} tier={lit} {w} {h} part="surface" />
     {/if}
   {:else if plate}
     {#if plate.window && plate.fade}
@@ -365,57 +371,13 @@
     {:else if motif.length}
       {@render glint()}
     {/if}
-    {#if lit && plate.pane}
-      {@const pane = plate.pane}
-      <!-- A fossil's card: its pane lit from behind as PoE's fossils are, amber with its light drifting in it, a
-           glossy highlight on it, and the plate's lines there printed dark in the resin (over its own, light ones). -->
-      <span
-        class="pane"
-        class:rare={lit === 'rare'}
-        class:back={side === 'back'}
-        style:clip-path="path('{pane.d}')"
-        style:--cx="{pane.c[0]}px"
-        style:--cy="{pane.c[1]}px"
-        style:--r="{pane.r}px"
-      >
-        <span class="amber"></span>
-        <span class="heart"></span>
-        <span class="heart two"></span>
-        <span class="gloss"></span>
-        <span class="dither"></span>
-        <svg class="resin" viewBox="0 0 {w} {h}">
-          {#if plate.fade}
-            <defs>
-              <radialGradient id="{uid}-resin-g" cx={plate.fade.c[0]} cy={plate.fade.c[1]} r={plate.fade.r} gradientUnits="userSpaceOnUse">
-                {#if plate.fade.from}<stop offset={plate.fade.from / plate.fade.r} stop-color="#000" />{/if}
-                <stop offset={Math.max(0.35, (plate.fade.from + 22) / plate.fade.r)} stop-color="#fff" />
-                <stop offset="1" stop-color="#000" />
-              </radialGradient>
-              <mask id="{uid}-resin-fade" maskUnits="userSpaceOnUse" x="0" y="0" width={w} height={h}>
-                <rect width={w} height={h} fill="url(#{uid}-resin-g)" />
-              </mask>
-            </defs>
-          {/if}
-          {#each ['soft', 'cut'] as tone (tone)}
-            <g class={tone}>
-              {#each strokes as { cls, d } (cls)}
-                <path {d} class={cls} mask={cls === 'ray' && plate.fade ? `url(#${uid}-resin-fade)` : undefined} />
-              {/each}
-            </g>
-          {/each}
-        </svg>
-        {#if lit === 'rare'}
-          {#each FLECKS as [deg, k, t] (deg)}
-            <span class="fleck" style:--a="{deg}deg" style:--k={k} style:--t="{t}s"></span>
-          {/each}
-        {/if}
-      </span>
-    {/if}
   {/if}
 </span>
+{/if}
 
 <style>
-  .engraving {
+  .engraving,
+  .amber-engraving {
     position: absolute;
     inset: 0;
     pointer-events: none;
@@ -574,6 +536,10 @@
   [data-find='dynamite'] .glow {
     animation: smoulder 4.8s ease-out infinite;
   }
+  /* A fossil's, slow as the lamp behind its stone. */
+  [data-fossil] .glow {
+    animation: breathe 5.2s ease-in-out infinite;
+  }
   @keyframes smoulder {
     0%,
     100% {
@@ -715,155 +681,6 @@
       opacity: 0.6;
     }
   }
-  /* A fossil's lit pane (see `lit`): over the plate's own lines, which it
-     hides there, the light through amber (core to edge), its heart drifting
-     slowly about the middle as if a lamp passed behind it, a glossy
-     highlight up on its left, and the plate there again in the dark of the
-     resin. Bright as it is, its gradients cross enough of 8-bit's levels
-     not to band. A rare's is deeper, red-gold, with gold flecks that wink. */
-  .pane {
-    --core: var(--fossil-core);
-    --mid: var(--fossil-mid);
-    --edge: var(--fossil-edge);
-    --resin: var(--fossil-resin);
-    --rim: rgba(130, 40, 0, 0.42);
-    position: absolute;
-    inset: 0;
-  }
-  .pane.rare {
-    --core: var(--fossil-rare-core);
-    --mid: var(--fossil-rare-mid);
-    --edge: var(--fossil-rare-edge);
-    --resin: var(--fossil-rare-resin);
-    --rim: rgba(100, 12, 0, 0.5);
-  }
-  .amber,
-  .heart,
-  .gloss,
-  .fleck {
-    position: absolute;
-  }
-  .amber {
-    inset: 0;
-    /* (Darker toward its rim, where the light crosses more of the amber.) */
-    background:
-      radial-gradient(circle calc(var(--r) * 1.3) at var(--cx) var(--cy), transparent 55%, var(--rim) 100%),
-      radial-gradient(circle calc(var(--r) * 1.3) at var(--cx) var(--cy), var(--core) 12%, var(--mid) 62%, var(--edge));
-  }
-  .heart {
-    left: calc(var(--cx) - var(--r) * 0.7);
-    top: calc(var(--cy) - var(--r) * 0.7);
-    width: calc(var(--r) * 1.4);
-    aspect-ratio: 1;
-    background: radial-gradient(closest-side, rgba(255, 246, 206, 0.78), rgba(255, 228, 150, 0.32) 52%, rgba(255, 220, 130, 0));
-    animation: drift 17s ease-in-out infinite alternate;
-    will-change: translate;
-  }
-  /* A second, smaller and yellower, the other way round: the light never lies even. */
-  .heart.two {
-    left: calc(var(--cx) - var(--r) * 0.42);
-    top: calc(var(--cy) - var(--r) * 0.42);
-    width: calc(var(--r) * 0.84);
-    background: radial-gradient(closest-side, rgba(255, 244, 170, 0.6), rgba(255, 236, 140, 0.2) 55%, rgba(255, 236, 140, 0));
-    animation: drift 23s ease-in-out -9s infinite alternate-reverse;
-  }
-  /* The lamp passing: a slow loop that never quite repeats its path. */
-  @keyframes drift {
-    0% {
-      translate: calc(var(--r) * -0.22) calc(var(--r) * 0.12);
-    }
-    30% {
-      translate: calc(var(--r) * 0.16) calc(var(--r) * -0.2);
-    }
-    55% {
-      translate: calc(var(--r) * 0.26) calc(var(--r) * 0.1);
-    }
-    80% {
-      translate: calc(var(--r) * -0.06) calc(var(--r) * 0.24);
-    }
-    100% {
-      translate: calc(var(--r) * -0.24) calc(var(--r) * -0.08);
-    }
-  }
-  /* The gloss: a crisp crescent of the light's reflection along the pane's
-     upper left, as on the icons, and a soft spot of it lower right. */
-  .gloss {
-    left: calc(var(--cx) - var(--r) * 0.9);
-    top: calc(var(--cy) - var(--r) * 1.15);
-    width: calc(var(--r) * 1.8);
-    aspect-ratio: 1;
-    background: radial-gradient(circle calc(var(--r) * 0.16) at 76% 80%, rgba(255, 250, 230, 0.32), rgba(255, 250, 230, 0));
-  }
-  .gloss::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(closest-side, rgba(255, 252, 236, 0) 84%, rgba(255, 252, 236, 0.78) 90.5%, rgba(255, 252, 236, 0) 96%);
-    -webkit-mask: conic-gradient(from 248deg, transparent, #000 22deg, #000 48deg, transparent 84deg);
-    mask: conic-gradient(from 248deg, transparent, #000 22deg, #000 48deg, transparent 84deg);
-  }
-  /* The light dithered (CLAUDE.md, "No banding"): toward the arch's top
-     the amber darkens to its rim so slowly that each of 8-bit's levels
-     there showed as a ring. The tile (app.css, --dither: near-black, its
-     opacity 0 to 10/255 a pixel at random) stirs every pixel of the light
-     by a level or two before it's rounded; faded to a quarter, as the light
-     is bright. Written out on its own element (docs/category-cards.md, 3). */
-  .dither {
-    position: absolute;
-    inset: 0;
-    background: url('../assets/dither.png') 0 0 / 128px;
-    image-rendering: pixelated;
-    opacity: 0.25;
-  }
-  .resin {
-    color: var(--resin);
-  }
-  .resin .soft path {
-    stroke-width: 2.2;
-    opacity: 0.16;
-  }
-  .resin .soft :is(.hair, .hatch, .shade, .ray, .lattice) {
-    stroke-width: 1.1;
-  }
-  .fleck {
-    left: var(--cx);
-    top: var(--cy);
-    width: 9px;
-    aspect-ratio: 1;
-    margin: -4.5px 0 0 -4.5px;
-    border-radius: 50%;
-    background: radial-gradient(closest-side, #fffbe8, var(--fossil-fleck) 30%, color-mix(in srgb, var(--fossil-fleck) 0%, transparent));
-    transform: rotate(var(--a)) translateY(calc(var(--r) * var(--k) * -1)) rotate(calc(var(--a) * -1));
-    opacity: 0.6;
-    animation: wink 4.8s ease-out var(--t) infinite;
-  }
-  .fleck::after {
-    content: '';
-    position: absolute;
-    inset: -3px 3px;
-    background: linear-gradient(90deg, rgba(255, 248, 220, 0), #fff8dc, rgba(255, 248, 220, 0));
-    clip-path: polygon(50% 0, 60% 50%, 50% 100%, 40% 50%);
-  }
-  @keyframes wink {
-    0%,
-    18%,
-    100% {
-      opacity: 0.6;
-      scale: 1;
-    }
-    6% {
-      opacity: 1;
-      scale: 1.5;
-    }
-  }
-  /* (The back is seen only as it's dealt: its light holds still.) */
-  .pane.back .heart,
-  .pane.back .fleck {
-    animation: none;
-  }
-  :global(html[data-still]) .engraving :is(.heart, .fleck) {
-    animation: none;
-  }
   :global(html[data-still]) .engraving .glint {
     display: none;
   }
@@ -874,9 +691,7 @@
     .glint {
       display: none;
     }
-    .lamp,
-    .heart,
-    .fleck {
+    .lamp {
       animation: none;
     }
   }
