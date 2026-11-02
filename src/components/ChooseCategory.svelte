@@ -28,7 +28,7 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { FIND_COLORS, cardHover, cardPicked, cardRevealed, raffleHop, voteCast } from '../lib/fx/moments';
   import { cover, fxActive, fxGroup, onFxChange, type CoverBox, type Handle, type Vec3 } from '../lib/fx/core';
-  import { C, embers, emitter, flare, glints, outline, puffs, ring, shards, sparks } from '../lib/fx/effects';
+  import { C, embers, emitter, flare, glints, outline, puffs, rays, ring, shards, sparks } from '../lib/fx/effects';
   import { light } from '../lib/lights';
   import CardEngraving from './CardEngraving.svelte';
   import FossilAmber from './FossilAmber.svelte';
@@ -488,12 +488,13 @@
     light(lantern, { color: LAMP, radius: 440, intensity: 0.85, decay: 1.3 });
   }
 
-  // A fossil's effects: the lamp behind its amber (FossilAmber), lamplight
-  // as the way out's is rather than fire, in the amber's colours (a rare's
-  // deeper, its glints its spangles' gold), all from the lamp, where the
-  // emblem lies caught: its light swells as the face turns up, motes of it
-  // drift in the amber under the pointer, and it floods out, ringing, as
-  // it's chosen. Never which fossil; that's the right answer's.
+  // A fossil's effects: the lamp behind its amber (FossilAmber), its own
+  // light, in the amber's colours (a rare's deeper), all from the lamp,
+  // where the emblem lies caught: it swells as the face turns up, steadies
+  // round the card under the pointer, and as it's chosen floods out,
+  // ringing, slow rays of it pouring out from behind the card. No sparks or
+  // twinkles: amber holds its light. Never which fossil; that's the right
+  // answer's.
   const AMBER: Record<FossilTier, { main: Vec3; pale: Vec3; light: Vec3 }> = {
     common: { main: amberLight('edge', 2.6), pale: amberLight('core', 3), light: amberLight('mid') },
     rare: { main: amberLight('rareEdge', 3.45), pale: amberLight('rareCore', 3.2), light: amberLight('rareMid', 1.05) },
@@ -504,24 +505,16 @@
     const { main, pale, light: lamp } = AMBER[tier];
     const at = lampOf(frame);
     outline(frame, { color: dim(main, 0.75), width: 10, intensity: 0.8, life: 1.2, fadeIn: 0.12 });
-    glints(at, { count: tier === 'rare' ? 6 : 4, area: 'fill', color: pale, size: [3, 7], delay: [0.2, 0.7] });
     light(at, { color: lamp, radius: 300, intensity: tier === 'rare' ? 0.42 : 0.34, decay: 1.2 });
   }
   function fossilHover(frame: Element, card: Element, tier: FossilTier): Handle {
     if (!fxActive()) return { stop() {} };
-    const { main, pale, light: lamp } = AMBER[tier];
-    const at = lampOf(frame);
+    const { main, light: lamp } = AMBER[tier];
     const glow = outline(frame, { color: dim(main, 0.65), width: 12, flame: 0.12, pulse: 0.5, intensity: 0.7, fadeIn: 0.35, base: card });
-    const motes = emitter(tier === 'rare' ? 6 : 4, () => glints(at, { count: 1, area: 'fill', color: pale, size: [2, 5], life: [0.7, 1.3] }));
-    light(at, { color: lamp, radius: 230, intensity: 0.2, decay: 0.9 });
-    return {
-      stop() {
-        glow.stop(0.45);
-        motes.stop();
-      },
-    };
+    light(lampOf(frame), { color: lamp, radius: 230, intensity: 0.2, decay: 0.9 });
+    return { stop: () => glow.stop(0.45) };
   }
-  /** A fossil's card is chosen: its lamp's light floods out of the amber and rings (a rare's twice); the other cards burn away. */
+  /** A fossil's card is chosen: its lamp's light floods out of the amber and rings (a rare's twice), and pours out from behind the card in slow rays; the other cards burn away. */
   function fossilPicked(card: Element, base: Element, others: Element[], tier: FossilTier) {
     if (!fxActive()) return;
     const { main, pale, light: lamp } = AMBER[tier];
@@ -534,7 +527,7 @@
     ring(at, { radius: tier === 'rare' ? 330 : 290, thickness: 10, life: 0.9, color: main, breakup: 0.2 });
     if (tier === 'rare') ring(at, { radius: 210, thickness: 6, life: 0.75, color: pale, breakup: 0.35 });
     flare(at, { size: 42, streak: 370, life: 0.8, color: pale });
-    glints(at, { count: tier === 'rare' ? 10 : 6, area: 'fill', color: pale, size: [4, 9], delay: [0, 0.3] });
+    rays(at, { radius: 380, count: 12, life: 1.5, fadeIn: 0.3, spin: 0.03, intensity: tier === 'rare' ? 0.2 : 0.14, color: pale, clear: card });
     light(at, { color: lamp, radius: 440, intensity: tier === 'rare' ? 0.95 : 0.8, decay: 1.3 });
   }
 
@@ -2202,7 +2195,7 @@
     --f-border: #9c561c;
     --f-pulse: rgba(255, 150, 40, 0.42);
     --f-glow: rgba(255, 140, 34, 0.26);
-    --f-glyph: linear-gradient(180deg, #8e4016 0%, #5c2008 50%, #34100a 100%);
+    --f-glyph: #56441a;
   }
   .card[data-fossil='rare'] {
     --ink: #f2a552;
@@ -2212,7 +2205,7 @@
     --f-border: #c2521c;
     --f-pulse: rgba(255, 96, 24, 0.56);
     --f-glow: rgba(255, 110, 30, 0.36);
-    --f-glyph: linear-gradient(180deg, #842e0c 0%, #521604 50%, #2e0804 100%);
+    --f-glyph: #4e3410;
   }
   .card[data-fossil] .frame,
   .card[data-fossil] .back {
@@ -2226,16 +2219,19 @@
   .card[data-fossil] :is(.frame, .back) > :global(.engraving) {
     opacity: 0.8;
   }
-  /* Its emblem caught in the amber, as the creature in a fossil's: dark
-     brown, multiplied over the amber so its light and flows show through
-     it, dimmed; soft at its edge where it lies deep. No glow, no shadow:
-     it's in the slab, not on it. */
-  .card[data-fossil] .icon {
-    filter: none;
+  /* Its emblem caught in the amber, as the creature in a fossil's icon:
+     olive-brown, multiplied over the amber so its light and flows show
+     through it (one colour: the amber's light under it shades it, dithered,
+     where a gradient of its own would band); soft at its edge, where it
+     thins and the light comes through, and where it lies a little deep. No glow, no shadow: it's in
+     the slab, not on it (its kindle, too, only brightens it). */
+  .card[data-fossil] .icon,
+  .card[data-fossil] .turn:global(.kindling) .icon {
+    filter: brightness(var(--kindle-lum, 1));
     mix-blend-mode: multiply;
   }
   .card[data-fossil] .lit {
-    filter: drop-shadow(0 0 1.5px rgba(80, 28, 0, 0.6));
+    filter: blur(0.3px);
   }
   /* Lifted toward the player, it's held nearer the lamp: the light reaching
      further across it, its heart brighter. */
@@ -2252,6 +2248,14 @@
   }
   .card.special .glyph {
     background: var(--f-glyph);
+  }
+  /* A fossil's emblem mottled, as a creature in the resin is: and its grain,
+     stirred into it before it's multiplied, keeps the amber's light under it
+     from banding (the amber's own dither, darkened through it, rounds to the
+     same level in runs). An image of its own, written out, beside a colour. */
+  .card[data-fossil] .glyph {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.7' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .36 0 0 0 -.12'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-size: 120px;
   }
   .card.special .title {
     color: var(--f-hi);
@@ -2579,6 +2583,15 @@
     .glyph {
       width: 74px;
       height: 74px;
+    }
+    /* A fossil's emblem a little smaller and lower, to sit inside its drop (findEngraving's rowDrop). */
+    .card[data-fossil] .icon {
+      top: 4px;
+      --e-s: 0.5;
+    }
+    .card[data-fossil] .glyph:not(.fit) {
+      width: 64px;
+      height: 64px;
     }
     /* A row has no room for an item to grow. */
     .glyph.fit {

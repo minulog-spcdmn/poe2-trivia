@@ -377,8 +377,21 @@
             </mask>
           </defs>
         {/if}
-        {#each strokes as { cls, d }, i (i)}
-          <path {d} class={cls} mask={cls === 'ray' && plate.fade ? `url(#${uid}-resin-fade)` : undefined} />
+        {#if knockout.length}
+          <defs>
+            <mask id="{uid}-resin-ko" maskUnits="userSpaceOnUse" x={-50} y={-50} width={w + 100} height={h + 100}>
+              <rect x={-50} y={-50} width={w + 100} height={h + 100} fill="#fff" />
+              {#each knockout as d, i (i)}<path {d} class="ko" />{/each}
+            </mask>
+          </defs>
+        {/if}
+        <!-- The cut, and a hair of the light caught on its edge toward the lamp (its upper left, as the plate's light falls). -->
+        {#each ['cut', 'edge'] as part (part)}
+          <g class={part} transform={part === 'edge' ? 'translate(-0.45 -0.45)' : undefined} mask={knockout.length ? `url(#${uid}-resin-ko)` : undefined}>
+            {#each strokes as { cls, d }, i (i)}
+              <path {d} class={cls} mask={cls === 'ray' && plate.fade ? `url(#${uid}-resin-fade)` : undefined} />
+            {/each}
+          </g>
         {/each}
       </svg>
     {/if}
@@ -687,14 +700,37 @@
     }
   }
   /* A fossil's lines where its lamp shines through (see `slab`): the
-     plate's and its motif's again, in the resin's dark, fading out as the
-     light does (on the light's own reach), so a cut reads dark against the
-     light and light against the dark resin, as a line cut in amber held to
-     a lamp does. Still: drawn once. */
+     plate's and its motif's again, cut in the resin's dark, a little wider
+     than drawn, with a hair of light along each on the side toward the
+     light, fading out as the light does (on the light's own reach), so a
+     cut reads dark against the light and light against the dark resin, as
+     a line cut in amber held to a lamp does. Still: drawn once. */
   .resin {
     color: var(--resin, #3a1103);
-    -webkit-mask-image: radial-gradient(var(--rx) var(--ry) at var(--cx) var(--cy), #000 30%, rgba(0, 0, 0, 0.6) 58%, transparent 92%);
-    mask-image: radial-gradient(var(--rx) var(--ry) at var(--cx) var(--cy), #000 30%, rgba(0, 0, 0, 0.6) 58%, transparent 92%);
+    -webkit-mask-image: radial-gradient(var(--rx) var(--ry) at var(--cx) var(--cy), #000 52%, rgba(0, 0, 0, 0.72) 74%, transparent 100%);
+    mask-image: radial-gradient(var(--rx) var(--ry) at var(--cx) var(--cy), #000 52%, rgba(0, 0, 0, 0.72) 74%, transparent 100%);
+  }
+  .resin .cut path {
+    stroke-width: 1px;
+  }
+  .resin .cut :is(.main, .sign) {
+    stroke-width: 1.15px;
+  }
+  .resin .cut :is(.hair, .hatch, .ray, .shade) {
+    stroke-width: 0.55px;
+  }
+  .resin .cut .ray {
+    opacity: 0.8;
+  }
+  .resin .edge {
+    color: var(--cut-light, #ffe6a8);
+    opacity: 0.55;
+  }
+  .resin .edge path {
+    stroke-width: 0.3px;
+  }
+  .resin .edge :is(.hatch, .ray, .shade) {
+    display: none;
   }
   /* A fossil's glint is the lamp's warm light, not a crystal's cold one; its glow breathes as a flame does. */
   [data-fossil] .glint {

@@ -30,13 +30,19 @@
   const INSET = 5;
   let w = $state(0);
   let h = $state(0);
-  /** Device px to a layout px, as the side is drawn on screen (not its sharp zoom, which its scale takes back). */
+  /**
+   * Device px to a layout px, as the side is drawn: a sharp face's zoom too, so
+   * its images lie pixel for pixel in the twice-size drawing and their dither
+   * comes through its filter (eased up to it, the grain is smoothed away and the
+   * light bands). At most 3, as dense as a phone draws.
+   */
   let s = $state(0);
 
   function sized(node: HTMLElement) {
     const look = () => {
       const [cw, ch] = [node.clientWidth, node.clientHeight];
-      const k = Math.round(zoomOf(node) * devicePixelRatio * 100) / 100;
+      const said = (node as HTMLElement & { currentCSSZoom?: number }).currentCSSZoom;
+      const k = Math.min(3, Math.round((said ?? zoomOf(node)) * devicePixelRatio * 100) / 100);
       if (cw !== w || ch !== h || k !== s) [w, h, s] = [cw, ch, k];
     };
     const ro = new ResizeObserver(look);
@@ -55,12 +61,11 @@
     const at = (layer: AmberLayer, ox: number, oy: number, cw: number, ch: number, k: number): AmberJob => ({ layer, slab, W: Math.max(1, Math.round(cw * k)), H: Math.max(1, Math.round(ch * k)), s: k, ox, oy });
     const [iw, ih] = inner;
     if (side === 'back') return { flat: at('flat', INSET, INSET, iw, ih, s) };
-    // (The light and its heart are soft: at half the density, eased up.)
-    const half = Math.max(0.5, s / 2);
+    // (Each at the density it's shown at, the soft ones too: eased up, their dither would be lost.)
     return {
-      light: at('light', INSET - reach, INSET - reach, iw + 2 * reach, ih + 2 * reach, half),
+      light: at('light', INSET - reach, INSET - reach, iw + 2 * reach, ih + 2 * reach, s),
       body: at('body', INSET, INSET, iw, ih, s),
-      bloom: at('bloom', INSET - reach, INSET - reach, iw + 2 * reach, ih + 2 * reach, half),
+      bloom: at('bloom', INSET - reach, INSET - reach, iw + 2 * reach, ih + 2 * reach, s),
       sheen: at('sheen', INSET, INSET, iw, ih, s),
     };
   });
@@ -224,22 +229,22 @@
       transform: translate(-1%, 2%);
     }
   }
-  /* A rare's spangles: each catches the light in its turn, then lets it go. */
+  /* A rare's spangles: gold discs in the amber, each catching the light in its turn, then letting it go. */
   .spangle {
-    opacity: 0.25;
+    opacity: 0.5;
     animation: catch 7.1s ease-in-out var(--t) infinite;
     will-change: opacity;
   }
   @keyframes catch {
     0%,
     100% {
-      opacity: 0.25;
+      opacity: 0.5;
     }
     8% {
       opacity: 1;
     }
-    20% {
-      opacity: 0.3;
+    22% {
+      opacity: 0.55;
     }
   }
   :global(html[data-still]) .amber :is(.lamp, .spangle) {

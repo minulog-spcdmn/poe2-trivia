@@ -11,27 +11,33 @@
 // thickness, not a colour: deeper away from the lamp's heart and toward the
 // slab's edges, as the icons are; the flows it was laid down in (the
 // layers of resin, nested round the drop that caught what's inside, warped
-// and fading in and out); clouds of it, denser and clearer; specks of
-// debris and small bubbles, some sharp, some deep and soft; the planes it
-// has cracked along inside, each a wedge of brighter amber with a sharp
-// break that catches the light (what gives the icons their angular gold);
-// for a rare, sun spangles, the flat fractures in old amber that catch the
-// light gold.
+// and fading in and out, each its own density, a sharp step between them
+// and a fine seam of light where one meets the next); clouds of it, denser
+// and clearer; flakes of fracture, clearer where they lie, their side
+// toward the lamp a sharp line of its light (what gives the icons their
+// angular gold); in patches, crazing, hairline cracks with a hair of light
+// beside each; specks of debris, some sharp, some deep and soft; for a
+// rare, sun spangles, flat gold discs of fracture that catch the light.
 //
 // It's painted in layers the page lays over each other (FossilAmber.svelte):
-//   light   the lamp behind, a soft warm light falling off to the dark (it
-//           moves: the lamp's drift, and as the card tilts);
-//   body    what the amber lets through of each colour (multiplied over the
-//           light: so wherever the light goes, the amber colours it, flows
-//           and specks and all, as a lamp passing behind it would);
+//   light   the lamp's heart, the share of its light that moves (the lamp's
+//           drift, and as the card tilts);
+//   body    what the amber lets through of each colour of the rest of the
+//           light, still (multiplied over the light: so wherever its heart
+//           goes, the amber colours it, flows and specks and all, as a lamp
+//           passing behind it would);
 //   bloom   the lamp's heart, too bright for the amber to hold, pale gold
 //           (screened, moving with the light);
-//   sheen   the bubbles' bright rims, the planes' breaks and a rare's
-//           spangles' light (screened).
+//   sheen   the light the seams, the flakes' edges and the cracks catch
+//           (screened);
+//   spangle a rare's spangle, one each, gold (screened; each catches the
+//           light in its turn).
 // and the back, seen only as it's dealt, as one still image (`flat`).
 //
-// Every layer is dithered as it's rounded to 8 bits (CLAUDE.md, "No
-// banding"): its own light varies smoothly over large areas, and each of
+// Every layer is painted at the density it's shown at and dithered as it's
+// rounded to 8 bits (CLAUDE.md, "No banding"), strongly enough that a sharp
+// face's filter, which averages and sharpens what it's given, still finds
+// the noise: its light varies smoothly over large areas, and each of
 // 8-bit's levels would show as a ring. Pure: no DOM, so the worker
 // (amberWorker.ts) and the page alike can paint it.
 
@@ -146,20 +152,31 @@ function lightAt(slab: AmberSlab, x: number, y: number) {
   return AMBIENT + (1 - AMBIENT) * Math.pow(1 + (dx * dx + dy * dy) / 0.64, -1.6);
 }
 
-/** The inclusions: specks of debris, fibres and bubbles, each at its depth (how soft), placed from the slab's seed. */
+/**
+ * The share of the light that moves with the lamp (the `light` layer): its
+ * heart, never less than SWAY's floor of it. The rest (lightAt over this,
+ * as it stands at rest) is painted into the body, still: multiplied over a
+ * light that fell to almost nothing in the dark, the body's dither would be
+ * multiplied away with it, and its dark resin would band.
+ */
+const SWAY = 0.7;
+function swayAt(slab: AmberSlab, x: number, y: number) {
+  const [dx, dy] = [(x - slab.lamp[0]) / slab.rx, (y - slab.lamp[1]) / slab.ry];
+  return SWAY + (1 - SWAY) * Math.exp(-(dx * dx + dy * dy) / 0.32);
+}
+
+/** What lies in the amber, placed from the slab's seed: specks of debris and fibres, each at its depth (how soft); flakes of fracture; a rare's sun spangles. */
 type Speck = { x: number; y: number; r: number; soft: number; dark: number; long: number; turn: number };
-type Bubble = { x: number; y: number; r: number; soft: number };
+/** A flake of fracture seen aslant: a small convex polygon, its side `edge` (from point `edge` to the next) the one toward the lamp, which catches its light, `lit` strong. */
+type Flake = { pts: Pt[]; c: Pt; reach: number; edge: number; lit: number };
 type Spangle = { x: number; y: number; r: number; turn: number; flat: number; seed: number };
-/** A fracture plane seen aslant: its break a line through `x`, `y` along (`c`, `s`), `len` long, its ends slanting by `lean`; the plane `wide` to its side, clearing the amber by `lift`. */
-type Plane = { x: number; y: number; c: number; s: number; len: number; wide: number; lean: number; lift: number };
 function inclusions(slab: AmberSlab) {
   const rnd = stream(slab.seed * 7919 + (slab.rare ? 13 : 0) + 1);
   const area = slab.w * slab.h;
   const specks: Speck[] = [];
-  const bubbles: Bubble[] = [];
   const spangles: Spangle[] = [];
-  const planes: Plane[] = [];
-  // Mostly near the light (where they show), thinning out to the edges; few in a row's name.
+  const flakes: Flake[] = [];
+  // Mostly near the light (where they show), thinning out to the edges.
   const place = (): Pt => {
     for (let i = 0; i < 8; i++) {
       const p: Pt = [rnd() * slab.w, rnd() * slab.h];
@@ -167,18 +184,13 @@ function inclusions(slab: AmberSlab) {
     }
     return [slab.lamp[0] + (rnd() - 0.5) * slab.rx, slab.lamp[1] + (rnd() - 0.5) * slab.ry];
   };
-  const nSpecks = Math.round(area / 6000);
+  const nSpecks = Math.round(area / 9000);
   for (let i = 0; i < nSpecks; i++) {
     const [x, y] = place();
-    const fibre = rnd() < 0.18;
+    const fibre = rnd() < 0.25;
     // Most lie deep, soft and faint; a few near the face, small and sharp.
-    const deep = rnd() < 0.7;
-    specks.push({ x, y, r: fibre ? 0.18 + rnd() * 0.15 : 0.2 + rnd() * rnd() * 0.9, soft: deep ? 0.7 + rnd() * 1.4 : 0.12, dark: deep ? 0.12 + rnd() * 0.22 : 0.3 + rnd() * 0.3, long: fibre ? 2.5 + rnd() * 6 : 0.6 + rnd() * 0.8, turn: rnd() * Math.PI });
-  }
-  const nBubbles = Math.round(area / 9000) + 2;
-  for (let i = 0; i < nBubbles; i++) {
-    const [x, y] = place();
-    bubbles.push({ x, y, r: 0.5 + rnd() * rnd() * 1.6, soft: rnd() < 0.6 ? 0 : 0.5 + rnd() });
+    const deep = rnd() < 0.75;
+    specks.push({ x, y, r: fibre ? 0.16 + rnd() * 0.12 : 0.2 + rnd() * rnd() * 0.6, soft: deep ? 0.8 + rnd() * 1.4 : 0.12, dark: deep ? 0.1 + rnd() * 0.18 : 0.25 + rnd() * 0.25, long: fibre ? 3 + rnd() * 6 : 0.5 + rnd() * 0.6, turn: rnd() * Math.PI });
   }
   if (slab.rare) {
     const n = Math.max(4, Math.round(area / 9000));
@@ -186,46 +198,96 @@ function inclusions(slab: AmberSlab) {
       // Round the drop, never on the emblem's heart.
       const a = (i / n) * Math.PI * 2 + rnd() * 0.9;
       const k = 0.42 + rnd() * 0.5;
-      spangles.push({ x: slab.lamp[0] + Math.sin(a) * slab.rx * k, y: slab.lamp[1] - Math.cos(a) * slab.ry * k * 0.95, r: 1.9 + rnd() * 2.2, turn: rnd() * Math.PI, flat: 0.28 + rnd() * 0.4, seed: Math.floor(rnd() * 1e6) });
+      spangles.push({ x: slab.lamp[0] + Math.sin(a) * slab.rx * k, y: slab.lamp[1] - Math.cos(a) * slab.ry * k * 0.95, r: 2.2 + rnd() * 2.4, turn: rnd() * Math.PI, flat: 0.3 + rnd() * 0.4, seed: Math.floor(rnd() * 1e6) });
     }
   }
-  // (Last, so the rest lie where they always have.)
-  const nPlanes = Math.max(3, Math.round(area / 20000));
-  for (let i = 0; i < nPlanes; i++) {
-    const a = (i / nPlanes) * Math.PI * 2 + rnd() * 1.4;
-    const k = 0.22 + rnd() * 0.62;
-    const turn = rnd() * Math.PI * 2;
-    planes.push({ x: slab.lamp[0] + Math.sin(a) * slab.rx * k, y: slab.lamp[1] - Math.cos(a) * slab.ry * k, c: Math.cos(turn), s: Math.sin(turn), len: (0.3 + rnd() * 0.45) * Math.min(slab.rx, slab.ry), wide: 12 + rnd() * 26, lean: (rnd() - 0.5) * 1.6, lift: 0.32 + rnd() * 0.26 });
+  // The flakes: many small, a few larger, each a few points round its middle, flattened as it lies aslant.
+  const nFlakes = Math.round(area / (slab.rare ? 4200 : 5400));
+  for (let i = 0; i < nFlakes; i++) {
+    const c = place();
+    const r = 2.6 + rnd() * rnd() * 11;
+    const n = 5 + Math.floor(rnd() * 3);
+    const [turn, flat] = [rnd() * Math.PI, 0.35 + rnd() * 0.5];
+    const [ct, st] = [Math.cos(turn), Math.sin(turn)];
+    const pts: Pt[] = [];
+    for (let k = 0; k < n; k++) {
+      const a = ((k + 0.25 + rnd() * 0.5) / n) * Math.PI * 2;
+      const [u, v] = [Math.cos(a) * r * (0.82 + rnd() * 0.18), Math.sin(a) * r * flat * (0.82 + rnd() * 0.18)];
+      pts.push([c[0] + u * ct - v * st, c[1] + u * st + v * ct]);
+    }
+    // The side whose outward normal turns most toward the lamp.
+    const toward = Math.atan2(slab.lamp[1] - c[1], slab.lamp[0] - c[0]);
+    let [edge, best] = [0, -Infinity];
+    for (let k = 0; k < n; k++) {
+      const [a, b] = [pts[k], pts[(k + 1) % n]];
+      const mid: Pt = [(a[0] + b[0]) / 2 - c[0], (a[1] + b[1]) / 2 - c[1]];
+      const facing = Math.cos(Math.atan2(mid[1], mid[0]) - toward);
+      if (facing > best) [edge, best] = [k, facing];
+    }
+    flakes.push({ pts, c, reach: r * 1.05, edge, lit: (0.45 + rnd() * 0.55) * lightAt(slab, c[0], c[1]) ** 0.4 });
   }
-  return { specks, bubbles, spangles, planes };
+  return { specks, spangles, flakes };
 }
-
-/** Where a point lies to a plane: how far across it from its break (on its side, more than 0), and how much it shows there along it (its ends fade, aslant). */
-function planeAt(pl: Plane, x: number, y: number): [number, number] {
-  const [dx, dy] = [x - pl.x, y - pl.y];
-  const across = -dx * pl.s + dy * pl.c;
-  const along = dx * pl.c + dy * pl.s + across * pl.lean;
-  return [across, 1 - smooth(pl.len * 0.15, pl.len * 0.5, Math.abs(along))];
-}
-const planeReach = (pl: Plane) => pl.len / 2 + pl.wide * (1 + Math.abs(pl.lean)) + 2;
 
 /** The slab's inclusions, as the page places a rare's spangles (each its own small image that catches the light in its turn). */
 export const spanglesOf = (slab: AmberSlab) => inclusions(slab).spangles;
 
+/** How far (x, y) lies from the segment a to b. */
+function toSegment(x: number, y: number, a: Pt, b: Pt) {
+  const [ex, ey] = [b[0] - a[0], b[1] - a[1]];
+  const t = Math.min(1, Math.max(0, ((x - a[0]) * ex + (y - a[1]) * ey) / (ex * ex + ey * ey || 1)));
+  return Math.hypot(x - a[0] - ex * t, y - a[1] - ey * t);
+}
+
+/** Where (x, y) lies to a flake: how far inside it (less than 0, outside), how far from its lit side, and from its nearest other side. */
+function flakeAt(fl: Flake, x: number, y: number): [number, number, number] {
+  const n = fl.pts.length;
+  let inside = Infinity;
+  let other = Infinity;
+  for (let k = 0; k < n; k++) {
+    const [a, b] = [fl.pts[k], fl.pts[(k + 1) % n]];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    // (Inward: the points go round counterclockwise in the slab's px, y down.)
+    let d = ((x - a[0]) * (b[1] - a[1]) - (y - a[1]) * (b[0] - a[0])) / len;
+    if ((fl.c[0] - a[0]) * (b[1] - a[1]) - (fl.c[1] - a[1]) * (b[0] - a[0]) < 0) d = -d;
+    inside = Math.min(inside, d);
+    if (k !== fl.edge) other = Math.min(other, Math.abs(d));
+  }
+  return [inside, toSegment(x, y, fl.pts[fl.edge], fl.pts[(fl.edge + 1) % n]), other];
+}
+
+/** How far (x, y) lies from the nearest crack of the slab's crazing (its cells about 13 px across), in layout px. */
+function crackAt(x: number, y: number, seed: number) {
+  const S = 13;
+  const [gx, gy] = [x / S, y / S];
+  const [ix, iy] = [Math.floor(gx), Math.floor(gy)];
+  let [d1, d2] = [9, 9];
+  for (let dj = -1; dj <= 1; dj++)
+    for (let di = -1; di <= 1; di++) {
+      const [cx, cy] = [ix + di + hash(ix + di, iy + dj, seed), iy + dj + hash(ix + di, iy + dj, seed + 1)];
+      const d = (gx - cx) ** 2 + (gy - cy) ** 2;
+      if (d < d1) [d2, d1] = [d1, d];
+      else if (d < d2) d2 = d;
+    }
+  return ((Math.sqrt(d2) - Math.sqrt(d1)) * S) / 2;
+}
+
 // ---- painting -------------------------------------------------------------------
 
-/** Rounds `v` (0 to 1) to 8 bits, dithered: a level up or down at random in proportion, so a slow gradient never shows its steps. */
-const dither = (v: number, r: number) => Math.max(0, Math.min(255, Math.floor(v * 255 + r)));
+/** How far the dither stirs each level, either way (a triangle): enough that a sharp face's filter, which averages and sharpens what it's given, still finds its noise. */
+const DITHER = 3.6;
+/** Rounds `v` (0 to 1) to 8 bits, dithered by `r` (a triangle, -1 to 1): a slow gradient never shows its steps. Nothing stays nothing. */
+const dither = (v: number, r: number) => (v <= 0 ? 0 : Math.max(0, Math.min(255, Math.floor(v * 255 + 0.5 + r * DITHER))));
 
 /** Paints one layer of the slab: RGBA, `job.W` x `job.H`, straight (not premultiplied) alpha. */
 export function paintAmber(job: AmberJob): Uint8ClampedArray {
-  const { slab, W, H, s, ox, oy, layer } = job;
+  const { slab, W, H, layer } = job;
   const out = new Uint8ClampedArray(W * H * 4);
   const rnd = stream(slab.seed * 31 + W * 7 + H + layer.length);
-  // (Triangular dither: two uniforms, so its noise has no mean and little low-frequency weight.)
-  const tri = () => rnd() + rnd();
+  // (Triangular: two uniforms, so its noise has no mean and little low-frequency weight.)
+  const tri = () => rnd() + rnd() - 1;
   const tier = slab.rare ? 'rare' : 'common';
-  const at = (i: number, j: number): Pt => [ox + (i + 0.5) / s, oy + (j + 0.5) / s];
+  const at = (i: number, j: number): Pt => [job.ox + (i + 0.5) / job.s, job.oy + (j + 0.5) / job.s];
 
   if (layer === 'spangle') return paintSpangle(job, out, tri);
 
@@ -236,76 +298,85 @@ export function paintAmber(job: AmberJob): Uint8ClampedArray {
         const [x, y] = at(i, j);
         const o = (j * W + i) * 4;
         if (layer === 'light') {
-          const L = lightAt(slab, x, y);
-          out[o] = dither(L * LAMP[0], tri());
-          out[o + 1] = dither(L * LAMP[1], tri());
-          out[o + 2] = dither(L * LAMP[2], tri());
+          const L = swayAt(slab, x, y);
+          out[o] = out[o + 1] = out[o + 2] = dither(L, tri());
           out[o + 3] = 255;
         } else {
           const [dx, dy] = [(x - slab.lamp[0]) / slab.rx, (y - slab.lamp[1]) / slab.ry];
-          const a = b.a * Math.exp(-(dx * dx + dy * dy) / (b.r * b.r));
           out[o] = 255 * b.c[0];
           out[o + 1] = 255 * b.c[1];
           out[o + 2] = 255 * b.c[2];
-          out[o + 3] = dither(a, tri());
+          out[o + 3] = dither(b.a * Math.exp(-(dx * dx + dy * dy) / (b.r * b.r)), tri());
         }
       }
     return out;
   }
 
-  const { specks, bubbles, spangles, planes } = inclusions(slab);
-  const sigma = SIGMA[tier];
-  const [t0, deepen] = DEPTH[tier];
-
+  const { tau, glow } = field(job);
   if (layer === 'sheen') {
-    // Light only where something catches it: a bubble's rim on the side toward the lamp and a
-    // point of it inside; a rare's spangles, faintly, as they lie (the page winks each in its turn).
-    const a = new Float32Array(W * H);
-    for (const bu of bubbles) {
-      const L = lightAt(slab, bu.x, bu.y);
-      const toward = Math.atan2(slab.lamp[0] - bu.x, -(slab.lamp[1] - bu.y));
-      stamp(job, bu.x, bu.y, bu.r + 1.5, (x, y) => {
-        const [dx, dy] = [x - bu.x, y - bu.y];
-        const d = Math.hypot(dx, dy);
-        const facing = Math.cos(Math.atan2(dx, -dy) - toward);
-        const rim = Math.exp(-(((d - bu.r * 0.78) / Math.max(0.22, bu.r * 0.12 + bu.soft * 0.4)) ** 2)) * Math.max(0, facing) * 0.75;
-        const spot = Math.exp(-((Math.hypot(dx + bu.r * 0.32, dy + bu.r * 0.36) / Math.max(0.2, bu.r * 0.2)) ** 2)) * 0.9;
-        return (rim + spot) * (0.35 + 0.65 * L);
-      }, a, W, H);
-    }
-    // A plane's break, a fine line of light, as bright as the light that reaches it.
-    for (const pl of planes) {
-      stamp(job, pl.x, pl.y, planeReach(pl), (x, y) => {
-        const [across, shows] = planeAt(pl, x, y);
-        // (Uneven along it, as a break is: brighter where it turns to the light.)
-        const along = x * pl.c + y * pl.s;
-        return shows && Math.exp(-(((across - 0.25) / 0.38) ** 2)) * shows * pl.lift * 1.3 * smooth(0.3, 0.75, noise(along / 9, 0, pl.x | 0)) * Math.sqrt(lightAt(slab, x, y));
-      }, a, W, H);
-    }
-    for (const sp of spangles) {
-      stamp(job, sp.x, sp.y, sp.r + 1, (x, y) => spangleAt(sp, x, y) * 0.22, a, W, H);
-    }
     for (let p = 0; p < W * H; p++) {
       const o = p * 4;
       out[o] = 255;
-      out[o + 1] = 243;
-      out[o + 2] = 205;
-      out[o + 3] = dither(Math.min(1, a[p]), tri());
+      out[o + 1] = 238;
+      out[o + 2] = 190;
+      out[o + 3] = dither(Math.min(1, glow[p]), tri());
     }
     return out;
   }
+  // What passes: each colour by how far it's carried through (and the back, its light and bloom and sheen worked in).
+  const sigma = SIGMA[tier];
+  const flat = layer === 'flat';
+  const b = BLOOM[tier];
+  const screen = (v: number, a: number) => 1 - (1 - v) * (1 - a);
+  for (let j = 0; j < H; j++)
+    for (let i = 0; i < W; i++) {
+      const p = j * W + i;
+      const o = p * 4;
+      const t = tau[p];
+      const [x, y] = at(i, j);
+      // The lamp's colour and its light as it falls off, but for the share that moves (the face's
+      // light layer), or all of it, dimmer, on the back.
+      const L = flat ? lightAt(slab, x, y) * 0.8 : lightAt(slab, x, y) / swayAt(slab, x, y);
+      let r = Math.exp(-sigma[0] * t) * L * LAMP[0];
+      let g = Math.exp(-sigma[1] * t) * L * LAMP[1];
+      let bl = Math.exp(-sigma[2] * t) * L * LAMP[2];
+      if (flat) {
+        const [dx, dy] = [(x - slab.lamp[0]) / slab.rx, (y - slab.lamp[1]) / slab.ry];
+        const a = b.a * 0.7 * Math.exp(-(dx * dx + dy * dy) / (b.r * b.r));
+        [r, g, bl] = [screen(r, a * b.c[0]), screen(g, a * b.c[1]), screen(bl, a * b.c[2])];
+        const s = Math.min(1, glow[p]) * 0.8;
+        [r, g, bl] = [screen(r, s), screen(g, s * 0.93), screen(bl, s * 0.75)];
+      }
+      out[o] = dither(r, tri());
+      out[o + 1] = dither(g, tri());
+      out[o + 2] = dither(bl, tri());
+      out[o + 3] = 255;
+    }
+  return out;
+}
 
-  // The body (and, for the flat back, the light and bloom worked in): the thickness at each point, then what passes.
+/**
+ * The slab's thickness at each pixel of `job` (how far the light is carried
+ * through it), and the light it catches on its way (the seams', the flakes'
+ * and the cracks' bright lines, for the sheen).
+ */
+function field(job: AmberJob) {
+  const { slab, W, H, s, ox, oy } = job;
+  const tier = slab.rare ? 'rare' : 'common';
+  const [t0, deepen] = DEPTH[tier];
+  const { specks, spangles, flakes } = inclusions(slab);
   const tau = new Float32Array(W * H);
-  // The slow fields (clouds, the flows' warp and how strongly each shows), on a grid every 3 layout px, then eased between.
+  const glow = new Float32Array(W * H);
+  const sd = slab.seed * 131;
+  // The slow fields (clouds, the flows' warp and how strongly each shows, the crazing's patches), on a grid every 3 layout px, eased between.
   const step = 3;
-  const gw = Math.ceil((W / s) / step) + 2;
-  const gh = Math.ceil((H / s) / step) + 2;
+  const gw = Math.ceil(W / s / step) + 2;
+  const gh = Math.ceil(H / s / step) + 2;
   const cloud = new Float32Array(gw * gh);
   const warp = new Float32Array(gw * gh);
   const showing = new Float32Array(gw * gh);
   const fine = new Float32Array(gw * gh);
-  const sd = slab.seed * 131;
+  const crazed = new Float32Array(gw * gh);
   for (let gj = 0; gj < gh; gj++)
     for (let gi = 0; gi < gw; gi++) {
       const [x, y] = [ox + gi * step, oy + gj * step];
@@ -314,8 +385,9 @@ export function paintAmber(job: AmberJob): Uint8ClampedArray {
       const [qx, qy] = [fbm(x / 70, y / 64, sd + 5, 2) - 0.5, fbm(x / 64 + 9, y / 70, sd + 6, 2) - 0.5];
       cloud[g] = fbm(x / 40 + qx * 2.4, y / 46 + qy * 2.4, sd + 1, 4);
       warp[g] = fbm(x / 34 + 3.1, y / 30, sd + 2, 3) - 0.5;
-      showing[g] = smooth(0.48, 0.78, fbm(x / 26, y / 30 + 7, sd + 3, 3));
+      showing[g] = smooth(0.42, 0.7, fbm(x / 26, y / 30 + 7, sd + 3, 3));
       fine[g] = fbm(x / 9, y / 13, sd + 4, 2) - 0.5;
+      crazed[g] = smooth(0.62, 0.78, fbm(x / 48 + 4, y / 52 - 2, sd + 7, 3));
     }
   const ease = (f: Float32Array, x: number, y: number) => {
     const [gx, gy] = [(x - ox) / step, (y - oy) / step];
@@ -329,123 +401,99 @@ export function paintAmber(job: AmberJob): Uint8ClampedArray {
     const fr = phase - Math.floor(phase) - 0.5;
     return Math.exp(-((fr / w) ** 2));
   };
+  /** Half a device px, in layout px: the sharp edges' easing. */
+  const aa = 0.5 / s;
   for (let j = 0; j < H; j++)
     for (let i = 0; i < W; i++) {
-      const [x, y] = at(i, j);
+      const [x, y] = [ox + (i + 0.5) / s, oy + (j + 0.5) / s];
+      const p = j * W + i;
       const [dx, dy] = [(x - slab.lamp[0]) / slab.rx, (y - slab.lamp[1]) / slab.ry];
-      const d = Math.sqrt(dx * dx + dy * dy);
-      let t = t0 + deepen * Math.pow(d, 1.6);
-      t += (ease(cloud, x, y) - 0.5) * 1.2;
-      // The flows: the drop's offsets, warped, broad layers showing and fading by turns, a fine one here and there.
+      const L = lightAt(slab, x, y);
+      let t = t0 + deepen * Math.pow(Math.sqrt(dx * dx + dy * dy), 1.6);
+      t += (ease(cloud, x, y) - 0.5) * 1.0;
+      // The flows: the drop's offsets, warped, broad layers showing and fading by turns.
       const wp = ease(warp, x, y);
-      const u = dropDistance(slab, x, y) + wp * 22;
+      const dd = dropDistance(slab, x, y);
+      const u = dd + wp * 22;
       const shows = ease(showing, x, y);
-      t += 0.24 * shows * band(u / 11 + wp * 0.8, 0.3);
-      // Each flow its own density, a sharp edge between one and the next (eased over half a device
-      // px) and a fine line on it where the light bends: layers of resin laid one over another.
+      t += 0.22 * shows * band(u / 11 + wp * 0.8, 0.3);
+      // Layers of resin laid one over another, each its own density, a sharp step between one and
+      // the next; and where one meets the next, the light bent along it: a fine seam, lit.
       const ph = u / 7.5 + wp * 1.3;
       const kf = Math.floor(ph);
       const fr = ph - kf;
-      const aa = 0.5 / s / 7.5;
-      const edge = smooth(0, aa * 2, fr) * (1 - smooth(1 - aa * 2, 1, fr));
       const layerOf = (n: number) => hash(n, 7, sd) - 0.5;
-      t += shows * 0.7 * (layerOf(kf - 1) + (layerOf(kf) - layerOf(kf - 1)) * smooth(0, aa * 3, fr));
-      t += shows * shows * 0.16 * (1 - edge) + 0.06 * shows * band(u / 2.6 + wp * 2.2, 0.12);
+      t += shows * 0.75 * (layerOf(kf - 1) + (layerOf(kf) - layerOf(kf - 1)) * smooth(0, (aa * 2) / 7.5, fr));
+      const off = Math.min(fr, 1 - fr) * 7.5;
+      const seam = Math.exp(-((off / Math.max(0.32, aa)) ** 2)) * shows * smooth(0.45, 0.85, hash(kf, 11, sd));
+      t -= 0.3 * seam;
+      glow[p] += 0.42 * seam * L;
       t += ease(fine, x, y) * 0.14;
+      // The crazing, in patches: hairline cracks, dark, a hair of light beside each.
+      const cz = ease(crazed, x, y);
+      if (cz > 0.01) {
+        // (Warped, and broken into runs: cracks, not a net.)
+        const k = crackAt(x + wp * 9, y - wp * 7, sd + 9);
+        const run = cz * smooth(0.48, 0.66, fbm(x / 7, y / 7, sd + 8, 2));
+        t += 0.3 * run * Math.exp(-((k / Math.max(0.26, aa)) ** 2));
+        glow[p] += 0.1 * run * L * Math.exp(-(((k - 0.5) / Math.max(0.28, aa)) ** 2));
+      }
       // Clear inside the drop, where it caught what it holds.
-      if (slab.drop) t -= 0.24 * smooth(0, 16, -dropDistance(slab, x, y));
+      if (slab.drop) t -= 0.24 * smooth(0, 16, -dd);
       // Deeper toward the slab's edges, as a piece of amber is (in the slab's own px: the light's layer runs past them).
       const e = Math.min(x, slab.w - x, y, slab.h - y);
       t += 0.8 * (1 - smooth(0, 18, e));
-      tau[j * W + i] = Math.max(0.05, t);
+      tau[p] = t;
     }
-  // Specks and fibres: thicker, darker resin, sharp or soft as they lie near the face or deep.
+  // The flakes: clearer where they lie, their light brightest along the side toward the lamp,
+  // which shows sharp; a fine dark line round their other sides.
+  const clear = new Float32Array(W * H);
   const dark = new Float32Array(W * H);
+  for (const fl of flakes) {
+    stamp(job, fl.c[0], fl.c[1], fl.reach + 1.5, (x, y, p) => {
+      const [inside, lit, other] = flakeAt(fl, x, y);
+      if (inside < -1.2) return 0;
+      const edge = Math.exp(-((lit / Math.max(0.26, aa)) ** 2));
+      const within = smooth(-aa, aa, inside);
+      glow[p] += fl.lit * (0.75 * edge + 0.1 * within * Math.exp(-lit / (fl.reach * 0.4)));
+      dark[p] += within * 0.14 * fl.lit * Math.exp(-((other / Math.max(0.24, aa)) ** 2));
+      return within * fl.lit * (0.18 + 0.4 * Math.exp(-lit / (fl.reach * 0.35)));
+    }, clear, W, H);
+  }
+  // A rare's spangles: flat discs, clearer (their gold is their own images').
+  for (const sp of spangles) stamp(job, sp.x, sp.y, sp.r + 1, (x, y) => spangleAt(sp, x, y) * 0.3, clear, W, H);
+  // Specks and fibres: darker resin, sharp or soft as they lie near the face or deep.
   for (const sp of specks) {
     const [c, sn] = [Math.cos(sp.turn), Math.sin(sp.turn)];
     stamp(job, sp.x, sp.y, sp.long + sp.r + sp.soft * 2, (x, y) => {
       const [dx, dy] = [x - sp.x, y - sp.y];
       const along = dx * c + dy * sn;
       const across = -dx * sn + dy * c;
-      const half = sp.long / 2;
-      const off = Math.max(0, Math.abs(along) - half);
-      const dd = Math.hypot(off, across);
+      const dd = Math.hypot(Math.max(0, Math.abs(along) - sp.long / 2), across);
       return sp.dark * Math.exp(-((Math.max(0, dd - sp.r) / (0.25 + sp.soft)) ** 2));
     }, dark, W, H);
   }
-  // Bubbles: a darker rim (the light turned away at their edge) round a clearer heart.
-  const clear = new Float32Array(W * H);
-  for (const bu of bubbles) {
-    stamp(job, bu.x, bu.y, bu.r + 1.5 + bu.soft, (x, y) => {
-      const d = Math.hypot(x - bu.x, y - bu.y);
-      return Math.exp(-(((d - bu.r) / (0.3 + bu.r * 0.12 + bu.soft * 0.5)) ** 2)) * 0.55;
-    }, dark, W, H);
-    stamp(job, bu.x, bu.y, bu.r, (x, y) => (Math.hypot(x - bu.x, y - bu.y) < bu.r * 0.8 ? 0.18 : 0), clear, W, H);
-  }
-  // A rare's spangles: flat discs, a little clearer, their fractures darker lines (their light is the sheen's).
-  for (const sp of spangles) {
-    stamp(job, sp.x, sp.y, sp.r + 1, (x, y) => spangleAt(sp, x, y) * 0.35, clear, W, H);
-  }
-  // The planes: the amber clearer on a plane's side, evenly near its break (sharp, eased over
-  // half a device px), then fading out across it, unevenly; a thin dark line just outside the break.
-  const aa = 0.5 / s;
-  for (const pl of planes) {
-    stamp(job, pl.x, pl.y, planeReach(pl), (x, y) => {
-      const [across, shows] = planeAt(pl, x, y);
-      if (!shows || across > pl.wide) return 0;
-      return smooth(-aa, aa, across) * (1 - smooth(pl.wide * 0.3, pl.wide, across)) * (0.8 + ease(fine, x, y) * 1.4) * pl.lift * shows;
-    }, clear, W, H);
-    stamp(job, pl.x, pl.y, planeReach(pl), (x, y) => {
-      const [across, shows] = planeAt(pl, x, y);
-      return shows && Math.exp(-(((across + 0.55) / 0.42) ** 2)) * 0.2 * shows;
-    }, dark, W, H);
-  }
-  const flat = layer === 'flat';
-  const b = BLOOM[tier];
-  for (let j = 0; j < H; j++)
-    for (let i = 0; i < W; i++) {
-      const p = j * W + i;
-      const o = p * 4;
-      const t = tau[p] * (1 - Math.min(0.85, clear[p]));
-      const keep = 1 - Math.min(0.92, dark[p]);
-      let r = Math.exp(-sigma[0] * t) * keep;
-      let g = Math.exp(-sigma[1] * t) * keep * (1 - dark[p] * 0.25);
-      let bl = Math.exp(-sigma[2] * t) * keep * (1 - dark[p] * 0.5);
-      if (flat) {
-        // The back: the light worked in (dimmer: it's the back), and its heart's bloom screened over.
-        const [x, y] = at(i, j);
-        const L = lightAt(slab, x, y) * 0.8;
-        [r, g, bl] = [r * L * LAMP[0], g * L * LAMP[1], bl * L * LAMP[2]];
-        const [dx, dy] = [(x - slab.lamp[0]) / slab.rx, (y - slab.lamp[1]) / slab.ry];
-        const a = b.a * 0.7 * Math.exp(-(dx * dx + dy * dy) / (b.r * b.r));
-        [r, g, bl] = [1 - (1 - r) * (1 - a * b.c[0]), 1 - (1 - g) * (1 - a * b.c[1]), 1 - (1 - bl) * (1 - a * b.c[2])];
-      }
-      out[o] = dither(r, tri());
-      out[o + 1] = dither(g, tri());
-      out[o + 2] = dither(bl, tri());
-      out[o + 3] = 255;
-    }
-  return out;
+  for (let p = 0; p < W * H; p++) tau[p] = Math.max(0.05, tau[p] * (1 - Math.min(0.85, clear[p])) + 2.2 * Math.min(0.9, dark[p]));
+  return { tau, glow };
 }
 
-/** Runs `f` (a point in layout px to a value) over the device px within `reach` of `x`, `y`, adding what it gives into `into`. */
-function stamp(job: AmberJob, x: number, y: number, reach: number, f: (x: number, y: number) => number, into: Float32Array, W: number, H: number) {
+/** Runs `f` (a point in layout px, and its pixel's index, to a value) over the device px within `reach` of `x`, `y`, adding what it gives into `into`. */
+function stamp(job: AmberJob, x: number, y: number, reach: number, f: (x: number, y: number, p: number) => number, into: Float32Array, W: number, H: number) {
   const { s, ox, oy } = job;
   const [i0, i1] = [Math.max(0, Math.floor((x - reach - ox) * s)), Math.min(W - 1, Math.ceil((x + reach - ox) * s))];
   const [j0, j1] = [Math.max(0, Math.floor((y - reach - oy) * s)), Math.min(H - 1, Math.ceil((y + reach - oy) * s))];
   for (let j = j0; j <= j1; j++)
     for (let i = i0; i <= i1; i++) {
-      const v = f(ox + (i + 0.5) / s, oy + (j + 0.5) / s);
+      const v = f(ox + (i + 0.5) / s, oy + (j + 0.5) / s, j * W + i);
       if (v > 0) into[j * W + i] += v;
     }
 }
 
 /**
  * A sun spangle at a point: a flat disc of fracture seen aslant (an
- * ellipse, `flat` as deep as wide, turned), its edge a fine bright line,
- * brightest where it faces the light (its upper left), and fine fractures
- * out from its middle like a lily pad's veins, the disc between them all
- * but clear. 0 to 1.
+ * ellipse, `flat` as deep as wide, turned), gold through, its rim a fine
+ * line of light, brightest on the side toward the light (its upper left).
+ * 0 to 1.
  */
 function spangleAt(sp: Spangle, x: number, y: number) {
   const [c, sn] = [Math.cos(sp.turn), Math.sin(sp.turn)];
@@ -454,16 +502,15 @@ function spangleAt(sp: Spangle, x: number, y: number) {
   const v = (-dx * sn + dy * c) / (sp.r * sp.flat);
   const d = Math.hypot(u, v);
   if (d > 1.3) return 0;
-  // (Its edge's width in the disc's own units: a fine line, a third of a layout px.)
-  const fine = 0.32 / (sp.r * sp.flat);
-  const a = Math.atan2(v, u);
-  const lit = 0.35 + 0.65 * Math.max(0, Math.cos(Math.atan2(dy, dx) + 2.3));
+  // (Its rim's width in the disc's own units: a fine line, a third of a layout px.)
+  const fine = 0.34 / (sp.r * sp.flat);
+  const lit = 0.25 + 0.75 * Math.max(0, Math.cos(Math.atan2(dy, dx) + 2.3));
   const rim = Math.exp(-(((d - 1) / fine) ** 2)) * lit;
-  const veins = Math.exp(-(((Math.sin(a * 6.5 + noise(a * 2.2, 0, sp.seed) * 2.4) * d * sp.r) / 0.22) ** 2)) * smooth(0.12, 0.5, d) * (1 - smooth(0.82, 1, d));
-  return Math.min(1, rim + veins * 0.55 + 0.06 * (1 - smooth(0.9, 1.05, d)));
+  const body = 0.34 * (1 - smooth(0.9, 1, d)) * (0.75 + 0.25 * noise(u * 2.2 + 3, v * 2.2, sp.seed));
+  return Math.min(1, rim + body);
 }
 
-/** One spangle alone, as its own small image: `job.slab.seed` picks it among the slab's (`job.ox` its index). */
+/** One spangle alone, as its own small image (`job.ox` its index among the slab's), gold. */
 function paintSpangle(job: AmberJob, out: Uint8ClampedArray, tri: () => number) {
   const sp = inclusions(job.slab).spangles[job.ox];
   const { W, H, s } = job;
@@ -471,12 +518,11 @@ function paintSpangle(job: AmberJob, out: Uint8ClampedArray, tri: () => number) 
   for (let j = 0; j < H; j++)
     for (let i = 0; i < W; i++) {
       const [x, y] = [sp.x + (i + 0.5 - W / 2) / s, sp.y + (j + 0.5 - H / 2) / s];
-      const v = spangleAt(sp, x, y);
       const o = (j * W + i) * 4;
       out[o] = 255;
-      out[o + 1] = 236;
-      out[o + 2] = 178;
-      out[o + 3] = dither(Math.min(1, v), tri());
+      out[o + 1] = 204;
+      out[o + 2] = 104;
+      out[o + 3] = dither(Math.min(1, spangleAt(sp, x, y)), tri());
     }
   return out;
 }
