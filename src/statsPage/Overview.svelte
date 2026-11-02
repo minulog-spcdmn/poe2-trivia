@@ -15,7 +15,7 @@
   import { fitChart } from './fitChart.svelte';
   import { backShare, beyondChanceOf, comersOf, spikesOf, troubleOf } from './insights';
   import Kpi from './Kpi.svelte';
-  import { DAILY_FROM, MODE_NAMES, answersPerDay, asked, dailyAverage, dayAverageHours, dayAverages, deviceOf, finishedShare, modesOf, percent, weekAverage, type Counts } from './model';
+  import { DAILY_FROM, MODE_NAMES, answersPerDay, asked, dailyAverage, dailyDays as dailyDaysOf, dayAverageHours, dayAverages, deviceOf, finishedShare, modesOf, percent, weekAverage, type Counts } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import Seg from './Seg.svelte';
@@ -36,8 +36,8 @@
   const gamesAvg = $derived(dayAverages(L.games.perDay, B.games.perDay));
   const dailyNow = $derived(dailyAverage(L));
   const dailyBefore = $derived(dailyAverage(B));
-  /** The whole days the average is over: its answers, and the period before's brought to as many days, weigh its change (Delta). */
-  const dailyDays = $derived(L.days.slice(0, -1).filter(asked).length);
+  /** The whole days the average is over (the game's days, as dailyAverage's): its answers, and the period before's brought to as many days, weigh its change (Delta). */
+  const dailyDays = $derived(Math.max(0, dailyDaysOf(L).filter((d) => asked(d.day)).length - 1));
 
   /** Joining worse than usual (insights.ts troubleOf), and what failed most there (the scripts' errors aren't joining's). */
   const trouble = $derived(troubleOf(L, B));

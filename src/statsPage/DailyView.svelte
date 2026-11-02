@@ -20,10 +20,10 @@
 
   const L = $derived(read.now);
   let itemOf = $state<((day: string) => DailyItem | null) | null>(null);
-  /** The days Today's unique asked something. */
+  /** The days Today's unique asked something, by the game's days (the last, the one it asks now), each with its item. */
   const days = $derived(dailyDays(L).filter((d) => asked(d.day)));
-  /** The chart starts on the first day it asked: the days before it would only be empty. */
-  const from = $derived(Math.max(0, L.days.findIndex(asked)));
+  /** The game's day it is now, still going. */
+  const today = $derived(days[days.length - 1]?.day ?? '');
   const answered = $derived(days.filter((d) => d.answers));
   let innerWidth = $state(1400);
   let innerHeight = $state(900);
@@ -33,7 +33,7 @@
   const ranked = $derived(hardestAndEasiest(days, 3, big ? 3 : 5));
   const now = $derived(dailyAverage(L));
   /** The whole days the average is over (the last, still going, left out), to weigh its change. */
-  const wholeDays = $derived(L.days.slice(0, -1).filter(asked).length);
+  const wholeDays = $derived(Math.max(0, days.length - 1));
   const before = $derived(dailyAverage(read.before));
   const total = $derived(L.daily.right + L.daily.wrong);
   const named = $derived(total ? Math.round((100 * L.daily.right) / total) : null);
@@ -76,9 +76,9 @@
 
   <Section title="Players a day" says="Named it in gold, missed it in grey.">
     <DayColumns
-      days={L.days.slice(from)}
-      gold={L.daily.rightPerDay.slice(from)}
-      grey={L.daily.wrongPerDay.slice(from)}
+      days={days.map((d) => d.day)}
+      gold={days.map((d) => d.right)}
+      grey={days.map((d) => d.wrong)}
       names={{ gold: 'Named it', grey: 'Missed it' }}
       {weekly}
       label="Players of Today's unique a {weekly ? 'week' : 'day'}, named and missed"
@@ -110,7 +110,7 @@
 
   <Section title="Every day" says="Newest first.">
     {#if answered.length}
-      <DailyTable days={all ? newestFirst : newestFirst.slice(0, 14)} {itemOf} label="Today's unique, every day" today={read.to} />
+      <DailyTable days={all ? newestFirst : newestFirst.slice(0, 14)} {itemOf} label="Today's unique, every day" {today} />
       {#if newestFirst.length > 14}
         <button type="button" class="more" onclick={() => (all = !all)}>{all ? 'Show fewer' : `Show all ${newestFirst.length} days`}</button>
       {/if}

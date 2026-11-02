@@ -1200,6 +1200,22 @@ test("a usual day in UTC days counts only those read from their start, and the g
   assert.equal(countsOf([path('daily/right', [1, 1, 1])], DAYS, 'Europe/Berlin', 9).gameDay, null);
 });
 
+test("Today's unique's days end on the game's day it is now, so each day is named with the item it asked", () => {
+  const hours = (at: Record<number, number>) => Array.from({ length: 24 }, (_, h) => at[h] ?? 0);
+  const daily = (path: string, hours: Record<string, number[]>): PathCount => ({ path, event: true, count: 0, days: {}, hours });
+  // Berlin at 00:30 on the 16th is 23:30 UTC on the 15th: the game still asks the 15th's item, so the 16th isn't a day of it yet.
+  const early = countsOf([daily('daily/right', { '2026-10-15': hours({ 9: 4 }), '2026-10-16': hours({ 0: 2 }) })], DAYS, 'Europe/Berlin', 0.5);
+  const d = dailyDays(early);
+  assert.deepEqual(d.map((x) => x.day), ['2026-10-14', '2026-10-15']);
+  // The answers in the hour past Berlin's midnight were to the 15th's item.
+  assert.equal(d[1].right, 6);
+  // New York at 22:00 on the 16th is 02:00 UTC on the 17th: the game asks the 17th's item.
+  const late = countsOf([daily('daily/right', { '2026-10-16': hours({ 19: 4, 21: 3 }) })], DAYS, 'America/New_York', 22);
+  assert.deepEqual(dailyDays(late).map((x) => [x.day, x.right]), [['2026-10-14', 0], ['2026-10-15', 0], ['2026-10-16', 4], ['2026-10-17', 3]]);
+  // Without the hours, the account's days.
+  assert.deepEqual(dailyDays(countsOf([path('daily/right', [1, 1, 1])], DAYS, 'Europe/Berlin', 0.5)).map((x) => x.day), DAYS);
+});
+
 test('a percent past 100, as failures for every 100 games can run, is still weighed', () => {
   assert.equal(rateBeyondChance(300, 10, 5, 100), true);
 });

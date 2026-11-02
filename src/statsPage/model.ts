@@ -789,13 +789,25 @@ export function dayAverages(now: number[], before: number[]): { now: number | nu
 /** Today's unique's answers each day, named or missed. */
 export const answersPerDay = (c: Counts): number[] => c.daily.rightPerDay.map((r, i) => r + (c.daily.wrongPerDay[i] ?? 0));
 
+const dailyDay = (day: string, right: number, wrong: number): DailyDay => {
+  const answers = right + wrong;
+  return { day, right, wrong, answers, named: answers ? Math.round((100 * right) / answers) : null };
+};
+
+/**
+ * Today's unique's days, by the game's (UTC) days, the last the game's day it
+ * is now (gameDay), so each day goes with the item it asked: in a zone ahead
+ * of UTC, the account's day just begun isn't the game's yet (its item comes
+ * at 00:00 UTC), so it's left out; in a zone behind, by the evening the
+ * game's day is the account's tomorrow, so it's added. Without the hours, the
+ * account's days.
+ */
 export function dailyDays(c: Counts): DailyDay[] {
-  return c.days.map((day, i) => {
-    const right = c.daily.rightPerDay[i] ?? 0;
-    const wrong = c.daily.wrongPerDay[i] ?? 0;
-    const answers = right + wrong;
-    return { day, right, wrong, answers, named: answers ? Math.round((100 * right) / answers) : null };
-  });
+  const days = c.days.map((day, i) => dailyDay(day, c.daily.rightPerDay[i] ?? 0, c.daily.wrongPerDay[i] ?? 0));
+  const g = c.gameDay;
+  if (!g || !days.length) return days;
+  const kept = days.filter((d) => d.day < g.day);
+  return [...kept, dailyDay(g.day, g.right, g.wrong)];
 }
 
 /** How many answers a day's share is drawn toward the usual one by (hardestAndEasiest): 3 players of 3 naming it says less than 30 of 30. */
