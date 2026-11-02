@@ -801,11 +801,41 @@ export function ammonite(p: Plate, c: Pt, R: number, { mouth = 228, turns = 3.1,
   p.add(shade, 'hatch');
 }
 
-/** The fossil's seal: an ammonite in a double ring `r` across, the plate stopping short of the ring. */
+/**
+ * Where an ammonite's heart goes, and how large it's drawn, to sit balanced
+ * in a circle about `c`: the shell's visual mass (the area centroid of its
+ * last whorl's silhouette, closed along the mouth's ray) is put on `c`, and
+ * its farthest point from that mass at `reach`. A spiral's heart isn't its
+ * middle, so the heart is moved off `c` to suit.
+ */
+function ammoniteIn(c: Pt, reach: number, mouth = 228, W = 2.45): { heart: Pt; R: number } {
+  const b = Math.log(W) / 360;
+  const at0 = (a: number): Pt => at([0, 0], a, Math.exp(b * (a - mouth)));
+  // The shell's silhouette: its last whorl, closed along the mouth's ray (star-shaped about the heart).
+  const silhouette: Pt[] = [];
+  for (let a = mouth - 360; a < mouth; a += 2.5) silhouette.push(at0(a));
+  silhouette.push(at0(mouth));
+  // Its mass: the silhouette's area centroid.
+  let [A, wx, wy] = [0, 0, 0];
+  for (let i = 0; i < silhouette.length; i++) {
+    const [p0, p1] = [silhouette[i], silhouette[(i + 1) % silhouette.length]];
+    const x = p0[0] * p1[1] - p1[0] * p0[1];
+    [A, wx, wy] = [A + x, wx + (p0[0] + p1[0]) * x, wy + (p0[1] + p1[1]) * x];
+  }
+  const mid: Pt = [wx / (3 * A), wy / (3 * A)];
+  // The farthest point of the whole drawn spiral, from the mass.
+  let far = 0;
+  for (let a = mouth - 3.1 * 360; a <= mouth; a += 2.5) far = Math.max(far, Math.hypot(at0(a)[0] - mid[0], at0(a)[1] - mid[1]));
+  const R = reach / far;
+  return { heart: [c[0] - mid[0] * R, c[1] - mid[1] * R], R };
+}
+
+/** The fossil's seal: an ammonite in a double ring `r` across, balanced in it, the plate stopping short of the ring. */
 export function ammoniteSeal(p: Plate, c: Pt, r: number) {
   p.add(arc(c, r, 0, 360), 'thin');
   p.add(arc(c, r - 1.3, 0, 360), 'hair');
-  ammonite(p, c, r - 3);
+  const { heart, R } = ammoniteIn(c, r - 2.3);
+  ammonite(p, heart, R);
   p.knockout += disc(c, r + 1.6);
 }
 
@@ -818,7 +848,8 @@ export function ammoniteSeal(p: Plate, c: Pt, r: number) {
 function sunSeal(p: Plate, c: Pt, r0: number, r: number, room: (a: number) => number = () => Infinity) {
   p.add(arc(c, r0, 0, 360), 'thin');
   p.add(arc(c, r0 - 1.3, 0, 360), 'hair');
-  ammonite(p, c, r0 - 3.4);
+  const { heart, R } = ammoniteIn(c, r0 - 3.4);
+  ammonite(p, heart, R);
   let fine = '';
   for (let k = 0; k < 16; k++) {
     const a = k * 22.5 + 11.25;
@@ -1013,7 +1044,8 @@ function fossilRow(p: Plate, g: RowLayout, rare: boolean) {
   resinDrop(p, d.c, d.r, d.tipY, NONE, rare, k);
   const r = Math.min(g.h * 0.32, 35);
   const c: Pt = [g.w - r - 13, g.h / 2];
-  if (!rare) return ammoniteSeal(p, c, r * 0.86);
+  // A common's ring is the rare's sun core's size, so the rare's sun reads loudest.
+  if (!rare) return ammoniteSeal(p, c, r * 0.58);
   const drop = dropPoly(d.c, d.r + 2.6 * k, d.tipY - 4 * k);
   dropRays(p, d.c, drop, 12, k, (a, long, r0) => {
     const u = at([0, 0], a, 1);
@@ -1034,14 +1066,16 @@ function fossilRow(p: Plate, g: RowLayout, rare: boolean) {
 /** A fossil's back: the ammonite at the mandorla's heart (a rare's in its sun), in its glory. */
 function fossilBack(p: Plate, g: BackLayout, rare: boolean) {
   const r = Math.min(g.room(0) - 6, g.row ? 20 : 34);
-  if (rare) sunSeal(p, g.c, r * 0.62, r * 1.5, (a) => g.room(a) - 2);
-  else ammoniteSeal(p, g.c, r);
+  // The rare's sun core's size: a common's ring stays under it.
+  const core = r * 0.62;
+  if (rare) sunSeal(p, g.c, core, r * 1.5, (a) => g.room(a) - 2);
+  else ammoniteSeal(p, g.c, core);
   p.motif = false;
-  p.glory(g.c, g.row ? 64 : 88, (rare ? r * 0.62 : r) + 3, (deg) => g.room(deg) + 1, 0.62, { holes: g.holes });
+  p.glory(g.c, g.row ? 64 : 88, core + 3, (deg) => g.room(deg) + 1, 0.62, { holes: g.holes });
   p.motif = true;
 }
 
-/** A fossil's spandrels: the ammonite's seal in Sol's place, so large it breaks out over the arch (a rare's in its sun), earth's sign in Luna's (a rare's electrum). */
+/** A fossil's spandrels: the ammonite's seal in Sol's place, no wider than a rare's sun ring (a rare's in its sun), earth's sign in Luna's (a rare's electrum). */
 function fossilSpandrels(p: Plate, sol: Hole, luna: Hole, w: number, rare: boolean) {
   const k = w / 218;
   if (rare) {
@@ -1056,8 +1090,8 @@ function fossilSpandrels(p: Plate, sol: Hole, luna: Hole, w: number, rare: boole
     electrumSign(p, luna.c, luna.r * 0.86);
     return;
   }
-  // The plate stops short of its ring.
-  ammoniteSeal(p, sol.c, Math.min(sol.r * 1.62, 21.5 * k));
+  // The plate stops short of its ring, which stays under a rare's sun ring (SUN.ring).
+  ammoniteSeal(p, sol.c, Math.min(sol.r * 1.1, 13.5 * k));
   earthSign(p, luna.c, luna.r * 0.86);
 }
 
