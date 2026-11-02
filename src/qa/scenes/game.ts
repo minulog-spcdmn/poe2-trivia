@@ -326,8 +326,9 @@ export function gameScenes(): Scene[] {
     }),
     // Which cards hold a find: a vein on the first and a flare on the last,
     // or one of them alone, its note on its card's side (where a phone's
-    // browser on its side gives the lock rule the other); and dynamite in
-    // the pack, for the line on what stays unused on them.
+    // browser on its side gives the lock rule the other); all three, a
+    // Dynamite Cache in the middle, to set a new card beside; and dynamite
+    // in the pack, for the line on what stays unused on them.
     scene(
       'delve-finds',
       'Delve alone',
@@ -335,10 +336,11 @@ export function gameScenes(): Scene[] {
       [ALONE],
       (v) => {
         const t = delveAlone();
-        const [vein, , flare] = t.s.offered;
+        const [vein, middle, flare] = t.s.offered;
         const on = v.finds ?? 'both';
         t.s.delve!.finds = [
           ...(on === 'flare' ? [] : [{ category: vein, kind: 'azurite' as const }]),
+          ...(on === 'all' ? [{ category: middle, kind: 'dynamite' as const }] : []),
           ...(on === 'vein' ? [] : [{ category: flare, kind: 'flare' as const }]),
         ];
         if (v.held) t.s.delve!.inventory = { [pid('Kalguur')]: { wards: 0, flares: 0, dynamite: 1 } };
@@ -355,12 +357,14 @@ export function gameScenes(): Scene[] {
               { value: 'both', label: 'A vein and a flare' },
               { value: 'vein', label: 'A vein, first card' },
               { value: 'flare', label: 'A flare, last card' },
+              { value: 'all', label: 'All three: a vein, dynamite and a flare' },
             ],
           },
           { kind: 'toggle', key: 'held', label: 'Dynamite in the pack', default: false },
         ],
         states: [
           { label: 'An Azurite Vein and a Flare Cache', values: {} },
+          { label: 'All three finds: a vein, a Dynamite Cache and a flare', values: { finds: 'all' } },
           { label: 'Both, with dynamite in the pack', values: { held: true } },
           { label: 'An Azurite Vein alone, on the first card', values: { finds: 'vein' } },
           { label: 'A Flare Cache alone, on the last card', values: { finds: 'flare' } },

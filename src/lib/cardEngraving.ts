@@ -55,8 +55,8 @@ export type Gilt = { parts: { d: string; tone: 'glass' | 'body' | 'flame' }[]; s
 
 // Where things sit, in pixels from the card's top left (inside its border).
 // ChooseCategory's CSS places the emblem and the name to match.
-/** A tall card's face: the panel's foot, the nameplate's top, and the emblem's centre. */
-export const TALL = { panelFoot: 232, plateTop: 238, emblemY: 132 };
+/** A tall card's face: the panel's foot, the nameplate's top, the emblem's centre and where the arch springs. */
+export const TALL = { panelFoot: 232, plateTop: 238, emblemY: 132, springing: 110 };
 /** A card in a row: the emblem's centre from the left, and the divider after it. */
 export const ROW = { emblemX: 62, divider: 118 };
 /** The largest Sol and Luna in the spandrels of a tall face (each as large as its corner allows, up to this). */
@@ -405,7 +405,7 @@ const tallFace = (w: number, h: number, p: Plate, v?: Variant) => {
   // The arch: a half circle on two sides, its springing at S.
   const ri = MID - 26;
   const ro = ri + 3.5;
-  const S = 110;
+  const S = TALL.springing;
   const A: Pt = [MID, S];
   // The keystone, flaring a little, its left half hatched; the arcs stop at it.
   const key = [at(A, -4.5, ri), at(A, 4.5, ri), at(A, 5.4, ro + 2.2), at(A, -5.4, ro + 2.2)];
