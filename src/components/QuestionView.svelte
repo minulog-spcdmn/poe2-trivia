@@ -451,6 +451,18 @@
   $effect(() => {
     if (!blastSlot && slotWanted()) blastSlot = true;
   });
+  /**
+   * Detonate hides at once when it can't be used: answered, struck, the
+   * clock out. But as dynamite blasts the question away (pressed or gone off
+   * by itself) the view reads the new question a moment before the blast
+   * copies it to blow apart (lib/blastAway.ts), its clock not running yet:
+   * there it stays drawn, so it is blown away with the rest.
+   */
+  let blastShown = $state(false);
+  $effect(() => {
+    if (canBlast) blastShown = true;
+  });
+  const blastGone = $derived(!canBlast && !(blastShown && waiting && !reveal));
   let blasting = false;
   function blastThrough() {
     if (!canBlast || blasting) return;
@@ -1032,7 +1044,7 @@
         <span in:scale={{ start: 0.3, duration: 300 }} title={p.name}><Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={22} /></span>
       {/each}
       {#if ps.length > faces.length}
-        <span class="more" title={ps.slice(faces.length).map((p) => p.name).join(', ')}>+{ps.length - faces.length}</span>
+        <span class="more" in:scale={{ start: 0.3, duration: 300 }} title={ps.slice(faces.length).map((p) => p.name).join(', ')}>+{ps.length - faces.length}</span>
       {/if}
     </span>
   {/if}
@@ -1201,10 +1213,10 @@
       <button
         class="btn blast"
         data-cursor="blast"
-        class:gone={!canBlast}
+        class:gone={blastGone}
         class:out={!mine}
         data-sfx="none"
-        disabled={!canBlast}
+        disabled={blastGone}
         aria-hidden={!canBlast}
         tabindex={canBlast ? undefined : -1}
         aria-label="Detonate: use dynamite to blast this question away and get a new one at this depth.{fuse !== null ? ' The fuse is already burning.' : ''}"
@@ -1238,7 +1250,7 @@
     {/if}
     {#if coop && myStruck && me}
       {@const others = waitingIds(s).filter((id) => id !== me)}
-      <p class="spectate out">
+      <p class="spectate out" in:fade={{ duration: 200 }}>
         {coopMissText(myStruck, livesOf(s, me), myStruck.lives + myStruck.wards > 1)}
         {#if others.length}<span class="still">Still answering: {namesOf(others, nameOf, me)}.</span>{/if}
       </p>
@@ -1258,7 +1270,7 @@
         The first right answer clears it; a wrong one costs a life.<span class="keys">{' '}Press {optionKeys(count)}.</span>
       </p>
     {:else if race && myMiss}
-      <p class="spectate out">Wrong: −1. You’re out until the next question.</p>
+      <p class="spectate out" in:fade={{ duration: 200 }}>Wrong: −1. You’re out until the next question.</p>
     {:else if race}
       <p class="spectate muted">First right answer wins. A wrong one costs a point!<span class="keys">{' '}Press {optionKeys(count)}.</span></p>
     {:else if !mine}
@@ -1282,12 +1294,12 @@
        verdict, where a long sentence (a team's, say) would make the row
        under the answers taller and push Next up: that row keeps the verdict
        and Next alone, and the art gives up what the sentence needs. The
-       line it takes the place of stays, unseen under it (.held), so the line
+       line it takes the place of stays, unseen under it (.kept), so the line
        keeps its height for a sentence no taller: the answers and the art
        under it stay where they were and the art's circle keeps its size, so
        nothing on the screen moves, or has to be drawn again, for it. -->
   <div class="task" data-cursor="task" class:snug class:timed={!!timer && clocked}>
-    <p class="task-text" class:held={!!reveal && upright.current}>
+    <p class="task-text" class:kept={!!reveal && upright.current}>
       <!-- Said to whoever can't answer as what is going on, and so it holds through the reveal. -->
       {#if !race && !coop && !session.myTurn}
         {active.name} <span class="muted">{q.mode === 'art' ? 'picks the art that matches the name' : 'names this item'}</span>
@@ -1580,9 +1592,15 @@
     font-size: 1.2rem;
     line-height: 1.45;
   }
-  /* What it said, kept for its height under the outcome. */
-  .task-text.held {
+  /* What it said, kept for its height under the outcome: it fades out over
+     the outcome's delay, gone just as the outcome starts rising in its place
+     (back at once with the next question). */
+  .task-text.kept {
     visibility: hidden;
+    opacity: 0;
+    transition:
+      opacity 0.25s ease-in,
+      visibility 0s 0.25s;
   }
   /* At the top of the cell, where it stood when it took the line's place:
      a question's line that wraps (a long name picking the art) leaves the
@@ -1615,7 +1633,9 @@
   .task .clock :global(.timer span) {
     font-size: 1.15rem;
   }
-  /* Answered: stopped, and set back behind the verdict. */
+  /* Answered: stopped, and set back behind the verdict. The ring dims itself
+     as it stops (TimerRing's .stopped) over the same 0.4s as this, so the two
+     run together: one smooth dim, to 0.2. */
   .clock.done {
     opacity: 0.5;
     pointer-events: none;
@@ -2313,6 +2333,7 @@
       transform 0.25s var(--ease-out),
       border-color 0.3s,
       opacity 0.4s,
+      filter 0.4s,
       --bs-ring 0.3s,
       --bs1 0.4s,
       --bs1-color 0.4s,
@@ -2543,9 +2564,12 @@
     font-size: 1.08rem;
     color: #e9c8a2;
     letter-spacing: 0.02em;
+    /* (Delve's words coming in as the clock runs, .veiled, kept with the rest.) */
     transition:
       color 0.25s,
-      text-shadow 0.25s;
+      text-shadow 0.25s,
+      opacity 0.2s,
+      filter 0.4s;
   }
   .mark {
     font-size: 1.3rem;
@@ -2686,10 +2710,25 @@
     cursor: default;
     isolation: isolate;
     transition:
-      background 0.3s,
       border-color 0.3s,
       opacity 0.4s,
       box-shadow 0.3s;
+  }
+  /* The verdict's tint (.right, .wrong): a gradient can't ease into another,
+     so it lies over the backdrop on a layer of its own and fades in. (Plain
+     CSS: the tiles' fill isn't one the WebGL backdrop paints, unlike the rows'.) */
+  .tile::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  .tile.right::before,
+  .tile.wrong::before {
+    opacity: 1;
   }
   /* A row's height (short windows work it out from the window, below). */
   .tiles.many {
@@ -2704,7 +2743,9 @@
     flex: 1;
     width: 92%;
     min-height: 0;
-    transition: transform 0.35s var(--ease-out);
+    transition:
+      transform 0.35s var(--ease-out),
+      filter 0.3s;
   }
   .tile .key {
     position: absolute;
@@ -2779,16 +2820,20 @@
   }
   .tile.right {
     border-color: #5d8a50;
-    background: radial-gradient(ellipse at center, rgba(150, 185, 105, 0.14), rgba(14, 20, 11, 0.95) 75%);
     box-shadow: inset 0 0 0 1px #5d8a50;
+  }
+  .tile.right::before {
+    background: radial-gradient(ellipse at center, rgba(150, 185, 105, 0.14), rgba(14, 20, 11, 0.95) 75%);
   }
   .tile.right .mark {
     color: #a9cf8f;
   }
   .tile.wrong {
     border-color: #8e4434;
-    background: radial-gradient(ellipse at center, rgba(200, 90, 60, 0.12), rgba(24, 10, 7, 0.95) 75%);
     animation: shake 0.5s;
+  }
+  .tile.wrong::before {
+    background: radial-gradient(ellipse at center, rgba(200, 90, 60, 0.12), rgba(24, 10, 7, 0.95) 75%);
   }
   .tile.wrong .mark {
     color: #d98a6e;

@@ -22,12 +22,21 @@
   }
 
   const joining = $derived(session.mode === 'client');
+
+  /** Each saying's width, so the words' box (and Cancel after it) is as wide as the one shown. */
+  let firstW = $state(0);
+  let slowW = $state(0);
+  const shownW = $derived(slow ? slowW : firstW);
 </script>
 
 <div class="connecting" role="status" in:fade={{ duration: 200 }}>
   <span class="rune" use:portalOn aria-hidden="true"></span>
-  <span class="what" title={slow && joining ? 'Some networks take a little longer.' : undefined}>
-    {#if !joining}{slow ? 'Still opening the portal…' : 'Opening a portal…'}{:else if slow}Still on the way…{:else}Travelling to <span class="num">{session.code}</span>…{/if}
+  <!-- Both sayings share one cell, its width the shown one's, so Cancel sits where the words end:
+       saying it's still going (by itself, so slowly), the first fades out and the new words in where it stood,
+       Cancel gliding to the new end (out first when the words grow, after the long words have gone when they shrink). -->
+  <span class="what" class:grows={slowW > firstW} style:width={shownW ? `${shownW}px` : undefined}>
+    <span class="say" class:on={!slow} aria-hidden={slow} bind:offsetWidth={firstW}>{#if !joining}Opening a portal…{:else}Travelling to <span class="num">{session.code}</span>…{/if}</span>
+    <span class="say" class:on={slow} aria-hidden={!slow} bind:offsetWidth={slowW} title={joining ? 'Some networks take a little longer.' : undefined}>{joining ? 'Still on the way…' : 'Still opening the portal…'}</span>
   </span>
   <button class="btn small ghost" type="button" onclick={() => session.leave()}>Cancel</button>
 </div>
@@ -51,10 +60,33 @@
     box-shadow: 0 0 16px rgba(201, 164, 92, 0.2);
   }
   .what {
+    display: inline-grid;
+    /* Each saying its own width (measured), not the cell's. */
+    justify-items: start;
+    transition: width 0.5s var(--ease-out) 0.35s;
     font-family: var(--font-display);
     font-size: 17px;
     color: var(--gold-hi);
     white-space: nowrap;
+  }
+  .say {
+    grid-area: 1 / 1;
+    opacity: 0;
+    /* The faded one's title (the slow join's) stays out of the way. */
+    pointer-events: none;
+    transition: opacity 0.4s;
+  }
+  /* The new words once the old have mostly gone. */
+  .say.on {
+    opacity: 1;
+    pointer-events: auto;
+    transition: opacity 0.7s 0.3s;
+  }
+  .what.grows {
+    transition-delay: 0s;
+  }
+  :global(html[data-still]) :is(.what, .say) {
+    transition: none;
   }
   .num {
     font-family: var(--font-cinzel);

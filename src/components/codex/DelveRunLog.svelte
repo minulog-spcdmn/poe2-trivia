@@ -1,5 +1,9 @@
 <script lang="ts">
+  import { tick } from 'svelte';
+  import { fade } from 'svelte/transition';
   import { engine } from '../../lib/session.svelte';
+  import { quintOut } from 'svelte/easing';
+  import { calm, motion } from '../../lib/motion.svelte';
   import type { Answer } from '../../lib/codex';
   import { answersFor, runLog, runStory, zoneOf, type RulesGroup } from '../../lib/codexStats';
   import { RUN_LIMIT, isTogether, runKey, type DelveRun } from '../../lib/delveRecord';
@@ -28,6 +32,63 @@
   const listed = $derived(runs.length + otherCount);
   /** The rows: in the short list SHORT runs at most, under these rules and others alike. */
   const log = $derived(runLog(runs, others, all ? Infinity : SHORT));
+  let more = $state<HTMLButtonElement>();
+  let ledger = $state<HTMLElement>();
+  /** The short list's height, as it stood before all were shown: what collapsing eases back to. */
+  let shortH = 0;
+  let easing = false;
+  const EASE_MS = 350;
+  /**
+   * The ledger's height eased from one to the other, the rows past it
+   * clipped meanwhile, and the page scrolled by `scroll` along with it.
+   */
+  const ease = (el: HTMLElement, from: number, to: number, scroll: number) =>
+    new Promise<void>((done) => {
+      const y0 = window.scrollY;
+      const t0 = performance.now();
+      el.style.overflow = 'clip';
+      const step = (now: number) => {
+        const k = quintOut(Math.min(1, (now - t0) / EASE_MS));
+        el.style.height = `${from + (to - from) * k}px`;
+        if (scroll) window.scrollTo({ top: y0 + scroll * k, behavior: 'instant' });
+        if (k < 1) requestAnimationFrame(step);
+        else done();
+      };
+      step(t0);
+    });
+  /**
+   * All shown, the ledger opens to its full height as the new rows fade in.
+   * Back to the short list, it closes up again before they go, the page
+   * scrolled with it so the button stays under the pointer.
+   */
+  async function toggle() {
+    if (easing || !ledger || !more) return;
+    const el = ledger;
+    const from = el.offsetHeight;
+    if (!all) {
+      shortH = from;
+      all = true;
+      await tick();
+      if (motion.still) return;
+      easing = true;
+      await ease(el, from, el.offsetHeight, 0);
+    } else if (motion.still || !shortH) {
+      const was = more.getBoundingClientRect().top;
+      all = false;
+      await tick();
+      const moved = more.getBoundingClientRect().top - was;
+      if (moved) window.scrollBy({ top: moved, behavior: 'instant' });
+      return;
+    } else {
+      easing = true;
+      await ease(el, from, shortH, shortH - from);
+      all = false;
+      await tick();
+    }
+    el.style.height = '';
+    el.style.overflow = '';
+    easing = false;
+  }
 
   const who = (r: DelveRun) => (isTogether(r) ? `${r.players} together` : 'Alone');
   /** Lives a row shows: three at most, the last of more standing for the rest. */
@@ -37,7 +98,8 @@
 {#snippet row(r: DelveRun)}
   {@const story = runStory(r, answersFor(byRun, r), engine.byId).lives}
   {@const lives = story.length > MAX_LIVES ? story.slice(0, MAX_LIVES - 1) : story}
-  <tr class:left={r.left}>
+  <!-- (Global, as the row is a snippet's: only the rows "Show all" brings fade, the first ones come with the page.) -->
+  <tr class:left={r.left} in:fade|global={calm({ duration: all ? 200 : 0 })}>
     <td class="num depth">{shownDepth(r.depth)}</td>
     <td class="run">
       <span class="r-main"><span class="r-zone">{zoneOf(r.depth).name}</span></span>
@@ -82,7 +144,7 @@
     >
   </div>
 
-  <div class="ledger" use:backdropShadow={{ fill: 'linear' }}>
+  <div class="ledger" bind:this={ledger} use:backdropShadow={{ fill: 'linear' }}>
     <table>
       <thead>
         <tr>
@@ -119,7 +181,7 @@
   </div>
 
   {#if listed > SHORT}
-    <button class="more" onclick={() => (all = !all)}>{all ? 'Show the latest 10' : `Show all ${listed} runs`}</button>
+    <button class="more" bind:this={more} onclick={toggle}>{all ? 'Show the latest 10' : `Show all ${listed} runs`}</button>
   {/if}
   {#if total > runs.length && (all || runs.length <= SHORT)}
     <p class="foot">The last {RUN_LIMIT} runs are kept here; all {total} count in the numbers above.</p>

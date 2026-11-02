@@ -11,6 +11,8 @@
   import { backdropShadow } from '../lib/backdropShadow';
   import { CopyPress } from '../lib/copyPress.svelte';
   import CopyNote from './CopyNote.svelte';
+  import { untrack } from 'svelte';
+  import { motion } from '../lib/motion.svelte';
 
   let { code, hidden = false, sparks = false, delay = 0 }: { code: string; hidden?: boolean; sparks?: boolean; delay?: number } = $props();
 
@@ -26,6 +28,50 @@
 
   const press = new CopyPress(() => code, 'Room code copied');
 
+  /** Hiding or showing, each letter turns into its dot (or back) over EACH ms, the next STEP ms after the one before, left to right. */
+  const EACH = 140;
+  const STEP = 25;
+  /**
+   * How far each letter has turned (0 the letter, 1 its dot), in CSS as its --h. A click sends them left to right either way:
+   * one already turning turns back at once from where it is, and those at rest that have to change follow in order, STEP
+   * apart, so fast clicks never leave a letter waiting or stuck.
+   */
+  const h0 = untrack(() => (hidden ? 1 : 0));
+  const turned: number[] = untrack(() => code.split('').map(() => h0));
+  let frame = 0;
+  $effect(() => {
+    const to = hidden ? 1 : 0;
+    const el = glyphs;
+    if (!el) return;
+    const boxes = [...el.querySelectorAll<HTMLElement>('.glyph')];
+    const show = () => boxes.forEach((b, i) => b.style.setProperty('--h', String(turned[i] ?? to)));
+    cancelAnimationFrame(frame);
+    if (motion.still || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      turned.fill(to);
+      show();
+      return;
+    }
+    // When each starts: at once if mid-turn, else in its turn among those at rest that have to change.
+    let queued = 0;
+    const t0 = performance.now();
+    const starts = turned.map((h) => (h === to ? 0 : h > 0 && h < 1 ? t0 : t0 + STEP * queued++));
+    let then = t0;
+    const step = (now: number) => {
+      let moving = false;
+      turned.forEach((h, i) => {
+        if (h === to) return;
+        const dt = Math.max(0, now - Math.max(then, starts[i]));
+        turned[i] = to ? Math.min(1, h + dt / EACH) : Math.max(0, h - dt / EACH);
+        if (turned[i] !== to) moving = true;
+      });
+      then = now;
+      show();
+      if (moving) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
+  });
+
   /** Svelte action: sparks as a letter lands (its drop is staggered by index). */
   function landing(node: HTMLElement, i: number) {
     if (!sparks) return;
@@ -39,8 +85,8 @@
 <span class="glyphs" class:hidden class:selected={selected || press.lit} data-copy bind:this={glyphs} {@attach press.attach}>
   {#each code.split('') as ch, i (i)}
     <!-- The letter in gold; its gleam's copy of it is drawn from data-ch (a pseudo-element), so a copy gives each letter once. -->
-    <span class="glyph" use:landing={i} use:backdropShadow={{ fill: 'linear' }} style:animation-delay="{delay + i * 80}ms" style:--i={i}
-      ><span class="ch">{hidden ? '•' : ch}</span><span class="gleam" aria-hidden="true" data-ch={hidden ? '•' : ch}></span></span
+    <span class="glyph" use:landing={i} use:backdropShadow={{ fill: 'linear' }} style:animation-delay="{delay + i * 80}ms" style:--i={i} style:--h={h0}
+      ><span class="ch letter" aria-hidden={hidden}>{ch}</span><span class="ch dot" aria-hidden={!hidden}></span><span class="gleam" aria-hidden="true" data-ch={hidden ? '•' : ch}></span></span
     >
   {/each}
 </span>
@@ -197,13 +243,29 @@
       opacity: 0;
     }
   }
-  .hidden .ch {
-    background-image: none;
-    color: var(--gold-lo);
-  }
   .selected .ch {
     filter: drop-shadow(0 0 9px rgba(255, 230, 170, 0.6));
     background-image: linear-gradient(180deg, #fffaf0 22%, #f4d79a 60%, #c99c4f 92%);
+  }
+  /* Each box holds its letter and its dot in one place: hidden, each letter in turn shrinks away as its dot swells in where it
+     stood, and back the same way, left to right, as far as each has turned (--h, from 0 shown to 1 hidden). (The letter
+     stays to be copied; the dot, drawn by CSS, never is.) */
+  .ch.letter,
+  .ch.dot {
+    grid-area: 1 / 1;
+  }
+  .ch.letter {
+    opacity: calc(1 - var(--h));
+    scale: calc(1 - 0.4 * var(--h));
+  }
+  .ch.dot {
+    background-image: none;
+    color: var(--gold-lo);
+    opacity: var(--h);
+    scale: calc(0.4 + 0.6 * var(--h));
+  }
+  .ch.dot::before {
+    content: '•';
   }
   @media (prefers-reduced-motion: reduce) {
     .gleam,

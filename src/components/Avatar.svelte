@@ -6,7 +6,7 @@
   import { CREATOR_TITLE } from '../lib/site';
   import VerdictSign from './VerdictSign.svelte';
   import { motion } from '../lib/motion.svelte';
-  import { untrack } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { classOf, isPlayerClass, SIGIL_FITS, sigilUrl, SMALL_INK, type PlayerClass } from '../lib/classSigils';
   import { sigilTrial } from '../lib/sigilTrial.svelte';
 
@@ -85,6 +85,15 @@
     );
     return () => a.cancel();
   });
+  // A sigil put on (worn, or asked about in the sigil picker) fades in on the
+  // token; one there as the token appears just is.
+  let live = false;
+  onMount(() => queueMicrotask(() => (live = true)));
+  function sigilIn(node: HTMLElement, _worn: PlayerClass) {
+    const show = () => motion.still || node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 250, easing: 'ease-out' });
+    if (live) show();
+    return { update: show };
+  }
   /** Keeps the face-down side on the token until the turn back up is edge on. */
   const untilEdgeOn = (_node: Element) => ({ duration: turn === 'up' ? TURN_MS / 2 : 0 });
 </script>
@@ -108,6 +117,7 @@
   >{#if worn && fit}<span
       class="sigil"
       class:gilt={!small}
+      use:sigilIn={worn}
       style:--sigil="url({sigilUrl(worn)})"
       style:--fw={fit[0]}
       style:--fh={fit[1]}

@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { fade } from 'svelte/transition';
   import { engine } from '../lib/session.svelte';
+  import { tick } from 'svelte';
+  import { calm, motion } from '../lib/motion.svelte';
   import type { Codex } from '../lib/codex';
   import {
     CATEGORY_MIN,
@@ -160,6 +163,20 @@
   let allZones = $state(false);
   const zoneRows = $derived(allZones || zones.reached.length <= ZONE_ROWS + 1 ? [...zones.reached].reverse() : zones.reached.slice(-ZONE_ROWS).reverse());
   const zonesHidden = $derived(zones.reached.length - zoneRows.length);
+  let zoneList = $state<HTMLElement>();
+  /** All the zones shown, the list opens to its full height as the new rows fade in (as the run log's). */
+  async function showAllZones() {
+    const el = zoneList;
+    const from = el?.offsetHeight ?? 0;
+    allZones = true;
+    await tick();
+    if (!el || motion.still) return;
+    const to = el.offsetHeight;
+    el.style.overflow = 'clip';
+    const open = el.animate({ height: [`${from}px`, `${to}px`] }, { duration: 350, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+    await open.finished.catch(() => {});
+    el.style.overflow = '';
+  }
 </script>
 
 {#snippet meter(share: number)}
@@ -188,9 +205,9 @@
                 >
               </p>
             {/if}
-            <ol class="list zones">
+            <ol class="list zones" bind:this={zoneList}>
               {#each zoneRows as z (z.k)}
-                <li>
+                <li in:fade={calm({ duration: allZones ? 200 : 0 })}>
                   <span class="z-depth n">{shownDepth(z.depth)}</span>
                   <span class="l-name"><span>{z.name}</span></span>
                   <span class="z-when n">{date(z.at)}</span>
@@ -198,7 +215,7 @@
               {/each}
             </ol>
             {#if zonesHidden > 0}
-              <button class="more" onclick={() => (allZones = true)}>Show all {zones.reached.length} zones</button>
+              <button class="more" onclick={showAllZones}>Show all {zones.reached.length} zones</button>
             {/if}
           {:else}
             <p class="hint">The zones you reach, and when you first got there, show up here.</p>

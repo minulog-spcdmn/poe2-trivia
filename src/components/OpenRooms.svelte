@@ -6,6 +6,7 @@
   import { joinable, roomMeta, watchable } from '../lib/roomInfo';
   import { PROTOCOL_VERSION } from '../lib/protocol';
   import { pinnedOut } from '../lib/stage';
+  import { calm } from '../lib/motion.svelte';
   import Connecting from './Connecting.svelte';
 
   /** A room leaving the list fades where it stood, under the stage's zoom too. */
@@ -149,6 +150,19 @@
     }
   }
 
+  /** What the empty tile says. */
+  const emptySays = $derived(scanned && rooms.length && !failed ? 'none-here' : scanning || !scanned ? 'searching' : failed ? 'failed' : 'nobody');
+  /** The tile's words change because of a tap on refresh (quick), not by themselves (slow): set for the moment the tap's change is made. */
+  let byHand = false;
+  function refreshByHand() {
+    byHand = true;
+    setTimeout(() => (byHand = false));
+    void scan();
+  }
+  /** Read as the words change (not reactive: only the tap's own change is quick). */
+  const saysIn = () => calm(byHand ? { duration: 200 } : { duration: 700, delay: 300 });
+  const saysOut = () => calm({ duration: byHand ? 120 : 400 });
+
   /** A refresh that came due (or a scan that ended) while a room was being joined, run once the join ends. */
   let held = $state(false);
   /** The timed refresh, held off while a room is being joined: the list stays as it was tapped. */
@@ -217,20 +231,21 @@
   <header>
     <h2 id="rooms-h">Open rooms</h2>
     {#if enterable}<span class="open" in:fade={{ duration: 200 }}><span class="num">{enterable}</span> open</span>{/if}
-    <button class="refresh" class:busy={scanning} onclick={scan} disabled={scanning || disabled} aria-label="Refresh room list" title="Refresh">
+    <button class="refresh" class:busy={scanning} onclick={refreshByHand} disabled={scanning || disabled} aria-label="Refresh room list" title="Refresh">
       <!-- The arc is centred on the viewBox so the icon turns in place. -->
       <svg viewBox="0 0 24 24" class:turning style:transform="rotate({angle}deg)">
         <path d="M18.58 14.39A7 7 0 1 1 14.39 5.42" />
         <path class="head" d="M18.15 6.8 15.6 2.15 13.2 8.7Z" />
       </svg>
     </button>
-    {#if enterable}<p class="note">{seatFree ? 'Anyone can join.' : 'No seat free: watch, and play once you can.'}</p>{/if}
+    <!-- Fading in with its count, and again as what it says changes. -->
+    {#if enterable}{#key seatFree}<p class="note" in:fade|global={calm({ duration: 200 })}>{seatFree ? 'Anyone can join.' : 'No seat free: watch, and play once you can.'}</p>{/key}{/if}
   </header>
 
   <!-- The list's own frame: the start page gives it a fixed height on a wide window, and a long list scrolls inside it. -->
   <div class="frame">
     {#if shown.length}
-      <ul>
+      <ul in:fade={calm({ duration: 200 })}>
         {#each shown as { room: r, door: d } (r.code)}
           <li class:dimmed={!!joining && r.code !== joining} animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fadeOut={{ duration: 150 }}>
             {#if r.code === joining}
@@ -239,7 +254,7 @@
             {:else}
               <div class="info">
                 <span class="host">{r.host}’s room</span>
-                <span class="meta">{roomMeta(r)}{r.spectators ? ` · ${r.spectators} watching` : ''}</span>
+                {#key `${roomMeta(r)}${r.spectators}`}<span class="meta" in:fade={calm({ duration: 200 })}>{roomMeta(r)}{r.spectators ? ` · ${r.spectators} watching` : ''}</span>{/key}
               </div>
               {#if d === 'join'}
                 <button class="btn small" {disabled} onclick={() => tap(r, 'join')}>Join</button>
@@ -256,15 +271,25 @@
           </li>
         {/each}
       </ul>
-    {:else if scanned && rooms.length && !failed}
-      <!-- Kept up through the refreshes too, as the list would be: the rooms found stay known while the next scan runs. -->
-      <p class="empty">No room can be joined from here right now.</p>
-    {:else if scanning || !scanned}
-      <p class="empty"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span> Searching for rooms…</p>
-    {:else if failed}
-      <p class="empty">Couldn’t reach the matchmaking server. Try the refresh button.</p>
     {:else}
-      <p class="empty">Nobody is waiting right now. Set your room to Public in its lobby and it shows up here.</p>
+      <!-- The tile stays; only what it says changes, the old words fading out and the new in where they stood:
+           quickly after a tap on refresh, slowly when a scan ends by itself. -->
+      <div class="empty" in:fade={calm({ duration: 200 })}>
+        {#key emptySays}
+          <p in:fade={saysIn()} out:fade={saysOut()}>
+            {#if emptySays === 'none-here'}
+              <!-- Kept up through the refreshes too, as the list would be: the rooms found stay known while the next scan runs. -->
+              No room can be joined from here right now.
+            {:else if emptySays === 'searching'}
+              <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span> Searching for rooms…
+            {:else if emptySays === 'failed'}
+              Couldn’t reach the matchmaking server. Try the refresh button.
+            {:else}
+              Nobody is waiting right now. Set your room to Public in its lobby and it shows up here.
+            {/if}
+          </p>
+        {/key}
+      </div>
     {/if}
   </div>
 </section>
@@ -420,10 +445,8 @@
   /* Nothing to list: one dashed tile across the row, as tall as a room's,
      so the first room to open doesn't move the page. */
   .empty {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.7rem;
+    display: grid;
+    place-items: center;
     min-height: 72px;
     margin: 0;
     padding: 0.6rem 1rem;
@@ -433,6 +456,15 @@
     color: #a99c86;
     border: 1px dashed rgba(125, 99, 51, 0.55);
     border-radius: 4px;
+  }
+  /* The words in one cell, so the old fade where the new come in. */
+  .empty > p {
+    grid-area: 1 / 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.7rem;
+    margin: 0;
   }
   .dots {
     display: inline-flex;

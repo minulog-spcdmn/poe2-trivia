@@ -7,8 +7,9 @@ import { DELVE_RULESET } from '../../lib/delve.ts';
 import { PROTOCOL_VERSION } from '../../lib/protocol.ts';
 import type { DelveRun } from '../../lib/delveRecord.ts';
 import { nameProblem } from '../../lib/names.ts';
+import { dailyQuestion, utcDay } from '../../lib/daily.ts';
 import type { Control, Values } from '../bench.ts';
-import type { Built, Scene } from '../scene.ts';
+import type { Built, Scene, Step } from '../scene.ts';
 
 const ME = { mode: 'none' as const, me: null };
 
@@ -49,12 +50,47 @@ function returning(v: Values = {}, more: Partial<Built> = {}): Built {
     runs,
     daily: today(Number(v.days ?? 7), String(v.today ?? 'right')),
     rooms: rooms(Number(v.rooms ?? 3)),
+    ...(v.then ? { steps: THEN[String(v.then)] ?? [] } : {}),
     ...more,
   };
 }
 
+/** Today's unique's right answer, as the frame's today asks it: its place among the options (1 on). */
+function rightOption(): number {
+  const q = dailyQuestion(utcDay(Date.now()));
+  return q.options.indexOf(q.itemId) + 1;
+}
+/** An option of Today's unique (or practice's), by its place (1 on). */
+const option = (n: number) => `.daily .options .option:nth-child(${n})`;
+
+/** What happens on a returning player's start page a moment after it shows, played as a player would. */
+const THEN: Record<string, Step[]> = {
+  // Rooms open and close: the open rooms' tag (a phone's Join a room) fades in, its count steps up and down, it fades out.
+  get rooms() {
+    return [{ wait: 1000 }, { rooms: rooms(1) }, { wait: 1900 }, { rooms: rooms(3) }, { wait: 1900 }, { rooms: rooms(2) }, { wait: 1900 }, { rooms: [] }];
+  },
+  // The quill pressed, then Cancel: the rename form swaps in for the greeting and out again, the menu gliding with its height.
+  rename: [{ wait: 1000 }, { click: '.hello .quill' }, { wait: 1800 }, { click: '.greeting form button.link' }],
+  // Today's unique answered right: the badge reads yesterday's run until its fire lands, then steps up.
+  get answer() {
+    return [{ wait: 1200 }, { click: option(rightOption()) }];
+  },
+};
+
 /** A returning player's start page: its open rooms and its streak. Today's unique's own bench (qa.html?b=streak) plays the streak growing. */
 const BACK: Control[] = [
+  {
+    kind: 'choice',
+    key: 'then',
+    label: 'Then',
+    default: '',
+    options: [
+      { value: '', label: 'Nothing' },
+      { value: 'rooms', label: 'Rooms open and close (a phone’s tag)' },
+      { value: 'rename', label: 'The quill pressed, then Cancel' },
+      { value: 'answer', label: 'Today’s unique answered right' },
+    ],
+  },
   { kind: 'range', key: 'rooms', label: 'Open rooms', min: 0, max: 60, default: 3 },
   { kind: 'range', key: 'days', label: 'Streak', min: 0, max: 730, default: 7, unit: 'days' },
   {
@@ -126,8 +162,23 @@ const INVITE: Control[] = [
       { value: 'none', label: 'None saved' },
     ],
   },
+  {
+    kind: 'choice',
+    key: 'then',
+    label: 'Then',
+    default: 'stay',
+    options: [
+      { value: 'stay', label: 'Nothing' },
+      { value: 'leave', label: '“Something else” is tapped' },
+    ],
+  },
 ];
 function invite(v: Values = {}): Built {
+  const built = inviteFor(v);
+  // Something else tapped a moment in: Today's unique comes in after the menu.
+  return v.then === 'leave' ? { ...built, steps: [...(built.steps ?? []), { wait: 1200 }, { click: ':is(.pair-pick, .entry:nth-child(2 of .entry) .pick)' }] } : built;
+}
+function inviteFor(v: Values): Built {
   const asked = room(4, { code: 'KXR4QT', players: 3 });
   const answer = v.room === 'full' ? { ...asked, players: 12, maxPlayers: 12 } : v.room === 'playing' ? { ...asked, phase: 'question' as const } : v.room === 'gone' ? ('gone' as const) : v.room === 'silent' ? null : asked;
   if (v.name === 'made') return { ...firstVisit(), query: 'room=KXR4QT', invite: answer };
@@ -188,6 +239,7 @@ const AFTER_DAILY: Control[] = [
       { value: 'connecting', label: 'Joining, on its way' },
     ],
   },
+  { kind: 'toggle', key: 'practise', label: 'Practice more pressed, then answered', default: false },
 ];
 function afterDaily(v: Values = {}): Built {
   // (New game's row opens only without a name, one let go: with one, a made one too, New game hosts straight away.)
@@ -197,6 +249,8 @@ function afterDaily(v: Values = {}): Built {
   if (v.row === 'connecting') return { ...base, status: 'connecting' };
   if (v.row === 'create') return { ...base, steps: [{ click: ':is(.entry:nth-child(1 of .entry) .pick, .act .btn.big)' }] };
   if (v.row === 'join') return { ...base, steps: [{ click: ':is(.entry:nth-child(2 of .entry) .pick, form.join .field.code)' }] };
+  // (Practice more is a returning player's: a newcomer has Identify more in its place.)
+  if (v.practise && !newcomer && v.answered !== false) return { ...base, steps: [{ wait: 1000 }, { click: '.daily .after .btn.small' }, { wait: 1600 }, { click: option(2) }] };
   return base;
 }
 
@@ -227,7 +281,10 @@ export function homeScenes(): Scene[] {
         { label: 'Back again: a codex, runs, a streak, three open rooms', values: {} },
         { label: 'Back again, no rooms open', values: { rooms: 0 } },
         { label: 'The most rooms the list shows (60)', values: { rooms: 60 } },
+        { label: 'Rooms opening and closing: the tag fades in, its count steps, it fades out (a phone)', values: { rooms: 0, then: 'rooms' }, group: 'As it changes' },
+        { label: 'The quill pressed, then Cancel: the rename form swaps in and out', values: { then: 'rename' }, group: 'As it changes' },
         { label: "Today's unique, not answered yet, a streak of 7 waiting", values: { today: 'waiting' }, group: "Today's unique" },
+        { label: "Today's unique answered right: the badge steps up from 7 once its fire lands", values: { today: 'waiting', then: 'answer' }, group: "Today's unique" },
         { label: "Today's unique after a forgotten day, a streak of 7 kept by the grace", values: { today: 'forgiven' }, group: "Today's unique" },
         { label: "Today's unique after a forgotten day, the grace not back yet: the streak is gone", values: { today: 'lapsed' }, group: "Today's unique" },
         { label: "Today's unique answered, a streak of a year", values: { days: 365 }, group: "Today's unique" },
@@ -258,6 +315,7 @@ export function homeScenes(): Scene[] {
         { label: 'A newcomer, Join a room’s row open: Join holds the gold', values: { row: 'join' } },
         { label: 'A newcomer, joining a room: no gold, Identify more waits', values: { row: 'connecting' } },
         { label: 'Back again, Today’s unique answered: Practice more, as before', values: { newcomer: false } },
+        { label: 'Back again, Practice more pressed, then a practice question answered', values: { newcomer: false, practise: true } },
       ],
       build: afterDaily,
     }),
@@ -298,6 +356,7 @@ export function homeScenes(): Scene[] {
           { label: 'An invite link to an open room', values: {} },
           { label: 'An invite link under a made name: the field holds it, selected', values: { name: 'made' } },
           { label: 'An invite link with no name saved', values: { name: 'none' } },
+          { label: 'An invite link under a made name, then Something else', values: { name: 'made', then: 'leave' } },
           { label: 'An invite to a full room', values: { room: 'full' } },
           { label: 'An invite to a room mid-game', values: { room: 'playing' } },
           { label: 'An invite to a room that has closed', values: { room: 'gone' } },

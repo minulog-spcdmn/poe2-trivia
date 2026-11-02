@@ -147,6 +147,8 @@ export async function boot(asked: URLSearchParams) {
   if (built.sound?.volume !== undefined) sound.setVolume(built.sound.volume);
   if (built.sound?.ambience !== undefined) sound.setAmbience(built.sound.ambience);
   for (const [name, value] of Object.entries(built.stored ?? {})) storage.writeStored(name, value);
+  // A game saved before a reload, where the page looks for it as it loads ('session.v4', lib/session.svelte.ts' SAVE).
+  if (built.saved) storage.writeStored('session.v4', JSON.stringify(built.saved), 'session');
   if (built.stored?.keys) (await import('../../lib/keybinds.svelte.ts')).reloadKeys();
   // How its sync stands (only where the scene says: sync's link is loaded for those scenes alone).
   if (built.sync) {
@@ -181,7 +183,11 @@ export async function boot(asked: URLSearchParams) {
     session.hostNow = () => now;
   }
   const said = (what: string) => toasts.show(what, 'info', { title: 'Preview' });
-  session.dispatch = (a) => said(a.type === 'restart' ? (a.play ? 'The next game would start now.' : 'Everyone would go back to the lobby.') : `Would send: ${a.type}`);
+  session.dispatch = (a) => {
+    // A scene whose host's moves count (Built.own) plays them through the room, as the host would.
+    if (built.own && built.act && seat.mode === 'host' && session.state) session.state = built.act(session.state, a);
+    else said(a.type === 'restart' ? (a.play ? 'The next game would start now.' : 'Everyone would go back to the lobby.') : `Would send: ${a.type}`);
+  };
   session.watch = (on) => said(on ? 'You would just watch the next game.' : 'You would play in the next game.');
   session.leave = () => said('You would leave the room.');
   session.closeAsOwner = () => said('The room would close for everyone in it.');
@@ -211,6 +217,29 @@ export async function boot(asked: URLSearchParams) {
     }
   };
   await pictures(state);
+
+  const slot = asked.get('frame') ?? '';
+  const tell = (m: FrameMessage) => parent.postMessage(m, deskOrigin(asked));
+  handOnKeys(tell);
+  addEventListener('pagehide', () => {
+    // Lets go of its WebGL at once as it goes, so the next frame's shaders don't wait on this one's.
+    for (const gl of gls) gl.getExtension('WEBGL_lose_context')?.loseContext();
+    clear();
+  });
+  // Shown: the desk takes its Loading away now, so what the steps do plays in view (and Freeze or S reach it meanwhile).
+  tell({ qa: 'ready', slot });
+
+  // Checked once at rest (once the steps are done), and again whenever what it shows changes (a click in it, a toast).
+  outline(asked.get('o') !== '0');
+  addEventListener('message', (e) => {
+    if (e.origin !== deskOrigin(asked) || !isDeskMessage(e.data)) return;
+    if (e.data.qa === 'outlines') outline(e.data.on);
+    else if (e.data.qa === 'freeze') freeze(e.data.on);
+    else if (e.data.qa === 'css') {
+      const on = e.data.on;
+      void import('../../lib/backdrop.ts').then((b) => b.leaveUiToCss(on));
+    }
+  });
 
   // What the scene does once it shows.
   for (const step of built.steps ?? []) {
@@ -253,32 +282,54 @@ export async function boot(asked: URLSearchParams) {
       }
     }
     else if ('toast' in step) toasts.hold(toasts.show(step.toast, step.kind, step.opts));
+    else if ('clock' in step) {
+      const now = step.clock;
+      session.clockOffset = now - Date.now();
+      session.hostNow = () => now;
+    } else if ('link' in step) {
+      // (With no peer the session never reconnects by itself; Retry counts its tries down to given up, as it would.)
+      session.status = step.link === 'back' ? 'ready' : 'lost';
+      session.gaveUp = step.link === 'gaveUp';
+    } else if ('earn' in step) {
+      const game = session.state?.startedAt;
+      if (game !== undefined) session.earned = { game, ids: [...new Set([...(session.earned?.game === game ? session.earned.ids : []), ...step.earn])] };
+    } else if ('logged' in step) {
+      // Met for the first time as answered, whatever the scene had met before.
+      for (const a of step.logged) {
+        c.log.push(a);
+        delete c.items[a.id];
+        meet(a.id, a.t, a.t);
+      }
+      storage.writeKey(codex.CODEX_KEY, codex.serializeCodex(c));
+    }
     // (In a tree before the back guard there's no Back of the game's to show: the tab's own history is the desk's.)
     else if ('back' in step) steps?.back();
+    else if ('scroll' in step) document.querySelector(step.scroll)?.scrollIntoView({ block: 'center', behavior: 'instant' });
+    else if ('rooms' in step) {
+      // Found from now on; then a look at once, once the list's last look is over (Refresh waits out its 1.5 s).
+      rooms.useMadeUpRooms(step.rooms, built.invite);
+      for (let i = 0; i < 100; i++) {
+        const refresh = document.querySelector<HTMLButtonElement>('button.refresh');
+        if (refresh && !refresh.disabled) {
+          refresh.click();
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    } else if ('sync' in step) {
+      const { sync } = await import('../../lib/sync/link.svelte.ts');
+      Object.assign(sync, step.sync);
+    } else if ('clipboard' in step) {
+      // Written if the frame may, and taken as written either way.
+      const real = navigator.clipboard as Clipboard | undefined;
+      const write = real?.writeText.bind(real);
+      const writeText = (text: string) => (write ? write(text) : Promise.resolve()).catch(() => undefined);
+      if (real) Object.defineProperty(real, 'writeText', { configurable: true, value: writeText });
+      else Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    }
     else (await found(step.click))?.click();
   }
 
-  const slot = asked.get('frame') ?? '';
-  const tell = (m: FrameMessage) => parent.postMessage(m, deskOrigin(asked));
-  handOnKeys(tell);
-  addEventListener('pagehide', () => {
-    // Lets go of its WebGL at once as it goes, so the next frame's shaders don't wait on this one's.
-    for (const gl of gls) gl.getExtension('WEBGL_lose_context')?.loseContext();
-    clear();
-  });
-  tell({ qa: 'ready', slot });
-
-  // Checked once at rest, and again whenever what it shows changes (a click in it, a toast).
-  outline(asked.get('o') !== '0');
-  addEventListener('message', (e) => {
-    if (e.origin !== deskOrigin(asked) || !isDeskMessage(e.data)) return;
-    if (e.data.qa === 'outlines') outline(e.data.on);
-    else if (e.data.qa === 'freeze') freeze(e.data.on);
-    else if (e.data.qa === 'css') {
-      const on = e.data.on;
-      void import('../../lib/backdrop.ts').then((b) => b.leaveUiToCss(on));
-    }
-  });
   const run = async () => {
     const settled = await settle();
     const problems = check(heard);

@@ -233,6 +233,10 @@
   /** An entry's description giving way to its fields, and back. */
   const SWAP_IN = { y: 4, duration: 240, delay: 90 };
   const SWAP_OUT = { duration: 140 };
+  /** The greeting and its rename form, crossing in place: a tap on the quill (or Cancel) answers at once, the form ready to type in. */
+  const RENAME_SWAP = { duration: 120 };
+  /** The greeting's height as laid out, which its box eases to. */
+  let greetingH = $state(0);
 
   /** The keyboard cursor: arrows move it, Enter chooses, it follows the mouse. */
   let cursor = $state(untrack(() => invite) ? 0 : lastEntry());
@@ -439,6 +443,13 @@
 
   /** How many rooms the Open rooms list shows; Join points down to them. */
   let roomCount = $state(0);
+  /** Whether the count last went up (its number steps up into place) or down. */
+  let roomsBefore = 0;
+  const roomsRose = $derived.by(() => {
+    const rose = roomCount >= roomsBefore;
+    roomsBefore = roomCount;
+    return rose;
+  });
   /** Whether any of them has a seat (none: they are all rooms to watch, games under way or full lobbies). */
   let roomSeats = $state(false);
   function toRooms() {
@@ -718,9 +729,12 @@
     </p>
 
     <!-- The greeting: the name is asked once, then greeted (and changed here). -->
-    <div class="greeting" in:fade|global={calm({ duration: 600, delay: 350 })}>
+    <!-- Its height follows what it holds, eased (two lines to one as a chosen name drops the quill's words on touch), so the menu under it glides rather than jumps. -->
+    <div class="greeting" style:height={greetingH ? `${greetingH}px` : undefined} in:fade|global={calm({ duration: 600, delay: 350 })}>
+      <!-- The greeting and the rename form share one cell, so one fades into the other where it stood. -->
+      <div class="greeting-cell" bind:offsetHeight={greetingH}>
       {#if renaming}
-        <form class="row" onsubmit={saveRename}>
+        <form class="row" onsubmit={saveRename} in:fade={calm(RENAME_SWAP)} out:fade={calm(RENAME_SWAP)}>
           <!-- No autofill on the name fields: its list is the browser's own and drops the game's cursor; the game remembers the name itself.
                No autocorrect either (tests/nameFields.test.ts): a gamer tag is seldom a word, and Gboard and iOS would make it one (Wolfsberg went in as Wolfsburg).
                The first letter is still capitalised as the keyboard likes: that only sets the shift key, and a name typed lower case stays so. -->
@@ -740,7 +754,7 @@
           <button class="link" type="button" onclick={() => (renaming = false)}>Cancel</button>
         </form>
       {:else}
-        <p class="hello" class:named={!!known} class:choose={askChoose}>
+        <p class="hello" class:named={!!known} class:choose={askChoose} in:fade={calm(RENAME_SWAP)} out:fade={calm(RENAME_SWAP)}>
           <span class="greet">{welcomeBack ? 'Welcome back,' : 'Welcome,'}</span>
           {#if invite}
             <!-- An invite asks the name in its own row: the greeting only greets. -->
@@ -757,6 +771,7 @@
           {/if}
         </p>
       {/if}
+      </div>
     </div>
 
     <nav class="menu" class:renaming class:lit aria-label="Start" onfocusin={focusIn} onfocusout={focusOut}>
@@ -817,13 +832,16 @@
           <div class="act-top">
             <h2 class="act-head" id="join-label">Join a room</h2>
             <!-- Open rooms sit below Today's unique: when there are any, this says so from up here. -->
+            <!-- The code or the rooms, in one cell: one fades out as the other fades in, and a count that changes steps up or down in place. -->
+            <div class="to-cell">
             {#if asking && !connecting}
-              <button class="to-rooms" onclick={backToCode} aria-label="Change the code, {code}" in:fade={{ duration: 300 }}>Code <span class="shown-code">{code}</span> • change</button>
+              <button class="to-rooms" onclick={backToCode} aria-label="Change the code, {code}" in:fade={calm({ duration: 300 })} out:fade={calm(SWAP_OUT)}>Code <span class="shown-code">{code}</span> • change</button>
             {:else if roomCount && !connecting}
-              <button class="to-rooms" onclick={toRooms} in:fade={{ duration: 300 }}>
-                <span><span class="n">{roomCount}</span> {roomSeats ? `open ${roomCount === 1 ? 'room' : 'rooms'}` : `${roomCount === 1 ? 'room' : 'rooms'} to watch`}</span><span class="down"><DrawnMark shape="chevron" /></span>
+              <button class="to-rooms" onclick={toRooms} in:fade={calm({ duration: 300 })} out:fade={calm(SWAP_OUT)}>
+                <span><span class="n">{#key roomCount}<span in:fly={calm({ y: roomsRose ? 6 : -6, duration: 240 })} out:fly={calm({ y: roomsRose ? -6 : 6, duration: 240 })}>{roomCount}</span>{/key}</span> {roomSeats ? `open ${roomCount === 1 ? 'room' : 'rooms'}` : `${roomCount === 1 ? 'room' : 'rooms'} to watch`}</span><span class="down"><DrawnMark shape="chevron" /></span>
               </button>
             {/if}
+            </div>
           </div>
           <div class="under">
             {#if busyEntry === 'join'}
@@ -902,7 +920,10 @@
     {:else}
       <!-- A newcomer's way on from it holds the gold while no row's Start or Join has it and no join is on its way.
            (On a phone New game's gold is a scroll away up the page: the two are never on screen together.) -->
-      <DailyUnique disabled={connecting} {newcomer} onIdentify={delveAlone} lead={!open && !connecting} />
+      <!-- Coming from an invite's "Something else" (a tap, so it answers quickly), it fades in with the menu flying in (and the room's card just goes). -->
+      <div in:fade={calm({ duration: 400, delay: 300 })}>
+        <DailyUnique disabled={connecting} {newcomer} onIdentify={delveAlone} lead={!open && !connecting} />
+      </div>
     {/if}
   </div>
 
@@ -1045,11 +1066,22 @@
 
   /* ---- the greeting ---- */
   .greeting {
+    margin: 16px 0;
+    transition: height 0.2s var(--ease-out);
+  }
+  .greeting-cell {
     /* A long name wraps the greeting onto a second line. */
     min-height: 44px;
-    margin: 16px 0;
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
     align-items: center;
+    justify-items: start;
+  }
+  .greeting-cell > * {
+    grid-area: 1 / 1;
+  }
+  :global(html[data-still]) .greeting {
+    transition: none;
   }
   .hello {
     display: flex;
@@ -1409,6 +1441,13 @@
   .act-top + .under {
     min-height: 44px;
   }
+  .to-cell {
+    display: grid;
+    justify-items: end;
+  }
+  .to-cell > * {
+    grid-area: 1 / 1;
+  }
   .to-rooms {
     display: inline-flex;
     align-items: center;
@@ -1439,6 +1478,13 @@
     font-style: normal;
     font-weight: 700;
     font-size: 0.86em;
+    /* A count that changes steps in place: the old and the new share one cell, clipped to its line
+       (clip, not hidden, which would move its baseline). */
+    display: inline-grid;
+    overflow: clip;
+  }
+  .to-rooms .n > * {
+    grid-area: 1 / 1;
   }
   .to-rooms .down {
     --mark-size: 9px;

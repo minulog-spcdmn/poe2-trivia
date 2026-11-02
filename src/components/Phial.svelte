@@ -22,6 +22,7 @@
   // scoreboard shows them by the avatar.
   import { DELVE_LIVES, type Inventory as Carried } from '../lib/delve';
   import { BARRIER, CASINGS, WARD_BREAK, WARD_NEXT, vesselLabel, type Casing, type InventoryMoment } from '../lib/inventoryArt';
+  import { motion } from '../lib/motion.svelte';
   import Inventory from './Inventory.svelte';
 
   let {
@@ -67,6 +68,24 @@
    * broken bursting off; a ward a blast destroyed (a Dynamite Cache missed) blows apart on the chamber after
    * those left.
    */
+  /**
+   * A heartbeat's pace: quicker on the last life. A change waits for the beat
+   * under way to end (where every beat starts from the same rest), then the
+   * new pace starts on the next; held still, it just takes.
+   */
+  function pace(node: HTMLElement, quick: boolean) {
+    let want = quick;
+    node.classList.toggle('quick', quick);
+    const next = () => node.classList.toggle('quick', want);
+    node.addEventListener('animationiteration', next);
+    return {
+      update(q: boolean) {
+        want = q;
+        if (motion.still || !node.getAnimations?.().length) next();
+      },
+      destroy: () => node.removeEventListener('animationiteration', next),
+    };
+  }
   const casings = $derived.by((): Cased[] => {
     const wards = inv?.wards ?? 0;
     const m = moment?.kind;
@@ -119,8 +138,9 @@
       {#each CHAMBERS as k (k)}
         <span class="chamber c{k}" data-k={k} class:lit={k < lives} class:draining={k === draining && k >= lives}>
           {#if k < lives}
+            <span class="deep"></span>
             <span class="wisp"></span>
-            <span class="beat"></span>
+            <span class="beat" use:pace={lives === 1}></span>
             {#if k === filling}<span class="inflow"></span>{/if}
             {#if surge}
               {#key surge}<span class="surge" style:animation-delay="{0.08 + k * 0.11}s"></span>{/key}
@@ -319,11 +339,22 @@
   .c2.lit {
     --at: 40% 52%;
   }
-  /* The last life: its light sinks to a deeper red. */
-  .low .chamber.lit {
+  /* The last life: its light sinks to a deeper red, as the life lost pours
+     out (and lifts again as quickly when one is given back). */
+  .deep {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.6s ease;
     background:
       linear-gradient(180deg, rgba(255, 200, 190, 0.35) 0, rgba(255, 200, 190, 0) 24%),
       radial-gradient(ellipse 80% 120% at var(--at), #ffb49c 0%, #f25a52 20%, #c81e38 46%, #6e0820 74%, #2a030c 100%);
+  }
+  .low .deep {
+    opacity: 1;
+    /* (Its last 0.6s of the drain's 1s.) */
+    transition-delay: 0.4s;
   }
 
   .wisp,
@@ -342,12 +373,37 @@
     opacity: 0.3;
     animation: beat 1.3s ease-out infinite;
   }
-  .low .beat {
-    /* Weaker and quicker: a heart racing on the last life. */
+  /* Weaker and quicker: a heart racing on the last life (pace sets it at a
+     beat's end; another name, so it starts afresh there). */
+  .beat:global(.quick) {
     background: radial-gradient(closest-side, rgba(255, 210, 190, 0.6), rgba(255, 110, 90, 0.3) 45%, rgba(255, 80, 70, 0) 100%);
+    animation-name: beat-quick;
     animation-duration: 0.82s;
   }
   @keyframes beat {
+    0% {
+      opacity: 0.3;
+      transform: scale(0.86);
+    }
+    11% {
+      opacity: 1;
+      transform: scale(1.08);
+    }
+    24% {
+      opacity: 0.5;
+      transform: scale(0.94);
+    }
+    35% {
+      opacity: 0.85;
+      transform: scale(1.03);
+    }
+    62%,
+    100% {
+      opacity: 0.3;
+      transform: scale(0.86);
+    }
+  }
+  @keyframes beat-quick {
     0% {
       opacity: 0.3;
       transform: scale(0.86);
@@ -1001,6 +1057,7 @@
     .c2 .wisp::before,
     .c2 .wisp::after,
     .beat,
+    .beat:global(.quick),
     .surge,
     .grow .glaze,
     .glint,
@@ -1027,6 +1084,9 @@
   :global(html[data-still]) .beat,
   :global(html[data-still]) .grow .glaze {
     animation-play-state: paused;
+  }
+  :global(html[data-still]) .deep {
+    transition: none;
   }
   :global(html[data-still]) .c2 .wisp::before,
   :global(html[data-still]) .c2 .wisp::after {

@@ -679,6 +679,10 @@
   .sync-row .unseen {
     visibility: hidden;
   }
+  /* The line turns green as the link comes up, and back as it goes, with the light. */
+  .sync-row .say {
+    transition: color 0.4s;
+  }
   .sync-row .blurb.linked {
     color: var(--verdict-good-icon);
   }
@@ -694,6 +698,11 @@
     border-radius: 50%;
     border: 1px solid var(--gold-lo);
     vertical-align: 0.08em;
+    /* (A dot this small: its glow is cheap to fade.) */
+    transition:
+      background-color 0.4s,
+      border-color 0.4s,
+      box-shadow 0.4s;
   }
   /* Every line after the light's in line with the words beside it, the light hung out in front. */
   .sync-row .paired {

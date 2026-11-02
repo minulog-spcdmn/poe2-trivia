@@ -1,7 +1,8 @@
 <script lang="ts">
   import { flushSync, onMount, tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
-  import { fade } from 'svelte/transition';
+  import { fade, slide } from 'svelte/transition';
+  import { calm, motion } from '../lib/motion.svelte';
   import { engine, savedName, session } from '../lib/session.svelte';
   import { nameUsable } from '../lib/names';
   import { CODEX_KEY, PRACTICE_KEY, RECENT, loadCodex, loadPractice, resetCodex, type Tally } from '../lib/codex';
@@ -344,12 +345,32 @@
     });
   });
   function sortBy(key: SortKey) {
+    resort();
     if (sortKey === key) sortDown = !sortDown;
     else {
       sortKey = key;
       // Names read A to Z; numbers start with the most.
       sortDown = key !== 'name' && key !== 'type';
     }
+  }
+
+  /**
+   * Sorted afresh, the rows fade in in their new order, in place: hundreds
+   * of them reordered take a long frame or two, which ate most of a slide.
+   * So the body is held clear as they're reordered, and fades in from the
+   * first frame after (a frame of their own).
+   */
+  let ledgerBody = $state<HTMLElement>();
+  function resort() {
+    const body = ledgerBody;
+    if (!body || motion.still) return;
+    body.style.opacity = '0';
+    void tick().then(() =>
+      requestAnimationFrame(() => {
+        body.style.opacity = '';
+        body.animate({ opacity: [0, 1] }, { duration: 180, easing: 'ease-out' });
+      }),
+    );
   }
 
   let collection = $state<HTMLElement>();
@@ -385,6 +406,12 @@
     achievements = loadAchievements();
     wins = loadWins();
     confirmReset = false;
+  }
+  /** The tabs going as it's erased: they close their room as they fade, the column's gap after them with it, so the page glides up. */
+  function closeTabs(node: HTMLElement) {
+    const gap = parseFloat(getComputedStyle(node.parentElement!).rowGap) || 0;
+    const s = slide(node, calm({ duration: 250 }));
+    return { ...s, css: (t: number, u: number) => `${s.css?.(t, u) ?? ''};opacity: ${t};margin-bottom: ${-u * gap}px` };
   }
   /**
    * The sections near the screen as the last dialog opened, and those that
@@ -423,8 +450,8 @@
    */
   let rising = $state(true);
   let codexEl = $state<HTMLElement>();
-  /** The motions that are the page coming in (the styles here, and app.css's filigree). */
-  const RISING = /codex-rise$|^filigree-in$/;
+  /** The motions that are the page coming in (the styles here and in its pages, and app.css's filigree). */
+  const RISING = /codex-(rise|fill|ring)$|^filigree-in$/;
   $effect(() => {
     if (!rising || !codexEl) return;
     const el = codexEl;
@@ -450,6 +477,44 @@
       live = false;
     };
   });
+  /**
+   * The panels' bars and the seals' rings fill from empty as each first
+   * comes into view, as the medallion's arc fills: on screen as the page
+   * comes in, they wait for their panel to rise (--rise-delay); below it,
+   * till they're scrolled to (opened on a laptop, most of them are). Held
+   * empty from the first frame (data-fill, set before it's painted), let go
+   * as the observer sees them. Only the panels' bars, never the tiles'.
+   */
+  const filled = new WeakSet<Element>();
+  let fillSeen: IntersectionObserver | undefined;
+  $effect(() => {
+    void tab;
+    void kept;
+    void stats;
+    if (!codexEl) return;
+    // Held still (or made so meanwhile), they stand full.
+    if (motion.still) {
+      for (const el of codexEl.querySelectorAll<HTMLElement | SVGElement>('[data-fill]')) delete el.dataset.fill;
+      return;
+    }
+    fillSeen ??= new IntersectionObserver(
+      (seen) => {
+        for (const e of seen) {
+          if (!e.isIntersecting) continue;
+          (e.target as HTMLElement).dataset.fill = 'go';
+          fillSeen?.unobserve(e.target);
+        }
+      },
+      { threshold: 0.5 },
+    );
+    for (const el of codexEl.querySelectorAll<HTMLElement | SVGElement>('.panel .fill, .seal .done')) {
+      if (filled.has(el)) continue;
+      filled.add(el);
+      el.dataset.fill = 'held';
+      fillSeen.observe(el);
+    }
+  });
+  $effect(() => () => fillSeen?.disconnect());
   const within = (el: Element, a: Animation) => {
     const target = (a.effect as KeyframeEffect | null)?.target;
     return !!target && el.contains(target);
@@ -538,17 +603,22 @@
   <header class="hero">
     <p class="kicker">Your collection</p>
     <h1>Codex</h1>
+    <!-- A tab turned, the line cross-fades in place: it stands between the title and the tabs, which stay put. -->
     <p class="tagline">
-      {tab === 'delve'
-        ? 'Every run you have made, and what it cost you.'
-        : tab === 'feats'
-          ? 'What you have earned, and how close you are to the rest.'
-          : 'Every unique and lineage gem you have seen in a game, and how well you know it.'}
+      {#key tab}
+        <span in:fade={calm({ duration: 200 })} out:fade={calm({ duration: 200 })}>
+          {tab === 'delve'
+            ? 'Every run you have made, and what it cost you.'
+            : tab === 'feats'
+              ? 'What you have earned, and how close you are to the rest.'
+              : 'Every unique and lineage gem you have seen in a game, and how well you know it.'}
+        </span>
+      {/key}
     </p>
   </header>
 
   {#if kept}
-    <div class="tabs" role="tablist" aria-label="Codex pages">
+    <div class="tabs" role="tablist" aria-label="Codex pages" out:closeTabs>
       {#each TABS as t (t.key)}
         <button
           {@attach tabRef(t.key)}
@@ -825,7 +895,7 @@
                 {/each}
               </tr>
             </thead>
-            <tbody>
+            <tbody bind:this={ledgerBody}>
               {#each rows as r (r.item.id)}
                 <tr>
                   <td>
@@ -972,6 +1042,35 @@
       translate: 0 14px;
     }
   }
+  /* The panels' bars and the seals' rings fill from empty as each comes
+     into view (fillSeen, data-fill), as the medallion's arc does
+     (CodexMedallion): during the page's rise, once their panel has risen
+     into place; scrolled to later, at once. */
+  .codex :global(.fill[data-fill]) {
+    transform-origin: left;
+  }
+  .codex :global(.fill[data-fill='held']) {
+    scale: 0 1;
+  }
+  .codex :global(.done[data-fill='held']) {
+    stroke-dasharray: 0 100;
+  }
+  .codex :global(.fill[data-fill='go']) {
+    animation: codex-fill 1s var(--ease-out) calc(var(--rise-delay, -0.25s) + 0.25s) backwards;
+  }
+  .codex :global(.done[data-fill='go']) {
+    animation: codex-ring 1s var(--ease-out) calc(var(--rise-delay, -0.25s) + 0.25s) backwards;
+  }
+  @keyframes codex-fill {
+    from {
+      scale: 0 1;
+    }
+  }
+  @keyframes codex-ring {
+    from {
+      stroke-dasharray: 0 100;
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     .hero > *,
     .tabs,
@@ -1013,6 +1112,11 @@
     margin: 0.6rem 0 0;
     font-style: italic;
     color: #b8ab95;
+    /* The line going and the one coming over each other as they cross-fade. */
+    display: grid;
+  }
+  .tagline > span {
+    grid-area: 1 / 1;
   }
 
   /* ---- the three pages ---- */

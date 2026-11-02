@@ -29,7 +29,8 @@
   import { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS, blastAway, prepareBlast } from '../lib/blastAway';
   import { untrack } from 'svelte';
   import { clockMs } from '../lib/game';
-  import { motion } from '../lib/motion.svelte';
+  import { PICK_IN_MS } from '../lib/delveSession';
+  import { calm, motion } from '../lib/motion.svelte';
   import { dealing } from '../lib/dealing.svelte';
   import { arrival, speak } from '../lib/zoneArrival.svelte';
   import { closeItemWindow, itemWindow } from '../lib/itemWindow.svelte';
@@ -270,20 +271,31 @@
   // Set before the DOM updates, so the cards stay up rather than being
   // swapped for the question and back.
   //
-  // Any other pick holds the cards for one frame too, the frame its tap (or
-  // the word of it) shows in: the question that takes their place comes in
-  // the frame after, mounted in a task of its own. Mounted with the pick, it
-  // made one task of the two, the longest of a game on an iPhone (#331).
+  // A pick, alone or on a turn, is handed over in order, on every screen
+  // that saw the choosing (the watchers' too): the card taken is marked
+  // (chosen, the others faded) as the cards go, they clear (cardsOut), and
+  // only then the question rises into their place (swingIn), PICK_IN_MS
+  // after the pick, its clock held as long (drawHoldUntil), so the handover
+  // costs no answer time. No moment of nothing: something moves throughout.
+  // The cards are held for the frame its tap (or the word of it) shows in:
+  // the question comes in the frame after, mounted in a task of its own.
+  // Mounted with the pick, it made one task of the two, the longest of a
+  // game on an iPhone (#331).
+  /** Whether the cards' choosing is the team's vote (Delve together), drawn on the cards, rather than one player's pick. */
+  const voted = $derived(!!run && group);
   let raffle = $state<number | null>(null);
-  let swap = $state<number | null>(null);
   let phaseSeen = '';
   let raffleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The cards are going after a pick (not a vote's draw), and its question coming: see cardsOut and swingIn (each lets its own go). */
+  let pickOut = false;
+  let pickIn = false;
   $effect.pre(() => {
     const key = `${s.turnCount}:${s.phase}`;
     const was = phaseSeen;
     phaseSeen = key;
     if (s.phase !== 'question' || !s.question) {
       if (s.phase !== 'question') raffle = null;
+      pickOut = pickIn = false;
       return;
     }
     if (was !== `${s.turnCount}:choosing`) return;
@@ -292,31 +304,32 @@
     // Back after a dropped connection with the question's clock already
     // running: the draw would eat into it, so the question shows at once.
     const running = asked.deadline !== null && asked.clockAt !== undefined && session.hostNow() > asked.clockAt;
-    if (run && group && !running && untrack(() => raffle) === null) {
-      raffle = qid;
+    if (running || untrack(() => raffle) !== null || !s.offered.includes(asked.category)) return;
+    raffle = qid;
+    if (raffleTimer) clearTimeout(raffleTimer);
+    pickOut = pickIn = !voted;
+    const done = () => raffle === qid && (raffle = null);
+    if (voted) {
       // Should the draw never say it is done, the question shows anyway.
-      if (raffleTimer) clearTimeout(raffleTimer);
-      raffleTimer = setTimeout(() => raffle === qid && (raffle = null), 4000);
+      raffleTimer = setTimeout(done, 4000);
       return;
     }
-    swap = qid;
-    const done = () => swap === qid && (swap = null);
+    // A pick: the frame its card is marked in, then the question in a task of its own.
     requestAnimationFrame(() => setTimeout(done));
     // (A hidden page draws no frames.)
-    setTimeout(done, 200);
+    raffleTimer = setTimeout(done, 200);
   });
   $effect(() => () => {
     if (raffleTimer) clearTimeout(raffleTimer);
   });
-  const drawing = $derived(raffle !== null && raffle === s.question?.askedAt && s.phase === 'question');
   /** The cards still up over a question just picked: its draw playing on them, or the pick's own frame. */
-  const cardsHeld = $derived(drawing || (swap !== null && swap === s.question?.askedAt && s.phase === 'question'));
+  const drawing = $derived(raffle !== null && raffle === s.question?.askedAt && s.phase === 'question');
   /**
    * Delve: between a vein's strikes, its two cards up (and the team's draw
    * playing on them), the lamp stays in view, still at the light it has left
    * for the next strike, where the strike's clock will run it.
    */
-  const lampHeld = $derived(!!between || (cardsHeld && inVein(s) && !!digOf(s)));
+  const lampHeld = $derived(!!between || (drawing && inVein(s) && !!digOf(s)));
   /** Together: the vote drew a vein's way out, and its draw plays on the two cards before the team goes back to the light (Delve.leaving). */
   const leaving = $derived(!!run && group && s.phase === 'choosing' && s.delve?.leaving !== undefined);
 
@@ -429,6 +442,11 @@
   /** Svelte transition: the new question comes in from the side the blast came from, as the smoke clears. */
   function swingIn(_node: Element) {
     const side = swingSide;
+    const pick = pickIn;
+    pickIn = false;
+    // After a pick: once the cards have cleared, the question rises a little into their place.
+    if (!side && pick && !motion.still)
+      return { duration: 320, delay: PICK_IN_MS, easing: cubicOut, css: (t: number, u: number) => `transform: translateY(${(u * 14).toFixed(2)}px); opacity: ${t}` };
     if (!side) return { duration: 0 };
     if (motion.still) return { duration: 300, delay: 150, css: (t: number) => `opacity: ${t}` };
     return {
@@ -463,10 +481,28 @@
    * fire) fade with them rather than outlining where they were. They take
    * no height meanwhile (.leaving), so the question is laid out where it
    * stays and nothing under it moves; what of them reaches past it, #app clips.
+   * After a pick they take longer, as the question is already there: the
+   * card taken goes on lifting as it fades (its lift is 0.55 s).
    */
   function cardsOut(node: HTMLElement) {
     node.classList.add('leaving');
-    return { duration: 180, css: (t: number) => `opacity: ${t}` };
+    const pick = pickOut;
+    pickOut = false;
+    // After a pick, cleared just as the question starts to rise (PICK_IN_MS).
+    return { duration: pick && !motion.still ? PICK_IN_MS + 40 : 180, css: (t: number) => `opacity: ${t}` };
+  }
+
+  /**
+   * Svelte transition: a Delve line under the stage (you perished, how to
+   * revive) opens its room as it fades in and closes it as it fades out,
+   * so what is round it moves with it rather than jumping as it comes.
+   */
+  function slideFade(node: Element, params: { duration?: number }) {
+    const made = slide(node, params);
+    return () => {
+      const c = made();
+      return { ...c, css: (t: number, u: number) => `${c.css?.(t, u) ?? ''};opacity: ${t}` };
+    };
   }
 
   /** Online Delve: where you perished, while the run goes on without you (someone still stands). */
@@ -500,11 +536,31 @@
           .map((r) => ({ key: `${r.at}:${r.to}`, text: revivedText(r.by, r.to, (id) => nameOf(id)?.name ?? '?', session.myPlayerId) }))
       : [],
   );
+
+  /**
+   * Delve together, a life just given: the line saying so takes the place of
+   * the one it answers (the hint naming whom to revive, or your own "you
+   * perished", just above it). The old line fades out where it stands, out of
+   * the flow; the new one fades in in its room, so neither moves. Otherwise
+   * a line goes as it came: fading, or (`slide`) closing its room as it does.
+   */
+  const handedOver = $derived(revivable.length === 0 && revivedLines.length > 0);
+  function answered(node: HTMLElement, { slide }: { slide?: boolean } = {}) {
+    if (!handedOver) return slide ? slideFade(node, calm({ duration: 400 })) : fade(node);
+    // Pinned where it stands (in a flex column, an absolute box left to itself goes to the column's top).
+    const { offsetTop: top, offsetLeft: left, offsetWidth: width } = node;
+    Object.assign(node.style, { position: 'absolute', top: `${top}px`, left: `${left}px`, width: `${width}px`, margin: '0' });
+    return calm({ duration: 180, css: (t: number) => `opacity: ${t}` });
+  }
+  function answer(node: HTMLElement) {
+    const crossing = handedOver && !!node.parentElement?.previousElementSibling?.matches('p.delve-line');
+    return crossing ? calm({ delay: 120, duration: 250, css: (t: number) => `opacity: ${t}` }) : slide(node, { duration: 250 });
+  }
 </script>
 
 {#snippet timer()}
   <!-- There from the question's start, full while its clock waits for the art, so nothing jumps as it starts. -->
-  {#if lampHeld || (!cardsHeld && q && (q.deadline || (s.phase === 'question' && seconds > 0)))}
+  {#if lampHeld || (!drawing && q && (q.deadline || (s.phase === 'question' && seconds > 0)))}
     {#key q?.askedAt}
       <TimerRing deadline={lampHeld ? null : q!.deadline} total={seconds} stopped={s.phase === 'reveal'} {warnFrom} />
     {/key}
@@ -545,10 +601,11 @@
 
           <!-- The cards fade out over the question that takes their place (see cardsOut). -->
           <div class="turn-body">
-            {#if s.phase === 'choosing' || cardsHeld}
+            {#if s.phase === 'choosing' || drawing}
               <div class="cards-slot" use:outWithoutInert out:cardsOut>
                 <ChooseCategory
-                  drawn={drawing ? (s.question?.category ?? null) : leaving ? WAY_OUT : null}
+                  drawn={drawing && voted ? (s.question?.category ?? null) : leaving ? WAY_OUT : null}
+                  taken={drawing && !voted ? (s.question?.category ?? null) : null}
                   ondrawn={() => (raffle = null)}
                   timer={lampHeld && !slim ? timer : undefined}
                 />
@@ -559,7 +616,8 @@
                    cell while they cross. -->
               <div class="questions">
                 {#key s.question?.askedAt}
-                  <div class="q-slot" in:swingIn out:swingOut>
+                  <!-- (|global: it comes in with the turn's question, not only a new one on the same turn.) -->
+                  <div class="q-slot" in:swingIn|global out:swingOut>
                     <QuestionView timer={slim ? undefined : timer} />
                   </div>
                 {/key}
@@ -567,24 +625,24 @@
             {/if}
           </div>
 
-          {#if group}
-            <!-- Who brought whom back, read out as it happens. -->
-            <div class="revived" aria-live="polite">
-              {#each revivedLines as line (line.key)}
-                <p class="delve-line revive-hint" transition:slide={{ duration: 250 }}>{line.text}</p>
-              {/each}
-            </div>
-          {/if}
           {#if myFall !== null}
-            <p class="delve-line muted">
+            <p class="delve-line muted" in:slideFade={calm({ duration: 400 })} out:answered={{ slide: true }}>
               You perished and are now watching.{#if canBeRevived}{' '}A teammate can give you a life between questions.{/if}
             </p>
           {:else if revivable.length && (s.phase === 'choosing' || s.phase === 'reveal')}
-            <p class="delve-line revive-hint" transition:fade>
+            <p class="delve-line revive-hint" in:fade out:answered>
               {revivable.length === 1
                 ? `Use the heart on ${revivable[0].name}’s entry to revive them with one of your lives.`
                 : 'Use the heart on an entry to revive that teammate with one of your lives.'}
             </p>
+          {/if}
+          {#if group}
+            <!-- Who brought whom back, read out as it happens. -->
+            <div class="revived" aria-live="polite">
+              {#each revivedLines as line (line.key)}
+                <p class="delve-line revive-hint" in:answer out:slide={{ duration: 250 }}>{line.text}</p>
+              {/each}
+            </div>
           {/if}
           {#if session.isHost && !local && !race && !run && !active.connected && s.phase !== 'reveal'}
             <div class="skip" data-cursor="skip" transition:fade>

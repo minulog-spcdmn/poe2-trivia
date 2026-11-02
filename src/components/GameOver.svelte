@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { flushSync, onMount, tick } from 'svelte';
+  import { flushSync, onMount } from 'svelte';
   import { fade, fly, scale, slide, type TransitionConfig } from 'svelte/transition';
   import { quintOut } from 'svelte/easing';
-  import { calm } from '../lib/motion.svelte';
+  import { calm, motion } from '../lib/motion.svelte';
+  import { zoomOf } from '../lib/stage';
   import { MediaQuery } from 'svelte/reactivity';
   import { engine, session } from '../lib/session.svelte';
   import { categoryGlyph, itemSrcset, itemThumb, playerColor } from '../lib/ui';
@@ -220,6 +221,18 @@
   });
   /** Delve alone: the words over the uniques met for the first time (none, no section). */
   const found = $derived(newInCodex(met));
+  /** When the screen came up: what is read in later takes its place in the entrances' order from there. */
+  const shownAt = performance.now();
+  /**
+   * A section set down in the entrances' order, `at` ms after the screen came up, as its neighbours are (the panel's,
+   * top to bottom: the runs 700, what was earned 850, the Highlights 1000, New in your codex 1150; beside it, Your game
+   * 900 and what it earned 1050); one that comes after its turn (an achievement judged late, the codex read again)
+   * opens out instead.
+   */
+  function arrive(node: Element, { at }: { at: number }): TransitionConfig {
+    const left = at - (performance.now() - shownAt);
+    return left > 0 ? settle(node, { delay: left }) : slide(node, calm({ duration: 450 }));
+  }
   /** Their row of thumbs' width (0 until measured): as many as fit, its "+N" opening it as a folded list's does. */
   let minisW = $state(0);
   /** Each thumb as large as the panel has room for (fit): from 40 px roomy down to the lines' marks' 26. */
@@ -235,10 +248,16 @@
     const keep = unfolded[key] ? Infinity : (folds[key] ?? Infinity);
     return list.length <= keep ? { shown: list, more: 0 } : { shown: list.slice(0, keep - 1), more: list.length - keep + 1 };
   }
-  /** "+N" pressed: the whole list, and the focus on the first place it showed (the "+N" itself is gone). */
-  async function unfold(key: string, list: Element | null, at: number) {
+  /**
+   * "+N" pressed: the whole list, its new places fading in and what lies below gliding down to make room (refit's
+   * glide), and the focus on the first place it showed (the "+N" itself is gone).
+   */
+  function unfold(key: string, list: Element | null, at: number) {
+    const from = motion.still ? null : places();
     unfolded[key] = true;
-    await tick();
+    flushSync();
+    seen?.takeRecords();
+    refit(from);
     const place = list?.children[at] as HTMLElement | undefined;
     const button = place?.matches('button') ? place : place?.querySelector('button');
     // (A place with nothing to press, an achievement or a line, takes the focus itself.)
@@ -318,8 +337,23 @@
    */
   function rankIn(node: Element, { i, n, top }: { i: number; n: number; top: boolean }): TransitionConfig {
     if (top) return scale(node, calm({ start: 1.07, delay: WINNER_IN_MS, duration: 520, easing: quintOut }));
-    const step = n > 2 ? Math.min(70, 400 / (n - 1)) : 70;
-    return settle(node, { delay: 450 + (n - 1 - i) * step });
+    return settle(node, { delay: rankDelay(i, n) });
+  }
+  /** When the `i`th of `n` rows is set down: from the foot up, the winner last. */
+  const rankDelay = (i: number, n: number) => 450 + (n - 1 - i) * (n > 2 ? Math.min(70, 400 / (n - 1)) : 70);
+  /**
+   * Your row on a phone's dock: it comes up out of the dock, from behind its face, the dock's dividing line riding on
+   * top of it (.pinned's own; the dock's is hidden meanwhile), and goes back down into it. As the screen comes in, in its
+   * turn among the rows, as they settle; after that (you scrolled past it, or back), quickly: it is your doing. Opaque
+   * all the while, and nothing cuts it or its glow: only the dock's face covers what is still inside.
+   */
+  function pinIn(node: Element): TransitionConfig {
+    const left = rankDelay(rows.findIndex((x) => x.p.id === me), rows.length) - (performance.now() - shownAt);
+    const y = (node as HTMLElement).offsetHeight;
+    return fly(node, calm(left > 0 ? { y, opacity: 1, delay: left, duration: 440, easing: quintOut } : { y, opacity: 1, duration: 160, easing: quintOut }));
+  }
+  function pinOut(node: Element): TransitionConfig {
+    return fly(node, calm({ y: (node as HTMLElement).offsetHeight, opacity: 1, duration: 140 }));
   }
   /** A part of the end screen set down into its place: risen a little, on the house's ease-out. */
   function settle(node: Element, { delay = 0, y = 12 }: { delay?: number; y?: number } = {}): TransitionConfig {
@@ -357,7 +391,7 @@
    * already the one that stays. The panel first: the column beside it may
    * stand centred against it.
    */
-  function refit() {
+  function fitNow() {
     const floor = short.current ? 1 : 0;
     if (!stageEl || !sideEl || !boardEl || !footEl || !twoColumns.current || flat.current) {
       sideFit = boardFit = floor;
@@ -472,6 +506,58 @@
       else delete folds[key];
     }
     flushSync();
+  }
+  // ---- a refit after the screen is up, moved rather than jumped -------------------------------------------------------
+  /** What glides to where a refit puts it: the circle and the heart, the headline, each section, its lines and places. */
+  const MOVES = '.plate, .heart, .words, .sec, .sec > *, .runs > *, .chart-row > *, [data-fold] > *, .ranking > li, .plates > li, .start';
+  let glides: Animation[] = [];
+  /** Where each of them stands, as seen (partway through a move included). */
+  function places() {
+    const at = new Map<Element, DOMRect>();
+    if (stageEl) for (const el of stageEl.querySelectorAll(MOVES)) at.set(el, el.getBoundingClientRect());
+    return at;
+  }
+  /** Only for a refit once the screen has been fitted, the window as it was (a resize moves everything at once anyway). */
+  const gliding = () => !motion.still && fitted.startsWith(`${innerWidth}x${innerHeight} `);
+  /**
+   * Each from where it stood (`from`) to where it stands now, as the entrances ease: by a transform added to whatever
+   * it runs besides (an entrance still coming in), each relative to the one it lies in, so none moves twice; the circle
+   * and the heart scaled from their size as well (a column stepped smaller makes them smaller). A place new to a list
+   * that was there (a "+N" opened) fades in where it lands; a section new as a whole comes in its own way.
+   */
+  function glide(from: Map<Element, DOMRect>) {
+    if (!stageEl) return;
+    const to = places();
+    const z = zoomOf(stageEl);
+    const timing = { duration: 450, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' };
+    for (const [el, b] of to) {
+      let up = el.parentElement;
+      while (up && up !== stageEl && !to.has(up)) up = up.parentElement;
+      const pb = up && up !== stageEl ? to.get(up) : undefined;
+      const pa = up && up !== stageEl ? from.get(up) : undefined;
+      const a = from.get(el);
+      if (!a) {
+        if (pa) glides.push(el.animate([{ opacity: 0 }, { opacity: 1 }], timing));
+        continue;
+      }
+      if (pb && !pa) continue;
+      const scaled = el.matches('.plate, .heart');
+      const k = scaled && b.width ? a.width / b.width : 1;
+      const x = (r: DOMRect) => (scaled ? r.left + r.width / 2 : r.left);
+      const y = (r: DOMRect) => (scaled ? r.top + r.height / 2 : r.top);
+      const dx = (x(a) - (pa?.left ?? 0) - (x(b) - (pb?.left ?? 0))) / z;
+      const dy = (y(a) - (pa?.top ?? 0) - (y(b) - (pb?.top ?? 0))) / z;
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5 && Math.abs(k - 1) < 0.005) continue;
+      const move = `translate(${dx}px, ${dy}px)${k === 1 ? '' : ` scale(${k})`}`;
+      glides.push(el.animate([{ transform: move }, { transform: 'none' }], { ...timing, composite: 'add' }));
+    }
+  }
+  /** A fit (fitNow), and what it moved gliding there from `from`, where it stood before (none: it simply stands). */
+  function refit(from = gliding() ? places() : null) {
+    for (const a of glides) a.cancel();
+    glides = [];
+    fitNow();
+    if (from) glide(from);
   }
   let seen: MutationObserver | undefined;
   /**
@@ -781,14 +867,21 @@
     {#if presence || joinNext.length}
       <div class="status" data-cursor="status">
         {#if presence}
-          {#if here === s.players.length}
-            <p class="note"><span class="ic"><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12.5l5 5 10-11" /></svg></span><span>All <b class="n">{here}</b> exiles still here</span></p>
-          {:else}
-            <p class="note warn"><span class="ic"><StandingMark mark="offline" /></span><span><b class="n">{here}</b> of <b class="n">{s.players.length}</b> exiles still here</span></p>
-          {/if}
+          <!-- Who is still here: the old count fading out as the new one fades in over it, in one cell. -->
+          <div class="swap">
+            {#key `${here}/${s.players.length}`}
+              <p class="note" class:warn={here < s.players.length} transition:fade={calm({ duration: 200 })}>
+                {#if here === s.players.length}
+                  <span class="ic"><svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12.5l5 5 10-11" /></svg></span><span>All <b class="n">{here}</b> exiles still here</span>
+                {:else}
+                  <span class="ic"><StandingMark mark="offline" /></span><span><b class="n">{here}</b> of <b class="n">{s.players.length}</b> exiles still here</span>
+                {/if}
+              </p>
+            {/key}
+          </div>
         {/if}
         {#if joinNext.length}
-          <p class="note"><span class="ic eye"><WatchEye /></span><span>{namesList(joinNext)} join{joinNext.length === 1 ? 's' : ''} next</span></p>
+          <p class="note" transition:slide={calm({ duration: 250 })}><span class="ic eye"><WatchEye /></span><span>{namesList(joinNext)} join{joinNext.length === 1 ? 's' : ''} next</span></p>
         {/if}
       </div>
     {/if}
@@ -799,16 +892,23 @@
   {:else if session.spectating}
     <p class="note spect" data-cursor="joining">
       <span class="ic"><span class="pulse"></span></span>
-      <span
-        >{#if session.justWatching && hostGone}You’re watching; <b class="host">{host}</b> seems to be {hostGone}.{:else if session.justWatching}You’re watching; <b class="host">{host}</b> starts the
-          next {run ? 'run' : 'game'} without you.{:else if together}You join the next run once <b class="host">{host}</b> starts it{goneTail}.{:else}You play in the next game once <b
-            class="host">{host}</b
-          > starts it{goneTail}.{/if}</span
+      <!-- The host gone idle (or back): the line fading to its new words in one cell. -->
+      <span class="swap"
+        >{#key hostGone}<span transition:fade={calm({ duration: 200 })}
+            >{#if session.justWatching && hostGone}You’re watching; <b class="host">{host}</b> seems to be {hostGone}.{:else if session.justWatching}You’re watching; <b class="host">{host}</b>
+              starts the next {run ? 'run' : 'game'} without you.{:else if together}You join the next run once <b class="host">{host}</b> starts it{goneTail}.{:else}You play in the next game once <b
+                class="host">{host}</b
+              > starts it{goneTail}.{/if}</span
+          >{/key}</span
       >
     </p>
     <WatchToggle />
   {:else}
-    <p class="waiting" data-cursor="actions"><span class="pulse"></span><span>Waiting for <b class="host">{host}</b> to start the next {run ? 'run' : 'game'}{goneTail}…</span></p>
+    <p class="waiting" data-cursor="actions">
+      <span class="pulse"></span><span class="swap"
+        >{#key goneTail}<span transition:fade={calm({ duration: 200 })}>Waiting for <b class="host">{host}</b> to start the next {run ? 'run' : 'game'}{goneTail}…</span>{/key}</span
+      >
+    </p>
   {/if}
 {/snippet}
 
@@ -898,7 +998,7 @@
         </section>
         {#if earned.length}
           <!-- Judged as the game ends, it can come in after the screen: it opens out rather than jumping in. -->
-          <section class="sec yours earned-sec" in:slide={calm({ duration: 450 })}>
+          <section class="sec yours earned-sec" in:arrive|global={{ at: 1050 }}>
             <h3>Earned this game</h3>
             {@render achievements(earned, sideFit, 'earned')}
           </section>
@@ -968,18 +1068,20 @@
           <h2>{modeName}</h2>
           {#if canShare}
             <span class="share-wrap">
-              <button class="share" data-cursor="share" onclick={shareDepth} title={together ? "Share the team’s depth" : 'Share your depth'}>
-                {#if shared}
-                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
-                  Copied
-                {:else}
+              <button class="share" class:copied={shared} data-cursor="share" onclick={shareDepth} title={together ? "Share the team’s depth" : 'Share your depth'}>
+                <!-- Both faces in one cell, the button as wide as the wider: one fades to the other. -->
+                <span class="face" class:off={shared} aria-hidden={shared || undefined}>
                   <!-- Three linked seals: the share sign. -->
                   <svg viewBox="0 0 24 24" aria-hidden="true">
                     <circle cx="18" cy="5.5" r="2.6" /><circle cx="6" cy="12" r="2.6" /><circle cx="18" cy="18.5" r="2.6" />
                     <path d="M8.3 10.8l7.4-4M8.3 13.2l7.4 4" />
                   </svg>
                   Share run
-                {/if}
+                </span>
+                <span class="face" class:off={!shared} aria-hidden={!shared || undefined}>
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>
+                  Copied
+                </span>
               </button>
             </span>
           {/if}
@@ -1023,7 +1125,7 @@
         {/if}
 
         {#if run}
-          <div class="runs" data-cursor="runs">
+          <div class="runs" data-cursor="runs" in:settle|global={{ delay: 700 }}>
             {#if first}
               {#if facts.length > 1}
                 <p class="cap">This run</p>
@@ -1059,7 +1161,7 @@
 
       {#if run && earned.length}
         <!-- Every run that earns one (judged as it ends: it opens out rather than jumping in). -->
-        <section class="sec earned-sec" in:slide={calm({ duration: 450 })}>
+        <section class="sec earned-sec" in:arrive|global={{ at: 850 }}>
           <h3>Earned this run</h3>
           {@render achievements(earned, boardFit, 'earned')}
         </section>
@@ -1074,7 +1176,7 @@
 
       {#if found}
         <!-- Delve alone: the uniques met for the first time, how many on the heading's line. -->
-        <section class="sec found" in:fade={{ duration: 600, delay: 1100 }}>
+        <section class="sec found" in:arrive|global={{ at: 1150 }}>
           <h3><span>New in your codex</span><span class="count">{@render say(found)}</span></h3>
           {@render minis(met.fresh)}
         </section>
@@ -1094,7 +1196,7 @@
   <div class="dock" class:host={session.isHost} use:portal use:overPage use:dock bind:offsetHeight={dockH} in:fade={{ duration: 200 }} out:fade|global={{ duration: 180 }}>
     {#if pinned}
       {@const x = rows.find((r) => r.p.id === me)}
-      {#if x}<div class="pinned"><div class="ranking"><div class="row you">{@render rankRow(x, true)}</div></div></div>{/if}
+      {#if x}<div class="pinned" in:pinIn|global out:pinOut|global><div class="ranking"><div class="row you">{@render rankRow(x, true)}</div></div></div>{/if}
     {/if}
     <div class="dock-row">{@render startRow()}</div>
   </div>
@@ -1741,6 +1843,9 @@
     box-shadow: 0 0 12px rgba(224, 138, 68, 0.3);
   }
   /* Someone who left: dimmed, the lobby's offline mark before the score. */
+  .ranking li > :not(.anchor) {
+    transition: opacity 0.3s;
+  }
   .ranking li.gone > :not(.anchor) {
     opacity: 0.5;
   }
@@ -1785,6 +1890,9 @@
   .plates li.you {
     border-color: rgba(224, 138, 68, 0.85);
     box-shadow: 0 0 12px rgba(224, 138, 68, 0.3);
+  }
+  .plates li {
+    transition: opacity 0.3s;
   }
   .plates li.gone {
     opacity: 0.5;
@@ -2011,9 +2119,8 @@
     display: inline-flex;
   }
   .share {
-    display: inline-flex;
+    display: inline-grid;
     align-items: center;
-    gap: 0.45em;
     padding: 0.4em 0.8em;
     border-radius: 3px;
     font-family: var(--font-display);
@@ -2030,6 +2137,22 @@
   .share:hover {
     color: var(--gold-hi);
     border-color: var(--gold-lo);
+  }
+  .share .face {
+    grid-area: 1 / 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45em;
+    /* Back to Share run by itself: slowly. */
+    transition: opacity 0.45s;
+  }
+  /* Copied answers the click at once (the lobby's Link copied!). */
+  .share.copied .face {
+    transition-duration: 0.12s;
+  }
+  .share .face.off {
+    opacity: 0;
   }
   .share svg {
     width: 13px;
@@ -2058,6 +2181,17 @@
     min-width: 0;
     display: grid;
     gap: 0.25rem;
+  }
+  /* Words that change fade one into the other in a single cell, as wide and tall as the larger. */
+  .swap {
+    display: grid;
+    min-width: 0;
+  }
+  .swap > * {
+    grid-area: 1 / 1;
+  }
+  .start.centre .swap {
+    justify-items: center;
   }
   .note {
     display: flex;
@@ -2367,7 +2501,8 @@
     height: 40px;
   }
 
-  /* The dock: fixed to the bottom, opaque, a hairline on top and a short fade above it. */
+  /* The dock: fixed to the bottom, opaque, a hairline on top and a short fade above it. Its face (::after, the opaque
+     ground and the hairline) lies over your row (.pinned) as it goes in and out of it, the buttons over that. */
   .dock {
     position: fixed;
     left: 0;
@@ -2375,10 +2510,26 @@
     bottom: 0;
     z-index: 20;
     padding: 0.6rem max(16px, env(safe-area-inset-right)) max(0.6rem, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    border-top: 1px solid transparent;
+  }
+  .dock::after {
+    content: '';
+    position: absolute;
+    inset: -1px 0 0;
+    z-index: 1;
     background: #0b0907;
     border-top: var(--pinned-line);
+    pointer-events: none;
   }
-  .dock::before {
+  /* Your row on it: the hairline and the fade ride on top of it instead (.pinned's), until it is back inside. */
+  .dock:has(.pinned)::after {
+    border-top-color: transparent;
+  }
+  .dock:has(.pinned)::before {
+    visibility: hidden;
+  }
+  .dock::before,
+  .pinned::before {
     content: '';
     position: absolute;
     left: 0;
@@ -2391,6 +2542,8 @@
     pointer-events: none;
   }
   .dock-row {
+    position: relative;
+    z-index: 2;
     display: flex;
     align-items: center;
     gap: 0.8rem;
@@ -2415,14 +2568,17 @@
   .dock-row .status {
     display: none;
   }
-  /* Your row riding on the dock's top edge, one opaque piece with it. */
+  /* Your row riding on the dock's top edge, one opaque piece with it, the dock's hairline over it; room round the row for
+     its glow, so nothing cuts it. */
   .pinned {
     position: absolute;
+    z-index: 0;
     left: 0;
     right: 0;
-    bottom: 100%;
-    padding: 8px 16px 6px;
+    bottom: calc(100% + 1px);
+    padding: 12px 16px;
     background: #0b0907;
+    border-top: var(--pinned-line);
   }
   .pinned .row {
     height: 46px;
