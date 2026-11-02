@@ -237,7 +237,18 @@
   {/key}
 {/snippet}
 
-<span class="engraving" class:front data-find={find ?? undefined} data-fossil={lit ?? undefined} use:sized aria-hidden="true">
+<span
+  class="engraving"
+  class:front
+  data-find={find ?? undefined}
+  data-fossil={lit ?? undefined}
+  style:--cx={slab ? `${slab.lamp[0]}px` : undefined}
+  style:--cy={slab ? `${slab.lamp[1]}px` : undefined}
+  style:--rx={slab ? `${slab.rx}px` : undefined}
+  style:--ry={slab ? `${slab.ry}px` : undefined}
+  use:sized
+  aria-hidden="true"
+>
   {#if plate && front}
     {#if plate.solid}
       <!-- Solid: whatever lies behind (the item, the plate) is hidden, the crystal's body faintly its colour. -->
@@ -266,6 +277,37 @@
           </radialGradient>
         </defs>
         <path d={plate.window} style:fill="url(#{uid}-warm)" />
+      </svg>
+    {/if}
+    {#if slab}
+      <!-- A fossil's card: under its gilt lines, where its lamp shines through, a hair of shadow along each on
+           the side away from the light, so they read over the lit amber as over the dark resin. -->
+      <svg class="resin" viewBox="0 0 {w} {h}">
+        {#if plate.fade}
+          <defs>
+            <radialGradient id="{uid}-resin-g" cx={plate.fade.c[0]} cy={plate.fade.c[1]} r={plate.fade.r} gradientUnits="userSpaceOnUse">
+              {#if plate.fade.from}<stop offset={plate.fade.from / plate.fade.r} stop-color="#000" />{/if}
+              <stop offset={Math.max(0.35, (plate.fade.from + 22) / plate.fade.r)} stop-color="#fff" />
+              <stop offset="1" stop-color="#000" />
+            </radialGradient>
+            <mask id="{uid}-resin-fade" maskUnits="userSpaceOnUse" x="0" y="0" width={w} height={h}>
+              <rect width={w} height={h} fill="url(#{uid}-resin-g)" />
+            </mask>
+          </defs>
+        {/if}
+        {#if knockout.length}
+          <defs>
+            <mask id="{uid}-resin-ko" maskUnits="userSpaceOnUse" x={-50} y={-50} width={w + 100} height={h + 100}>
+              <rect x={-50} y={-50} width={w + 100} height={h + 100} fill="#fff" />
+              {#each knockout as d, i (i)}<path {d} class="ko" />{/each}
+            </mask>
+          </defs>
+        {/if}
+        <g transform="translate(0.5 0.5)" mask={knockout.length ? `url(#${uid}-resin-ko)` : undefined}>
+          {#each strokes as { cls, d }, i (i)}
+            <path {d} class={cls} mask={cls === 'ray' && plate.fade ? `url(#${uid}-resin-fade)` : undefined} />
+          {/each}
+        </g>
       </svg>
     {/if}
     {#each LAYERS as layer (layer)}
@@ -353,47 +395,6 @@
       </svg>
     {:else if motif.length}
       {@render glint()}
-    {/if}
-    {#if slab}
-      <!-- A fossil's card: its lines cut in the amber (FossilAmber, under them), seen dark against its lamp
-           where the light comes through, light against the dark resin away from it (the plate's own). -->
-      <svg
-        class="resin"
-        viewBox="0 0 {w} {h}"
-        style:--cx="{slab.lamp[0]}px"
-        style:--cy="{slab.lamp[1]}px"
-        style:--rx="{slab.rx}px"
-        style:--ry="{slab.ry}px"
-      >
-        {#if plate.fade}
-          <defs>
-            <radialGradient id="{uid}-resin-g" cx={plate.fade.c[0]} cy={plate.fade.c[1]} r={plate.fade.r} gradientUnits="userSpaceOnUse">
-              {#if plate.fade.from}<stop offset={plate.fade.from / plate.fade.r} stop-color="#000" />{/if}
-              <stop offset={Math.max(0.35, (plate.fade.from + 22) / plate.fade.r)} stop-color="#fff" />
-              <stop offset="1" stop-color="#000" />
-            </radialGradient>
-            <mask id="{uid}-resin-fade" maskUnits="userSpaceOnUse" x="0" y="0" width={w} height={h}>
-              <rect width={w} height={h} fill="url(#{uid}-resin-g)" />
-            </mask>
-          </defs>
-        {/if}
-        {#if knockout.length}
-          <defs>
-            <mask id="{uid}-resin-ko" maskUnits="userSpaceOnUse" x={-50} y={-50} width={w + 100} height={h + 100}>
-              <rect x={-50} y={-50} width={w + 100} height={h + 100} fill="#fff" />
-              {#each knockout as d, i (i)}<path {d} class="ko" />{/each}
-            </mask>
-          </defs>
-        {/if}
-        <!-- The cut, and a hair of the light caught on its edge toward the lamp (its upper left, as the plate's light falls). -->
-        {#each ['cut', 'edge'] as part (part)}
-          <g class={part} transform={part === 'edge' ? 'translate(-0.45 -0.45)' : undefined} mask={knockout.length ? `url(#${uid}-resin-ko)` : undefined}>
-            {#each strokes as { cls, d }, i (i)}
-              <path {d} class={cls} mask={cls === 'ray' && plate.fade ? `url(#${uid}-resin-fade)` : undefined} />
-            {/each}
-          </g>
-        {/each}
-      </svg>
     {/if}
   {/if}
 </span>
@@ -699,38 +700,30 @@
       opacity: 0.6;
     }
   }
-  /* A fossil's lines where its lamp shines through (see `slab`): the
-     plate's and its motif's again, cut in the resin's dark, a little wider
-     than drawn, with a hair of light along each on the side toward the
-     light, fading out as the light does (on the light's own reach), so a
-     cut reads dark against the light and light against the dark resin, as
-     a line cut in amber held to a lamp does. Still: drawn once. */
+  /* A fossil's lines where its lamp shines through (see `slab`): each
+     line's shadow, a hair of the resin's dark beside it on the side away
+     from the light, under the gilt line itself, as a line cut in amber held
+     to a lamp is shadowed in its groove; fading out as the light does (on
+     the light's own reach), where the dark resin needs none. Still: drawn
+     once. */
   .resin {
     color: var(--resin, #3a1103);
-    -webkit-mask-image: radial-gradient(var(--rx) var(--ry) at var(--cx) var(--cy), #000 52%, rgba(0, 0, 0, 0.72) 74%, transparent 100%);
-    mask-image: radial-gradient(var(--rx) var(--ry) at var(--cx) var(--cy), #000 52%, rgba(0, 0, 0, 0.72) 74%, transparent 100%);
+    opacity: 0.75;
+    -webkit-mask-image: radial-gradient(var(--rx) var(--ry) at var(--cx) var(--cy), #000 55%, rgba(0, 0, 0, 0.6) 78%, transparent 100%);
+    mask-image: radial-gradient(var(--rx) var(--ry) at var(--cx) var(--cy), #000 55%, rgba(0, 0, 0, 0.6) 78%, transparent 100%);
   }
-  .resin .cut path {
-    stroke-width: 1px;
+  .resin path {
+    stroke-width: 0.7px;
   }
-  .resin .cut :is(.main, .sign) {
-    stroke-width: 1.15px;
+  .resin :is(.main, .sign) {
+    stroke-width: 0.9px;
   }
-  .resin .cut :is(.hair, .hatch, .ray, .shade) {
-    stroke-width: 0.55px;
+  .resin :is(.hair, .hatch, .shade) {
+    stroke-width: 0.45px;
   }
-  .resin .cut .ray {
-    opacity: 0.8;
-  }
-  .resin .edge {
-    color: var(--cut-light, #ffe6a8);
-    opacity: 0.55;
-  }
-  .resin .edge path {
-    stroke-width: 0.3px;
-  }
-  .resin .edge :is(.hatch, .ray, .shade) {
-    display: none;
+  .resin .ray {
+    stroke-width: 0.5px;
+    opacity: 0.85;
   }
   /* A fossil's glint is the lamp's warm light, not a crystal's cold one; its glow breathes as a flame does. */
   [data-fossil] .glint {
