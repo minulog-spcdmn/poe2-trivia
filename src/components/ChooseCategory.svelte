@@ -998,6 +998,7 @@
         class:mine
         class:dim={dimmed}
         class:chosen={chosen === cat || (landed && lit === i)}
+        class:taking={chosen === cat}
         class:faded={(chosen && chosen !== cat) || (landed && lit !== i)}
         class:voted={coop && myVote === cat && !landed}
         class:passing={!landed && lit === i}
@@ -2032,6 +2033,17 @@
     --bs1-color: rgba(255, 170, 90, 0.5);
     --bs2: 0px 0px;
     --bs2-color: transparent;
+  }
+  /* A pick's card, as the cards go: its colours, shade and shadow take the
+     chosen ones at once (the lift still plays), as the frame is drawn again
+     every frame they ease, at twice its size, while the cards stay for the
+     handover (src/qa/redrawBaselines.json, pick). A vote's draw keeps the
+     ease: its card lands and holds. */
+  .card.chosen.taking .frame {
+    transition:
+      transform 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.15),
+      opacity 0.4s,
+      filter 0.4s;
   }
   /* (Its light eases on its ::before, not here: see .pulse.) */
   .card.chosen .pulse {
