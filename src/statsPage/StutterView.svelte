@@ -62,23 +62,26 @@
             <th scope="col" class="n">Games</th>
             <th scope="col" class="n">Stuttered</th>
             <th scope="col" class="n opt">A lot</th>
-            <th scope="col">Mostly at</th>
-            <th scope="col" class="n">In software</th>
+            <th scope="col" class="at">Mostly at</th>
+            <th scope="col" class="n opt">In software</th>
           </tr>
         </thead>
         <tbody>
           {#each devices as d (d.device)}
             <tr class:none={!d.now.games}>
-              <th scope="row">{DEVICE_NAMES[d.device]}</th>
+              <th scope="row">
+                {DEVICE_NAMES[d.device]}
+                {#if d.now.games}<span class="on-phone">{percent(d.now.many, d.now.games)} a lot{#if d.device.startsWith('desktop')}{' • '}{fmt(d.now.f.software)} in software{/if}</span>{/if}
+              </th>
               <td class="n">{fmt(d.now.games)}</td>
               <td class="n">
                 <b class="strong">{percent(d.now.part, d.now.games)}</b>
                 <Delta now={share(d.now)} before={share(d.before)} rate worse="up" of={{ now: d.now.games, before: d.before.games }} period={period.before} />
               </td>
               <td class="n opt">{percent(d.now.many, d.now.games)}</td>
-              <td class:soft={!d.now.worst}>{d.now.worst ? MOMENT_NAMES[d.now.worst] : '–'}</td>
+              <td class="at" class:soft={!d.now.worst}>{d.now.worst ? MOMENT_NAMES[d.now.worst] : '–'}</td>
               <!-- (Counted on a computer alone: a phone has no setting to switch its GPU off.) -->
-              <td class="n" class:soft={!d.device.startsWith('desktop')}>{d.device.startsWith('desktop') ? fmt(d.now.f.software) : '–'}</td>
+              <td class="n opt" class:soft={!d.device.startsWith('desktop')}>{d.device.startsWith('desktop') ? fmt(d.now.f.software) : '–'}</td>
             </tr>
           {/each}
         </tbody>
@@ -146,6 +149,16 @@
   @media (max-width: 700px) {
     .devices {
       grid-template-columns: minmax(0, 1fr);
+    }
+    /* The change under the share, so the table keeps to a phone's width. */
+    td :global(.delta) {
+      display: flex;
+      justify-content: flex-end;
+      margin: 0.15rem 0 0;
+    }
+    /* The last column shown, the one after it hidden. */
+    .table .at {
+      padding-right: 0;
     }
   }
   /* A big monitor: the four side by side. */
