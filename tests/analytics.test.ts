@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { addDays, dayIn, hoursIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, labelled, restsOn } from '../src/statsPage/chart.ts';
 import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
-import { appShare, backShare, beforeShare, beyondChanceOf, busiestStandsOut, comersOf, countsApart, failureRate, gamesSpread, sameLabels, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
+import { appShare, backShare, beforeShare, beyondChanceOf, busiestStandsOut, comersOf, countsApart, failureRate, gamesSpread, healthOf, sameLabels, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
 import { apartFrom, countsIn, depthCalls, depthsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
@@ -916,6 +916,27 @@ test('who came: with no save on the device or back to one after so long, of thos
   // Before they were told apart: nothing to say, not 0%.
   const none = comersOf(countsOf([path('/', [10, 10, 10], false)], DAYS));
   assert.deepEqual([none.from, backShare(none), appShare(none)], [null, null, null]);
+});
+
+test('the game going worse than before: its scripts failing, a kind of device stuttering, only beyond chance', () => {
+  const counts = (visits: number, script: number, chunk: number, ios: [number, number]) =>
+    countsOf(
+      [
+        path('/', [visits, visits, visits], false),
+        path('error/script', [script, 0, 0]),
+        path('error/chunk', [chunk, 0, 0]),
+        path('frames2/ios/smooth', [ios[0] - ios[1], 0, 0]),
+        path('frames2/ios/some/reveal', [ios[1], 0, 0]),
+      ],
+      DAYS,
+    );
+  const before = counts(100, 5, 2, [100, 5]);
+  assert.equal(healthOf(counts(100, 7, 3, [100, 8]), before), null);
+  const worse = healthOf(counts(100, 40, 3, [100, 30]), before)!;
+  assert.deepEqual(worse.errors, [{ key: 'script', count: 40, expected: 5 }]);
+  assert.deepEqual(worse.stutter.map((d) => [d.device, Math.round(d.share), Math.round(d.before), d.games]), [['ios', 30, 5, 100]]);
+  // Twice the visits bring twice the errors: no worse.
+  assert.equal(healthOf(counts(200, 10, 4, [100, 5]), before), null);
 });
 
 test("bars named alike are one, so a label counted from outside can't take another's place", () => {

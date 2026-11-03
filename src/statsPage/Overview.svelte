@@ -4,8 +4,8 @@
   // period; one chart of how busy it was, its busiest days ringed, beside
   // today so far (with what the last update brought) and what happened; and
   // a row of short answers (when they come, where they are, what they play),
-  // each opening its view. Joining only shows when it's going worse than
-  // usual, as a line above it all. Room is left between the parts on
+  // each opening its view. Joining, the game's own errors and stutter show
+  // only when going worse than usual, each a line above it all. Room is left between the parts on
   // purpose: what's here is what's worth a glance, the rest is a click away.
   // The monitor button shows it full screen, kept awake.
   import Bars from './Bars.svelte';
@@ -13,9 +13,9 @@
   import { average, fmt, restsOn, shortDay } from './chart';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
-  import { backShare, busiestStandsOut, comersOf, gamesSpreadOf, spikesOf, troubleOf } from './insights';
+  import { backShare, busiestStandsOut, comersOf, gamesSpreadOf, healthOf, spikesOf, troubleOf } from './insights';
   import Kpi from './Kpi.svelte';
-  import { DAILY_FROM, MODE_NAMES, answersPerDay, asked, dailyAverage, dailyDays as dailyDaysOf, dayAverageHours, dayAverages, deviceOf, finishedShare, hoursHad, modesOf, percent, weekAverage, type Counts } from './model';
+  import { DAILY_FROM, DEVICE_NAMES, MODE_NAMES, answersPerDay, asked, dailyAverage, dailyDays as dailyDaysOf, dayAverageHours, dayAverages, deviceOf, finishedShare, hoursHad, modesOf, percent, weekAverage, type Counts } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import Seg from './Seg.svelte';
@@ -41,6 +41,8 @@
 
   /** Joining worse than usual (insights.ts troubleOf), and what failed most there (the scripts' errors aren't joining's). */
   const trouble = $derived(troubleOf(L, B));
+  /** The game going worse than in the period before: its scripts' errors and parts that didn't load, a kind of device stuttering (insights.ts healthOf). */
+  const health = $derived(read.compare ? healthOf(L, B) : null);
   const worst = $derived(L.failures.find((f) => !f.script));
   /** Of the visits that found a save or none, those that found one (insights.ts backShare). */
   const comers = $derived(comersOf(L));
@@ -127,17 +129,46 @@
 
 <svelte:window bind:innerHeight bind:innerWidth />
 
-{#if trouble}
-  <a class="problem" href="#joining">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l10 18H2z" /><path d="M12 10v5" /><path d="M12 18v.01" /></svg>
-    <span>
-      <b>Joining fails more than usual.</b>
-      {#if trouble.today}{fmt(trouble.today.failed)} failures today so far, where about {fmt(Math.round(trouble.today.expected))} would be usual.{/if}
-      {#if trouble.period}{fmt(trouble.period.failed)} in {period.now.toLowerCase()}, where about {fmt(Math.round(trouble.period.expected))} would be usual for as many games.{/if}
-      {#if worst}Most often: {worst.host ? 'opening a room, ' : ''}{worst.label.toLowerCase()}.{/if}
-    </span>
-    <span class="go">See why ›</span>
-  </a>
+{#snippet warning()}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l10 18H2z" /><path d="M12 10v5" /><path d="M12 18v.01" /></svg>{/snippet}
+{#if trouble || health}
+  <div class="alerts">
+    {#if trouble}
+      <a class="problem" href="#joining">
+        {@render warning()}
+        <span>
+          <b>Joining fails more than usual.</b>
+          {#if trouble.today}{fmt(trouble.today.failed)} failures today so far, where about {fmt(Math.round(trouble.today.expected))} would be usual.{/if}
+          {#if trouble.period}{fmt(trouble.period.failed)} in {period.now.toLowerCase()}, where about {fmt(Math.round(trouble.period.expected))} would be usual for as many games.{/if}
+          {#if worst}Most often: {worst.host ? 'opening a room, ' : ''}{worst.label.toLowerCase()}.{/if}
+        </span>
+        <span class="go">See why ›</span>
+      </a>
+    {/if}
+    {#if health?.errors.length}
+      <a class="problem" href="#joining">
+        {@render warning()}
+        <span>
+          <b>The game breaks more than before.</b>
+          {#each health.errors as e (e.key)}
+            {fmt(e.count)} {e.key === 'script' ? (e.count === 1 ? "error in the game's own scripts" : "errors in the game's own scripts") : e.count === 1 ? "page missing a part that didn't load" : "pages missing a part that didn't load"} in {period.now.toLowerCase()}, where about {fmt(Math.round(e.expected))} would be usual for as many visits.
+          {/each}
+        </span>
+        <span class="go">See them ›</span>
+      </a>
+    {/if}
+    {#if health?.stutter.length}
+      <a class="problem" href="#stutter">
+        {@render warning()}
+        <span>
+          <b>Games stutter more than before.</b>
+          {#each health.stutter as d (d.device)}
+            {DEVICE_NAMES[d.device]}: {Math.round(d.share)}% of {fmt(d.games)} games stuttered, against {Math.round(d.before)}% in {period.before}.
+          {/each}
+        </span>
+        <span class="go">See where ›</span>
+      </a>
+    {/if}
+  </div>
 {/if}
 
 <div class="ov">
@@ -171,7 +202,7 @@
       </Section>
     </div>
   {/snippet}
-  <div class="now"><Today {read} tall={big && innerHeight >= 1500 && !trouble} /></div>
+  <div class="now"><Today {read} tall={big && innerHeight >= 1500 && !trouble && !health} /></div>
   {#if !big}{@render happened()}{/if}
   <div class="answers" class:four={big}>
     {#if big}{@render happened()}{/if}
@@ -206,12 +237,16 @@
 </div>
 
 <style>
-  /* Joining going worse than usual: a line above everything, opening Joining. */
+  /* Joining, or the game, going worse than usual: a line above everything for each, opening its view. */
+  .alerts {
+    display: grid;
+    gap: 0.6rem;
+    margin-bottom: var(--gap);
+  }
   .problem {
     display: flex;
     align-items: center;
     gap: 1rem;
-    margin-bottom: var(--gap);
     padding: 1rem 1.4rem;
     font-size: 1.15rem;
     color: var(--a-ink);
@@ -251,7 +286,7 @@
    * whatever more it needs. Narrower, they take rows of their own, today
    * first. --gap is the room between the parts, the same everywhere.
    */
-  .problem,
+  .alerts,
   .ov {
     --gap: 1.75rem;
   }
@@ -350,7 +385,7 @@
   }
   /* Two to a row, the last on its own across both. */
   @media (max-width: 1200px) {
-    .problem,
+    .alerts,
     .ov {
       --gap: 1.25rem;
     }
@@ -377,7 +412,7 @@
     }
   }
   @media (max-width: 600px) {
-    .problem,
+    .alerts,
     .ov {
       --gap: 1rem;
     }
@@ -394,7 +429,7 @@
   }
   /* A monitor on its side: everything stacked in the screen's height, the four figures in a row, the short answers two by two. */
   @media (orientation: portrait) and (min-width: 900px) and (min-height: 1500px) {
-    .problem,
+    .alerts,
     .ov {
       --gap: 1.4rem;
     }

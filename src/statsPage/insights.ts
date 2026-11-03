@@ -12,6 +12,7 @@
 
 import type { Named } from './api.ts';
 import { siteName } from './chart.ts';
+import { DEVICES, type Device } from '../lib/stutter.ts';
 import { FIRSTS, LATER_FIRSTS, RETURNS, VISIT_KINDS, answersPerDay, asked, zFor, type Cohort, type Counts, type First, type Reach, type Return } from './model.ts';
 
 /** Well beyond chance: a change of `d` on a count of `n` known all but exactly (z times its square root, and a few besides, so tiny counts never qualify). */
@@ -486,4 +487,39 @@ export function troubleOf(now: Counts, before: Counts): Trouble | null {
   const today = restChances > 0 ? worse(failedToday, failed(now) - failedToday, chancesToday / restChances) : null;
 
   return period || today ? { period, today } : null;
+}
+
+/**
+ * The game going worse than in the period before, the way a deploy breaks
+ * it: its own scripts' errors, or pages missing a part that didn't load,
+ * far above the period before's for as many visits; a kind of device whose
+ * games stuttered far more often. Each beyond chance for one of them all
+ * (zFor), as the overview speaks of any. Null where none is.
+ */
+export interface Health {
+  errors: { key: 'script' | 'chunk'; count: number; expected: number }[];
+  stutter: { device: Device; share: number; before: number; games: number }[];
+}
+
+export function healthOf(now: Counts, before: Counts): Health | null {
+  const z = zFor(2 + DEVICES.length);
+  const errorsOf = (c: Counts, key: string) => c.failures.find((f) => f.key === key)?.count ?? 0;
+  // At most once a page load: as many more visits bring as many more.
+  const scale = before.visitors.total ? now.visitors.total / before.visitors.total : 0;
+  const errors = scale
+    ? (['script', 'chunk'] as const)
+        .map((key) => ({ key, count: errorsOf(now, key), was: errorsOf(before, key) }))
+        .filter((e) => e.count > e.was * scale && countsApart(e.count, e.was, { scale, z }))
+        .map(({ key, count, was }) => ({ key, count, expected: was * scale }))
+    : [];
+  const sum = (vs: number[]) => vs.reduce((n, v) => n + v, 0);
+  const stutter = DEVICES.flatMap((device) => {
+    const games = sum(now.frames[device].games);
+    const gamesBefore = sum(before.frames[device].games);
+    if (!games || !gamesBefore) return [];
+    const share = (100 * sum(now.frames[device].stuttered)) / games;
+    const was = (100 * sum(before.frames[device].stuttered)) / gamesBefore;
+    return share > was && rateBeyondChance(share, games, was, gamesBefore, z) ? [{ device, share, before: was, games }] : [];
+  });
+  return errors.length || stutter.length ? { errors, stutter } : null;
 }
