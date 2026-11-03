@@ -1,9 +1,9 @@
 // What Analytics reads for a period, and the periods it offers.
 
-import type { Named } from './api';
+import type { Named, Span } from './api';
 import type { Changes } from './changes';
 import type { Counts } from './model';
-import { addDays } from './zone';
+import { addDays, dayIn, hoursIn, midnight } from './zone.ts';
 
 /** A period read: its days and the same many before, with what the start page's visitors came on and from. */
 export interface Read {
@@ -37,6 +37,27 @@ export interface Read {
   began: string | null;
   /** What came in since the read before it (changes.ts keptChanges). */
   changes?: Changes | null;
+}
+
+/**
+ * What a read of `days` at `at` asks GoatCounter for, in the account's
+ * `zone`: from the start of the first day to now, and the period before to
+ * as far into its last day as today has gone (by the clock there: the two
+ * compare like with like). The period before from the day before it: where
+ * counting began earlier, that day has counts, which tell the period before
+ * was counted from its first (model.ts countedSpan); its counts aren't
+ * taken (countsOf). `until`: the hours today has had, a part of the one
+ * it's in too.
+ */
+export function spansOf(zone: string, at: Date, days: number) {
+  const today = dayIn(zone, at);
+  const from = addDays(today, -(days - 1));
+  const fromBefore = addDays(from, -days);
+  const toBefore = addDays(today, -days);
+  const until = hoursIn(zone, today, at);
+  const now: Span = { start: midnight(zone, from), end: at };
+  const before: Span = { start: midnight(zone, addDays(fromBefore, -1)), end: new Date(midnight(zone, toBefore).getTime() + until * 3_600_000) };
+  return { today, from, fromBefore, toBefore, until, now, before };
 }
 
 /** Whether counting began inside the period, so it starts there and not `span` days back. */

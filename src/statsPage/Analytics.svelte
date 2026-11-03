@@ -32,11 +32,11 @@
   import KeyGate from './KeyGate.svelte';
   import { countedSpan, countsOf, daysBetween, firstCounted } from './model';
   import Overview from './Overview.svelte';
-  import { COMPARE, PERIODS, VIEWS, counted, type Read, type View } from './read';
+  import { COMPARE, PERIODS, VIEWS, counted, spansOf, type Read, type View } from './read';
   import Seg from './Seg.svelte';
   import { depthCalls, hashOf, selOf, sliceCalls, type Sel, type Slices } from './slices';
   import VisitorsView from './VisitorsView.svelte';
-  import { addDays, dayIn, hoursIn, midnight } from './zone';
+  import { addDays, midnight } from './zone';
   import { CHANNEL } from '../lib/channel';
   import { demoSlices, demoUpdate } from './demo';
   import { keepAwake } from '../lib/wakeLock';
@@ -193,21 +193,10 @@
       else progress = ++done / steps;
       if (ask !== asked) return;
       const tz = zone.zone;
-      // From the start of the first day to now, and the period before to as
-      // far into its last day as today has gone (by the clock there): the two
-      // compare like with like.
       const at = new Date();
-      const today = dayIn(tz, at);
-      const from = addDays(today, -(days - 1));
-      const fromBefore = addDays(from, -days);
-      const toBefore = addDays(today, -days);
-      const now: Span = { start: midnight(tz, from), end: at };
-      // (By the clock: on a day the clocks change, the time gone since midnight is an hour off it.)
-      const before: Span = { start: midnight(tz, fromBefore), end: new Date(midnight(tz, toBefore).getTime() + hoursIn(tz, today, at) * 3_600_000) };
+      const { today, from, fromBefore, toBefore, until, now, before } = spansOf(tz, at, days);
       const [n, b] = await Promise.all([step(pathCounts(k, now, tz, signal)), step(pathCounts(k, before, tz, signal))]);
       if (ask !== asked) return;
-      // The hours today has had (a part of the one it's in too), which the period before's last day is cut at too.
-      const until = hoursIn(tz, today, at);
       // The period starts where whole days were counted (model.ts countedSpan), the one before the same many days back; who the visitors were is read from there too.
       const first = firstCounted([...b.paths, ...n.paths]);
       const { start, compare } = countedSpan(first, from, fromBefore, today);

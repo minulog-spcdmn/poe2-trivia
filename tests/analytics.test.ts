@@ -5,6 +5,7 @@ import { axis, labelled, restsOn } from '../src/statsPage/chart.ts';
 import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
 import { appShare, backShare, beforeShare, beyondChanceOf, comersOf, failureRate, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
+import { spansOf } from '../src/statsPage/read.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
 import { apartFrom, countsIn, depthCalls, depthsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
 import { currentName, isoWeek, underNamesNow, weekMonday, busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, countedSpan, dayAverageHours, dayAverages, firstCounted, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, stutterTop, usualByNow, usualByNowUtc, USUAL_DAYS, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
@@ -1352,4 +1353,45 @@ test('the night the clocks go back, its 02:00 holds both of its hours; read in s
   // When each hour on the clock begins: the doubled 02:00 lasts two hours, the day 25.
   const s = hourStarts(tz, '2026-10-25');
   assert.deepEqual([s[2], s[3], s[24]].map((t) => new Date(t).toISOString()), ['2026-10-25T00:00:00.000Z', '2026-10-25T02:00:00.000Z', '2026-10-25T23:00:00.000Z']);
+});
+
+/** One visit every `every` minutes from `from` to `at`. */
+const steady = (from: string, at: Date, every = 30): Hit[] => {
+  const out: Hit[] = [];
+  for (let t = Date.parse(from); t < at.getTime(); t += every * 60_000) out.push({ path: '/', t });
+  return out;
+};
+/** Where a read made as Analytics' load() makes it starts its period, and whether it compares. */
+const readAt = (hits: Hit[], at: Date, days: number) => {
+  const tz = 'Europe/Berlin';
+  const s = spansOf(tz, at, days);
+  const n = goatCounter(hits, s.now, tz, at);
+  const b = goatCounter(hits, s.before, tz, at);
+  return { ...s, ...countedSpan(firstCounted([...b, ...n]), s.from, s.fromBefore, s.today) };
+};
+
+test('a site counted from long before is compared with the period before, in winter and in summer', () => {
+  for (const [iso, days] of [
+    ['2026-11-09T09:30:00Z', 7],
+    ['2026-11-20T09:30:00Z', 7],
+    ['2026-12-20T09:30:00Z', 30],
+    ['2026-07-20T09:30:00Z', 7],
+  ] as const) {
+    const at = new Date(iso);
+    const r = readAt(steady('2026-03-01T00:00:00Z', at, 60), at, days);
+    assert.deepEqual([r.start, r.compare], [r.from, true], iso);
+  }
+});
+
+test('counting begun partway through a day: the period starts the day after, and compares once the day before it was counted whole', () => {
+  // Counting began at 15:00 on Oct 16 (Berlin).
+  const hits = (at: Date) => steady('2026-10-16T13:00:00Z', at);
+  const week = new Date('2026-10-20T09:30:00Z');
+  assert.deepEqual(readAt(hits(week), week, 7).start, '2026-10-17');
+  assert.equal(readAt(hits(week), week, 7).compare, false);
+  // On Oct 31 the week before runs from Oct 18, counted whole; on Oct 24 it ran from Oct 11, before counting began.
+  for (const [iso, compare] of [['2026-10-31T09:30:00Z', true], ['2026-10-24T09:30:00Z', false], ['2026-10-30T09:30:00Z', true]] as const) {
+    const at = new Date(iso);
+    assert.equal(readAt(hits(at), at, 7).compare, compare, iso);
+  }
 });
