@@ -1,25 +1,38 @@
 <script lang="ts" generics="T extends string | number">
   // A row of choices, one picked: the game's own (the lobby's settings),
   // square buttons side by side, the picked one lit in gold. A radio group:
-  // Tab reaches the picked one, the arrow keys (Home, End) pick along it.
+  // Tab reaches the picked one, the arrow keys (Home, End) move along it and
+  // Space or Enter picks, so arrowing past a choice neither reads its days
+  // nor leaves it in the history.
   let { options, value, onpick, label }: { options: readonly { value: T; name: string }[]; value: T; onpick: (v: T) => void; label: string } = $props();
 
   let el = $state<HTMLElement>();
   const lit = $derived(Math.max(0, options.findIndex((o) => o.value === value)));
+  /** The choice the arrows have reached, while focus is in the row; the picked one otherwise. */
+  let reached = $state<number | null>(null);
+  const at = $derived(reached ?? lit);
   function key(e: KeyboardEvent) {
     const step = ({ ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 } as Record<string, number>)[e.key];
-    const to = e.key === 'Home' ? 0 : e.key === 'End' ? options.length - 1 : step === undefined ? null : (lit + step + options.length) % options.length;
+    const to = e.key === 'Home' ? 0 : e.key === 'End' ? options.length - 1 : step === undefined ? null : (at + step + options.length) % options.length;
     if (to === null) return;
     e.preventDefault();
-    if (options[to].value !== value) onpick(options[to].value);
+    reached = to;
     el?.querySelectorAll<HTMLElement>('button')[to]?.focus();
   }
+  function choose(i: number) {
+    reached = i;
+    if (options[i].value !== value) onpick(options[i].value);
+  }
+  /** Focus gone from the row: Tab comes back to the picked one. */
+  const left = (e: FocusEvent) => {
+    if (!el?.contains(e.relatedTarget as Node)) reached = null;
+  };
 </script>
 
 <!-- svelte-ignore a11y_interactive_supports_focus -->
-<div class="seg" role="radiogroup" aria-label={label} bind:this={el} onkeydown={key}>
+<div class="seg" role="radiogroup" aria-label={label} bind:this={el} onkeydown={key} onfocusout={left}>
   {#each options as o, i (o.value)}
-    <button type="button" role="radio" class:on={o.value === value} aria-checked={o.value === value} tabindex={i === lit ? 0 : -1} onclick={() => o.value !== value && onpick(o.value)}>{o.name}</button>
+    <button type="button" role="radio" class:on={o.value === value} aria-checked={o.value === value} tabindex={i === at ? 0 : -1} onclick={() => choose(i)}>{o.name}</button>
   {/each}
 </div>
 

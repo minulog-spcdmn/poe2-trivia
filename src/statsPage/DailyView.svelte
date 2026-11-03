@@ -112,7 +112,7 @@
     {#if answered.length}
       <DailyTable days={all ? newestFirst : newestFirst.slice(0, 14)} {itemOf} label="Today's unique, every day" {today} />
       {#if newestFirst.length > 14}
-        <button type="button" class="more" onclick={() => (all = !all)}>{all ? 'Show fewer' : `Show all ${newestFirst.length} days`}</button>
+        <button type="button" class="more" aria-expanded={all} onclick={() => (all = !all)}>{all ? 'Show fewer' : `Show all ${newestFirst.length} days`}</button>
       {/if}
     {:else}
       <p class="soft">Nobody answered in these days.</p>
@@ -124,6 +124,7 @@
     items={[
       "The game's days run from midnight to midnight UTC, when the item changes.",
       'Hardest and easiest: days with at least 3 players, today left out, whose share named is further from the usual than chance would take it with as many players; ranked with each share weighed by how many played, so a day of 3 says less than a day of 30.',
+      'The more days are looked at, the further from the usual a day must be to count as hardest or easiest, or a long period would turn some up by chance alone. With few players a day there are often none.',
     ]}
   />
   </div>

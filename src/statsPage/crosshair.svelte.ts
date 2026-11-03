@@ -24,9 +24,9 @@ export class Crosshair {
         this.at = null;
       }
     };
-    window.addEventListener('pointerdown', away);
+    window.addEventListener("pointerdown", away);
     return () => {
-      window.removeEventListener('pointerdown', away);
+      window.removeEventListener("pointerdown", away);
       this.#svg = undefined;
     };
   };
@@ -34,29 +34,43 @@ export class Crosshair {
   #near(clientX: number): number | null {
     const n = this.count();
     if (!this.#svg || !n) return null;
-    return Math.max(0, Math.min(n - 1, this.index(clientX - this.#svg.getBoundingClientRect().left)));
+    return Math.max(
+      0,
+      Math.min(
+        n - 1,
+        this.index(clientX - this.#svg.getBoundingClientRect().left),
+      ),
+    );
   }
 
   move = (e: PointerEvent) => {
-    if (e.pointerType === 'mouse' || this.#pinned) this.at = this.#near(e.clientX);
+    if (e.pointerType === "mouse" || this.#pinned)
+      this.at = this.#near(e.clientX);
   };
   down = (e: PointerEvent) => {
-    if (e.pointerType === 'mouse') return;
+    if (e.pointerType === "mouse") return;
     this.#pinned = true;
     this.at = this.#near(e.clientX);
   };
   leave = (e: PointerEvent) => {
-    if (e.pointerType === 'mouse') this.at = null;
+    if (e.pointerType === "mouse") this.at = null;
   };
   blur = () => {
     if (!this.#pinned) this.at = null;
   };
   key = (e: KeyboardEvent) => {
     const n = this.count();
-    if (e.key === 'Escape') this.at = null;
-    if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || !n) return;
+    if (e.key === "Escape") {
+      // A touch's pinned note too, or the next finger over the chart brings it back.
+      this.#pinned = false;
+      this.at = null;
+    }
+    if ((e.key !== "ArrowLeft" && e.key !== "ArrowRight") || !n) return;
     e.preventDefault();
-    const step = e.key === 'ArrowRight' ? 1 : -1;
-    this.at = Math.max(0, Math.min(n - 1, (this.at ?? (step > 0 ? -1 : n)) + step));
+    const step = e.key === "ArrowRight" ? 1 : -1;
+    this.at = Math.max(
+      0,
+      Math.min(n - 1, (this.at ?? (step > 0 ? -1 : n)) + step),
+    );
   };
 }

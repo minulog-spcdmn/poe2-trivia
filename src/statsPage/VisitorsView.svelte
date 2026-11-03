@@ -19,6 +19,7 @@
   import { deviceLink, placeLink, systemLink } from './slices';
   import How from './How.svelte';
   import TrendChart from './TrendChart.svelte';
+  import { untrack, type Snippet } from 'svelte';
 
   let { read, period, weekly }: { read: Read; period: Period; weekly: boolean } = $props();
 
@@ -43,6 +44,37 @@
     }
     return { ...by, all: by.computer + by.phone + by.other };
   });
+
+  let innerWidth = $state(1400);
+  let innerHeight = $state(900);
+  /** A monitor on its side. */
+  const upright = $derived(innerHeight > innerWidth && innerWidth >= 900 && innerHeight >= 1500);
+  /**
+   * A big monitor, or one on its side: a column of sections each, coming
+   * back beside the visits. The view is taller than one screen even so (a
+   * first visit's thirteen steps, the lists), so the chart isn't fitted to
+   * the screen, which would only squeeze it: it takes what its column has
+   * left beside the tallest, up to a height that still reads as a chart in
+   * a narrow column.
+   */
+  const columns = $derived.by((): Snippet[][] | null => {
+    if (upright) return [[visits, comeBack, byWeek, whereFrom], [howFar, howLong, found, playOn]];
+    if (innerWidth >= 1900) return [[visits, comeBack, byWeek], [howFar, howLong], [whereFrom, found, playOn]];
+    return null;
+  });
+  /** The chart's own height: 340px at the root's 16px, grown with the type on a big monitor. */
+  const base = $derived(columns ? Math.round((340 / 16) * (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16)) : 340);
+  /** Each column's height, the chart at its own. */
+  let heights = $state<number[]>([]);
+  let chartH = $state(340);
+  $effect(() => {
+    const others = Math.max(0, ...heights.slice(1, columns?.length));
+    if (!columns || !heights[0]) return void (chartH = base);
+    const own = heights[0] - untrack(() => chartH) + base;
+    chartH = Math.round(Math.max(base, Math.min(innerHeight * (upright ? 0.3 : 0.42), base + others - own)));
+  });
+  /** What a step's share is of: page loads once those were counted, visits before (insights.ts reachedOf). */
+  const loads = (r: Reached) => (r.paged ? 'page loads' : 'visits');
 
   /** Whether the period before's share was counted from its first day: one counted only from a later day rests on those days alone, and isn't set against. */
   const whole = (r: { from: string | null }) => r.from !== null && r.from === B.days[0];
@@ -99,7 +131,7 @@
   });
 </script>
 
-<div class="stack">
+{#snippet visits()}
   <Section title="Visits a day" says="Visits to the start page each day; {fmt(L.visitors.total)} in all." area="chart">
     {#snippet aside()}
       <div class="total">
@@ -108,100 +140,138 @@
         <Delta now={perDay.now} before={perDay.before} digits={1} of={perDay.of} period={period.before} />
       </div>
     {/snippet}
-    <TrendChart days={L.days} now={L.visitors.perDay} before={B.visitors.perDay} {weekly} what="Visits" names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={340} />
+    <TrendChart days={L.days} now={L.visitors.perDay} before={B.visitors.perDay} {weekly} what="Visits" names={{ now: period.now, before: period.before[0].toUpperCase() + period.before.slice(1) }} height={chartH} />
   </Section>
+{/snippet}
 
-  <div class="two">
-    <Section title="How far a visit gets" says="The share of visits that got each step along.{since(journey)}" area="journey">
-      {#if journey.from}
-        <Shares rows={journeyRows} head="Step" label="Visits by how far they got" />
-      {:else}
-        <p class="soft">Not counted in these days.</p>
-      {/if}
-      {#if firsts.from}
-        <h3>A first visit</h3>
-        <p class="hint">Visits that found no save: mostly first visits.{since(firsts)}{laterSince}</p>
-        <Shares rows={firstRows} head="Step" label="First visits by how far they got" />
-      {/if}
-    </Section>
+{#snippet comeBack()}
+  <Section title="Who comes back" says="New, or back to a save, and how long since they last played.{since(comers)}" area="back">
+    {#if comers.from}
+      <div class="total left">
+        <b>{percent(comers.returned, comers.fresh + comers.returned)}</b>
+        <span class="soft">came back to their save</span>
+        <Delta now={back} before={whole(comersWas) ? backShare(comersWas) : null} rate of={{ now: comers.fresh + comers.returned, before: comersWas.fresh + comersWas.returned }} period={period.before} />
+      </div>
+      <Shares rows={comerRows} head="Who" label="Visits with no save, and back to one" />
+    {:else}
+      <p class="soft">Not counted in these days.</p>
+    {/if}
+  </Section>
+{/snippet}
 
-    <Section title="How long they stay" says="The share of visits with the game on screen this long.{since(stay)}" area="stay">
-      {#if stay.from}
-        <Shares rows={stayRows} head="On screen" label="Visits by how long they stayed" />
-      {:else}
-        <p class="soft">Not counted in these days.</p>
-      {/if}
-      <h3>What else they open</h3>
-      {#if opened.from}
-        <Shares rows={openedRows} head="Opened" label="Visits that opened the codex or the achievements" />
-      {:else}
-        <p class="soft">Nobody opened the codex or the achievements in these days.</p>
-      {/if}
-      {#if L.sync.paired || B.sync.paired}
-        <p class="line"><b>{fmt(L.sync.paired)}</b> {L.sync.paired === 1 ? 'device' : 'devices'} paired to sync. <Delta now={L.sync.paired} before={B.sync.paired} period={period.before} /></p>
-      {/if}
-    </Section>
-  </div>
-
-  <div class="two">
-    <Section title="Where they are" says="Visits by country." area="where">
-      <Bars bars={countries} top={10} empty="No visitors in these days." link={placeLink} fresh={freshOf(read.changes, read.at, 'countries')} />
-    </Section>
-    <Section title="How they found the game" says="Visits by the site they came from." area="found">
-      <Bars bars={refs} top={10} empty="No visitors in these days." />
-      {#if unsourced > 0.5}
-        <p class="hint">Most came with no site: a chat app's link or a bookmark has none. A link tagged poe2.quest/?ref=… says where it was posted.</p>
-      {/if}
-      {#if campaigns.length}
-        <h3>Tagged links</h3>
-        <p class="hint">Visits by the tag of their link (poe2.quest/?ref=…).</p>
-        <Bars bars={campaigns} top={6} />
-      {/if}
-    </Section>
-  </div>
-
-  <div class="two">
-    <Section title="Who comes back" says="New, or back to a save, and how long since they last played.{since(comers)}" area="back">
-      {#if comers.from}
-        <div class="total left">
-          <b>{percent(comers.returned, comers.fresh + comers.returned)}</b>
-          <span class="soft">came back to their save</span>
-          <Delta now={back} before={whole(comersWas) ? backShare(comersWas) : null} rate of={{ now: comers.fresh + comers.returned, before: comersWas.fresh + comersWas.returned }} period={period.before} />
-        </div>
-        <Shares rows={comerRows} head="Who" label="Visits with no save, and back to one" />
-      {:else}
-        <p class="soft">Not counted in these days.</p>
-      {/if}
-    </Section>
-
-    <Section title="What they play on" area="on">
-      {#if devices.all}
-        <div class="split" aria-hidden="true">
-          <i class="computer" style:flex-grow={devices.computer}></i>
-          <i class="phone" style:flex-grow={devices.phone}></i>
-          {#if devices.other}<i class="other" style:flex-grow={devices.other}></i>{/if}
-        </div>
-        <dl class="devices">
-          <div><dt><i class="computer"></i><a class="pick" href={deviceLink('Computer')}>Computer</a></dt><dd><b>{percent(devices.computer, devices.all)}</b> {fmt(devices.computer)}</dd></div>
-          <div><dt><i class="phone"></i><a class="pick" href={deviceLink('Phone or tablet')}>Phone or tablet</a></dt><dd><b>{percent(devices.phone, devices.all)}</b> {fmt(devices.phone)}</dd></div>
-          {#if devices.other}<div><dt><i class="other"></i>Other</dt><dd><b>{percent(devices.other, devices.all)}</b> {fmt(devices.other)}</dd></div>{/if}
-        </dl>
-        {#if app !== null}
-          <p class="line app"><b>{Math.round(app)}%</b> opened it as the installed app, from a home screen{restsOn(comers.app, comers.visitors, comers.from && comers.from > read.from ? comers.from : null)}; the rest in a browser. <Delta now={app} before={whole(comersWas) ? appShare(comersWas) : null} rate of={{ now: comers.visitors, before: comersWas.visitors }} period={period.before} /></p>
-        {/if}
-        <h3>By system</h3>
-        <Bars bars={systems} top={8} link={systemLink} fresh={freshOf(read.changes, read.at, 'systems')} />
-      {:else}
-        <p class="soft">No visitors in these days.</p>
-      {/if}
-    </Section>
-  </div>
-
+{#snippet byWeek()}
   {#if countable}
-    <!-- The whole width: a column for each of eight weeks. -->
     <Section title="By the week they first played" says="Visits each week after, for every 100 who first played that week." area="cohorts">
       <Cohorts cohorts={cohorts} />
     </Section>
+  {/if}
+{/snippet}
+
+{#snippet howFar()}
+  <Section title="How far a visit gets" says="The share of {loads(journey)} that got each step along.{since(journey)}" area="journey">
+    {#if journey.from}
+      <Shares rows={journeyRows} head="Step" counted={journey.paged ? 'Page loads' : 'Visits'} label="{journey.paged ? 'Page loads' : 'Visits'} by how far they got" />
+    {:else}
+      <p class="soft">Not counted in these days.</p>
+    {/if}
+    {#if firsts.from}
+      <h3>A first visit</h3>
+      <p class="hint">Visits that found no save: mostly first visits.{since(firsts)}{laterSince}</p>
+      <Shares rows={firstRows} head="Step" label="First visits by how far they got" />
+    {/if}
+  </Section>
+{/snippet}
+
+{#snippet howLong()}
+  <Section title="How long they stay" says="The share of {loads(stay)} with the game on screen this long.{since(stay)}" area="stay">
+    {#if stay.from}
+      <Shares rows={stayRows} head="On screen" counted={stay.paged ? 'Page loads' : 'Visits'} label="{stay.paged ? 'Page loads' : 'Visits'} by how long they stayed" />
+    {:else}
+      <p class="soft">Not counted in these days.</p>
+    {/if}
+    <h3>What else they open</h3>
+    {#if opened.from}
+      <Shares rows={openedRows} head="Opened" counted={opened.paged ? 'Page loads' : 'Visits'} label="{opened.paged ? 'Page loads' : 'Visits'} that opened the codex or the achievements" />
+    {:else}
+      <p class="soft">Nobody opened the codex or the achievements in these days.</p>
+    {/if}
+    {#if L.sync.paired || B.sync.paired}
+      <p class="line"><b>{fmt(L.sync.paired)}</b> {L.sync.paired === 1 ? 'device' : 'devices'} paired to sync. <Delta now={L.sync.paired} before={B.sync.paired} period={period.before} /></p>
+    {/if}
+  </Section>
+{/snippet}
+
+{#snippet whereFrom()}
+  <Section title="Where they are" says="Visits by country." area="where">
+    <Bars bars={countries} top={10} empty="No visitors in these days." link={placeLink} fresh={freshOf(read.changes, read.at, 'countries')} />
+  </Section>
+{/snippet}
+
+{#snippet found()}
+  <Section title="How they found the game" says="Visits by the site they came from." area="found">
+    <Bars bars={refs} top={10} empty="No visitors in these days." />
+    {#if unsourced > 0.5}
+      <p class="hint">Most came with no site: a chat app's link or a bookmark has none. A link tagged poe2.quest/?ref=… says where it was posted.</p>
+    {/if}
+    {#if campaigns.length}
+      <h3>Tagged links</h3>
+      <p class="hint">Visits by the tag of their link (poe2.quest/?ref=…).</p>
+      <Bars bars={campaigns} top={6} />
+    {/if}
+  </Section>
+{/snippet}
+
+{#snippet playOn()}
+  <Section title="What they play on" area="on">
+    {#if devices.all}
+      <div class="split" aria-hidden="true">
+        <i class="computer" style:flex-grow={devices.computer}></i>
+        <i class="phone" style:flex-grow={devices.phone}></i>
+        {#if devices.other}<i class="other" style:flex-grow={devices.other}></i>{/if}
+      </div>
+      <dl class="devices">
+        <div><dt><i class="computer"></i><a class="pick" href={deviceLink('Computer')}>Computer</a></dt><dd><b>{percent(devices.computer, devices.all)}</b> {fmt(devices.computer)}</dd></div>
+        <div><dt><i class="phone"></i><a class="pick" href={deviceLink('Phone or tablet')}>Phone or tablet</a></dt><dd><b>{percent(devices.phone, devices.all)}</b> {fmt(devices.phone)}</dd></div>
+        {#if devices.other}<div><dt><i class="other"></i>Other</dt><dd><b>{percent(devices.other, devices.all)}</b> {fmt(devices.other)}</dd></div>{/if}
+      </dl>
+      {#if app !== null}
+        <p class="line app"><b>{Math.round(app)}%</b> opened it as the installed app, from a home screen{restsOn(comers.app, comers.visitors, comers.from && comers.from > read.from ? comers.from : null)}; the rest in a browser. <Delta now={app} before={whole(comersWas) ? appShare(comersWas) : null} rate of={{ now: comers.visitors, before: comersWas.visitors }} period={period.before} /></p>
+      {/if}
+      <h3>By system</h3>
+      <Bars bars={systems} top={8} link={systemLink} fresh={freshOf(read.changes, read.at, 'systems')} />
+    {:else}
+      <p class="soft">No visitors in these days.</p>
+    {/if}
+  </Section>
+{/snippet}
+
+<svelte:window bind:innerWidth bind:innerHeight />
+
+<div class="stack">
+  {#if columns}
+    <div class="columns" style:--columns={columns.length}>
+      {#each columns as column, i (i)}
+        <div class="column" bind:clientHeight={heights[i]}>
+          {#each column as part (part)}{@render part()}{/each}
+        </div>
+      {/each}
+    </div>
+  {:else}
+    {@render visits()}
+    <div class="two">
+      {@render comeBack()}
+      {@render playOn()}
+    </div>
+    <!-- The whole width: a column for each of eight weeks. -->
+    {@render byWeek()}
+    <div class="two">
+      {@render howFar()}
+      {@render howLong()}
+    </div>
+    <div class="two">
+      {@render whereFrom()}
+      {@render found()}
+    </div>
   {/if}
 
   <How
@@ -212,7 +282,8 @@
       "Safari on iPhone and iPad clears a save after about a week away, so iOS can't show anyone coming back after a week.",
       'A link in a chat app or a bookmark has no site, so it shows as typed in.',
       cohorts.length > 0 && !countable && 'Visits by the week players first played show once a week has been counted from its Monday (weeks are cut in UTC).',
-      countable && 'By the week they first played: not a percent, as a keen player visits several times a week. A week begun before the period has its visits alone, in grey italics. Weeks are cut in UTC.',
+      countable && 'By the week they first played: not a percent, as a keen player visits several times a week. A week begun before the period has its visits alone, in grey italics. The week still going has only its days so far, and is marked so. Weeks are cut in UTC.',
+      'A change is coloured where chance alone would move it that far about 1 time in 20. Each row is tested on its own, so a table of thirty rows shows one or two coloured by chance.',
     ]}
   />
 </div>
@@ -326,49 +397,45 @@
   .soft {
     color: var(--a-muted);
   }
+  /* One column: coming back straight under the visits, what they play on last. */
   @media (max-width: 900px) {
-    .two {
-      grid-template-columns: minmax(0, 1fr);
-    }
-  }
-  /* A big monitor: two columns, the chart beside how far a visit gets. */
-  @media (min-width: 1900px) {
-    .stack {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      grid-template-areas:
-        'chart journey'
-        'back stay'
-        'where found'
-        'on on'
-        'cohorts cohorts';
-      align-items: stretch;
-    }
     .two {
       display: contents;
     }
-    .stack :global(.section[data-area='chart']) {
-      grid-area: chart;
+    .stack > :global(.section[data-area='cohorts']) {
+      order: 1;
     }
-    .stack :global(.section[data-area='journey']) {
-      grid-area: journey;
+    .two > :global(.section) {
+      order: 2;
     }
-    .stack :global(.section[data-area='stay']) {
-      grid-area: stay;
+    .two > :global(.section[data-area='back']) {
+      order: 0;
     }
-    .stack :global(.section[data-area='back']) {
-      grid-area: back;
+    .two > :global(.section[data-area='on']) {
+      order: 3;
     }
-    .stack :global(.section[data-area='where']) {
-      grid-area: where;
+    .stack > :global(.how) {
+      order: 4;
     }
-    .stack :global(.section[data-area='found']) {
-      grid-area: found;
-    }
-    .stack :global(.section[data-area='on']) {
-      grid-area: on;
-    }
-    .stack :global(.section[data-area='cohorts']) {
-      grid-area: cohorts;
-    }
+  }
+  /* A big monitor, or one on its side: a column of sections each, each as tall as its sections. */
+  .columns {
+    display: grid;
+    grid-template-columns: repeat(var(--columns), minmax(0, 1fr));
+    align-items: start;
+    gap: 1.25rem;
+  }
+  .column {
+    display: grid;
+    gap: 1.25rem;
+  }
+  /* Rows a little closer, and the names each on a line, so the view keeps to the screen. */
+  .columns :global(.table th),
+  .columns :global(.table td) {
+    padding-top: 0.4rem;
+    padding-bottom: 0.4rem;
+  }
+  .columns :global(.bars li) {
+    padding: 0.3rem 0;
   }
 </style>
