@@ -78,7 +78,8 @@
       <div>
         <span class="name">{f.name}</span>
         <b>{fmt(f.value)}{#if f.added}<span class="added" title="New since the last update">+{fmt(f.added)} new</span>{/if}</b>
-        {#if f.vs}<span class="vs"><i class={f.vs.tone}>{f.vs.says}</i> · usually {fmt(f.vs.usual)} by now</span>{/if}
+        <!-- (Bound to what it follows, so a line never starts with the dot.) -->
+        {#if f.vs}<span class="vs"><i class={f.vs.tone}>{f.vs.says}</i>&nbsp;· <span class="usual">usually {fmt(f.vs.usual)} by now</span></span>{/if}
         {#if f.note}<span class="soft">{f.note}</span>{/if}
       </div>
     {/each}
@@ -119,18 +120,24 @@
     font-family: var(--font-data);
     font-size: 1rem;
     font-weight: 400;
+    letter-spacing: 0;
     color: var(--a-muted);
   }
   .figures {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 1rem 1.5rem;
+    gap: 0.15rem 1.5rem;
   }
+  /* Each figure's name, figure and lines on rows shared with the others, so a name taking two lines moves all three figures down together. */
   .figures > div {
     display: grid;
+    grid-row: span 4;
+    grid-template-rows: subgrid;
     align-content: start;
-    gap: 0.15rem;
     min-width: 0;
+  }
+  .usual {
+    white-space: nowrap;
   }
   .name {
     font-weight: 600;
@@ -175,19 +182,38 @@
   .lit .when {
     color: var(--a-now);
   }
-  /* A narrow box (a phone): the three a size smaller, so each keeps to its line. */
-  @container (max-width: 24rem) {
-    .figures {
-      gap: 0.8rem 1rem;
+  /* A narrow box (a phone, the overview's side column): a row each, the name and its lines on the left, the figure on the right, a size smaller. */
+  @container (max-width: 26rem) {
+    .today:not(.tall) .figures {
+      grid-template-columns: minmax(0, 1fr);
+      row-gap: 0.8rem;
     }
-    .figures b {
+    .today:not(.tall) .figures > div {
+      grid-row: auto;
+      grid-template-rows: none;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 0.15rem 1rem;
+    }
+    .today:not(.tall) .figures > div > :not(b) {
+      grid-column: 1;
+    }
+    .today:not(.tall) .figures b {
+      grid-column: 2;
+      grid-row: 1 / span 3;
       font-size: 2.1rem;
+      text-align: right;
     }
   }
   /* Beside a big chart: one under another, larger. */
   .tall .figures {
     grid-template-columns: minmax(0, 1fr);
     row-gap: 1rem;
+  }
+  .tall .figures > div {
+    grid-row: auto;
+    grid-template-rows: none;
+    gap: 0.15rem;
   }
   .tall .figures b {
     font-size: 3.2rem;

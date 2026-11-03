@@ -12,16 +12,19 @@
   // only while that view is open, and seldom (slices.ts): a call for each
   // thing people do and each way to break it down.
   //
-  // Each period read is kept (this tab, and through a reload), so switching
-  // back shows it at once; it is read again once it's 5 minutes old, by
-  // itself while the page is in view, as long as the hour's requests stay
-  // well under GoatCounter's 500 (api.ts requestsLastHour). The numbers on
-  // show stay as they are while newer ones are read.
+  // Each period read is kept in this browser, for its other tabs too, so
+  // switching back shows it at once and a second tab (the monitor beside a
+  // laptop's) reads nothing the first has; it is read again once it's 5
+  // minutes old, by itself while the page is in view, as long as the hour's
+  // requests stay well under GoatCounter's 500 (api.ts requestsLastHour).
+  // The numbers on show stay as they are while newer ones are read. A
+  // period read for the first time shows its counts as soon as they're in,
+  // who came and from where after.
   import { onMount, setContext, tick, untrack } from 'svelte';
-  import { readStored, removeStoredStarting, writeStored } from '../lib/storage';
+  import { onStoredElsewhere, readStored, removeStored, removeStoredStarting, storeKey, writeStored } from '../lib/storage';
   import { ApiError, Cancelled, DASHBOARD, HOUR_LIMIT, accountZone, forgetKey, pathCounts, pathsBy, requestsLastHour, saveKey, savedKey, visitorsBy, type Named, type Span } from './api';
   import { sameSites, spikesOf } from './insights';
-  import { shortDay } from './chart';
+  import { dayRange, shortDay } from './chart';
   import { keptChanges } from './changes';
   import { DAY_REFS_KEY, dayRefsOf, dayRefsToKeep } from './dayRefs';
   import DailyView from './DailyView.svelte';
@@ -32,13 +35,13 @@
   import KeyGate from './KeyGate.svelte';
   import { countedSpan, countsOf, daysBetween, firstCounted } from './model';
   import Overview from './Overview.svelte';
-  import { COMPARE, PERIODS, VIEWS, counted, type Read, type View } from './read';
+  import { COMPARE, PERIODS, READ_V, VIEWS, counted, coverOf, keptRead, spansOf, untilDay, type Read, type View } from './read';
   import Seg from './Seg.svelte';
   import { depthCalls, hashOf, selOf, sliceCalls, type Sel, type Slices } from './slices';
   import VisitorsView from './VisitorsView.svelte';
-  import { addDays, dayIn, hoursIn, midnight } from './zone';
+  import { addDays, dayIn, midnight } from './zone';
   import { CHANNEL } from '../lib/channel';
-  import { demoSlices, demoUpdate } from './demo';
+  import { demoSlices, demoStateOf, demoUpdate } from './demo';
   import { keepAwake } from '../lib/wakeLock';
 
   /** A period is read again once it's this old. */
@@ -52,13 +55,21 @@
 
   /** stats.html?demo, on the dev server and the beta: made-up numbers (demo.ts), no key and no calls. */
   const demo = CHANNEL !== 'live' && new URLSearchParams(location.search).has('demo');
+  /** The state the demo's query asks for (demo.ts demoStateOf: `since`, `compare=0`, `incomplete`, `first`, `alert`). */
+  const demoState = demo ? demoStateOf(new URLSearchParams(location.search), dayIn('Europe/Berlin', new Date())) : {};
   let key = $state(demo ? 'demo' : savedKey());
   let refused = $state('');
-  const stored = Number(readStored('analytics.days'));
-  const firstSpan = PERIODS.some((p) => p.value === stored) ? stored : 30;
-  let span = $state<number>(firstSpan);
+  /** The key GoatCounter turned down, back in the door's field to put right. */
+  let typed = $state('');
   /** The day counting began, once a read has started there (counted): the periods it hasn't reached yet are one choice. Kept, for the periods read inside it. */
-  let began = $state<string | null>(demo ? null : readStored('analytics.began'));
+  const firstBegan = demo ? (demoState.since ? addDays(demoState.since, 1) : null) : readStored('analytics.began');
+  let began = $state<string | null>(firstBegan);
+  const stored = Number(readStored('analytics.days'));
+  const kept = PERIODS.some((p) => p.value === stored) ? stored : 30;
+  // A period kept from before that counting hasn't reached yet is the one that holds it ("Since Oct 16"): read as both, it would be read twice. (Today by this browser's clock: the account's zone isn't known yet, and the cover effect below puts a day's difference right.)
+  const fits = coverOf(firstBegan, dayIn(Intl.DateTimeFormat().resolvedOptions().timeZone, new Date()));
+  const firstSpan = fits && kept > fits.value ? fits.value : kept;
+  let span = $state<number>(firstSpan);
 
   const viewOf = (hash: string): View => VIEWS.find((v) => v.value !== 'overview' && (`#${v.value}` === hash || hash.startsWith(`#${v.value}/`)))?.value ?? 'overview';
   let view = $state<View>(viewOf(location.hash));
@@ -108,6 +119,8 @@
     view = viewOf(location.hash);
     sel = selOf(location.hash);
     board = location.hash === BOARD;
+    // Back out of the board leaves its full screen too, as its X does.
+    if (!board && document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
     await tick();
     window.scrollTo({ top: (history.state as { y?: number } | null)?.y ?? 0 });
   }
@@ -120,25 +133,27 @@
     go(viewOf(href), selOf(href));
   }
 
-  const cache = new Map<number, Read>();
+  // Kept in localStorage, so every tab finds the newest any of them read; and here, as kept (`raw`), for where storage has no room.
+  const readName = (days: number) => `analytics.read.${days}`;
+  const cache = new Map<number, { raw: string; r: Read }>();
   const cached = (days: number): Read | null => {
+    const raw = readStored(readName(days));
     const had = cache.get(days);
-    if (had) return had;
-    try {
-      const r = JSON.parse(readStored(`analytics.read.${days}`, 'session') ?? 'null') as Read | null;
-      if (r?.v !== 12 || r.span !== days) return null;
-      cache.set(days, r);
-      return r;
-    } catch {
-      return null;
-    }
+    if (raw === null || raw === had?.raw) return had?.r ?? null;
+    const r = keptRead(raw, days);
+    if (r && (!had || r.at >= had.r.at)) cache.set(days, { raw, r });
+    return cache.get(days)?.r ?? null;
   };
   const keep = (r: Read) => {
-    cache.set(r.span, r);
-    writeStored(`analytics.read.${r.span}`, JSON.stringify(r), 'session');
+    const raw = JSON.stringify(r);
+    cache.set(r.span, { raw, r });
+    writeStored(readName(r.span), raw);
   };
 
   let read = $state<Read | null>(cached(firstSpan));
+  /** The read on show while it has only its counts, its lists still on the way (its span and time). */
+  let partial = $state<{ span: number; at: number } | null>(null);
+  const isPartial = $derived(!!read && !!partial && read.span === partial.span && read.at === partial.at);
   let loading = $state(false);
   let progress = $state(0);
   let failed = $state('');
@@ -157,12 +172,24 @@
     reading = null;
     asked++;
     loading = false;
+    doneReading();
+  }
+  // A read under way in any tab (its tab, period and start): another tab of the same period waits for it rather than ask GoatCounter the same, and shows it as it's kept (fromElsewhere). Taken as given up after READING_MS, should its tab have closed mid-read.
+  const READING = 'analytics.reading';
+  const READING_MS = 2 * 60_000;
+  const TAB = Math.random().toString(36).slice(2);
+  function readingElsewhere(days: number) {
+    const [tab, of, since] = (readStored(READING) ?? '').split(' ');
+    return tab !== TAB && Number(of) === days && Date.now() - Number(since) < READING_MS;
+  }
+  function doneReading() {
+    if (readStored(READING)?.startsWith(`${TAB} `)) removeStored(READING);
   }
   /** Reads `days` (the period on show): `force` reads it even while fresh, and asks the time zone again. */
   async function load(days = span, force = false) {
     if (!key) return;
     if (demo) {
-      read = demoUpdate(days);
+      read = demoUpdate(days, new Date(), demoState);
       return;
     }
     const had = cached(days);
@@ -174,6 +201,8 @@
     }
     if (had) read = had;
     stopReading();
+    if (!force && readingElsewhere(days)) return;
+    writeStored(READING, `${TAB} ${days} ${Date.now()}`);
     const ask = asked;
     const ctrl = (reading = new AbortController());
     const signal = ctrl.signal;
@@ -181,7 +210,7 @@
     loading = true;
     failed = '';
     progress = 0;
-    const steps = 9;
+    let steps = 10;
     let done = 0;
     const step = <T,>(p: Promise<T>) =>
       p.then((v) => {
@@ -193,36 +222,58 @@
       else progress = ++done / steps;
       if (ask !== asked) return;
       const tz = zone.zone;
-      // From the start of the first day to now, and the period before to as
-      // far into its last day as today has gone (by the clock there): the two
-      // compare like with like.
       const at = new Date();
-      const today = dayIn(tz, at);
-      const from = addDays(today, -(days - 1));
-      const fromBefore = addDays(from, -days);
-      const toBefore = addDays(today, -days);
-      const now: Span = { start: midnight(tz, from), end: at };
-      // (By the clock: on a day the clocks change, the time gone since midnight is an hour off it.)
-      const before: Span = { start: midnight(tz, fromBefore), end: new Date(midnight(tz, toBefore).getTime() + hoursIn(tz, today, at) * 3_600_000) };
-      const [n, b] = await Promise.all([step(pathCounts(k, now, signal)), step(pathCounts(k, before, signal))]);
+      // Nothing from before counting began, where that's known: a Quarter or a Year read since then reads only what's there.
+      const { today, from, fromBefore, toBefore, until, now, before } = spansOf(tz, at, days, began);
+      if (!before) steps--;
+      const none = { paths: [], complete: true };
+      const [n, b] = await Promise.all([step(pathCounts(k, now, tz, signal)), before ? step(pathCounts(k, before, tz, signal)) : none]);
       if (ask !== asked) return;
-      // The hours today has had (a part of the one it's in too), which the period before's last day is cut at too.
-      const until = hoursIn(tz, today, at);
       // The period starts where whole days were counted (model.ts countedSpan), the one before the same many days back; who the visitors were is read from there too.
       const first = firstCounted([...b.paths, ...n.paths]);
       const { start, compare } = countedSpan(first, from, fromBefore, today);
       const shown: Span = { start: midnight(tz, start), end: at };
-      const shownBefore: Span = { ...before, start: midnight(tz, addDays(start, -days)) };
-      const [systems, countries, refs, campaigns, countriesBefore, refsBefore] = await Promise.all([
+      // Who brought more or fewer than the period before, only where it's compared (WhatHappened). Countries are kept by the day, so they're compared over whole days alone: the period's to yesterday, as many before.
+      const against = compare && before ? { ...before, start: midnight(tz, addDays(start, -days)) } : null;
+      if (!against) steps -= 3;
+      const counts = countsOf(n.paths, daysBetween(start, today), tz, until);
+      const r: Read = {
+        v: READ_V,
+        span: days,
+        from: start,
+        to: today,
+        fromBefore: addDays(start, -days),
+        toBefore,
+        zone: tz,
+        now: counts,
+        before: countsOf(b.paths, daysBetween(addDays(start, -days), toBefore), tz, until, true),
+        systems: [],
+        countries: [],
+        refs: [],
+        campaigns: [],
+        countriesBefore: [],
+        refsBefore: [],
+        spikeRefs: {},
+        at: at.getTime(),
+        complete: n.complete && b.complete,
+        compare,
+        began: first,
+      };
+      // A period with nothing of its own on show yet shows its counts now, the lists filling in once they're read (each call waits for the one before).
+      if (days === span && read?.span !== days) {
+        read = { ...r, waiting: true };
+        partial = { span: days, at: r.at };
+      }
+      const [systems, countries, refs, campaigns, countriesBefore, refsBefore, countriesWhole] = await Promise.all([
         step(visitorsBy(k, shown, 'systems', signal)),
         step(visitorsBy(k, shown, 'locations', signal)),
         step(visitorsBy(k, shown, 'toprefs', signal)),
         step(visitorsBy(k, shown, 'campaigns', signal)),
-        step(visitorsBy(k, shownBefore, 'locations', signal)),
-        step(visitorsBy(k, shownBefore, 'toprefs', signal)),
+        against ? step(visitorsBy(k, untilDay(tz, against, toBefore), 'locations', signal)) : [],
+        against ? step(visitorsBy(k, against, 'toprefs', signal)) : [],
+        against ? step(visitorsBy(k, untilDay(tz, shown, today), 'locations', signal)) : [],
       ]);
       if (ask !== asked) return;
-      const counts = countsOf(n.paths, daysBetween(start, today), tz, until);
       // The sites behind the busiest days: a day gone by is read once and kept (it never changes), today each time.
       const spikeRefs: Record<string, Named[]> = {};
       const keptRefs = dayRefsOf(readStored(DAY_REFS_KEY), tz);
@@ -233,7 +284,8 @@
           spikeRefs[s.day] = kept;
           continue;
         }
-        const day: Span = { start: midnight(tz, s.day), end: s.day === today ? at : midnight(tz, addDays(s.day, 1)) };
+        // (To just before the next day: GoatCounter would give the hour a span ends in whole.)
+        const day: Span = { start: midnight(tz, s.day), end: s.day === today ? at : new Date(midnight(tz, addDays(s.day, 1)).getTime() - 1) };
         spikeRefs[s.day] = await visitorsBy(k, day, 'toprefs', signal);
         if (s.day !== today) {
           keptRefs[s.day] = spikeRefs[s.day];
@@ -243,51 +295,51 @@
       // Only as far back as the longest period reaches: older days are never asked for again.
       if (added) writeStored(DAY_REFS_KEY, dayRefsToKeep(keptRefs, tz, addDays(today, -Math.max(...PERIODS.map((p) => p.value)))));
       if (ask !== asked) return;
-      const r: Read = {
-        v: 12,
-        span: days,
-        from: start,
-        to: today,
-        fromBefore: addDays(start, -days),
-        toBefore,
-        zone: tz,
-        now: counts,
-        before: countsOf(b.paths, daysBetween(addDays(start, -days), toBefore), tz, until),
-        systems,
-        countries,
-        // Each site once: a tagged link's visit comes with its referrer as it was (insights.ts sameSites).
-        refs: sameSites(refs),
-        campaigns,
-        countriesBefore,
-        refsBefore: sameSites(refsBefore),
-        spikeRefs: Object.fromEntries(Object.entries(spikeRefs).map(([day, list]) => [day, sameSites(list)])),
-        at: at.getTime(),
-        complete: n.complete && b.complete,
-        compare,
-        began: first,
-      };
+      r.systems = systems;
+      r.countries = countries;
+      // Each site once: a tagged link's visit comes with its referrer as it was (insights.ts sameSites).
+      r.refs = sameSites(refs);
+      r.campaigns = campaigns;
+      r.countriesBefore = countriesBefore;
+      r.countriesWhole = countriesWhole;
+      r.refsBefore = sameSites(refsBefore);
+      r.spikeRefs = Object.fromEntries(Object.entries(spikeRefs).map(([day, list]) => [day, sameSites(list)]));
       r.changes = keptChanges(had, r);
       if (counted(r) && r.from !== began) writeStored('analytics.began', (began = r.from));
       keep(r);
       fails = { n: 0, at: 0, busy: false };
-      if (days === span) read = r;
+      if (days === span) {
+        read = r;
+        partial = null;
+      }
     } catch (err) {
       // One call failing ends the read: the others' calls not yet sent never go.
       ctrl.abort();
       if (ask !== asked || err instanceof Cancelled) return;
       fails = { n: fails.n + 1, at: Date.now(), busy: err instanceof ApiError && err.kind === 'busy' };
-      if (err instanceof ApiError && err.kind === 'key') {
-        // A key GoatCounter turns down is no use kept: the next visit asks for a new one straight away.
-        forget();
-        refused = err.message;
-      } else failed = err instanceof Error ? err.message : 'Something went wrong.';
+      if (!turnedDown(err, k)) failed = err instanceof Error ? err.message : 'Something went wrong.';
     } finally {
       if (ask === asked) {
         loading = false;
         reading = null;
+        doneReading();
       }
       countRequests();
     }
+  }
+
+  /**
+   * A key GoatCounter turns down (`k`, while it's still the one in use) is
+   * no use kept: back to the door, which asks for a new one, the key as it
+   * was in its field to put right. Whether it was that.
+   */
+  function turnedDown(err: unknown, k: string) {
+    if (!(err instanceof ApiError && err.kind === 'key')) return false;
+    if (k !== key) return true;
+    forget();
+    refused = err.message;
+    typed = k;
+    return true;
   }
 
   // ---- player groups: read while their view is open, kept a while ----
@@ -319,6 +371,7 @@
     slicer?.abort();
     stopDepths();
     const ctrl = (slicer = new AbortController());
+    const k = key;
     const calls = sliceCalls(r.now);
     let done = 0;
     slicing = 0.02;
@@ -329,7 +382,7 @@
       await Promise.all(
         calls.map((c) =>
           // Each from its own first day (slices.ts groupFrom), so a share and what it's of cover the same days.
-          pathsBy(key, { start: midnight(r.zone, c.from), end }, c.dim, c.paths, ctrl.signal).then((list) => {
+          pathsBy(k, { start: midnight(r.zone, c.from), end }, c.dim, c.paths, ctrl.signal).then((list) => {
             out[c.dim][c.group] = list;
             // (Not once it's been called off: what's read for another period has its own.)
             if (slicer === ctrl) slicing = ++done / calls.length;
@@ -340,7 +393,7 @@
       if (r.span === span) slices = out;
     } catch (err) {
       ctrl.abort();
-      if (!(err instanceof Cancelled)) slicesFailed = err instanceof Error ? err.message : 'Something went wrong.';
+      if (!(err instanceof Cancelled) && !turnedDown(err, k)) slicesFailed = err instanceof Error ? err.message : 'Something went wrong.';
     } finally {
       if (slicer === ctrl) {
         slicer = null;
@@ -375,6 +428,7 @@
     depthsFor = s.at;
     depther?.abort();
     const ctrl = (depther = new AbortController());
+    const k = key;
     depthsReading = true;
     depthsFailed = '';
     try {
@@ -383,7 +437,7 @@
       const end = new Date(s.at);
       await Promise.all(
         depthCalls(r.now).map((c) =>
-          pathsBy(key, { start: midnight(r.zone, c.start), end }, c.dim, c.paths, ctrl.signal).then((list) => {
+          pathsBy(k, { start: midnight(r.zone, c.start), end }, c.dim, c.paths, ctrl.signal).then((list) => {
             depths[c.dim]![c.from] = list;
           }),
         ),
@@ -394,7 +448,7 @@
     } catch (err) {
       ctrl.abort();
       if (depthsFor === s.at) depthsFor = 0;
-      if (!(err instanceof Cancelled) && depther === ctrl) depthsFailed = err instanceof Error ? err.message : 'Something went wrong.';
+      if (!(err instanceof Cancelled) && depther === ctrl && !turnedDown(err, k)) depthsFailed = err instanceof Error ? err.message : 'Something went wrong.';
     } finally {
       if (depther === ctrl) {
         depther = null;
@@ -418,30 +472,69 @@
     held = used > HOUR_LIMIT - KEEP_SPARE;
   }
 
-  /** Reads the period on show again if it's grown stale, unless the hour's requests are running low. */
+  /** Reads the period picked again if it's grown stale, or what's on show is another's or has only its counts, unless the hour's requests are running low. */
   function update() {
     clock = Date.now();
     countRequests();
     if (!key || loading || held || document.visibilityState !== 'visible') return;
     // After a failure, not again until the wait is over (the Read again button still reads at once).
     if (fails.n && clock - fails.at < waitAfterFails()) return;
-    if (!read || clock - read.at >= FRESH_MS) void load();
+    if (!read || read.span !== span || isPartial || clock - read.at >= FRESH_MS) void load();
   }
 
   onMount(() => {
     // The spike days' sites were once kept a key each, never cleared: they're one map now (dayRefs.ts).
     removeStoredStarting(`${DAY_REFS_KEY}.`);
+    // Reads were kept a tab each once (sessionStorage): they're the browser's now.
+    removeStoredStarting('analytics.read.', 'session');
     void load();
     const ticking = setInterval(update, 20_000);
     document.addEventListener('visibilitychange', update);
     document.addEventListener('click', follow);
     window.addEventListener('popstate', followHash);
+    window.addEventListener('pagehide', keepPlace);
+    window.addEventListener('pagehide', doneReading);
+    // Another tab's read of the period on show, newer than this one's: shown here too, and this tab's own given up.
+    const others = onStoredElsewhere(Object.fromEntries(PERIODS.map((p) => [storeKey(readName(p.value)), () => p.value === span && fromElsewhere()])));
     return () => {
       clearInterval(ticking);
       document.removeEventListener('visibilitychange', update);
       document.removeEventListener('click', follow);
       window.removeEventListener('popstate', followHash);
+      window.removeEventListener('pagehide', keepPlace);
+      window.removeEventListener('pagehide', doneReading);
+      others();
     };
+  });
+
+  function fromElsewhere() {
+    if (!key || demo) return;
+    const r = cached(span);
+    if (!r || (read?.span === span && !isPartial && r.at <= read.at)) return;
+    stopReading();
+    failed = '';
+    fails = { n: 0, at: 0, busy: false };
+    read = r;
+    partial = null;
+  }
+
+  // A reload comes back to where the page was scrolled, once the read is there to scroll in (the browser would put it back before). Kept in this tab as the page goes, with its view.
+  const PLACE = 'analytics.place';
+  let place = ((): number | null => {
+    const kept = readStored(PLACE, 'session');
+    removeStored(PLACE, 'session');
+    if ((performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type !== 'reload' || !kept) return null;
+    const [hash, y] = [kept.slice(0, kept.lastIndexOf(' ')), Number(kept.slice(kept.lastIndexOf(' ') + 1))];
+    return hash === location.hash && y > 0 ? y : null;
+  })();
+  function keepPlace() {
+    writeStored(PLACE, `${location.hash} ${Math.round(window.scrollY)}`, 'session');
+  }
+  $effect(() => {
+    if (place === null || !read || isPartial) return;
+    const y = place;
+    place = null;
+    void tick().then(() => window.scrollTo({ top: y }));
   });
 
   function pick(days: number) {
@@ -459,14 +552,18 @@
     saveKey(k);
     key = k;
     refused = '';
+    typed = '';
     void load(span, true);
   }
   function forget() {
     stopReading();
     forgetKey();
-    removeStoredStarting('analytics.read.', 'session');
+    removeStoredStarting('analytics.read.');
     removeStoredStarting('analytics.slices.', 'session');
     removeStoredStarting(DAY_REFS_KEY);
+    // Another account's key may come next: its counting began on a day of its own.
+    removeStored('analytics.began');
+    began = null;
     slicer?.abort();
     slicer = null;
     slicing = 0;
@@ -477,7 +574,9 @@
     fails = { n: 0, at: 0, busy: false };
     key = '';
     read = null;
+    partial = null;
     refused = '';
+    typed = '';
     failed = '';
   }
 
@@ -487,10 +586,10 @@
   };
   const chosen = $derived(PERIODS.find((p) => p.value === (read?.span ?? span)) ?? PERIODS[1]);
   /** The shortest period that holds every day counted so far, where counting began inside the longest: it and those longer are one choice, "Since Oct 16". */
-  const cover = $derived.by(() => {
-    if (!began || !read) return null;
-    const n = daysBetween(began, read.to).length;
-    return n > PERIODS[PERIODS.length - 1].value ? null : (PERIODS.find((p) => p.value >= n) ?? null);
+  const cover = $derived(read ? coverOf(began, read.to) : null);
+  // A period picked before counting had begun (or kept by this browser's day, a day off the account's) is read as the one that holds it.
+  $effect(() => {
+    if (cover && span > cover.value) untrack(() => pick(cover.value));
   });
   const periodOptions = $derived(
     PERIODS.filter((p) => !cover || p.value <= cover.value).map((p) => ({ value: p.value, name: p === cover ? `Since ${shortDay(began!)}` : p.name })),
@@ -529,10 +628,19 @@
       still = window.setTimeout(() => (idle = true), 3000);
     };
     moved();
+    // Esc leaves it where full screen doesn't take the key first (an iPhone, or full screen refused).
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) leaveBoard();
+    };
     document.addEventListener('pointermove', moved);
+    document.addEventListener('keydown', escape);
+    // Its type sized from the screen's height at any width (html.board below).
+    document.documentElement.classList.add('board');
     return () => {
       sleep();
       document.removeEventListener('pointermove', moved);
+      document.removeEventListener('keydown', escape);
+      document.documentElement.classList.remove('board');
       clearTimeout(still);
       idle = false;
     };
@@ -580,7 +688,7 @@
   {#if key}
     <nav class="row choices">
       {#if !board}<Seg label="View" options={VIEWS} value={view} onpick={go} />{/if}
-      {#if read}<span class="range">{#if demo}<b class="made-up-tag" title="Nothing here was read from GoatCounter">Made-up numbers</b>{/if}{shortDay(read.from)} to {shortDay(read.to)}{#if read.compare}, against {shortDay(read.fromBefore)} to {shortDay(read.toBefore)}{/if}</span>{/if}
+      {#if read}<span class="range">{#if demo}<b class="made-up-tag" title="Nothing here was read from GoatCounter">Made-up numbers</b>{/if}{dayRange(read.from, read.to)}{#if read.compare}, against {dayRange(read.fromBefore, read.toBefore)}{/if}</span>{/if}
       <Seg label="Period" options={periodOptions} value={cover && span > cover.value ? cover.value : span} onpick={pick} />
     </nav>
   {/if}
@@ -589,11 +697,11 @@
 
 <main class="analytics" class:idle class:stale aria-busy={stale}>
   {#if !key}
-    <KeyGate onkey={useKey} {refused} />
+    <KeyGate onkey={useKey} {refused} {typed} />
   {:else}
     {#if read}
       <p class="dates">
-        <b>{period.now}</b>, {shortDay(read.from)} to {shortDay(read.to)}{#if read.compare}, against {period.before} ({shortDay(read.fromBefore)} to {shortDay(read.toBefore)}){:else if counted(read)}{read.began ? `; counting began partway through ${shortDay(read.began)}, so there's nothing before to compare with yet` : ': nothing before to compare with yet'}{:else}; {period.before} weren't counted in full, so nothing is compared with them{/if}<span class="phone-fresh">; {loading ? 'updating…' : `updated ${ago(read.at)}`}{held && !loading ? ', paused for now' : ''}</span>
+        <b>{period.now}</b>, {dayRange(read.from, read.to)}{#if read.compare}, against {period.before} ({dayRange(read.fromBefore, read.toBefore)}){:else if counted(read)}{read.began ? `; counting began partway through ${shortDay(read.began)}, so there's nothing before to compare with yet` : ': nothing before to compare with yet'}{:else}; {period.before} weren't counted in full, so nothing is compared with them{/if}<span class="phone-fresh">; {loading ? 'updating…' : `updated ${ago(read.at)}`}{held && !loading ? ', paused for now' : ''}</span>
       </p>
     {:else if loading}
       <!-- (Its line's room kept, so the view doesn't move down as it arrives.) -->
@@ -603,7 +711,11 @@
       <p class="note made-up" role="status">Made-up numbers, to look at the page with: nothing here was read from GoatCounter.</p>
     {/if}
     {#if failed}
-      <p class="note bad" role="alert">{failed} <button type="button" class="again" onclick={() => void load(span, true)}>Try again</button></p>
+      <!-- (Where what's on show isn't the period picked, or has only its counts, it says so.) -->
+      <p class="note bad" role="alert">
+        {failed}{#if stale}{' '}Still showing {period.now.toLowerCase()}.{:else if isPartial}{' '}Only the counts are in: who came, on what and from where is still missing.{/if}
+        <button type="button" class="again" onclick={() => void load(span, true)}>Try again</button>
+      </p>
     {/if}
     {#if read && !read.complete}
       <p class="note" role="status">There were more paths than Analytics reads (1,000): some counts may be missing.</p>
@@ -621,7 +733,7 @@
       </div>
     {:else if read}
       {#if board || view === 'overview'}
-        <Overview {read} {period} {weekly} />
+        <Overview {read} {period} {weekly} {board} />
       {:else if view === 'visitors'}
         <VisitorsView {read} {period} {weekly} />
       {:else if view === 'games'}
@@ -819,6 +931,10 @@
     opacity: 0.45;
     transition: opacity 0.2s;
   }
+  /* (Not what went wrong reading the period picked.) */
+  main.stale > .note.bad {
+    opacity: 1;
+  }
   .dates {
     margin: 0 0 1.4rem;
     font-size: 1.125rem;
@@ -956,6 +1072,32 @@
     .foot p {
       margin: 0;
     }
+  }
+
+  /* The board, on a monitor of its own at any size (1080p, a laptop's 1280 x 800): the overview no taller than the screen, its type sized from the screen's height. */
+  :global(html.board) {
+    font-size: clamp(9px, min(0.625vw, 1.1vh), 26px);
+  }
+  /* Its dates up in the bar, as on a big monitor, and no room it doesn't use. */
+  :global(html.board) .range {
+    display: block;
+    margin-left: auto;
+    font-family: var(--font-data);
+    font-size: 1rem;
+    color: var(--a-muted);
+  }
+  :global(html.board) .dates,
+  :global(html.board) .made-up {
+    display: none;
+  }
+  :global(html.board) .made-up-tag {
+    margin-right: 1.2rem;
+    font-weight: 600;
+    color: var(--a-now);
+  }
+  :global(html.board) main {
+    padding-top: 1.2rem;
+    padding-bottom: 1.2rem;
   }
 
   .idle,

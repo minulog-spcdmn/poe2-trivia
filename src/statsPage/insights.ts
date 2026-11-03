@@ -6,14 +6,52 @@
 // it stays, and who comes back.
 // Only what the counts bear out: a change has to be well beyond what chance
 // moves a count of that size by (a count's chance swing is about its square
-// root). Pure, so the tests can feed it.
+// root), and where a list is read for its most extreme (the busiest of 30
+// days, the biggest mover of 40 sites), beyond what chance makes of one of
+// so many (model.ts zFor). Pure, so the tests can feed it.
 
 import type { Named } from './api.ts';
 import { siteName } from './chart.ts';
-import { FIRSTS, LATER_FIRSTS, RETURNS, VISIT_KINDS, answersPerDay, asked, type Cohort, type Counts, type First, type Reach, type Return } from './model.ts';
+import { DEVICES, type Device } from '../lib/stutter.ts';
+import { FIRSTS, LATER_FIRSTS, READIES, RETURNS, START_STEPS, STARTS_FROM, VISIT_KINDS, answersPerDay, asked, zFor, type Cohort, type Counts, type First, type Reach, type Ready, type Return } from './model.ts';
 
-/** Well beyond chance: a change of `d` on a count of `n` (twice its square root, and a few besides, so tiny counts never qualify). */
-const beyondChance = (d: number, n: number) => Math.abs(d) >= 2 * Math.sqrt(Math.max(n, 1)) + 3;
+/** Well beyond chance: a change of `d` on a count of `n` known all but exactly (z times its square root, and a few besides, so tiny counts never qualify). */
+const beyondChance = (d: number, n: number, z = 2) => Math.abs(d) >= z * Math.sqrt(Math.max(n, 1)) + 3;
+
+/**
+ * Whether two counts are apart by more than chance makes: `now` against
+ * `before` brought to as many chances (`scale`: twice the games, twice the
+ * failures). Both are counts, each swinging by about its square root, so
+ * their difference swings by the root of both, not of one as though the
+ * period before were exact. `per`: how many each one behind them brings at
+ * once (a player's several games), which widens the swing as much; `z`: as
+ * many swings as it takes (2, or zFor of a list). A few besides, so tiny
+ * counts never qualify.
+ */
+export function countsApart(now: number, before: number, { z = 2, scale = 1, per = 1 }: { z?: number; scale?: number; per?: number } = {}): boolean {
+  return Math.abs(now - scale * before) >= z * Math.sqrt(Math.max(now + scale * scale * before, 1) * Math.max(per, 1)) + 3;
+}
+
+/**
+ * How much wider than a count's own a count of games swings (countsApart's
+ * `per`), from `games` played by `players`: each player plays several, so
+ * games come in bunches. A player's games spread as a geometric's do, about
+ * 2m − 1 times their mean m; 1 where nobody's known to have played.
+ */
+export const gamesSpread = (games: number, players: number) => (players > 0 ? Math.max(1, (2 * games) / players - 1) : 1);
+
+/** gamesSpread of the periods' games together, those who played them counted ("reach/played", once a player in eight hours), on the days they were. */
+export function gamesSpreadOf(...periods: Counts[]): number {
+  let games = 0;
+  let players = 0;
+  for (const c of periods)
+    c.reach.played.forEach((n, i) => {
+      if (n <= 0) return;
+      players += n;
+      games += c.games.perDay[i] ?? 0;
+    });
+  return gamesSpread(games, players);
+}
 
 const median = (vs: number[]) => {
   const s = [...vs].sort((a, b) => a - b);
@@ -29,27 +67,31 @@ export interface Spike {
 }
 
 /** How far either side of a day its usual one is found: a game that grows, or a launch, then moves its usual along with it. */
-export const SPIKE_REACH = 14;
+const SPIKE_REACH = 14;
 
 /**
  * The days far busier than usual (at least 1.6 times the median of the
- * other whole days within SPIKE_REACH of it, and beyond chance), busiest
- * against usual first, at most `top`. The last day isn't over, so it's
- * never part of a usual one, but it can be a spike already.
+ * other whole days within SPIKE_REACH of it, and beyond chance for one of
+ * the period's days: of 30, one passes z = 2 by chance most months),
+ * busiest against usual first, at most `top`. The last day isn't over, so
+ * it's never part of a usual one, but it can be a spike already.
  */
 export function spikesOf(days: string[], values: number[], top = 3): Spike[] {
   const whole = values.length - 1;
+  const z = zFor(days.length);
   return days
     .map((day, i) => {
       const around = values.filter((_, k) => k !== i && k < whole && Math.abs(k - i) <= SPIKE_REACH);
-      return { day, value: values[i] ?? 0, usual: median(around) };
+      // (A median of k days swings too, about π/2k of a day's own.)
+      return { day, value: values[i] ?? 0, usual: median(around), spread: around.length ? 1 + Math.PI / (2 * around.length) : 1 };
     })
-    .filter((s) => s.usual > 0 && s.value >= s.usual * 1.6 && beyondChance(s.value - s.usual, s.usual))
+    .filter((s) => s.usual > 0 && s.value >= s.usual * 1.6 && beyondChance(s.value - s.usual, s.usual * s.spread, z))
     .sort((a, b) => b.value - a.value)
-    .slice(0, top);
+    .slice(0, top)
+    .map(({ day, value, usual }) => ({ day, value, usual }));
 }
 
-/** Where a spike's visitors came from: the site that brought the most that day, and its share then and on the period as a whole. */
+/** Where a spike's visitors came from: the site that brought the most that day, and its share then and on the period's other days. */
 export interface SpikeSource {
   name: string;
   share: number;
@@ -62,12 +104,15 @@ const typedIn = (name: string) => !name || name === '(unknown)';
  * The site behind a spike: of that day's referrers, the one most above its
  * usual share (and bringing at least a fifth of the day's visitors). None
  * when the day's visitors came the usual ways, or without a referrer.
+ * `period`'s counts hold the day's: its usual share is of the other days,
+ * or a big enough spike would lift its own site's usual out of reach.
  */
 export function spikeSource(day: Named[], period: Named[]): SpikeSource | null {
   const dayAll = day.reduce((n, r) => n + r.count, 0);
-  const periodAll = period.reduce((n, r) => n + r.count, 0);
   if (!dayAll) return null;
-  const usualOf = (name: string) => (periodAll ? (100 * (period.find((r) => r.name === name)?.count ?? 0)) / periodAll : 0);
+  const others = period.map((r) => ({ name: r.name, count: Math.max(0, r.count - day.reduce((n, d) => n + (d.name === r.name ? d.count : 0), 0)) }));
+  const othersAll = others.reduce((n, r) => n + r.count, 0);
+  const usualOf = (name: string) => (othersAll ? (100 * (others.find((r) => r.name === name)?.count ?? 0)) / othersAll : 0);
   const best = day
     .filter((r) => !typedIn(r.name))
     .map((r) => ({ name: r.name, share: (100 * r.count) / dayAll, usualShare: usualOf(r.name) }))
@@ -90,7 +135,9 @@ const MOVER_BASE = 5;
  * The biggest rise and the biggest fall in a list against the period
  * before, each against what it would have brought had it moved as most of
  * them did (the middle one's change, of those with enough before to say;
- * typed in moves by itself), and only where it's beyond chance. When every
+ * typed in moves by itself), and only where it's beyond chance for one of
+ * as many names (zFor, a rise and a fall each): of 25 sites at z = 2, one
+ * moves by chance most months. When every
  * site brings twice as many, none of them is news; when one brings three
  * times as many, the middle isn't dragged along, so it's that one, and not
  * the rest falling behind it.
@@ -101,9 +148,10 @@ export function moversOf(now: Named[], before: Named[]): { up: Mover | null; dow
   const names = [...new Set([...is.keys(), ...was.keys()])].filter((n) => !typedIn(n));
   const changes = names.filter((name) => (was.get(name) ?? 0) >= MOVER_BASE).map((name) => (is.get(name) ?? 0) / was.get(name)!);
   const scale = changes.length ? median(changes) : 1;
+  const z = zFor(2 * names.length);
   const moves = names
     .map((name) => ({ name, now: is.get(name) ?? 0, before: was.get(name) ?? 0, expected: (was.get(name) ?? 0) * scale }))
-    .filter((m) => beyondChance(m.now - m.expected, m.expected));
+    .filter((m) => countsApart(m.now, m.before, { scale, z }));
   const strip = ({ name, now, before }: Mover): Mover => ({ name, now, before });
   const up = moves.filter((m) => m.now > m.expected * 1.3).sort((a, b) => b.now - b.expected - (a.now - a.expected))[0];
   const down = moves.filter((m) => m.now < m.expected * 0.7).sort((a, b) => a.now - a.expected - (b.now - b.expected))[0];
@@ -234,15 +282,15 @@ export interface FirstSteps {
   /** Visits with no save on the device ("visit/new"). */
   visits: number;
   counts: Record<First, number>;
-  /** Each step's own reading: the day it's counted from (LATER_FIRSTS from the day their group was first counted) and the visits with no save since. */
+  /** Each step's own reading: the day it's counted from (LATER_FIRSTS from the day their group was first counted, model.ts) and the visits with no save since. */
   steps: Record<First, { from: string | null; visits: number }>;
 }
 
 /** Read from the first day "visit/new" was counted, which came with the first steps' own ("new/…"): not from the day one first happened. */
 export function firstStepsOf(c: Counts): FirstSteps {
   const first = firstDay(c.days, (i) => (c.visits.new[i] ?? 0) > 0);
-  const groupFrom = (g: readonly First[]) => firstDay(c.days, (i) => g.some((s) => (c.firsts[s][i] ?? 0) > 0));
-  const later = new Map(LATER_FIRSTS.flatMap((g) => g.map((s) => [s, groupFrom(g)] as const)));
+  const groupFrom = (from: string) => firstDay(c.days, (i) => c.days[i] >= from);
+  const later = new Map(LATER_FIRSTS.flatMap((g) => g.steps.map((s) => [s, groupFrom(g.from)] as const)));
   const fromOf = (s: First) => {
     const from = later.get(s);
     return first < 0 || from === -1 ? -1 : from === undefined ? first : Math.max(first, from);
@@ -252,6 +300,74 @@ export function firstStepsOf(c: Counts): FirstSteps {
   counts.lobby = Math.max(counts.lobby, counts.played);
   const steps = Object.fromEntries(FIRSTS.map((s) => [s, { from: fromOf(s) < 0 ? null : c.days[fromOf(s)], visits: fromOf(s) < 0 ? 0 : sumFrom(c.visits.new, fromOf(s)) }])) as FirstSteps['steps'];
   return { from: first < 0 ? null : c.days[first], visits: first < 0 ? 0 : sumFrom(c.visits.new, first), counts, steps };
+}
+
+/** The start page's steps, every visit's (START_STEPS), named as a first visit's are. */
+export const START_JOURNEY: readonly { step: Reach; name: string }[] = START_STEPS.map((step) => ({ step, name: FIRST_JOURNEY.find((f) => f.step === step)!.name }));
+
+/**
+ * Every visit's start-page steps, against the page loads ("reach/page")
+ * from STARTS_FROM, when they were first counted, or from the period's
+ * first day where it's later; nothing where the period ends before it.
+ */
+export function startStepsOf(c: Counts): Reached {
+  const first = firstDay(c.days, (i) => c.days[i] >= STARTS_FROM);
+  if (first < 0) return { from: null, visitors: 0, paged: true, counts: {} };
+  const counts: Reached['counts'] = {};
+  for (const s of START_STEPS) counts[s] = sumFrom(c.reach[s], first);
+  return { from: c.days[first], visitors: sumFrom(c.reach.page, first), paged: true, counts };
+}
+
+/** A count the game began on STARTS_FROM, over the period's days since then: `from` null where it ends before. */
+export interface Since {
+  from: string | null;
+}
+const sinceStarts = (c: Counts) => firstDay(c.days, (i) => c.days[i] >= STARTS_FROM);
+
+/** How soon a newcomer's page was usable: the loads timed (those in sight until ready), and those within each mark ("load/ready-…"). */
+export interface Readiness extends Since {
+  timed: number;
+  counts: Record<Ready, number>;
+}
+export function readinessOf(c: Counts): Readiness {
+  const first = sinceStarts(c);
+  const counts = Object.fromEntries(READIES.map((r) => [r, first < 0 ? 0 : sumFrom(c.ready[r], first)])) as Record<Ready, number>;
+  return { from: first < 0 ? null : c.days[first], timed: READIES.reduce((n, r) => n + counts[r], 0), counts };
+}
+/** The marks read as a newcomer would wait: ready within 2, 5 and 10 seconds (each holding the ones before), and later. */
+export const READY_ROWS: readonly { within: readonly Ready[]; name: string }[] = [
+  { within: ['2s'], name: 'Within 2 seconds' },
+  { within: ['2s', '5s'], name: 'Within 5 seconds' },
+  { within: ['2s', '5s', '10s'], name: 'Within 10 seconds' },
+  { within: ['later'], name: 'Later' },
+];
+export const readyCount = (r: Readiness, within: readonly Ready[]) => within.reduce((n, k) => n + r.counts[k], 0);
+
+/**
+ * Today's unique's players who came back to a save ("daily/back"), of all
+ * who answered ("reach/daily"), both once a visitor in eight hours. A load
+ * whose save wasn't read in time says neither, so back and new together
+ * can be a few short of all.
+ */
+export interface DailyBack extends Since {
+  answered: number;
+  back: number;
+}
+export function dailyBackOf(c: Counts): DailyBack {
+  const first = sinceStarts(c);
+  if (first < 0) return { from: null, answered: 0, back: 0 };
+  return { from: c.days[first], answered: sumFrom(c.reach.daily, first), back: sumFrom(c.dailyBack, first) };
+}
+
+/** Delve's runs ended, and Share run tapped at their end ("share/delve", each tap, so a run shared twice counts twice). */
+export interface DelveShared extends Since {
+  ended: number;
+  shared: number;
+}
+export function delveSharedOf(c: Counts): DelveShared {
+  const first = sinceStarts(c);
+  if (first < 0) return { from: null, ended: 0, shared: 0 };
+  return { from: c.days[first], ended: sumFrom(c.delveRuns.ended, first), shared: sumFrom(c.delveRuns.shared, first) };
 }
 
 /** How long a visit kept the game on screen, in one page load: 2, 10 and 30 minutes. */
@@ -308,6 +424,8 @@ export const appShare = (w: Comers) => (w.from ? shareOf(w.app, w.visitors) : nu
  * only then is that a share.
  */
 export const toldFromStart = (c: Counts) => !!c.days.length && comersOf(c).from === c.days[0];
+/** The period before's share who came back, only where its visits were told apart from its first day: a share from a later day rests on its early days alone, which read low (VisitorsView's `whole`). */
+export const backBeforeOf = (c: Counts) => (toldFromStart(c) ? backShare(comersOf(c)) : null);
 
 /**
  * The cohorts a table of `weeks` columns shows: the latest `rows` whose
@@ -346,6 +464,39 @@ export function sameSites(list: Named[]): Named[] {
 }
 
 /**
+ * Whether a grid's busiest hour (the most on average, as WeekHours names
+ * it) is busier than chance makes of one of so many: its count against
+ * what the grid's usual hour brings in as many days as it had (`had`, the
+ * days that had each: a month's Thursdays can be five to the rest's four),
+ * at zFor its hours. The busiest of 168 passes twice the swing by chance
+ * nearly always.
+ */
+export function busiestStandsOut(grid: number[][], had: number[][]): boolean {
+  const cells = grid.flatMap((row, d) => row.map((n, h) => ({ n, had: had[d]?.[h] ?? 0 }))).filter((c) => c.had > 0);
+  const total = cells.reduce((n, c) => n + c.n, 0);
+  if (!total) return false;
+  const rate = total / cells.reduce((n, c) => n + c.had, 0);
+  const best = cells.reduce((a, b) => (b.n / b.had > a.n / a.had ? b : a));
+  const expected = best.had * rate;
+  return best.n > expected && beyondChance(best.n - expected, expected, zFor(cells.length));
+}
+
+/**
+ * A list with each label once, the counts of those labelled alike added up:
+ * labels can come from outside (a failure the page doesn't know is labelled
+ * by its own key, which anyone can count), so two can meet, and a list
+ * keyed by its labels can't hold both.
+ */
+export function sameLabels<T extends { label: string; count: number }>(list: T[]): T[] {
+  const out = new Map<string, T>();
+  for (const b of list) {
+    const had = out.get(b.label);
+    out.set(b.label, had ? { ...had, count: had.count + b.count } : b);
+  }
+  return [...out.values()];
+}
+
+/**
  * Joining going worse than usual: failures (joining a room, or opening
  * one) against what the usual rate would give for as many games and tries
  * to join, each only beyond chance. `period`: the period's against the
@@ -367,19 +518,21 @@ export const chances = (c: Counts) => c.games.started + tries(c);
 export const failureRate = (c: Counts): number | null => (chances(c) ? (100 * failed(c)) / chances(c) : null);
 
 /**
- * Whether a change is more than chance would make: `now` against `before`,
- * counts of about that size (a count's chance swing being about its square
- * root). For a rate's change, its counts are what it rests on.
+ * Whether a count is further from a usual one than chance would take it:
+ * `now` against `usual`, an average of so many days (Today's against 28)
+ * that its own swing is small beside a day's. Two counts each of one period
+ * are countsApart.
  */
-export const beyondChanceOf = (now: number, before: number) => beyondChance(now - before, Math.max(before, 0));
+export const beyondChanceOf = (now: number, usual: number) => beyondChance(now - usual, Math.max(usual, 0));
 
 /**
  * Whether two percents differ by more than chance would make, each of `n`
- * and `nBefore` (twice the spread of their difference; a share near 0 or
- * 100 is taken a little in from the edge), and by at least 3 of the
- * smaller side's: 3 of 3 against 0 of 3 is a handful, never sure.
+ * and `nBefore` (`z` times the spread of their difference, twice unless a
+ * list asks more; a share near 0 or 100 is taken a little in from the
+ * edge), and by at least 3 of the smaller side's: 3 of 3 against 0 of 3 is
+ * a handful, never sure.
  */
-export function rateBeyondChance(pct: number, n: number, pctBefore: number, nBefore: number): boolean {
+export function rateBeyondChance(pct: number, n: number, pctBefore: number, nBefore: number, z = 2): boolean {
   if (n <= 0 || nBefore <= 0) return false;
   if ((Math.abs(pct - pctBefore) * Math.min(n, nBefore)) / 100 < 3) return false;
   // (A rate of more than one each, as failures can run to, spreads at least as a share at the edge would.)
@@ -387,21 +540,56 @@ export function rateBeyondChance(pct: number, n: number, pctBefore: number, nBef
   const p = (edge(pct) * n + 100) / (n + 2) / 100;
   const q = (edge(pctBefore) * nBefore + 100) / (nBefore + 2) / 100;
   const spread = 100 * Math.sqrt((p * (1 - p)) / n + (q * (1 - q)) / nBefore);
-  return Math.abs(pct - pctBefore) >= 2 * spread;
+  return Math.abs(pct - pctBefore) >= z * spread;
 }
 
 export function troubleOf(now: Counts, before: Counts): Trouble | null {
-  /** Failures well above `expected`, or null. */
-  const worse = (f: number, expected: number) => (f > expected && beyondChance(f - expected, expected) ? { failed: f, expected } : null);
+  /** Failures `f` well above the `usual` ones brought to as many chances (`scale`), or null: both are counts, each as much chance's. */
+  const worse = (f: number, usual: number, scale: number) => (f > usual * scale && countsApart(f, usual, { scale }) ? { failed: f, expected: usual * scale } : null);
 
   const before_ = chances(before);
-  const period = before_ ? worse(failed(now), (chances(now) * failed(before)) / before_) : null;
+  const period = before_ ? worse(failed(now), failed(before), chances(now) / before_) : null;
 
   const last = now.days.length - 1;
   const failedToday = now.failuresPerDay[last] ?? 0;
   const chancesToday = (now.games.perDay[last] ?? 0) + (now.joinsPerDay.tried[last] ?? 0);
   const restChances = chances(now) - chancesToday;
-  const today = restChances > 0 ? worse(failedToday, (chancesToday * (failed(now) - failedToday)) / restChances) : null;
+  const today = restChances > 0 ? worse(failedToday, failed(now) - failedToday, chancesToday / restChances) : null;
 
   return period || today ? { period, today } : null;
+}
+
+/**
+ * The game going worse than in the period before, the way a deploy breaks
+ * it: its own scripts' errors, or pages missing a part that didn't load,
+ * far above the period before's for as many visits; a kind of device whose
+ * games stuttered far more often. Each beyond chance for one of them all
+ * (zFor), as the overview speaks of any. Null where none is.
+ */
+export interface Health {
+  errors: { key: 'script' | 'chunk'; count: number; expected: number }[];
+  stutter: { device: Device; share: number; before: number; games: number }[];
+}
+
+export function healthOf(now: Counts, before: Counts): Health | null {
+  const z = zFor(2 + DEVICES.length);
+  const errorsOf = (c: Counts, key: string) => c.failures.find((f) => f.key === key)?.count ?? 0;
+  // At most once a page load: as many more visits bring as many more.
+  const scale = before.visitors.total ? now.visitors.total / before.visitors.total : 0;
+  const errors = scale
+    ? (['script', 'chunk'] as const)
+        .map((key) => ({ key, count: errorsOf(now, key), was: errorsOf(before, key) }))
+        .filter((e) => e.count > e.was * scale && countsApart(e.count, e.was, { scale, z }))
+        .map(({ key, count, was }) => ({ key, count, expected: was * scale }))
+    : [];
+  const sum = (vs: number[]) => vs.reduce((n, v) => n + v, 0);
+  const stutter = DEVICES.flatMap((device) => {
+    const games = sum(now.frames[device].games);
+    const gamesBefore = sum(before.frames[device].games);
+    if (!games || !gamesBefore) return [];
+    const share = (100 * sum(now.frames[device].stuttered)) / games;
+    const was = (100 * sum(before.frames[device].stuttered)) / gamesBefore;
+    return share > was && rateBeyondChance(share, games, was, gamesBefore, z) ? [{ device, share, before: was, games }] : [];
+  });
+  return errors.length || stutter.length ? { errors, stutter } : null;
 }

@@ -3,10 +3,11 @@
   // Delve's runs get. A game is counted once, on the device that runs it
   // (the host's), games once counted online and hot-seat apart as one
   // (model.ts currentName).
-  import { average, fmt } from './chart';
+  import { average, fmt, restsOn } from './chart';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
-  import { MODES, MODE_NAMES, finishedShare, modesOf, percent, seatsOf, sizeName, sizesOf, dayAverages } from './model';
+  import { delveSharedOf, gamesSpreadOf, shareOf } from './insights';
+  import { MODES, MODE_NAMES, finishedShare, modesOf, percent, seatsOf, sizeName, sizesOf, dayAverages, type ModeSummary } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import { hashOf } from './slices';
@@ -19,17 +20,29 @@
   const L = $derived(read.now);
   /** The most played first, as everywhere else. */
   const modes = $derived(modesOf(L.games.rows).sort((a, b) => b.started - a.started));
+  /** Each mode's games in the period before, to set its games and its share played to the end against. */
+  const modesBefore = $derived(modesOf(read.before.games.rows));
+  const was = (m: ModeSummary) => modesBefore.find((b) => b.mode === m.mode)!;
+  /** Of a mode's games started, the share played to the end (finishedShare), as a number; null with none. */
+  const toEnd = (m: ModeSummary) => (m.started ? (100 * Math.min(m.finished, m.started)) / m.started : null);
+  /** Games come several to a player: their changes weighed as such (insights.ts gamesSpread). */
+  const spread = $derived(gamesSpreadOf(L, read.before));
   const topMode = $derived(Math.max(1, ...modes.map((m) => m.started)));
   /** Games with players at the host's own screen, every mode. */
   const screen = $derived(modes.reduce((n, m) => n + m.screen, 0));
-  /** Games a day over the whole days (today's left out), against the period before's. */
-  const perDay = $derived(dayAverages(L.games.perDay, read.before.games.perDay));
+  /** Games a day over the whole days (today's left out), against the period before's, weighed as games come: several to a player. */
+  const perDay = $derived(dayAverages(L.games.perDay, read.before.games.perDay, spread));
   const sizes = $derived(sizesOf(L.games.rows));
   const sized = $derived(sizes.reduce((n, s) => n + s.total, 0));
   const topSize = $derived(Math.max(1, ...sizes.map((s) => s.total)));
   const ranges = $derived(sizes.some((s) => s.from !== s.to));
   /** Delve's runs started: those left mid-run (the tab closed) never say how deep they got, so the depths are of the runs that ended. */
   const delveStarted = $derived(modes.find((m) => m.mode === 'delve')?.started ?? 0);
+  /** Share run tapped at a run's end, against the runs ended since it was counted (each tap, so a run shared twice counts twice). */
+  const shared = $derived(delveSharedOf(L));
+  const sharedBefore = $derived(delveSharedOf(read.before));
+  /** The period before's share, only where it was counted from its first day. */
+  const sharedWas = $derived(sharedBefore.from === read.before.days[0] ? shareOf(sharedBefore.shared, sharedBefore.ended) : null);
   /** The first day every build counted each event (no session): before it, a path counted once a player in eight hours. */
   const SESSIONLESS_FROM = '2026-10-18';
   /** Players a game, one decimal, of the games whose size is known. */
@@ -76,9 +89,9 @@
           {#each modes as m (m.mode)}
             <tr class:none={!m.started}>
               <th scope="row"><a class="pick" href={hashOf({ mode: m.mode })} title="Where it's played most">{MODE_NAMES[m.mode]}</a><span class="on-phone">{percent(m.started, L.games.started)} of games, {perGame(L.games.rows.filter((r) => r.mode === m.mode))} players each{#if m.screen}; {fmt(m.screen)} shared a screen{/if}</span></th>
-              <td class="n strong">{fmt(m.started)}</td>
+              <td class="n strong">{fmt(m.started)}<span class="change"><Delta now={m.started} before={was(m).started} of={{ now: m.started, before: was(m).started, per: spread }} period={period.before} /></span></td>
               <td class="n opt">{percent(m.started, L.games.started)}</td>
-              <td class="n">{finishedShare(m.finished, m.started)}</td>
+              <td class="n">{finishedShare(m.finished, m.started)}<span class="change"><Delta now={toEnd(m)} before={toEnd(was(m))} rate of={{ now: m.started, before: was(m).started }} period={period.before} /></span></td>
               <td class="n opt">{perGame(L.games.rows.filter((r) => r.mode === m.mode))}</td>
               <td class="n opt" class:soft={!m.screen}>{fmt(m.screen)}</td>
               <td class="bar"><span class="meter"><i style:width="{(100 * m.started) / topMode}%"></i></span></td>
@@ -136,6 +149,12 @@
       says="Runs by the depth they ended at{delveStarted > L.delve.total ? `; ${fmt(delveStarted)} were started` : ''}."
     >
       <DelveDepths ranges={L.delve.ranges} />
+      {#if shared.ended}
+        <p class="shared">
+          <b>{Math.round(shareOf(shared.shared, shared.ended)!)}%</b> of the runs ended were shared with Share run{restsOn(shared.shared, shared.ended, shared.from && shared.from > read.from ? shared.from : null)}.
+          <Delta now={shareOf(shared.shared, shared.ended)} before={sharedWas} rate of={{ now: shared.ended, before: sharedBefore.ended }} period={period.before} />
+        </p>
+      {/if}
     </Section>
   </div>
 
@@ -180,6 +199,12 @@
   .none > * {
     color: var(--a-muted);
   }
+  /* A mode's change against the period before, under its figure. */
+  .change {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 400;
+  }
   .bar {
     width: 30%;
     min-width: 4rem;
@@ -187,6 +212,14 @@
   sup {
     margin-left: 0.15rem;
     color: var(--a-muted);
+  }
+  .shared {
+    margin: 1rem 0 0;
+    color: var(--a-text);
+  }
+  .shared b {
+    font-weight: 650;
+    color: var(--a-ink);
   }
   .foot {
     margin: 1rem 0 0;

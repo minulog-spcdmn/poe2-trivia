@@ -1,13 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addDays, dayIn, hoursIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
-import { axis, labelled, restsOn } from '../src/statsPage/chart.ts';
-import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
-import { appShare, backShare, beforeShare, beyondChanceOf, comersOf, failureRate, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
+import { addDays, dayIn, hourStarts, hoursIn, midnight, onClock, zoneOf } from '../src/statsPage/zone.ts';
+import { axis, dayRange, labelled, pct, restsOn } from '../src/statsPage/chart.ts';
+import { demoRead, demoSlices, demoStateOf, demoUpdate } from '../src/statsPage/demo.ts';
+import { READY_ROWS, START_JOURNEY, dailyBackOf, delveSharedOf, readinessOf, readyCount, startStepsOf, appShare, backShare, beforeShare, beyondChanceOf, busiestStandsOut, comersOf, countsApart, failureRate, gamesSpread, healthOf, sameLabels, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, backBeforeOf, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
+import { READ_V, counted, coverOf, keptRead, orReading, spansOf, untilDay } from '../src/statsPage/read.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
 import { apartFrom, countsIn, depthCalls, depthsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
-import { currentName, isoWeek, underNamesNow, weekMonday, busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, countedSpan, dayAverageHours, dayAverages, firstCounted, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, stutterTop, usualByNow, usualByNowUtc, USUAL_DAYS, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
+import { currentName, isoWeek, underNamesNow, weekMonday, busiest, hoursHad, seatsOf, weekAverage, zFor, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, countedSpan, dayAverageHours, dayAverages, firstCounted, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, stutterTop, usualByNow, usualByNowUtc, USUAL_DAYS, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
 const path = (p: string, perDay: number[], event = true): PathCount => ({
@@ -15,6 +16,15 @@ const path = (p: string, perDay: number[], event = true): PathCount => ({
   event,
   count: perDay.reduce((n, v) => n + v, 0),
   days: Object.fromEntries(DAYS.map((d, i) => [d, perDay[i] ?? 0])),
+});
+
+test("the overview's came back is set against a period before only where that was told apart from its first day", () => {
+  const whole = countsOf([path('/', [10, 10, 10], false), path('visit/new', [6, 6, 6]), path('visit/back-1d', [3, 3, 3])], DAYS);
+  assert.equal(Math.round(backBeforeOf(whole)!), 33);
+  // Told apart from its second day only: its few early saves would read low, so no change is shown (as Visitors' Who comes back).
+  const partly = countsOf([path('/', [10, 10, 10], false), path('visit/new', [0, 6, 6]), path('visit/back-1d', [0, 1, 1])], DAYS);
+  assert.notEqual(backShare(comersOf(partly)), null);
+  assert.equal(backBeforeOf(partly), null);
 });
 
 test('days run from the first to the last, both included, across a month', () => {
@@ -300,8 +310,8 @@ test("Today's unique by day: the hardest and easiest items, today left out", () 
   const days = daysBetween('2026-10-10', '2026-10-16');
   const l = countsOf(
     [
-      { path: 'daily/right', event: true, count: 0, days: { '2026-10-10': 1, '2026-10-11': 9, '2026-10-12': 2, '2026-10-13': 5, '2026-10-14': 0, '2026-10-16': 0 } },
-      { path: 'daily/wrong', event: true, count: 0, days: { '2026-10-10': 0, '2026-10-11': 1, '2026-10-12': 8, '2026-10-13': 5, '2026-10-14': 4, '2026-10-16': 9 } },
+      { path: 'daily/right', event: true, count: 0, days: { '2026-10-10': 1, '2026-10-11': 10, '2026-10-12': 2, '2026-10-13': 5, '2026-10-14': 0, '2026-10-16': 0 } },
+      { path: 'daily/wrong', event: true, count: 0, days: { '2026-10-10': 0, '2026-10-11': 0, '2026-10-12': 8, '2026-10-13': 5, '2026-10-14': 4, '2026-10-16': 9 } },
     ],
     days,
   );
@@ -310,7 +320,7 @@ test("Today's unique by day: the hardest and easiest items, today left out", () 
     d.map((x) => [x.answers, x.named]),
     [
       [1, 100],
-      [10, 90],
+      [10, 100],
       [10, 20],
       [10, 50],
       [4, 0],
@@ -320,7 +330,8 @@ test("Today's unique by day: the hardest and easiest items, today left out", () 
   );
   const { hardest, easiest } = hardestAndEasiest(d, 3, 2);
   // The 10th has a single answer, under the 3 the rest have: not ranked. Nor today (the 16th).
-  // Against the usual 47%, 9 of 10 is beyond chance; 2 of 10 (1.7 standard deviations under) and 0 of 4 aren't.
+  // Against the usual 50%, 10 of 10 is beyond chance for one of four days tested either way (zFor(8), 2.5 standard deviations and half an answer); 2 of 10 (1.9 under) and 0 of 4 aren't.
+  // (9 of 10 wouldn't be: one of eight tests goes that far by chance about one time in twelve.)
   assert.deepEqual(hardest, []);
   assert.deepEqual(
     easiest.map((x) => x.day),
@@ -506,6 +517,28 @@ test('joining is called worse only when its failures are well above the usual ra
   assert.equal(troubleOf(counts([100, 100, 100], [2, 2, 2]), countsOf([], DAYS)), null);
 });
 
+test('a test for one of many: zFor raises z as the tests read together grow, never under 2', () => {
+  assert.equal(zFor(1), 2);
+  assert.ok(Math.abs(zFor(30) - 2.94) < 0.01);
+  assert.ok(Math.abs(zFor(168) - 3.43) < 0.01);
+  assert.ok(zFor(1000) > zFor(168));
+});
+
+test('two counts are apart only beyond both their swings, and a count of games beyond its bunches', () => {
+  assert.equal(countsApart(30, 10), true);
+  // 60 against 40: as though 40 were exact, beyond twice its swing; but both are counts, each as much chance's.
+  assert.equal(beyondChanceOf(60, 40), true);
+  assert.equal(countsApart(60, 40), false);
+  // Brought to as many chances: 30 failures against 10 in half the games is 30 against 20.
+  assert.equal(countsApart(30, 10, { scale: 2 }), false);
+  // 200 games against 150: apart one to a player, not three a player (gamesSpread: about five times a count's swing).
+  assert.equal(countsApart(200, 150), true);
+  assert.equal(gamesSpread(300, 100), 5);
+  assert.equal(countsApart(200, 150, { per: gamesSpread(300, 100) }), false);
+  assert.equal(gamesSpread(5, 0), 1);
+  assert.equal(gamesSpread(50, 100), 1);
+});
+
 test('a day far busier than usual stands out, a day chance could make does not', () => {
   const days = daysBetween('2026-10-01', '2026-10-10');
   const values = [40, 42, 38, 41, 95, 39, 44, 52, 40, 30];
@@ -518,6 +551,10 @@ test('a day far busier than usual stands out, a day chance could make does not',
   // At a handful a day, even double is chance.
   assert.deepEqual(spikesOf(days.slice(0, 5), [2, 3, 2, 6, 2]), []);
   assert.deepEqual(spikesOf(days, days.map(() => 0)), []);
+  // A month at 10 a day: a day of 20 is twice the swing, which one of 30 days passes by chance most months; not a spike.
+  const month = daysBetween('2026-10-01', '2026-10-30');
+  assert.deepEqual(spikesOf(month, month.map((_, i) => (i === 10 ? 20 : 10))), []);
+  assert.deepEqual(spikesOf(month, month.map((_, i) => (i === 10 ? 30 : 10))).map((s) => s.day), ['2026-10-11']);
 });
 
 test("a spike's source: the site far above its usual share that day", () => {
@@ -529,6 +566,10 @@ test("a spike's source: the site far above its usual share that day", () => {
   // The usual mix, or most typed in: no site to name.
   assert.equal(spikeSource([{ name: '(unknown)', count: 90 }, { name: 'https://www.reddit.com', count: 14 }], period), null);
   assert.equal(spikeSource([], period), null);
+  // A spike big enough to be most of the period's own visits: its site's usual share is the other days', not one the spike lifted.
+  const big = [{ name: 'reddit.com', count: 450 }, { name: '(unknown)', count: 50 }];
+  const month = [{ name: 'reddit.com', count: 450 + 14 }, { name: '(unknown)', count: 50 + 126 }];
+  assert.deepEqual(spikeSource(big, month), { name: 'reddit.com', share: 90, usualShare: 10 });
 });
 
 test('who brought far more or fewer than before, only beyond chance', () => {
@@ -549,6 +590,24 @@ test('who brought far more or fewer than before, only beyond chance', () => {
     [{ name: 'reddit', count: 100 }, { name: 'google', count: 20 }, { name: 'youtube', count: 20 }],
   );
   assert.deepEqual(surge, { up: { name: 'reddit', now: 300, before: 100 }, down: null });
+  // Ten sites at 40 each, one bringing 56: beyond twice 40's swing, not beyond both counts' for one of ten names.
+  const ten = Array.from({ length: 10 }, (_, i) => ({ name: 'site' + i + '.com', count: 40 }));
+  assert.deepEqual(moversOf(ten.map((r, i) => (i === 3 ? { ...r, count: 56 } : r)), ten), { up: null, down: null });
+  assert.equal(moversOf(ten.map((r, i) => (i === 3 ? { ...r, count: 90 } : r)), ten).up?.name, 'site3.com');
+});
+
+test('the busiest hour is named only beyond chance for one of the hours, each against the days it had', () => {
+  const days = daysBetween('2026-10-01', '2026-10-30');
+  const had = hoursHad(days);
+  // Every hour as busy: a month's Thursdays and Fridays are five to the rest's four, which is no busier.
+  const flat = had.map((row) => row.map((n) => 4 * n));
+  assert.equal(busiestStandsOut(flat, had), false);
+  // An evening at three times the rest stands out.
+  assert.equal(busiestStandsOut(flat.map((row) => row.map((n, h) => (h === 20 ? 3 * n : n))), had), true);
+  // A week at one an hour: an hour of 6 passes twice the swing of one, but not for one of 168.
+  const week = hoursHad(days.slice(0, 7));
+  assert.equal(busiestStandsOut(week.map((row, d) => row.map((n, h) => (d === 2 && h === 20 ? 6 : n))), week), false);
+  assert.equal(busiestStandsOut(week.map((row) => row.map(() => 0)), week), false);
 });
 
 test('the made-up numbers read the same for a day in any period, and add up', () => {
@@ -766,15 +825,16 @@ test('what stands out among the groups: big enough to tell, a mix, the largest f
   const s = demoSlices(demoRead(30, new Date('2026-10-16T18:30:00Z')));
   const found = standouts(s);
   assert.ok(found.length > 0 && found.length <= 6);
-  // The made-up Germans lean to Delve.
-  assert.ok(found.some((f) => f.who.name === 'Germany' && f.what === 'mode' && f.mode === 'delve'));
+  // The made-up Germans lean to Delve: 49 of their 135 games in a month, against a quarter of everyone's, is within what chance makes of one of fifteen groups' nine figures; a quarter's 150 of 404 isn't.
+  assert.ok(!found.some((f) => f.what === 'mode'));
+  const quarter = standouts(demoSlices(demoRead(90, new Date('2026-10-16T18:30:00Z'))));
+  assert.ok(quarter.some((f) => f.who.name === 'Germany' && f.what === 'mode' && f.mode === 'delve'));
   for (const what of ['mode', 'played', 'games', 'daily', 'back', 'joins', 'failures']) assert.ok(found.filter((f) => f.what === what).length <= 2);
   assert.deepEqual(found.map((f) => f.score), [...found.map((f) => f.score)].sort((a, b) => b - a));
   // Groups too small to tell apart say nothing.
   assert.deepEqual(standouts(SLICES, 6, 1000), []);
-  // A problem is never left out for its group's other findings: the made-up Brazilians meet far more failures.
-  const quarter = standouts(demoSlices(demoRead(90, new Date('2026-10-16T18:30:00Z'))));
-  assert.ok(quarter.some((f) => f.who.name === 'Brazil' && f.what === 'failures' && f.tone === 'down'));
+  // A problem is never left out for its group's other findings: far more of the made-up Brazilians' joins fail.
+  assert.ok(quarter.some((f) => f.who.name === 'Brazil' && f.what === 'joins' && f.tone === 'down'));
 });
 
 test("a game's hours under an older name and its name now are added up, so the week's hours read across the change", () => {
@@ -866,6 +926,42 @@ test('who came: with no save on the device or back to one after so long, of thos
   // Before they were told apart: nothing to say, not 0%.
   const none = comersOf(countsOf([path('/', [10, 10, 10], false)], DAYS));
   assert.deepEqual([none.from, backShare(none), appShare(none)], [null, null, null]);
+});
+
+test('the game going worse than before: its scripts failing, a kind of device stuttering, only beyond chance', () => {
+  const counts = (visits: number, script: number, chunk: number, ios: [number, number]) =>
+    countsOf(
+      [
+        path('/', [visits, visits, visits], false),
+        path('error/script', [script, 0, 0]),
+        path('error/chunk', [chunk, 0, 0]),
+        path('frames2/ios/smooth', [ios[0] - ios[1], 0, 0]),
+        path('frames2/ios/some/reveal', [ios[1], 0, 0]),
+      ],
+      DAYS,
+    );
+  const before = counts(100, 5, 2, [100, 5]);
+  assert.equal(healthOf(counts(100, 7, 3, [100, 8]), before), null);
+  const worse = healthOf(counts(100, 40, 3, [100, 30]), before)!;
+  assert.deepEqual(worse.errors, [{ key: 'script', count: 40, expected: 5 }]);
+  assert.deepEqual(worse.stutter.map((d) => [d.device, Math.round(d.share), Math.round(d.before), d.games]), [['ios', 30, 5, 100]]);
+  // Twice the visits bring twice the errors: no worse.
+  assert.equal(healthOf(counts(200, 10, 4, [100, 5]), before), null);
+});
+
+test("bars named alike are one, so a label counted from outside can't take another's place", () => {
+  assert.deepEqual(
+    sameLabels([
+      { label: 'No room with that code', count: 4 },
+      { label: 'Opening a room: host-spam', count: 1 },
+      { label: 'No room with that code', count: 1 },
+      { label: 'Opening a room: host-spam', count: 2 },
+    ]),
+    [
+      { label: 'No room with that code', count: 5 },
+      { label: 'Opening a room: host-spam', count: 3 },
+    ],
+  );
 });
 
 test("the game's own script errors and its parts that didn't load are listed with the failures, but aren't joining's", () => {
@@ -975,19 +1071,31 @@ test("a first visit's steps, of the visits that found no save", () => {
   assert.deepEqual(f.counts, { acted: 0, create: 0, host: 0, room: 0, solo: 0, daily: 0, practice: 0, identify: 0, lobby: 14, played: 10, finished: 7, 'games-2': 0, 'games-5': 0 });
   assert.equal(f.steps.host.from, null, 'not counted yet');
   assert.equal(firstStepsOf(countsOf([path('new/played', [5, 5, 5])], DAYS)).from, null);
-  // The steps counted later: each a share of the visits from the day they were, the first ones' reading as it was.
-  const later = firstStepsOf(countsOf([path('visit/new', [5, 10, 15]), path('new/played', [1, 2, 3]), path('new/host', [0, 4, 5]), path('new/acted', [0, 8, 12])], DAYS));
-  assert.deepEqual(later.steps.host, { from: DAYS[1], visits: 25 });
-  assert.deepEqual(later.steps.played, { from: DAYS[0], visits: 30 });
-  assert.deepEqual([later.counts.host, later.counts.acted, later.counts.played], [9, 20, 6]);
-  // A group counted later still (the Daily's IDENTIFY MORE) from its own first day.
-  const identify = firstStepsOf(countsOf([path('visit/new', [5, 10, 15]), path('new/acted', [0, 8, 12]), path('new/identify', [0, 0, 2])], DAYS));
-  assert.deepEqual(identify.steps.identify, { from: DAYS[2], visits: 15 });
-  assert.deepEqual(identify.steps.acted, { from: DAYS[1], visits: 25 });
-  // A second and fifth game, likewise from their own first day.
-  const games = firstStepsOf(countsOf([path('visit/new', [5, 10, 15]), path('new/acted', [0, 8, 12]), path('new/games-2', [0, 0, 3])], DAYS));
-  assert.deepEqual(games.steps['games-2'], { from: DAYS[2], visits: 15 });
-  assert.equal(games.counts['games-2'], 3);
+  // Mid-October, before the steps counted later were: none of them read.
+  assert.equal(f.steps.identify.from, null);
+});
+
+test("a first visit's later steps, each from the day its group was first counted, not the day one first happened", () => {
+  const days = daysBetween('2026-10-27', '2026-11-03');
+  const at = (p: string, perDay: number[]): PathCount => ({ path: p, event: true, count: perDay.reduce((n, v) => n + v, 0), days: Object.fromEntries(days.map((d, i) => [d, perDay[i] ?? 0])) });
+  const paths = [
+    at('visit/new', [5, 5, 5, 5, 5, 5, 5, 5]),
+    at('new/played', [1, 1, 1, 1, 1, 1, 1, 1]),
+    at('new/acted', [0, 0, 3, 3, 3, 3, 3, 3]),
+    // Nobody pressed IDENTIFY MORE until Nov 1: the days since Oct 29 were counted all the same.
+    at('new/identify', [0, 0, 0, 0, 0, 2, 2, 2]),
+    // A second game's first came the evening it went live (Nov 1): read from the first whole day after.
+    at('new/games-2', [0, 0, 0, 0, 0, 1, 2, 2]),
+  ];
+  const f = firstStepsOf(countsOf(paths, days));
+  assert.deepEqual(f.steps.played, { from: '2026-10-27', visits: 40 });
+  assert.deepEqual(f.steps.acted, { from: '2026-10-29', visits: 30 });
+  assert.deepEqual(f.steps.identify, { from: '2026-10-29', visits: 30 });
+  assert.equal(f.counts.identify, 6);
+  assert.deepEqual(f.steps['games-2'], { from: '2026-11-02', visits: 10 });
+  assert.equal(f.counts['games-2'], 4);
+  // A period begun after they were all counted reads each from its own first day, as the rest.
+  assert.deepEqual(firstStepsOf(countsOf(paths, days.slice(-2))).steps.identify, { from: '2026-11-02', visits: 10 });
 });
 
 test('ISO weeks, and those who first played in one coming back the weeks after', () => {
@@ -1025,6 +1133,8 @@ test('ISO weeks, and those who first played in one coming back the weeks after',
       ['2026-W44', 3, [0]],
     ],
   );
+  // The period ends on a Wednesday, today: its week is three days so far, each row's last week and the newest row's newcomers with it.
+  assert.deepEqual(c.cohorts.map((x) => x.soFar), [3, 3, 3, 3]);
   // Counting began after a week's Monday: who started that week isn't known, rather than far too few.
   const late = countsOf(
     [
@@ -1045,7 +1155,7 @@ test('ISO weeks, and those who first played in one coming back the weeks after',
   );
   assert.deepEqual(later.cohorts[0].weeks, [null, null, 1, 0]);
   // The table's rows: the weeks its columns reach, none after the period (a clock years off).
-  const odd = [...c.cohorts, { week: '2031-W05', monday: weekMonday('2031-W05')!, started: null, weeks: [] }];
+  const odd = [...c.cohorts, { week: '2031-W05', monday: weekMonday('2031-W05')!, started: null, weeks: [], soFar: 3 }];
   assert.deepEqual(recentCohorts(odd, '2026-10-28', 3).map((x) => x.week), ['2026-W42', '2026-W43', '2026-W44']);
   assert.deepEqual(recentCohorts(odd, '2026-10-28').map((x) => x.week), ['2026-W40', '2026-W42', '2026-W43', '2026-W44']);
 });
@@ -1200,6 +1310,22 @@ test("a usual day in UTC days counts only those read from their start, and the g
   assert.equal(countsOf([path('daily/right', [1, 1, 1])], DAYS, 'Europe/Berlin', 9).gameDay, null);
 });
 
+test("Today's unique's days end on the game's day it is now, so each day is named with the item it asked", () => {
+  const hours = (at: Record<number, number>) => Array.from({ length: 24 }, (_, h) => at[h] ?? 0);
+  const daily = (path: string, hours: Record<string, number[]>): PathCount => ({ path, event: true, count: 0, days: {}, hours });
+  // Berlin at 00:30 on the 16th is 23:30 UTC on the 15th: the game still asks the 15th's item, so the 16th isn't a day of it yet.
+  const early = countsOf([daily('daily/right', { '2026-10-15': hours({ 9: 4 }), '2026-10-16': hours({ 0: 2 }) })], DAYS, 'Europe/Berlin', 0.5);
+  const d = dailyDays(early);
+  assert.deepEqual(d.map((x) => x.day), ['2026-10-14', '2026-10-15']);
+  // The answers in the hour past Berlin's midnight were to the 15th's item.
+  assert.equal(d[1].right, 6);
+  // New York at 22:00 on the 16th is 02:00 UTC on the 17th: the game asks the 17th's item.
+  const late = countsOf([daily('daily/right', { '2026-10-16': hours({ 19: 4, 21: 3 }) })], DAYS, 'America/New_York', 22);
+  assert.deepEqual(dailyDays(late).map((x) => [x.day, x.right]), [['2026-10-14', 0], ['2026-10-15', 0], ['2026-10-16', 4], ['2026-10-17', 3]]);
+  // Without the hours, the account's days.
+  assert.deepEqual(dailyDays(countsOf([path('daily/right', [1, 1, 1])], DAYS, 'Europe/Berlin', 0.5)).map((x) => x.day), DAYS);
+});
+
 test('a percent past 100, as failures for every 100 games can run, is still weighed', () => {
   assert.equal(rateBeyondChance(300, 10, 5, 100), true);
 });
@@ -1266,4 +1392,301 @@ test("every device's stutter shares fit under one axis, a share resting on few g
   // iOS: 40% of 5, 20% of 5, and 100% of 2 (too few to set the axis); Android 20% of 10.
   assert.equal(stutterTop(Object.values(l.frames), DAYS, false), 40);
   assert.equal(stutterTop([], DAYS, false), 10);
+});
+
+// GoatCounter's /stats/hits as its source answers it (db/query/hit_list): whole
+// UTC hours, from the one the span starts on to the one its end falls in,
+// each labelled with the zone's offset as it is when asked (`at`), one offset
+// for every day, in days of 24 hours. Put on the clock as api.ts does.
+const H = 3_600_000;
+const offsetAt = (zone: string, at: Date) => {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(at).map((x) => [x.type, x.value]));
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute) - Math.floor(at.getTime() / 60_000) * 60_000;
+};
+type Hit = { path: string; t: number };
+function asGoatCounterLabels(hits: Hit[], span: { start: Date; end: Date }, zone: string, at: Date): Record<string, Record<string, number[]>> {
+  const off = offsetAt(zone, at);
+  const label = (t: number) => new Date(t + off).toISOString();
+  const out: Record<string, Record<string, number[]>> = {};
+  for (const { path, t } of hits) {
+    const hour = Math.floor(t / H) * H;
+    if (hour < span.start.getTime() || hour > span.end.getTime()) continue;
+    const days = (out[path] ??= Object.fromEntries(daysBetween(label(span.start.getTime()).slice(0, 10), label(span.end.getTime()).slice(0, 10)).map((d) => [d, Array<number>(24).fill(0)])));
+    days[label(hour).slice(0, 10)][+label(hour).slice(11, 13)]++;
+  }
+  return out;
+}
+const goatCounter = (hits: Hit[], span: { start: Date; end: Date }, zone: string, at: Date): PathCount[] =>
+  Object.entries(asGoatCounterLabels(hits, span, zone, at)).map(([path, hours]) => {
+    const onIt = onClock(hours, zone, at);
+    return { path, event: path !== '/', count: Object.values(onIt.days).reduce((a, b) => a + b, 0), ...onIt };
+  });
+
+test("GoatCounter's hours, labelled with the zone's offset when asked, go back onto the clock of their own day", () => {
+  const tz = 'Europe/Berlin';
+  // Read on Nov 3 (winter time, +1): a summer day comes labelled an hour early.
+  const at = new Date('2026-11-03T09:30:00Z');
+  const span = { start: midnight(tz, '2026-10-19'), end: at };
+  // An answer at 00:30 UTC on Oct 20 (02:30 in Berlin); a visit at 20:30 in Berlin on Tue Oct 20; one at 00:30 on Oct 21 there.
+  const hits = [
+    { path: 'daily/right', t: Date.parse('2026-10-20T00:30:00Z') },
+    { path: '/', t: Date.parse('2026-10-20T18:30:00Z') },
+    { path: '/', t: Date.parse('2026-10-20T22:30:00Z') },
+  ];
+  const raw = asGoatCounterLabels(hits, span, tz, at);
+  // GoatCounter has the answer at Oct 20's 01:00, the visit at 19:00, and the period's first hour as Oct 18's last.
+  assert.equal(raw['daily/right']['2026-10-20'][1], 1);
+  assert.equal(raw['/']['2026-10-20'][19], 1);
+  assert.equal(raw['/']['2026-10-20'][23], 1);
+  assert.ok('2026-10-18' in raw['/']);
+  const [answers, visits] = goatCounter(hits, span, tz, at).sort((a, b) => (a.path < b.path ? -1 : 1)).reverse();
+  // On the clock: the answer on the UTC day it was given, the visit at Tuesday 20:00, the 00:30 one on the 21st.
+  assert.deepEqual(utcPerDay(answers, ['2026-10-19', '2026-10-20'], tz), [0, 1]);
+  assert.equal(weekHours([visits], ['2026-10-20', '2026-10-21'])![1][20], 1);
+  assert.deepEqual([visits.days['2026-10-20'], visits.days['2026-10-21'], visits.days['2026-10-18'] ?? 0], [1, 1, 0]);
+  // A visit at 10:45 on a summer day is in the 10:00 hour: none of it by 10:00, half of it by 10:30, all by 11:00.
+  const morning = goatCounter([{ path: '/', t: Date.parse('2026-10-20T08:45:00Z') }], span, tz, at);
+  assert.deepEqual([10, 10.5, 11].map((until) => usualByNow(morning, ['2026-10-20', '2026-11-03'], until)), [0, 0.5, 1]);
+});
+
+test('the night the clocks go back, its 02:00 holds both of its hours; read in summer, a winter day comes back to its own midnight', () => {
+  const tz = 'Europe/Berlin';
+  const at = new Date('2026-11-03T09:30:00Z');
+  // 00:30 and 01:30 UTC on Oct 25 are both 02:30 in Berlin; 22:30 UTC on Oct 24 is 00:30 on the 25th.
+  const [p] = goatCounter(['2026-10-24T22:30:00Z', '2026-10-25T00:30:00Z', '2026-10-25T01:30:00Z'].map((t) => ({ path: '/', t: Date.parse(t) })), { start: midnight(tz, '2026-10-24'), end: at }, tz, at);
+  assert.deepEqual([p.hours!['2026-10-25'][0], p.hours!['2026-10-25'][2], p.days['2026-10-25']], [1, 2, 3]);
+  // Read in April 2027 (summer time, +2): a January visit at 00:30 in Berlin comes labelled 01:00; on the clock it's at 00:00 again.
+  const spring = new Date('2027-04-10T09:00:00Z');
+  const [q] = goatCounter([{ path: '/', t: Date.parse('2027-01-15T23:30:00Z') }], { start: midnight(tz, '2027-01-14'), end: spring }, tz, spring);
+  assert.equal(q.hours!['2027-01-16'][0], 1);
+  // When each hour on the clock begins: the doubled 02:00 lasts two hours, the day 25.
+  const s = hourStarts(tz, '2026-10-25');
+  assert.deepEqual([s[2], s[3], s[24]].map((t) => new Date(t).toISOString()), ['2026-10-25T00:00:00.000Z', '2026-10-25T02:00:00.000Z', '2026-10-25T23:00:00.000Z']);
+});
+
+/** One visit every `every` minutes from `from` to `at`. */
+const steady = (from: string, at: Date, every = 30): Hit[] => {
+  const out: Hit[] = [];
+  for (let t = Date.parse(from); t < at.getTime(); t += every * 60_000) out.push({ path: '/', t });
+  return out;
+};
+/** Where a read made as Analytics' load() makes it starts its period, and whether it compares. */
+const readAt = (hits: Hit[], at: Date, days: number, began: string | null = null) => {
+  const tz = 'Europe/Berlin';
+  const s = spansOf(tz, at, days, began);
+  const n = goatCounter(hits, s.now, tz, at);
+  const b = s.before ? goatCounter(hits, s.before, tz, at) : [];
+  return { ...s, ...countedSpan(firstCounted([...b, ...n]), s.from, s.fromBefore, s.today) };
+};
+
+test('a site counted from long before is compared with the period before, in winter and in summer', () => {
+  for (const [iso, days] of [
+    ['2026-11-09T09:30:00Z', 7],
+    ['2026-11-20T09:30:00Z', 7],
+    ['2026-12-20T09:30:00Z', 30],
+    ['2026-07-20T09:30:00Z', 7],
+  ] as const) {
+    const at = new Date(iso);
+    const r = readAt(steady('2026-03-01T00:00:00Z', at, 60), at, days);
+    assert.deepEqual([r.start, r.compare], [r.from, true], iso);
+  }
+});
+
+test('counting begun partway through a day: the period starts the day after, and compares once the day before it was counted whole', () => {
+  // Counting began at 15:00 on Oct 16 (Berlin).
+  const hits = (at: Date) => steady('2026-10-16T13:00:00Z', at);
+  const week = new Date('2026-10-20T09:30:00Z');
+  assert.deepEqual(readAt(hits(week), week, 7).start, '2026-10-17');
+  assert.equal(readAt(hits(week), week, 7).compare, false);
+  // On Oct 31 the week before runs from Oct 18, counted whole; on Oct 24 it ran from Oct 11, before counting began.
+  for (const [iso, compare] of [['2026-10-31T09:30:00Z', true], ['2026-10-24T09:30:00Z', false], ['2026-10-30T09:30:00Z', true]] as const) {
+    const at = new Date(iso);
+    assert.equal(readAt(hits(at), at, 7).compare, compare, iso);
+  }
+});
+
+test("the period before's last day is cut where today is, by the clock, across a clock change too", () => {
+  const tz = 'Europe/Berlin';
+  // Six visits an hour, steadily: the period before's last day should have had as many hours as today.
+  for (const [iso, days, hours] of [
+    ['2026-11-03T09:30:00Z', 7, 10.5],
+    ['2026-11-03T09:05:00Z', 7, 10 + 5 / 60],
+    // Its last day Oct 4, in summer time.
+    ['2026-11-03T09:30:00Z', 30, 10.5],
+    // Today the day the clocks went back: the period before's is cut at 10:30 on the clock too, though today has had 11.5 hours.
+    ['2026-10-25T09:30:00Z', 30, 10.5],
+  ] as const) {
+    const at = new Date(iso);
+    const s = spansOf(tz, at, days);
+    const hits = steady('2026-03-01T00:00:00Z', at, 10);
+    const now = countsOf(goatCounter(hits, s.now, tz, at), daysBetween(s.from, s.today), tz, s.until);
+    const before = countsOf(goatCounter(hits, s.before!, tz, at), daysBetween(s.fromBefore, s.toBefore), tz, s.until, true);
+    assert.equal(before.visitors.perDay.at(-1), Math.round(6 * hours), iso);
+    assert.equal(before.visitors.perDay[0], 144, iso);
+    if (iso !== '2026-10-25T09:30:00Z') assert.equal(now.visitors.perDay.at(-1), Math.round(6 * hours), iso);
+  }
+});
+
+test("in a zone behind UTC, Today's unique's first day is read whole in the period as in the period before", () => {
+  // New York, a Week read on Nov 3 at 23:30 UTC: each first UTC day begins at 20:00 the evening before, on the clock there.
+  const tz = 'America/New_York';
+  const at = new Date('2026-11-03T23:30:00Z');
+  const s = spansOf(tz, at, 7);
+  const hits = steady('2026-10-01T00:00:00Z', at, 30).map((h) => ({ ...h, path: 'daily/right' }));
+  const now = countsOf(goatCounter(hits, s.now, tz, at), daysBetween(s.from, s.today), tz, s.until);
+  const before = countsOf(goatCounter(hits, s.before!, tz, at), daysBetween(s.fromBefore, s.toBefore), tz, s.until, true);
+  const [first, firstBefore] = [dailyDays(now)[0], dailyDays(before)[0]];
+  assert.deepEqual([first.day, first.right], ['2026-10-28', 48]);
+  assert.deepEqual([firstBefore.day, firstBefore.right], ['2026-10-21', 48]);
+});
+
+test('countries are compared over whole days, as GoatCounter keeps them by the day', () => {
+  const tz = 'Europe/Berlin';
+  // GoatCounter's countries (cron/location_stat.go, hit_stats.ListLocations): kept by the hit's UTC date, asked for by the days the span's ends fall on there.
+  const countries = (hits: Hit[], span: { start: Date; end: Date }) => {
+    const [from, to] = [dayIn(tz, span.start), dayIn(tz, span.end)];
+    return hits.filter((h) => new Date(h.t).toISOString().slice(0, 10) >= from && new Date(h.t).toISOString().slice(0, 10) <= to).length;
+  };
+  // Germany steadily, at 10:30 on Nov 3, a week.
+  const at = new Date('2026-11-03T09:30:00Z');
+  const s = spansOf(tz, at, 7);
+  const hits = steady('2026-10-01T00:00:00Z', at, 10);
+  // Asked for from the period's first day, as Analytics asks (its read of the counts starts the day before).
+  const now = countries(hits, untilDay(tz, { ...s.now, start: midnight(tz, s.from) }, s.today));
+  const before = countries(hits, untilDay(tz, { ...s.before!, start: midnight(tz, s.fromBefore) }, s.toBefore));
+  assert.equal(now, 6 * 24 * 6);
+  assert.equal(before, now);
+});
+
+test('where counting began is known, nothing from before it is read, and the period comes out the same', () => {
+  // Counting began partway through Oct 16; a Quarter and a Year read on Nov 3.
+  const at = new Date('2026-11-03T09:30:00Z');
+  const hits = steady('2026-10-16T13:00:00Z', at);
+  for (const days of [90, 364]) {
+    const r = readAt(hits, at, days, '2026-10-17');
+    assert.equal(dayIn('Europe/Berlin', r.now.start), '2026-10-16');
+    assert.equal(r.before, null);
+    assert.deepEqual([r.start, r.compare], [readAt(hits, at, days).start, false]);
+    assert.equal(r.start, '2026-10-17');
+  }
+  // A Week, its period before after counting began: read from the day before it, as without it.
+  assert.equal(dayIn('Europe/Berlin', readAt(hits, at, 7, '2026-10-17').before!.start), '2026-10-20');
+  // A Month on Nov 16 (from Oct 18): its period before (Sep 18 to Oct 17) is read from the day counting began on, and isn't compared.
+  const later = new Date('2026-11-16T09:30:00Z');
+  const month = readAt(steady('2026-10-16T13:00:00Z', later), later, 30, '2026-10-17');
+  assert.equal(dayIn('Europe/Berlin', month.before!.start), '2026-10-16');
+  assert.deepEqual([month.start, month.compare], ['2026-10-18', false]);
+});
+
+test('a range across a new year says the years, so a year never reads as run backwards', () => {
+  assert.equal(dayRange('2026-10-05', '2026-11-03'), 'Oct 5 to Nov 3');
+  assert.equal(dayRange('2025-11-05', '2026-11-03'), 'Nov 5, 2025 to Nov 3, 2026');
+  assert.equal(dayRange('2026-12-21', '2027-01-19'), 'Dec 21, 2026 to Jan 19, 2027');
+});
+
+test('a kept read is used only in the shape this build keeps, and for its own period', () => {
+  const r = { ...demoUpdate(30), v: READ_V };
+  const raw = JSON.stringify(r);
+  assert.equal(keptRead(raw, 30)?.span, 30);
+  assert.equal(keptRead(raw, 7), null);
+  assert.equal(keptRead(JSON.stringify({ ...r, v: READ_V - 1 }), 30), null);
+  assert.equal(keptRead(null, 30), null);
+  assert.equal(keptRead('{not json', 30), null);
+  // This build's kept read has the unread counts (Counts.ready, dailyBack, delveRuns): one kept without them is read again.
+  assert.equal(READ_V, 14);
+});
+
+test("a read shown before its lists are in says they're being read, never that there are none", () => {
+  const r = demoUpdate(30);
+  const cold = { ...r, systems: [], countries: [], refs: [], waiting: true };
+  assert.equal(orReading(cold, 'No visitors in these days.'), 'Reading…');
+  assert.equal(orReading({ ...cold, waiting: undefined }, 'No visitors in these days.'), 'No visitors in these days.');
+});
+
+test('the periods counting has not reached are one, the shortest that holds every day counted', () => {
+  assert.equal(coverOf(null, '2026-11-03'), null);
+  // 19 days counted: the Month holds them, Quarter and Year are it again.
+  assert.equal(coverOf('2026-10-16', '2026-11-03')?.value, 30);
+  assert.equal(coverOf('2026-10-28', '2026-11-03')?.value, 7);
+  assert.equal(coverOf('2026-10-28', '2026-11-04')?.value, 30);
+  // Past the longest, every period is its own.
+  assert.equal(coverOf('2025-10-16', '2026-11-03'), null);
+});
+
+test('the paths counted from Oct 29 are read from that day alone, never against the days before', () => {
+  const days = daysBetween('2026-10-27', '2026-10-30');
+  const at = (p: string, perDay: number[]): PathCount => ({ path: p, event: true, count: perDay.reduce((n, v) => n + v, 0), days: Object.fromEntries(days.map((d, i) => [d, perDay[i] ?? 0])) });
+  const c = countsOf(
+    [
+      at('reach/page', [20, 20, 10, 10]),
+      at('reach/create', [0, 0, 4, 6]),
+      at('reach/daily', [0, 0, 5, 5]),
+      at('daily/back', [0, 0, 2, 3]),
+      at('load/ready-2s', [0, 0, 3, 3]),
+      at('load/ready-5s', [0, 0, 1, 0]),
+      at('load/ready-later', [0, 0, 0, 1]),
+      at('end/delve-online', [5, 5, 4, 4]),
+      at('end/delve', [0, 0, 2, 0]),
+      at('share/delve', [0, 0, 1, 2]),
+    ],
+    days,
+  );
+  // The start page's steps: of the page loads since Oct 29 (20), not the month's (60).
+  const s = startStepsOf(c);
+  assert.equal(s.from, '2026-10-29');
+  assert.equal(s.visitors, 20);
+  assert.equal(reachedShare(s, 'create'), 50);
+  // Ready within 2 s, 5 s and 10 s hold the ones before; later stands alone.
+  const r = readinessOf(c);
+  assert.equal(r.timed, 8);
+  assert.deepEqual(READY_ROWS.map((row) => readyCount(r, row.within)), [6, 7, 7, 1]);
+  assert.deepEqual(dailyBackOf(c), { from: '2026-10-29', answered: 10, back: 5 });
+  // Runs ended under the older name count too, but only those since Oct 29.
+  assert.deepEqual(delveSharedOf(c), { from: '2026-10-29', ended: 10, shared: 3 });
+  // A period that ends before Oct 29 has none of them: no share of nothing, nothing to set a later one against.
+  const before = countsOf([at('reach/page', [20, 20, 0, 0]), at('end/delve', [5, 5, 0, 0])], days.slice(0, 2));
+  assert.equal(startStepsOf(before).from, null);
+  assert.equal(readinessOf(before).from, null);
+  assert.equal(dailyBackOf(before).from, null);
+  assert.deepEqual(delveSharedOf(before), { from: null, ended: 0, shared: 0 });
+  // The start page's steps are named as a first visit's.
+  assert.deepEqual(START_JOURNEY.map((j) => j.step), ['create', 'host', 'room', 'solo', 'daily', 'practice', 'identify']);
+});
+
+test('the demo shows the paths counted from Oct 29', () => {
+  const l = demoRead(30).now;
+  assert.ok(readinessOf(l).timed > 0 && dailyBackOf(l).back > 0 && delveSharedOf(l).shared > 0);
+  assert.ok((reachedShare(startStepsOf(l), 'create') ?? 0) > 0);
+});
+
+test('a share reads as a whole percent, a dash where there is none', () => {
+  assert.deepEqual([pct(34.6), pct(0), pct(100), pct(null)], ['35%', '0%', '100%', '–']);
+});
+
+test("the demo's query gives each state it names, and the countries to yesterday", () => {
+  const at = new Date('2026-11-03T15:30:00Z');
+  const q = (s: string) => demoStateOf(new URLSearchParams(s), '2026-11-03');
+  assert.deepEqual(q('demo'), { since: undefined, compare: undefined, incomplete: undefined, first: undefined, alert: undefined });
+  assert.equal(q('demo&since').since, '2026-10-14');
+  assert.equal(q('demo&since=2026-10-20').since, '2026-10-20');
+  const plain = demoUpdate(7, at);
+  assert.deepEqual([plain.v, plain.compare, plain.complete, plain.began, counted(plain)], [READ_V, true, true, null, false]);
+  assert.ok(plain.changes);
+  assert.equal(troubleOf(plain.now, plain.before), null);
+  assert.equal(healthOf(plain.now, plain.before), null);
+  // The countries to yesterday, today left out.
+  const sum = (l: { count: number }[]) => l.reduce((n, x) => n + x.count, 0);
+  assert.equal(sum(plain.countriesWhole!), plain.now.visitors.total - plain.now.visitors.perDay.at(-1)!);
+  // Since Oct 20: a Month starts on Oct 21 with nothing to compare with, and the longer periods are one ("Since Oct 21").
+  const since = demoRead(30, at, q('demo&since=2026-10-20'));
+  assert.deepEqual([since.from, since.began, since.compare, counted(since)], ['2026-10-21', '2026-10-20', false, true]);
+  assert.equal(coverOf(since.from, since.to)?.value, 30);
+  assert.deepEqual([since.countriesBefore, since.countriesWhole], [[], []]);
+  assert.equal(since.before.visitors.total, 0);
+  assert.equal(demoRead(30, at, q('demo&compare=0')).compare, false);
+  assert.equal(demoRead(7, at, q('demo&incomplete')).complete, false);
+  assert.equal(demoUpdate(7, at, q('demo&first')).changes, null);
+  const alert = demoRead(7, at, q('demo&alert'));
+  assert.ok(troubleOf(alert.now, alert.before)?.today);
+  assert.deepEqual(healthOf(alert.now, alert.before)?.errors.map((e) => e.key), ['script']);
 });

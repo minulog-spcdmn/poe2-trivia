@@ -2,12 +2,17 @@
   // Analytics' door: the GoatCounter API key it reads with, asked once and
   // kept in this browser alone. Says where to make one (read-only), and why
   // it's safe on a page anyone could open.
+  import { untrack } from 'svelte';
   import { KEY_PAGE } from './api';
 
-  let { onkey, refused = '' }: { onkey: (key: string) => void; refused?: string } = $props();
-  let key = $state('');
+  /** `typed`: the key GoatCounter just turned down, left in the field (selected) to put right or paste over. */
+  let { onkey, refused = '', typed = '' }: { onkey: (key: string) => void; refused?: string; typed?: string } = $props();
+  let key = $state(untrack(() => typed));
   let field = $state<HTMLInputElement>();
-  $effect(() => field?.focus());
+  $effect(() => {
+    field?.focus();
+    field?.select();
+  });
 
   function submit(e: Event) {
     e.preventDefault();

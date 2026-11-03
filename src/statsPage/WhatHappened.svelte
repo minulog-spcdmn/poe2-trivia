@@ -3,7 +3,8 @@
   // (insights.ts). The days far busier than usual and the site behind each;
   // the site and the country that brought far more, or far fewer, than the
   // period before, beyond how all of them moved together (insights.ts
-  // moversOf), where the period before was counted in full (read.compare).
+  // moversOf), where the period before was counted in full (read.compare):
+  // countries over whole days alone, as GoatCounter keeps them by the day.
   // Nothing said that chance could have done.
   import { fmt, longDay, siteName } from './chart';
   import { moversOf, spikeSource, spikesOf } from './insights';
@@ -18,11 +19,16 @@
   );
   const still = { up: null, down: null };
   const refs = $derived(read.compare ? moversOf(read.refs, read.refsBefore ?? []) : still);
-  const places = $derived(read.compare ? moversOf(read.countries, read.countriesBefore ?? []) : still);
+  // Countries over whole days (read.ts countriesWhole), today left out; a read kept from before then has today's in.
+  const places = $derived(read.compare ? moversOf(read.countriesWhole ?? read.countries, read.countriesBefore ?? []) : still);
+  const placesWhen = $derived(read.countriesWhole ? { now: ' up to yesterday', before: 'as many days before' } : { now: '', before: period.before });
   const none = $derived(!spikes.length && !refs.up && !refs.down && !places.up && !places.down);
 </script>
 
-{#if none}
+{#if read.waiting}
+  <!-- The lists the sites and countries come from are still on the way (read.ts orReading). -->
+  <p class="quiet">Reading…</p>
+{:else if none}
   <p class="quiet">Nothing out of the ordinary: no day far busier than usual{#if read.compare}, and no site or country bringing far more or fewer than {period.before}, beyond how they all moved{/if}.</p>
 {:else}
   <ul class="happened">
@@ -36,13 +42,13 @@
       <li class="rise"><span><b>{siteName(refs.up.name)}</b> brought <b>{fmt(refs.up.now)}</b> visits, against {fmt(refs.up.before)} in {period.before}.</span></li>
     {/if}
     {#if places.up}
-      <li class="rise"><span><b>{places.up.name}</b>: <b>{fmt(places.up.now)}</b> visits, against {fmt(places.up.before)} in {period.before}.</span></li>
+      <li class="rise"><span><b>{places.up.name}</b>: <b>{fmt(places.up.now)}</b> visits{placesWhen.now}, against {fmt(places.up.before)} in {placesWhen.before}.</span></li>
     {/if}
     {#if refs.down}
       <li class="fall"><span><b>{siteName(refs.down.name)}</b> brought <b>{fmt(refs.down.now)}</b> visits, against {fmt(refs.down.before)} in {period.before}.</span></li>
     {/if}
     {#if places.down}
-      <li class="fall"><span><b>{places.down.name}</b>: <b>{fmt(places.down.now)}</b> visits, against {fmt(places.down.before)} in {period.before}.</span></li>
+      <li class="fall"><span><b>{places.down.name}</b>: <b>{fmt(places.down.now)}</b> visits{placesWhen.now}, against {fmt(places.down.before)} in {placesWhen.before}.</span></li>
     {/if}
   </ul>
 {/if}

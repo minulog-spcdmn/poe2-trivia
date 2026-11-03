@@ -11,16 +11,18 @@
 <a class="kpi" {href}>
   <span class="name">{label}<span class="more" aria-hidden="true">›</span></span>
   <span class="value">{value}</span>
-  {#if change}<span class="change">{@render change()}</span>{/if}
+  <span class="change">{#if change}{@render change()}{/if}</span>
   <span class="means">{means}</span>
   {#if spark}<span class="spark">{@render spark()}</span>{/if}
 </a>
 
 <style>
   .kpi {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
+    /* Rows shared with the other cards of its row (name, value, change, means, spark), so a wrapped name or line moves the figures of the whole row together. */
+    display: grid;
+    grid-row: span 5;
+    grid-template-rows: subgrid;
+    row-gap: 0.35rem;
     min-width: 0;
     padding: 1.4rem 1.5rem 1.5rem;
     color: inherit;
@@ -63,9 +65,9 @@
     font-size: 1.05rem;
     color: var(--a-muted);
   }
-  /* At the foot, so the sparks of a row line up whatever the lines above them. */
+  /* In the last track, so the sparks of a row line up at the foot whatever the lines above them. */
   .spark {
-    margin-top: auto;
+    align-self: end;
     padding-top: 0.6rem;
   }
   .change {

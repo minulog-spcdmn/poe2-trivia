@@ -7,7 +7,7 @@
   // out against it. Small, to stand beside others of its kind on one axis
   // (`top`, in percent: model.ts stutterTop). Pointing (or the arrow keys)
   // reads a day.
-  import { axis, fmt, labelled, longDay, shortDay } from './chart';
+  import { axis, fmt, labelled, longDay, pct, shortDay } from './chart';
   import { Crosshair } from './crosshair.svelte';
   import { FEW_GAMES, grouped } from './model';
   import { rootFont } from './rootFont.svelte';
@@ -50,7 +50,6 @@
     (px) => Math.round(((px - PAD.left) / Math.max(1, plotW)) * (n - 1)),
   );
   const tipLeft = $derived(hair.at === null ? 0 : Math.max(110, Math.min(width - 110, x(hair.at))));
-  const pct = (v: number) => `${Math.round(v)}%`;
 </script>
 
 <div class="chart" bind:clientWidth={width} style:height="{height}px">
