@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import { addDays, dayIn, hourStarts, hoursIn, midnight, onClock, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, dayRange, labelled, restsOn } from '../src/statsPage/chart.ts';
 import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
-import { appShare, backShare, beforeShare, beyondChanceOf, comersOf, failureRate, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
+import { appShare, backShare, beforeShare, beyondChanceOf, busiestStandsOut, comersOf, countsApart, failureRate, gamesSpread, healthOf, sameLabels, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
 import { spansOf, untilDay } from '../src/statsPage/read.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
 import { apartFrom, countsIn, depthCalls, depthsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
-import { currentName, isoWeek, underNamesNow, weekMonday, busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, countedSpan, dayAverageHours, dayAverages, firstCounted, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, stutterTop, usualByNow, usualByNowUtc, USUAL_DAYS, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
+import { currentName, isoWeek, underNamesNow, weekMonday, busiest, hoursHad, seatsOf, weekAverage, zFor, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, countedSpan, dayAverageHours, dayAverages, firstCounted, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, stutterTop, usualByNow, usualByNowUtc, USUAL_DAYS, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
 
 const DAYS = daysBetween('2026-10-14', '2026-10-16');
 const path = (p: string, perDay: number[], event = true): PathCount => ({
@@ -301,8 +301,8 @@ test("Today's unique by day: the hardest and easiest items, today left out", () 
   const days = daysBetween('2026-10-10', '2026-10-16');
   const l = countsOf(
     [
-      { path: 'daily/right', event: true, count: 0, days: { '2026-10-10': 1, '2026-10-11': 9, '2026-10-12': 2, '2026-10-13': 5, '2026-10-14': 0, '2026-10-16': 0 } },
-      { path: 'daily/wrong', event: true, count: 0, days: { '2026-10-10': 0, '2026-10-11': 1, '2026-10-12': 8, '2026-10-13': 5, '2026-10-14': 4, '2026-10-16': 9 } },
+      { path: 'daily/right', event: true, count: 0, days: { '2026-10-10': 1, '2026-10-11': 10, '2026-10-12': 2, '2026-10-13': 5, '2026-10-14': 0, '2026-10-16': 0 } },
+      { path: 'daily/wrong', event: true, count: 0, days: { '2026-10-10': 0, '2026-10-11': 0, '2026-10-12': 8, '2026-10-13': 5, '2026-10-14': 4, '2026-10-16': 9 } },
     ],
     days,
   );
@@ -311,7 +311,7 @@ test("Today's unique by day: the hardest and easiest items, today left out", () 
     d.map((x) => [x.answers, x.named]),
     [
       [1, 100],
-      [10, 90],
+      [10, 100],
       [10, 20],
       [10, 50],
       [4, 0],
@@ -321,7 +321,8 @@ test("Today's unique by day: the hardest and easiest items, today left out", () 
   );
   const { hardest, easiest } = hardestAndEasiest(d, 3, 2);
   // The 10th has a single answer, under the 3 the rest have: not ranked. Nor today (the 16th).
-  // Against the usual 47%, 9 of 10 is beyond chance; 2 of 10 (1.7 standard deviations under) and 0 of 4 aren't.
+  // Against the usual 50%, 10 of 10 is beyond chance for one of four days tested either way (zFor(8), 2.5 standard deviations and half an answer); 2 of 10 (1.9 under) and 0 of 4 aren't.
+  // (9 of 10 wouldn't be: one of eight tests goes that far by chance about one time in twelve.)
   assert.deepEqual(hardest, []);
   assert.deepEqual(
     easiest.map((x) => x.day),
@@ -507,6 +508,28 @@ test('joining is called worse only when its failures are well above the usual ra
   assert.equal(troubleOf(counts([100, 100, 100], [2, 2, 2]), countsOf([], DAYS)), null);
 });
 
+test('a test for one of many: zFor raises z as the tests read together grow, never under 2', () => {
+  assert.equal(zFor(1), 2);
+  assert.ok(Math.abs(zFor(30) - 2.94) < 0.01);
+  assert.ok(Math.abs(zFor(168) - 3.43) < 0.01);
+  assert.ok(zFor(1000) > zFor(168));
+});
+
+test('two counts are apart only beyond both their swings, and a count of games beyond its bunches', () => {
+  assert.equal(countsApart(30, 10), true);
+  // 60 against 40: as though 40 were exact, beyond twice its swing; but both are counts, each as much chance's.
+  assert.equal(beyondChanceOf(60, 40), true);
+  assert.equal(countsApart(60, 40), false);
+  // Brought to as many chances: 30 failures against 10 in half the games is 30 against 20.
+  assert.equal(countsApart(30, 10, { scale: 2 }), false);
+  // 200 games against 150: apart one to a player, not three a player (gamesSpread: about five times a count's swing).
+  assert.equal(countsApart(200, 150), true);
+  assert.equal(gamesSpread(300, 100), 5);
+  assert.equal(countsApart(200, 150, { per: gamesSpread(300, 100) }), false);
+  assert.equal(gamesSpread(5, 0), 1);
+  assert.equal(gamesSpread(50, 100), 1);
+});
+
 test('a day far busier than usual stands out, a day chance could make does not', () => {
   const days = daysBetween('2026-10-01', '2026-10-10');
   const values = [40, 42, 38, 41, 95, 39, 44, 52, 40, 30];
@@ -519,6 +542,10 @@ test('a day far busier than usual stands out, a day chance could make does not',
   // At a handful a day, even double is chance.
   assert.deepEqual(spikesOf(days.slice(0, 5), [2, 3, 2, 6, 2]), []);
   assert.deepEqual(spikesOf(days, days.map(() => 0)), []);
+  // A month at 10 a day: a day of 20 is twice the swing, which one of 30 days passes by chance most months; not a spike.
+  const month = daysBetween('2026-10-01', '2026-10-30');
+  assert.deepEqual(spikesOf(month, month.map((_, i) => (i === 10 ? 20 : 10))), []);
+  assert.deepEqual(spikesOf(month, month.map((_, i) => (i === 10 ? 30 : 10))).map((s) => s.day), ['2026-10-11']);
 });
 
 test("a spike's source: the site far above its usual share that day", () => {
@@ -530,6 +557,10 @@ test("a spike's source: the site far above its usual share that day", () => {
   // The usual mix, or most typed in: no site to name.
   assert.equal(spikeSource([{ name: '(unknown)', count: 90 }, { name: 'https://www.reddit.com', count: 14 }], period), null);
   assert.equal(spikeSource([], period), null);
+  // A spike big enough to be most of the period's own visits: its site's usual share is the other days', not one the spike lifted.
+  const big = [{ name: 'reddit.com', count: 450 }, { name: '(unknown)', count: 50 }];
+  const month = [{ name: 'reddit.com', count: 450 + 14 }, { name: '(unknown)', count: 50 + 126 }];
+  assert.deepEqual(spikeSource(big, month), { name: 'reddit.com', share: 90, usualShare: 10 });
 });
 
 test('who brought far more or fewer than before, only beyond chance', () => {
@@ -550,6 +581,24 @@ test('who brought far more or fewer than before, only beyond chance', () => {
     [{ name: 'reddit', count: 100 }, { name: 'google', count: 20 }, { name: 'youtube', count: 20 }],
   );
   assert.deepEqual(surge, { up: { name: 'reddit', now: 300, before: 100 }, down: null });
+  // Ten sites at 40 each, one bringing 56: beyond twice 40's swing, not beyond both counts' for one of ten names.
+  const ten = Array.from({ length: 10 }, (_, i) => ({ name: 'site' + i + '.com', count: 40 }));
+  assert.deepEqual(moversOf(ten.map((r, i) => (i === 3 ? { ...r, count: 56 } : r)), ten), { up: null, down: null });
+  assert.equal(moversOf(ten.map((r, i) => (i === 3 ? { ...r, count: 90 } : r)), ten).up?.name, 'site3.com');
+});
+
+test('the busiest hour is named only beyond chance for one of the hours, each against the days it had', () => {
+  const days = daysBetween('2026-10-01', '2026-10-30');
+  const had = hoursHad(days);
+  // Every hour as busy: a month's Thursdays and Fridays are five to the rest's four, which is no busier.
+  const flat = had.map((row) => row.map((n) => 4 * n));
+  assert.equal(busiestStandsOut(flat, had), false);
+  // An evening at three times the rest stands out.
+  assert.equal(busiestStandsOut(flat.map((row) => row.map((n, h) => (h === 20 ? 3 * n : n))), had), true);
+  // A week at one an hour: an hour of 6 passes twice the swing of one, but not for one of 168.
+  const week = hoursHad(days.slice(0, 7));
+  assert.equal(busiestStandsOut(week.map((row, d) => row.map((n, h) => (d === 2 && h === 20 ? 6 : n))), week), false);
+  assert.equal(busiestStandsOut(week.map((row) => row.map(() => 0)), week), false);
 });
 
 test('the made-up numbers read the same for a day in any period, and add up', () => {
@@ -767,15 +816,16 @@ test('what stands out among the groups: big enough to tell, a mix, the largest f
   const s = demoSlices(demoRead(30, new Date('2026-10-16T18:30:00Z')));
   const found = standouts(s);
   assert.ok(found.length > 0 && found.length <= 6);
-  // The made-up Germans lean to Delve.
-  assert.ok(found.some((f) => f.who.name === 'Germany' && f.what === 'mode' && f.mode === 'delve'));
+  // The made-up Germans lean to Delve: 49 of their 135 games in a month, against a quarter of everyone's, is within what chance makes of one of fifteen groups' nine figures; a quarter's 150 of 404 isn't.
+  assert.ok(!found.some((f) => f.what === 'mode'));
+  const quarter = standouts(demoSlices(demoRead(90, new Date('2026-10-16T18:30:00Z'))));
+  assert.ok(quarter.some((f) => f.who.name === 'Germany' && f.what === 'mode' && f.mode === 'delve'));
   for (const what of ['mode', 'played', 'games', 'daily', 'back', 'joins', 'failures']) assert.ok(found.filter((f) => f.what === what).length <= 2);
   assert.deepEqual(found.map((f) => f.score), [...found.map((f) => f.score)].sort((a, b) => b - a));
   // Groups too small to tell apart say nothing.
   assert.deepEqual(standouts(SLICES, 6, 1000), []);
-  // A problem is never left out for its group's other findings: the made-up Brazilians meet far more failures.
-  const quarter = standouts(demoSlices(demoRead(90, new Date('2026-10-16T18:30:00Z'))));
-  assert.ok(quarter.some((f) => f.who.name === 'Brazil' && f.what === 'failures' && f.tone === 'down'));
+  // A problem is never left out for its group's other findings: far more of the made-up Brazilians' joins fail.
+  assert.ok(quarter.some((f) => f.who.name === 'Brazil' && f.what === 'joins' && f.tone === 'down'));
 });
 
 test("a game's hours under an older name and its name now are added up, so the week's hours read across the change", () => {
@@ -867,6 +917,42 @@ test('who came: with no save on the device or back to one after so long, of thos
   // Before they were told apart: nothing to say, not 0%.
   const none = comersOf(countsOf([path('/', [10, 10, 10], false)], DAYS));
   assert.deepEqual([none.from, backShare(none), appShare(none)], [null, null, null]);
+});
+
+test('the game going worse than before: its scripts failing, a kind of device stuttering, only beyond chance', () => {
+  const counts = (visits: number, script: number, chunk: number, ios: [number, number]) =>
+    countsOf(
+      [
+        path('/', [visits, visits, visits], false),
+        path('error/script', [script, 0, 0]),
+        path('error/chunk', [chunk, 0, 0]),
+        path('frames2/ios/smooth', [ios[0] - ios[1], 0, 0]),
+        path('frames2/ios/some/reveal', [ios[1], 0, 0]),
+      ],
+      DAYS,
+    );
+  const before = counts(100, 5, 2, [100, 5]);
+  assert.equal(healthOf(counts(100, 7, 3, [100, 8]), before), null);
+  const worse = healthOf(counts(100, 40, 3, [100, 30]), before)!;
+  assert.deepEqual(worse.errors, [{ key: 'script', count: 40, expected: 5 }]);
+  assert.deepEqual(worse.stutter.map((d) => [d.device, Math.round(d.share), Math.round(d.before), d.games]), [['ios', 30, 5, 100]]);
+  // Twice the visits bring twice the errors: no worse.
+  assert.equal(healthOf(counts(200, 10, 4, [100, 5]), before), null);
+});
+
+test("bars named alike are one, so a label counted from outside can't take another's place", () => {
+  assert.deepEqual(
+    sameLabels([
+      { label: 'No room with that code', count: 4 },
+      { label: 'Opening a room: host-spam', count: 1 },
+      { label: 'No room with that code', count: 1 },
+      { label: 'Opening a room: host-spam', count: 2 },
+    ]),
+    [
+      { label: 'No room with that code', count: 5 },
+      { label: 'Opening a room: host-spam', count: 3 },
+    ],
+  );
 });
 
 test("the game's own script errors and its parts that didn't load are listed with the failures, but aren't joining's", () => {
@@ -976,19 +1062,31 @@ test("a first visit's steps, of the visits that found no save", () => {
   assert.deepEqual(f.counts, { acted: 0, create: 0, host: 0, room: 0, solo: 0, daily: 0, practice: 0, identify: 0, lobby: 14, played: 10, finished: 7, 'games-2': 0, 'games-5': 0 });
   assert.equal(f.steps.host.from, null, 'not counted yet');
   assert.equal(firstStepsOf(countsOf([path('new/played', [5, 5, 5])], DAYS)).from, null);
-  // The steps counted later: each a share of the visits from the day they were, the first ones' reading as it was.
-  const later = firstStepsOf(countsOf([path('visit/new', [5, 10, 15]), path('new/played', [1, 2, 3]), path('new/host', [0, 4, 5]), path('new/acted', [0, 8, 12])], DAYS));
-  assert.deepEqual(later.steps.host, { from: DAYS[1], visits: 25 });
-  assert.deepEqual(later.steps.played, { from: DAYS[0], visits: 30 });
-  assert.deepEqual([later.counts.host, later.counts.acted, later.counts.played], [9, 20, 6]);
-  // A group counted later still (the Daily's IDENTIFY MORE) from its own first day.
-  const identify = firstStepsOf(countsOf([path('visit/new', [5, 10, 15]), path('new/acted', [0, 8, 12]), path('new/identify', [0, 0, 2])], DAYS));
-  assert.deepEqual(identify.steps.identify, { from: DAYS[2], visits: 15 });
-  assert.deepEqual(identify.steps.acted, { from: DAYS[1], visits: 25 });
-  // A second and fifth game, likewise from their own first day.
-  const games = firstStepsOf(countsOf([path('visit/new', [5, 10, 15]), path('new/acted', [0, 8, 12]), path('new/games-2', [0, 0, 3])], DAYS));
-  assert.deepEqual(games.steps['games-2'], { from: DAYS[2], visits: 15 });
-  assert.equal(games.counts['games-2'], 3);
+  // Mid-October, before the steps counted later were: none of them read.
+  assert.equal(f.steps.identify.from, null);
+});
+
+test("a first visit's later steps, each from the day its group was first counted, not the day one first happened", () => {
+  const days = daysBetween('2026-10-27', '2026-11-03');
+  const at = (p: string, perDay: number[]): PathCount => ({ path: p, event: true, count: perDay.reduce((n, v) => n + v, 0), days: Object.fromEntries(days.map((d, i) => [d, perDay[i] ?? 0])) });
+  const paths = [
+    at('visit/new', [5, 5, 5, 5, 5, 5, 5, 5]),
+    at('new/played', [1, 1, 1, 1, 1, 1, 1, 1]),
+    at('new/acted', [0, 0, 3, 3, 3, 3, 3, 3]),
+    // Nobody pressed IDENTIFY MORE until Nov 1: the days since Oct 29 were counted all the same.
+    at('new/identify', [0, 0, 0, 0, 0, 2, 2, 2]),
+    // A second game's first came the evening it went live (Nov 1): read from the first whole day after.
+    at('new/games-2', [0, 0, 0, 0, 0, 1, 2, 2]),
+  ];
+  const f = firstStepsOf(countsOf(paths, days));
+  assert.deepEqual(f.steps.played, { from: '2026-10-27', visits: 40 });
+  assert.deepEqual(f.steps.acted, { from: '2026-10-29', visits: 30 });
+  assert.deepEqual(f.steps.identify, { from: '2026-10-29', visits: 30 });
+  assert.equal(f.counts.identify, 6);
+  assert.deepEqual(f.steps['games-2'], { from: '2026-11-02', visits: 10 });
+  assert.equal(f.counts['games-2'], 4);
+  // A period begun after they were all counted reads each from its own first day, as the rest.
+  assert.deepEqual(firstStepsOf(countsOf(paths, days.slice(-2))).steps.identify, { from: '2026-11-02', visits: 10 });
 });
 
 test('ISO weeks, and those who first played in one coming back the weeks after', () => {
@@ -1026,6 +1124,8 @@ test('ISO weeks, and those who first played in one coming back the weeks after',
       ['2026-W44', 3, [0]],
     ],
   );
+  // The period ends on a Wednesday, today: its week is three days so far, each row's last week and the newest row's newcomers with it.
+  assert.deepEqual(c.cohorts.map((x) => x.soFar), [3, 3, 3, 3]);
   // Counting began after a week's Monday: who started that week isn't known, rather than far too few.
   const late = countsOf(
     [
@@ -1046,7 +1146,7 @@ test('ISO weeks, and those who first played in one coming back the weeks after',
   );
   assert.deepEqual(later.cohorts[0].weeks, [null, null, 1, 0]);
   // The table's rows: the weeks its columns reach, none after the period (a clock years off).
-  const odd = [...c.cohorts, { week: '2031-W05', monday: weekMonday('2031-W05')!, started: null, weeks: [] }];
+  const odd = [...c.cohorts, { week: '2031-W05', monday: weekMonday('2031-W05')!, started: null, weeks: [], soFar: 3 }];
   assert.deepEqual(recentCohorts(odd, '2026-10-28', 3).map((x) => x.week), ['2026-W42', '2026-W43', '2026-W44']);
   assert.deepEqual(recentCohorts(odd, '2026-10-28').map((x) => x.week), ['2026-W40', '2026-W42', '2026-W43', '2026-W44']);
 });

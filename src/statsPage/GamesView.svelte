@@ -6,7 +6,8 @@
   import { average, fmt } from './chart';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
-  import { MODES, MODE_NAMES, finishedShare, modesOf, percent, seatsOf, sizeName, sizesOf, dayAverages } from './model';
+  import { gamesSpreadOf } from './insights';
+  import { MODES, MODE_NAMES, finishedShare, modesOf, percent, seatsOf, sizeName, sizesOf, dayAverages, type ModeSummary } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import { hashOf } from './slices';
@@ -19,11 +20,18 @@
   const L = $derived(read.now);
   /** The most played first, as everywhere else. */
   const modes = $derived(modesOf(L.games.rows).sort((a, b) => b.started - a.started));
+  /** Each mode's games in the period before, to set its games and its share played to the end against. */
+  const modesBefore = $derived(modesOf(read.before.games.rows));
+  const was = (m: ModeSummary) => modesBefore.find((b) => b.mode === m.mode)!;
+  /** Of a mode's games started, the share played to the end (finishedShare), as a number; null with none. */
+  const toEnd = (m: ModeSummary) => (m.started ? (100 * Math.min(m.finished, m.started)) / m.started : null);
+  /** Games come several to a player: their changes weighed as such (insights.ts gamesSpread). */
+  const spread = $derived(gamesSpreadOf(L, read.before));
   const topMode = $derived(Math.max(1, ...modes.map((m) => m.started)));
   /** Games with players at the host's own screen, every mode. */
   const screen = $derived(modes.reduce((n, m) => n + m.screen, 0));
-  /** Games a day over the whole days (today's left out), against the period before's. */
-  const perDay = $derived(dayAverages(L.games.perDay, read.before.games.perDay));
+  /** Games a day over the whole days (today's left out), against the period before's, weighed as games come: several to a player. */
+  const perDay = $derived(dayAverages(L.games.perDay, read.before.games.perDay, spread));
   const sizes = $derived(sizesOf(L.games.rows));
   const sized = $derived(sizes.reduce((n, s) => n + s.total, 0));
   const topSize = $derived(Math.max(1, ...sizes.map((s) => s.total)));
@@ -76,9 +84,9 @@
           {#each modes as m (m.mode)}
             <tr class:none={!m.started}>
               <th scope="row"><a class="pick" href={hashOf({ mode: m.mode })} title="Where it's played most">{MODE_NAMES[m.mode]}</a><span class="on-phone">{percent(m.started, L.games.started)} of games, {perGame(L.games.rows.filter((r) => r.mode === m.mode))} players each{#if m.screen}; {fmt(m.screen)} shared a screen{/if}</span></th>
-              <td class="n strong">{fmt(m.started)}</td>
+              <td class="n strong">{fmt(m.started)}<span class="change"><Delta now={m.started} before={was(m).started} of={{ now: m.started, before: was(m).started, per: spread }} period={period.before} /></span></td>
               <td class="n opt">{percent(m.started, L.games.started)}</td>
-              <td class="n">{finishedShare(m.finished, m.started)}</td>
+              <td class="n">{finishedShare(m.finished, m.started)}<span class="change"><Delta now={toEnd(m)} before={toEnd(was(m))} rate of={{ now: m.started, before: was(m).started }} period={period.before} /></span></td>
               <td class="n opt">{perGame(L.games.rows.filter((r) => r.mode === m.mode))}</td>
               <td class="n opt" class:soft={!m.screen}>{fmt(m.screen)}</td>
               <td class="bar"><span class="meter"><i style:width="{(100 * m.started) / topMode}%"></i></span></td>
@@ -179,6 +187,12 @@
   }
   .none > * {
     color: var(--a-muted);
+  }
+  /* A mode's change against the period before, under its figure. */
+  .change {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 400;
   }
   .bar {
     width: 30%;

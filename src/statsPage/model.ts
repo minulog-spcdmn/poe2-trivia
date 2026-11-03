@@ -57,11 +57,19 @@ export const FIRSTS = ['acted', 'create', 'host', 'room', 'solo', 'daily', 'prac
 export type First = (typeof FIRSTS)[number];
 /**
  * The first steps counted later than the rest (count.ts NEWCOMER_STEPS), in
- * the groups that came together: from 2026-10-28, then the Daily's IDENTIFY
- * MORE, then a second and fifth game. Each group a share of the visits from the day it was first counted,
- * not from the first "visit/new".
+ * the groups that came together, each with the first whole day it was
+ * counted (`from`, the account's day): the start page's steps and the
+ * Daily's IDENTIFY MORE went live early on 2026-10-29, a second and fifth
+ * game on the evening of 2026-11-01. Each group a share of the visits from
+ * then, not from the first "visit/new", nor from the first day one of its
+ * steps happened: the days before a newcomer first pressed IDENTIFY MORE
+ * were counted, with nobody pressing it.
  */
-export const LATER_FIRSTS: readonly (readonly First[])[] = [['acted', 'create', 'host', 'room', 'solo', 'daily', 'practice'], ['identify'], ['games-2', 'games-5']];
+export const LATER_FIRSTS: readonly { steps: readonly First[]; from: string }[] = [
+  { steps: ['acted', 'create', 'host', 'room', 'solo', 'daily', 'practice'], from: '2026-10-29' },
+  { steps: ['identify'], from: '2026-10-29' },
+  { steps: ['games-2', 'games-5'], from: '2026-11-02' },
+];
 
 /**
  * How long since a visitor coming back last played on that device
@@ -105,6 +113,12 @@ export interface Cohort {
   started: number | null;
   /** Each week from the first on, up to the period's last; null for a week before the period. */
   weeks: (number | null)[];
+  /**
+   * The days the period's last week has had, its last (today) still going:
+   * that week is only so far, so each row's last week, and the newcomers of
+   * a week begun in it, are fewer than a whole week's would be.
+   */
+  soFar: number;
 }
 
 /**
@@ -588,6 +602,8 @@ function cohortsOf(paths: PathCount[], days: string[], joined: number[]): Cohort
   const counting = joined.findIndex((n) => n > 0);
   // The first day visits were told apart: any visit told new or back, or a cohort's (sent with them), so a quiet start of new visitors isn't taken for none counted.
   const told = days.findIndex((d) => paths.some((p) => (p.path.startsWith('visit/') || p.path.startsWith('cohort/')) && (p.days[d] ?? 0) > 0));
+  // (The period's last day is today, so its week is under way.)
+  const soFar = days.length ? weekday(days[days.length - 1]) + 1 : 0;
   const rowOf = (week: string, monday: string, p: PathCount | null): Cohort => {
     const from = Date.parse(`${monday}T12:00:00Z`);
     const weekOf = (d: string) => Math.floor((Date.parse(`${d}T12:00:00Z`) - from) / (7 * 86_400_000));
@@ -600,7 +616,7 @@ function cohortsOf(paths: PathCount[], days: string[], joined: number[]): Cohort
     // Only a week the period holds from its Monday, counted from then: one cut short would look small, its cells far over 100%.
     const at = days.indexOf(monday);
     const started = at < 0 || counting < 0 || counting > at ? null : joined.slice(at, at + 7).reduce((n, v) => n + v, 0);
-    return { week, monday, started, weeks };
+    return { week, monday, started, weeks, soFar };
   };
   const out = new Map<string, Cohort>();
   for (const p of paths) {
@@ -624,11 +640,17 @@ function cohortsOf(paths: PathCount[], days: string[], joined: number[]): Cohort
  * hour no day has had yet (a week's today, later than now).
  */
 export function weekAverage(grid: number[][], days: string[], until: number | null = null): (number | null)[][] {
+  const many = hoursHad(days, until);
+  return grid.map((row, wd) => row.map((n, h) => (many[wd][h] ? n / many[wd][h] : null)));
+}
+
+/** How many of `days` had each hour of a weekHours grid (a month has four or five of each weekday), the last only before `until`. */
+export function hoursHad(days: string[], until: number | null = null): number[][] {
   const many = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
   days.forEach((d, i) => {
     for (let h = 0; h < 24; h++) if (i < days.length - 1 || until === null || h < until) many[weekday(d)][h]++;
   });
-  return grid.map((row, wd) => row.map((n, h) => (many[wd][h] ? n / many[wd][h] : null)));
+  return many;
 }
 
 /**
@@ -791,12 +813,13 @@ export const wholeDayAverage = (vs: number[]): number | null => (vs.length > 1 ?
 /**
  * A figure a day on average, now and in the period before (wholeDayAverage),
  * and the counts behind the two, over as many whole days, to weigh their
- * change (Delta's `of`).
+ * change (Delta's `of`). `per`: how much wider than a count's own their
+ * swing is (games come several to a player: insights.ts gamesSpread).
  */
-export function dayAverages(now: number[], before: number[]): { now: number | null; before: number | null; of?: { now: number; before: number } } {
+export function dayAverages(now: number[], before: number[], per = 1): { now: number | null; before: number | null; of?: { now: number; before: number; per?: number } } {
   const a = { now: wholeDayAverage(now), before: wholeDayAverage(before) };
   const whole = now.length - 1;
-  return a.now !== null && a.before !== null ? { ...a, of: { now: a.now * whole, before: a.before * whole } } : a;
+  return a.now !== null && a.before !== null ? { ...a, of: { now: a.now * whole, before: a.before * whole, ...(per > 1 ? { per } : {}) } } : a;
 }
 
 /** Today's unique's answers each day, named or missed. */
@@ -823,6 +846,31 @@ export function dailyDays(c: Counts): DailyDay[] {
   return [...kept, dailyDay(g.day, g.right, g.wrong)];
 }
 
+/** The complementary error function (Numerical Recipes', to 1e-7): erfc(z / √2) is the share of a normal further than z from its middle, either side. */
+function erfc(x: number): number {
+  const t = 1 / (1 + 0.5 * Math.abs(x));
+  const y = t * Math.exp(-x * x - 1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 + t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851413 + t * (-0.82215223 + t * 0.17087277)))))))));
+  return x >= 0 ? y : 2 - y;
+}
+
+/**
+ * The z one of `m` tests has to pass for the lot to be beyond chance at 1 in
+ * 20 (one tail holding 0.05 / m; a test either way counts twice): the
+ * busiest of 30 days passes z = 2 by chance about half the time. Never under
+ * the 2 a test alone takes. 30 tests: 2.94; 168 (the week's hours): 3.43.
+ */
+export function zFor(m: number): number {
+  const tail = 0.05 / Math.max(1, m);
+  let lo = 0;
+  let hi = 8;
+  for (let i = 0; i < 50; i++) {
+    const mid = (lo + hi) / 2;
+    if (erfc(mid / Math.SQRT2) / 2 > tail) lo = mid;
+    else hi = mid;
+  }
+  return Math.max(2, hi);
+}
+
 /** How many answers a day's share is drawn toward the usual one by (hardestAndEasiest): 3 players of 3 naming it says less than 30 of 30. */
 const SURE_AFTER = 5;
 
@@ -830,9 +878,11 @@ const SURE_AFTER = 5;
  * The hardest and easiest days' items, `top` of each: days with at least
  * `min` answers (none, if no day has so many), today left out as it's still
  * going, and only those named by far fewer (or more) than the days' usual
- * share would have, beyond what chance does with so few players (two
- * standard deviations of as many answers at the usual share): with three
- * players a day, every day's share is chance's. Ranked by the share who
+ * share would have, beyond what chance does with so few players for one of
+ * as many days (zFor's standard deviations of as many answers at the usual
+ * share, and half an answer besides, which a handful needs): with three
+ * players a day, every day's share is chance's, and of 30 days at twice the
+ * swing, one or two read as hard by chance alone. Ranked by the share who
  * named them drawn toward the usual share by SURE_AFTER answers, so a day
  * few played can't top the list on its own luck. More answers first
  * between equals.
@@ -842,13 +892,11 @@ export function hardestAndEasiest(days: DailyDay[], min = 3, top = 5): { hardest
   const answers = pool.reduce((n, d) => n + d.answers, 0);
   const usual = answers ? pool.reduce((n, d) => n + d.right, 0) / answers : 0;
   const weighed = (d: DailyDay) => (d.right + SURE_AFTER * usual) / (d.answers + SURE_AFTER);
-  /** How far under (below 0) or over the usual share's count the day's named were, in standard deviations. */
-  const off = (d: DailyDay) => {
-    const spread = Math.sqrt(d.answers * usual * (1 - usual));
-    const by = d.right - d.answers * usual;
-    return spread ? by / spread : by ? Math.sign(by) * Infinity : 0;
-  };
-  const rank = (dir: 1 | -1) => pool.filter((d) => dir * off(d) <= -2).sort((a, b) => dir * (weighed(a) - weighed(b)) || b.answers - a.answers || a.day.localeCompare(b.day));
+  // Each day tested either way: hardest and easiest.
+  const z = zFor(2 * pool.length);
+  /** Whether the day's named were further under (`dir` 1) or over (−1) the usual share's count than chance takes them. */
+  const far = (d: DailyDay, dir: 1 | -1) => dir * (d.answers * usual - d.right) >= z * Math.sqrt(d.answers * usual * (1 - usual)) + 0.5;
+  const rank = (dir: 1 | -1) => pool.filter((d) => far(d, dir)).sort((a, b) => dir * (weighed(a) - weighed(b)) || b.answers - a.answers || a.day.localeCompare(b.day));
   return { hardest: rank(1).slice(0, top), easiest: rank(-1).slice(0, top) };
 }
 
