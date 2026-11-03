@@ -67,7 +67,7 @@ export interface Spike {
 }
 
 /** How far either side of a day its usual one is found: a game that grows, or a launch, then moves its usual along with it. */
-export const SPIKE_REACH = 14;
+const SPIKE_REACH = 14;
 
 /**
  * The days far busier than usual (at least 1.6 times the median of the

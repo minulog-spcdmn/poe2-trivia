@@ -38,7 +38,7 @@ export const MODE_NAMES: Record<Mode, string> = { turns: 'Take turns', race: 'Ra
 
 /** How a join started (count.ts JoinVia). */
 export type Via = 'invite-link' | 'code' | 'open-rooms';
-export const VIAS: readonly Via[] = ['invite-link', 'code', 'open-rooms'];
+const VIAS: readonly Via[] = ['invite-link', 'code', 'open-rooms'];
 export const VIA_NAMES: Record<Via, string> = { 'invite-link': 'Invite link', code: 'Room code', 'open-rooms': 'Open rooms' };
 
 /**
@@ -51,7 +51,7 @@ export const VIA_NAMES: Record<Via, string> = { 'invite-link': 'Invite link', co
  * load, opened the codex, the achievements; and, from STARTS_FROM, the
  * start page's steps (START_STEPS).
  */
-export const REACHES = ['page', 'lobby', 'played', 'finished', 'games-2', 'games-5', 'time-2m', 'time-10m', 'time-30m', 'codex', 'achievements', 'create', 'host', 'room', 'solo', 'daily', 'practice', 'identify'] as const;
+const REACHES = ['page', 'lobby', 'played', 'finished', 'games-2', 'games-5', 'time-2m', 'time-10m', 'time-30m', 'codex', 'achievements', 'create', 'host', 'room', 'solo', 'daily', 'practice', 'identify'] as const;
 export type Reach = (typeof REACHES)[number];
 /**
  * The first whole day (the account's) of what went live early on 2026-10-29
@@ -177,7 +177,7 @@ export const ROOM_BACKS = ['10s', '1m', '5m', 'later'] as const;
 export type RoomBack = (typeof ROOM_BACKS)[number];
 
 /** What each counted failure (count.ts Failure) means, in a line; `host`: on the side opening a room; `script`: no part of joining, an error in the game's own scripts or a part of it that didn't load. */
-export const FAILURES: Record<string, { label: string; host?: true; script?: true }> = {
+const FAILURES: Record<string, { label: string; host?: true; script?: true }> = {
   'join-no-answer': { label: "The room didn't answer" },
   'join-no-such-room': { label: 'No room with that code' },
   'join-refused': { label: 'Turned down: full, locked or a name' },

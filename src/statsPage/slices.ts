@@ -36,7 +36,6 @@ export const GROUPS: readonly { group: Group; name: string }[] = [
   { group: 'joined', name: 'Joined a room' },
   { group: 'failed', name: 'Met a failure' },
 ];
-export const groupName = (g: Group) => GROUPS.find((x) => x.group === g)?.name ?? g;
 
 /** The steps the overview reads (insights.ts stepsOf), and so the groups' share who played. */
 const playedSteps = (c: Counts) => reachedOf(c, ['played', 'finished']);
@@ -311,7 +310,7 @@ export function sliceCalls(c: Counts): { group: Group; dim: Dim; paths: string[]
 }
 
 /** The groups looked at for what stands out: the biggest countries, both kinds of device, the biggest systems. */
-export function lookedAt(s: Slices): SegmentRow[] {
+function lookedAt(s: Slices): SegmentRow[] {
   const known = (r: SegmentRow) => r.who.name !== 'Unknown' && r.who.name !== 'Other';
   return [...segments(s, 'place', 8), ...segments(s, 'device'), ...segments(s, 'system', 5)].filter(known);
 }

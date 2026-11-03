@@ -11,7 +11,7 @@
   // for its visitors; with a group, the group's against everyone's (Delve's
   // depths too, slices.ts depthsIn). GoatCounter breaks a whole period
   // down, not its days.
-  import { fmt } from './chart';
+  import { fmt, pct } from './chart';
   import DelveDepths from './DelveDepths.svelte';
   import How from './How.svelte';
   import { toldFromStart } from './insights';
@@ -86,7 +86,6 @@
   /** "from Germany", "on phones and tablets", "on iOS". */
   const from = (w: Who) => (w.kind === 'place' ? `from ${w.name}` : `on ${w.kind === 'device' ? (DEVICE[w.name] ?? w.name) : w.name}`);
   const times = (r: number) => `${r >= 10 ? Math.round(r) : r.toFixed(1)}×`;
-  const pct = (v: number) => `${Math.round(v)}%`;
   /** For each 100 visitors: a whole number, or one decimal while it's small. */
   const rate = (v: number) => (v >= 10 || v === 0 ? String(Math.round(v)) : v.toFixed(1));
   const per100 = (n: number, visitors: number) => (visitors ? (100 * n) / visitors : 0);

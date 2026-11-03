@@ -2,7 +2,7 @@
 // and days are written on them.
 
 /** A round step for an axis that reaches `max` in about `ticks` steps. */
-export function niceStep(max: number, ticks = 3): number {
+function niceStep(max: number, ticks = 3): number {
   if (max <= 0) return 1;
   const raw = max / ticks;
   const mag = 10 ** Math.floor(Math.log10(raw));
@@ -18,6 +18,8 @@ export function axis(peak: number, ticks = 3): { top: number; ticks: number[] } 
 }
 
 export const fmt = (n: number) => n.toLocaleString('en');
+/** A share as a whole percent ("35%"); a dash where there's none. */
+export const pct = (v: number | null) => (v === null ? '–' : `${Math.round(v)}%`);
 /** A site as people say it: "reddit.com", from GoatCounter's "https://www.reddit.com". */
 export const siteName = (name: string) => name.replace(/^[a-z-]+:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
 /** A figure a day on average: one decimal under 10 ("2.5"), whole above. */

@@ -19,14 +19,13 @@
   // Neither line nor change where the period before wasn't counted in full
   // (COMPARE).
   import { getContext } from 'svelte';
-  import { fmt } from './chart';
+  import { fmt, pct } from './chart';
   import Delta from './Delta.svelte';
   import { COMPARE } from './read';
 
   let { rows, head, counted = 'Visits', label }: { rows: ShareRow[]; head: string; counted?: string; label: string } = $props();
 
   const compare = getContext<(() => boolean) | undefined>(COMPARE) ?? (() => true);
-  const pct = (v: number | null) => (v === null ? '–' : `${Math.round(v)}%`);
 </script>
 
 <div class="scroll-x shares">

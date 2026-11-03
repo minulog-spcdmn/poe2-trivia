@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addDays, dayIn, hourStarts, hoursIn, midnight, onClock, zoneOf } from '../src/statsPage/zone.ts';
-import { axis, dayRange, labelled, restsOn } from '../src/statsPage/chart.ts';
+import { axis, dayRange, labelled, pct, restsOn } from '../src/statsPage/chart.ts';
 import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
 import { READY_ROWS, START_JOURNEY, dailyBackOf, delveSharedOf, readinessOf, readyCount, startStepsOf, appShare, backShare, beforeShare, beyondChanceOf, busiestStandsOut, comersOf, countsApart, failureRate, gamesSpread, healthOf, sameLabels, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, backBeforeOf, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
@@ -1657,4 +1657,8 @@ test('the demo shows the paths counted from Oct 29', () => {
   const l = demoRead(30).now;
   assert.ok(readinessOf(l).timed > 0 && dailyBackOf(l).back > 0 && delveSharedOf(l).shared > 0);
   assert.ok((reachedShare(startStepsOf(l), 'create') ?? 0) > 0);
+});
+
+test('a share reads as a whole percent, a dash where there is none', () => {
+  assert.deepEqual([pct(34.6), pct(0), pct(100), pct(null)], ['35%', '0%', '100%', '–']);
 });
