@@ -3366,11 +3366,11 @@
     }
     .tiles.many.tall.six .tile {
       height: calc(var(--rows, 2) * var(--tile-h));
-      /* The number above the art, not on it, and as much room below, so the
-         art sits in the middle of its tile and its foot clears the name the
-         reveal lays over the tile's bottom. */
-      padding-top: 2.4rem;
-      padding-bottom: 2.4rem;
+      /* The art in the middle of its tile: the room the tile's padding gives
+         (2.4rem above for the number, 0.8rem below) split evenly, so the art
+         keeps its size. */
+      padding-top: 1.6rem;
+      padding-bottom: 1.6rem;
     }
     .tiles.tall .caption {
       overflow-wrap: anywhere;
@@ -3382,8 +3382,22 @@
     }
     .tiles.many.tall .tile {
       height: calc(var(--rows, 2) * var(--tile-h));
-      padding-top: 2.4rem;
-      padding-bottom: 2.4rem;
+      padding-top: 1.6rem;
+      padding-bottom: 1.6rem;
+    }
+  }
+  /* Short desktop windows pad a tile 0.4rem below (see .tile there): the
+     same room, split evenly. */
+  @media (min-width: 761px) and (max-height: 820px) {
+    .tiles.many.tall.six .tile {
+      padding-top: 1.4rem;
+      padding-bottom: 1.4rem;
+    }
+  }
+  @media (min-width: 900px) and (max-height: 820px) {
+    .tiles.many.tall .tile {
+      padding-top: 1.4rem;
+      padding-bottom: 1.4rem;
     }
   }
   /* Desktop windows a little short of the art's full 200px rows (up to about
