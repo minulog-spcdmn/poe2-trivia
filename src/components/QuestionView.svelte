@@ -3366,8 +3366,11 @@
     }
     .tiles.many.tall.six .tile {
       height: calc(var(--rows, 2) * var(--tile-h));
-      /* The number above the art, not on it. */
+      /* The number above the art, not on it, and as much room below, so the
+         art sits in the middle of its tile and its foot clears the name the
+         reveal lays over the tile's bottom. */
       padding-top: 2.4rem;
+      padding-bottom: 2.4rem;
     }
     .tiles.tall .caption {
       overflow-wrap: anywhere;
@@ -3380,6 +3383,7 @@
     .tiles.many.tall .tile {
       height: calc(var(--rows, 2) * var(--tile-h));
       padding-top: 2.4rem;
+      padding-bottom: 2.4rem;
     }
   }
   /* Desktop windows a little short of the art's full 200px rows (up to about

@@ -32,7 +32,7 @@ else outer();
 function outer() {
   const args = process.argv.slice(2);
   const at = args.indexOf('--base');
-  const out = args.find((a, i) => !a.startsWith('--') && i !== at + 1);
+  const out = args.find((a, i) => !a.startsWith('--') && (at < 0 || i !== at + 1));
   if (!out) {
     console.error('Usage: node scripts/qa-before.mjs <out dir> [--base <commit>]');
     process.exit(2);
