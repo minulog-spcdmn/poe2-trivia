@@ -32,7 +32,7 @@
   import KeyGate from './KeyGate.svelte';
   import { countedSpan, countsOf, daysBetween, firstCounted } from './model';
   import Overview from './Overview.svelte';
-  import { COMPARE, PERIODS, VIEWS, counted, spansOf, type Read, type View } from './read';
+  import { COMPARE, PERIODS, VIEWS, counted, spansOf, untilDay, type Read, type View } from './read';
   import Seg from './Seg.svelte';
   import { depthCalls, hashOf, selOf, sliceCalls, type Sel, type Slices } from './slices';
   import VisitorsView from './VisitorsView.svelte';
@@ -181,7 +181,7 @@
     loading = true;
     failed = '';
     progress = 0;
-    const steps = 9;
+    const steps = 10;
     let done = 0;
     const step = <T,>(p: Promise<T>) =>
       p.then((v) => {
@@ -202,13 +202,15 @@
       const { start, compare } = countedSpan(first, from, fromBefore, today);
       const shown: Span = { start: midnight(tz, start), end: at };
       const shownBefore: Span = { ...before, start: midnight(tz, addDays(start, -days)) };
-      const [systems, countries, refs, campaigns, countriesBefore, refsBefore] = await Promise.all([
+      // Countries are kept by the day, so they're compared over whole days alone: the period's to yesterday, as many before.
+      const [systems, countries, refs, campaigns, countriesBefore, refsBefore, countriesWhole] = await Promise.all([
         step(visitorsBy(k, shown, 'systems', signal)),
         step(visitorsBy(k, shown, 'locations', signal)),
         step(visitorsBy(k, shown, 'toprefs', signal)),
         step(visitorsBy(k, shown, 'campaigns', signal)),
-        step(visitorsBy(k, shownBefore, 'locations', signal)),
+        step(visitorsBy(k, untilDay(tz, shownBefore, toBefore), 'locations', signal)),
         step(visitorsBy(k, shownBefore, 'toprefs', signal)),
+        compare ? step(visitorsBy(k, untilDay(tz, shown, today), 'locations', signal)) : [],
       ]);
       if (ask !== asked) return;
       const counts = countsOf(n.paths, daysBetween(start, today), tz, until);
@@ -249,6 +251,7 @@
         refs: sameSites(refs),
         campaigns,
         countriesBefore,
+        countriesWhole,
         refsBefore: sameSites(refsBefore),
         spikeRefs: Object.fromEntries(Object.entries(spikeRefs).map(([day, list]) => [day, sameSites(list)])),
         at: at.getTime(),

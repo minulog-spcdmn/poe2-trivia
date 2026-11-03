@@ -24,8 +24,10 @@ export interface Read {
   refs: Named[];
   /** Visitors by the tag of the link they came by (poe2.quest/?ref=<tag>, GoatCounter's campaigns); untagged visits aren't in it. */
   campaigns: Named[];
-  /** The period before's, to see who brought more or fewer (insights.ts moversOf). */
+  /** The period before's, to see who brought more or fewer (insights.ts moversOf): its countries over its whole days, as many as countriesWhole's. */
   countriesBefore: Named[];
+  /** The period's countries to yesterday, where it's compared: GoatCounter keeps countries by the day, so a part of today has nothing to be held against. */
+  countriesWhole?: Named[];
   refsBefore: Named[];
   /** The sites that brought each of the period's busiest days (insights.ts spikesOf), by day. */
   spikeRefs: Record<string, Named[]>;
@@ -62,6 +64,9 @@ export function spansOf(zone: string, at: Date, days: number) {
   const before: Span = { start: midnight(zone, addDays(fromBefore, -1)), end: new Date(hourStarts(zone, toBefore)[Math.floor(until) + 1] - 1) };
   return { today, from, fromBefore, toBefore, until, now, before };
 }
+
+/** `span` to just before `day` begins in `zone`: GoatCounter's countries, kept by the day, are asked for whole days by the days the span's ends fall on. */
+export const untilDay = (zone: string, span: Span, day: string): Span => ({ start: span.start, end: new Date(midnight(zone, day).getTime() - 1) });
 
 /** Whether counting began inside the period, so it starts there and not `span` days back. */
 export const counted = (r: Read) => r.from !== addDays(r.to, -(r.span - 1));

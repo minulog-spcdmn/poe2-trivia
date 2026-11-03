@@ -5,7 +5,7 @@ import { axis, labelled, restsOn } from '../src/statsPage/chart.ts';
 import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
 import { appShare, backShare, beforeShare, beyondChanceOf, comersOf, failureRate, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
-import { spansOf } from '../src/statsPage/read.ts';
+import { spansOf, untilDay } from '../src/statsPage/read.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
 import { apartFrom, countsIn, depthCalls, depthsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
 import { currentName, isoWeek, underNamesNow, weekMonday, busiest, seatsOf, weekAverage, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, countedSpan, dayAverageHours, dayAverages, firstCounted, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, stutterTop, usualByNow, usualByNowUtc, USUAL_DAYS, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
@@ -1416,4 +1416,21 @@ test("the period before's last day is cut where today is, by the clock, across a
     assert.equal(before.visitors.perDay[0], 144, iso);
     if (iso !== '2026-10-25T09:30:00Z') assert.equal(now.visitors.perDay.at(-1), Math.round(6 * hours), iso);
   }
+});
+
+test('countries are compared over whole days, as GoatCounter keeps them by the day', () => {
+  const tz = 'Europe/Berlin';
+  // GoatCounter's countries (cron/location_stat.go, hit_stats.ListLocations): kept by the hit's UTC date, asked for by the days the span's ends fall on there.
+  const countries = (hits: Hit[], span: { start: Date; end: Date }) => {
+    const [from, to] = [dayIn(tz, span.start), dayIn(tz, span.end)];
+    return hits.filter((h) => new Date(h.t).toISOString().slice(0, 10) >= from && new Date(h.t).toISOString().slice(0, 10) <= to).length;
+  };
+  // Germany steadily, at 10:30 on Nov 3, a week.
+  const at = new Date('2026-11-03T09:30:00Z');
+  const s = spansOf(tz, at, 7);
+  const hits = steady('2026-10-01T00:00:00Z', at, 10);
+  const now = countries(hits, untilDay(tz, s.now, s.today));
+  const before = countries(hits, untilDay(tz, { ...s.before, start: midnight(tz, s.fromBefore) }, s.toBefore));
+  assert.equal(now, 6 * 24 * 6);
+  assert.equal(before, now);
 });
