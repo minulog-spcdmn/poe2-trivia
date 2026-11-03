@@ -107,6 +107,8 @@ const BACK = [
 function dayCounts(day: string, upTo = 24): Map<string, number[]> {
   const rnd = stream(seedOf(day));
   const frames = stream(seedOf(`${day}/frames`));
+  // (Its own stream, so the paths read later don't move the rest's numbers.)
+  const later = stream(seedOf(`${day}/later`));
   const out = new Map<string, number[]>();
   const add = (path: string, h: number, n: number) => {
     if (!n || h >= upTo) return;
@@ -183,6 +185,26 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
       add('reach/time-30m', h, ofThem(ten, 0.42, rnd));
       add('reach/codex', h, ofThem(came, 0.13, rnd));
       add('reach/achievements', h, ofThem(came, 0.08, rnd));
+      // Every visit's start-page steps, and how soon a first visit's page was ready (most within 2 seconds).
+      const pressed = ofThem(came, 0.7, later);
+      const created = ofThem(pressed, 0.45, later);
+      const hosted = ofThem(created, 0.8, later);
+      const answered = ofThem(pressed, 0.4, later);
+      add('reach/create', h, created);
+      add('reach/host', h, hosted);
+      add('reach/room', h, ofThem(hosted, 0.9, later));
+      add('reach/solo', h, ofThem(pressed, 0.2, later));
+      add('reach/daily', h, answered);
+      add('reach/practice', h, ofThem(answered, 0.3, later));
+      add('reach/identify', h, ofThem(answered, 0.25, later));
+      add('daily/back', h, ofThem(answered, 0.45, later));
+      let timed = ofThem(fresh, 0.9, later);
+      for (const [mark, share] of [['2s', 0.8], ['5s', 0.6], ['10s', 0.5]] as const) {
+        const n = ofThem(timed, share, later);
+        add(`load/ready-${mark}`, h, n);
+        timed -= n;
+      }
+      add('load/ready-later', h, timed);
       add('sync/paired', h, around(v * 0.006, rnd));
       const broke = rnd();
       if (broke < 0.02) add(broke < 0.006 ? 'error/chunk' : 'error/script', h, 1);
@@ -204,6 +226,7 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
         // Most runs end shallow, a few go far down.
         const depth = Math.floor(rnd() ** 2.2 * 6) * 10;
         if (g.mode === 'delve') add(`delve/depth-${depth}-${depth + 9}`, h, 1);
+        if (g.mode === 'delve' && later() < 0.12) add('share/delve', h, 1);
       }
       const invites = around(started * 0.75, rnd);
       add('open/invite-link', h, invites);
