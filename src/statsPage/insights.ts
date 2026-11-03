@@ -90,7 +90,7 @@ export function spikesOf(days: string[], values: number[], top = 3): Spike[] {
     .map(({ day, value, usual }) => ({ day, value, usual }));
 }
 
-/** Where a spike's visitors came from: the site that brought the most that day, and its share then and on the period as a whole. */
+/** Where a spike's visitors came from: the site that brought the most that day, and its share then and on the period's other days. */
 export interface SpikeSource {
   name: string;
   share: number;
@@ -103,12 +103,15 @@ const typedIn = (name: string) => !name || name === '(unknown)';
  * The site behind a spike: of that day's referrers, the one most above its
  * usual share (and bringing at least a fifth of the day's visitors). None
  * when the day's visitors came the usual ways, or without a referrer.
+ * `period`'s counts hold the day's: its usual share is of the other days,
+ * or a big enough spike would lift its own site's usual out of reach.
  */
 export function spikeSource(day: Named[], period: Named[]): SpikeSource | null {
   const dayAll = day.reduce((n, r) => n + r.count, 0);
-  const periodAll = period.reduce((n, r) => n + r.count, 0);
   if (!dayAll) return null;
-  const usualOf = (name: string) => (periodAll ? (100 * (period.find((r) => r.name === name)?.count ?? 0)) / periodAll : 0);
+  const others = period.map((r) => ({ name: r.name, count: Math.max(0, r.count - day.reduce((n, d) => n + (d.name === r.name ? d.count : 0), 0)) }));
+  const othersAll = others.reduce((n, r) => n + r.count, 0);
+  const usualOf = (name: string) => (othersAll ? (100 * (others.find((r) => r.name === name)?.count ?? 0)) / othersAll : 0);
   const best = day
     .filter((r) => !typedIn(r.name))
     .map((r) => ({ name: r.name, share: (100 * r.count) / dayAll, usualShare: usualOf(r.name) }))

@@ -556,6 +556,10 @@ test("a spike's source: the site far above its usual share that day", () => {
   // The usual mix, or most typed in: no site to name.
   assert.equal(spikeSource([{ name: '(unknown)', count: 90 }, { name: 'https://www.reddit.com', count: 14 }], period), null);
   assert.equal(spikeSource([], period), null);
+  // A spike big enough to be most of the period's own visits: its site's usual share is the other days', not one the spike lifted.
+  const big = [{ name: 'reddit.com', count: 450 }, { name: '(unknown)', count: 50 }];
+  const month = [{ name: 'reddit.com', count: 450 + 14 }, { name: '(unknown)', count: 50 + 126 }];
+  assert.deepEqual(spikeSource(big, month), { name: 'reddit.com', share: 90, usualShare: 10 });
 });
 
 test('who brought far more or fewer than before, only beyond chance', () => {
