@@ -305,24 +305,26 @@ export function firstStepsOf(c: Counts): FirstSteps {
 /** The start page's steps, every visit's (START_STEPS), named as a first visit's are. */
 export const START_JOURNEY: readonly { step: Reach; name: string }[] = START_STEPS.map((step) => ({ step, name: FIRST_JOURNEY.find((f) => f.step === step)!.name }));
 
+/** A count the game began on STARTS_FROM, over the period's days since then: `from` null where it ends before. */
+export interface Since {
+  from: string | null;
+}
+const sinceStarts = (c: Counts) => firstDay(c.days, (i) => c.days[i] >= STARTS_FROM);
+/** Whether a reading of the period before (`r`, of `c`) was counted from its first day: one from a later day rests on those days alone, and isn't set against. */
+export const fromFirstDay = (r: { from: string | null }, c: Counts) => r.from !== null && r.from === c.days[0];
+
 /**
  * Every visit's start-page steps, against the page loads ("reach/page")
  * from STARTS_FROM, when they were first counted, or from the period's
  * first day where it's later; nothing where the period ends before it.
  */
 export function startStepsOf(c: Counts): Reached {
-  const first = firstDay(c.days, (i) => c.days[i] >= STARTS_FROM);
+  const first = sinceStarts(c);
   if (first < 0) return { from: null, visitors: 0, paged: true, counts: {} };
   const counts: Reached['counts'] = {};
   for (const s of START_STEPS) counts[s] = sumFrom(c.reach[s], first);
   return { from: c.days[first], visitors: sumFrom(c.reach.page, first), paged: true, counts };
 }
-
-/** A count the game began on STARTS_FROM, over the period's days since then: `from` null where it ends before. */
-export interface Since {
-  from: string | null;
-}
-const sinceStarts = (c: Counts) => firstDay(c.days, (i) => c.days[i] >= STARTS_FROM);
 
 /** How soon a newcomer's page was usable: the loads timed (those in sight until ready), and those within each mark ("load/ready-…"). */
 export interface Readiness extends Since {
