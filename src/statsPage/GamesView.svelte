@@ -6,7 +6,7 @@
   import { average, fmt, restsOn } from './chart';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
-  import { delveSharedOf, gamesSpreadOf, shareOf } from './insights';
+  import { delveSharedOf, fromFirstDay, gamesSpreadOf, shareOf } from './insights';
   import { MODES, MODE_NAMES, finishedShare, modesOf, percent, seatsOf, sizeName, sizesOf, dayAverages, type ModeSummary } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
@@ -42,7 +42,7 @@
   const shared = $derived(delveSharedOf(L));
   const sharedBefore = $derived(delveSharedOf(read.before));
   /** The period before's share, only where it was counted from its first day. */
-  const sharedWas = $derived(sharedBefore.from === read.before.days[0] ? shareOf(sharedBefore.shared, sharedBefore.ended) : null);
+  const sharedWas = $derived(fromFirstDay(sharedBefore, read.before) ? shareOf(sharedBefore.shared, sharedBefore.ended) : null);
   /** The first day every build counted each event (no session): before it, a path counted once a player in eight hours. */
   const SESSIONLESS_FROM = '2026-10-18';
   /** Players a game, one decimal, of the games whose size is known. */

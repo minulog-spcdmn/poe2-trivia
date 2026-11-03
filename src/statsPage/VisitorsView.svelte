@@ -11,7 +11,7 @@
   import { average, fmt, restsOn, shortDay, siteName } from './chart';
   import Delta from './Delta.svelte';
   import Cohorts from './Cohorts.svelte';
-  import { FIRST_JOURNEY, JOURNEY, OPENED, READY_ROWS, START_JOURNEY, STAY, appShare, beforeShare, backShare, comersOf, firstStepsOf, journeyOf, reachedOf, readinessOf, readyCount, recentCohorts, reachedShare, shareOf, startStepsOf, type FirstSteps, type Reached } from './insights';
+  import { FIRST_JOURNEY, JOURNEY, OPENED, READY_ROWS, START_JOURNEY, STAY, appShare, fromFirstDay, beforeShare, backShare, comersOf, firstStepsOf, journeyOf, reachedOf, readinessOf, readyCount, recentCohorts, reachedShare, shareOf, startStepsOf, type FirstSteps, type Reached } from './insights';
   import { RETURNS, RETURN_NAMES, dayAverages, deviceOf, percent, type Reach } from './model';
   import { orReading, type Period, type Read } from './read';
   import Section from './Section.svelte';
@@ -79,7 +79,7 @@
   const loads = (r: Reached) => (r.paged ? 'page loads' : 'visits');
 
   /** Whether the period before's share was counted from its first day: one counted only from a later day rests on those days alone, and isn't set against. */
-  const whole = (r: { from: string | null }) => r.from !== null && r.from === B.days[0];
+  const whole = (r: { from: string | null }) => fromFirstDay(r, B);
   /** Each step's share, against the period before's where that was a share of the same (beforeShare), over all its days. */
   const rowsOf = (steps: readonly { step: Reach; name: string }[], now: Reached, was: Reached): ShareRow[] =>
     steps.map((s) => ({ name: s.name, count: now.counts[s.step] ?? null, share: reachedShare(now, s.step), before: whole(was) ? beforeShare(now, was, s.step) : null, of: { now: now.visitors, before: was.visitors } }));

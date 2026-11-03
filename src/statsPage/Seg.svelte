@@ -11,7 +11,8 @@
   const lit = $derived(Math.max(0, options.findIndex((o) => o.value === value)));
   /** The choice the arrows have reached, while focus is in the row; the picked one otherwise. */
   let reached = $state<number | null>(null);
-  const at = $derived(reached ?? lit);
+  // (Not one the row no longer has: the periods' choices narrow once counting's start is known.)
+  const at = $derived(reached !== null && reached < options.length ? reached : lit);
   function key(e: KeyboardEvent) {
     const step = ({ ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 } as Record<string, number>)[e.key];
     const to = e.key === 'Home' ? 0 : e.key === 'End' ? options.length - 1 : step === undefined ? null : (at + step + options.length) % options.length;

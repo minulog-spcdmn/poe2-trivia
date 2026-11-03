@@ -11,7 +11,7 @@
   import DayColumns from './DayColumns.svelte';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
-  import { dailyBackOf, shareOf } from './insights';
+  import { dailyBackOf, fromFirstDay, shareOf } from './insights';
   import { asked, dailyAverage, dailyDays, hardestAndEasiest } from './model';
   import type { Period, Read } from './read';
   import How from './How.svelte';
@@ -46,7 +46,7 @@
   const back = $derived(dailyBackOf(L));
   const backBefore = $derived(dailyBackOf(read.before));
   /** The period before's share, only where it was counted from its first day. */
-  const backWas = $derived(backBefore.from === read.before.days[0] ? shareOf(backBefore.back, backBefore.answered) : null);
+  const backWas = $derived(fromFirstDay(backBefore, read.before) ? shareOf(backBefore.back, backBefore.answered) : null);
   const best = $derived(answered.reduce<(typeof days)[number] | null>((b, d) => (!b || d.answers > b.answers ? d : b), null));
 
   onMount(() => withDailyItems((f) => (itemOf = f)));

@@ -155,6 +155,9 @@
   let partial = $state<{ span: number; at: number } | null>(null);
   const isPartial = $derived(!!read && !!partial && read.span === partial.span && read.at === partial.at);
   let loading = $state(false);
+  /** The period picked being read by another tab, this one waiting for it (readingElsewhere): read as under way, though none of its calls are this tab's. */
+  let elsewhere = $state(false);
+  const busy = $derived(loading || elsewhere);
   let progress = $state(0);
   let failed = $state('');
   let held = $state(false);
@@ -172,18 +175,22 @@
     reading = null;
     asked++;
     loading = false;
+    elsewhere = false;
     doneReading();
   }
-  // A read under way in any tab (its tab, period and start): another tab of the same period waits for it rather than ask GoatCounter the same, and shows it as it's kept (fromElsewhere). Taken as given up after READING_MS, should its tab have closed mid-read.
-  const READING = 'analytics.reading';
+  // A read under way in any tab, a mark a period (its tab and start): another tab of the same period waits for it rather than ask GoatCounter the same, and shows it as it's kept (fromElsewhere). Taken as given up after READING_MS, should its tab have closed mid-read.
+  const readingName = (days: number) => `analytics.reading.${days}`;
   const READING_MS = 2 * 60_000;
   const TAB = Math.random().toString(36).slice(2);
+  /** The period this tab's own read under way is marked for. */
+  let marked: number | null = null;
   function readingElsewhere(days: number) {
-    const [tab, of, since] = (readStored(READING) ?? '').split(' ');
-    return tab !== TAB && Number(of) === days && Date.now() - Number(since) < READING_MS;
+    const [tab, since] = (readStored(readingName(days)) ?? '').split(' ');
+    return !!tab && tab !== TAB && Date.now() - Number(since) < READING_MS;
   }
   function doneReading() {
-    if (readStored(READING)?.startsWith(`${TAB} `)) removeStored(READING);
+    if (marked !== null && readStored(readingName(marked))?.startsWith(`${TAB} `)) removeStored(readingName(marked));
+    marked = null;
   }
   /** Reads `days` (the period on show): `force` reads it even while fresh, and asks the time zone again. */
   async function load(days = span, force = false) {
@@ -201,8 +208,12 @@
     }
     if (had) read = had;
     stopReading();
-    if (!force && readingElsewhere(days)) return;
-    writeStored(READING, `${TAB} ${days} ${Date.now()}`);
+    if (!force && readingElsewhere(days)) {
+      elsewhere = true;
+      return;
+    }
+    writeStored(readingName(days), `${TAB} ${Date.now()}`);
+    marked = days;
     const ask = asked;
     const ctrl = (reading = new AbortController());
     const signal = ctrl.signal;
@@ -659,7 +670,7 @@
     {#if key}
       <div class="tools">
         <span class="fresh" aria-live="polite">
-          {#if loading}Updating…{:else if read}Updated {ago(read.at)}{/if}{#if held && !loading}<em title="Paused to stay under GoatCounter's 500 requests an hour">, paused for now</em>{/if}
+          {#if busy}Updating…{:else if read}Updated {ago(read.at)}{/if}{#if held && !busy}<em title="Paused to stay under GoatCounter's 500 requests an hour">, paused for now</em>{/if}
         </span>
         <button type="button" class="icon-btn" class:spin={loading} onclick={() => void load(span, true)} disabled={loading} title="Read again" aria-label="Read again">
           <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66" /><path d="M20 4v5h-5" /></svg>
@@ -701,9 +712,9 @@
   {:else}
     {#if read}
       <p class="dates">
-        <b>{period.now}</b>, {dayRange(read.from, read.to)}{#if read.compare}, against {period.before} ({dayRange(read.fromBefore, read.toBefore)}){:else if counted(read)}{read.began ? `; counting began partway through ${shortDay(read.began)}, so there's nothing before to compare with yet` : ': nothing before to compare with yet'}{:else}; {period.before} weren't counted in full, so nothing is compared with them{/if}<span class="phone-fresh">; {loading ? 'updating…' : `updated ${ago(read.at)}`}{held && !loading ? ', paused for now' : ''}</span>
+        <b>{period.now}</b>, {dayRange(read.from, read.to)}{#if read.compare}, against {period.before} ({dayRange(read.fromBefore, read.toBefore)}){:else if counted(read)}{read.began ? `; counting began partway through ${shortDay(read.began)}, so there's nothing before to compare with yet` : ': nothing before to compare with yet'}{:else}; {period.before} weren't counted in full, so nothing is compared with them{/if}<span class="phone-fresh">; {busy ? 'updating…' : `updated ${ago(read.at)}`}{held && !busy ? ', paused for now' : ''}</span>
       </p>
-    {:else if loading}
+    {:else if busy}
       <!-- (Its line's room kept, so the view doesn't move down as it arrives.) -->
       <p class="dates" aria-hidden="true">&nbsp;</p>
     {/if}
@@ -721,7 +732,7 @@
       <p class="note" role="status">There were more paths than Analytics reads (1,000): some counts may be missing.</p>
     {/if}
 
-    {#if !read && loading}
+    {#if !read && busy}
       <!-- The view's outline, in the overview's grid where it's that, so nothing jumps as it arrives. -->
       <div class="waiting" class:ov={board || view === 'overview'} aria-busy="true" aria-label="Reading">
         {#if board || view === 'overview'}
