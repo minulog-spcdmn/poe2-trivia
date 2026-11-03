@@ -995,7 +995,7 @@
   @media (min-width: 641px) and (max-height: 820px) {
     .game {
       padding-top: clamp(4px, 0.01 * var(--view-h), 16px);
-      padding-bottom: 0.5rem;
+      padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
     }
   }
 

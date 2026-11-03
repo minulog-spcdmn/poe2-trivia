@@ -3386,14 +3386,8 @@
       padding-bottom: 1.6rem;
     }
   }
-  /* Short desktop windows pad a tile 0.4rem below (see .tile there): the
-     same room, split evenly. */
-  @media (min-width: 761px) and (max-height: 820px) {
-    .tiles.many.tall.six .tile {
-      padding-top: 1.4rem;
-      padding-bottom: 1.4rem;
-    }
-  }
+  /* Short desktop windows pad a tile only 0.4rem below (their block, below,
+     which centres a row of six the same way): the same room, split evenly. */
   @media (min-width: 900px) and (max-height: 820px) {
     .tiles.many.tall .tile {
       padding-top: 1.4rem;
@@ -3471,6 +3465,12 @@
     /* The pictures: their number sits over the art, so the art takes the tile. */
     .tile {
       padding: 0.45rem 0.5rem 0.4rem;
+    }
+    /* A row of tall ones keeps room for its number over the art: as much
+       below, so the art is centred. */
+    .tiles.many.tall.six .tile {
+      padding-top: 1.4rem;
+      padding-bottom: 1.4rem;
     }
     .task.timed .task-text {
       padding-inline: 54px;
@@ -3630,6 +3630,7 @@
     .tiles.ten .tile {
       height: max(50px, (var(--room) - 54px) / 2);
       padding-top: 0.45rem;
+      padding-bottom: 0.4rem;
     }
     /* The name at the reveal over a tile barely taller than its picture: as
        small as upright, on a shorter shade and two lines at most, so the

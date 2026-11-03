@@ -1170,9 +1170,17 @@
   .legal a:hover {
     color: var(--gold-hi);
   }
+  /* In a game the links, hidden (two clicks away in the Leave dialog), take
+     no height under it, so the game fits the window; nor a click as they
+     fade. */
   .legal.hidden {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
     opacity: 0;
     visibility: hidden;
+    pointer-events: none;
     transition:
       opacity 0.3s,
       visibility 0s 0.3s;
@@ -1286,18 +1294,6 @@
     }
   }
 
-  /* Short desktop windows (13 and 14 inch laptops, as Game.svelte's): the
-     game's links, hidden, take no height under it either, so the question
-     and Next fit the window. */
-  @media (min-width: 641px) and (max-height: 820px) {
-    .legal.hidden {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-    }
-  }
-
   /* A phone on its side (lib/layout.ts `flat`): a slimmer header, clear of
      the notch, so the game below it fits the screen's height (its buttons
      keep their size: a thumb's to tap). */
@@ -1327,14 +1323,6 @@
     .brand {
       white-space: nowrap;
     }
-    /* The game's links, hidden (two clicks away in the Leave dialog), take no
-       height under it: there is none to spare. */
-    .legal.hidden {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-    }
   }
   /* Narrower ones keep the header to one line: the name goes without its Beta, as on phones. */
   @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) and (max-width: 760px) {
@@ -1343,18 +1331,11 @@
     }
   }
   /* A phone upright (lib/layout.ts `upright`): a game is as tall as the room
-     under the header and no taller (Game.svelte fills it), and its links,
-     hidden, take no height under it. */
+     under the header and no taller (Game.svelte fills it). */
   @media (orientation: portrait) and (max-width: 640px) {
     .screen:has(> :global(.game)) {
       display: flex;
       flex-direction: column;
-    }
-    .legal.hidden {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
     }
   }
 
