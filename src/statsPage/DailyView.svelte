@@ -5,12 +5,13 @@
   // that day's item was. Which item each day asked is worked out as the
   // game does (dailyItems.ts).
   import { onMount } from 'svelte';
-  import { average, fmt } from './chart';
+  import { average, fmt, restsOn } from './chart';
   import { withDailyItems, type DailyItem } from './dailyItems';
   import DailyTable from './DailyTable.svelte';
   import DayColumns from './DayColumns.svelte';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
+  import { dailyBackOf, shareOf } from './insights';
   import { asked, dailyAverage, dailyDays, hardestAndEasiest } from './model';
   import type { Period, Read } from './read';
   import How from './How.svelte';
@@ -41,6 +42,11 @@
     const t = read.before.daily.right + read.before.daily.wrong;
     return t ? (100 * read.before.daily.right) / t : null;
   });
+  /** Of its players since "daily/back" was counted, those who came back to a save: whether the habit is the regulars'. */
+  const back = $derived(dailyBackOf(L));
+  const backBefore = $derived(dailyBackOf(read.before));
+  /** The period before's share, only where it was counted from its first day. */
+  const backWas = $derived(backBefore.from === read.before.days[0] ? shareOf(backBefore.back, backBefore.answered) : null);
   const best = $derived(answered.reduce<(typeof days)[number] | null>((b, d) => (!b || d.answers > b.answers ? d : b), null));
 
   onMount(() => withDailyItems((f) => (itemOf = f)));
@@ -61,6 +67,9 @@
       <span class="name">Players a day</span>
       <b>{now === null ? '–' : average(now)}</b>
       <Delta now={now} before={before} digits={1} of={now !== null && before !== null ? { now: now * wholeDays, before: before * wholeDays } : undefined} period={period.before} />
+      {#if back.answered}
+        <span class="soft back"><b>{Math.round(shareOf(back.back, back.answered)!)}%</b> came back to a save{restsOn(back.back, back.answered, back.from && back.from > read.from ? back.from : null)} <Delta now={shareOf(back.back, back.answered)} before={backWas} rate of={{ now: back.answered, before: backBefore.answered }} period={period.before} /></span>
+      {/if}
     </div>
     <div class="figure">
       <span class="name">Named the item</span>
@@ -170,6 +179,15 @@
     line-height: 1.05;
     letter-spacing: -0.02em;
     color: var(--a-ink);
+  }
+  /* Of the players, those back to a save: under the figure's change, as quiet as it. */
+  .back {
+    margin-top: 0.3rem;
+  }
+  .figure .back b {
+    font-size: inherit;
+    line-height: inherit;
+    letter-spacing: 0;
   }
   .two {
     display: grid;
