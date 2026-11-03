@@ -57,11 +57,19 @@ export const FIRSTS = ['acted', 'create', 'host', 'room', 'solo', 'daily', 'prac
 export type First = (typeof FIRSTS)[number];
 /**
  * The first steps counted later than the rest (count.ts NEWCOMER_STEPS), in
- * the groups that came together: from 2026-10-28, then the Daily's IDENTIFY
- * MORE, then a second and fifth game. Each group a share of the visits from the day it was first counted,
- * not from the first "visit/new".
+ * the groups that came together, each with the first whole day it was
+ * counted (`from`, the account's day): the start page's steps and the
+ * Daily's IDENTIFY MORE went live early on 2026-10-29, a second and fifth
+ * game on the evening of 2026-11-01. Each group a share of the visits from
+ * then, not from the first "visit/new", nor from the first day one of its
+ * steps happened: the days before a newcomer first pressed IDENTIFY MORE
+ * were counted, with nobody pressing it.
  */
-export const LATER_FIRSTS: readonly (readonly First[])[] = [['acted', 'create', 'host', 'room', 'solo', 'daily', 'practice'], ['identify'], ['games-2', 'games-5']];
+export const LATER_FIRSTS: readonly { steps: readonly First[]; from: string }[] = [
+  { steps: ['acted', 'create', 'host', 'room', 'solo', 'daily', 'practice'], from: '2026-10-29' },
+  { steps: ['identify'], from: '2026-10-29' },
+  { steps: ['games-2', 'games-5'], from: '2026-11-02' },
+];
 
 /**
  * How long since a visitor coming back last played on that device

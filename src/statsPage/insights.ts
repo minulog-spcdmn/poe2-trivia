@@ -281,15 +281,15 @@ export interface FirstSteps {
   /** Visits with no save on the device ("visit/new"). */
   visits: number;
   counts: Record<First, number>;
-  /** Each step's own reading: the day it's counted from (LATER_FIRSTS from the day their group was first counted) and the visits with no save since. */
+  /** Each step's own reading: the day it's counted from (LATER_FIRSTS from the day their group was first counted, model.ts) and the visits with no save since. */
   steps: Record<First, { from: string | null; visits: number }>;
 }
 
 /** Read from the first day "visit/new" was counted, which came with the first steps' own ("new/…"): not from the day one first happened. */
 export function firstStepsOf(c: Counts): FirstSteps {
   const first = firstDay(c.days, (i) => (c.visits.new[i] ?? 0) > 0);
-  const groupFrom = (g: readonly First[]) => firstDay(c.days, (i) => g.some((s) => (c.firsts[s][i] ?? 0) > 0));
-  const later = new Map(LATER_FIRSTS.flatMap((g) => g.map((s) => [s, groupFrom(g)] as const)));
+  const groupFrom = (from: string) => firstDay(c.days, (i) => c.days[i] >= from);
+  const later = new Map(LATER_FIRSTS.flatMap((g) => g.steps.map((s) => [s, groupFrom(g.from)] as const)));
   const fromOf = (s: First) => {
     const from = later.get(s);
     return first < 0 || from === -1 ? -1 : from === undefined ? first : Math.max(first, from);

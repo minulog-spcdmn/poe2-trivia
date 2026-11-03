@@ -1025,19 +1025,31 @@ test("a first visit's steps, of the visits that found no save", () => {
   assert.deepEqual(f.counts, { acted: 0, create: 0, host: 0, room: 0, solo: 0, daily: 0, practice: 0, identify: 0, lobby: 14, played: 10, finished: 7, 'games-2': 0, 'games-5': 0 });
   assert.equal(f.steps.host.from, null, 'not counted yet');
   assert.equal(firstStepsOf(countsOf([path('new/played', [5, 5, 5])], DAYS)).from, null);
-  // The steps counted later: each a share of the visits from the day they were, the first ones' reading as it was.
-  const later = firstStepsOf(countsOf([path('visit/new', [5, 10, 15]), path('new/played', [1, 2, 3]), path('new/host', [0, 4, 5]), path('new/acted', [0, 8, 12])], DAYS));
-  assert.deepEqual(later.steps.host, { from: DAYS[1], visits: 25 });
-  assert.deepEqual(later.steps.played, { from: DAYS[0], visits: 30 });
-  assert.deepEqual([later.counts.host, later.counts.acted, later.counts.played], [9, 20, 6]);
-  // A group counted later still (the Daily's IDENTIFY MORE) from its own first day.
-  const identify = firstStepsOf(countsOf([path('visit/new', [5, 10, 15]), path('new/acted', [0, 8, 12]), path('new/identify', [0, 0, 2])], DAYS));
-  assert.deepEqual(identify.steps.identify, { from: DAYS[2], visits: 15 });
-  assert.deepEqual(identify.steps.acted, { from: DAYS[1], visits: 25 });
-  // A second and fifth game, likewise from their own first day.
-  const games = firstStepsOf(countsOf([path('visit/new', [5, 10, 15]), path('new/acted', [0, 8, 12]), path('new/games-2', [0, 0, 3])], DAYS));
-  assert.deepEqual(games.steps['games-2'], { from: DAYS[2], visits: 15 });
-  assert.equal(games.counts['games-2'], 3);
+  // Mid-October, before the steps counted later were: none of them read.
+  assert.equal(f.steps.identify.from, null);
+});
+
+test("a first visit's later steps, each from the day its group was first counted, not the day one first happened", () => {
+  const days = daysBetween('2026-10-27', '2026-11-03');
+  const at = (p: string, perDay: number[]): PathCount => ({ path: p, event: true, count: perDay.reduce((n, v) => n + v, 0), days: Object.fromEntries(days.map((d, i) => [d, perDay[i] ?? 0])) });
+  const paths = [
+    at('visit/new', [5, 5, 5, 5, 5, 5, 5, 5]),
+    at('new/played', [1, 1, 1, 1, 1, 1, 1, 1]),
+    at('new/acted', [0, 0, 3, 3, 3, 3, 3, 3]),
+    // Nobody pressed IDENTIFY MORE until Nov 1: the days since Oct 29 were counted all the same.
+    at('new/identify', [0, 0, 0, 0, 0, 2, 2, 2]),
+    // A second game's first came the evening it went live (Nov 1): read from the first whole day after.
+    at('new/games-2', [0, 0, 0, 0, 0, 1, 2, 2]),
+  ];
+  const f = firstStepsOf(countsOf(paths, days));
+  assert.deepEqual(f.steps.played, { from: '2026-10-27', visits: 40 });
+  assert.deepEqual(f.steps.acted, { from: '2026-10-29', visits: 30 });
+  assert.deepEqual(f.steps.identify, { from: '2026-10-29', visits: 30 });
+  assert.equal(f.counts.identify, 6);
+  assert.deepEqual(f.steps['games-2'], { from: '2026-11-02', visits: 10 });
+  assert.equal(f.counts['games-2'], 4);
+  // A period begun after they were all counted reads each from its own first day, as the rest.
+  assert.deepEqual(firstStepsOf(countsOf(paths, days.slice(-2))).steps.identify, { from: '2026-11-02', visits: 10 });
 });
 
 test('ISO weeks, and those who first played in one coming back the weeks after', () => {
