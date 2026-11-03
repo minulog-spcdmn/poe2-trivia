@@ -23,7 +23,7 @@
   const second = $derived(reachedShare(journeyOf(read.now), 'games-2'));
   // The journey's own steps only, each of the same page loads over the same days (Today's unique has its own figure, of other days and visits).
   const rows = $derived([
-    { name: 'Saw one to its end', share: now.from ? share(now.finished, now.visitors) : null },
+    { name: `${now.paged ? 'Page loads' : 'Visits'} that finished a game`, share: now.from ? share(now.finished, now.visitors) : null },
     ...(second === null ? [] : [{ name: '2+ games in one page load', share: second }]),
   ]);
   /** What the shares are of, said with how many where they're few. */
