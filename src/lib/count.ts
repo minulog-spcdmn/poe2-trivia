@@ -330,10 +330,11 @@ export function countVisit(save: () => Played | null, campaign: string | null, i
  * An event: its name is the path GoatCounter lists it under. Each one counts
  * (`ns`, no session): GoatCounter would otherwise count a path once a visitor
  * in eight hours, five games in an evening as one. A visit keeps its session,
- * so visits still count people.
+ * so visits still count people. `now`: sent at once (a beacon), for one
+ * counted as the page goes, after what waited has already gone (leaving).
  */
-export function countEvent(name: string) {
-  send({ p: name, t: name, e: 'true', ns: 'true' });
+export function countEvent(name: string, now = false) {
+  send({ p: name, t: name, e: 'true', ns: 'true' }, now);
 }
 
 const reached = new Set<string>();
@@ -567,20 +568,22 @@ const WHERE_MS = 5_000;
  */
 function countScriptError(from: ErrorPlace, assets: string) {
   let sent = false;
-  const go = (name: string) => {
+  const go = (name: string, now = false) => {
     if (sent) return;
     sent = true;
     clearTimeout(timer);
-    removeEventListener('pagehide', gone);
+    removeEventListener('pagehide', leave);
     document.removeEventListener('visibilitychange', hidden);
-    countEvent(name);
+    countEvent(name, now);
   };
-  const gone = () => go('error/script');
-  const hidden = () => document.visibilityState === 'hidden' && gone();
-  const timer = setTimeout(gone, WHERE_MS);
-  addEventListener('pagehide', gone);
+  const plain = () => go('error/script');
+  // (As the page goes, at once: leaving, which sends what waits, has run before these listeners, added later, so a queued count would stay behind.)
+  const leave = () => go('error/script', true);
+  const hidden = () => document.visibilityState === 'hidden' && leave();
+  const timer = setTimeout(plain, WHERE_MS);
+  addEventListener('pagehide', leave);
   document.addEventListener('visibilitychange', hidden);
-  scriptErrorEvent(from, assets, fetchWhereTable(assets)).then(go, gone);
+  scriptErrorEvent(from, assets, fetchWhereTable(assets)).then((name) => go(name), plain);
 }
 
 /** The errors counted this page load ("error/script", "error/chunk"), each once, and how countScriptErrors' listeners are taken off once both have gone. */
@@ -613,8 +616,9 @@ export function countScriptErrors() {
   const onError = (e: ErrorEvent) =>
     errorDone(errorKind(e.message ?? '', [e.filename ?? '', (e.error as Error | undefined)?.stack ?? ''], assets), { ...placeOf(e.error), file: e.filename, line: e.lineno, col: e.colno }, assets);
   const onRejection = (e: PromiseRejectionEvent) => {
-    const err = e.reason as { stack?: unknown; message?: unknown } | null;
-    errorDone(errorKind(typeof err?.message === 'string' ? err.message : '', [typeof err?.stack === 'string' ? err.stack : ''], assets), placeOf(err), assets);
+    const err = e.reason as { message?: unknown } | null;
+    const from = placeOf(err);
+    errorDone(errorKind(typeof err?.message === 'string' ? err.message : '', [from.stack ?? ''], assets), from, assets);
   };
   stopScriptErrors = () => {
     removeEventListener('error', onError);

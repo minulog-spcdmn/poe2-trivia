@@ -192,10 +192,7 @@ const FAILURES: Record<string, { label: string; host?: true; script?: true }> = 
 };
 
 /** A failure's key, by its path: "error/<key>", an error in the game's own scripts "script" wherever it came from ("error/script/<where>"). */
-export const failureKey = (path: string) => {
-  const key = path.slice('error/'.length);
-  return key.startsWith('script/') ? 'script' : key;
-};
+export const failureKey = (path: string) => (scriptErrorWhere(path) !== null ? 'script' : path.slice('error/'.length));
 
 /** Where an error in the game's own scripts came from, by its path ("" for one counted without it); null for any other path. */
 export const scriptErrorWhere = (path: string) => (path === 'error/script' ? '' : path.startsWith('error/script/') ? path.slice('error/script/'.length) : null);

@@ -26,6 +26,19 @@ export function polyfillsFirst(): Plugin {
   };
 }
 
+/** Whether a pattern holds a lookbehind: "(?<=" or "(?<!" itself, not an escaped "\(" or one in a class ("[(?<=]"). */
+export function hasLookbehind(pattern: string): boolean {
+  let inClass = false;
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === '\\') i++;
+    else if (inClass) inClass = c !== ']';
+    else if (c === '[') inClass = true;
+    else if (c === '(' && pattern.startsWith('?<', i + 1) && (pattern[i + 3] === '=' || pattern[i + 3] === '!')) return true;
+  }
+  return false;
+}
+
 /**
  * The regular expressions in a script that Safari before 16.4 can't read (a
  * lookbehind), each as written. Unlike a missing built-in, nothing can fill
@@ -38,7 +51,7 @@ export function unreadableRegexes(code: string): string[] {
     if (!node || typeof node !== 'object') return;
     if (Array.isArray(node)) return node.forEach(walk);
     const n = node as { type?: string; regex?: { pattern: string; flags: string } };
-    if (n.type === 'Literal' && n.regex && /\(\?<[=!]/.test(n.regex.pattern)) found.push(`/${n.regex.pattern}/${n.regex.flags}`);
+    if (n.type === 'Literal' && n.regex && hasLookbehind(n.regex.pattern)) found.push(`/${n.regex.pattern}/${n.regex.flags}`);
     for (const k in n) if (k !== 'parent') walk((n as Record<string, unknown>)[k]);
   };
   walk(parseSync('x.js', code).program);

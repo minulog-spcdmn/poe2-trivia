@@ -87,10 +87,11 @@ const fromPackage = (label: string) => label.startsWith('node_modules/');
  * failing that the first in a package's; null when no frame tells.
  */
 export async function whereOf(frames: Frame[], table: (file: string) => Promise<WhereTable | null>): Promise<string | null> {
+  // (Each script's table asked for at once, so the frames' scripts don't wait on each other within WHERE_MS.)
   const tables = new Map<string, Promise<WhereTable | null>>();
+  for (const f of frames) if (!tables.has(f.file)) tables.set(f.file, table(f.file).catch(() => null));
   let fallback: string | null = null;
   for (const f of frames) {
-    if (!tables.has(f.file)) tables.set(f.file, table(f.file).catch(() => null));
     const t = await tables.get(f.file)!;
     const label = t ? placeIn(t, f.line, f.col) : null;
     if (!label) continue;

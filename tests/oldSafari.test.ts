@@ -86,5 +86,7 @@ test("the build fails on a script holding a lookbehind, a package's too, and on 
   assert.deepEqual(unreadableRegexes('const a = /(?<=Z)(?=M)/; const b = /(?<!k)kkk/iu;'), ['/(?<=Z)(?=M)/', '/(?<!k)kkk/iu']);
   // Named groups, a lookahead, and the words in a string or a comment are read everywhere.
   assert.deepEqual(unreadableRegexes('const c = /(?<year>\\d{4})(?=-)/; const s = "(?<=Z)"; // (?<!x)'), []);
+  // An escaped bracket, or one in a class, that only looks like one.
+  assert.deepEqual(unreadableRegexes('const d = /\\(?<=/; const e = /[(?<!]x/; const f = /\\\\(?<=a)/;'), ['/\\\\(?<=a)/']);
   assert.match(readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8'), /plugins: \[[^\]]*\breadableRegexes\(\)[\s\S]*worker: \{[^}]*readableRegexes\(\)/);
 });

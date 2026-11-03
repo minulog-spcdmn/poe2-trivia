@@ -270,14 +270,9 @@ function allowed() {
   return ua ? ua.hasBeenActive : true;
 }
 
-/**
- * Whether this browser can play the game's sound: it has Web Audio, and the
- * context wasn't refused when it was made (`new AudioContext()` throws where
- * there's no audio device to be had, too many contexts, or audio is switched
- * off for the site), which leaves the game silent rather than throwing at
- * every press.
- */
+/** Whether making the context was refused (`new AudioContext()` throws where there's no audio device to be had, too many contexts, or audio is switched off for the site): asked once, then the game stays silent rather than throwing at every press. */
 let refused = false;
+/** Whether this browser can play the game's sound: it has Web Audio, and the context wasn't refused when it was made. */
 const canHear = () => typeof AudioContext !== 'undefined' && !refused;
 
 function audio(): Bus | null {

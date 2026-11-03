@@ -1620,8 +1620,8 @@ test('a kept read is used only in the shape this build keeps, and for its own pe
   assert.equal(keptRead(JSON.stringify({ ...r, v: READ_V - 1 }), 30), null);
   assert.equal(keptRead(null, 30), null);
   assert.equal(keptRead('{not json', 30), null);
-  // This build's kept read has the unread counts (Counts.ready, dailyBack, delveRuns): one kept without them is read again.
-  assert.equal(READ_V, 14);
+  // This build's kept read has the unread counts (Counts.ready, dailyBack, delveRuns, scriptErrors): one kept without them is read again.
+  assert.equal(READ_V, 15);
 });
 
 test("a read shown before its lists are in says they're being read, never that there are none", () => {
