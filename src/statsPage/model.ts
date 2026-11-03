@@ -105,6 +105,12 @@ export interface Cohort {
   started: number | null;
   /** Each week from the first on, up to the period's last; null for a week before the period. */
   weeks: (number | null)[];
+  /**
+   * The days the period's last week has had, its last (today) still going:
+   * that week is only so far, so each row's last week, and the newcomers of
+   * a week begun in it, are fewer than a whole week's would be.
+   */
+  soFar: number;
 }
 
 /**
@@ -575,6 +581,8 @@ function cohortsOf(paths: PathCount[], days: string[], joined: number[]): Cohort
   const counting = joined.findIndex((n) => n > 0);
   // The first day visits were told apart: any visit told new or back, or a cohort's (sent with them), so a quiet start of new visitors isn't taken for none counted.
   const told = days.findIndex((d) => paths.some((p) => (p.path.startsWith('visit/') || p.path.startsWith('cohort/')) && (p.days[d] ?? 0) > 0));
+  // (The period's last day is today, so its week is under way.)
+  const soFar = days.length ? weekday(days[days.length - 1]) + 1 : 0;
   const rowOf = (week: string, monday: string, p: PathCount | null): Cohort => {
     const from = Date.parse(`${monday}T12:00:00Z`);
     const weekOf = (d: string) => Math.floor((Date.parse(`${d}T12:00:00Z`) - from) / (7 * 86_400_000));
@@ -587,7 +595,7 @@ function cohortsOf(paths: PathCount[], days: string[], joined: number[]): Cohort
     // Only a week the period holds from its Monday, counted from then: one cut short would look small, its cells far over 100%.
     const at = days.indexOf(monday);
     const started = at < 0 || counting < 0 || counting > at ? null : joined.slice(at, at + 7).reduce((n, v) => n + v, 0);
-    return { week, monday, started, weeks };
+    return { week, monday, started, weeks, soFar };
   };
   const out = new Map<string, Cohort>();
   for (const p of paths) {

@@ -1075,6 +1075,8 @@ test('ISO weeks, and those who first played in one coming back the weeks after',
       ['2026-W44', 3, [0]],
     ],
   );
+  // The period ends on a Wednesday, today: its week is three days so far, each row's last week and the newest row's newcomers with it.
+  assert.deepEqual(c.cohorts.map((x) => x.soFar), [3, 3, 3, 3]);
   // Counting began after a week's Monday: who started that week isn't known, rather than far too few.
   const late = countsOf(
     [
@@ -1095,7 +1097,7 @@ test('ISO weeks, and those who first played in one coming back the weeks after',
   );
   assert.deepEqual(later.cohorts[0].weeks, [null, null, 1, 0]);
   // The table's rows: the weeks its columns reach, none after the period (a clock years off).
-  const odd = [...c.cohorts, { week: '2031-W05', monday: weekMonday('2031-W05')!, started: null, weeks: [] }];
+  const odd = [...c.cohorts, { week: '2031-W05', monday: weekMonday('2031-W05')!, started: null, weeks: [], soFar: 3 }];
   assert.deepEqual(recentCohorts(odd, '2026-10-28', 3).map((x) => x.week), ['2026-W42', '2026-W43', '2026-W44']);
   assert.deepEqual(recentCohorts(odd, '2026-10-28').map((x) => x.week), ['2026-W40', '2026-W42', '2026-W43', '2026-W44']);
 });
