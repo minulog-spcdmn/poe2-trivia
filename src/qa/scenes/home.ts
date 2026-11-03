@@ -289,6 +289,7 @@ export function homeScenes(): Scene[] {
         { label: "Today's unique after a forgotten day, the grace not back yet: the streak is gone", values: { today: 'lapsed' }, group: "Today's unique" },
         { label: "Today's unique answered, a streak of a year", values: { days: 365 }, group: "Today's unique" },
         { label: "Today's unique missed, a streak of 30 ended", values: { today: 'missed', days: 30 }, group: "Today's unique" },
+        { label: "Today's unique missed, a streak of a year ended: on a phone, Practice more beside it still", values: { today: 'missed', days: 365 }, group: "Today's unique" },
       ],
       build: (v) => returning(v),
     }),

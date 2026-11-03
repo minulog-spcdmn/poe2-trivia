@@ -456,12 +456,15 @@
             <!-- The game's streak badge, counted in days, burning with the game's fire. -->
             <DailyStreak days={streak} {burning} />
           {:else if todays && todays.ended >= 1}
-            <span use:douse={justMissed}>Streak ended at <span class="num">{todays.ended}</span> {todays.ended === 1 ? 'day' : 'days'}</span>
+            <!-- On a phone "Streak" goes, and "minutes" shortens to "min" below, or Practice more drops to a line of its own. -->
+            <span use:douse={justMissed}><span class="full">Streak ended</span><span class="short">Ended</span> at <span class="num">{todays.ended}</span> {todays.ended === 1 ? 'day' : 'days'}</span>
           {:else}
             <span>Missed today</span>
           {/if}
           <span class="sep" aria-hidden="true">·</span>
-          <span aria-live="off">{nextIn(now)}</span>
+          {@const when = nextIn(now)}
+          {@const cut = when.match(/^(.* min)(utes?)$/)}
+          <span aria-live="off">{#if cut}{cut[1]}<span class="full">{cut[2]}</span>{:else}{when}{/if}</span>
         {/if}
       </p>
       <!-- After the result, as in the game: what happened first, then the way on;
@@ -919,6 +922,14 @@
     font-size: 15px;
     color: #a99c86;
   }
+  /* A phone's shorter wording (below). */
+  .tally .short {
+    display: none;
+  }
+  /* The way on keeps to the right, even on a line of its own. */
+  .after .btn {
+    margin-inline-start: auto;
+  }
   .num {
     font-family: var(--font-cinzel);
     font-style: normal;
@@ -948,11 +959,13 @@
     .option {
       height: 58px;
     }
-    /* Room for the answered state's two lines (result, then Practice more) from the start, so nothing below moves when it comes. */
+    /* Room for two lines from the start (a caption may take two), so nothing below moves when the answer comes.
+       The result and Practice more keep to one line, at 375 wide too (the longest, Ended at 365 days · next in 23 hours, by 4px),
+       the result at the left and the button at the right, as on wider screens. */
     .after {
-      justify-content: center;
       align-content: center;
       min-height: 62px;
+      column-gap: 0.625rem;
     }
     .caption {
       font-size: 15px;
@@ -961,7 +974,14 @@
       display: none;
     }
     .tally {
+      gap: 0.375rem;
       margin: 0;
+    }
+    .tally .full {
+      display: none;
+    }
+    .tally .short {
+      display: inline;
     }
   }
 </style>

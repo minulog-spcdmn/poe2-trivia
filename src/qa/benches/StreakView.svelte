@@ -72,7 +72,7 @@
         {#if days >= 1}
           <DailyStreak {days} {burning} />
         {:else if ended >= 1}
-          <span use:douse>Streak ended at <span class="n">{ended}</span> {ended === 1 ? 'day' : 'days'}</span>
+          <span use:douse><span class="full">Streak ended</span><span class="short">Ended</span> at <span class="n">{ended}</span> {ended === 1 ? 'day' : 'days'}</span>
         {:else}
           <span>Missed today</span>
         {/if}
@@ -129,6 +129,10 @@
     font-size: 15px;
     color: #a99c86;
   }
+  /* A phone's shorter wording, as Today's unique words it. */
+  .short {
+    display: none;
+  }
   .n {
     font-family: var(--font-cinzel);
     font-style: normal;
@@ -144,6 +148,12 @@
   @media (max-width: 640px) {
     .answers {
       grid-template-columns: minmax(0, 1fr);
+    }
+    .full {
+      display: none;
+    }
+    .short {
+      display: inline;
     }
   }
 </style>
