@@ -163,57 +163,99 @@ still counted as the page is left.
 
 **Reading them:** `stats.html` (Analytics, `src/statsPage`), with the
 owner's read-only GoatCounter API key, which stays in that browser until
-"Forget the key on this browser" at the foot of the page. Its
-overview answers "how is it going?" and keeps to what's worth a glance,
-with room around it: four figures for the period (visits and games a day
-on average, over the whole days), today's visits, games and answers
+"Forget the key on this browser" at the foot of the page (the day
+counting began and every tab's kept reads go with it). GoatCounter
+labels every hour it kept with the account zone's offset as it is when
+asked, so `api.ts` puts each back on the zone's clock (`zone.ts` onClock,
+the night the clocks go back adding its doubled 02:00 up): a summer day
+read in winter keeps its own hours, and Today's unique, asked by UTC
+days, is moved there hour by hour (`model.ts` utcPerDay). A read is kept
+in localStorage and shared between tabs: a second tab (the board beside
+a laptop's) finds the first one's fresh read and asks GoatCounter
+nothing, and shows another tab's newer read of its period as it lands. A
+period read for the first time shows its counts as soon as the hits are
+in, about 1.5 s, with "Reading…" where the lists of who came, on what and
+from where are still on the way (`read.ts` orReading); a read kept by an
+older build (another `READ_V`) is read again.
+
+Its overview answers "how is it going?" and keeps to what's worth a
+glance, with room around it: four figures for the period (visits, games
+and Today's unique's players a day on average, over the whole days, and
+Came back, the share of visits told new or back that came back to a
+save, `insights.ts` backShare), today's visits, games and answers
 against a usual day by the same hour (the last 28 whole days' average up
 to then, `model.ts` usualByNow, so a game that grows isn't busier than
-usual every day; each with what the last update added), how busy
-each day was against its average line, what happened, when they
-come, where they are and what they play; the rest is in the views
-behind it. Joining only shows there when its failures run well above the
-usual rate, today's or the period's (`insights.ts` troubleOf), as a line
-above it all. The monitor
-button in its top bar (`#board`) shows the overview full screen for a
-monitor of its own, kept awake, the pointer hidden while still, updating
-by itself; leaving full screen leaves it. On a monitor on its side
-(taller than wide, 900px or more) every view fits the screen, its type
-sized from it. On a big monitor (1440p, 4K) every view fits one screen, a chart giving up what runs past it or
-taking what's left (`fitChart.svelte.ts`), its labels sized with the
-type; "What happened" reads out the days far busier
-than usual (the median of the days within two weeks of it) and the site behind each, and the sites and countries that
-brought far more or fewer than the period before, beyond how they all
-moved (`insights.ts`, only what's beyond chance). A change against the
-period before is coloured only when chance couldn't have made it
-(`Delta.svelte`: a count by itself, a share by how many it's of, and
-never while fewer than three people apart, `insights.ts` rateBeyondChance).
-The days before counting began (the first day anything was counted,
-`model.ts` firstCounted) weren't quiet, they weren't counted: a period
-starts at the first whole day counted instead (`model.ts` countedSpan;
-that first day began partway through), the longest period offered named
-"Since <day>" while counting hasn't gone on that long, and nothing is
-compared with a period before that wasn't counted whole (`read.ts`
-COMPARE: no changes, no grey line). When they come is by weekday and hour
-once there are four weeks to average each over, before that every day's
-hours together, the busiest hour named only beyond chance;
-Today's unique's hardest and easiest items are only those named far
-less or more than usual, beyond what chance does with so few players.
-Each view keeps how it's counted folded away below it (`How.svelte`).
-Each update keeps what it brought in
+usual every day; each with what the last update added), how busy each
+day was against its average line, what happened, when they come, where
+they are and what they play; the rest is in the views behind it. A line
+above it all speaks only when something's wrong: joining failing well
+above the usual rate, today's or the period's (`insights.ts` troubleOf),
+and, where the period before was counted in full, the game breaking more
+than before (its scripts' errors, or pages missing a part that didn't
+load, for as many visits) or a kind of device stuttering more
+(`insights.ts` healthOf); each opens Joining or Stutter. "What happened"
+reads out the days far busier than usual (the median of the days within
+two weeks of it) and the site behind each, and the sites and countries
+that brought far more or fewer than the period before, beyond how they
+all moved; countries over whole days alone, the period's up to yesterday
+against as many days before, as GoatCounter keeps them by the day.
+
+Nothing is said that chance could have made. A change against the period
+before is coloured only beyond chance (`Delta.svelte`): two counts each
+taken as chance's (`insights.ts` countsApart, the joining line's too),
+games weighed as several to a player (gamesSpread), a share by how many
+it's of and never while fewer than three people apart
+(rateBeyondChance). A list read for its most extreme allows for how many
+it tests at once (`model.ts` zFor): What happened's movers and spikes,
+Today's unique's hardest and easiest items, the busiest hour, Groups'
+standouts and the health line's six. The days before counting began (the
+first day anything was counted, `model.ts` firstCounted) weren't quiet,
+they weren't counted: a period starts at the first whole day counted
+instead (`model.ts` countedSpan; that first day began partway through),
+the longest period offered named "Since <day>" while counting hasn't
+gone on that long, and nothing is compared with a period before that
+wasn't counted whole (`read.ts` COMPARE: no changes, no grey line). Each
+share counted only from a later day (visits told new or back, page
+loads, the counts below from 29 Oct) is read from that day and compared
+only where the period before was counted from its first. When they come
+is by weekday and hour once there are four weeks to average each over,
+before that every day's hours together. Each view keeps how it's counted
+folded away below it (`How.svelte`). Each update keeps what it brought in
 (`changes.ts`): the visitors, games and answers added, and the countries
 and systems the new visitors came from and on, lit on the overview.
-Visitors (`#visitors`) also has how far a visit gets (a game entered,
-started, finished, two and five in one page load) and a first visit's
-own steps, how long it stays and what else it opens, who comes back to a
-save and how long after, by the week they first played too (for every
-100 whose save began that week, `new/saved`, once a week has been counted
-from its Monday; a week none came back from a row of noughts), the installed app's share, and the
-tagged links (`?ref=`) beside the referrers (a site's subdomains as one); each
-share is of page loads (`reach/page`) from the day those were first
-counted, against the period before only where that was a share of page
-loads too (`insights.ts`). Games once counted online and
-hot-seat apart (`play/race-online`) read as their mode (`model.ts`
+
+The monitor button in the top bar (`#board`) shows the overview full
+screen for a monitor of its own, kept awake, the pointer hidden while
+still, updating by itself; its type is sized from the screen's height
+and the overview takes its big-monitor layout at any width, so the whole
+board fits a 1080p screen and a 1280 x 800 laptop. Leaving full screen
+leaves it, so does Back, and so does Escape where full screen doesn't
+take the key (an iPhone, or full screen refused), unless it puts a
+chart's note away. On a big monitor (1440p, 4K) and on a monitor on its side
+(portrait, 900px wide and 1500px tall or more) each view fits one
+screen, its type sized from it, a chart giving up what runs past it or
+taking what's left (`fitChart.svelte.ts`). Visitors runs past on
+purpose, about 1.4 screens in its three columns (two on its side): a
+first visit's steps and the lists don't fit at the page's type without
+leaving something out, so its chart isn't fitted.
+
+Visitors (`#visitors`) opens with the visits, then who comes back and how
+long after, by the week they first played too (for every 100 whose save
+began that week, `new/saved`, once a week has been counted from its
+Monday; the week still going in grey, so far). Then how far a visit gets (a game entered, started, finished, two
+and five in one page load) with every visit's start-page steps (New
+game, a room asked for, the room open, a run alone, Today's unique, a
+practice question, Identify more), a first visit's own steps with how
+soon its page was ready (`load/ready-…`), how long it stays and what
+else it opens, each a share of page loads (`reach/page`) from the day
+those were first counted; and the countries, the referrers with the
+tagged links (`?ref=`) beside them (a site's subdomains as one), and
+what they play on, with the installed app's share. Today's unique (`#daily`) has the share of its players who came
+back to a save (`daily/back`), Games (`#games`) each mode's change and
+the share of Delve's runs shared (`share/delve`); these and the
+start-page steps and load times are read from 29 Oct (`model.ts`
+STARTS_FROM), when they were first counted. Games once counted online
+and hot-seat apart (`play/race-online`) read as their mode (`model.ts`
 currentName). Stutter (`#stutter`) has the share of games that stuttered
 a day on each kind of device, small charts on one axis with the period's
 share dashed across, so a deploy that made things worse on one shows as a
@@ -239,7 +281,11 @@ each thing people do is read once for each, only while that view is
 open, and kept half an hour; Delve's depths, two calls for each ten
 depths, only once a group is picked with Delve. On the dev server and the beta,
 `stats.html?demo` fills every view with made-up numbers
-(`src/statsPage/demo.ts`), no key needed, to look at the layout with.
+(`src/statsPage/demo.ts`), no key needed, to look at the layout with;
+the query adds the states a real site gets into (`demo.ts`
+demoStateOf): `since=<day>` (counting began partway through it, `since`
+alone 20 days back), `compare=0`, `incomplete`, `first` (a first load,
+nothing marked new) and `alert` (the line above the overview).
 
 
 Not defended against: a determined player recognising item art with
