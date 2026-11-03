@@ -108,6 +108,8 @@
     view = viewOf(location.hash);
     sel = selOf(location.hash);
     board = location.hash === BOARD;
+    // Back out of the board leaves its full screen too, as its X does.
+    if (!board && document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
     await tick();
     window.scrollTo({ top: (history.state as { y?: number } | null)?.y ?? 0 });
   }
@@ -526,10 +528,19 @@
       still = window.setTimeout(() => (idle = true), 3000);
     };
     moved();
+    // Esc leaves it where full screen doesn't take the key first (an iPhone, or full screen refused).
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented) leaveBoard();
+    };
     document.addEventListener('pointermove', moved);
+    document.addEventListener('keydown', escape);
+    // Its type sized from the screen's height at any width (html.board below).
+    document.documentElement.classList.add('board');
     return () => {
       sleep();
       document.removeEventListener('pointermove', moved);
+      document.removeEventListener('keydown', escape);
+      document.documentElement.classList.remove('board');
       clearTimeout(still);
       idle = false;
     };
@@ -618,7 +629,7 @@
       </div>
     {:else if read}
       {#if board || view === 'overview'}
-        <Overview {read} {period} {weekly} />
+        <Overview {read} {period} {weekly} {board} />
       {:else if view === 'visitors'}
         <VisitorsView {read} {period} {weekly} />
       {:else if view === 'games'}
@@ -953,6 +964,32 @@
     .foot p {
       margin: 0;
     }
+  }
+
+  /* The board, on a monitor of its own at any size (1080p, a laptop's 1280 x 800): the overview no taller than the screen, its type sized from the screen's height. */
+  :global(html.board) {
+    font-size: clamp(9px, min(0.625vw, 1.1vh), 26px);
+  }
+  /* Its dates up in the bar, as on a big monitor, and no room it doesn't use. */
+  :global(html.board) .range {
+    display: block;
+    margin-left: auto;
+    font-family: var(--font-data);
+    font-size: 1rem;
+    color: var(--a-muted);
+  }
+  :global(html.board) .dates,
+  :global(html.board) .made-up {
+    display: none;
+  }
+  :global(html.board) .made-up-tag {
+    margin-right: 1.2rem;
+    font-weight: 600;
+    color: var(--a-now);
+  }
+  :global(html.board) main {
+    padding-top: 1.2rem;
+    padding-bottom: 1.2rem;
   }
 
   .idle,

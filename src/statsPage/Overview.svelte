@@ -26,7 +26,8 @@
   import WeekHours from './WeekHours.svelte';
   import WhatHappened from './WhatHappened.svelte';
 
-  let { read, period, weekly }: { read: Read; period: Period; weekly: boolean } = $props();
+  /** `board`: on a monitor of its own (Analytics' #board), laid out as on a big one at any width, its type sized from the screen's height. */
+  let { read, period, weekly, board = false }: { read: Read; period: Period; weekly: boolean; board?: boolean } = $props();
 
   const L = $derived(read.now);
   const B = $derived(read.before);
@@ -96,9 +97,9 @@
   let innerWidth = $state(1400);
   /** A monitor on its side (taller than wide, wider than a phone): the overview fitted to it as to a big one. */
   const sideways = $derived(innerHeight > innerWidth && innerWidth >= 900 && innerHeight >= 1500);
-  const oneScreen = $derived(innerWidth > 1500 || sideways);
+  const oneScreen = $derived(innerWidth > 1500 || sideways || board);
   /** A big monitor the usual way round: what happened joins the short answers below, so the chart has the height beside today's box. */
-  const big = $derived(innerWidth >= 1900 && !sideways);
+  const big = $derived((innerWidth >= 1900 || board) && !sideways);
   /** The figures' comparisons said short where the cards are narrow (a monitor on its side): "from 1,861 before". */
   const before = $derived(sideways ? 'before' : period.before);
   const chartBase = $derived(Math.round(oneScreen ? Math.max(200, innerHeight * (sideways ? 0.2 : 0.18)) : Math.min(560, Math.max(260, innerHeight * 0.27))));
@@ -180,7 +181,7 @@
   </div>
 {/if}
 
-<div class="ov">
+<div class="ov" class:board={big && board}>
   <div class="kpis">
     <Kpi label="Visits a day" value={visitsAvg.now === null ? '–' : average(visitsAvg.now)} means="on average; {fmt(L.visitors.total)} in {period.now.toLowerCase()}" href="#visitors">
       {#snippet spark()}<Spark days={L.days} values={L.visitors.perDay} {weekly} label="Visits a day" />{/snippet}
@@ -383,6 +384,25 @@
     .kpis :global(.spark) {
       display: none;
     }
+  }
+  /* The board on a smaller screen (1080p, a laptop's): laid out as on a big one, whatever the width says below. */
+  .ov.board {
+    grid-template-columns: minmax(0, 2.3fr) minmax(0, 1fr);
+    grid-template-rows: auto 1fr auto;
+    grid-template-areas:
+      'kpis kpis'
+      'chart now'
+      'answers answers';
+  }
+  .board .kpis,
+  .board .answers {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .board .answers > :global(:last-child) {
+    grid-column: auto;
+  }
+  .board .kpis :global(.spark) {
+    display: none;
   }
   /* (A laptop keeps today beside the chart, so the chart is on screen.) */
   @media (max-width: 1100px) {
