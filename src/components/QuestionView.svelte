@@ -2,7 +2,7 @@
   import { fly, fade, scale, slide } from '../lib/transitions';
   import { session, engine } from '../lib/session.svelte';
   import { glare } from '../lib/glare';
-  import { onceFontsIn } from '../lib/inFrame';
+  import { inFrame, onceFontsIn } from '../lib/inFrame';
   import { AUTO_NEXT_MS, answerDrawn, autoNextLeft, clockMs, clockRuns, drawnAs, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
   import { FINALE_MS, materialize, warmBurns, type BurnParams } from '../lib/materialize';
@@ -96,17 +96,25 @@
    * side, where the plate has no height to spare).
    */
   function oneLine(node: HTMLElement, on = true) {
+    const head = node.closest<HTMLElement>('.head');
+    // The plate's room inside its padding (the text block itself grows with an unwrapped name). Inside it, as its padding
+    // follows the plate's ends (--plate-scale, on phones) while its width stays.
+    const roomOf = (h: HTMLElement) => {
+      const hs = getComputedStyle(h);
+      return h.clientWidth - parseFloat(hs.paddingLeft) - parseFloat(hs.paddingRight);
+    };
+    /** The plate's room the name was last fitted to. */
+    let fittedTo = -1;
     const run = () => {
       node.style.fontSize = '';
       node.style.whiteSpace = '';
+      fittedTo = -1;
       if (!on) return;
       node.style.whiteSpace = 'nowrap';
       const full = parseFloat(getComputedStyle(node).fontSize);
-      // The plate's room inside its padding (the text block itself grows with an unwrapped name).
-      const head = node.closest<HTMLElement>('.head');
       if (!head) return;
-      const hs = getComputedStyle(head);
-      const room = head.clientWidth - parseFloat(hs.paddingLeft) - parseFloat(hs.paddingRight) + 0.5;
+      fittedTo = roomOf(head);
+      const room = fittedTo + 0.5;
       // The words' own width (the span itself is as wide as the plate's line).
       const range = document.createRange();
       range.selectNodeContents(node);
@@ -123,7 +131,11 @@
       }
       if (wide() > room) node.style.whiteSpace = '';
     };
-    run();
+    // Fitted in the frame's animation frame, not as it mounts (lib/inFrame.ts): measured there and then, it had the
+    // new question laid out half made, in the task that makes it, 5 to 7 ms of a picture question's pick at 4K (#331).
+    // Still before the frame is painted: the name never shows at its full size.
+    const { soon, cancel } = inFrame(run);
+    if (on) soon();
     // Again once the display font is in, and whenever the plate's width changes (a phone turned). Only while it is on: off,
     // run() measures nothing, and asking for the fonts' readiness lays the whole page out there and then (Chrome), in the
     // middle of a reveal coming in (12 ms in a trace). Asked in the frame's animation frame for that too (lib/inFrame.ts).
@@ -133,10 +145,13 @@
       fontsIn = onceFontsIn(run);
     };
     if (on) fonts();
-    const ro = new ResizeObserver(run);
-    const head = node.closest('.head');
-    // And when the name changes: once its new words are in (before the next paint).
-    const mo = new MutationObserver(run);
+    // (Its first report is of the room the animation frame has just fitted it to: left alone, as is any report of that room.)
+    const ro = new ResizeObserver(() => {
+      if (head && roomOf(head) !== fittedTo) run();
+    });
+    // And when the name changes (the clock starting turns the blank into the name): in the frame's animation frame too,
+    // not in the task that changed it, which has the rest of the question changing with it. Still before the next paint.
+    const mo = new MutationObserver(soon);
     // (Watching only while it is on.)
     const watch = () => {
       ro.disconnect();
@@ -151,10 +166,13 @@
         const was = on;
         on = now;
         watch();
-        run();
+        // Off, at once (it measures nothing); on, in the frame's animation frame, as when it mounts.
+        if (on) soon();
+        else run();
         if (on && !was) fonts();
       },
       destroy: () => {
+        cancel();
         fontsIn();
         ro.disconnect();
         mo.disconnect();
