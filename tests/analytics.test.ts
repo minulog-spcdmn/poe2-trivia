@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { addDays, dayIn, hourStarts, hoursIn, midnight, onClock, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, dayRange, labelled, restsOn } from '../src/statsPage/chart.ts';
 import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
-import { appShare, backShare, beforeShare, beyondChanceOf, busiestStandsOut, comersOf, countsApart, failureRate, gamesSpread, healthOf, sameLabels, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
+import { READY_ROWS, START_JOURNEY, dailyBackOf, delveSharedOf, readinessOf, readyCount, startStepsOf, appShare, backShare, beforeShare, beyondChanceOf, busiestStandsOut, comersOf, countsApart, failureRate, gamesSpread, healthOf, sameLabels, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
 import { READ_V, coverOf, keptRead, spansOf, untilDay } from '../src/statsPage/read.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
@@ -1579,4 +1579,50 @@ test('the periods counting has not reached are one, the shortest that holds ever
   assert.equal(coverOf('2026-10-28', '2026-11-04')?.value, 30);
   // Past the longest, every period is its own.
   assert.equal(coverOf('2025-10-16', '2026-11-03'), null);
+});
+
+test('the paths counted from Oct 29 are read from that day alone, never against the days before', () => {
+  const days = daysBetween('2026-10-27', '2026-10-30');
+  const at = (p: string, perDay: number[]): PathCount => ({ path: p, event: true, count: perDay.reduce((n, v) => n + v, 0), days: Object.fromEntries(days.map((d, i) => [d, perDay[i] ?? 0])) });
+  const c = countsOf(
+    [
+      at('reach/page', [20, 20, 10, 10]),
+      at('reach/create', [0, 0, 4, 6]),
+      at('reach/daily', [0, 0, 5, 5]),
+      at('daily/back', [0, 0, 2, 3]),
+      at('load/ready-2s', [0, 0, 3, 3]),
+      at('load/ready-5s', [0, 0, 1, 0]),
+      at('load/ready-later', [0, 0, 0, 1]),
+      at('end/delve-online', [5, 5, 4, 4]),
+      at('end/delve', [0, 0, 2, 0]),
+      at('share/delve', [0, 0, 1, 2]),
+    ],
+    days,
+  );
+  // The start page's steps: of the page loads since Oct 29 (20), not the month's (60).
+  const s = startStepsOf(c);
+  assert.equal(s.from, '2026-10-29');
+  assert.equal(s.visitors, 20);
+  assert.equal(reachedShare(s, 'create'), 50);
+  // Ready within 2 s, 5 s and 10 s hold the ones before; later stands alone.
+  const r = readinessOf(c);
+  assert.equal(r.timed, 8);
+  assert.deepEqual(READY_ROWS.map((row) => readyCount(r, row.within)), [6, 7, 7, 1]);
+  assert.deepEqual(dailyBackOf(c), { from: '2026-10-29', answered: 10, back: 5 });
+  // Runs ended under the older name count too, but only those since Oct 29.
+  assert.deepEqual(delveSharedOf(c), { from: '2026-10-29', ended: 10, shared: 3 });
+  // A period that ends before Oct 29 has none of them: no share of nothing, nothing to set a later one against.
+  const before = countsOf([at('reach/page', [20, 20, 0, 0]), at('end/delve', [5, 5, 0, 0])], days.slice(0, 2));
+  assert.equal(startStepsOf(before).from, null);
+  assert.equal(readinessOf(before).from, null);
+  assert.equal(dailyBackOf(before).from, null);
+  assert.deepEqual(delveSharedOf(before), { from: null, ended: 0, shared: 0 });
+  // The start page's steps are named as a first visit's.
+  assert.deepEqual(START_JOURNEY.map((j) => j.step), ['create', 'host', 'room', 'solo', 'daily', 'practice', 'identify']);
+});
+
+test('the demo shows the paths counted from Oct 29', () => {
+  const l = demoRead(30).now;
+  assert.ok(readinessOf(l).timed > 0 && dailyBackOf(l).back > 0 && delveSharedOf(l).shared > 0);
+  assert.ok((reachedShare(startStepsOf(l), 'create') ?? 0) > 0);
 });

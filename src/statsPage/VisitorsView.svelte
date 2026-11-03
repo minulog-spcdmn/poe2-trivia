@@ -11,7 +11,7 @@
   import { average, fmt, restsOn, shortDay, siteName } from './chart';
   import Delta from './Delta.svelte';
   import Cohorts from './Cohorts.svelte';
-  import { FIRST_JOURNEY, JOURNEY, OPENED, STAY, appShare, beforeShare, backShare, comersOf, firstStepsOf, journeyOf, reachedOf, recentCohorts, reachedShare, shareOf, type FirstSteps, type Reached } from './insights';
+  import { FIRST_JOURNEY, JOURNEY, OPENED, READY_ROWS, START_JOURNEY, STAY, appShare, beforeShare, backShare, comersOf, firstStepsOf, journeyOf, reachedOf, readinessOf, readyCount, recentCohorts, reachedShare, shareOf, startStepsOf, type FirstSteps, type Reached } from './insights';
   import { RETURNS, RETURN_NAMES, dayAverages, deviceOf, percent, type Reach } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
@@ -85,7 +85,11 @@
   const since = (r: { from: string | null }) => (r.from && r.from > read.from ? ` Counted since ${shortDay(r.from)}.` : '');
 
   const journey = $derived(journeyOf(L));
-  const journeyRows = $derived(rowsOf(JOURNEY, journey, journeyOf(B)));
+  /** Every visit's start-page steps (from STARTS_FROM, model.ts), ahead of the journey's, as a first visit's are: shares of the page loads since then. */
+  const starts = $derived(startStepsOf(L));
+  const journeyRows = $derived([...(starts.from ? rowsOf(START_JOURNEY, starts, startStepsOf(B)) : []), ...rowsOf(JOURNEY, journey, journeyOf(B))]);
+  /** " The start page's steps since Oct 29." where they were first counted inside the period, after the rest. */
+  const startsSince = $derived(starts.from && starts.from !== journey.from && starts.from > read.from ? ` The start page's steps, New game to Identify more, since ${shortDay(starts.from)}.` : '');
   /** A first visit's steps, each a share of the visits that found no save. */
   const firsts = $derived(firstStepsOf(L));
   /** " The start page's steps since Oct 28." where those (LATER_FIRSTS' first group) were first counted inside the period, after the rest. */
@@ -103,6 +107,18 @@
       share: of(firsts, s.step),
       before: whole(was.steps[s.step]) ? of(was, s.step) : null,
       of: { now: firsts.steps[s.step].visits, before: was.steps[s.step].visits },
+    }));
+  });
+  /** How soon a first visit's page was usable, each mark a share of the loads timed. */
+  const ready = $derived(readinessOf(L));
+  const readyRows = $derived.by((): ShareRow[] => {
+    const was = readinessOf(B);
+    return READY_ROWS.map((r) => ({
+      name: r.name,
+      count: readyCount(ready, r.within),
+      share: shareOf(readyCount(ready, r.within), ready.timed),
+      before: whole(was) ? shareOf(readyCount(was, r.within), was.timed) : null,
+      of: { now: ready.timed, before: was.timed },
     }));
   });
   const stay = $derived(reachedOf(L, STAY.map((s) => s.step)));
@@ -168,7 +184,7 @@
 {/snippet}
 
 {#snippet howFar()}
-  <Section title="How far a visit gets" says="The share of {loads(journey)} that got each step along.{since(journey)}" area="journey">
+  <Section title="How far a visit gets" says="The share of {loads(journey)} that got each step along.{since(journey)}{startsSince}" area="journey">
     {#if journey.from}
       <Shares rows={journeyRows} head="Step" counted={journey.paged ? 'Page loads' : 'Visits'} label="{journey.paged ? 'Page loads' : 'Visits'} by how far they got" />
     {:else}
@@ -178,6 +194,11 @@
       <h3>A first visit</h3>
       <p class="hint">Visits that found no save: mostly first visits.{since(firsts)}{laterSince}</p>
       <Shares rows={firstRows} head="Step" label="First visits by how far they got" />
+    {/if}
+    {#if ready.timed}
+      <h3>How soon a first visit's page was ready</h3>
+      <p class="hint">From opening the page to the start menu drawn, of the first visits in sight all the while.{since(ready)}</p>
+      <Shares rows={readyRows} head="Ready" counted="Page loads" label="First visits' page loads by how soon the page was ready" />
     {/if}
   </Section>
 {/snippet}

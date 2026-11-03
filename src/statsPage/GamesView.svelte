@@ -3,10 +3,10 @@
   // Delve's runs get. A game is counted once, on the device that runs it
   // (the host's), games once counted online and hot-seat apart as one
   // (model.ts currentName).
-  import { average, fmt } from './chart';
+  import { average, fmt, restsOn } from './chart';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
-  import { gamesSpreadOf } from './insights';
+  import { delveSharedOf, gamesSpreadOf, shareOf } from './insights';
   import { MODES, MODE_NAMES, finishedShare, modesOf, percent, seatsOf, sizeName, sizesOf, dayAverages, type ModeSummary } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
@@ -38,6 +38,11 @@
   const ranges = $derived(sizes.some((s) => s.from !== s.to));
   /** Delve's runs started: those left mid-run (the tab closed) never say how deep they got, so the depths are of the runs that ended. */
   const delveStarted = $derived(modes.find((m) => m.mode === 'delve')?.started ?? 0);
+  /** Share run tapped at a run's end, against the runs ended since it was counted (each tap, so a run shared twice counts twice). */
+  const shared = $derived(delveSharedOf(L));
+  const sharedBefore = $derived(delveSharedOf(read.before));
+  /** The period before's share, only where it was counted from its first day. */
+  const sharedWas = $derived(sharedBefore.from === read.before.days[0] ? shareOf(sharedBefore.shared, sharedBefore.ended) : null);
   /** The first day every build counted each event (no session): before it, a path counted once a player in eight hours. */
   const SESSIONLESS_FROM = '2026-10-18';
   /** Players a game, one decimal, of the games whose size is known. */
@@ -144,6 +149,12 @@
       says="Runs by the depth they ended at{delveStarted > L.delve.total ? `; ${fmt(delveStarted)} were started` : ''}."
     >
       <DelveDepths ranges={L.delve.ranges} />
+      {#if shared.ended}
+        <p class="shared">
+          <b>{Math.round(shareOf(shared.shared, shared.ended)!)}%</b> of the runs ended were shared with Share run{restsOn(shared.shared, shared.ended, shared.from && shared.from > read.from ? shared.from : null)}.
+          <Delta now={shareOf(shared.shared, shared.ended)} before={sharedWas} rate of={{ now: shared.ended, before: sharedBefore.ended }} period={period.before} />
+        </p>
+      {/if}
     </Section>
   </div>
 
@@ -201,6 +212,14 @@
   sup {
     margin-left: 0.15rem;
     color: var(--a-muted);
+  }
+  .shared {
+    margin: 1rem 0 0;
+    color: var(--a-text);
+  }
+  .shared b {
+    font-weight: 650;
+    color: var(--a-ink);
   }
   .foot {
     margin: 1rem 0 0;

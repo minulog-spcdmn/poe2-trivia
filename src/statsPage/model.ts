@@ -48,10 +48,26 @@ export const VIA_NAMES: Record<Via, string> = { 'invite-link': 'Invite link', co
  * the others are a share of), entered a game (a lobby, or straight into a
  * Delve run), started one, saw one decided, started a second and a fifth in
  * one page load, had the game on screen 2, 10 and 30 minutes in one page
- * load, opened the codex, the achievements.
+ * load, opened the codex, the achievements; and, from STARTS_FROM, the
+ * start page's steps (START_STEPS).
  */
-export const REACHES = ['page', 'lobby', 'played', 'finished', 'games-2', 'games-5', 'time-2m', 'time-10m', 'time-30m', 'codex', 'achievements'] as const;
+export const REACHES = ['page', 'lobby', 'played', 'finished', 'games-2', 'games-5', 'time-2m', 'time-10m', 'time-30m', 'codex', 'achievements', 'create', 'host', 'room', 'solo', 'daily', 'practice', 'identify'] as const;
 export type Reach = (typeof REACHES)[number];
+/**
+ * The first whole day (the account's) of what went live early on 2026-10-29
+ * (count.ts, from "Counts: newcomer steps, cohort gate, daily/back,
+ * share/delve"): the start page's steps, every visit's ("reach/create" to
+ * "reach/identify") as a newcomer's; how soon a newcomer's page was ready
+ * ("load/…"); Today's unique answered by a player back ("daily/back"); Share
+ * run ("share/delve"). Read from this day, never set against the days
+ * before it, which counted none of them.
+ */
+export const STARTS_FROM = '2026-10-29';
+/** The start page's steps (count.ts NEWCOMER_STEPS), every visit's: counted from STARTS_FROM. */
+export const START_STEPS = ['create', 'host', 'room', 'solo', 'daily', 'practice', 'identify'] as const satisfies readonly Reach[];
+/** How soon a newcomer's page became usable (count.ts readyEvent, "load/ready-…"): within 2, 5 or 10 seconds, or later. */
+export const READIES = ['2s', '5s', '10s', 'later'] as const;
+export type Ready = (typeof READIES)[number];
 /** The first steps again, counted only in a page load whose visit found no save on the device ("new/…"): how far a first visit gets. */
 export const FIRSTS = ['acted', 'create', 'host', 'room', 'solo', 'daily', 'practice', 'identify', 'lobby', 'played', 'finished', 'games-2', 'games-5'] as const;
 export type First = (typeof FIRSTS)[number];
@@ -66,8 +82,8 @@ export type First = (typeof FIRSTS)[number];
  * were counted, with nobody pressing it.
  */
 export const LATER_FIRSTS: readonly { steps: readonly First[]; from: string }[] = [
-  { steps: ['acted', 'create', 'host', 'room', 'solo', 'daily', 'practice'], from: '2026-10-29' },
-  { steps: ['identify'], from: '2026-10-29' },
+  { steps: ['acted', 'create', 'host', 'room', 'solo', 'daily', 'practice'], from: STARTS_FROM },
+  { steps: ['identify'], from: STARTS_FROM },
   { steps: ['games-2', 'games-5'], from: '2026-11-02' },
 ];
 
@@ -276,6 +292,12 @@ export interface Counts {
   visits: Record<VisitKind, number[]>;
   /** The first steps in a visit that found no save, a day each ("new/…"). */
   firsts: Record<First, number[]>;
+  /** How soon a newcomer's page was usable, a day each ("load/ready-…"), from STARTS_FROM. */
+  ready: Record<Ready, number[]>;
+  /** Today's unique answered in a load that came back to a save, a day each ("daily/back", once a visitor like visits), from STARTS_FROM. */
+  dailyBack: number[];
+  /** Delve's runs ended ("end/delve") and Share run tapped at the end of one ("share/delve", each tap), a day each; shares from STARTS_FROM. */
+  delveRuns: { ended: number[]; shared: number[] };
   /** Those who first played in a week, and their visits each week since, oldest week first. */
   cohorts: Cohort[];
   /** Devices paired for sync. */
@@ -567,6 +589,9 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
     reach: Object.fromEntries(REACHES.map((r) => [r, perDay((p) => p === `reach/${r}`)])) as Record<Reach, number[]>,
     visits: Object.fromEntries(VISIT_KINDS.map((k) => [k, perDay((p) => p === `visit/${k}`)])) as Record<VisitKind, number[]>,
     firsts: Object.fromEntries(FIRSTS.map((s) => [s, perDay((p) => p === `new/${s}`)])) as Record<First, number[]>,
+    ready: Object.fromEntries(READIES.map((r) => [r, perDay((p) => p === `load/ready-${r}`)])) as Record<Ready, number[]>,
+    dailyBack: perDay((p) => p === 'daily/back'),
+    delveRuns: { ended: perDay((p) => p === 'end/delve'), shared: perDay((p) => p === 'share/delve') },
     // (By UTC days, as a cohort's week is of its first answer's UTC time, where the hours came to sort them.)
     cohorts: cohortsOf(paths, days, utcPerDay(byPath.get('new/saved'), days, zone)),
     sync: { paired: count('sync/paired') },

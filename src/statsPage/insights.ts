@@ -13,7 +13,7 @@
 import type { Named } from './api.ts';
 import { siteName } from './chart.ts';
 import { DEVICES, type Device } from '../lib/stutter.ts';
-import { FIRSTS, LATER_FIRSTS, RETURNS, VISIT_KINDS, answersPerDay, asked, zFor, type Cohort, type Counts, type First, type Reach, type Return } from './model.ts';
+import { FIRSTS, LATER_FIRSTS, READIES, RETURNS, START_STEPS, STARTS_FROM, VISIT_KINDS, answersPerDay, asked, zFor, type Cohort, type Counts, type First, type Reach, type Ready, type Return } from './model.ts';
 
 /** Well beyond chance: a change of `d` on a count of `n` known all but exactly (z times its square root, and a few besides, so tiny counts never qualify). */
 const beyondChance = (d: number, n: number, z = 2) => Math.abs(d) >= z * Math.sqrt(Math.max(n, 1)) + 3;
@@ -300,6 +300,74 @@ export function firstStepsOf(c: Counts): FirstSteps {
   counts.lobby = Math.max(counts.lobby, counts.played);
   const steps = Object.fromEntries(FIRSTS.map((s) => [s, { from: fromOf(s) < 0 ? null : c.days[fromOf(s)], visits: fromOf(s) < 0 ? 0 : sumFrom(c.visits.new, fromOf(s)) }])) as FirstSteps['steps'];
   return { from: first < 0 ? null : c.days[first], visits: first < 0 ? 0 : sumFrom(c.visits.new, first), counts, steps };
+}
+
+/** The start page's steps, every visit's (START_STEPS), named as a first visit's are. */
+export const START_JOURNEY: readonly { step: Reach; name: string }[] = START_STEPS.map((step) => ({ step, name: FIRST_JOURNEY.find((f) => f.step === step)!.name }));
+
+/**
+ * Every visit's start-page steps, against the page loads ("reach/page")
+ * from STARTS_FROM, when they were first counted, or from the period's
+ * first day where it's later; nothing where the period ends before it.
+ */
+export function startStepsOf(c: Counts): Reached {
+  const first = firstDay(c.days, (i) => c.days[i] >= STARTS_FROM);
+  if (first < 0) return { from: null, visitors: 0, paged: true, counts: {} };
+  const counts: Reached['counts'] = {};
+  for (const s of START_STEPS) counts[s] = sumFrom(c.reach[s], first);
+  return { from: c.days[first], visitors: sumFrom(c.reach.page, first), paged: true, counts };
+}
+
+/** A count the game began on STARTS_FROM, over the period's days since then: `from` null where it ends before. */
+export interface Since {
+  from: string | null;
+}
+const sinceStarts = (c: Counts) => firstDay(c.days, (i) => c.days[i] >= STARTS_FROM);
+
+/** How soon a newcomer's page was usable: the loads timed (those in sight until ready), and those within each mark ("load/ready-…"). */
+export interface Readiness extends Since {
+  timed: number;
+  counts: Record<Ready, number>;
+}
+export function readinessOf(c: Counts): Readiness {
+  const first = sinceStarts(c);
+  const counts = Object.fromEntries(READIES.map((r) => [r, first < 0 ? 0 : sumFrom(c.ready[r], first)])) as Record<Ready, number>;
+  return { from: first < 0 ? null : c.days[first], timed: READIES.reduce((n, r) => n + counts[r], 0), counts };
+}
+/** The marks read as a newcomer would wait: ready within 2, 5 and 10 seconds (each holding the ones before), and later. */
+export const READY_ROWS: readonly { within: readonly Ready[]; name: string }[] = [
+  { within: ['2s'], name: 'Within 2 seconds' },
+  { within: ['2s', '5s'], name: 'Within 5 seconds' },
+  { within: ['2s', '5s', '10s'], name: 'Within 10 seconds' },
+  { within: ['later'], name: 'Later' },
+];
+export const readyCount = (r: Readiness, within: readonly Ready[]) => within.reduce((n, k) => n + r.counts[k], 0);
+
+/**
+ * Today's unique's players who came back to a save ("daily/back"), of all
+ * who answered ("reach/daily"), both once a visitor in eight hours. A load
+ * whose save wasn't read in time says neither, so back and new together
+ * can be a few short of all.
+ */
+export interface DailyBack extends Since {
+  answered: number;
+  back: number;
+}
+export function dailyBackOf(c: Counts): DailyBack {
+  const first = sinceStarts(c);
+  if (first < 0) return { from: null, answered: 0, back: 0 };
+  return { from: c.days[first], answered: sumFrom(c.reach.daily, first), back: sumFrom(c.dailyBack, first) };
+}
+
+/** Delve's runs ended, and Share run tapped at their end ("share/delve", each tap, so a run shared twice counts twice). */
+export interface DelveShared extends Since {
+  ended: number;
+  shared: number;
+}
+export function delveSharedOf(c: Counts): DelveShared {
+  const first = sinceStarts(c);
+  if (first < 0) return { from: null, ended: 0, shared: 0 };
+  return { from: c.days[first], ended: sumFrom(c.delveRuns.ended, first), shared: sumFrom(c.delveRuns.shared, first) };
 }
 
 /** How long a visit kept the game on screen, in one page load: 2, 10 and 30 minutes. */
