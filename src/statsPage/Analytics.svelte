@@ -21,7 +21,7 @@
   import { readStored, removeStoredStarting, writeStored } from '../lib/storage';
   import { ApiError, Cancelled, DASHBOARD, HOUR_LIMIT, accountZone, forgetKey, pathCounts, pathsBy, requestsLastHour, saveKey, savedKey, visitorsBy, type Named, type Span } from './api';
   import { sameSites, spikesOf } from './insights';
-  import { shortDay } from './chart';
+  import { dayRange, shortDay } from './chart';
   import { keptChanges } from './changes';
   import { DAY_REFS_KEY, dayRefsOf, dayRefsToKeep } from './dayRefs';
   import DailyView from './DailyView.svelte';
@@ -32,11 +32,11 @@
   import KeyGate from './KeyGate.svelte';
   import { countedSpan, countsOf, daysBetween, firstCounted } from './model';
   import Overview from './Overview.svelte';
-  import { COMPARE, PERIODS, VIEWS, counted, type Read, type View } from './read';
+  import { COMPARE, PERIODS, VIEWS, counted, spansOf, untilDay, type Read, type View } from './read';
   import Seg from './Seg.svelte';
   import { depthCalls, hashOf, selOf, sliceCalls, type Sel, type Slices } from './slices';
   import VisitorsView from './VisitorsView.svelte';
-  import { addDays, dayIn, hoursIn, midnight } from './zone';
+  import { addDays, midnight } from './zone';
   import { CHANNEL } from '../lib/channel';
   import { demoSlices, demoUpdate } from './demo';
   import { keepAwake } from '../lib/wakeLock';
@@ -181,7 +181,7 @@
     loading = true;
     failed = '';
     progress = 0;
-    const steps = 9;
+    let steps = 10;
     let done = 0;
     const step = <T,>(p: Promise<T>) =>
       p.then((v) => {
@@ -193,33 +193,28 @@
       else progress = ++done / steps;
       if (ask !== asked) return;
       const tz = zone.zone;
-      // From the start of the first day to now, and the period before to as
-      // far into its last day as today has gone (by the clock there): the two
-      // compare like with like.
       const at = new Date();
-      const today = dayIn(tz, at);
-      const from = addDays(today, -(days - 1));
-      const fromBefore = addDays(from, -days);
-      const toBefore = addDays(today, -days);
-      const now: Span = { start: midnight(tz, from), end: at };
-      // (By the clock: on a day the clocks change, the time gone since midnight is an hour off it.)
-      const before: Span = { start: midnight(tz, fromBefore), end: new Date(midnight(tz, toBefore).getTime() + hoursIn(tz, today, at) * 3_600_000) };
-      const [n, b] = await Promise.all([step(pathCounts(k, now, signal)), step(pathCounts(k, before, signal))]);
+      // Nothing from before counting began, where that's known: a Quarter or a Year read since then reads only what's there.
+      const { today, from, fromBefore, toBefore, until, now, before } = spansOf(tz, at, days, began);
+      if (!before) steps--;
+      const none = { paths: [], complete: true };
+      const [n, b] = await Promise.all([step(pathCounts(k, now, tz, signal)), before ? step(pathCounts(k, before, tz, signal)) : none]);
       if (ask !== asked) return;
-      // The hours today has had (a part of the one it's in too), which the period before's last day is cut at too.
-      const until = hoursIn(tz, today, at);
       // The period starts where whole days were counted (model.ts countedSpan), the one before the same many days back; who the visitors were is read from there too.
       const first = firstCounted([...b.paths, ...n.paths]);
       const { start, compare } = countedSpan(first, from, fromBefore, today);
       const shown: Span = { start: midnight(tz, start), end: at };
-      const shownBefore: Span = { ...before, start: midnight(tz, addDays(start, -days)) };
-      const [systems, countries, refs, campaigns, countriesBefore, refsBefore] = await Promise.all([
+      // Who brought more or fewer than the period before, only where it's compared (WhatHappened). Countries are kept by the day, so they're compared over whole days alone: the period's to yesterday, as many before.
+      const against = compare && before ? { ...before, start: midnight(tz, addDays(start, -days)) } : null;
+      if (!against) steps -= 3;
+      const [systems, countries, refs, campaigns, countriesBefore, refsBefore, countriesWhole] = await Promise.all([
         step(visitorsBy(k, shown, 'systems', signal)),
         step(visitorsBy(k, shown, 'locations', signal)),
         step(visitorsBy(k, shown, 'toprefs', signal)),
         step(visitorsBy(k, shown, 'campaigns', signal)),
-        step(visitorsBy(k, shownBefore, 'locations', signal)),
-        step(visitorsBy(k, shownBefore, 'toprefs', signal)),
+        against ? step(visitorsBy(k, untilDay(tz, against, toBefore), 'locations', signal)) : [],
+        against ? step(visitorsBy(k, against, 'toprefs', signal)) : [],
+        against ? step(visitorsBy(k, untilDay(tz, shown, today), 'locations', signal)) : [],
       ]);
       if (ask !== asked) return;
       const counts = countsOf(n.paths, daysBetween(start, today), tz, until);
@@ -233,7 +228,8 @@
           spikeRefs[s.day] = kept;
           continue;
         }
-        const day: Span = { start: midnight(tz, s.day), end: s.day === today ? at : midnight(tz, addDays(s.day, 1)) };
+        // (To just before the next day: GoatCounter would give the hour a span ends in whole.)
+        const day: Span = { start: midnight(tz, s.day), end: s.day === today ? at : new Date(midnight(tz, addDays(s.day, 1)).getTime() - 1) };
         spikeRefs[s.day] = await visitorsBy(k, day, 'toprefs', signal);
         if (s.day !== today) {
           keptRefs[s.day] = spikeRefs[s.day];
@@ -252,13 +248,14 @@
         toBefore,
         zone: tz,
         now: counts,
-        before: countsOf(b.paths, daysBetween(addDays(start, -days), toBefore), tz, until),
+        before: countsOf(b.paths, daysBetween(addDays(start, -days), toBefore), tz, until, true),
         systems,
         countries,
         // Each site once: a tagged link's visit comes with its referrer as it was (insights.ts sameSites).
         refs: sameSites(refs),
         campaigns,
         countriesBefore,
+        countriesWhole,
         refsBefore: sameSites(refsBefore),
         spikeRefs: Object.fromEntries(Object.entries(spikeRefs).map(([day, list]) => [day, sameSites(list)])),
         at: at.getTime(),
@@ -580,7 +577,7 @@
   {#if key}
     <nav class="row choices">
       {#if !board}<Seg label="View" options={VIEWS} value={view} onpick={go} />{/if}
-      {#if read}<span class="range">{#if demo}<b class="made-up-tag" title="Nothing here was read from GoatCounter">Made-up numbers</b>{/if}{shortDay(read.from)} to {shortDay(read.to)}{#if read.compare}, against {shortDay(read.fromBefore)} to {shortDay(read.toBefore)}{/if}</span>{/if}
+      {#if read}<span class="range">{#if demo}<b class="made-up-tag" title="Nothing here was read from GoatCounter">Made-up numbers</b>{/if}{dayRange(read.from, read.to)}{#if read.compare}, against {dayRange(read.fromBefore, read.toBefore)}{/if}</span>{/if}
       <Seg label="Period" options={periodOptions} value={cover && span > cover.value ? cover.value : span} onpick={pick} />
     </nav>
   {/if}
@@ -593,7 +590,7 @@
   {:else}
     {#if read}
       <p class="dates">
-        <b>{period.now}</b>, {shortDay(read.from)} to {shortDay(read.to)}{#if read.compare}, against {period.before} ({shortDay(read.fromBefore)} to {shortDay(read.toBefore)}){:else if counted(read)}{read.began ? `; counting began partway through ${shortDay(read.began)}, so there's nothing before to compare with yet` : ': nothing before to compare with yet'}{:else}; {period.before} weren't counted in full, so nothing is compared with them{/if}<span class="phone-fresh">; {loading ? 'updating…' : `updated ${ago(read.at)}`}{held && !loading ? ', paused for now' : ''}</span>
+        <b>{period.now}</b>, {dayRange(read.from, read.to)}{#if read.compare}, against {period.before} ({dayRange(read.fromBefore, read.toBefore)}){:else if counted(read)}{read.began ? `; counting began partway through ${shortDay(read.began)}, so there's nothing before to compare with yet` : ': nothing before to compare with yet'}{:else}; {period.before} weren't counted in full, so nothing is compared with them{/if}<span class="phone-fresh">; {loading ? 'updating…' : `updated ${ago(read.at)}`}{held && !loading ? ', paused for now' : ''}</span>
       </p>
     {:else if loading}
       <!-- (Its line's room kept, so the view doesn't move down as it arrives.) -->

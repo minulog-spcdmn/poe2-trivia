@@ -1,9 +1,9 @@
 // What Analytics reads for a period, and the periods it offers.
 
-import type { Named } from './api';
+import type { Named, Span } from './api';
 import type { Changes } from './changes';
 import type { Counts } from './model';
-import { addDays } from './zone';
+import { addDays, dayIn, hourStarts, hoursIn, midnight } from './zone.ts';
 
 /** A period read: its days and the same many before, with what the start page's visitors came on and from. */
 export interface Read {
@@ -24,8 +24,10 @@ export interface Read {
   refs: Named[];
   /** Visitors by the tag of the link they came by (poe2.quest/?ref=<tag>, GoatCounter's campaigns); untagged visits aren't in it. */
   campaigns: Named[];
-  /** The period before's, to see who brought more or fewer (insights.ts moversOf). */
+  /** The period before's, to see who brought more or fewer (insights.ts moversOf): its countries over its whole days, as many as countriesWhole's. */
   countriesBefore: Named[];
+  /** The period's countries to yesterday, where it's compared: GoatCounter keeps countries by the day, so a part of today has nothing to be held against. */
+  countriesWhole?: Named[];
   refsBefore: Named[];
   /** The sites that brought each of the period's busiest days (insights.ts spikesOf), by day. */
   spikeRefs: Record<string, Named[]>;
@@ -38,6 +40,39 @@ export interface Read {
   /** What came in since the read before it (changes.ts keptChanges). */
   changes?: Changes | null;
 }
+
+/**
+ * What a read of `days` at `at` asks GoatCounter for, in the account's
+ * `zone`: from the start of the first day to now, and the period before to
+ * as far into its last day as today has gone (by the clock there: the two
+ * compare like with like). GoatCounter gives the hour a span ends in whole,
+ * so the period before ends with the hour on the clock it is now (both of
+ * them, the night the clocks go back), and countsOf takes the part of it
+ * that has passed. The period before from the day before it: where
+ * counting began earlier, that day has counts, which tell the period before
+ * was counted from its first (model.ts countedSpan); its counts aren't
+ * taken (countsOf). `until`: the hours today has had, a part of the one
+ * it's in too. `began`: the first whole day counted, where it's kept
+ * (Analytics): nothing from before the day counting began partway through
+ * is asked for, and no period before at all where it all lies before then
+ * (`before` null).
+ */
+export function spansOf(zone: string, at: Date, days: number, began: string | null = null) {
+  const today = dayIn(zone, at);
+  const from = addDays(today, -(days - 1));
+  const fromBefore = addDays(from, -days);
+  const toBefore = addDays(today, -days);
+  const until = hoursIn(zone, today, at);
+  const counting = began && addDays(began, -1);
+  const notBefore = (day: string) => (counting && counting > day ? counting : day);
+  const now: Span = { start: midnight(zone, notBefore(from)), end: at };
+  const before: Span | null =
+    counting && counting > toBefore ? null : { start: midnight(zone, notBefore(addDays(fromBefore, -1))), end: new Date(hourStarts(zone, toBefore)[Math.floor(until) + 1] - 1) };
+  return { today, from, fromBefore, toBefore, until, now, before };
+}
+
+/** `span` to just before `day` begins in `zone`: GoatCounter's countries, kept by the day, are asked for whole days by the days the span's ends fall on. */
+export const untilDay = (zone: string, span: Span, day: string): Span => ({ start: span.start, end: new Date(midnight(zone, day).getTime() - 1) });
 
 /** Whether counting began inside the period, so it starts there and not `span` days back. */
 export const counted = (r: Read) => r.from !== addDays(r.to, -(r.span - 1));
