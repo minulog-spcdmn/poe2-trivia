@@ -6,6 +6,7 @@
   import { average, fmt } from './chart';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
+  import { gamesSpreadOf } from './insights';
   import { MODES, MODE_NAMES, finishedShare, modesOf, percent, seatsOf, sizeName, sizesOf, dayAverages } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
@@ -22,8 +23,8 @@
   const topMode = $derived(Math.max(1, ...modes.map((m) => m.started)));
   /** Games with players at the host's own screen, every mode. */
   const screen = $derived(modes.reduce((n, m) => n + m.screen, 0));
-  /** Games a day over the whole days (today's left out), against the period before's. */
-  const perDay = $derived(dayAverages(L.games.perDay, read.before.games.perDay));
+  /** Games a day over the whole days (today's left out), against the period before's, weighed as games come: several to a player. */
+  const perDay = $derived(dayAverages(L.games.perDay, read.before.games.perDay, gamesSpreadOf(L, read.before)));
   const sizes = $derived(sizesOf(L.games.rows));
   const sized = $derived(sizes.reduce((n, s) => n + s.total, 0));
   const topSize = $derived(Math.max(1, ...sizes.map((s) => s.total)));

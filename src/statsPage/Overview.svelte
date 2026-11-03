@@ -13,9 +13,9 @@
   import { average, fmt, restsOn, shortDay } from './chart';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
-  import { backShare, beyondChanceOf, comersOf, spikesOf, troubleOf } from './insights';
+  import { backShare, busiestStandsOut, comersOf, gamesSpreadOf, spikesOf, troubleOf } from './insights';
   import Kpi from './Kpi.svelte';
-  import { DAILY_FROM, MODE_NAMES, answersPerDay, asked, dailyAverage, dailyDays as dailyDaysOf, dayAverageHours, dayAverages, deviceOf, finishedShare, modesOf, percent, weekAverage, type Counts } from './model';
+  import { DAILY_FROM, MODE_NAMES, answersPerDay, asked, dailyAverage, dailyDays as dailyDaysOf, dayAverageHours, dayAverages, deviceOf, finishedShare, hoursHad, modesOf, percent, weekAverage, type Counts } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import Seg from './Seg.svelte';
@@ -31,9 +31,9 @@
 
   const L = $derived(read.now);
   const B = $derived(read.before);
-  /** Visits and games a day on average, over the whole days, against the period before's: a day's swings average out. */
+  /** Visits and games a day on average, over the whole days, against the period before's: a day's swings average out. Games come several to a player, so their change is weighed as such. */
   const visitsAvg = $derived(dayAverages(L.visitors.perDay, B.visitors.perDay));
-  const gamesAvg = $derived(dayAverages(L.games.perDay, B.games.perDay));
+  const gamesAvg = $derived(dayAverages(L.games.perDay, B.games.perDay, gamesSpreadOf(L, B)));
   const dailyNow = $derived(dailyAverage(L));
   const dailyBefore = $derived(dailyAverage(B));
   /** The whole days the average is over (the game's days, as dailyAverage's): its answers, and the period before's brought to as many days, weigh its change (Delta). */
@@ -72,11 +72,12 @@
   /** By weekday once there are four weeks to average each over, and enough counted that an hour of a weekday holds a few (four on average); before, one or two of a weekday are only those days' chance, so every day is taken together. */
   const inHours = $derived(week ? week.flat().reduce((n, v) => n + v, 0) : 0);
   const byDay = $derived(L.days.length >= 28 && inHours >= 7 * 24 * 4);
-  /** Whether the busiest hour (of the cells drawn) is busier than chance makes of the usual one: only then is it named. */
+  /** Whether the busiest hour (of the cells drawn) is busier than chance makes of one of so many, each against the days it had: only then is it named. */
   const sureBusiest = $derived.by(() => {
     if (!week) return false;
-    const cells = byDay ? week.flat() : Array.from({ length: 24 }, (_, h) => week.reduce((n, row) => n + row[h], 0));
-    return beyondChanceOf(Math.max(...cells), cells.reduce((n, v) => n + v, 0) / cells.length);
+    const had = hoursHad(L.days, L.week.until);
+    const hourly = (g: number[][]) => [Array.from({ length: 24 }, (_, h) => g.reduce((n, row) => n + row[h], 0))];
+    return byDay ? busiestStandsOut(week, had) : busiestStandsOut(hourly(week), hourly(had));
   });
   const hours = $derived(week && (byDay ? weekAverage(week, L.days, L.week.until) : [dayAverageHours(week, L.days, L.week.until)]));
 
