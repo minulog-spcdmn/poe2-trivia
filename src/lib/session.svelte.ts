@@ -196,6 +196,21 @@ const ATTEMPT_LIFE_MS = 15000;
 /** Client: joining gives up if the room hasn't let us in by then (each "busy" buys more time, up to the cap). */
 const JOIN_GIVE_UP_MS = 30000;
 const JOIN_GIVE_UP_CAP_MS = 60000;
+/**
+ * Host: how long a new room keeps trying to get onto the signalling server,
+ * through its errors (the network gone for a moment as Create is tapped, the
+ * server hiccuping) and tries it never answers, before it opens on this
+ * device instead. In time the page ran (whileTimer).
+ */
+const HOST_GIVE_UP_MS = 20000;
+/** Host: a try at the signalling server not open by then makes way for a fresh one (a socket that stalled on the way). */
+const HOST_TRY_MS = 10000;
+/**
+ * A timer that fires this long after it was due fired on a page that wasn't
+ * running meanwhile: sent to the background (a phone's browser stops its
+ * pages there), the phone locked or asleep.
+ */
+const AWAY_MS = 5000;
 /** Client: the server says an attempt's room isn't there within this time (it holds an offer ~5 s). */
 const EXPIRE_MS = 7000;
 /** Delve: how long past 0 and the time-out a fuse's sound holds before it fades by itself, should the blast be slow to come. */
@@ -246,6 +261,17 @@ const CURSOR_BACKLOG_BYTES = 64 * 1024;
 const CLICK_GAP_MS = 16;
 /** Development only: a far link played on a near one, set with the `fakeLink` setting (artLane.ts parseFakeLink). */
 const FAKE_LINK = import.meta.env.DEV ? parseFakeLink(readStored('fakeLink')) : null;
+
+/**
+ * setTimeout for the time something is given (to join, to open a room): `f`
+ * is told whether the page was away when that ran out (AWAY_MS late), so it
+ * never had the time, as when a player switches apps to share or check a
+ * code and comes back.
+ */
+function whileTimer(f: (away: boolean) => void, ms: number) {
+  const due = Date.now() + ms;
+  return setTimeout(() => f(Date.now() - due >= AWAY_MS), ms);
+}
 
 export type Mode = 'local' | 'host' | 'client';
 export type Status = 'idle' | 'connecting' | 'ready' | 'lost';
@@ -538,6 +564,10 @@ class Session {
   private awake: (() => void) | null = null;
   /** Client: when joining began. */
   private joinedAt = 0;
+  /** Host: a new room not online by then opens on this device instead (armOpenGiveUp). */
+  private openGiveUp: ReturnType<typeof setTimeout> | null = null;
+  /** Host: what the new room's last try at the signalling server ran into, for the notice if it gives up. */
+  private openTrouble = 'timeout';
   /** Client: attempts to reach the host that haven't opened yet (and when they started), oldest first. */
   private attempts: { conn: DataConnection; at: number }[] = [];
   /** Client, joining: when its first attempt went out (0: none yet). Only one out longer than the server holds an offer is known to have reached the room. */
@@ -826,6 +856,7 @@ class Session {
     this.status = 'connecting';
     this.joinName = name;
     this.loadPrivate(noPrivate(randomToken(12)));
+    this.armOpenGiveUp();
     this.openRoom(randomCode(), 0);
     // Asked from the tap that opened the room, which some browsers want for it.
     this.stayAwake();
@@ -846,12 +877,13 @@ class Session {
     }
     const Peer = this.peerClass(
       () => this.openRoom(code, attempt, resumeState),
-      () => this.roomNotOpened(code, 'peerjs-load', !!resumeState),
+      () => (resumeState ? this.roomNotOpened(code, 'peerjs-load', true) : this.openAgain(code, attempt, 'peerjs-load')),
       false,
     );
     if (!Peer) return;
     const peer = new Peer(PEER_PREFIX + code, peerOptions());
     this.peer = peer;
+    if (!resumeState) this.armOpenTry(peer, code, attempt);
     // An invite link's screen asking whose room this is: told, apart from the
     // players' slots (nobody banned or blocked, though). Everyone else comes to play.
     answerProbes(peer, this.probeDesk, {
@@ -862,6 +894,10 @@ class Session {
     // room (and its game) is only built the first time.
     peer.once('open', () => {
       if (this.peer !== peer) return;
+      if (this.connectTimer) clearTimeout(this.connectTimer);
+      this.connectTimer = null;
+      if (this.openGiveUp) clearTimeout(this.openGiveUp);
+      this.openGiveUp = null;
       this.code = code;
       this.status = 'ready';
       const me = this.priv.myPlayerId;
@@ -939,6 +975,12 @@ class Session {
         this.connectTimer = setTimeout(() => this.openRoom(code, attempt + 1, resumeState), 2500);
         return;
       }
+      // A new room tries again, until its while is up (armOpenGiveUp).
+      if (!resumeState && NETWORK_ERRORS.has(err.type)) {
+        peer.destroy();
+        this.openAgain(code, attempt, err.type);
+        return;
+      }
       // A room that couldn't be reopened stays saved, so a refresh tries again.
       if (err.type === 'unavailable-id' && resumeState)
         this.fail(
@@ -948,6 +990,40 @@ class Session {
         );
       else this.roomNotOpened(code, err.type, !!resumeState);
     });
+  }
+
+  /**
+   * Host: a new room's while to get online (HOST_GIVE_UP_MS), after which it
+   * opens on this device instead, saying what its last try ran into. A page
+   * that was away when it ran out gets it again from its return.
+   */
+  private armOpenGiveUp() {
+    if (this.openGiveUp) clearTimeout(this.openGiveUp);
+    this.openTrouble = 'timeout';
+    this.openGiveUp = whileTimer((away) => {
+      this.openGiveUp = null;
+      if (this.mode !== 'host' || this.status !== 'connecting') return;
+      if (away) return this.armOpenGiveUp();
+      this.roomNotOpened('', this.openTrouble, false);
+    }, HOST_GIVE_UP_MS);
+  }
+
+  /** Host: a new room's try at the signalling server that hasn't opened by HOST_TRY_MS makes way for a fresh one; one the page was away for waits on (its answer may be in). */
+  private armOpenTry(peer: Peer, code: string, attempt: number) {
+    if (this.connectTimer) clearTimeout(this.connectTimer);
+    this.connectTimer = whileTimer((away) => {
+      if (this.peer !== peer || this.status !== 'connecting') return;
+      if (away) return this.armOpenTry(peer, code, attempt);
+      peer.destroy();
+      this.openAgain(code, attempt, 'timeout');
+    }, HOST_TRY_MS);
+  }
+
+  /** Host: a new room's try at the signalling server failed (`why`): another goes in a moment, while its while lasts (armOpenGiveUp). */
+  private openAgain(code: string, attempt: number, why: string) {
+    this.openTrouble = why;
+    if (this.connectTimer) clearTimeout(this.connectTimer);
+    this.connectTimer = setTimeout(() => this.openRoom(code, attempt), RETRY_SOON_MS);
   }
 
   /** Host: the room couldn't be opened (or reopened, kept saved so a refresh tries again) for want of a connection. */
@@ -984,6 +1060,8 @@ class Session {
     this.peerEpoch++;
     if (this.connectTimer) clearTimeout(this.connectTimer);
     this.connectTimer = null;
+    if (this.openGiveUp) clearTimeout(this.openGiveUp);
+    this.openGiveUp = null;
     this.peer?.destroy();
     this.peer = null;
     this.hereOnly = true;
@@ -2080,8 +2158,11 @@ class Session {
   private armConnectTimeout() {
     if (this.connectTimer) clearTimeout(this.connectTimer);
     const wait = Math.min(JOIN_GIVE_UP_MS, this.joinedAt + JOIN_GIVE_UP_CAP_MS - Date.now());
-    this.connectTimer = setTimeout(() => {
+    this.connectTimer = whileTimer((away) => {
       if (this.mode !== 'client' || this.status !== 'connecting') return;
+      // The page was away when its time ran out (in the background, the
+      // phone locked), so it never had it: it starts again from its return.
+      if (away) return this.joinAfresh();
       // On the server, but no way through to the room. Unless the server has
       // said the room may be missing (roomUnavailable), or was reached too late
       // for an attempt to have outlived its offer, the code was right and
@@ -2091,6 +2172,25 @@ class Session {
       if (this.peer?.open) this.joinFailed(this.unavailableUntil || !reached ? 'missing' : 'blocked', 'join-no-answer');
       else this.joinFailed('server', 'join-no-connection');
     }, wait);
+  }
+
+  /**
+   * Joining starts its while again, as if just set off: the signalling link
+   * back first if it dropped meanwhile (its 'open' tries the host), else the
+   * host tried. What was heard before (the room missing, an attempt's age)
+   * is about attempts from before the page went away.
+   */
+  private joinAfresh() {
+    this.joinedAt = Date.now();
+    this.firstAttemptAt = 0;
+    this.unavailableUntil = 0;
+    this.armConnectTimeout();
+    const peer = this.peer;
+    // (No peer: PeerJS is still loading, and makes it when it's in.)
+    if (!peer) return;
+    if (peer.destroyed) this.startClientPeer();
+    else if (peer.disconnected) peer.reconnect();
+    else this.planAttempt();
   }
 
   /**
@@ -3635,6 +3735,8 @@ class Session {
     this.peerTimer = null;
     if (this.connectTimer) clearTimeout(this.connectTimer);
     this.connectTimer = null;
+    if (this.openGiveUp) clearTimeout(this.openGiveUp);
+    this.openGiveUp = null;
     if (this.hostWatch) clearInterval(this.hostWatch);
     this.hostWatch = null;
     writeSaved(null);
