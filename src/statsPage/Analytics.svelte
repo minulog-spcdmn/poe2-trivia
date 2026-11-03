@@ -21,7 +21,7 @@
   import { readStored, removeStoredStarting, writeStored } from '../lib/storage';
   import { ApiError, Cancelled, DASHBOARD, HOUR_LIMIT, accountZone, forgetKey, pathCounts, pathsBy, requestsLastHour, saveKey, savedKey, visitorsBy, type Named, type Span } from './api';
   import { sameSites, spikesOf } from './insights';
-  import { shortDay } from './chart';
+  import { dayRange, shortDay } from './chart';
   import { keptChanges } from './changes';
   import { DAY_REFS_KEY, dayRefsOf, dayRefsToKeep } from './dayRefs';
   import DailyView from './DailyView.svelte';
@@ -577,7 +577,7 @@
   {#if key}
     <nav class="row choices">
       {#if !board}<Seg label="View" options={VIEWS} value={view} onpick={go} />{/if}
-      {#if read}<span class="range">{#if demo}<b class="made-up-tag" title="Nothing here was read from GoatCounter">Made-up numbers</b>{/if}{shortDay(read.from)} to {shortDay(read.to)}{#if read.compare}, against {shortDay(read.fromBefore)} to {shortDay(read.toBefore)}{/if}</span>{/if}
+      {#if read}<span class="range">{#if demo}<b class="made-up-tag" title="Nothing here was read from GoatCounter">Made-up numbers</b>{/if}{dayRange(read.from, read.to)}{#if read.compare}, against {dayRange(read.fromBefore, read.toBefore)}{/if}</span>{/if}
       <Seg label="Period" options={periodOptions} value={cover && span > cover.value ? cover.value : span} onpick={pick} />
     </nav>
   {/if}
@@ -590,7 +590,7 @@
   {:else}
     {#if read}
       <p class="dates">
-        <b>{period.now}</b>, {shortDay(read.from)} to {shortDay(read.to)}{#if read.compare}, against {period.before} ({shortDay(read.fromBefore)} to {shortDay(read.toBefore)}){:else if counted(read)}{read.began ? `; counting began partway through ${shortDay(read.began)}, so there's nothing before to compare with yet` : ': nothing before to compare with yet'}{:else}; {period.before} weren't counted in full, so nothing is compared with them{/if}<span class="phone-fresh">; {loading ? 'updating…' : `updated ${ago(read.at)}`}{held && !loading ? ', paused for now' : ''}</span>
+        <b>{period.now}</b>, {dayRange(read.from, read.to)}{#if read.compare}, against {period.before} ({dayRange(read.fromBefore, read.toBefore)}){:else if counted(read)}{read.began ? `; counting began partway through ${shortDay(read.began)}, so there's nothing before to compare with yet` : ': nothing before to compare with yet'}{:else}; {period.before} weren't counted in full, so nothing is compared with them{/if}<span class="phone-fresh">; {loading ? 'updating…' : `updated ${ago(read.at)}`}{held && !loading ? ', paused for now' : ''}</span>
       </p>
     {:else if loading}
       <!-- (Its line's room kept, so the view doesn't move down as it arrives.) -->

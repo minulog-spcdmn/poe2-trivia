@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addDays, dayIn, hourStarts, hoursIn, midnight, onClock, zoneOf } from '../src/statsPage/zone.ts';
-import { axis, labelled, restsOn } from '../src/statsPage/chart.ts';
+import { axis, dayRange, labelled, restsOn } from '../src/statsPage/chart.ts';
 import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
 import { appShare, backShare, beforeShare, beyondChanceOf, comersOf, failureRate, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
@@ -1453,4 +1453,10 @@ test('where counting began is known, nothing from before it is read, and the per
   const month = readAt(steady('2026-10-16T13:00:00Z', later), later, 30, '2026-10-17');
   assert.equal(dayIn('Europe/Berlin', month.before!.start), '2026-10-16');
   assert.deepEqual([month.start, month.compare], ['2026-10-18', false]);
+});
+
+test('a range across a new year says the years, so a year never reads as run backwards', () => {
+  assert.equal(dayRange('2026-10-05', '2026-11-03'), 'Oct 5 to Nov 3');
+  assert.equal(dayRange('2025-11-05', '2026-11-03'), 'Nov 5, 2025 to Nov 3, 2026');
+  assert.equal(dayRange('2026-12-21', '2027-01-19'), 'Dec 21, 2026 to Jan 19, 2027');
 });

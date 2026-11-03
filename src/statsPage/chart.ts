@@ -27,6 +27,12 @@ export const compact = (n: number) => (n >= 1000 ? new Intl.NumberFormat('en', {
 const at = (d: string) => new Date(`${d}T12:00:00Z`);
 /** "Oct 9", for an axis. */
 export const shortDay = (d: string) => at(d).toLocaleDateString('en', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+/** "Oct 5 to Nov 3", with the years where they differ ("Nov 5, 2025 to Nov 3, 2026"): without them a year reads as a range run backwards. */
+export const dayRange = (from: string, to: string) => {
+  if (from.slice(0, 4) === to.slice(0, 4)) return `${shortDay(from)} to ${shortDay(to)}`;
+  const day = (d: string) => at(d).toLocaleDateString('en', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return `${day(from)} to ${day(to)}`;
+};
 /** "Fri, Oct 9", or "Week of Oct 9" for a week. */
 export const longDay = (d: string, week = false) =>
   week ? `Week of ${shortDay(d)}` : at(d).toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
