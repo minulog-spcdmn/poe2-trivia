@@ -62,11 +62,12 @@
   /** The key GoatCounter turned down, back in the door's field to put right. */
   let typed = $state('');
   /** The day counting began, once a read has started there (counted): the periods it hasn't reached yet are one choice. Kept, for the periods read inside it. */
-  let began = $state<string | null>(demo ? (demoState.since ? addDays(demoState.since, 1) : null) : readStored('analytics.began'));
+  const firstBegan = demo ? (demoState.since ? addDays(demoState.since, 1) : null) : readStored('analytics.began');
+  let began = $state<string | null>(firstBegan);
   const stored = Number(readStored('analytics.days'));
   const kept = PERIODS.some((p) => p.value === stored) ? stored : 30;
   // A period kept from before that counting hasn't reached yet is the one that holds it ("Since Oct 16"): read as both, it would be read twice. (Today by this browser's clock: the account's zone isn't known yet, and the cover effect below puts a day's difference right.)
-  const fits = coverOf(began, dayIn(Intl.DateTimeFormat().resolvedOptions().timeZone, new Date()));
+  const fits = coverOf(firstBegan, dayIn(Intl.DateTimeFormat().resolvedOptions().timeZone, new Date()));
   const firstSpan = fits && kept > fits.value ? fits.value : kept;
   let span = $state<number>(firstSpan);
 

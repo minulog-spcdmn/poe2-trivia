@@ -1520,7 +1520,7 @@ test("the period before's last day is cut where today is, by the clock, across a
     const s = spansOf(tz, at, days);
     const hits = steady('2026-03-01T00:00:00Z', at, 10);
     const now = countsOf(goatCounter(hits, s.now, tz, at), daysBetween(s.from, s.today), tz, s.until);
-    const before = countsOf(goatCounter(hits, s.before, tz, at), daysBetween(s.fromBefore, s.toBefore), tz, s.until, true);
+    const before = countsOf(goatCounter(hits, s.before!, tz, at), daysBetween(s.fromBefore, s.toBefore), tz, s.until, true);
     assert.equal(before.visitors.perDay.at(-1), Math.round(6 * hours), iso);
     assert.equal(before.visitors.perDay[0], 144, iso);
     if (iso !== '2026-10-25T09:30:00Z') assert.equal(now.visitors.perDay.at(-1), Math.round(6 * hours), iso);
@@ -1553,7 +1553,7 @@ test('countries are compared over whole days, as GoatCounter keeps them by the d
   const hits = steady('2026-10-01T00:00:00Z', at, 10);
   // Asked for from the period's first day, as Analytics asks (its read of the counts starts the day before).
   const now = countries(hits, untilDay(tz, { ...s.now, start: midnight(tz, s.from) }, s.today));
-  const before = countries(hits, untilDay(tz, { ...s.before, start: midnight(tz, s.fromBefore) }, s.toBefore));
+  const before = countries(hits, untilDay(tz, { ...s.before!, start: midnight(tz, s.fromBefore) }, s.toBefore));
   assert.equal(now, 6 * 24 * 6);
   assert.equal(before, now);
 });
