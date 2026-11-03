@@ -980,6 +980,34 @@ test("the game's own script errors and its parts that didn't load are listed wit
   assert.equal(c.sync.paired, 3);
 });
 
+test("the scripts' errors by where they came from are one failure, broken down under it, and still not joining's", () => {
+  const c = countsOf(
+    [
+      path('play/race', [100, 100, 100]),
+      path('error/join-no-answer', [1, 0, 0]),
+      path('error/script', [2, 0, 0]),
+      path('error/script/lib/codex.ts:loadCodex', [0, 3, 1]),
+      path('error/script/node_modules/peerjs', [0, 0, 1]),
+      path('error/chunk', [0, 1, 0]),
+    ],
+    DAYS,
+  );
+  assert.deepEqual(
+    c.failures.filter((f) => f.script).map((f) => [f.key, f.count]),
+    [
+      ['script', 7],
+      ['chunk', 1],
+    ],
+  );
+  assert.deepEqual(c.scriptErrors, [
+    { where: 'lib/codex.ts:loadCodex', count: 4 },
+    { where: '', count: 2 },
+    { where: 'node_modules/peerjs', count: 1 },
+  ]);
+  assert.deepEqual(c.failuresPerDay, [1, 0, 0]);
+  assert.deepEqual(groupPaths(c).failed, ['error/join-no-answer']);
+});
+
 test('visitors new, back and in the installed app are groups too, their shares of those told apart', () => {
   const c = countsOf([path('/', [10, 0, 0], false), path('visit/new', [6, 0, 0]), path('visit/back-1d', [3, 0, 0]), path('visit/back-later', [1, 0, 0]), path('visit/app', [2, 0, 0])], DAYS);
   const g = groupPaths(c);

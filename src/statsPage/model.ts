@@ -191,6 +191,15 @@ const FAILURES: Record<string, { label: string; host?: true; script?: true }> = 
   chunk: { label: "A part of the game that didn't load", script: true },
 };
 
+/** A failure's key, by its path: "error/<key>", an error in the game's own scripts "script" wherever it came from ("error/script/<where>"). */
+export const failureKey = (path: string) => {
+  const key = path.slice('error/'.length);
+  return key.startsWith('script/') ? 'script' : key;
+};
+
+/** Where an error in the game's own scripts came from, by its path ("" for one counted without it); null for any other path. */
+export const scriptErrorWhere = (path: string) => (path === 'error/script' ? '' : path.startsWith('error/script/') ? path.slice('error/script/'.length) : null);
+
 export const DEVICE_NAMES: Record<Device, string> = {
   'desktop-chrome': 'Chrome and Edge on a computer',
   'desktop-other': 'Other browsers on a computer',
@@ -282,6 +291,8 @@ export interface Counts {
   /** Tries to join, and those let in, a day, every way in together. */
   joinsPerDay: { tried: number[]; joined: number[] };
   failures: { key: string; label: string; host: boolean; script: boolean; count: number }[];
+  /** The game's own scripts' errors (the failure "script") by where they came from, most first: a module and function ("lib/codex.ts:loadCodex"), or "" for those counted without one (before November 2026, or where it couldn't tell). */
+  scriptErrors: { where: string; count: number }[];
   /** Open rooms that lost the matchmaking server (count.ts RoomOff), the page in sight or not then, and those back on it by how long they were off. */
   roomsOff: { seen: number; hidden: number; back: Record<RoomBack, number> };
   /** The failures joining a room or opening one a day, every cause together (not the scripts' errors). */
@@ -546,12 +557,21 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
   const deepest = Math.max(-1, ...ranges.keys());
   const delveRanges = deepest < 0 ? [] : Array.from({ length: deepest / 10 + 1 }, (_, i) => ({ from: i * 10, count: ranges.get(i * 10) ?? 0 }));
 
-  const failures = paths
-    .filter((p) => p.path.startsWith('error/') && p.count > 0)
-    .map((p) => {
-      const key = p.path.slice('error/'.length);
+  // An error in the game's own scripts counts with where it came from (count.ts scriptErrorEvent:
+  // "error/script/lib/codex.ts:loadCodex"): all of them one failure, broken down by where.
+  const failed = new Map<string, number>();
+  const scriptPlaces = new Map<string, number>();
+  for (const p of paths) {
+    if (!p.path.startsWith('error/') || p.count <= 0) continue;
+    const key = failureKey(p.path);
+    failed.set(key, (failed.get(key) ?? 0) + p.count);
+    const where = scriptErrorWhere(p.path);
+    if (where !== null) scriptPlaces.set(where, (scriptPlaces.get(where) ?? 0) + p.count);
+  }
+  const failures = [...failed]
+    .map(([key, n]) => {
       const known = FAILURES[key];
-      return { key, label: known?.label ?? key, host: !!known?.host || key.startsWith('host-'), script: !!known?.script, count: p.count };
+      return { key, label: known?.label ?? key, host: !!known?.host || key.startsWith('host-'), script: !!known?.script, count: n };
     })
     .sort((a, b) => b.count - a.count);
 
@@ -580,12 +600,13 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
       joined: perDay((p) => VIAS.some((via) => p === `joined/${via}`)),
     },
     failures,
+    scriptErrors: [...scriptPlaces].map(([where, count]) => ({ where, count })).sort((a, b) => b.count - a.count || a.where.localeCompare(b.where)),
     roomsOff: {
       seen: count('room/off-seen'),
       hidden: count('room/off-hidden'),
       back: Object.fromEntries(ROOM_BACKS.map((t) => [t, count(`room/back-${t}`)])) as Record<RoomBack, number>,
     },
-    failuresPerDay: perDay((p) => p.startsWith('error/') && !FAILURES[p.slice('error/'.length)]?.script),
+    failuresPerDay: perDay((p) => p.startsWith('error/') && !FAILURES[failureKey(p)]?.script),
     reach: Object.fromEntries(REACHES.map((r) => [r, perDay((p) => p === `reach/${r}`)])) as Record<Reach, number[]>,
     visits: Object.fromEntries(VISIT_KINDS.map((k) => [k, perDay((p) => p === `visit/${k}`)])) as Record<VisitKind, number[]>,
     firsts: Object.fromEntries(FIRSTS.map((s) => [s, perDay((p) => p === `new/${s}`)])) as Record<First, number[]>,
