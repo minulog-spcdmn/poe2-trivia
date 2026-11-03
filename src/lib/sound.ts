@@ -270,9 +270,20 @@ function allowed() {
   return ua ? ua.hasBeenActive : true;
 }
 
+/**
+ * Whether this browser can play the game's sound: it has Web Audio, and the
+ * context wasn't refused when it was made (`new AudioContext()` throws where
+ * there's no audio device to be had, too many contexts, or audio is switched
+ * off for the site), which leaves the game silent rather than throwing at
+ * every press.
+ */
+let refused = false;
+const canHear = () => typeof AudioContext !== 'undefined' && !refused;
+
 function audio(): Bus | null {
-  if (typeof AudioContext === 'undefined' || !allowed()) return null;
+  if (!canHear() || !allowed()) return null;
   const b = build();
+  if (!b) return null;
   if (!primed) prime(b);
   // iOS also parks the context as 'interrupted' after a call or a trip to the lock screen.
   if (b.ac.state !== 'running') wake(b.ac);
@@ -403,9 +414,15 @@ export function loopHeard(file: string, now = performance.now()): number | null 
  * plays is loaded only once it may play (prime): a touch that only scrolled
  * loads nothing.
  */
-function build(): Bus {
-  if (!bus) {
-    const ac = new AudioContext();
+function build(): Bus | null {
+  if (!bus && !refused) {
+    let ac: AudioContext;
+    try {
+      ac = new AudioContext();
+    } catch {
+      refused = true;
+      return null;
+    }
     const comp = ac.createDynamicsCompressor();
     comp.threshold.value = -18;
     comp.knee.value = 12;
@@ -875,7 +892,7 @@ export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number; from?: So
     // No bus yet, so nothing of it has loaded (load needs the bus) and
     // nothing could play: it's made in a moment (buildSoon), not here, where
     // it would hold up the hover or press that wants it.
-    if (typeof AudioContext === 'undefined' || !allowed()) return undefined;
+    if (!canHear() || !allowed()) return undefined;
     buildSoon(false);
     return void sounded({ name, at: performance.now() + Math.max(0, opts.inMs ?? 0), gainDb: (Math.random() * 2 - 1) * m.varyGain + (trims[name] ?? 0) });
   }
@@ -1425,7 +1442,7 @@ export function installUiSounds() {
     pressedAt = performance.now();
     if (muted) return;
     if (!bus && e.type === 'pointerdown') {
-      if (typeof AudioContext !== 'undefined') buildSoon(true);
+      if (canHear()) buildSoon(true);
       return;
     }
     audio();
