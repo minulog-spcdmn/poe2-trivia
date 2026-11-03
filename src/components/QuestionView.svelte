@@ -3624,7 +3624,8 @@
     .tiles.many.tall .tile,
     .tiles.many.tall.six .tile {
       height: max(50px, var(--room) - 52px);
-      padding: 1.6rem 0.4rem 0.4rem;
+      /* The room for the number split above and below, so the art is centred. */
+      padding: 1rem 0.4rem;
     }
     .tiles.ten .tile {
       height: max(50px, (var(--room) - 54px) / 2);
@@ -3876,7 +3877,8 @@
     .tiles.many.snug.ten.armed .tile {
       height: auto;
       min-height: 0;
-      padding: 1.5rem 0.3rem 0.35rem;
+      /* The room for the number split above and below, so the art is centred. */
+      padding: 0.925rem 0.3rem;
     }
     .tiles .tile .key,
     .tiles.snug .tile .key {
