@@ -578,6 +578,8 @@ class Session {
   private openingCode = '';
   /** Host: what the room's last try at the signalling server ran into, for the notice if it gives up. */
   private openTrouble = 'timeout';
+  /** Host: a new room's try not open yet makes way for a fresh one (the network back, nudge). */
+  private tryAfresh: (() => void) | null = null;
   /** Client: attempts to reach the host that haven't opened yet (and when they started), oldest first. */
   private attempts: { conn: DataConnection; at: number }[] = [];
   /** Client, joining: when its first attempt went out (0: none yet). Only one out longer than the server holds an offer is known to have reached the room. */
@@ -896,6 +898,16 @@ class Session {
     this.peer = peer;
     // A reopened room gives each try its while (a new room's runs through them all, host).
     if (resumeState) this.armOpenGiveUp(code);
+    // A new room's try is never cut short (a slow link's socket can take its while to open), but one that hangs with no
+    // error (Create tapped as the Wi-Fi went, its socket waiting on a dead route) makes way for a fresh one once the
+    // network is back (nudge), which may get through on the new one.
+    this.tryAfresh = resumeState
+      ? null
+      : () => {
+          if (this.peer !== peer || peer.open || peer.destroyed || this.status !== 'connecting') return;
+          peer.destroy();
+          this.openAgain(code, attempt, 'network');
+        };
     // An invite link's screen asking whose room this is: told, apart from the
     // players' slots (nobody banned or blocked, though). Everyone else comes to play.
     answerProbes(peer, this.probeDesk, {
@@ -2215,8 +2227,8 @@ class Session {
       this.fail(`No room has the code ${this.code}. Check it with your host.`, 'No such room', { failure: this.joinFailure('join-no-such-room') });
       return;
     }
-    // (Every attempt is made by now: this is EXPIRE_MS after the answer, as the look above takes it.)
-    if (!this.unavailableUntil) this.unavailableUntil = Math.max(Date.now(), ...this.attempts.map((a) => a.at)) + EXPIRE_MS;
+    // (Every attempt is made by now: EXPIRE_MS after the answer, as the look above takes it.)
+    if (!this.unavailableUntil) this.unavailableUntil = Date.now() + EXPIRE_MS;
     // The server holds an offer a few seconds before giving up on it, so the
     // answer is about an attempt that old. A newer one may still get through.
     const now = Date.now();
@@ -2555,14 +2567,22 @@ class Session {
    * or more gets its while to join or to get its room online afresh
    * (backFromAway). A return often fires more than one of these events at
    * once, so it counts once a second, and the time away once a return.
+   * Back `online`, a new room's try that hasn't opened makes way for a
+   * fresh one (openRoom's tryAfresh): its socket may be on the old network.
    */
-  nudge() {
-    if (!this.mode || this.roomless) return;
+  nudge(online = false) {
+    // Every return is noted, in a room or not: one seen on the start page
+    // (off to copy the code) isn't taken for another by a later nudge, such as
+    // the network back mid-join, whose time "away" would run from before it.
     const away = hiddenSince(Date.now());
+    let back = false;
     if (away !== null && !document.hidden && away !== this.awayFrom) {
       this.awayFrom = away;
-      if (Date.now() - away >= AWAY_MS) this.backFromAway();
+      back = Date.now() - away >= AWAY_MS;
     }
+    if (!this.mode || this.roomless) return;
+    if (back) this.backFromAway();
+    if (online) this.tryAfresh?.();
     if (Date.now() - this.nudgedAt < NUDGE_EVERY_MS) return;
     this.nudgedAt = Date.now();
     const peer = this.peer;
@@ -3882,7 +3902,7 @@ if (typeof window !== 'undefined') {
   // Art that wouldn't load (offline) is tried again once the browser is back online.
   window.addEventListener('online', () => session.artBack());
   // Coming back (online again, a page restored, or shown again) gets the room's links going again at once.
-  window.addEventListener('online', () => session.nudge());
+  window.addEventListener('online', () => session.nudge(true));
   window.addEventListener('pageshow', () => session.nudge());
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && session.nudge());
 }

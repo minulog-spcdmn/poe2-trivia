@@ -120,6 +120,35 @@ test('a new room whose server never answers plays here once its while is up, not
   assert.match(lastToast()?.message ?? '', /matchmaking server \(timeout\)/);
 });
 
+test('a new room whose try hangs as the network goes tries afresh once it is back online, not waiting out its while', async () => {
+  // Create tapped as the Wi-Fi went: the socket waits on a dead route, with no error.
+  net.silent = true;
+  session.host('Ash');
+  await settle();
+  await run(5000);
+  assert.equal(session.status, 'connecting');
+  // The phone is on mobile data now: the hung try makes way for a fresh one, which gets through.
+  net.silent = false;
+  session.nudge(true);
+  await run(2000);
+  assert.equal(session.status, 'ready');
+  assert.equal(session.hereOnly, false, 'online, not played on this device');
+  assert.equal(roomPeers().length, 2, 'the hung try, then one fresh one');
+  assert.equal(roomPeers()[0].destroyed, true);
+});
+
+test('a room that has opened isn’t torn down by the network coming back', async () => {
+  net.answerIn = 3000;
+  session.host('Ash');
+  await settle();
+  await run(3500);
+  assert.equal(session.status, 'ready');
+  session.nudge(true);
+  await run(2000);
+  assert.equal(roomPeers().length, 1, 'an open room keeps its try');
+  assert.equal(roomPeers()[0].destroyed, false);
+});
+
 test('a new room whose page was away (Create tapped, then off to share the code) keeps trying on its return', async () => {
   net.down = true;
   session.host('Ash');
@@ -272,6 +301,22 @@ test('a join back from away isn’t told the room is missing by what the server 
   // One about an attempt since its return starts the count again.
   missing();
   assert.equal(session.status, 'connecting', 'what was heard before the return counts for nothing');
+});
+
+test('a return seen before joining isn’t taken for one by the network coming back mid-join', async () => {
+  // Off to copy the code on the start page, back 10 s later, then the join.
+  sight(false);
+  frozen(10_000);
+  sight(true);
+  session.join('ABCDEF', 'Bram');
+  await settle();
+  await run(20_000);
+  // Back online (a phone between networks): the join's while runs on from when it began.
+  session.nudge();
+  await run(9000);
+  assert.equal(session.status, 'connecting');
+  await run(2000);
+  assert.equal(session.status, 'idle', 'given up 30 s after the join, not 30 s after the nudge');
 });
 
 test('a join left running gives up after its while, as before', async () => {
