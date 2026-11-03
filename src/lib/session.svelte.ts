@@ -199,18 +199,22 @@ const JOIN_GIVE_UP_CAP_MS = 60000;
 /**
  * Host: how long a new room keeps trying to get onto the signalling server,
  * through its errors (the network gone for a moment as Create is tapped, the
- * server hiccuping) and tries it never answers, before it opens on this
- * device instead. In time the page ran (whileTimer).
+ * server hiccuping) and a try slow to answer, before it opens on this device
+ * instead. A reopened room gives each of its tries this long.
  */
 const HOST_GIVE_UP_MS = 20000;
-/** Host: a try at the signalling server not open by then makes way for a fresh one (a socket that stalled on the way). */
-const HOST_TRY_MS = 10000;
 /**
- * A timer that fires this long after it was due fired on a page that wasn't
- * running meanwhile: sent to the background (a phone's browser stops its
- * pages there), the phone locked or asleep.
+ * A page out of sight this long (in the background, the phone locked) wasn't
+ * running for most of it, a phone's browser stopping it there: the time it
+ * was given to join or to get its room online starts again on its return
+ * (nudge).
  */
 const AWAY_MS = 5000;
+/**
+ * A page out of sight as its while runs out looks again this much later: one
+ * just thawing runs its held-up timers before its return is heard (whileTimer).
+ */
+const THAW_MS = 1000;
 /** Client: the server says an attempt's room isn't there within this time (it holds an offer ~5 s). */
 const EXPIRE_MS = 7000;
 /** Delve: how long past 0 and the time-out a fuse's sound holds before it fades by itself, should the blast be slow to come. */
@@ -263,14 +267,16 @@ const CLICK_GAP_MS = 16;
 const FAKE_LINK = import.meta.env.DEV ? parseFakeLink(readStored('fakeLink')) : null;
 
 /**
- * setTimeout for the time something is given (to join, to open a room): `f`
- * is told whether the page was away when that ran out (AWAY_MS late), so it
- * never had the time, as when a player switches apps to share or check a
- * code and comes back.
+ * setTimeout for the time something is given (to join, to open a room), the
+ * timer handed to `keep` to be cleared as any other. A page out of sight as
+ * it runs out may be one just thawing (a phone's browser back from another
+ * app), which runs its held-up timers before its return is heard: `f` waits
+ * THAW_MS more, by when that return (nudge) has cleared it and given the
+ * while afresh. A page that stays out of sight (a hidden tab on a computer)
+ * runs out then all the same.
  */
-function whileTimer(f: (away: boolean) => void, ms: number) {
-  const due = Date.now() + ms;
-  return setTimeout(() => f(Date.now() - due >= AWAY_MS), ms);
+function whileTimer(f: () => void, ms: number, keep: (timer: ReturnType<typeof setTimeout>) => void) {
+  keep(setTimeout(() => (typeof document !== 'undefined' && document.hidden ? keep(setTimeout(f, THAW_MS)) : f()), ms));
 }
 
 export type Mode = 'local' | 'host' | 'client';
@@ -560,13 +566,17 @@ class Session {
   private retries = 0;
   /** When the page's return last nudged the room's links (nudge), so one return seen by several events counts once. */
   private nudgedAt = 0;
+  /** When the page went out of sight before the return last seen (nudge), so a later nudge doesn't take it for another. */
+  private awayFrom = 0;
   /** While this device is in a room online: lets the screen sleep again (wakeLock.ts, stayAwake). */
   private awake: (() => void) | null = null;
   /** Client: when joining began. */
   private joinedAt = 0;
-  /** Host: a new room not online by then opens on this device instead (armOpenGiveUp). */
+  /** Host: a room not online by then gives up trying (armOpenGiveUp). */
   private openGiveUp: ReturnType<typeof setTimeout> | null = null;
-  /** Host: what the new room's last try at the signalling server ran into, for the notice if it gives up. */
+  /** Host: the room being reopened while it tries to get online ('': a new room's). */
+  private openingCode = '';
+  /** Host: what the room's last try at the signalling server ran into, for the notice if it gives up. */
   private openTrouble = 'timeout';
   /** Client: attempts to reach the host that haven't opened yet (and when they started), oldest first. */
   private attempts: { conn: DataConnection; at: number }[] = [];
@@ -856,6 +866,7 @@ class Session {
     this.status = 'connecting';
     this.joinName = name;
     this.loadPrivate(noPrivate(randomToken(12)));
+    this.openTrouble = 'timeout';
     this.armOpenGiveUp();
     this.openRoom(randomCode(), 0);
     // Asked from the tap that opened the room, which some browsers want for it.
@@ -883,7 +894,8 @@ class Session {
     if (!Peer) return;
     const peer = new Peer(PEER_PREFIX + code, peerOptions());
     this.peer = peer;
-    if (!resumeState) this.armOpenTry(peer, code, attempt);
+    // A reopened room gives each try its while (a new room's runs through them all, host).
+    if (resumeState) this.armOpenGiveUp(code);
     // An invite link's screen asking whose room this is: told, apart from the
     // players' slots (nobody banned or blocked, though). Everyone else comes to play.
     answerProbes(peer, this.probeDesk, {
@@ -894,8 +906,6 @@ class Session {
     // room (and its game) is only built the first time.
     peer.once('open', () => {
       if (this.peer !== peer) return;
-      if (this.connectTimer) clearTimeout(this.connectTimer);
-      this.connectTimer = null;
       if (this.openGiveUp) clearTimeout(this.openGiveUp);
       this.openGiveUp = null;
       this.code = code;
@@ -993,30 +1003,27 @@ class Session {
   }
 
   /**
-   * Host: a new room's while to get online (HOST_GIVE_UP_MS), after which it
-   * opens on this device instead, saying what its last try ran into. A page
-   * that was away when it ran out gets it again from its return.
+   * Host: a room's while to get online (HOST_GIVE_UP_MS). A new room's runs
+   * through all its tries, then it opens on this device instead, saying what
+   * the last one ran into. A reopened room's (`code`) is each try's: one the
+   * server never answers fails as one that errs would, the room kept saved so
+   * a refresh tries again. A page back from away gets its while afresh (nudge).
    */
-  private armOpenGiveUp() {
+  private armOpenGiveUp(code = '') {
     if (this.openGiveUp) clearTimeout(this.openGiveUp);
-    this.openTrouble = 'timeout';
-    this.openGiveUp = whileTimer((away) => {
-      this.openGiveUp = null;
-      if (this.mode !== 'host' || this.status !== 'connecting') return;
-      if (away) return this.armOpenGiveUp();
-      this.roomNotOpened('', this.openTrouble, false);
-    }, HOST_GIVE_UP_MS);
-  }
-
-  /** Host: a new room's try at the signalling server that hasn't opened by HOST_TRY_MS makes way for a fresh one; one the page was away for waits on (its answer may be in). */
-  private armOpenTry(peer: Peer, code: string, attempt: number) {
-    if (this.connectTimer) clearTimeout(this.connectTimer);
-    this.connectTimer = whileTimer((away) => {
-      if (this.peer !== peer || this.status !== 'connecting') return;
-      if (away) return this.armOpenTry(peer, code, attempt);
-      peer.destroy();
-      this.openAgain(code, attempt, 'timeout');
-    }, HOST_TRY_MS);
+    this.openingCode = code;
+    // (What the last try ran into stays: a page back from away keeps it for the notice.)
+    whileTimer(
+      () => {
+        this.openGiveUp = null;
+        if (this.mode !== 'host' || this.status !== 'connecting') return;
+        // (A reopened room's try that erred waits on its next, which gets a while of its own.)
+        if (code && this.peer?.destroyed) return;
+        this.roomNotOpened(code, code ? 'timeout' : this.openTrouble, !!code);
+      },
+      HOST_GIVE_UP_MS,
+      (timer) => (this.openGiveUp = timer),
+    );
   }
 
   /** Host: a new room's try at the signalling server failed (`why`): another goes in a moment, while its while lasts (armOpenGiveUp). */
@@ -2158,11 +2165,8 @@ class Session {
   private armConnectTimeout() {
     if (this.connectTimer) clearTimeout(this.connectTimer);
     const wait = Math.min(JOIN_GIVE_UP_MS, this.joinedAt + JOIN_GIVE_UP_CAP_MS - Date.now());
-    this.connectTimer = whileTimer((away) => {
+    whileTimer(() => {
       if (this.mode !== 'client' || this.status !== 'connecting') return;
-      // The page was away when its time ran out (in the background, the
-      // phone locked), so it never had it: it starts again from its return.
-      if (away) return this.joinAfresh();
       // On the server, but no way through to the room. Unless the server has
       // said the room may be missing (roomUnavailable), or was reached too late
       // for an attempt to have outlived its offer, the code was right and
@@ -2171,14 +2175,15 @@ class Session {
       const reached = this.firstAttemptAt > 0 && Date.now() - this.firstAttemptAt >= EXPIRE_MS;
       if (this.peer?.open) this.joinFailed(this.unavailableUntil || !reached ? 'missing' : 'blocked', 'join-no-answer');
       else this.joinFailed('server', 'join-no-connection');
-    }, wait);
+    }, wait, (timer) => (this.connectTimer = timer));
   }
 
   /**
-   * Joining starts its while again, as if just set off: the signalling link
-   * back first if it dropped meanwhile (its 'open' tries the host), else the
-   * host tried. What was heard before (the room missing, an attempt's age)
-   * is about attempts from before the page went away.
+   * Joining starts its while again, as if just set off, the page back from
+   * away (nudge): the signalling link back first if it dropped meanwhile (its
+   * 'open' tries the host), else the host tried. What was heard before (the
+   * room missing, an attempt's age) is about attempts from before the page
+   * went away.
    */
   private joinAfresh() {
     this.joinedAt = Date.now();
@@ -2201,11 +2206,16 @@ class Session {
    */
   private roomUnavailable() {
     if (this.hostConn?.open) return;
+    // An answer heard before the page last went out of sight is about attempts
+    // from before (joinAfresh), even one heard again as it thaws, before its return is.
+    const away = hiddenSince(Date.now());
+    if (away !== null && this.unavailableUntil - EXPIRE_MS < away) this.unavailableUntil = 0;
     if (this.unavailableUntil && Date.now() >= this.unavailableUntil) {
       this.codeDoubted = true;
       this.fail(`No room has the code ${this.code}. Check it with your host.`, 'No such room', { failure: this.joinFailure('join-no-such-room') });
       return;
     }
+    // (Every attempt is made by now: this is EXPIRE_MS after the answer, as the look above takes it.)
     if (!this.unavailableUntil) this.unavailableUntil = Math.max(Date.now(), ...this.attempts.map((a) => a.at)) + EXPIRE_MS;
     // The server holds an offer a few seconds before giving up on it, so the
     // answer is about an attempt that old. A newer one may still get through.
@@ -2541,15 +2551,36 @@ class Session {
    * and a guest cut off from the host starts a fresh count of retries, so
    * the room isn't given up on while the player is looking at it (the 20
    * retries run out within a minute, which a network change can outlast).
-   * A link that's fine is left alone. A return often fires more than one of these events
-   * at once, so it counts once a second.
+   * A link that's fine is left alone. A page that was out of sight AWAY_MS
+   * or more gets its while to join or to get its room online afresh
+   * (backFromAway). A return often fires more than one of these events at
+   * once, so it counts once a second, and the time away once a return.
    */
   nudge() {
-    if (!this.mode || this.roomless || Date.now() - this.nudgedAt < NUDGE_EVERY_MS) return;
+    if (!this.mode || this.roomless) return;
+    const away = hiddenSince(Date.now());
+    if (away !== null && !document.hidden && away !== this.awayFrom) {
+      this.awayFrom = away;
+      if (Date.now() - away >= AWAY_MS) this.backFromAway();
+    }
+    if (Date.now() - this.nudgedAt < NUDGE_EVERY_MS) return;
     this.nudgedAt = Date.now();
     const peer = this.peer;
     if (peer && peer.disconnected && !peer.destroyed) peer.reconnect();
     if (this.mode === 'client' && this.status === 'lost') this.reconnect();
+  }
+
+  /**
+   * The page is back from out of sight, where a phone's browser stops it: the
+   * time it was given to join, or to get its room online, ran on while it
+   * couldn't use it (a player off to share or check the code), so that
+   * starts again from now. A page out of sight that never comes back runs
+   * out as it always did.
+   */
+  private backFromAway() {
+    if (this.status !== 'connecting') return;
+    if (this.mode === 'client') this.joinAfresh();
+    else if (this.mode === 'host' && this.openGiveUp) this.armOpenGiveUp(this.openingCode);
   }
 
   /**

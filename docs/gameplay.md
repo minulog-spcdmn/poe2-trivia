@@ -711,10 +711,12 @@ they're worth more sigils than are unlocked already. Kept in this browser (`src/
     pictures) opens anyway, on this device only: nobody can join, players at
     the screen are added in its lobby, and a reload picks it up there
     (`hostHere` in `src/lib/session.svelte.ts`). Until then a network that
-    drops for a moment, or a try the server never answers, is tried again
-    (`openAgain`), and time the page spent in the background (switching
-    apps to share the code) isn't counted: a join's 30 seconds aren't
-    either (`whileTimer`).
+    drops for a moment is tried again (`openAgain`), and a slow one is
+    waited for. A page back from the background (switching apps to share
+    the code) gets its 20 seconds afresh, and a join its 30 (`nudge`,
+    `backFromAway`); a page that stays hidden still gives up. A reopened
+    room whose server never answers a try in 20 seconds isn't reopened,
+    and stays saved for a refresh.
   - Players who refresh or drop out rejoin automatically. Outside Delve, the
     host can skip the turn of a player who is disconnected. Opening the same room in a
     second tab moves your seat there, and the first tab lets it go.
