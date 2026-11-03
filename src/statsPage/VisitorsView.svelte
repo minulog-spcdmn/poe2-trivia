@@ -13,7 +13,7 @@
   import Cohorts from './Cohorts.svelte';
   import { FIRST_JOURNEY, JOURNEY, OPENED, READY_ROWS, START_JOURNEY, STAY, appShare, beforeShare, backShare, comersOf, firstStepsOf, journeyOf, reachedOf, readinessOf, readyCount, recentCohorts, reachedShare, shareOf, startStepsOf, type FirstSteps, type Reached } from './insights';
   import { RETURNS, RETURN_NAMES, dayAverages, deviceOf, percent, type Reach } from './model';
-  import type { Period, Read } from './read';
+  import { orReading, type Period, type Read } from './read';
   import Section from './Section.svelte';
   import Shares, { type ShareRow } from './Shares.svelte';
   import { deviceLink, placeLink, systemLink } from './slices';
@@ -224,13 +224,13 @@
 
 {#snippet whereFrom()}
   <Section title="Where they are" says="Visits by country." area="where">
-    <Bars bars={countries} top={10} empty="No visitors in these days." link={placeLink} fresh={freshOf(read.changes, read.at, 'countries')} />
+    <Bars bars={countries} top={10} empty={orReading(read, 'No visitors in these days.')} link={placeLink} fresh={freshOf(read.changes, read.at, 'countries')} />
   </Section>
 {/snippet}
 
 {#snippet found()}
   <Section title="How they found the game" says="Visits by the site they came from." area="found">
-    <Bars bars={refs} top={10} empty="No visitors in these days." />
+    <Bars bars={refs} top={10} empty={orReading(read, 'No visitors in these days.')} />
     {#if unsourced > 0.5}
       <p class="hint">Most came with no site: a chat app's link or a bookmark has none. A link tagged poe2.quest/?ref=… says where it was posted.</p>
     {/if}
@@ -261,7 +261,7 @@
       <h3>By system</h3>
       <Bars bars={systems} top={8} link={systemLink} fresh={freshOf(read.changes, read.at, 'systems')} />
     {:else}
-      <p class="soft">No visitors in these days.</p>
+      <p class="soft">{orReading(read, 'No visitors in these days.')}</p>
     {/if}
   </Section>
 {/snippet}

@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import { addDays, dayIn, hourStarts, hoursIn, midnight, onClock, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, dayRange, labelled, restsOn } from '../src/statsPage/chart.ts';
 import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
-import { READY_ROWS, START_JOURNEY, dailyBackOf, delveSharedOf, readinessOf, readyCount, startStepsOf, appShare, backShare, beforeShare, beyondChanceOf, busiestStandsOut, comersOf, countsApart, failureRate, gamesSpread, healthOf, sameLabels, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
+import { READY_ROWS, START_JOURNEY, dailyBackOf, delveSharedOf, readinessOf, readyCount, startStepsOf, appShare, backShare, beforeShare, beyondChanceOf, busiestStandsOut, comersOf, countsApart, failureRate, gamesSpread, healthOf, sameLabels, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, backBeforeOf, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
-import { READ_V, coverOf, keptRead, spansOf, untilDay } from '../src/statsPage/read.ts';
+import { READ_V, coverOf, keptRead, orReading, spansOf, untilDay } from '../src/statsPage/read.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
 import { apartFrom, countsIn, depthCalls, depthsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
 import { currentName, isoWeek, underNamesNow, weekMonday, busiest, hoursHad, seatsOf, weekAverage, zFor, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, countedSpan, dayAverageHours, dayAverages, firstCounted, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, stutterTop, usualByNow, usualByNowUtc, USUAL_DAYS, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
@@ -16,6 +16,15 @@ const path = (p: string, perDay: number[], event = true): PathCount => ({
   event,
   count: perDay.reduce((n, v) => n + v, 0),
   days: Object.fromEntries(DAYS.map((d, i) => [d, perDay[i] ?? 0])),
+});
+
+test("the overview's came back is set against a period before only where that was told apart from its first day", () => {
+  const whole = countsOf([path('/', [10, 10, 10], false), path('visit/new', [6, 6, 6]), path('visit/back-1d', [3, 3, 3])], DAYS);
+  assert.equal(Math.round(backBeforeOf(whole)!), 33);
+  // Told apart from its second day only: its few early saves would read low, so no change is shown (as Visitors' Who comes back).
+  const partly = countsOf([path('/', [10, 10, 10], false), path('visit/new', [0, 6, 6]), path('visit/back-1d', [0, 1, 1])], DAYS);
+  assert.notEqual(backShare(comersOf(partly)), null);
+  assert.equal(backBeforeOf(partly), null);
 });
 
 test('days run from the first to the last, both included, across a month', () => {
@@ -1518,6 +1527,19 @@ test("the period before's last day is cut where today is, by the clock, across a
   }
 });
 
+test("in a zone behind UTC, Today's unique's first day is read whole in the period as in the period before", () => {
+  // New York, a Week read on Nov 3 at 23:30 UTC: each first UTC day begins at 20:00 the evening before, on the clock there.
+  const tz = 'America/New_York';
+  const at = new Date('2026-11-03T23:30:00Z');
+  const s = spansOf(tz, at, 7);
+  const hits = steady('2026-10-01T00:00:00Z', at, 30).map((h) => ({ ...h, path: 'daily/right' }));
+  const now = countsOf(goatCounter(hits, s.now, tz, at), daysBetween(s.from, s.today), tz, s.until);
+  const before = countsOf(goatCounter(hits, s.before!, tz, at), daysBetween(s.fromBefore, s.toBefore), tz, s.until, true);
+  const [first, firstBefore] = [dailyDays(now)[0], dailyDays(before)[0]];
+  assert.deepEqual([first.day, first.right], ['2026-10-28', 48]);
+  assert.deepEqual([firstBefore.day, firstBefore.right], ['2026-10-21', 48]);
+});
+
 test('countries are compared over whole days, as GoatCounter keeps them by the day', () => {
   const tz = 'Europe/Berlin';
   // GoatCounter's countries (cron/location_stat.go, hit_stats.ListLocations): kept by the hit's UTC date, asked for by the days the span's ends fall on there.
@@ -1529,7 +1551,8 @@ test('countries are compared over whole days, as GoatCounter keeps them by the d
   const at = new Date('2026-11-03T09:30:00Z');
   const s = spansOf(tz, at, 7);
   const hits = steady('2026-10-01T00:00:00Z', at, 10);
-  const now = countries(hits, untilDay(tz, s.now, s.today));
+  // Asked for from the period's first day, as Analytics asks (its read of the counts starts the day before).
+  const now = countries(hits, untilDay(tz, { ...s.now, start: midnight(tz, s.from) }, s.today));
   const before = countries(hits, untilDay(tz, { ...s.before, start: midnight(tz, s.fromBefore) }, s.toBefore));
   assert.equal(now, 6 * 24 * 6);
   assert.equal(before, now);
@@ -1569,6 +1592,15 @@ test('a kept read is used only in the shape this build keeps, and for its own pe
   assert.equal(keptRead(JSON.stringify({ ...r, v: READ_V - 1 }), 30), null);
   assert.equal(keptRead(null, 30), null);
   assert.equal(keptRead('{not json', 30), null);
+  // This build's kept read has the unread counts (Counts.ready, dailyBack, delveRuns): one kept without them is read again.
+  assert.equal(READ_V, 14);
+});
+
+test("a read shown before its lists are in says they're being read, never that there are none", () => {
+  const r = demoUpdate(30);
+  const cold = { ...r, systems: [], countries: [], refs: [], waiting: true };
+  assert.equal(orReading(cold, 'No visitors in these days.'), 'Reading…');
+  assert.equal(orReading({ ...cold, waiting: undefined }, 'No visitors in these days.'), 'No visitors in these days.');
 });
 
 test('the periods counting has not reached are one, the shortest that holds every day counted', () => {

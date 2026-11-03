@@ -244,7 +244,7 @@
       };
       // A period with nothing of its own on show yet shows its counts now, the lists filling in once they're read (each call waits for the one before).
       if (days === span && read?.span !== days) {
-        read = { ...r };
+        read = { ...r, waiting: true };
         partial = { span: days, at: r.at };
       }
       const [systems, countries, refs, campaigns, countriesBefore, refsBefore, countriesWhole] = await Promise.all([

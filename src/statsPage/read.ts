@@ -7,7 +7,7 @@ import { daysBetween } from './model.ts';
 import { addDays, dayIn, hourStarts, hoursIn, midnight } from './zone.ts';
 
 /** The shape reads are kept in: a read kept by an older build (another number) is read again. */
-export const READ_V = 13;
+export const READ_V = 14;
 
 /** A period read: its days and the same many before, with what the start page's visitors came on and from. */
 export interface Read {
@@ -43,7 +43,12 @@ export interface Read {
   began: string | null;
   /** What came in since the read before it (changes.ts keptChanges). */
   changes?: Changes | null;
+  /** Shown with its counts alone, the lists still to come (Analytics' partial read; never kept): an empty list isn't yet none (orReading). */
+  waiting?: boolean;
 }
+
+/** What stands in a list's place while it's empty: `none` once it's read, "Reading…" while the read is still waiting for it. */
+export const orReading = (r: Read, none: string) => (r.waiting ? 'Reading…' : none);
 
 /**
  * What a read of `days` at `at` asks GoatCounter for, in the account's
@@ -52,10 +57,11 @@ export interface Read {
  * compare like with like). GoatCounter gives the hour a span ends in whole,
  * so the period before ends with the hour on the clock it is now (both of
  * them, the night the clocks go back), and countsOf takes the part of it
- * that has passed. The period before from the day before it: where
- * counting began earlier, that day has counts, which tell the period before
- * was counted from its first (model.ts countedSpan); its counts aren't
- * taken (countsOf). `until`: the hours today has had, a part of the one
+ * that has passed. Both from the day before them: where counting began
+ * earlier, the period before's has counts, which tell it was counted from
+ * its first (model.ts countedSpan); and in a zone behind UTC each one's
+ * first UTC day begins that evening, so Today's unique has it whole in both
+ * (model.ts utcPerDay). That day's counts aren't taken (countsOf). `until`: the hours today has had, a part of the one
  * it's in too. `began`: the first whole day counted, where it's kept
  * (Analytics): nothing from before the day counting began partway through
  * is asked for, and no period before at all where it all lies before then
@@ -69,7 +75,7 @@ export function spansOf(zone: string, at: Date, days: number, began: string | nu
   const until = hoursIn(zone, today, at);
   const counting = began && addDays(began, -1);
   const notBefore = (day: string) => (counting && counting > day ? counting : day);
-  const now: Span = { start: midnight(zone, notBefore(from)), end: at };
+  const now: Span = { start: midnight(zone, notBefore(addDays(from, -1))), end: at };
   const before: Span | null =
     counting && counting > toBefore ? null : { start: midnight(zone, notBefore(addDays(fromBefore, -1))), end: new Date(hourStarts(zone, toBefore)[Math.floor(until) + 1] - 1) };
   return { today, from, fromBefore, toBefore, until, now, before };

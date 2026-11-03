@@ -61,6 +61,8 @@ export class Crosshair {
   key = (e: KeyboardEvent) => {
     const n = this.count();
     if (e.key === "Escape") {
+      // Taken where a note was put away, so the board isn't left by the same key (Analytics).
+      if (this.at !== null || this.#pinned) e.preventDefault();
       // A touch's pinned note too, or the next finger over the chart brings it back.
       this.#pinned = false;
       this.at = null;

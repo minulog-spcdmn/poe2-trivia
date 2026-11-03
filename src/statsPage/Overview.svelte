@@ -13,10 +13,10 @@
   import { average, fmt, restsOn, shortDay } from './chart';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
-  import { backShare, busiestStandsOut, comersOf, gamesSpreadOf, healthOf, spikesOf, troubleOf, type Comers } from './insights';
+  import { backBeforeOf, backShare, busiestStandsOut, comersOf, gamesSpreadOf, healthOf, spikesOf, troubleOf, type Comers } from './insights';
   import Kpi from './Kpi.svelte';
   import { DAILY_FROM, DEVICE_NAMES, MODE_NAMES, RETURNS, answersPerDay, asked, dailyAverage, dailyDays as dailyDaysOf, dayAverageHours, dayAverages, deviceOf, finishedShare, hoursHad, modesOf, percent, sharePerDay, weekAverage, type Counts } from './model';
-  import type { Period, Read } from './read';
+  import { orReading, type Period, type Read } from './read';
   import Section from './Section.svelte';
   import Seg from './Seg.svelte';
   import { deviceLink, modeLink, placeLink } from './slices';
@@ -48,7 +48,7 @@
   const comers = $derived(comersOf(L));
   const back = $derived(backShare(comers));
   const comersBefore = $derived(comersOf(B));
-  const backBefore = $derived(backShare(comersBefore));
+  const backBefore = $derived(backBeforeOf(B));
   const told = (w: Comers) => w.fresh + w.returned;
   /** Each day's share who came back, from the first day visits were told apart. */
   const backDays = $derived.by(() => {
@@ -235,7 +235,7 @@
 
     <Section title="Where they are">
       {#snippet aside()}<a class="to-view" href="#visitors">Visitors ›</a>{/snippet}
-      <Bars bars={countries} top={5} empty="No visitors in these days." link={placeLink} fresh={freshOf(read.changes, read.at, 'countries')} />
+      <Bars bars={countries} top={5} empty={orReading(read, 'No visitors in these days.')} link={placeLink} fresh={freshOf(read.changes, read.at, 'countries')} />
       {#if phones.all}
         <p class="line"><b>{percent(phones.phone, phones.all)}</b> came on a <a class="pick" href={deviceLink('Phone or tablet')}>phone or tablet</a>.</p>
       {/if}

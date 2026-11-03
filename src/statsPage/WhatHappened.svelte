@@ -25,7 +25,10 @@
   const none = $derived(!spikes.length && !refs.up && !refs.down && !places.up && !places.down);
 </script>
 
-{#if none}
+{#if read.waiting}
+  <!-- The lists the sites and countries come from are still on the way (read.ts orReading). -->
+  <p class="quiet">Reading…</p>
+{:else if none}
   <p class="quiet">Nothing out of the ordinary: no day far busier than usual{#if read.compare}, and no site or country bringing far more or fewer than {period.before}, beyond how they all moved{/if}.</p>
 {:else}
   <ul class="happened">

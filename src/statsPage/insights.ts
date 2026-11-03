@@ -424,6 +424,8 @@ export const appShare = (w: Comers) => (w.from ? shareOf(w.app, w.visitors) : nu
  * only then is that a share.
  */
 export const toldFromStart = (c: Counts) => !!c.days.length && comersOf(c).from === c.days[0];
+/** The period before's share who came back, only where its visits were told apart from its first day: a share from a later day rests on its early days alone, which read low (VisitorsView's `whole`). */
+export const backBeforeOf = (c: Counts) => (toldFromStart(c) ? backShare(comersOf(c)) : null);
 
 /**
  * The cohorts a table of `weeks` columns shows: the latest `rows` whose
