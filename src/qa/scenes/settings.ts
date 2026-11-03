@@ -170,11 +170,11 @@ export function settingsScenes(): Scene[] {
           { wait: 1000 },
           { click: '.sync-row .btn.small' },
           { wait: 1600 },
-          { click: '.sync .routes .route' },
+          { click: '.sync .routes .route:last-of-type' },
           { wait: 1400 },
           { click: '.sync .actions .btn.ghost' },
           { wait: 1400 },
-          { click: '.sync .routes .route' },
+          { click: '.sync .routes .route:last-of-type' },
           { wait: 900 },
           { fill: '.sync .code-field', text: SYNC_CODE },
           { wait: 500 },
@@ -216,7 +216,8 @@ export function settingsScenes(): Scene[] {
       group: 'Settings',
       label: 'A key waiting to be set',
       seats: [{ mode: 'none', me: null }],
-      build: (): Built => ({ state: null, hash: '#settings', steps: [{ click: '.seal' }] }),
+      // (Keys only where there's a keyboard: a phone has none to set, Settings.svelte.)
+      build: (): Built => ({ state: null, hash: '#settings', steps: [{ click: '.seal', ifThere: true }] }),
     },
     {
       key: 'settings/over',

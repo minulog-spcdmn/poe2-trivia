@@ -38,8 +38,8 @@ export interface Seat {
 
 /** What a frame does once the scene shows, in order. */
 export type Step =
-  /** Clicks the first element `selector` finds. */
-  | { click: string }
+  /** Clicks the first element `selector` finds; `ifThere`, only if a size has it (a list that folds only where it runs out of room, keys only where there's a keyboard), and none found is no fault. */
+  | { click: string; ifThere?: true }
   /** Types `text` into the first field `fill` finds, as typing it would (its input event). */
   | { fill: string; text: string }
   /** Waits (ms). */
