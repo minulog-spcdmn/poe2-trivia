@@ -3393,8 +3393,11 @@
     }
     .tiles.many.tall.six .tile {
       height: calc(var(--rows, 2) * var(--tile-h));
-      /* The number above the art, not on it. */
-      padding-top: 2.4rem;
+      /* The art in the middle of its tile: the room the tile's padding gives
+         (2.4rem above for the number, 0.8rem below) split evenly, so the art
+         keeps its size. */
+      padding-top: 1.6rem;
+      padding-bottom: 1.6rem;
     }
     .tiles.tall .caption {
       overflow-wrap: anywhere;
@@ -3406,7 +3409,16 @@
     }
     .tiles.many.tall .tile {
       height: calc(var(--rows, 2) * var(--tile-h));
-      padding-top: 2.4rem;
+      padding-top: 1.6rem;
+      padding-bottom: 1.6rem;
+    }
+  }
+  /* Short desktop windows pad a tile only 0.4rem below (their block, below,
+     which centres a row of six the same way): the same room, split evenly. */
+  @media (min-width: 900px) and (max-height: 820px) {
+    .tiles.many.tall .tile {
+      padding-top: 1.4rem;
+      padding-bottom: 1.4rem;
     }
   }
   /* Desktop windows a little short of the art's full 200px rows (up to about
@@ -3480,6 +3492,12 @@
     /* The pictures: their number sits over the art, so the art takes the tile. */
     .tile {
       padding: 0.45rem 0.5rem 0.4rem;
+    }
+    /* A row of tall ones keeps room for its number over the art: as much
+       below, so the art is centred. */
+    .tiles.many.tall.six .tile {
+      padding-top: 1.4rem;
+      padding-bottom: 1.4rem;
     }
     .task.timed .task-text {
       padding-inline: 54px;
@@ -3633,11 +3651,13 @@
     .tiles.many.tall .tile,
     .tiles.many.tall.six .tile {
       height: max(50px, var(--room) - 52px);
-      padding: 1.6rem 0.4rem 0.4rem;
+      /* The room for the number split above and below, so the art is centred. */
+      padding: 1rem 0.4rem;
     }
     .tiles.ten .tile {
       height: max(50px, (var(--room) - 54px) / 2);
       padding-top: 0.45rem;
+      padding-bottom: 0.4rem;
     }
     /* The name at the reveal over a tile barely taller than its picture: as
        small as upright, on a shorter shade and two lines at most, so the
@@ -3885,7 +3905,8 @@
     .tiles.many.snug.ten.armed .tile {
       height: auto;
       min-height: 0;
-      padding: 1.5rem 0.3rem 0.35rem;
+      /* The room for the number split above and below, so the art is centred. */
+      padding: 0.925rem 0.3rem;
     }
     .tiles .tile .key,
     .tiles.snug .tile .key {
