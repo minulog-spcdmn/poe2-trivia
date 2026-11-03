@@ -21,13 +21,13 @@
 
 import type { Engraved, Fade } from './cardEngraving';
 import { whenIdle } from './idle';
+import { pixelsOf, placedBy, type At } from './printPlacing';
 
+export type { At };
 /** The layers of a side that are printed: the still ones. */
 export type Layer = 'glow' | 'lines';
 /** A layer's print as shown: its URL ('' if it left every path to the svg), and the paths it leaves to its svg (leftKey). */
 export type Shown = { url: string; left: Set<string> };
-/** A layer as drawn: the size of its svg's viewBox (w, h), of its box (CSS px), the device pixels to its CSS px (its zoom, all of it, times the screen's density), and its box in whole device pixels, where the print is drawn. */
-export type At = { w: number; h: number; cw: number; ch: number; z: number; W: number; H: number };
 
 /** A path of the layer, as its svg draws it: its paint, stroke and opacity; faded (its mask, the glory's); the motif's (drawn over the plate, not stopping short of it). */
 export type PrintPath = {
@@ -42,7 +42,7 @@ export type PrintPath = {
   fade?: boolean;
   motif?: boolean;
 };
-/** A print to pull: its size (device px), the viewBox's (w, h), the viewBox onto its pixels (sx, sy, tx, ty), its paths, the fade, and the motif's shapes the plate's lines stop short of. */
+/** A print to pull: its size (px, lib/printPlacing's pixelsOf), the viewBox's (w, h), the viewBox onto its pixels (sx, sy, tx, ty), its paths, the fade, and the motif's shapes the plate's lines stop short of. */
 export type PrintJob = {
   id: number;
   size: [number, number];
@@ -58,28 +58,8 @@ export type PrintAnswer = { id: number; png?: Blob };
 /** Whether the cards' plates are printed: always, but on the card bench, which can show them as live strokes to compare. */
 export const printing = $state({ on: true });
 
-/**
- * The viewBox onto the print's pixels, as Chrome maps an svg's onto the
- * screen's: scaled to fit its box as laid out (not its whole pixels) and
- * centred in it (preserveAspectRatio's default), from the box's corner on
- * the pixel it's drawn from (read from the paint commands: a stretch to
- * the whole pixels was a third of a pixel out at the foot of a face).
- */
-function placing({ w, h, cw, ch, z }: At): [number, number, number, number] {
-  const s = Math.min(cw / w, ch / h) * z;
-  return [s, s, (cw * z - w * s) / 2, (ch * z - h * s) / 2];
-}
-
-/**
- * The same, read from the svg itself: Chrome fits it to its box at the
- * layout's own precision, which the box's size in CSS px (rounded to
- * 1/64 px) can't give back; its group's CTM can (to 1/10000 of a pixel at
- * a face's foot, where placing was 3/100 out).
- */
-function placed(svg: SVGSVGElement, at: At): [number, number, number, number] {
-  const m = svg.querySelector('g')?.getCTM();
-  return m ? [m.a * at.z, m.d * at.z, m.e * at.z, m.f * at.z] : placing(at);
-}
+/** The viewBox onto the print's pixels, read from the svg itself (lib/printPlacing); null if it's been laid out at another size since `at`. */
+const placed = (svg: SVGSVGElement, at: At) => placedBy(svg.querySelector('g')?.getCTM() ?? null, at);
 
 // ---- the worker ----------------------------------------------------------------
 
@@ -186,9 +166,11 @@ export function pull(plate: Engraved, layer: Layer, at: At, ink: string, svg: SV
   const was = use(kept, key);
   if (was) return was.made;
   const place = placed(svg, at);
+  // (Laid out at another size since: not pulled, nor kept for this one.)
+  if (!place) return Promise.resolve(null);
   const { paths, left } = pathsOf(svg, Math.min(place[0], place[1]));
   const print: Print = { left, made: Promise.resolve(null) };
-  print.made = (paths.length ? ask({ size: [at.W, at.H], view: [at.w, at.h], at: place, paths, fade: plate.fade, knockout: plate.knockout?.split(/(?<=Z)(?=M)/) ?? [] }) : Promise.resolve(null))
+  print.made = (paths.length ? ask({ size: pixelsOf(at), view: [at.w, at.h], at: place, paths, fade: plate.fade, knockout: plate.knockout?.split(/(?<=Z)(?=M)/) ?? [] }) : Promise.resolve(null))
     .then(async (png) => {
       if (!png) return paths.length ? null : '';
       const url = URL.createObjectURL(png);
