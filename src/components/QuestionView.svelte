@@ -2881,10 +2881,8 @@
     flex: 1;
     min-width: 0;
   }
-  /* Read out, not shown: and so the verdict's word in the phone's docked bar,
-     where its disc says it (a streak's count stays). */
-  .sr,
-  .dock .verdict .word:not(.count) {
+  /* Read out, not shown. */
+  .sr {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -3206,32 +3204,16 @@
     .dock .btn.blast.out {
       display: none;
     }
-    /* The docked row has the width of a phone: the verdict is its disc alone
-       (its word still read out), the sentence beside it says the rest. */
-    .dock .verdict {
-      padding: 0;
-      border: 0;
-      background: none;
-      font-size: 0.95rem;
-    }
-    .dock .verdict::after {
-      display: none;
-    }
-    /* A streak keeps its chip: the count is what the row has to say; the
-       sentence takes a line of its own under the chip and Next. */
-    .dock .result:has(.count) {
+    /* The docked row has the width of a phone: the verdict keeps its chip,
+       word and all, beside Next, and the sentence takes a line of its own
+       under them. */
+    .dock .result:has(> .verdict) {
       flex-wrap: wrap;
       row-gap: 0.4rem;
     }
-    .dock .result:has(.count) p {
+    .dock .result:has(> .verdict) > p {
       flex: 1 1 100%;
       order: 3;
-    }
-    .dock .verdict:has(.count) {
-      padding: 0.4em calc(1.1em - 0.16em) 0.4em 0.4em;
-      border: 1px solid var(--gold-lo);
-      background: rgba(0, 0, 0, 0.4);
-      font-size: 0.8rem;
     }
     /* Beside the dynamite's button, the line under the answers takes a little less room. */
     .blasting .hint .spectate {
@@ -3926,9 +3908,8 @@
       overflow-wrap: anywhere;
     }
     /* The row under the answers: as tall as a result and Next from the
-       start, so nothing moves when they come. The verdict is its disc alone
-       (its word read out), the sentence beside it says the rest; a streak
-       keeps its chip, the sentence under it and Next. */
+       start, so nothing moves when they come: the verdict's chip, word and
+       all (the sentence is over the art), and Next. */
     .footer {
       flex: none;
       min-height: 48px;
@@ -3937,37 +3918,6 @@
     .result p {
       font-size: 1rem;
       line-height: 1.25;
-    }
-    .footer .verdict {
-      padding: 0;
-      border: 0;
-      background: none;
-      font-size: 0.95rem;
-    }
-    .footer .verdict::after {
-      display: none;
-    }
-    .footer .verdict .word:not(.count) {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-      white-space: nowrap;
-    }
-    .footer .result:has(.count) {
-      flex-wrap: wrap;
-      row-gap: 0.4rem;
-    }
-    .footer .result:has(.count) p {
-      flex: 1 1 100%;
-      order: 3;
-    }
-    .footer .verdict:has(.count) {
-      padding: 0.4em calc(1.1em - 0.16em) 0.4em 0.4em;
-      border: 1px solid var(--gold-lo);
-      background: rgba(0, 0, 0, 0.4);
-      font-size: 0.8rem;
     }
     /* Out of this question (struck out, together), the row keeps its place but not Detonate's. */
     .footer .btn.blast.out {
