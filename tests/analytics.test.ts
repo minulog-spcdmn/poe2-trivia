@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addDays, dayIn, hoursIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
+import { addDays, dayIn, hourStarts, hoursIn, midnight, onClock, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, labelled, restsOn } from '../src/statsPage/chart.ts';
 import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
 import { appShare, backShare, beforeShare, beyondChanceOf, comersOf, failureRate, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
@@ -1282,4 +1282,74 @@ test("every device's stutter shares fit under one axis, a share resting on few g
   // iOS: 40% of 5, 20% of 5, and 100% of 2 (too few to set the axis); Android 20% of 10.
   assert.equal(stutterTop(Object.values(l.frames), DAYS, false), 40);
   assert.equal(stutterTop([], DAYS, false), 10);
+});
+
+// GoatCounter's /stats/hits as its source answers it (db/query/hit_list): whole
+// UTC hours, from the one the span starts on to the one its end falls in,
+// each labelled with the zone's offset as it is when asked (`at`), one offset
+// for every day, in days of 24 hours. Put on the clock as api.ts does.
+const H = 3_600_000;
+const offsetAt = (zone: string, at: Date) => {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(at).map((x) => [x.type, x.value]));
+  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute) - Math.floor(at.getTime() / 60_000) * 60_000;
+};
+type Hit = { path: string; t: number };
+function asGoatCounterLabels(hits: Hit[], span: { start: Date; end: Date }, zone: string, at: Date): Record<string, Record<string, number[]>> {
+  const off = offsetAt(zone, at);
+  const label = (t: number) => new Date(t + off).toISOString();
+  const out: Record<string, Record<string, number[]>> = {};
+  for (const { path, t } of hits) {
+    const hour = Math.floor(t / H) * H;
+    if (hour < span.start.getTime() || hour > span.end.getTime()) continue;
+    const days = (out[path] ??= Object.fromEntries(daysBetween(label(span.start.getTime()).slice(0, 10), label(span.end.getTime()).slice(0, 10)).map((d) => [d, Array<number>(24).fill(0)])));
+    days[label(hour).slice(0, 10)][+label(hour).slice(11, 13)]++;
+  }
+  return out;
+}
+const goatCounter = (hits: Hit[], span: { start: Date; end: Date }, zone: string, at: Date): PathCount[] =>
+  Object.entries(asGoatCounterLabels(hits, span, zone, at)).map(([path, hours]) => {
+    const onIt = onClock(hours, zone, at);
+    return { path, event: path !== '/', count: Object.values(onIt.days).reduce((a, b) => a + b, 0), ...onIt };
+  });
+
+test("GoatCounter's hours, labelled with the zone's offset when asked, go back onto the clock of their own day", () => {
+  const tz = 'Europe/Berlin';
+  // Read on Nov 3 (winter time, +1): a summer day comes labelled an hour early.
+  const at = new Date('2026-11-03T09:30:00Z');
+  const span = { start: midnight(tz, '2026-10-19'), end: at };
+  // An answer at 00:30 UTC on Oct 20 (02:30 in Berlin); a visit at 20:30 in Berlin on Tue Oct 20; one at 00:30 on Oct 21 there.
+  const hits = [
+    { path: 'daily/right', t: Date.parse('2026-10-20T00:30:00Z') },
+    { path: '/', t: Date.parse('2026-10-20T18:30:00Z') },
+    { path: '/', t: Date.parse('2026-10-20T22:30:00Z') },
+  ];
+  const raw = asGoatCounterLabels(hits, span, tz, at);
+  // GoatCounter has the answer at Oct 20's 01:00, the visit at 19:00, and the period's first hour as Oct 18's last.
+  assert.equal(raw['daily/right']['2026-10-20'][1], 1);
+  assert.equal(raw['/']['2026-10-20'][19], 1);
+  assert.equal(raw['/']['2026-10-20'][23], 1);
+  assert.ok('2026-10-18' in raw['/']);
+  const [answers, visits] = goatCounter(hits, span, tz, at).sort((a, b) => (a.path < b.path ? -1 : 1)).reverse();
+  // On the clock: the answer on the UTC day it was given, the visit at Tuesday 20:00, the 00:30 one on the 21st.
+  assert.deepEqual(utcPerDay(answers, ['2026-10-19', '2026-10-20'], tz), [0, 1]);
+  assert.equal(weekHours([visits], ['2026-10-20', '2026-10-21'])![1][20], 1);
+  assert.deepEqual([visits.days['2026-10-20'], visits.days['2026-10-21'], visits.days['2026-10-18'] ?? 0], [1, 1, 0]);
+  // A visit at 10:45 on a summer day is in the 10:00 hour: none of it by 10:00, half of it by 10:30, all by 11:00.
+  const morning = goatCounter([{ path: '/', t: Date.parse('2026-10-20T08:45:00Z') }], span, tz, at);
+  assert.deepEqual([10, 10.5, 11].map((until) => usualByNow(morning, ['2026-10-20', '2026-11-03'], until)), [0, 0.5, 1]);
+});
+
+test('the night the clocks go back, its 02:00 holds both of its hours; read in summer, a winter day comes back to its own midnight', () => {
+  const tz = 'Europe/Berlin';
+  const at = new Date('2026-11-03T09:30:00Z');
+  // 00:30 and 01:30 UTC on Oct 25 are both 02:30 in Berlin; 22:30 UTC on Oct 24 is 00:30 on the 25th.
+  const [p] = goatCounter(['2026-10-24T22:30:00Z', '2026-10-25T00:30:00Z', '2026-10-25T01:30:00Z'].map((t) => ({ path: '/', t: Date.parse(t) })), { start: midnight(tz, '2026-10-24'), end: at }, tz, at);
+  assert.deepEqual([p.hours!['2026-10-25'][0], p.hours!['2026-10-25'][2], p.days['2026-10-25']], [1, 2, 3]);
+  // Read in April 2027 (summer time, +2): a January visit at 00:30 in Berlin comes labelled 01:00; on the clock it's at 00:00 again.
+  const spring = new Date('2027-04-10T09:00:00Z');
+  const [q] = goatCounter([{ path: '/', t: Date.parse('2027-01-15T23:30:00Z') }], { start: midnight(tz, '2027-01-14'), end: spring }, tz, spring);
+  assert.equal(q.hours!['2027-01-16'][0], 1);
+  // When each hour on the clock begins: the doubled 02:00 lasts two hours, the day 25.
+  const s = hourStarts(tz, '2026-10-25');
+  assert.deepEqual([s[2], s[3], s[24]].map((t) => new Date(t).toISOString()), ['2026-10-25T00:00:00.000Z', '2026-10-25T02:00:00.000Z', '2026-10-25T23:00:00.000Z']);
 });

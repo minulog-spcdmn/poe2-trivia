@@ -204,7 +204,7 @@
       const now: Span = { start: midnight(tz, from), end: at };
       // (By the clock: on a day the clocks change, the time gone since midnight is an hour off it.)
       const before: Span = { start: midnight(tz, fromBefore), end: new Date(midnight(tz, toBefore).getTime() + hoursIn(tz, today, at) * 3_600_000) };
-      const [n, b] = await Promise.all([step(pathCounts(k, now, signal)), step(pathCounts(k, before, signal))]);
+      const [n, b] = await Promise.all([step(pathCounts(k, now, tz, signal)), step(pathCounts(k, before, tz, signal))]);
       if (ask !== asked) return;
       // The hours today has had (a part of the one it's in too), which the period before's last day is cut at too.
       const until = hoursIn(tz, today, at);

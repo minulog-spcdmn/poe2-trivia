@@ -15,7 +15,7 @@
 import { COUNTER_ORIGIN } from '../lib/counter';
 import { readStored, readStoredStarting, removeStored, removeStoredStarting, writeStored } from '../lib/storage';
 import type { PathCount } from './model';
-import { zoneOf } from './zone';
+import { onClock, zoneOf } from './zone';
 
 const KEY = 'analytics.key';
 /** What the page kept while it was called the ledger (on the beta only): the key and the requests' logs are taken over, the rest cleared away. */
@@ -151,10 +151,12 @@ const MAX_PAGES = 10;
 
 /**
  * Every path counted in the span, with its days: pages of up to 100, each
- * next one leaving out the paths already had. `complete`: false when there
- * were more than MAX_PAGES of them.
+ * next one leaving out the paths already had. Its days and hours put onto
+ * the clock of `zone`, the account's (zone.ts onClock): GoatCounter labels
+ * them all with the offset the zone has when asked. `complete`: false when
+ * there were more than MAX_PAGES of them.
  */
-export async function pathCounts(key: string, span: Span, signal: AbortSignal): Promise<{ paths: PathCount[]; complete: boolean }> {
+export async function pathCounts(key: string, span: Span, zone: string, signal: AbortSignal): Promise<{ paths: PathCount[]; complete: boolean }> {
   const out: PathCount[] = [];
   const had: string[] = [];
   for (let page = 0; page < MAX_PAGES; page++) {
@@ -164,14 +166,17 @@ export async function pathCounts(key: string, span: Span, signal: AbortSignal): 
       { ...range(span), group: 'day', limit: '100', ...(had.length ? { exclude_paths: had.join(',') } : {}) },
       signal,
     );
+    // (Its offset, as near the moment GoatCounter took it as the page can tell.)
+    const at = new Date();
     for (const h of r.hits) {
       had.push(String(h.path_id));
       out.push({
         path: h.path,
         event: h.event,
         count: h.count,
-        days: Object.fromEntries(h.stats.map((s) => [s.day, s.daily])),
-        ...(h.stats.every((s) => s.hourly?.length === 24) ? { hours: Object.fromEntries(h.stats.map((s) => [s.day, s.hourly!])) } : {}),
+        ...(h.stats.every((s) => s.hourly?.length === 24)
+          ? onClock(Object.fromEntries(h.stats.map((s) => [s.day, s.hourly!])), zone, at)
+          : { days: Object.fromEntries(h.stats.map((s) => [s.day, s.daily])) }),
       });
     }
     if (!r.more) return { paths: out, complete: true };

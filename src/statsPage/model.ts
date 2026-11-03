@@ -4,7 +4,7 @@
 
 import { DAILY_LAUNCH } from '../lib/dailyLaunch.ts';
 import { DEVICES, SOFTWARE, readFramesPath, type Device, type Moment } from '../lib/stutter.ts';
-import { addDays, midnight } from './zone.ts';
+import { addDays, hourStarts, midnight } from './zone.ts';
 import { isoWeekOfDay, weekMonday } from '../lib/isoWeek.ts';
 
 /** One path as GoatCounter's /stats/hits gives it: how often it was counted, all told and per day. */
@@ -14,7 +14,7 @@ export interface PathCount {
   count: number;
   /** Per day (YYYY-MM-DD), in the site's time zone. */
   days: Record<string, number>;
-  /** Per day as `days`, its 24 hours (from the day's midnight there), where GoatCounter gave them. */
+  /** Per day as `days`, its 24 hours on the clock there (api.ts puts GoatCounter's onto it), where GoatCounter gave them. */
   hours?: Record<string, number[]>;
 }
 
@@ -289,12 +289,11 @@ export interface Counts {
 export const weekday = (day: string) => (new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7;
 
 /**
- * Paths' counts by weekday and hour: 7 rows (Monday first) of 24 hours, as
- * GoatCounter counted them in the account's zone, only `days` taken, and of
- * the last of them only the hours before `until` (the hour it is now: the
- * rest hasn't happened, or is still going). Null when a path with counts
- * came without its hours. (On a day the clocks change, the hours after the
- * change sit an hour off.)
+ * Paths' counts by weekday and hour: 7 rows (Monday first) of 24 hours, by
+ * the clock in the account's zone, only `days` taken, and of the last of
+ * them only the hours before `until` (the hour it is now: the rest hasn't
+ * happened, or is still going). Null when a path with counts came without
+ * its hours. (The night the clocks go back, 02:00 holds both of its hours.)
  */
 export function weekHours(paths: PathCount[], days: string[], until: number | null = null): number[][] | null {
   const grid = Array.from({ length: 7 }, () => Array<number>(24).fill(0));
@@ -338,8 +337,12 @@ export function usualByNow(paths: PathCount[], days: string[], until: number | n
   return sum / whole.length;
 }
 
-/** The time the last of `days` has reached `until` hours in, in `zone`. */
-const timeOf = (zone: string, days: string[], until: number) => midnight(zone, days[days.length - 1]).getTime() + until * 3_600_000;
+/** The time the last of `days` has reached `until` hours in by the clock, in `zone`. */
+const timeOf = (zone: string, days: string[], until: number) => {
+  const starts = hourStarts(zone, days[days.length - 1]);
+  const h = Math.floor(until);
+  return h >= 24 ? starts[24] : starts[h] + (until - h) * 3_600_000;
+};
 const utcDayOf = (t: number) => new Date(t).toISOString().slice(0, 10);
 /** Hours since its UTC midnight, of a time. */
 const utcHoursOf = (t: number) => (t - Date.parse(`${utcDayOf(t)}T00:00:00Z`)) / 3_600_000;
@@ -362,9 +365,9 @@ export function usualByNowUtc(p: PathCount | undefined, days: string[], zone: st
   const by = utcHoursOf(now);
   let sum = 0;
   for (const [day, hours] of Object.entries(p.hours)) {
-    const start = midnight(zone, day).getTime();
+    const starts = hourStarts(zone, day);
     hours.forEach((n, h) => {
-      const at = start + h * 3_600_000;
+      const at = starts[h];
       if (n && whole.has(utcDayOf(at))) sum += n * hadOf(utcHoursOf(at), by);
     });
   }
@@ -380,9 +383,9 @@ function gameDayOf(right: PathCount | undefined, wrong: PathCount | undefined, d
     if (!p.hours) return p.count > 0 ? null : 0;
     let n = 0;
     for (const [d, hours] of Object.entries(p.hours)) {
-      const start = midnight(zone, d).getTime();
+      const starts = hourStarts(zone, d);
       hours.forEach((v, h) => {
-        const at = start + h * 3_600_000;
+        const at = starts[h];
         if (at < now && utcDayOf(at) === day) n += v;
       });
     }
@@ -427,19 +430,18 @@ export function daysBetween(from: string, to: string): string[] {
 
 /**
  * A path's count on each of `days` taken as UTC days, the days Today's unique
- * asks by: each hour GoatCounter counted (in the account's `zone`) moved to
- * the UTC day it fell on, an hour outside `days` left out. Without its hours
- * (or a zone), by GoatCounter's own days. (On a day the clocks change, an
- * hour after the change may land an hour off.)
+ * asks by: each hour on the clock in the account's `zone` moved to the UTC
+ * day it began on, an hour outside `days` left out. Without its hours (or a
+ * zone), by the account's own days.
  */
 export function utcPerDay(p: PathCount | undefined, days: string[], zone?: string): number[] {
   if (!p) return days.map(() => 0);
   if (!zone || !p.hours) return days.map((d) => p.days[d] ?? 0);
   const out = new Map(days.map((d) => [d, 0]));
   for (const [day, hours] of Object.entries(p.hours)) {
-    const start = midnight(zone, day).getTime();
+    const starts = hourStarts(zone, day);
     hours.forEach((n, h) => {
-      const utc = new Date(start + h * 3_600_000).toISOString().slice(0, 10);
+      const utc = new Date(starts[h]).toISOString().slice(0, 10);
       if (n && out.has(utc)) out.set(utc, out.get(utc)! + n);
     });
   }
