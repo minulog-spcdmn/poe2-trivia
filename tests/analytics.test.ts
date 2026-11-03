@@ -1395,3 +1395,25 @@ test('counting begun partway through a day: the period starts the day after, and
     assert.equal(readAt(hits(at), at, 7).compare, compare, iso);
   }
 });
+
+test("the period before's last day is cut where today is, by the clock, across a clock change too", () => {
+  const tz = 'Europe/Berlin';
+  // Six visits an hour, steadily: the period before's last day should have had as many hours as today.
+  for (const [iso, days, hours] of [
+    ['2026-11-03T09:30:00Z', 7, 10.5],
+    ['2026-11-03T09:05:00Z', 7, 10 + 5 / 60],
+    // Its last day Oct 4, in summer time.
+    ['2026-11-03T09:30:00Z', 30, 10.5],
+    // Today the day the clocks went back: the period before's is cut at 10:30 on the clock too, though today has had 11.5 hours.
+    ['2026-10-25T09:30:00Z', 30, 10.5],
+  ] as const) {
+    const at = new Date(iso);
+    const s = spansOf(tz, at, days);
+    const hits = steady('2026-03-01T00:00:00Z', at, 10);
+    const now = countsOf(goatCounter(hits, s.now, tz, at), daysBetween(s.from, s.today), tz, s.until);
+    const before = countsOf(goatCounter(hits, s.before, tz, at), daysBetween(s.fromBefore, s.toBefore), tz, s.until, true);
+    assert.equal(before.visitors.perDay.at(-1), Math.round(6 * hours), iso);
+    assert.equal(before.visitors.perDay[0], 144, iso);
+    if (iso !== '2026-10-25T09:30:00Z') assert.equal(now.visitors.perDay.at(-1), Math.round(6 * hours), iso);
+  }
+});

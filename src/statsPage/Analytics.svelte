@@ -222,7 +222,8 @@
           spikeRefs[s.day] = kept;
           continue;
         }
-        const day: Span = { start: midnight(tz, s.day), end: s.day === today ? at : midnight(tz, addDays(s.day, 1)) };
+        // (To just before the next day: GoatCounter would give the hour a span ends in whole.)
+        const day: Span = { start: midnight(tz, s.day), end: s.day === today ? at : new Date(midnight(tz, addDays(s.day, 1)).getTime() - 1) };
         spikeRefs[s.day] = await visitorsBy(k, day, 'toprefs', signal);
         if (s.day !== today) {
           keptRefs[s.day] = spikeRefs[s.day];
@@ -241,7 +242,7 @@
         toBefore,
         zone: tz,
         now: counts,
-        before: countsOf(b.paths, daysBetween(addDays(start, -days), toBefore), tz, until),
+        before: countsOf(b.paths, daysBetween(addDays(start, -days), toBefore), tz, until, true),
         systems,
         countries,
         // Each site once: a tagged link's visit comes with its referrer as it was (insights.ts sameSites).

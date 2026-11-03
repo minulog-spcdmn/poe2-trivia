@@ -448,14 +448,25 @@ export function utcPerDay(p: PathCount | undefined, days: string[], zone?: strin
   return days.map((d) => out.get(d)!);
 }
 
+/** A path's `day` cut at `until` hours in by the clock: the hour it's in counted for as much of it as has passed (whole, as a count is). */
+function cutAt(p: PathCount, day: string, until: number): PathCount {
+  const hours = p.hours?.[day];
+  if (!hours) return p;
+  const kept = hours.map((n, h) => Math.round(n * hadOf(h, until)));
+  return { ...p, days: { ...p.days, [day]: kept.reduce((a, b) => a + b, 0) }, hours: { ...p.hours, [day]: kept } };
+}
+
 /**
  * `zone`: the account's time zone, which GoatCounter cuts its days in; Today's
  * unique is counted by UTC days with it (utcPerDay). `until`: the hours the
  * last day has reached there (it's still going; a part of the one it's in
  * too), so the week's hours take only the whole ones before it (weekHours),
- * and a usual day is had to then (usualByNow).
+ * and a usual day is had to then (usualByNow). `cut`: the last day is one
+ * gone by, read to the end of the hour `until` is in (the period before's,
+ * read.ts spansOf), and is cut at `until` here, as today is.
  */
-export function countsOf(counted: PathCount[], days: string[], zone?: string, until: number | null = null): Counts {
+export function countsOf(counted: PathCount[], days: string[], zone?: string, until: number | null = null, cut = false): Counts {
+  if (cut && until !== null) counted = counted.map((p) => cutAt(p, days[days.length - 1], until));
   // Each path's total over these days alone, not all the call asked for: a period held at where counting began starts after it (countedSpan). GoatCounter's total is its days' sum.
   const windowed = counted.map((p): PathCount => ({ ...p, count: days.reduce((n, d) => n + (p.days[d] ?? 0), 0) }));
   const paths = underNamesNow(windowed);
