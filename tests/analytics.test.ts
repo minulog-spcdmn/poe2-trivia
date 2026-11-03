@@ -2,10 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addDays, dayIn, hourStarts, hoursIn, midnight, onClock, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, dayRange, labelled, pct, restsOn } from '../src/statsPage/chart.ts';
-import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
+import { demoRead, demoSlices, demoStateOf, demoUpdate } from '../src/statsPage/demo.ts';
 import { READY_ROWS, START_JOURNEY, dailyBackOf, delveSharedOf, readinessOf, readyCount, startStepsOf, appShare, backShare, beforeShare, beyondChanceOf, busiestStandsOut, comersOf, countsApart, failureRate, gamesSpread, healthOf, sameLabels, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, backBeforeOf, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
-import { READ_V, coverOf, keptRead, orReading, spansOf, untilDay } from '../src/statsPage/read.ts';
+import { READ_V, counted, coverOf, keptRead, orReading, spansOf, untilDay } from '../src/statsPage/read.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
 import { apartFrom, countsIn, depthCalls, depthsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
 import { currentName, isoWeek, underNamesNow, weekMonday, busiest, hoursHad, seatsOf, weekAverage, zFor, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, countedSpan, dayAverageHours, dayAverages, firstCounted, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, stutterTop, usualByNow, usualByNowUtc, USUAL_DAYS, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
@@ -1661,4 +1661,32 @@ test('the demo shows the paths counted from Oct 29', () => {
 
 test('a share reads as a whole percent, a dash where there is none', () => {
   assert.deepEqual([pct(34.6), pct(0), pct(100), pct(null)], ['35%', '0%', '100%', '–']);
+});
+
+test("the demo's query gives each state it names, and the countries to yesterday", () => {
+  const at = new Date('2026-11-03T15:30:00Z');
+  const q = (s: string) => demoStateOf(new URLSearchParams(s), '2026-11-03');
+  assert.deepEqual(q('demo'), { since: undefined, compare: undefined, incomplete: undefined, first: undefined, alert: undefined });
+  assert.equal(q('demo&since').since, '2026-10-14');
+  assert.equal(q('demo&since=2026-10-20').since, '2026-10-20');
+  const plain = demoUpdate(7, at);
+  assert.deepEqual([plain.v, plain.compare, plain.complete, plain.began, counted(plain)], [READ_V, true, true, null, false]);
+  assert.ok(plain.changes);
+  assert.equal(troubleOf(plain.now, plain.before), null);
+  assert.equal(healthOf(plain.now, plain.before), null);
+  // The countries to yesterday, today left out.
+  const sum = (l: { count: number }[]) => l.reduce((n, x) => n + x.count, 0);
+  assert.equal(sum(plain.countriesWhole!), plain.now.visitors.total - plain.now.visitors.perDay.at(-1)!);
+  // Since Oct 20: a Month starts on Oct 21 with nothing to compare with, and the longer periods are one ("Since Oct 21").
+  const since = demoRead(30, at, q('demo&since=2026-10-20'));
+  assert.deepEqual([since.from, since.began, since.compare, counted(since)], ['2026-10-21', '2026-10-20', false, true]);
+  assert.equal(coverOf(since.from, since.to)?.value, 30);
+  assert.deepEqual([since.countriesBefore, since.countriesWhole], [[], []]);
+  assert.equal(since.before.visitors.total, 0);
+  assert.equal(demoRead(30, at, q('demo&compare=0')).compare, false);
+  assert.equal(demoRead(7, at, q('demo&incomplete')).complete, false);
+  assert.equal(demoUpdate(7, at, q('demo&first')).changes, null);
+  const alert = demoRead(7, at, q('demo&alert'));
+  assert.ok(troubleOf(alert.now, alert.before)?.today);
+  assert.deepEqual(healthOf(alert.now, alert.before)?.errors.map((e) => e.key), ['script']);
 });

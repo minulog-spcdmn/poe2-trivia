@@ -41,7 +41,7 @@
   import VisitorsView from './VisitorsView.svelte';
   import { addDays, dayIn, midnight } from './zone';
   import { CHANNEL } from '../lib/channel';
-  import { demoSlices, demoUpdate } from './demo';
+  import { demoSlices, demoStateOf, demoUpdate } from './demo';
   import { keepAwake } from '../lib/wakeLock';
 
   /** A period is read again once it's this old. */
@@ -55,12 +55,14 @@
 
   /** stats.html?demo, on the dev server and the beta: made-up numbers (demo.ts), no key and no calls. */
   const demo = CHANNEL !== 'live' && new URLSearchParams(location.search).has('demo');
+  /** The state the demo's query asks for (demo.ts demoStateOf: `since`, `compare=0`, `incomplete`, `first`, `alert`). */
+  const demoState = demo ? demoStateOf(new URLSearchParams(location.search), dayIn('Europe/Berlin', new Date())) : {};
   let key = $state(demo ? 'demo' : savedKey());
   let refused = $state('');
   /** The key GoatCounter turned down, back in the door's field to put right. */
   let typed = $state('');
   /** The day counting began, once a read has started there (counted): the periods it hasn't reached yet are one choice. Kept, for the periods read inside it. */
-  let began = $state<string | null>(demo ? null : readStored('analytics.began'));
+  let began = $state<string | null>(demo ? (demoState.since ? addDays(demoState.since, 1) : null) : readStored('analytics.began'));
   const stored = Number(readStored('analytics.days'));
   const kept = PERIODS.some((p) => p.value === stored) ? stored : 30;
   // A period kept from before that counting hasn't reached yet is the one that holds it ("Since Oct 16"): read as both, it would be read twice. (Today by this browser's clock: the account's zone isn't known yet, and the cover effect below puts a day's difference right.)
@@ -174,7 +176,7 @@
   async function load(days = span, force = false) {
     if (!key) return;
     if (demo) {
-      read = demoUpdate(days);
+      read = demoUpdate(days, new Date(), demoState);
       return;
     }
     const had = cached(days);
