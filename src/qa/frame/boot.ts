@@ -327,7 +327,7 @@ export async function boot(asked: URLSearchParams) {
       if (real) Object.defineProperty(real, 'writeText', { configurable: true, value: writeText });
       else Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     }
-    else (await found(step.click))?.click();
+    else (await found(step.click, step.ifThere))?.click();
   }
 
   const run = async () => {
@@ -374,14 +374,14 @@ export function handOnKeys(tell: (m: FrameMessage) => void, digits = false) {
   addEventListener('keyup', (e) => hand(e, true));
 }
 
-/** The first element `selector` finds, once there is one (null after 5 s). */
-async function found(selector: string): Promise<HTMLElement | null> {
+/** The first element `selector` finds, once there is one (null after 5 s, an error unless the step asked for it only `ifThere`). */
+async function found(selector: string, ifThere = false): Promise<HTMLElement | null> {
   for (let i = 0; i < 50; i++) {
     const el = document.querySelector<HTMLElement>(selector);
     if (el) return el;
     await new Promise((r) => setTimeout(r, 100));
   }
-  console.error(`The scene's step found nothing at ${selector}`);
+  if (!ifThere) console.error(`The scene's step found nothing at ${selector}`);
   return null;
 }
 

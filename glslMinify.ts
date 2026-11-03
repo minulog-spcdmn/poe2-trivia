@@ -149,7 +149,7 @@ export function glslMinify(): Plugin {
       if (!GLSL_FILES.test(id)) return;
       const out = minifyGlsl(code, id);
       if (!out.minified) return;
-      // No source map: the build makes none.
+      // No source map of its own: a shader is a string, in no function, so the build's hidden maps (whereMaps.ts) need none of it.
       return { code: out.code, map: { mappings: '' } };
     },
   };

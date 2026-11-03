@@ -24,6 +24,7 @@ import { COUNTER_ORIGIN } from './counter.ts';
 import { isoWeek } from './isoWeek.ts';
 import { countOptedOut, notCounted, privacySignal, setCountOptedOut } from './countOptOut.ts';
 import { SITE_URL } from './site.ts';
+import { fetchWhereTable, ownFrames, whereOf, type ErrorPlace, type WhereTable } from './errorWhere.ts';
 import { GameFrames, SOFTWARE, deviceOf, framesEvent, type BrowserSays, type StateMoment } from './stutter.ts';
 
 /** Whether a page counts: the live game's own page at its own address, no robot driving it. */
@@ -329,10 +330,11 @@ export function countVisit(save: () => Played | null, campaign: string | null, i
  * An event: its name is the path GoatCounter lists it under. Each one counts
  * (`ns`, no session): GoatCounter would otherwise count a path once a visitor
  * in eight hours, five games in an evening as one. A visit keeps its session,
- * so visits still count people.
+ * so visits still count people. `now`: sent at once (a beacon), for one
+ * counted as the page goes, after what waited has already gone (leaving).
  */
-export function countEvent(name: string) {
-  send({ p: name, t: name, e: 'true', ns: 'true' });
+export function countEvent(name: string, now = false) {
+  send({ p: name, t: name, e: 'true', ns: 'true' }, now);
 }
 
 const reached = new Set<string>();
@@ -543,30 +545,80 @@ export const caughtImportKind = (e: unknown, assets: string): 'script' | 'chunk'
 /** The game's own built scripts' folder, as ownScript has it: assets/ beside this page. */
 const assetsHere = () => `${location.origin}${location.pathname.replace(/[^/]*$/, '')}assets/`;
 
+/**
+ * The event for an error in the game's own scripts: "error/script/<where>",
+ * where it came from by the build's tables (lib/errorWhere.ts:
+ * "error/script/lib/codex.ts:loadCodex"), or plain "error/script" when they
+ * can't tell. Nothing of the error itself goes into it.
+ */
+export async function scriptErrorEvent(from: ErrorPlace, assets: string, table: (file: string) => Promise<WhereTable | null>): Promise<string> {
+  const frames = ownFrames(from, assets);
+  const where = frames.length ? await whereOf(frames, table).catch(() => null) : null;
+  return where ? `error/script/${where}` : 'error/script';
+}
+
+/** How long an error's place may take to be found (its scripts' tables fetched) before it's counted without it (ms). */
+const WHERE_MS = 5_000;
+
+/**
+ * Counts an error in the game's own scripts once its place is found
+ * (scriptErrorEvent), or plain if that takes past WHERE_MS or the page is
+ * put away first (closed, hidden), so a start that fails and is left at once
+ * still counts.
+ */
+function countScriptError(from: ErrorPlace, assets: string) {
+  let sent = false;
+  const go = (name: string, now = false) => {
+    if (sent) return;
+    sent = true;
+    clearTimeout(timer);
+    removeEventListener('pagehide', leave);
+    document.removeEventListener('visibilitychange', hidden);
+    countEvent(name, now);
+  };
+  const plain = () => go('error/script');
+  // (As the page goes, at once: leaving, which sends what waits, has run before these listeners, added later, so a queued count would stay behind.)
+  const leave = () => go('error/script', true);
+  const hidden = () => document.visibilityState === 'hidden' && leave();
+  const timer = setTimeout(plain, WHERE_MS);
+  addEventListener('pagehide', leave);
+  document.addEventListener('visibilitychange', hidden);
+  scriptErrorEvent(from, assets, fetchWhereTable(assets)).then((name) => go(name), plain);
+}
+
 /** The errors counted this page load ("error/script", "error/chunk"), each once, and how countScriptErrors' listeners are taken off once both have gone. */
 const errorsCounted = new Set<'script' | 'chunk'>();
 let stopScriptErrors = () => {};
-function errorDone(kind: 'script' | 'chunk' | null) {
+function errorDone(kind: 'script' | 'chunk' | null, from: ErrorPlace, assets: string) {
   if (!kind || errorsCounted.has(kind)) return;
   errorsCounted.add(kind);
   if (errorsCounted.size === 2) stopScriptErrors();
-  countEvent(`error/${kind}`);
+  if (kind === 'script') countScriptError(from, assets);
+  else countEvent('error/chunk');
 }
 
+/** An error's (or a rejection's reason's) stack, as ErrorPlace has it, if it has one. */
+const placeOf = (err: unknown): ErrorPlace => {
+  const stack = (err as { stack?: unknown } | null)?.stack;
+  return typeof stack === 'string' ? { stack } : {};
+};
+
 /**
- * An uncaught error in the game's own scripts ("error/script"), thrown or
- * rejected, and apart from it a part of the game that failed to load
- * ("error/chunk"), which is no fault in the code; each once a page load.
- * Installed first thing (lib/countErrors.ts), so a start that fails is
- * mostly caught too.
+ * An uncaught error in the game's own scripts ("error/script", and where it
+ * came from: scriptErrorEvent), thrown or rejected, and apart from it a part
+ * of the game that failed to load ("error/chunk"), which is no fault in the
+ * code; each once a page load. Installed first thing (lib/countErrors.ts),
+ * so a start that fails is mostly caught too.
  */
 export function countScriptErrors() {
   if (!counting || typeof addEventListener === 'undefined') return;
   const assets = assetsHere();
-  const onError = (e: ErrorEvent) => errorDone(errorKind(e.message ?? '', [e.filename ?? '', (e.error as Error | undefined)?.stack ?? ''], assets));
+  const onError = (e: ErrorEvent) =>
+    errorDone(errorKind(e.message ?? '', [e.filename ?? '', (e.error as Error | undefined)?.stack ?? ''], assets), { ...placeOf(e.error), file: e.filename, line: e.lineno, col: e.colno }, assets);
   const onRejection = (e: PromiseRejectionEvent) => {
-    const err = e.reason as { stack?: unknown; message?: unknown } | null;
-    errorDone(errorKind(typeof err?.message === 'string' ? err.message : '', [typeof err?.stack === 'string' ? err.stack : ''], assets));
+    const err = e.reason as { message?: unknown } | null;
+    const from = placeOf(err);
+    errorDone(errorKind(typeof err?.message === 'string' ? err.message : '', [from.stack ?? ''], assets), from, assets);
   };
   stopScriptErrors = () => {
     removeEventListener('error', onError);
@@ -583,7 +635,9 @@ export function countScriptErrors() {
  * load they share).
  */
 export function countFailedImport(e?: unknown) {
-  if (counting) errorDone(caughtImportKind(e, assetsHere()));
+  if (!counting) return;
+  const assets = assetsHere();
+  errorDone(caughtImportKind(e, assets), placeOf(e), assets);
 }
 
 const arrivals = new Set<string>();

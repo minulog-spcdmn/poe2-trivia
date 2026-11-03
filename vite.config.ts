@@ -14,11 +14,12 @@ import { PROFILE_NAMES } from './src/lib/emberProfiles.ts';
 import { preloadedWith } from './src/lib/retriedPages.ts';
 import { glslMinify } from './glslMinify.ts';
 import { keyframesFirst } from './keyframesFirst.ts';
-import { polyfillsFirst, polyfillsScript } from './polyfillsFirst.ts';
+import { polyfillsFirst, polyfillsScript, readableRegexes } from './polyfillsFirst.ts';
 import { peerjsProbe } from './peerjsProbe.ts';
 import { qaServer } from './qaServer.ts';
 import { themedCursors } from './themedCursors.ts';
 import { weaveTile } from './weaveTile.ts';
+import { whereMaps } from './whereMaps.ts';
 
 /**
  * Content Security Policy for the production build: the page may only run its
@@ -357,10 +358,12 @@ export default defineConfig(({ command, mode }) => {
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), glslMinify(), peerjsProbe(), polyfillsFirst(), csp(env), errorsFirst(), betaPages(env), preloadFonts(), fontinNotice(), keyframesFirst(), backdropSave(), devHub(env), weaveTile(), qaServer(process.cwd())],
+    plugins: [svelte(), glslMinify(), peerjsProbe(), polyfillsFirst(), csp(env), errorsFirst(), readableRegexes(), betaPages(env), preloadFonts(), fontinNotice(), keyframesFirst(), backdropSave(), devHub(env), weaveTile(), whereMaps(), qaServer(process.cwd())],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
-    // Module workers, so one (the plates', lib/plateWorker.ts) can load only what it's asked for.
-    worker: { format: 'es' },
+    // Module workers, so one (the plates', lib/plateWorker.ts) can load only what it's asked for. Their scripts
+    // get the tables that say where an error came from too (whereMaps.ts: one of theirs reaches the page's count), and
+    // are held to the regular expressions an older Safari can read (polyfillsFirst.ts readableRegexes) as the page's are.
+    worker: { format: 'es', plugins: () => [whereMaps(), readableRegexes()] },
     build: {
       // The codex's and the settings' chunks are linked ahead without their
       // imports, so a dropped connection that fails them leaves those to be

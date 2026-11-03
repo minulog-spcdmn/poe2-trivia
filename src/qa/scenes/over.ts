@@ -332,7 +332,7 @@ function anyGame(v: Values): AsSet {
   }
   if (watching) s.spectators = [spectator('Kalguur', v.place === 'watches')];
   const told = judged(watching ? [] : GAME_EARNED.slice(0, Number(v.earned)), v.late);
-  const pressed: Step[] = v.pressed === 'missed' ? [{ wait: 1000 }, { click: `[data-more="${hot ? 'hot' : 'missed'}"]` }] : [];
+  const pressed: Step[] = v.pressed === 'missed' ? [{ wait: 1000 }, { click: `[data-more="${hot ? 'hot' : 'missed'}"]`, ifThere: true }] : [];
   return {
     state: s,
     seat: hot ? { mode: 'local', me: null } : { mode: guest ? 'client' : 'host', me: K },

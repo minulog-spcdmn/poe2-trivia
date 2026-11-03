@@ -214,7 +214,8 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
       add('load/ready-later', h, timed);
       add('sync/paired', h, around(v * 0.006, rnd));
       const broke = rnd();
-      if (broke < 0.02) add(broke < 0.006 ? 'error/chunk' : 'error/script', h, 1);
+      // (A script's error by where it came from, as count.ts scriptErrorEvent has it; now and then where it couldn't tell.)
+      if (broke < 0.02) add(broke < 0.006 ? 'error/chunk' : broke < 0.008 ? 'error/script' : broke < 0.014 ? 'error/script/lib/sound.ts:wake' : 'error/script/components/Codex.svelte:open', h, 1);
     }
     for (const g of GAMES) {
       const started = around(v * g.share, rnd);
@@ -390,7 +391,7 @@ export function demoRead(days: number, at = new Date(), state: DemoState = {}): 
   const nowPaths = pathsOf(daysBetween(from, today), hoursSoFar, began);
   if (state.alert) {
     more(nowPaths, 'error/join-no-answer', today, 12 + 3 * hoursSoFar, hoursSoFar);
-    for (const day of [addDays(today, -1), today]) more(nowPaths, 'error/script', day, 20, day === today ? hoursSoFar : 24);
+    for (const day of [addDays(today, -1), today]) more(nowPaths, 'error/script/lib/session.svelte.ts:Session.openRoom', day, 20, day === today ? hoursSoFar : 24);
   }
   const visitors = nowPaths.find((p) => p.path === '/')?.count ?? 0;
   // (Its hour so far made up whole, as the rest; a usual day is had to the minute, as on the live page.)

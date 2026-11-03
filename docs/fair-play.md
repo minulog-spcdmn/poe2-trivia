@@ -109,7 +109,9 @@ Game events count each time (`ns`, no session): `play/<mode>`,
 `size/<mode>-<n>p`, `screen/<mode>` (some at the host's screen) and
 `end/<mode>` from the device running the game (`-online`/`-hotseat` until
 October 2026), Delve's depth range, `share/delve` (Share run tapped), the
-Daily's answers, links opened, joins, failures (`error/script` and
+Daily's answers, links opened, joins, failures (`error/script`, with where
+it came from when the build's tables can tell, `error/script/<module>:<function>`
+(`src/lib/errorWhere.ts`, `whereMaps.ts`), and
 `error/chunk`, a part that didn't load, among them)
 and `sync/paired`. Each device that shows a game, a guest's and a watcher's
 too, sends `frames2/<device>/<bucket>[/<moment>]` once a game

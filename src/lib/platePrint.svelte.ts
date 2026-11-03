@@ -21,6 +21,7 @@
 
 import type { Engraved, Fade } from './cardEngraving';
 import { whenIdle } from './idle';
+import { knockoutShapes } from './knockout';
 import { pixelsOf, placedBy, type At } from './printPlacing';
 
 export type { At };
@@ -170,7 +171,7 @@ export function pull(plate: Engraved, layer: Layer, at: At, ink: string, svg: SV
   if (!place) return Promise.resolve(null);
   const { paths, left } = pathsOf(svg, Math.min(place[0], place[1]));
   const print: Print = { left, made: Promise.resolve(null) };
-  print.made = (paths.length ? ask({ size: pixelsOf(at), view: [at.w, at.h], at: place, paths, fade: plate.fade, knockout: plate.knockout?.split(/(?<=Z)(?=M)/) ?? [] }) : Promise.resolve(null))
+  print.made = (paths.length ? ask({ size: pixelsOf(at), view: [at.w, at.h], at: place, paths, fade: plate.fade, knockout: plate.knockout ? knockoutShapes(plate.knockout) : [] }) : Promise.resolve(null))
     .then(async (png) => {
       if (!png) return paths.length ? null : '';
       const url = URL.createObjectURL(png);

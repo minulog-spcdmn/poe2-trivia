@@ -59,9 +59,11 @@ MORE.push([THREATS.flatMap((t) => GROUPS.map((g) => `${t}[ ][al][l][ ][the][ ]${
 
 /**
  * Codes obscenity can't see, as leetspeak reads digits as letters and k is collapsed: 1488 and 14/88, KKK
- * (but not "kkkk", which is laughter in Brazil).
+ * (but not "kkkk", which is laughter in Brazil). No lookbehind (the character before is matched instead, as
+ * only whether it matches counts): Safari before 16.4 can't read one, and this module is on the start page's
+ * path, so the game wouldn't start there at all.
  */
-const CODES = /(?<!\d)14[^\p{L}\p{N}]{0,2}88(?!\d)|(?<!k)kkk(?!k)/iu;
+const CODES = /(?:^|\D)14[^\p{L}\p{N}]{0,2}88(?!\d)|(?:^|[^k])kkk(?!k)/iu;
 
 /**
  * The matcher, and one for the same terms that spares no innocent words. Built on the first check rather than
@@ -90,8 +92,15 @@ function build() {
 /** What splits a name into words: anything but letters, digits and the leetspeak obscenity reads as letters (@ ( $ | ! /). */
 const BREAKS = /[^\p{L}\p{N}@($|!/]+/gu;
 
-/** Spaced-out letters put back together ("n i g g e r" → "nigger"). */
-const joinLetters = (s: string) => s.replace(/(?<=(?:^| )\S) (?=\S(?: |$))/gu, '');
+/** A word of one letter (or any one character but a space's kind). */
+const LONE = /^\S$/u;
+/** Spaced-out letters put back together ("n i g g e r" → "nigger"): each space between two words of one letter goes (by words, not with a lookbehind, which Safari before 16.4 can't read). */
+export const joinLetters = (s: string) => {
+  const words = s.split(' ');
+  let out = words[0];
+  for (let i = 1; i < words.length; i++) out += (LONE.test(words[i - 1]) && LONE.test(words[i]) ? '' : ' ') + words[i];
+  return out;
+};
 
 /**
  * The ways a name is read: as typed, with punctuation as spaces ("sieg_heil" → "sieg heil"); split into
