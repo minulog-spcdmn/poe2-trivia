@@ -98,6 +98,7 @@
   // images of themselves, pulled from their svgs once for each size, which
   // Chrome draws for a fraction of what their strokes cost it.
   import { engrave } from '../lib/cardEngraving';
+  import { knockoutShapes } from '../lib/knockout';
   import { findVariant } from '../lib/findEngraving';
   import { leftKey, printing, pull, pulled, type At, type Layer } from '../lib/platePrint.svelte';
   import { layoutZoomOf } from '../lib/stage';
@@ -159,7 +160,7 @@
   const variant = $derived(custom ?? (find ? findVariant(find) : undefined));
   const plate = $derived(w && h ? engrave(side, w, h, variant) : null);
   /** The shapes the plate's lines stop short of, one path each (overlapping shapes of one path would cancel out). */
-  const knockout = $derived(plate?.knockout ? plate.knockout.split(/(?<=Z)(?=M)/) : []);
+  const knockout = $derived(plate?.knockout ? knockoutShapes(plate.knockout) : []);
   /** The plate's strokes, or in front, those that stand in front of the emblem. */
   const strokes = $derived(plate?.strokes.filter((s) => !!s.front === front) ?? []);
   const motif = $derived(strokes.filter((s) => s.motif));

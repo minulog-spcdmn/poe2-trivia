@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { minify, transformWithOxc, type Plugin } from 'vite';
+import { minify, parseSync, transformWithOxc, type Plugin } from 'vite';
 
 /**
  * The built-ins an older browser lacks (src/lib/polyfills.ts), compiled and
@@ -23,5 +23,39 @@ export function polyfillsFirst(): Plugin {
   return {
     name: 'polyfills-first',
     transformIndexHtml: async (html) => (html.includes('type="module"') ? [{ tag: 'script', children: await polyfillsScript(), injectTo: 'head' }] : undefined),
+  };
+}
+
+/**
+ * The regular expressions in a script that Safari before 16.4 can't read (a
+ * lookbehind), each as written. Unlike a missing built-in, nothing can fill
+ * one in: a script holding one fails to load there as a whole, before any of
+ * it runs, and on the start page's path that's a page with nothing on it.
+ */
+export function unreadableRegexes(code: string): string[] {
+  const found: string[] = [];
+  const walk = (node: unknown): void => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) return node.forEach(walk);
+    const n = node as { type?: string; regex?: { pattern: string; flags: string } };
+    if (n.type === 'Literal' && n.regex && /\(\?<[=!]/.test(n.regex.pattern)) found.push(`/${n.regex.pattern}/${n.regex.flags}`);
+    for (const k in n) if (k !== 'parent') walk((n as Record<string, unknown>)[k]);
+  };
+  walk(parseSync('x.js', code).program);
+  return found;
+}
+
+/** Fails the build on a script with a regular expression Safari before 16.4 can't read (unreadableRegexes), the packages' code too. */
+export function readableRegexes(): Plugin {
+  return {
+    name: 'readable-regexes',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      for (const file of Object.values(bundle)) {
+        if (file.type !== 'chunk') continue;
+        const found = unreadableRegexes(file.code);
+        if (found.length) this.error(`${file.fileName} holds ${found.join(', ')}: a lookbehind, which Safari before 16.4 can't read, so the script fails to load there; match the character before instead.`);
+      }
+    },
   };
 }
