@@ -3,12 +3,16 @@
 import type { Named, Span } from './api';
 import type { Changes } from './changes';
 import type { Counts } from './model';
+import { daysBetween } from './model.ts';
 import { addDays, dayIn, hourStarts, hoursIn, midnight } from './zone.ts';
+
+/** The shape reads are kept in: a read kept by an older build (another number) is read again. */
+export const READ_V = 13;
 
 /** A period read: its days and the same many before, with what the start page's visitors came on and from. */
 export interface Read {
-  /** The shape this was kept in: a read kept by an older build is read again. */
-  v: 12;
+  /** The shape this was kept in (READ_V). */
+  v: number;
   /** The period's length; `from` is later where counting began inside it (counted). */
   span: number;
   from: string;
@@ -101,6 +105,27 @@ export const PERIODS: readonly Period[] = [
   // 52 weeks: drawn by the week, a year of whole weeks has no stub of a day at its start.
   { value: 364, name: 'Year', now: 'The last 52 weeks', before: 'the 52 weeks before' },
 ];
+
+/** A kept read of `days`, from what storage holds: null where it's another shape's, another period's, or nothing. */
+export function keptRead(raw: string | null, days: number): Read | null {
+  try {
+    const r = JSON.parse(raw ?? 'null') as Read | null;
+    return r?.v === READ_V && r.span === days ? r : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The shortest period that holds every day counted from `began` to `today`,
+ * where counting began inside the longest: it and those longer are one
+ * choice ("Since Oct 16"), and a longer one kept from before is read as it.
+ */
+export function coverOf(began: string | null, today: string): Period | null {
+  if (!began) return null;
+  const n = daysBetween(began, today).length;
+  return n > PERIODS[PERIODS.length - 1].value ? null : (PERIODS.find((p) => p.value >= n) ?? null);
+}
 
 /** The views, each a question; the overview is the page without a #. */
 export const VIEWS = [

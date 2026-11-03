@@ -5,7 +5,7 @@ import { axis, dayRange, labelled, restsOn } from '../src/statsPage/chart.ts';
 import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
 import { appShare, backShare, beforeShare, beyondChanceOf, busiestStandsOut, comersOf, countsApart, failureRate, gamesSpread, healthOf, sameLabels, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
-import { spansOf, untilDay } from '../src/statsPage/read.ts';
+import { READ_V, coverOf, keptRead, spansOf, untilDay } from '../src/statsPage/read.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
 import { apartFrom, countsIn, depthCalls, depthsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
 import { currentName, isoWeek, underNamesNow, weekMonday, busiest, hoursHad, seatsOf, weekAverage, zFor, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, countedSpan, dayAverageHours, dayAverages, firstCounted, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, stutterTop, usualByNow, usualByNowUtc, USUAL_DAYS, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
@@ -1559,4 +1559,24 @@ test('a range across a new year says the years, so a year never reads as run bac
   assert.equal(dayRange('2026-10-05', '2026-11-03'), 'Oct 5 to Nov 3');
   assert.equal(dayRange('2025-11-05', '2026-11-03'), 'Nov 5, 2025 to Nov 3, 2026');
   assert.equal(dayRange('2026-12-21', '2027-01-19'), 'Dec 21, 2026 to Jan 19, 2027');
+});
+
+test('a kept read is used only in the shape this build keeps, and for its own period', () => {
+  const r = { ...demoUpdate(30), v: READ_V };
+  const raw = JSON.stringify(r);
+  assert.equal(keptRead(raw, 30)?.span, 30);
+  assert.equal(keptRead(raw, 7), null);
+  assert.equal(keptRead(JSON.stringify({ ...r, v: READ_V - 1 }), 30), null);
+  assert.equal(keptRead(null, 30), null);
+  assert.equal(keptRead('{not json', 30), null);
+});
+
+test('the periods counting has not reached are one, the shortest that holds every day counted', () => {
+  assert.equal(coverOf(null, '2026-11-03'), null);
+  // 19 days counted: the Month holds them, Quarter and Year are it again.
+  assert.equal(coverOf('2026-10-16', '2026-11-03')?.value, 30);
+  assert.equal(coverOf('2026-10-28', '2026-11-03')?.value, 7);
+  assert.equal(coverOf('2026-10-28', '2026-11-04')?.value, 30);
+  // Past the longest, every period is its own.
+  assert.equal(coverOf('2025-10-16', '2026-11-03'), null);
 });
