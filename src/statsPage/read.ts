@@ -52,16 +52,22 @@ export interface Read {
  * counting began earlier, that day has counts, which tell the period before
  * was counted from its first (model.ts countedSpan); its counts aren't
  * taken (countsOf). `until`: the hours today has had, a part of the one
- * it's in too.
+ * it's in too. `began`: the first whole day counted, where it's kept
+ * (Analytics): nothing from before the day counting began partway through
+ * is asked for, and no period before at all where it all lies before then
+ * (`before` null).
  */
-export function spansOf(zone: string, at: Date, days: number) {
+export function spansOf(zone: string, at: Date, days: number, began: string | null = null) {
   const today = dayIn(zone, at);
   const from = addDays(today, -(days - 1));
   const fromBefore = addDays(from, -days);
   const toBefore = addDays(today, -days);
   const until = hoursIn(zone, today, at);
-  const now: Span = { start: midnight(zone, from), end: at };
-  const before: Span = { start: midnight(zone, addDays(fromBefore, -1)), end: new Date(hourStarts(zone, toBefore)[Math.floor(until) + 1] - 1) };
+  const counting = began && addDays(began, -1);
+  const notBefore = (day: string) => (counting && counting > day ? counting : day);
+  const now: Span = { start: midnight(zone, notBefore(from)), end: at };
+  const before: Span | null =
+    counting && counting > toBefore ? null : { start: midnight(zone, notBefore(addDays(fromBefore, -1))), end: new Date(hourStarts(zone, toBefore)[Math.floor(until) + 1] - 1) };
   return { today, from, fromBefore, toBefore, until, now, before };
 }
 

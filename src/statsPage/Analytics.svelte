@@ -181,7 +181,7 @@
     loading = true;
     failed = '';
     progress = 0;
-    const steps = 10;
+    let steps = 10;
     let done = 0;
     const step = <T,>(p: Promise<T>) =>
       p.then((v) => {
@@ -194,23 +194,27 @@
       if (ask !== asked) return;
       const tz = zone.zone;
       const at = new Date();
-      const { today, from, fromBefore, toBefore, until, now, before } = spansOf(tz, at, days);
-      const [n, b] = await Promise.all([step(pathCounts(k, now, tz, signal)), step(pathCounts(k, before, tz, signal))]);
+      // Nothing from before counting began, where that's known: a Quarter or a Year read since then reads only what's there.
+      const { today, from, fromBefore, toBefore, until, now, before } = spansOf(tz, at, days, began);
+      if (!before) steps--;
+      const none = { paths: [], complete: true };
+      const [n, b] = await Promise.all([step(pathCounts(k, now, tz, signal)), before ? step(pathCounts(k, before, tz, signal)) : none]);
       if (ask !== asked) return;
       // The period starts where whole days were counted (model.ts countedSpan), the one before the same many days back; who the visitors were is read from there too.
       const first = firstCounted([...b.paths, ...n.paths]);
       const { start, compare } = countedSpan(first, from, fromBefore, today);
       const shown: Span = { start: midnight(tz, start), end: at };
-      const shownBefore: Span = { ...before, start: midnight(tz, addDays(start, -days)) };
-      // Countries are kept by the day, so they're compared over whole days alone: the period's to yesterday, as many before.
+      // Who brought more or fewer than the period before, only where it's compared (WhatHappened). Countries are kept by the day, so they're compared over whole days alone: the period's to yesterday, as many before.
+      const against = compare && before ? { ...before, start: midnight(tz, addDays(start, -days)) } : null;
+      if (!against) steps -= 3;
       const [systems, countries, refs, campaigns, countriesBefore, refsBefore, countriesWhole] = await Promise.all([
         step(visitorsBy(k, shown, 'systems', signal)),
         step(visitorsBy(k, shown, 'locations', signal)),
         step(visitorsBy(k, shown, 'toprefs', signal)),
         step(visitorsBy(k, shown, 'campaigns', signal)),
-        step(visitorsBy(k, untilDay(tz, shownBefore, toBefore), 'locations', signal)),
-        step(visitorsBy(k, shownBefore, 'toprefs', signal)),
-        compare ? step(visitorsBy(k, untilDay(tz, shown, today), 'locations', signal)) : [],
+        against ? step(visitorsBy(k, untilDay(tz, against, toBefore), 'locations', signal)) : [],
+        against ? step(visitorsBy(k, against, 'toprefs', signal)) : [],
+        against ? step(visitorsBy(k, untilDay(tz, shown, today), 'locations', signal)) : [],
       ]);
       if (ask !== asked) return;
       const counts = countsOf(n.paths, daysBetween(start, today), tz, until);

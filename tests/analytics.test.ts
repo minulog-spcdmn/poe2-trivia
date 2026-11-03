@@ -1362,11 +1362,11 @@ const steady = (from: string, at: Date, every = 30): Hit[] => {
   return out;
 };
 /** Where a read made as Analytics' load() makes it starts its period, and whether it compares. */
-const readAt = (hits: Hit[], at: Date, days: number) => {
+const readAt = (hits: Hit[], at: Date, days: number, began: string | null = null) => {
   const tz = 'Europe/Berlin';
-  const s = spansOf(tz, at, days);
+  const s = spansOf(tz, at, days, began);
   const n = goatCounter(hits, s.now, tz, at);
-  const b = goatCounter(hits, s.before, tz, at);
+  const b = s.before ? goatCounter(hits, s.before, tz, at) : [];
   return { ...s, ...countedSpan(firstCounted([...b, ...n]), s.from, s.fromBefore, s.today) };
 };
 
@@ -1433,4 +1433,24 @@ test('countries are compared over whole days, as GoatCounter keeps them by the d
   const before = countries(hits, untilDay(tz, { ...s.before, start: midnight(tz, s.fromBefore) }, s.toBefore));
   assert.equal(now, 6 * 24 * 6);
   assert.equal(before, now);
+});
+
+test('where counting began is known, nothing from before it is read, and the period comes out the same', () => {
+  // Counting began partway through Oct 16; a Quarter and a Year read on Nov 3.
+  const at = new Date('2026-11-03T09:30:00Z');
+  const hits = steady('2026-10-16T13:00:00Z', at);
+  for (const days of [90, 364]) {
+    const r = readAt(hits, at, days, '2026-10-17');
+    assert.equal(dayIn('Europe/Berlin', r.now.start), '2026-10-16');
+    assert.equal(r.before, null);
+    assert.deepEqual([r.start, r.compare], [readAt(hits, at, days).start, false]);
+    assert.equal(r.start, '2026-10-17');
+  }
+  // A Week, its period before after counting began: read from the day before it, as without it.
+  assert.equal(dayIn('Europe/Berlin', readAt(hits, at, 7, '2026-10-17').before!.start), '2026-10-20');
+  // A Month on Nov 16 (from Oct 18): its period before (Sep 18 to Oct 17) is read from the day counting began on, and isn't compared.
+  const later = new Date('2026-11-16T09:30:00Z');
+  const month = readAt(steady('2026-10-16T13:00:00Z', later), later, 30, '2026-10-17');
+  assert.equal(dayIn('Europe/Berlin', month.before!.start), '2026-10-16');
+  assert.deepEqual([month.start, month.compare], ['2026-10-18', false]);
 });
