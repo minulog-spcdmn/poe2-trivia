@@ -13,15 +13,14 @@
   import { average, fmt, restsOn, shortDay } from './chart';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
-  import { backShare, busiestStandsOut, comersOf, gamesSpreadOf, healthOf, spikesOf, troubleOf } from './insights';
+  import { backShare, busiestStandsOut, comersOf, gamesSpreadOf, healthOf, spikesOf, troubleOf, type Comers } from './insights';
   import Kpi from './Kpi.svelte';
-  import { DAILY_FROM, DEVICE_NAMES, MODE_NAMES, answersPerDay, asked, dailyAverage, dailyDays as dailyDaysOf, dayAverageHours, dayAverages, deviceOf, finishedShare, hoursHad, modesOf, percent, weekAverage, type Counts } from './model';
+  import { DAILY_FROM, DEVICE_NAMES, MODE_NAMES, RETURNS, answersPerDay, asked, dailyAverage, dailyDays as dailyDaysOf, dayAverageHours, dayAverages, deviceOf, finishedShare, hoursHad, modesOf, percent, sharePerDay, weekAverage, type Counts } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
   import Seg from './Seg.svelte';
   import { deviceLink, modeLink, placeLink } from './slices';
   import Spark from './Spark.svelte';
-  import Steps from './Steps.svelte';
   import Today from './Today.svelte';
   import TrendChart from './TrendChart.svelte';
   import WeekHours from './WeekHours.svelte';
@@ -44,9 +43,19 @@
   /** The game going worse than in the period before: its scripts' errors and parts that didn't load, a kind of device stuttering (insights.ts healthOf). */
   const health = $derived(read.compare ? healthOf(L, B) : null);
   const worst = $derived(L.failures.find((f) => !f.script));
-  /** Of the visits that found a save or none, those that found one (insights.ts backShare). */
+  /** Of the visits that found a save or none, those that found one (insights.ts backShare), now and in the period before: how many come back, the overview's fourth figure. */
   const comers = $derived(comersOf(L));
   const back = $derived(backShare(comers));
+  const comersBefore = $derived(comersOf(B));
+  const backBefore = $derived(backShare(comersBefore));
+  const told = (w: Comers) => w.fresh + w.returned;
+  /** Each day's share who came back, from the first day visits were told apart. */
+  const backDays = $derived.by(() => {
+    const from = Math.max(0, comers.from ? L.days.indexOf(comers.from) : 0);
+    const returned = L.days.map((_, i) => RETURNS.reduce((n, r) => n + (L.visits[r][i] ?? 0), 0));
+    const all = returned.map((n, i) => n + (L.visits.new[i] ?? 0));
+    return { days: L.days.slice(from), values: sharePerDay(returned, all).slice(from) };
+  });
 
   const METRICS = [
     { value: 'visitors', name: 'Visits' },
@@ -185,7 +194,15 @@
       {#snippet spark()}<Spark days={L.days.filter(asked)} values={answersPerDay(L).filter((_, i) => asked(L.days[i]))} {weekly} label="Players of Today's unique a day" />{/snippet}
       {#snippet change()}{#if read.compare && dailyNow !== null && dailyBefore === null}<span class="soft">Nothing to compare: it began {shortDay(DAILY_FROM)}</span>{:else}<Delta now={dailyNow} before={dailyBefore} digits={1} of={dailyNow !== null && dailyBefore !== null ? { now: dailyNow * dailyDays, before: dailyBefore * dailyDays } : undefined} period={before} />{/if}{/snippet}
     </Kpi>
-    <Steps {read} period={{ ...period, before }} />
+    <Kpi
+      label="Came back"
+      value={back === null ? '–' : `${Math.round(back)}%`}
+      means="of the visits told new or back found their save{restsOn(comers.returned, told(comers), comers.from && comers.from > read.from ? comers.from : null)}"
+      href="#visitors"
+    >
+      {#snippet spark()}<Spark days={backDays.days} values={backDays.values} {weekly} label="The share who came back a day" />{/snippet}
+      {#snippet change()}<Delta now={back} before={backBefore} rate of={{ now: told(comers), before: told(comersBefore) }} period={before} />{/snippet}
+    </Kpi>
   </div>
   <div class="chart">
     <Section title="How busy it was" says={oneScreen ? '' : !read.compare ? `Each ${weekly ? 'week' : 'day'}, the dashed line its average.` : weekly ? 'Each week against the same week of the period before.' : 'Each day against the same day of the period before.'}>
@@ -218,11 +235,8 @@
     <Section title="Where they are">
       {#snippet aside()}<a class="to-view" href="#visitors">Visitors ›</a>{/snippet}
       <Bars bars={countries} top={5} empty="No visitors in these days." link={placeLink} fresh={freshOf(read.changes, read.at, 'countries')} />
-      {#if phones.all || back !== null}
-        <p class="line">
-          {#if phones.all}<b>{percent(phones.phone, phones.all)}</b> came on a <a class="pick" href={deviceLink('Phone or tablet')}>phone or tablet</a>.{/if}
-          {#if back !== null}Of the visits told new or back, <b>{Math.round(back)}%</b> came back to a save{restsOn(comers.returned, comers.fresh + comers.returned, comers.from && comers.from > read.from ? comers.from : null)}.{/if}
-        </p>
+      {#if phones.all}
+        <p class="line"><b>{percent(phones.phone, phones.all)}</b> came on a <a class="pick" href={deviceLink('Phone or tablet')}>phone or tablet</a>.</p>
       {/if}
     </Section>
 
