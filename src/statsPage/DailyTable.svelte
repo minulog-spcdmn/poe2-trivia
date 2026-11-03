@@ -29,7 +29,7 @@
     {/each}
   </ol>
 {:else}
-<div class="scroll-x">
+<div class="scroll-x days">
   <table class="table" aria-label={label}>
     <thead>
       <tr>
@@ -123,5 +123,20 @@
   .bar {
     width: 22%;
     min-width: 5rem;
+  }
+  /* Kept to the width it's given (half the view, the hardest beside the easiest): there the bar goes, the share beside it says it, and a long name takes two lines rather than the table more width. */
+  .days {
+    container-type: inline-size;
+  }
+  @container (max-width: 38rem) {
+    .bar {
+      display: none;
+    }
+    .item {
+      min-width: 0;
+    }
+    .iname {
+      white-space: normal;
+    }
   }
 </style>
