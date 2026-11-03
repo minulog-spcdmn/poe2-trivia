@@ -10,7 +10,9 @@
   // largest, the count, and its share of them all. The first `top` show; the
   // rest open below. `link`: where a name leads (its player group), and
   // `fresh`: what the last update brought each, marked beside its count.
+  // Bars named alike are one (insights.ts sameLabels).
   import { fmt } from './chart';
+  import { sameLabels } from './insights';
   import { percent } from './model';
 
   let {
@@ -23,13 +25,14 @@
   }: { bars: Bar[]; top?: number; empty?: string; tone?: 'now' | 'down'; link?: (label: string) => string | null; fresh?: Map<string, number> } = $props();
 
   let all = $state(false);
-  const total = $derived(bars.reduce((n, b) => n + b.count, 0));
-  const max = $derived(Math.max(1, ...bars.map((b) => b.count)));
-  const ranked = $derived([...bars].sort((a, b) => b.count - a.count));
+  const named = $derived(sameLabels(bars));
+  const total = $derived(named.reduce((n, b) => n + b.count, 0));
+  const max = $derived(Math.max(1, ...named.map((b) => b.count)));
+  const ranked = $derived([...named].sort((a, b) => b.count - a.count));
   const shown = $derived(all ? ranked : ranked.slice(0, top));
 </script>
 
-{#if !bars.length}
+{#if !named.length}
   <p class="empty">{empty}</p>
 {:else}
   <ol class="bars" class:down={tone === 'down'}>
@@ -44,8 +47,8 @@
       </li>
     {/each}
   </ol>
-  {#if bars.length > top}
-    <button type="button" class="more" onclick={() => (all = !all)}>{all ? 'Show fewer' : `Show all ${bars.length}`}</button>
+  {#if named.length > top}
+    <button type="button" class="more" onclick={() => (all = !all)}>{all ? 'Show fewer' : `Show all ${named.length}`}</button>
   {/if}
 {/if}
 

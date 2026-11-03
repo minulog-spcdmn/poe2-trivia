@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { addDays, dayIn, hoursIn, midnight, zoneOf } from '../src/statsPage/zone.ts';
 import { axis, labelled, restsOn } from '../src/statsPage/chart.ts';
 import { demoRead, demoSlices, demoUpdate } from '../src/statsPage/demo.ts';
-import { appShare, backShare, beforeShare, beyondChanceOf, busiestStandsOut, comersOf, countsApart, failureRate, gamesSpread, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
+import { appShare, backShare, beforeShare, beyondChanceOf, busiestStandsOut, comersOf, countsApart, failureRate, gamesSpread, sameLabels, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
 import { apartFrom, countsIn, depthCalls, depthsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
@@ -916,6 +916,21 @@ test('who came: with no save on the device or back to one after so long, of thos
   // Before they were told apart: nothing to say, not 0%.
   const none = comersOf(countsOf([path('/', [10, 10, 10], false)], DAYS));
   assert.deepEqual([none.from, backShare(none), appShare(none)], [null, null, null]);
+});
+
+test("bars named alike are one, so a label counted from outside can't take another's place", () => {
+  assert.deepEqual(
+    sameLabels([
+      { label: 'No room with that code', count: 4 },
+      { label: 'Opening a room: host-spam', count: 1 },
+      { label: 'No room with that code', count: 1 },
+      { label: 'Opening a room: host-spam', count: 2 },
+    ]),
+    [
+      { label: 'No room with that code', count: 5 },
+      { label: 'Opening a room: host-spam', count: 3 },
+    ],
+  );
 });
 
 test("the game's own script errors and its parts that didn't load are listed with the failures, but aren't joining's", () => {

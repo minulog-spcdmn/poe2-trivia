@@ -411,6 +411,21 @@ export function busiestStandsOut(grid: number[][], had: number[][]): boolean {
 }
 
 /**
+ * A list with each label once, the counts of those labelled alike added up:
+ * labels can come from outside (a failure the page doesn't know is labelled
+ * by its own key, which anyone can count), so two can meet, and a list
+ * keyed by its labels can't hold both.
+ */
+export function sameLabels<T extends { label: string; count: number }>(list: T[]): T[] {
+  const out = new Map<string, T>();
+  for (const b of list) {
+    const had = out.get(b.label);
+    out.set(b.label, had ? { ...had, count: had.count + b.count } : b);
+  }
+  return [...out.values()];
+}
+
+/**
  * Joining going worse than usual: failures (joining a room, or opening
  * one) against what the usual rate would give for as many games and tries
  * to join, each only beyond chance. `period`: the period's against the
