@@ -707,10 +707,16 @@ they're worth more sigils than are unlocked already. Kept in this browser (`src/
     click (there's no device to bar). See `Player.local` and `aside` in
     `src/lib/game.ts`.
   - **No connection:** a room that can't go online (no connection to the
-    matchmaking server, or a page that can't seal pictures) opens anyway, on
-    this device only: nobody can join, players at the screen are added in
-    its lobby, and a reload picks it up there (`hostHere` in
-    `src/lib/session.svelte.ts`).
+    matchmaking server after 20 seconds of trying, or a page that can't seal
+    pictures) opens anyway, on this device only: nobody can join, players at
+    the screen are added in its lobby, and a reload picks it up there
+    (`hostHere` in `src/lib/session.svelte.ts`). Until then a network that
+    drops for a moment is tried again (`openAgain`), and a slow one is
+    waited for. A page back from the background (switching apps to share
+    the code) gets its 20 seconds afresh, and a join its 30 (`nudge`,
+    `backFromAway`); a page that stays hidden still gives up. A reopened
+    room whose server never answers a try in 20 seconds isn't reopened,
+    and stays saved for a refresh.
   - Players who refresh or drop out rejoin automatically. Outside Delve, the
     host can skip the turn of a player who is disconnected. Opening the same room in a
     second tab moves your seat there, and the first tab lets it go.
