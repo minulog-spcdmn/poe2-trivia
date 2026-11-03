@@ -300,11 +300,7 @@
       ctrl.abort();
       if (ask !== asked || err instanceof Cancelled) return;
       fails = { n: fails.n + 1, at: Date.now(), busy: err instanceof ApiError && err.kind === 'busy' };
-      if (err instanceof ApiError && err.kind === 'key') {
-        // A key GoatCounter turns down is no use kept: the next visit asks for a new one straight away.
-        forget();
-        refused = err.message;
-      } else failed = err instanceof Error ? err.message : 'Something went wrong.';
+      if (!turnedDown(err, k)) failed = err instanceof Error ? err.message : 'Something went wrong.';
     } finally {
       if (ask === asked) {
         loading = false;
@@ -312,6 +308,20 @@
       }
       countRequests();
     }
+  }
+
+  /**
+   * A key GoatCounter turns down (`k`, while it's still the one in use) is
+   * no use kept: back to the door, which asks for a new one, the key as it
+   * was in its field to put right. Whether it was that.
+   */
+  function turnedDown(err: unknown, k: string) {
+    if (!(err instanceof ApiError && err.kind === 'key')) return false;
+    if (k !== key) return true;
+    forget();
+    refused = err.message;
+    typed = k;
+    return true;
   }
 
   // ---- player groups: read while their view is open, kept a while ----
@@ -343,6 +353,7 @@
     slicer?.abort();
     stopDepths();
     const ctrl = (slicer = new AbortController());
+    const k = key;
     const calls = sliceCalls(r.now);
     let done = 0;
     slicing = 0.02;
@@ -353,7 +364,7 @@
       await Promise.all(
         calls.map((c) =>
           // Each from its own first day (slices.ts groupFrom), so a share and what it's of cover the same days.
-          pathsBy(key, { start: midnight(r.zone, c.from), end }, c.dim, c.paths, ctrl.signal).then((list) => {
+          pathsBy(k, { start: midnight(r.zone, c.from), end }, c.dim, c.paths, ctrl.signal).then((list) => {
             out[c.dim][c.group] = list;
             // (Not once it's been called off: what's read for another period has its own.)
             if (slicer === ctrl) slicing = ++done / calls.length;
@@ -364,7 +375,7 @@
       if (r.span === span) slices = out;
     } catch (err) {
       ctrl.abort();
-      if (!(err instanceof Cancelled)) slicesFailed = err instanceof Error ? err.message : 'Something went wrong.';
+      if (!(err instanceof Cancelled) && !turnedDown(err, k)) slicesFailed = err instanceof Error ? err.message : 'Something went wrong.';
     } finally {
       if (slicer === ctrl) {
         slicer = null;
@@ -399,6 +410,7 @@
     depthsFor = s.at;
     depther?.abort();
     const ctrl = (depther = new AbortController());
+    const k = key;
     depthsReading = true;
     depthsFailed = '';
     try {
@@ -407,7 +419,7 @@
       const end = new Date(s.at);
       await Promise.all(
         depthCalls(r.now).map((c) =>
-          pathsBy(key, { start: midnight(r.zone, c.start), end }, c.dim, c.paths, ctrl.signal).then((list) => {
+          pathsBy(k, { start: midnight(r.zone, c.start), end }, c.dim, c.paths, ctrl.signal).then((list) => {
             depths[c.dim]![c.from] = list;
           }),
         ),
@@ -418,7 +430,7 @@
     } catch (err) {
       ctrl.abort();
       if (depthsFor === s.at) depthsFor = 0;
-      if (!(err instanceof Cancelled) && depther === ctrl) depthsFailed = err instanceof Error ? err.message : 'Something went wrong.';
+      if (!(err instanceof Cancelled) && depther === ctrl && !turnedDown(err, k)) depthsFailed = err instanceof Error ? err.message : 'Something went wrong.';
     } finally {
       if (depther === ctrl) {
         depther = null;
@@ -665,7 +677,7 @@
 
 <main class="analytics" class:idle class:stale aria-busy={stale}>
   {#if !key}
-    <KeyGate onkey={useKey} {refused} />
+    <KeyGate onkey={useKey} {refused} {typed} />
   {:else}
     {#if read}
       <p class="dates">
