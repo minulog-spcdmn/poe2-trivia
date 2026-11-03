@@ -172,7 +172,9 @@ read in winter keeps its own hours, and Today's unique, asked by UTC
 days, is moved there hour by hour (`model.ts` utcPerDay). A read is kept
 in localStorage and shared between tabs: a second tab (the board beside
 a laptop's) finds the first one's fresh read and asks GoatCounter
-nothing, and shows another tab's newer read of its period as it lands. A
+nothing, waits for a read of its period another tab has under way rather
+than read it too (`analytics.reading`), and shows another tab's newer read
+of its period as it lands. A
 period read for the first time shows its counts as soon as the hits are
 in, about 1.5 s, with "Reading…" where the lists of who came, on what and
 from where are still on the way (`read.ts` orReading); a read kept by an

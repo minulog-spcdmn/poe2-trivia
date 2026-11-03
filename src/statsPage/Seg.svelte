@@ -1,9 +1,10 @@
 <script lang="ts" generics="T extends string | number">
   // A row of choices, one picked: the game's own (the lobby's settings),
-  // square buttons side by side, the picked one lit in gold. A radio group:
-  // Tab reaches the picked one, the arrow keys (Home, End) move along it and
-  // Space or Enter picks, so arrowing past a choice neither reads its days
-  // nor leaves it in the history.
+  // square buttons side by side, the picked one lit in gold. A toolbar of
+  // toggle buttons, the picked one pressed: Tab reaches it, the arrow keys
+  // (Home, End) move along the row and Space or Enter picks, so arrowing
+  // past a choice neither reads its days nor leaves it in the history (a
+  // radio group's arrows would pick as they go, and a screen reader says so).
   let { options, value, onpick, label }: { options: readonly { value: T; name: string }[]; value: T; onpick: (v: T) => void; label: string } = $props();
 
   let el = $state<HTMLElement>();
@@ -30,9 +31,9 @@
 </script>
 
 <!-- svelte-ignore a11y_interactive_supports_focus -->
-<div class="seg" role="radiogroup" aria-label={label} bind:this={el} onkeydown={key} onfocusout={left}>
+<div class="seg" role="toolbar" aria-label={label} bind:this={el} onkeydown={key} onfocusout={left}>
   {#each options as o, i (o.value)}
-    <button type="button" role="radio" class:on={o.value === value} aria-checked={o.value === value} tabindex={i === at ? 0 : -1} onclick={() => choose(i)}>{o.name}</button>
+    <button type="button" class:on={o.value === value} aria-pressed={o.value === value} tabindex={i === at ? 0 : -1} onclick={() => choose(i)}>{o.name}</button>
   {/each}
 </div>
 

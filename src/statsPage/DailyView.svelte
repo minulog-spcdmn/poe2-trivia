@@ -5,7 +5,7 @@
   // that day's item was. Which item each day asked is worked out as the
   // game does (dailyItems.ts).
   import { onMount } from 'svelte';
-  import { average, fmt, restsOn } from './chart';
+  import { average, fmt, pct, restsOn } from './chart';
   import { withDailyItems, type DailyItem } from './dailyItems';
   import DailyTable from './DailyTable.svelte';
   import DayColumns from './DayColumns.svelte';
@@ -68,7 +68,7 @@
       <b>{now === null ? '–' : average(now)}</b>
       <Delta now={now} before={before} digits={1} of={now !== null && before !== null ? { now: now * wholeDays, before: before * wholeDays } : undefined} period={period.before} />
       {#if back.answered}
-        <span class="soft back"><b>{Math.round(shareOf(back.back, back.answered)!)}%</b> came back to a save{restsOn(back.back, back.answered, back.from && back.from > read.from ? back.from : null)} <Delta now={shareOf(back.back, back.answered)} before={backWas} rate of={{ now: back.answered, before: backBefore.answered }} period={period.before} /></span>
+        <span class="soft back"><b>{pct(shareOf(back.back, back.answered))}</b> came back to a save{restsOn(back.back, back.answered, back.from && back.from > read.from ? back.from : null)} <Delta now={shareOf(back.back, back.answered)} before={backWas} rate of={{ now: back.answered, before: backBefore.answered }} period={period.before} /></span>
       {/if}
     </div>
     <div class="figure">

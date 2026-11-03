@@ -63,7 +63,7 @@
 
   const known = (r: SegmentRow) => r.who.name !== 'Unknown' && r.who.name !== 'Other';
   /** Whether the picked group had visits in the period: a link with a name in no list (mistyped, or from another period) gets no chip and no empty table. */
-  const counted = $derived(!slices || !who || segments(slices, who.kind, Infinity).some((r) => r.who.name === who.name));
+  const counted = $derived(!mine || mine.visit > 0);
   /** The chips of a kind: its biggest groups, and the picked one even where it isn't among them (opened from a list). Those too small to tell apart only once "More" is open, the picked one always. */
   let more = $state(false);
   const chipsOf = (rows: SegmentRow[]) => {

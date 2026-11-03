@@ -10,7 +10,7 @@
   // The monitor button shows it full screen, kept awake.
   import Bars from './Bars.svelte';
   import { freshOf } from './changes';
-  import { average, fmt, restsOn, shortDay } from './chart';
+  import { average, fmt, pct, restsOn, shortDay } from './chart';
   import Delta from './Delta.svelte';
   import { fitChart } from './fitChart.svelte';
   import { backBeforeOf, backShare, busiestStandsOut, comersOf, gamesSpreadOf, healthOf, spikesOf, troubleOf, type Comers } from './insights';
@@ -172,7 +172,7 @@
         <span>
           <b>Games stutter more than before.</b>
           {#each health.stutter as d (d.device)}
-            {DEVICE_NAMES[d.device]}: {Math.round(d.share)}% of {fmt(d.games)} games stuttered, against {Math.round(d.before)}% in {period.before}.
+            {DEVICE_NAMES[d.device]}: {pct(d.share)} of {fmt(d.games)} games stuttered, against {pct(d.before)} in {period.before}.
           {/each}
         </span>
         <span class="go">See where ›</span>
@@ -197,7 +197,7 @@
     </Kpi>
     <Kpi
       label="Came back"
-      value={back === null ? '–' : `${Math.round(back)}%`}
+      value={pct(back)}
       means="of the visits told new or back found their save{restsOn(comers.returned, told(comers), comers.from && comers.from > read.from ? comers.from : null)}"
       href="#visitors"
     >

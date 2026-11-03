@@ -19,6 +19,7 @@
   import { deviceLink, placeLink, systemLink } from './slices';
   import How from './How.svelte';
   import TrendChart from './TrendChart.svelte';
+  import { rootFont } from './rootFont.svelte';
   import { untrack, type Snippet } from 'svelte';
 
   let { read, period, weekly }: { read: Read; period: Period; weekly: boolean } = $props();
@@ -62,8 +63,9 @@
     if (innerWidth >= 1900) return [[visits, comeBack, byWeek], [howFar, howLong], [whereFrom, found, playOn]];
     return null;
   });
-  /** The chart's own height: 340px at the root's 16px, grown with the type on a big monitor. */
-  const base = $derived(columns ? Math.round((340 / 16) * (parseFloat(getComputedStyle(document.documentElement).fontSize) || 16)) : 340);
+  /** The chart's own height: 340px at the root's 16px, grown with the type on a big monitor (and as it follows the screen). */
+  const font = rootFont();
+  const base = $derived(columns ? Math.round((340 / 16) * font.px) : 340);
   /** Each column's height, the chart at its own. */
   let heights = $state<number[]>([]);
   let chartH = $state(340);

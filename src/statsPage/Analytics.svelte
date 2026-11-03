@@ -172,6 +172,18 @@
     reading = null;
     asked++;
     loading = false;
+    doneReading();
+  }
+  // A read under way in any tab (its tab, period and start): another tab of the same period waits for it rather than ask GoatCounter the same, and shows it as it's kept (fromElsewhere). Taken as given up after READING_MS, should its tab have closed mid-read.
+  const READING = 'analytics.reading';
+  const READING_MS = 2 * 60_000;
+  const TAB = Math.random().toString(36).slice(2);
+  function readingElsewhere(days: number) {
+    const [tab, of, since] = (readStored(READING) ?? '').split(' ');
+    return tab !== TAB && Number(of) === days && Date.now() - Number(since) < READING_MS;
+  }
+  function doneReading() {
+    if (readStored(READING)?.startsWith(`${TAB} `)) removeStored(READING);
   }
   /** Reads `days` (the period on show): `force` reads it even while fresh, and asks the time zone again. */
   async function load(days = span, force = false) {
@@ -189,6 +201,8 @@
     }
     if (had) read = had;
     stopReading();
+    if (!force && readingElsewhere(days)) return;
+    writeStored(READING, `${TAB} ${days} ${Date.now()}`);
     const ask = asked;
     const ctrl = (reading = new AbortController());
     const signal = ctrl.signal;
@@ -308,6 +322,7 @@
       if (ask === asked) {
         loading = false;
         reading = null;
+        doneReading();
       }
       countRequests();
     }
@@ -478,6 +493,7 @@
     document.addEventListener('click', follow);
     window.addEventListener('popstate', followHash);
     window.addEventListener('pagehide', keepPlace);
+    window.addEventListener('pagehide', doneReading);
     // Another tab's read of the period on show, newer than this one's: shown here too, and this tab's own given up.
     const others = onStoredElsewhere(Object.fromEntries(PERIODS.map((p) => [storeKey(readName(p.value)), () => p.value === span && fromElsewhere()])));
     return () => {
@@ -486,6 +502,7 @@
       document.removeEventListener('click', follow);
       window.removeEventListener('popstate', followHash);
       window.removeEventListener('pagehide', keepPlace);
+      window.removeEventListener('pagehide', doneReading);
       others();
     };
   });
