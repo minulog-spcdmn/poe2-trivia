@@ -51,7 +51,7 @@
   const METRICS = [
     { value: 'visitors', name: 'Visits' },
     { value: 'games', name: 'Games' },
-    { value: 'daily', name: 'Daily players' },
+    { value: 'daily', name: "Today's unique" },
   ] as const;
   let metric = $state<(typeof METRICS)[number]['value']>('visitors');
   const series = (c: Counts) => (metric === 'visitors' ? c.visitors.perDay : metric === 'games' ? c.games.perDay : answersPerDay(c));
@@ -181,7 +181,7 @@
       {#snippet spark()}<Spark days={L.days} values={L.games.perDay} {weekly} label="Games a day" />{/snippet}
       {#snippet change()}<Delta now={gamesAvg.now} before={gamesAvg.before} digits={1} of={gamesAvg.of} period={before} />{/snippet}
     </Kpi>
-    <Kpi label="Daily players" value={dailyNow === null ? '–' : average(dailyNow)} means="answered Today's unique a day, on average" href="#daily">
+    <Kpi label="Today's unique" value={dailyNow === null ? '–' : average(dailyNow)} means="players a day, on average" href="#daily">
       {#snippet spark()}<Spark days={L.days.filter(asked)} values={answersPerDay(L).filter((_, i) => asked(L.days[i]))} {weekly} label="Players of Today's unique a day" />{/snippet}
       {#snippet change()}{#if read.compare && dailyNow !== null && dailyBefore === null}<span class="soft">Nothing to compare: it began {shortDay(DAILY_FROM)}</span>{:else}<Delta now={dailyNow} before={dailyBefore} digits={1} of={dailyNow !== null && dailyBefore !== null ? { now: dailyNow * dailyDays, before: dailyBefore * dailyDays } : undefined} period={before} />{/if}{/snippet}
     </Kpi>
