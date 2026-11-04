@@ -85,7 +85,7 @@
 
 {#snippet set()}
   <p class="about">
-    {#if complete}Every fossil kept.{:else}Now and then a Delve card holds a fossil: answer it right to excavate one for your codex. Your run is unaffected.{/if}
+    {#if complete}Every fossil kept.{:else}Now and then a Delve card holds a fossil: answer it right to keep one for your codex. Your run is unchanged.{/if}
   </p>
   <div class="body">
     <div class="sets">
