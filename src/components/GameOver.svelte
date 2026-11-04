@@ -386,7 +386,8 @@
    * of twelve on a laptop 725 or 790 tall) for the column alone, the footer
    * left below.
    * Measured as it will stand once everything has come in (the entrances run
-   * to their end and back, with nothing painted between) and without
+   * to their end and back, with nothing painted between; the screen's own
+   * entrance set straight, straighten) and without
    * transitions (reduced motion gives everything one), so the first frame is
    * already the one that stays. The panel first: the column beside it may
    * stand centred against it.
@@ -403,6 +404,8 @@
     const had = document.activeElement instanceof HTMLElement && stageEl.contains(document.activeElement) ? document.activeElement : null;
     const hadList = had?.dataset.more ?? had?.closest<HTMLElement>('[data-fold]')?.dataset.fold ?? (had?.closest('.minis') ? 'minis' : undefined);
     const prev = { ...folds };
+    // (First: it writes nothing until it has read all it needs, so it can't leave anything half done.)
+    const unbent = straighten(stageEl);
     // The entrances, not the transitions: those the class below settles (a transition seeked and put back once it
     // was cancelled would come back paused at its start).
     const running = stageEl
@@ -447,6 +450,7 @@
       }
       fitted = sizes();
     } finally {
+      unbent();
       stageEl.classList.remove('fitting');
       running.forEach((a, i) => (a.currentTime = at[i]));
       // What the steps themselves changed (a row of thumbs as many as fit) isn't news to fit again for.
@@ -506,6 +510,30 @@
       else delete folds[key];
     }
     flushSync();
+  }
+  /**
+   * What holds the stage drawn scaled or moved, set straight until the returned call puts it back: the screen coming
+   * in from a game (App.svelte's screenIn, 0.98 of its size as the first fit runs) would have the columns measured
+   * short of where they stand once it's in, and the page scroll by the difference. An important declaration outranks
+   * the animation; a transition would outrank that in turn (reduced motion gives everything one), so none runs on
+   * what's straightened, nor as it's put back.
+   */
+  function straighten(el: HTMLElement) {
+    // Every one asked before any is written: a read after a write styles the page again.
+    const bent: [HTMLElement, string[]][] = [];
+    for (let up = el.parentElement; up; up = up.parentElement) {
+      const cs = getComputedStyle(up);
+      const by = (['transform', 'translate', 'scale', 'rotate'] as const).filter((prop) => cs[prop] !== 'none');
+      if (by.length) bent.push([up, ['transition-property', ...by]]);
+    }
+    const was = bent.flatMap(([up, props]) => props.map((prop) => [up, prop, up.style.getPropertyValue(prop), up.style.getPropertyPriority(prop)] as const));
+    for (const [up, prop] of was) up.style.setProperty(prop, 'none', 'important');
+    return () => {
+      for (const [up, prop, value, priority] of was) if (prop !== 'transition-property') up.style.setProperty(prop, value, priority);
+      // (Styled as it was before its transitions come back, so nothing eases back into place.)
+      for (const [up] of bent) void getComputedStyle(up).transform;
+      for (const [up, prop, value, priority] of was) if (prop === 'transition-property') up.style.setProperty(prop, value, priority);
+    };
   }
   // ---- a refit after the screen is up, moved rather than jumped -------------------------------------------------------
   /** What glides to where a refit puts it: the circle and the heart, the headline, each section, its lines and places. */
