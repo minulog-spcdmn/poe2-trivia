@@ -108,14 +108,14 @@ export function fossilSeal(kind: FossilSign, r: number, pane: number): SealArt {
 }
 
 /**
- * The pane's amber, `d` across (its layout px), as the card's back is
- * painted (one still image, the lamp's light worked in): the lamp at its
- * middle, its light carried a little past the edge so the whole pane
- * glows, the deeper red-brown only at its rim; a rare's redder. `s`, device
- * px to one.
+ * The pane's amber, `d` across (its layout px), as the card's face is
+ * painted (its body, multiplied over the lamp's light: lampLight for its
+ * `slab`): the lamp at its middle, its light carried a little past the edge
+ * so the whole pane glows, the deeper red-brown only at its rim; a rare's
+ * redder. `s`, device px to one.
  */
 export function paneJob(tier: FossilTier, d: number, s: number): AmberJob {
-  const slab: AmberSlab = { w: d, h: d, lamp: [d / 2, d / 2], rx: d * 0.62, ry: d * 0.62, drop: null, rare: tier === 'rare', seed: tier === 'rare' ? 17 : 5 };
+  const slab: AmberSlab = { w: d, h: d, lamp: [d / 2, d / 2], rx: d * 1, ry: d * 1, drop: null, rare: tier === 'rare', seed: tier === 'rare' ? 17 : 5 };
   const W = Math.round(d * s);
-  return { layer: 'flat', slab, W, H: W, s, ox: 0, oy: 0 };
+  return { layer: 'body', slab, W, H: W, s, ox: 0, oy: 0 };
 }

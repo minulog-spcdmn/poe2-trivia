@@ -20,6 +20,7 @@
   //   place, each on a small pane of its amber lit from behind (lib/fossilSeals.ts).
 
   import { LUNA, LUNA_HATCH, SOL_RAYS } from '../lib/alchemy';
+  import { lampLight } from '../lib/amber';
   import { amberImage } from '../lib/amberImage';
   import { fossilSeal, paneJob, sealsOf, type FossilSign, type SealArt } from '../lib/fossilSeals';
   import { FOSSIL_REVEAL, beatAt } from '../lib/fossilReveal';
@@ -196,11 +197,11 @@
   // always run along its edges; `scale` (bindable) says how large, so what
   // sits on the plate can keep clear of the ends. `fossil`: a fossil's
   // question, its card's seals at the ends in place of Sol and Luna, each on
-  // a pane of its amber; `lit` turns up the lamp behind them, as it lights
-  // the plate's own signs (low till the item is known); `fossilLight`, how
-  // that stands: up while the question is, flaring as the fossil is taken
-  // (it comes out of the left seal: lib/fossilFlight.ts), gone out with it
-  // lost.
+  // a pane of its amber lit from behind; `fossilLight`, how the lamp behind
+  // them stands (whatever `lit` says): low while the question is up, flaring
+  // as the fossil is taken (it comes out of the left seal:
+  // lib/fossilFlight.ts) and staying up after, up quietly with one another
+  // player kept, gone out with it lost.
   let {
     lit = true,
     glint = true,
@@ -209,7 +210,7 @@
     fit = false,
     scale: endScale = $bindable(),
     fossil = null,
-    fossilLight = 'up',
+    fossilLight = 'low',
   }: {
     lit?: boolean;
     glint?: boolean;
@@ -218,11 +219,12 @@
     fit?: boolean;
     scale?: number;
     fossil?: FossilTier | null;
-    fossilLight?: 'up' | 'taken' | 'out';
+    fossilLight?: 'low' | 'up' | 'taken' | 'out';
   } = $props();
   const signs = $derived(fossil ? sealsOf(fossil) : { start, end });
-  /** The fossil's panes of amber, painted once for its tier (the same image at both ends). */
+  /** The fossil's panes of amber, painted once for its tier (the same image at both ends), and the lamp's light behind them. */
   let pane = $state<string | null>(null);
+  const paneLight = $derived(fossil ? lampLight(paneJob(fossil, 2 * PANE_R, PANE_DENSITY).slab, 0, 0) : null);
   $effect(() => {
     const tier = fossil;
     let gone = false;
@@ -295,8 +297,8 @@
   {/each}
 {/snippet}
 
-<!-- One end of the plate (`lines`: the copy drawn as lines, not the glow's; `right`: the mirrored one). -->
-{#snippet cap(sign: 'sol' | 'luna' | 'empty' | FossilSign, lines: boolean, right: boolean)}
+<!-- One end of the plate. -->
+{#snippet cap(sign: 'sol' | 'luna' | 'empty' | FossilSign)}
   {@const e = sign === 'sun' ? END_SUN : END}
   {@const art = sign === 'sol' || sign === 'luna' || sign === 'empty' ? null : FOSSIL_SEALS[sign]}
   <g class="end">
@@ -321,21 +323,14 @@
         <circle cx={SEAL[0]} cy={SEAL[1]} r={SEAL_R + 1} class="well" />
         {@render moulding(e.ring)}
         {#if art}
-          <!-- A fossil's: its pane of amber in an inner ring, the card's sign cut into it (read as on the card at
-               either end), a rare's sun throwing its rays out over the end. -->
+          <!-- A fossil's: an inner ring for its pane of amber (over the plate: .pane-at), a rare's sun
+               throwing its rays out over the end. -->
           <g transform="translate({pt(SEAL)})">
-            {#if lines && pane}
-              <clipPath id={id(`pane-${right ? 'r' : 'l'}`)}><circle r={PANE_R - 0.2} /></clipPath>
-              <image class="pane" href={pane} x={-PANE_R} y={-PANE_R} width={2 * PANE_R} height={2 * PANE_R} clip-path="url(#{id(`pane-${right ? 'r' : 'l'}`)})" preserveAspectRatio="none" />
-            {/if}
             <circle r={PANE_R} class="metal inner" />
             {#if art.rays}
               <path d={art.rays.lines} class="metal ray" />
               <path d={art.rays.hatch} class="metal ray hatch" />
             {/if}
-            <g class="cut fade" style:--d="0.7s" style:--t="0.6s" transform={right ? 'scale(-1 1)' : undefined}>
-              {#each art.sign as { d, cls }, k (k)}<path {d} class={cls} />{/each}
-            </g>
           </g>
         {:else if sign !== 'empty'}
           <g class="sign fade" style:--d="0.7s" style:--t="0.6s" transform="translate({pt(SEAL)}) scale({f(SIGN_SCALE)})">
@@ -357,10 +352,10 @@
   </g>
 {/snippet}
 
-{#snippet plate(lines: boolean)}
+{#snippet plate()}
   <!-- The ends, round the middle, each in its own half of the plate. -->
-  <svg width="50%" height="100%" overflow="hidden"><svg y="50%" overflow="visible">{@render cap(signs.start, lines, false)}</svg></svg>
-  <svg x="50%" width="50%" height="100%" overflow="hidden"><svg x="100%" y="50%" overflow="visible"><g transform="scale(-1 1)">{@render cap(signs.end, lines, true)}</g></svg></svg>
+  <svg width="50%" height="100%" overflow="hidden"><svg y="50%" overflow="visible">{@render cap(signs.start)}</svg></svg>
+  <svg x="50%" width="50%" height="100%" overflow="hidden"><svg x="100%" y="50%" overflow="visible"><g transform="scale(-1 1)">{@render cap(signs.end)}</g></svg></svg>
 {/snippet}
 
 <span
@@ -369,6 +364,7 @@
   class:glint
   class:fossil={!!fossil}
   class:rare={fossil === 'rare'}
+  class:up={!!fossil && fossilLight === 'up'}
   class:taken={!!fossil && fossilLight === 'taken'}
   class:out={!!fossil && fossilLight === 'out'}
   aria-hidden="true"
@@ -381,8 +377,8 @@
 >
   <span class="field {WEAVE_CLASS}" bind:this={fieldEl}></span>
   <!-- The lines twice, as on the circle: a soft, wide copy for the glow, and the lines. -->
-  <svg class="art glow" width="100%" height="100%" bind:this={glowEl}>{@render plate(false)}</svg>
-  <svg class="art" width="100%" height="100%" bind:this={linesEl}>{@render plate(true)}</svg>
+  <svg class="art glow" width="100%" height="100%" bind:this={glowEl}>{@render plate()}</svg>
+  <svg class="art" width="100%" height="100%" bind:this={linesEl}>{@render plate()}</svg>
   <!-- The glint's sparks, one along each outer rule from each end, laid out
        as the rules are in the SVG (each half clipped at the middle, its end
        scaled and the right one mirrored) but on layers of their own, run by
@@ -423,17 +419,22 @@
       </span>
     </span>
   {/each}
-  <!-- A fossil's panes, placed as the blooms are but on nothing pressed in or
-       fading (which would keep them to themselves): over each, the dark of
-       the lamp turned low or gone out (.dark, multiplied over it, the sign
-       still cut in it), or the lamp flaring as the fossil is taken (.flash,
-       screened over it), the sign again over that light while it flares:
-       cut in the amber, it stands dark against the light behind it. -->
-  {#if fossil}
+  <!-- A fossil's panes, placed as the blooms are, pressed in with the seals.
+       Each lit as the card's face is (FossilAmber): the lamp's light, the
+       amber multiplied over it and its heart, too bright for the amber,
+       screened over that; over the amber, the dark of the lamp turned low or
+       gone out (.dark, multiplied), or the lamp flaring as the fossil is
+       taken (.flash, screened); over all of it the card's sign, cut in the
+       amber (read as on the card at either end), dark against the light. -->
+  {#if fossil && paneLight}
     {#each [['left', signs.start], ['right', signs.end]] as [side, sign] (side)}
-      <span class="pane-at {side}" style:--pane="{((PANE_R / BLOOM_R) * 100).toFixed(2)}%"
-        ><span class="dark"></span><span class="flash"></span><svg class="flash-cut" viewBox="{-BLOOM_R} {-BLOOM_R} {2 * BLOOM_R} {2 * BLOOM_R}"
-          ><g class="cut">{#each FOSSIL_SEALS[sign as FossilSign].sign as { d, cls }, k (k)}<path {d} class={cls} />{/each}</g></svg
+      <span class="seal pane-at {side}" style:--d="0.3s"
+        ><span class="pane" style:--pane-r="{PANE_R}px"
+          >{#if pane}<span class="amber-lit" style:background={paneLight.light}
+              ><img src={pane} alt="" /><span class="heart" style:background={paneLight.bloom}></span><span class="dark"></span></span
+            >{/if}<span class="flash"></span><svg class="cut-at" viewBox="{-PANE_R} {-PANE_R} {2 * PANE_R} {2 * PANE_R}"
+            ><g class="cut">{#each FOSSIL_SEALS[sign as FossilSign].sign as { d, cls }, k (k)}<path {d} class={cls} />{/each}</g></svg
+          ></span
         ></span
       >
     {/each}
@@ -530,8 +531,7 @@
   .glow .ground,
   .glow .well,
   .glow .sign,
-  .glow .inner,
-  .glow .cut {
+  .glow .inner {
     display: none;
   }
 
@@ -639,12 +639,15 @@
       animation: none;
     }
   }
-  /* A fossil's: the amber's light round its pane, lit from the first, whatever
-     `lit` says; breathing as the plate's own do. Taken, the lamp behind
-     comes up, the light round it swelling and the pane overexposed (.flash,
-     screened over it) until the fossil comes out of it, then settles (a
-     rare's surges twice). Lost, it goes out: the light round it fades and
-     the pane goes dark (.dark). */
+  /* A fossil's lamp, behind its panes and round them, whatever `lit` says.
+     Low while the question is up, as the plate's own signs are dark till
+     the item is known: the amber deeper (.dark, multiplied over it), its
+     heart and the light round the pane faint. Taken, it comes up: the light
+     round it swelling and the pane overexposed (.flash) until the fossil
+     comes out of it, then settling, up, where it stays till the question
+     goes, breathing as the plate's own do (a rare's surges twice first).
+     Another player's (together), it comes up quietly. Lost, it goes out:
+     the light round it fades and the pane goes dark. */
   .amber {
     stop-color: var(--fossil-mid);
   }
@@ -658,18 +661,12 @@
     stop-color: var(--fossil-rare-edge);
   }
   .plate.fossil .bloom {
-    opacity: 0.55;
-    animation: breathe-amber 6s 0.8s ease-in-out infinite alternate;
-  }
-  /* Till the item is known the lamp is low, as the plate's own signs are dark
-     till then: the amber deeper, the light round it faint. Lit, it comes up
-     (with the reveal, as they light) and stays up. */
-  .plate.fossil:not(.lit) .bloom {
     opacity: 0.16;
     animation: none;
   }
-  .plate.fossil:not(.lit) .dark {
-    opacity: 0.62;
+  .plate.fossil.up .bloom {
+    opacity: 0.55;
+    animation: breathe-amber 6s 0.8s ease-in-out infinite alternate;
   }
   .plate.fossil.taken .bloom {
     animation:
@@ -685,27 +682,70 @@
     animation: none;
     transition: opacity 0.9s ease-in;
   }
-  .dark,
-  .flash {
+  /* The pane, drawn in the plate's px about the seal and scaled with its end
+     (the lamp's light is sized in px, as on the card). */
+  .pane {
     position: absolute;
-    inset: calc((100% - var(--pane)) / 2);
-    border-radius: 50%;
+    left: calc(50% - var(--pane-r));
+    top: calc(50% - var(--pane-r));
+    width: calc(2 * var(--pane-r));
+    height: calc(2 * var(--pane-r));
+    transform: scale(var(--end-scale, 1));
+  }
+  .amber-lit,
+  .amber-lit > *,
+  .cut-at {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  /* (Just inside its ring, which is drawn whole.) */
+  .amber-lit {
+    clip-path: circle(calc(50% - 0.3px));
+  }
+  .amber-lit img {
+    mix-blend-mode: multiply;
+  }
+  .heart {
+    mix-blend-mode: screen;
+    opacity: 0.35;
+    transition: opacity 0.8s ease-out;
+  }
+  .plate.up .heart {
+    opacity: 1;
+    animation: breathe-heart 6s 0.8s ease-in-out infinite alternate;
+  }
+  .plate.taken .heart {
+    opacity: 1;
+    animation: breathe-heart 6s calc(var(--launch) + 0.9s) ease-in-out infinite alternate;
+  }
+  .plate.out .heart {
     opacity: 0;
+    transition: opacity 0.9s ease-in;
   }
   /* (Multiplied over it: the amber gone dark as resin with no light behind it.) */
   .dark {
     background: #4a1f10;
     mix-blend-mode: multiply;
+    opacity: 0.62;
     transition: opacity 0.8s ease-out;
+  }
+  .plate:is(.up, .taken) .dark {
+    opacity: 0;
   }
   .plate.out .dark {
     opacity: 1;
     transition: opacity 0.9s ease-in;
   }
   .flash {
-    inset: calc((100% - var(--pane)) / 2 - 6%);
+    position: absolute;
+    inset: -9%;
+    border-radius: 50%;
     background: radial-gradient(closest-side, #fff6d8, color-mix(in srgb, var(--fossil-core) 85%, transparent) 50%, transparent);
     mix-blend-mode: screen;
+    opacity: 0;
   }
   .rare .flash {
     background: radial-gradient(closest-side, #fff0c8, color-mix(in srgb, var(--fossil-rare-core) 85%, transparent) 50%, transparent);
@@ -718,27 +758,15 @@
   .plate.rare.taken .flash {
     animation-name: flash-rare, flash-out;
   }
-  .flash-cut {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
+  .cut-at {
     overflow: visible;
-    opacity: 0;
-  }
-  .plate.taken .flash-cut {
-    animation:
-      flash var(--launch) ease-in both,
-      flash-out 0.7s var(--launch) ease-out forwards;
-  }
-  .plate.rare.taken .flash-cut {
-    animation-name: flash-rare, flash-out;
+    animation: fade 0.6s 0.7s ease-out both;
   }
   @media (prefers-reduced-motion: reduce) {
     .plate.fossil .bloom,
     .plate.fossil.taken .bloom,
-    .plate.taken .flash,
-    .plate.taken .flash-cut {
+    .plate .heart,
+    .plate.taken .flash {
       animation: none;
     }
   }
@@ -746,8 +774,8 @@
     transform-box: fill-box;
     transform-origin: center;
   }
-  /* The bloom is stamped in with its seal by CSS, on a layer of its own. */
-  .bloom-at.seal {
+  /* The bloom (and a fossil's pane) is stamped in with its seal by CSS, on a layer of its own. */
+  :is(.bloom-at, .pane-at).seal {
     animation: stamp 0.55s var(--d) var(--ease-out) both;
   }
 
@@ -871,9 +899,17 @@
       opacity: 0.3;
     }
   }
+  @keyframes breathe-heart {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0.55;
+    }
+  }
   @keyframes kindle {
     from {
-      opacity: 0.55;
+      opacity: 0.16;
       transform: none;
     }
     to {
@@ -883,7 +919,7 @@
   }
   @keyframes kindle-rare {
     from {
-      opacity: 0.55;
+      opacity: 0.16;
       transform: none;
     }
     50% {
