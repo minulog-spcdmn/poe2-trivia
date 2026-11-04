@@ -1,37 +1,43 @@
 <script lang="ts" module>
   // The set of 25 fossils Delve turns up (lib/fossils.ts), as PoE's Delve
   // stash tab lays them out: a fixed slot for each, a recess cut into the
-  // panel. One kept sits in its slot lit from behind, the lamp's amber
-  // light coming through it as through the resin; a rare one's light is
-  // deeper, red-gold, the brightest. Now and then a band of lamplight
-  // passes over the kept ones, a rare one's more often. One not kept yet is
-  // a faint print of itself in its empty recess: knowing what's missing is
-  // the hunt.
+  // panel. The 17 common ones lie as tightly as 17 squares are known to go
+  // into a square: John Bidwell's packing (lib/squarePacking.ts), seven of
+  // them askew; the 8 rare ones stand in neat rows beside it (under it where
+  // the width is too narrow). One kept sits in its slot lit from behind, the
+  // lamp's amber light coming through it as through the resin; a rare one's
+  // light is deeper, red-gold, the brightest. Now and then a band of
+  // lamplight passes over the kept ones, a rare one's more often. One not
+  // kept yet is a faint print of itself in its empty recess: knowing what's
+  // missing is the hunt.
   import { passingLight } from '../../lib/glint';
+  import { PACKED, PACKED_SIDE } from '../../lib/squarePacking';
 
   /** The lamplight passing over the kept ones (lib/glint.ts), all of a kind on the same beat: every `every` ms, `sweep` to cross. */
   const LAMP = passingLight(12000, 1500, { travel: true });
   const LAMP_RARE = passingLight(7000, 1400, { travel: true });
   const sweep = (slit: Element, rare: boolean) => (rare ? LAMP_RARE : LAMP).glintAt(slit, slit.closest('.slot') ?? slit);
+
+  /** Where each common one lies in the packing, as CSS places it: its left and top, and its turn. */
+  const PLACES = PACKED.map((p) => ({ left: `${((p.x - 0.5) / PACKED_SIDE) * 100}%`, top: `${((p.y - 0.5) / PACKED_SIDE) * 100}%`, rotate: `${p.turn}deg` }));
 </script>
 
 <script lang="ts">
   // Choosing one shows it in the detail box (beside the set on a wide
-  // screen, under it on a narrow one) as the game's tooltip would: its name
-  // in the currency colour, whether it is rare, and when and how deep it was
-  // kept (one not kept yet, where it turns up). A mouse chooses by resting
-  // on a slot, and the choice stays
-  // until it enters another (the cells touch, their spacing inside them, so
-  // moving across the set never drops it); a touch chooses only by a tap, so
-  // a finger scrolling over the set chooses nothing. The box is as tall as
-  // the tallest it can show, every face laid in the same place with only the
-  // chosen one seen, so nothing moves as the choice changes.
+  // screen, under it on a narrower one) as the game's tooltip would: its
+  // name in the currency colour, whether it is rare, and when and how deep
+  // it was kept (one not kept yet, where it turns up). Where the width
+  // allows, the box shows it big too, in a slot of its own. A mouse chooses
+  // by resting on a slot, and the choice stays until it enters another (the
+  // cells touch where the packing's squares lean on each other, and the rare
+  // ones' touch, their spacing inside them, so moving across the set never
+  // drops it); a touch chooses only by a tap, so a finger scrolling over the
+  // set chooses nothing. The box is as tall as the tallest it can show,
+  // every face laid in the same place with only the chosen one seen, so
+  // nothing moves as the choice changes.
   //
-  // The rows are cut so none is left with a straggler: nine to a row where
-  // nine fit (the 17 common ones nine and eight, the 8 rare ones a row of
-  // their own), six on a phone (six, six and five; the rare ones four and
-  // four). Every size is fixed by the width alone, so the Codex's scroll
-  // stays exact.
+  // Every size is fixed by the width alone (the packing's side, and all else
+  // from it), so the Codex's scroll stays exact.
   //
   // `embedded`: in a dialog of its own (the end screen's), with no panel or
   // heading of the codex's; the dialog names it. Read-only either way.
@@ -83,6 +89,30 @@
   </span>
 {/snippet}
 
+{#snippet cell(f: Fossil)}
+  {@const got = found[f.id]}
+  <button
+    class="cell"
+    class:got={!!got}
+    class:rare={f.rare}
+    class:on={shown?.id === f.id}
+    aria-label={got ? f.name : `${f.name}, not kept yet`}
+    aria-pressed={shown?.id === f.id}
+    aria-controls="{uid}-tip"
+    onpointerdown={(e) => (pressed = { x: e.clientX, y: e.clientY })}
+    onclick={(e) => {
+      // A keyboard's click has no press, and counts.
+      if (e.detail === 0 || tapped(e)) chosen = f.id;
+      pressed = null;
+    }}
+    onpointerenter={(e) => {
+      if (e.pointerType === 'mouse') chosen = f.id;
+    }}
+  >
+    {@render slot(f)}
+  </button>
+{/snippet}
+
 {#snippet set()}
   <p class="about">
     {#if complete}Every fossil kept.{:else}Now and then a Delve card holds a fossil: answer it right to keep one for your codex. Your run is unchanged.{/if}
@@ -93,31 +123,13 @@
         {@const n = g.fossils.filter((f) => found[f.id]).length}
         <div class="group {g.key}">
           <h3 class="head" id="{uid}-{g.key}"><span>{g.name}</span><span class="tally"><span class="n">{n}</span> of <span class="n">{g.fossils.length}</span></span></h3>
-          <ul class="grid" aria-labelledby="{uid}-{g.key}">
-            {#each g.fossils as f (f.id)}
-              {@const got = found[f.id]}
-              <li>
-                <button
-                  class="cell"
-                  class:got={!!got}
-                  class:rare={f.rare}
-                  class:on={shown?.id === f.id}
-                  aria-label={got ? f.name : `${f.name}, not kept yet`}
-                  aria-pressed={shown?.id === f.id}
-                  aria-controls="{uid}-tip"
-                  onpointerdown={(e) => (pressed = { x: e.clientX, y: e.clientY })}
-                  onclick={(e) => {
-                    // A keyboard's click has no press, and counts.
-                    if (e.detail === 0 || tapped(e)) chosen = f.id;
-                    pressed = null;
-                  }}
-                  onpointerenter={(e) => {
-                    if (e.pointerType === 'mouse') chosen = f.id;
-                  }}
-                >
-                  {@render slot(f)}
-                </button>
-              </li>
+          <ul class="grid {g.key}" aria-labelledby="{uid}-{g.key}">
+            {#each g.fossils as f, i (f.id)}
+              {#if g.key === 'common'}
+                <li style:left={PLACES[i].left} style:top={PLACES[i].top} style:rotate={PLACES[i].rotate}>{@render cell(f)}</li>
+              {:else}
+                <li>{@render cell(f)}</li>
+              {/if}
             {/each}
           </ul>
         </div>
@@ -126,28 +138,44 @@
     <!-- Every face the box can show, stacked in one place with only the chosen one seen: the box is as tall as
          the tallest of them, no taller, so nothing moves as the choice changes. -->
     <div class="tip" id="{uid}-tip" aria-live="polite">
-      {#each FOSSILS as f (f.id)}
-        {@const got = found[f.id]}
-        <div class="face" class:shown={shown?.id === f.id} aria-hidden={shown?.id !== f.id}>
-          {#if got}
-            <p class="name">{f.name}</p>
-            {#if f.rare}<p class="mark">Rare</p>{/if}
-            <p class="when">Kept {date(got.at)} at depth <span class="n">{shownDepth(got.depth)}</span>{got.together ? ', in a run together' : ''}.</p>
-          {:else}
-            <p class="name unknown">{f.name}</p>
-            {#if f.rare}<p class="mark">Rare</p>{/if}
-            <p class="when">
-              Not kept yet. {#if f.rare}From depth <span class="n">{rareFrom}</span>, more often the deeper you go.{:else}From depth <span class="n">{commonFrom}</span>, most often beside a find.{/if}
-            </p>
+      <!-- Where the width allows, the one chosen, big, in a slot of its own: every picture laid in it at once, only
+           the chosen one seen, so a new choice only shows another. -->
+      <div class="preview" aria-hidden="true">
+        <span class="slot big" class:got={!!shown && !!found[shown.id]} class:rare={!!shown?.rare}>
+          {#each FOSSILS as f (f.id)}
+            <img class:shown={shown?.id === f.id} src={fossilArt(f.id)} alt="" loading="lazy" draggable="false" />
+          {/each}
+          {#if shown && found[shown.id] && !motion.still}
+            {#key shown.rare}
+              <span class="lamp"><span class="slit" use:sweep={shown.rare}><img src={fossilArt(shown.id)} alt="" draggable="false" /></span></span>
+            {/key}
           {/if}
-        </div>
-      {/each}
-      {#if !count}
-        <div class="face" class:shown={!shown} aria-hidden={!!shown}>
-          <p class="name unknown">None kept yet</p>
-          <p class="when">The first can turn up from depth <span class="n">{commonFrom}</span>.</p>
-        </div>
-      {/if}
+        </span>
+      </div>
+      <div class="faces">
+        {#each FOSSILS as f (f.id)}
+          {@const got = found[f.id]}
+          <div class="face" class:shown={shown?.id === f.id} aria-hidden={shown?.id !== f.id}>
+            {#if got}
+              <p class="name">{f.name}</p>
+              {#if f.rare}<p class="mark">Rare</p>{/if}
+              <p class="when">Kept {date(got.at)} at depth <span class="n">{shownDepth(got.depth)}</span>{got.together ? ', in a run together' : ''}.</p>
+            {:else}
+              <p class="name unknown">{f.name}</p>
+              {#if f.rare}<p class="mark">Rare</p>{/if}
+              <p class="when">
+                Not kept yet. {#if f.rare}From depth <span class="n">{rareFrom}</span>, more often the deeper you go.{:else}From depth <span class="n">{commonFrom}</span>, most often beside a find.{/if}
+              </p>
+            {/if}
+          </div>
+        {/each}
+        {#if !count}
+          <div class="face" class:shown={!shown} aria-hidden={!!shown}>
+            <p class="name unknown">None kept yet</p>
+            <p class="when">The first can turn up from depth <span class="n">{commonFrom}</span>.</p>
+          </div>
+        {/if}
+      </div>
     </div>
   </div>
 {/snippet}
@@ -213,44 +241,64 @@
   }
 
   /*
-   * The layout, by the width alone. Narrow: six to a row (the rare ones four),
-   * the detail box under the set. From 480px, nine to a row. From 700px, the
-   * detail box beside the set, which takes what the box leaves it, up to a
-   * 66px cell (a 60px slot).
+   * The layout, by the width alone, from the packing's side (--P). Narrow:
+   * the packing as wide as there is room (at most 320px), the rare ones
+   * under it in two rows of four, as wide as it, the detail box under them.
+   * From 520px, the rare ones beside it in two columns of four, as tall as
+   * it. From 784px, the detail box beside them too, the one chosen shown
+   * big in it.
    */
   .body {
+    --P: min(100cqi, 320px);
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 1rem;
     align-items: start;
   }
   .sets {
-    --cols: 6;
-    --cell: min(66px, 100cqi / 6);
     justify-self: center;
-    display: grid;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     gap: 0.8rem;
-    width: fit-content;
   }
-  .rare {
-    --cols: 4;
+  .group {
+    width: var(--P);
   }
-  @container fossils (min-width: 480px) {
-    .sets,
-    .rare {
-      --cols: 9;
-      --cell: min(66px, 100cqi / 9);
+  .grid.rare {
+    grid-template-columns: repeat(4, 1fr);
+    aspect-ratio: 2;
+  }
+  .preview {
+    display: none;
+  }
+  @container fossils (min-width: 520px) {
+    .body {
+      --P: min(320px, (100cqi - 1.75rem) / 1.5);
+    }
+    .sets {
+      flex-direction: row;
+      align-items: flex-start;
+      gap: 1.75rem;
+    }
+    .group.rare {
+      width: calc(var(--P) / 2);
+    }
+    .grid.rare {
+      grid-template-columns: repeat(2, 1fr);
+      aspect-ratio: 1 / 2;
     }
   }
-  @container fossils (min-width: 700px) {
+  @container fossils (min-width: 784px) {
     .body {
-      grid-template-columns: auto minmax(14rem, 1fr);
-      gap: 1.75rem;
+      --P: min(330px, (100cqi - 4rem - 15rem) / 1.5);
+      grid-template-columns: auto minmax(15rem, 19rem);
+      justify-content: center;
+      gap: 2.25rem;
       align-items: center;
     }
-    .sets,
-    .rare {
-      --cell: min(66px, (100cqi - 15.75rem) / 9);
+    .preview {
+      display: block;
     }
   }
   .head {
@@ -277,24 +325,47 @@
     font-size: 1em;
     color: #c9bea8;
   }
+  /*
+   * The packing: a square PACKED_SIDE of its slots' cells across, each cell
+   * laid where the packing puts it, turned as it is. The rare ones' cells
+   * touch, each a quarter of the packing across, its slot as large as the
+   * packing's.
+   */
   .grid {
+    --unit: calc(var(--P) / 4.67553);
+    position: relative;
     list-style: none;
     margin: 0;
     padding: 0;
+  }
+  .grid.common {
+    aspect-ratio: 1;
+  }
+  .grid.common li {
+    position: absolute;
+    width: var(--unit);
+    height: var(--unit);
+  }
+  .grid.rare {
     display: grid;
-    grid-template-columns: repeat(var(--cols), var(--cell));
+  }
+  .grid.rare li {
+    display: grid;
   }
 
-  /* The cells touch: the spacing is inside each, so a pointer crossing the set is always on one. */
+  /* The spacing is inside each cell, so a pointer crossing the set is on one wherever they touch. */
   .cell {
     display: block;
-    width: var(--cell);
-    height: var(--cell);
-    padding: calc(var(--cell) * 0.045);
+    width: 100%;
+    height: 100%;
+    padding: calc(var(--unit) * 0.045);
     border: 0;
     background: none;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
+  }
+  .rare .cell {
+    padding: calc((var(--P) / 4 - var(--unit) * 0.91) / 2);
   }
   .cell:focus-visible {
     outline: 2px solid var(--fossil-core);
@@ -407,8 +478,62 @@
     filter: brightness(2.1) saturate(1.3) hue-rotate(-8deg);
   }
 
-  /* The game's tooltip: the name in the currency colour (ItemDetails.svelte), Fontin SmallCaps. */
+  /* The detail box: the one chosen big (where it shows), and the game's tooltip under it. */
   .tip {
+    display: grid;
+    justify-items: center;
+    gap: 1rem;
+  }
+  .preview {
+    width: min(15rem, 100%);
+    aspect-ratio: 1;
+  }
+  /*
+   * The big one: the slot as the set's, its light grown with it. Its light
+   * spreads wide enough to band, so it's dithered (app.css's --dither, over
+   * the gradients, as a dark fill's is), and only the dither is drawn
+   * pixelated. Its shadows stay the small slots' size: a box-shadow can't be
+   * dithered, and grown with it they'd band.
+   */
+  .slot.big {
+    border-radius: 12%;
+    image-rendering: pixelated;
+    background: var(--dither), linear-gradient(165deg, #0a0806, #140f0a);
+  }
+  .slot.big.got {
+    background:
+      var(--dither),
+      radial-gradient(
+        circle,
+        color-mix(in srgb, var(--hi) 55%, transparent) 0,
+        color-mix(in srgb, var(--edge) 30%, transparent) 36%,
+        color-mix(in srgb, var(--edge) 8%, transparent) 58%,
+        transparent 72%
+      ),
+      linear-gradient(165deg, #0a0806, #140f0a);
+  }
+  .slot.big img {
+    left: 17%;
+    top: 17%;
+    width: 66%;
+    height: 66%;
+    image-rendering: auto;
+  }
+  .slot.big > img {
+    visibility: hidden;
+  }
+  .slot.big > img.shown {
+    visibility: visible;
+  }
+  .slot.big.got > img {
+    filter: drop-shadow(0 0 6px color-mix(in srgb, var(--hi) 70%, transparent)) drop-shadow(0 0 16px color-mix(in srgb, var(--edge) 55%, transparent));
+  }
+  .slot.big.got.rare > img {
+    filter: drop-shadow(0 0 7px color-mix(in srgb, var(--hi) 85%, transparent)) drop-shadow(0 0 20px color-mix(in srgb, var(--edge) 70%, transparent));
+  }
+
+  /* The game's tooltip: the name in the currency colour (ItemDetails.svelte), Fontin SmallCaps. */
+  .faces {
     display: grid;
     text-align: center;
     font-family: var(--font-tooltip);
@@ -421,7 +546,7 @@
   .face.shown {
     visibility: visible;
   }
-  .tip p {
+  .faces p {
     margin: 0;
   }
   .name {

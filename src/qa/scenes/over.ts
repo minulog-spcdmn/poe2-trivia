@@ -555,6 +555,8 @@ export function endScenes(): EndScene[] {
     },
     { key: 'd-fossils-none', group: 'Delve', label: 'Alone: no fossil this run, 6 of 25', view: D, mode: 'local', me: null, state: solo(), ...solo23(), ...heldFossils(6) },
     { key: 'd-fossils-all', group: 'Delve', label: 'Alone: every fossil kept', view: D, mode: 'local', me: null, state: solo(), ...solo23(), ...heldFossils(FOSSILS.length) },
+    // The fossil line opened: the codex's set over the screen (FossilsDialog.svelte, codex/DelveFossils embedded), read only.
+    { key: 'd-fossils-set', group: 'Delve', label: 'Alone: the fossil set opened, 20 of 25', view: D, mode: 'local', me: null, state: solo(), ...solo23(), ...heldFossils(20), steps: [{ wait: 600 }, { click: '.fossil-line .set-link' }] },
     {
       key: 'd-fossils-team',
       group: 'Delve',

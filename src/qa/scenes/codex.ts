@@ -15,12 +15,13 @@ function filled(steps: Step[] = [], depths = [8, 14, 27, 19, 33, 23, 41]): Built
 
 /**
  * The first `n` fossils found, a few days apart, the rare ones mixed in from
- * the fourth on (so 17 holds three of them), one of them in a run together.
+ * the fourth on (so 17 holds three of them), one of them in a run together;
+ * `commons`: the 17 common ones alone, every square of the packing filled.
  */
-function fossils(n: number): Record<string, string> {
-  const commons = FOSSILS.filter((f) => !f.rare);
+function fossils(n: number, { commons = false } = {}): Record<string, string> {
+  const common = FOSSILS.filter((f) => !f.rare);
   const rares = FOSSILS.filter((f) => f.rare);
-  const order = n >= FOSSILS.length ? FOSSILS : [...commons.slice(0, 3), ...rares.slice(0, 3), ...commons.slice(3), ...rares.slice(3)];
+  const order = commons ? common : n >= FOSSILS.length ? FOSSILS : [...common.slice(0, 3), ...rares.slice(0, 3), ...common.slice(3), ...rares.slice(3)];
   const found: FossilStore['found'] = {};
   for (const [i, f] of order.slice(0, n).entries()) found[f.id] = { at: Date.UTC(2026, 8, 1) + i * 3 * 86_400_000, depth: f.rare ? 28 + i : 7 + i, ...(i === 1 ? { together: true } : {}) };
   return { fossils: serializeFossils({ found }) };
@@ -35,10 +36,15 @@ export function codexScenes(): Scene[] {
     codex('item', 'An item open', () => filled([{ click: '.tile' }])),
     codex('delve', 'The Delve page', () => filled([{ click: '#codex-tab-delve' }])),
     codex('delve-none', 'The Delve page, never delved', () => filled([{ click: '#codex-tab-delve' }], [])),
-    // Its fossils (components/codex/DelveFossils.svelte): none is the Delve page above; one, some (a found
-    // rare one chosen, its tooltip up), all 25.
+    // Its fossils (components/codex/DelveFossils.svelte), the 17 common ones in Bidwell's packing, the 8 rare
+    // ones beside it (under it on a phone upright), the one chosen shown big beside them from 784px of the
+    // set's width (a desk's, a laptop's, the end screen's dialog; not a phone's, even on its side): none is
+    // the Delve page above; one; some (a found rare one chosen, its tooltip up); one not kept yet chosen (its
+    // print, big); every common one (the packing full, one tilted chosen); all 25.
     codex('fossils-1', 'The Delve page, the first fossil', () => ({ ...filled([{ click: '#codex-tab-delve' }]), stored: fossils(1) })),
     codex('fossils-some', 'The Delve page, 17 fossils, one chosen', () => ({ ...filled([{ click: '#codex-tab-delve' }, { click: '.fossils .cell.got.rare' }]), stored: fossils(17) })),
+    codex('fossils-missing', 'The Delve page, 17 fossils, one not kept chosen', () => ({ ...filled([{ click: '#codex-tab-delve' }, { click: '.fossils .grid.common .cell:not(.got)' }]), stored: fossils(17) })),
+    codex('fossils-commons', 'The Delve page, every common fossil', () => ({ ...filled([{ click: '#codex-tab-delve' }, { click: '.fossils .grid.common li:nth-child(5) .cell' }]), stored: fossils(17, { commons: true }) })),
     codex('fossils-all', 'The Delve page, all 25 fossils', () => ({ ...filled([{ click: '#codex-tab-delve' }]), stored: fossils(25) })),
     codex('feats', 'The Achievements page', () => filled([{ click: '#codex-tab-feats' }])),
     codex('delve-empty', 'The Delve page, no run yet', () => ({ state: null, hash: '#codex', met: 40, steps: [{ click: '#codex-tab-delve' }] })),
