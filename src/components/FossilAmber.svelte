@@ -14,10 +14,11 @@
   // tilt is), and held nearer as it's hovered. It kindles as the face turns
   // up in the deal (ChooseCategory's .dealt, at its --face): the light
   // catching behind the dark resin, its heart flaring a moment after and
-  // settling, the spangles catching it in turn. Nothing moves on a card left
-  // alone, so the compositor has nothing to blend again. Transform and
-  // opacity only, each on a layer of its own. The back (seen only as it's
-  // dealt) is one still image.
+  // settling, a light passing up behind it, the spangles catching it in
+  // turn. Nothing moves on a card left alone, so the compositor has nothing
+  // to blend again. Transform and opacity only, each on a layer of its own.
+  // The back (seen only as it's dealt) is one still image, unlit: no lamp
+  // behind it until the face turns up.
   //
   // Under the plate's engraving (CardEngraving, the lines cut in the amber).
   import { amberImage } from '../lib/amberImage';
@@ -183,7 +184,7 @@
       opacity: 0;
     }
   }
-  /* The amber takes from the light what it doesn't let through (the back's is all of it, its light worked in). */
+  /* The amber takes from the light what it doesn't let through (the back's is all of it, unlit). */
   .body:not(.flat) {
     mix-blend-mode: multiply;
   }
@@ -230,6 +231,36 @@
   }
   :global(.card.mine:not(.down):hover) .hand {
     opacity: 1;
+  }
+  /* As the face turns up, the same light passes once up behind the slab,
+     from below its foot to over the arch, while the lamp catches: the
+     amber brightening in its own colours as it goes, the emblem dark
+     against it. A find's light runs across in front of its face
+     (ChooseCategory's .sheen); a fossil's passes behind. */
+  :global(.dealt) .hand {
+    animation: pass-by 1.3s linear calc(var(--face, 0ms) + 80ms) backwards;
+  }
+  :global(.dealt) .spot {
+    animation: pass-up 1.3s cubic-bezier(0.45, 0, 0.4, 1) calc(var(--face, 0ms) + 80ms) backwards;
+  }
+  @keyframes pass-by {
+    from,
+    to {
+      opacity: 0;
+    }
+    22%,
+    70% {
+      opacity: 1;
+    }
+  }
+  /* (Its middle from under the slab's foot to over its top; at rest it's behind the emblem.) */
+  @keyframes pass-up {
+    from {
+      translate: 0 95%;
+    }
+    to {
+      translate: 0 -68%;
+    }
   }
   /* The lamp: its swing with the tilt is set a frame at a time while the
      card tilts (.tilting); once the pointer's gone, it eases back. (A layer
@@ -298,7 +329,7 @@
       opacity: 1;
     }
   }
-  :global(html[data-still]) .amber :is(.lamp, .spangle) {
+  :global(html[data-still]) .amber :is(.lamp, .spangle, .hand, .spot) {
     animation: none;
   }
 </style>

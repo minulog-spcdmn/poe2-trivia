@@ -2270,8 +2270,9 @@
     opacity: 1;
     scale: 1.05;
   }
-  /* No glare on its face: the pointer's light shines through the amber from behind instead (FossilAmber's .hand). */
-  .card[data-fossil] .frame > .glare {
+  /* No glare on its face, and no light run across it as it turns up: the light shines through the amber from behind instead, the pointer's and, as it turns up, one passing (FossilAmber's .hand). */
+  .card[data-fossil] .frame > .glare,
+  .card[data-fossil] .sheen {
     display: none;
   }
   .card.special .glyph {

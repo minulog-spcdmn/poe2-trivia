@@ -27,7 +27,8 @@
 // multiplied over the one and under the other. So wherever the heart goes as
 // the card tilts, the amber colours it, flows and all, as a lamp passing
 // behind it would. The back, seen only as
-// it's dealt, is one still image of it all (`flat`).
+// it's dealt, is one still image, unlit (`flat`): no lamp behind it, so the
+// light comes on only as the face turns up.
 //
 // What the amber caught (a fossil's emblem) is painted here too, from its
 // mask (paintInclusion): thick and dark where its body is, letting the
@@ -64,8 +65,9 @@ export type AmberSlab = {
 /**
  * One image of a layer: `W` x `H` device px, covering the slab's layout px
  * from `ox`, `oy` at `s` device px to one; `grain`, how much harder its
- * dither is stirred: 3 on a sharp face, whose filter and shrink leave about
- * a third of it (ChooseCategory's SHARP_KERNEL), else 1.
+ * dither is stirred: 5 on a sharp face, whose filter and shrink leave about
+ * a third of it (ChooseCategory's SHARP_KERNEL; at 3 its dark edges still
+ * banded), else 1.
  */
 export type AmberJob = { layer: AmberLayer; slab: AmberSlab; W: number; H: number; s: number; ox: number; oy: number; grain?: number };
 
@@ -325,6 +327,8 @@ const DITHER = 3.6;
 const dither = (v: number, r: number) => (v <= 0 ? 0 : Math.max(0, Math.min(255, Math.floor(v * 255 + 0.5 + r * DITHER))));
 /** The colour of the light the seams, flakes and cracks catch: the lamp's, pale gold. */
 const SHEEN: [number, number, number] = [1, 0.93, 0.75];
+/** The room's light on the back, from in front (no lamp behind it there): the resin dark, its colour and flows only just showing. */
+const ROOM = 0.2;
 
 /** Paints one image of the slab: RGBA, `job.W` x `job.H`, straight (not premultiplied) alpha. */
 export function paintAmber(job: AmberJob): Uint8ClampedArray {
@@ -341,13 +345,11 @@ export function paintAmber(job: AmberJob): Uint8ClampedArray {
   const { tau, glow, light } = field(job);
   // What passes: each colour by how far it's carried through; and the light the seams and flakes
   // catch, screened over that as it will be once the face's moving light is under it (the body is
-  // multiplied over the light: worked in as the light stands at rest). On the back, the lamp's
-  // light and bloom worked in too.
+  // multiplied over the light: worked in as the light stands at rest). The back has no lamp behind
+  // it: lit by the room alone, from in front, its seams catching a little of that.
   const sigma = SIGMA[tier];
   const lamp = LAMP[tier];
   const flat = layer === 'flat';
-  const b = BLOOM[tier];
-  const screen = (v: number, a: number) => 1 - (1 - v) * (1 - a);
   for (let j = 0; j < H; j++)
     for (let i = 0; i < W; i++) {
       const p = j * W + i;
@@ -355,19 +357,14 @@ export function paintAmber(job: AmberJob): Uint8ClampedArray {
       const t = tau[p];
       const [x, y] = [job.ox + (i + 0.5) / job.s, job.oy + (j + 0.5) / job.s];
       // The lamp's colour and its light as it falls off, but for the share that moves (the face's
-      // light), or all of it, dimmer, on the back.
+      // light); on the back, the room's.
       const sway = flat ? 1 : swayAt(slab, x, y);
-      const L = flat ? light[p] * 0.8 : light[p] / sway;
-      const a = Math.min(1, glow[p]) * (flat ? 0.8 : 1);
+      const L = flat ? ROOM : light[p] / sway;
+      const a = Math.min(1, glow[p]) * (flat ? 0.2 : 1);
       const rgb = [0, 0, 0];
       for (let c = 0; c < 3; c++) {
         const v = Math.exp(-sigma[c] * t) * L * lamp[c];
         rgb[c] = Math.min(1, v + a * SHEEN[c] * (1 / sway - v));
-      }
-      if (flat) {
-        const [dx, dy] = [(x - slab.lamp[0]) / slab.rx, (y - slab.lamp[1]) / slab.ry];
-        const k = b.a * 0.7 * Math.exp(-(dx * dx + dy * dy) / (b.r * b.r));
-        for (let c = 0; c < 3; c++) rgb[c] = screen(rgb[c], k * b.c[c]);
       }
       out[o] = dither(rgb[0], tri());
       out[o + 1] = dither(rgb[1], tri());
