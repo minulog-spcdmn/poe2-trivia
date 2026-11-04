@@ -831,13 +831,13 @@
             <header>
               {@render glyph(sec.stats.category)}
               <h3>{sec.stats.category}</h3>
-              <span class="muted">{sec.stats.seen} / {sec.stats.total} discovered{sec.stats.n ? ` • ${pct(sec.stats)} accuracy` : ''}</span>
+              <span class="count">{sec.stats.seen} / {sec.stats.total} discovered{sec.stats.n ? ` • ${pct(sec.stats)} accuracy` : ''}</span>
             </header>
             {#if sec.stats.groups.length > 1}
               <ul class="groups">
                 {#each sec.stats.groups as g (g.group)}
                   <li title="{g.seen} of {g.total} discovered{g.n ? `, ${g.ok} of ${answers(g.n)} right` : ''}">
-                    {g.group} <span class="muted">{g.seen}/{g.total}{g.n ? ` • ${pct(g)}` : ''}</span>
+                    {g.group} <span class="count">{g.seen}/{g.total}{g.n ? ` • ${pct(g)}` : ''}</span>
                   </li>
                 {/each}
               </ul>
@@ -1652,6 +1652,10 @@
   .cat-section header span {
     font-size: 0.92rem;
   }
+  /* A count, in --muted as labels are. */
+  .count {
+    color: var(--muted);
+  }
   .groups {
     list-style: none;
     margin: 0 0 0.7rem;
@@ -1763,6 +1767,7 @@
     user-select: none;
   }
   .unknown .name {
+    /* (Dim on purpose: an item not found yet.) */
     font-style: italic;
     color: var(--muted);
     opacity: 0.6;

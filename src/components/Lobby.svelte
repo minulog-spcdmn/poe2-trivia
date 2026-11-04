@@ -1133,6 +1133,7 @@
     margin: 0;
     font-size: 1rem;
     font-style: italic;
+    color: var(--note);
   }
   /* The old hint fades out where the new one comes, in one cell (settles). */
   .vis-hint-box {

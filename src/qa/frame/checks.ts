@@ -315,13 +315,12 @@ function textRuns(keep: (run: Omit<TextRun, 'lines'>) => boolean, one: boolean):
   return runs;
 }
 
-/** A run of text too faint to read well: its Lc against what's behind it, the floor it falls under, and the colours measured. */
+/** A run of text too faint to read well: its Lc against what's behind it (under FLOOR), and the colours measured. */
 export interface Faint {
   el: Element;
   where: string;
   text: string;
   lc: number;
-  needs: number;
   bg: string;
   seen: string;
   size: number;
@@ -400,7 +399,6 @@ export function faintText(shot?: ImageData): Faint[] {
         where: describe(run.el),
         text: run.text.slice(0, 60),
         lc: Math.round(worst.lc * 10) / 10,
-        needs: Math.round(FLOOR * 10) / 10,
         bg: hex(worst.bg),
         seen: hex(worst.seen),
         size: run.size,
@@ -444,8 +442,8 @@ export function publish(settled: boolean, problems: Problem[]) {
 }
 
 /** The faint runs as a problem to list: how many, a few named with their Lc against what they need. */
-export const faintProblem = (found: Pick<Faint, 'where' | 'lc' | 'needs'>[]): Problem[] =>
-  found.length ? [{ kind: 'faint', count: found.length, examples: [...new Set(found.map((f) => `${f.where} at Lc ${f.lc} (needs ${f.needs})`))].slice(0, 3) }] : [];
+export const faintProblem = (found: Pick<Faint, 'where' | 'lc'>[]): Problem[] =>
+  found.length ? [{ kind: 'faint', count: found.length, examples: [...new Set(found.map((f) => `${f.where} at Lc ${f.lc} (needs ${Math.round(FLOOR)})`))].slice(0, 3) }] : [];
 
 /** Outlines the elements at fault (or stops). */
 export function outline(on: boolean) {

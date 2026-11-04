@@ -270,6 +270,7 @@
 
 <style>
   .recorder {
+    /* (Dim on purpose: a tool's, out of the way until hovered.) */
     position: fixed;
     left: 12px;
     bottom: 12px;
