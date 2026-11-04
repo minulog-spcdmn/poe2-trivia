@@ -124,12 +124,13 @@ jobs:
           - { name: 'At rest, 8 of 10', args: '--shard 8/10' }
           - { name: 'At rest, 9 of 10', args: '--shard 9/10' }
           - { name: 'At rest, 10 of 10', args: '--shard 10/10' }
-          # (A frame with WebGL takes a runner one to four seconds here: the slow ones alone, the three
-          # quick ones, 2 to 6 minutes each, in one job, two at once.)
+          # (A frame with WebGL takes a runner one to four seconds here: each alone, but for the two
+          # quickest, 2 to 5 minutes each, in one job, one after the other.)
           - { name: 'With WebGL: game/delve-dig', args: '--webgl --only "^game/delve-dig$"' }
+          - { name: 'With WebGL: lobby/room', args: '--webgl --only "^lobby/room$"' }
           - { name: 'With WebGL: over/n-lost', args: '--webgl --only "^over/n-lost$"' }
           - { name: 'With WebGL: home/returning', args: '--webgl --only "^home/returning$"' }
-          - { name: 'With WebGL: lobby/room, codex/item, settings/key', args: '--webgl --only "^(lobby/room|codex/item|settings/key)$"' }
+          - { name: 'With WebGL: codex/item and settings/key', args: '--webgl --only "^(codex/item|settings/key)$"' }
           - { name: 'Moments: the deal, with WebGL', args: '--moments --only "^deal$"' }
           - { name: 'Moments: the dig and the pick', args: '--moments --only "^(dig|pick)$"' }
           - { name: 'Moments: the pointer and the plate', args: '--moments --only "^(glare|plate)$"' }

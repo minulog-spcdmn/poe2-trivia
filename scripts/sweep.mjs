@@ -1025,8 +1025,10 @@ async function checkRedraws(base, scenes) {
     } else {
       const firsts = scenesToWatch(scenes);
       if (!firsts.length) throw new Error(only ? `No scene's key matches ${only}${values.webgl ? ' among the WebGL scenes' : ''}.` : 'No scenes.');
-      // (Two at once: a CI runner has four threads, and a page drawing in software keeps more than one busy.)
-      const at = Math.min(firsts.length, 2);
+      // (Two at once: a CI runner has four threads, and a page drawing in software keeps more than one busy.
+      // With WebGL one at a time: a page drawing WebGL in software keeps them all busy, and two took a
+      // runner over 12 minutes where one after the other take 4 to 8.)
+      const at = Math.min(firsts.length, values.webgl ? 1 : 2);
       console.log(`Redraws at rest: ${firsts.length} scenes${shard ? ` (part ${shard[0]} of ${shard[1]})` : ''}, ${at} at once, at ${REDRAW_SIZE}, ${values.webgl ? 'with WebGL' : 'WebGL refused'}, on fixed frames, from ${base}, ${runner()}`);
       for (let i = 0; i < at; i++) traceBrowsers.push(await launchTraced());
       atRestFound = await scenesAtRest(base, firsts, traceBrowsers);
