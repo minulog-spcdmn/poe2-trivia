@@ -377,4 +377,15 @@
       transform: scale(1.08);
     }
   }
+  /* With the battery saver or reduced motion the glow holds still and no
+     ember rises. */
+  :global(html[data-saver]) :is(.glow, .ember) {
+    animation: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .glow,
+    .ember {
+      animation: none;
+    }
+  }
 </style>

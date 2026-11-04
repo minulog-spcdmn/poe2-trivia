@@ -136,8 +136,9 @@ all as in a game.
   spores, the void, light, fumes) to compare them on one place.
 - **Phone width** shows the screen at 375 px. **Freeze** keeps the card up
   (its cards never dealt) and stops it at the moment the slider sets, to
-  look at any frame of it. **Effects off** and **Reduced motion** show it
-  as those players see it (it fades in and out whole). Click the screen
+  look at any frame of it. **Battery saver** shows it as those players see
+  it (its CSS alone, no effects drawn on it; the page plays it again as it
+  reloads), **Reduced motion** too (it fades in and out whole). Click the screen
   once for sound.
 - **Open it:** `npm run dev`, then `http://localhost:5173/zones.html`; on
   the beta, **poe2.quest/beta/zones.html**. Like the lab, the live build

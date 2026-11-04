@@ -12,7 +12,7 @@
 import { SHADOWS_PER_ELEMENT, measureShadows, releaseAll } from './backdropShadow';
 import { DROPS_PER_MASK, MAX_MASKS, dropAtlasLost, measureDrops, releaseAllDrops } from './backdropDropShadow';
 import { MAX_LIGHTS, packLights, stepHomeScene, stepMood } from './lights';
-import { backdropFrame, fxActive, fxScaledDown, fxSlowGap, fxUserOn, onFxChange, onFxScale, setBackdropPixels, shakeOffset } from './fx/core';
+import { backdropFrame, batterySaver, fxActive, fxScaledDown, fxSlowGap, onFxChange, onFxScale, setBackdropPixels, shakeOffset } from './fx/core';
 import { GpuTimer } from './fx/gpuTimer';
 import { CALM, COLUMNS, GLINT_COLOR, PALETTE, ROWS, SIZE_STRIDE, SLOTS, TILES, embers } from './backdropEmbers';
 import { BLOBS, ENVIRONMENTS, FX_SLOTS, FX_UNIFORM, NO_SLOT, currentDescent, packFx, sinking, smokeOf, snapDescent, stepDescent, stepPlunge, stepSwing, stopsFor, targetDescent, toneOf, type Blob, type Look } from './descent';
@@ -24,7 +24,10 @@ import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 import { buildPrograms, maxDrawSize, refuseWebgl2, setGpuCatchUp, startPrograms, type Build, type Pending, type ProgramSource } from './fx/gl';
 import { frameEvent, timed } from './fpsMeter';
 import { whenIdle } from './idle';
-import { switchedOff } from './switchedOff';
+import { backdropFps, switchedOff } from './switchedOff';
+
+/** ?bgfps (lib/switchedOff.ts): the least gap between two frames of the backdrop (ms), or 0. */
+const BG_GAP = backdropFps ? 1000 / backdropFps : 0;
 
 const CITY = ENVIRONMENTS.indexOf('city');
 
@@ -1825,11 +1828,14 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
   const paths = BLOBS.map(blobPath);
 
   const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
-  // With the visual effects switched off (in the settings) the backdrop
-  // holds still too, where it stands, and is only drawn when something
-  // changes: the low-power mode, for phones that run hot. (Reduced motion
-  // goes further and rests everything.)
-  const calm = () => reduceMotion.matches || !fxUserOn();
+  // With the battery saver on (in the settings) the backdrop's own drift
+  // stops where it stands (the breathing, the smoke, the embers, the god
+  // rays), and it's only drawn when something changes; what runs its course
+  // (a depth easing in, the scene sinking, a light) still does. Reduced
+  // motion rests everything, and what runs its course snaps. (?bgfps keeps it
+  // drifting under the saver too, at that rate: what a saver that only slows
+  // it would save.)
+  const calm = () => reduceMotion.matches || (batterySaver() && !backdropFps);
   /** The backdrop's own clock (ms): it stops while calm(). */
   let clock = 0;
   let raf = 0;
@@ -1856,8 +1862,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
   function drawUntimed() {
     // Every gradient breathes on its own cycle; the periods share no common
     // factor, so the combined motion takes hours to repeat. Reduced motion
-    // freezes them all (and the blobs and embers) at rest; the effects
-    // switched off freeze them where they are.
+    // freezes them all (and the blobs and embers) at rest; the battery
+    // saver freezes them where they are.
     const still = reduceMotion.matches;
     const ms = still ? 0 : clock;
     const glow = still ? 0 : breathe(ms, 9000);
@@ -2185,8 +2191,12 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
     }
     // (A frame's time can come before the last one's; it never runs backwards here.)
     const dt = Math.max(0, Math.min(0.1, (now - lastStep) / 1000));
-    const still = calm();
-    if (!still) {
+    // Resting (calm()), the backdrop's own drift stops and it's drawn only
+    // when something changes; held still (reduced motion), what would run
+    // its course (a depth easing in, a plunge, the vein shaking) snaps too.
+    const resting = calm();
+    const still = reduceMotion.matches;
+    if (!resting) {
       clock += 1000 * dt;
       // (The magma flows as fast as it is hot: slower as it cools, still once it has.)
       magmaClock += dt * (1 - currentDescent().cool);
@@ -2199,18 +2209,18 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
     // Lights and mood step once per animation frame; draw() uses the latest values.
     // A mood holding steady (the victory's gold, a deathmatch's red) changes
     // nothing, so it is just drawn along with everything else: at the pace,
-    // or while calm only when something changes. On phones, where this
+    // or resting only when something changes. On phones, where this
     // full-screen shader is the costliest thing on screen and runs under the
     // effects overlay, lights and an easing mood need no more than 30fps
     // either.
     // Delve's depth eases in; holding still, it changes at once (it is game information).
     const descending = still ? snapDescent() : stepDescent(dt);
     // The dark of a question's clock eases in and out by itself: drawn with
-    // everything else, or, holding still, in steps of a fiftieth.
+    // everything else, or, resting, in steps of a fiftieth.
     const p = pressureLevel(now);
-    if (p !== pressure && (Math.abs(p - pressure) > (still ? 0.02 : 0.002) || p === 0)) {
+    if (p !== pressure && (Math.abs(p - pressure) > (resting ? 0.02 : 0.002) || p === 0)) {
       pressure = p;
-      if (still) dirty = true;
+      if (resting) dirty = true;
     }
     // The view shaking (moved to this frame in backdropFrame, above): the
     // scene with it, every frame it moves, or the UI would slide on it.
@@ -2220,8 +2230,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
       dirty = true;
     }
     // The vein's ground shaking: the seams flicker with it, and each rise
-    // knocks the embers about (EMBER_JOLT). Holding still, neither.
-    const q = still ? 0 : veinQuake();
+    // knocks the embers about (EMBER_JOLT). Resting, neither: it rumbles for
+    // as long as the vein lasts, and would draw the scene every frame of it.
+    const q = resting ? 0 : veinQuake();
     if (q !== quake) {
       if (q > quake) embers.jolt((q - quake) * EMBER_JOLT);
       quake = q;
@@ -2253,11 +2264,11 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
     // Arrived at a depth: the embers still in the old colour take the new one (after a rejoin, all of them).
     if (wasDescending && !descending) embers.recolor();
     wasDescending = descending;
-    // A depth easing in is a slow change of colour: it waits for the pace.
-    // Holding still, the one frame it changes in must be drawn.
+    // A depth easing in is a slow change of colour: it waits for the pace,
+    // resting too. Holding still, the one frame it changes in must be drawn.
     if (still && descending) dirty = true;
-    const soft = lights || moodState === 'moving';
-    if (!still) embers.step(dt, canvasW, canvasH, !fxActive());
+    const soft = lights || moodState === 'moving' || (resting && descending);
+    if (!resting) embers.step(dt, canvasW, canvasH, !fxActive());
     else if (descending) embers.step(0, canvasW, canvasH, true, true);
     // A dialog's dimming fades in and out with the dialog, in step with the UI's.
     const d = openDialog().amount;
@@ -2283,8 +2294,12 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
     if (measured || soft) owed = true;
     if (drawnSlowly && now - last < 1000) return;
     const urgent = measured === 'now' || dirty || homeMoving || fading;
-    if (!urgent && ((still && !owed) || now - last < fxSlowGap())) return;
-    last = now;
+    // (?bgfps: at most that many a second, on the beat, so 24 on a 60 Hz screen
+    // comes as 24, every second or third frame.)
+    const gap = BG_GAP ? Math.max(fxSlowGap(), BG_GAP) : fxSlowGap();
+    if (!urgent && ((resting && !owed) || now - last < gap - (BG_GAP ? 4 : 0))) return;
+    // (An urgent frame drawn before the beat starts the beat over: carried on, the beat would run ahead of the clock.)
+    last = BG_GAP && now - last >= gap - 4 && now - last < 2 * gap ? last + gap : now;
     dirty = false;
     owed = false;
     draw();

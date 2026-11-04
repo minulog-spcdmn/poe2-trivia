@@ -10,8 +10,8 @@
   // sides and hide the backdrop's: a Gaussian falloff (an inset shadow), a
   // few px deep, that never reaches the question or the answers. It comes in
   // late, felt in the last seconds rather than seen before them. Only its
-  // opacity changes, so it costs the compositor nothing more. Holding still
-  // (effects off, reduced motion) it follows the clock in steps of a
+  // opacity changes, so it costs the compositor nothing more. At rest
+  // (reduced motion, the battery saver) it follows the clock in steps of a
   // twentieth rather than every frame. Its colour is the dark's own, a deep
   // blue-black, not the warm black of the scene.
   let { active }: { active: boolean } = $props();
@@ -30,7 +30,7 @@
       // swallows the scene behind (nor any lighter as a right answer's light
       // overshoots): it stays at the very edges, off the question and answers.
       const o = Math.min(1, Math.max(0, level) / CLOCK_PEAK) ** 2;
-      if (Math.abs(o - shown) > (motion.still ? 0.05 : 0.004) || (o === 0 && shown !== 0)) {
+      if (Math.abs(o - shown) > (motion.resting ? 0.05 : 0.004) || (o === 0 && shown !== 0)) {
         shown = o;
         el.style.opacity = o > 0.001 ? o.toFixed(3) : '0';
         el.style.visibility = o > 0.001 ? 'visible' : 'hidden';

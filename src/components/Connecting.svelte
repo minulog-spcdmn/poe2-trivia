@@ -85,9 +85,6 @@
   .what.grows {
     transition-delay: 0s;
   }
-  :global(html[data-still]) :is(.what, .say) {
-    transition: none;
-  }
   .num {
     font-family: var(--font-cinzel);
     font-size: 15px;

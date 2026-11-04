@@ -1510,6 +1510,10 @@
       transform: scale(0.7);
     }
   }
+  /* With the battery saver it just stays lit, as GameOver's does: the line beside it says what it waits for, however long. */
+  :global(:root[data-saver]) .pulse {
+    animation: none;
+  }
 
   .setting {
     margin-bottom: 1.2rem;

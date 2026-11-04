@@ -150,8 +150,8 @@
       <circle r={OUTER} class="done" pathLength="100" stroke-dasharray="{share * 100} 100" transform="rotate(-90)" />
     {/if}
   </svg>
-  <!-- Held still, no light ever passes, so no copy of the lines is kept for it. -->
-  {#if earned && !motion.still}
+  <!-- At rest (reduced motion, or the battery saver), no light ever passes, so no copy of the lines is kept for it. -->
+  {#if earned && !motion.resting}
     {#key tier}
       <span class="light"><span class="slit" use:sheen={tier}><svg viewBox="-24 -24 48 48">{@render engraving(true)}</svg></span></span>
       {#if METALS[tier].light.spark}

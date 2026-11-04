@@ -144,8 +144,9 @@
     transition: filter 0.3s;
   }
   /* Her ring: a gold band set in ruby, with a faint ruby glow. It marks her
-     with effects off too, and as shadows it takes no room. (BEZEL in
-     lib/fx/orbit.ts is how far it reaches.) */
+     where no effects are drawn too (the battery saver, no WebGL2), and as
+     shadows it takes no room. (BEZEL in lib/fx/orbit.ts is how far it
+     reaches.) */
   .creator {
     box-shadow:
       0 0 0 1.5px #0c0a08,

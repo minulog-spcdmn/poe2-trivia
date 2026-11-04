@@ -160,7 +160,7 @@
   }
   $effect(() => {
     if (!coop) return;
-    // (Again when the effects are turned back on: turning them off drops every cover.)
+    // (Again when the effects come back: the battery saver drops every cover as it goes on.)
     let seen = cover(seals);
     const off = onFxChange(() => {
       seen.stop();
@@ -608,8 +608,8 @@
 
   // The deal: the cards slide in face down one after another, then turn face
   // up from left to right. Seconds from when they appear. Held still (reduced
-  // motion, or the effects off) they only fade in, face up, and the vote pips
-  // appear and go at once.
+  // motion) they only fade in, face up, and the vote pips appear and go at
+  // once.
   const DEAL = 0.42;
   const FLIP = TURN.seconds;
   const dealAt = (i: number) => 0.15 + i * 0.07;
@@ -2358,6 +2358,29 @@
   }
   .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after {
     animation: light-swell 3.2s ease-in-out infinite;
+  }
+  /* With the battery saver or reduced motion, a card yours to pick holds
+     its light at rest (and a duel's its ring), as a find's glow does
+     (CardEngraving). */
+  :global(html[data-saver]) .card.dm.mine:not(:global(.down)) .pulse,
+  :global(html[data-saver]) .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::before,
+  :global(html[data-saver]) .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after,
+  :global(html[data-saver]) .card.dm.mine:not(:global(.down)) .rim.ring,
+  :global(html[data-saver]) .card.special.mine:not(:global(.down)) .pulse,
+  :global(html[data-saver]) .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::before,
+  :global(html[data-saver]) .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after {
+    animation: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .card.dm.mine:not(:global(.down)) .pulse,
+    .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::before,
+    .card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after,
+    .card.dm.mine:not(:global(.down)) .rim.ring,
+    .card.special.mine:not(:global(.down)) .pulse,
+    .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::before,
+    .card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on])) ~ .pulse::after {
+      animation: none;
+    }
   }
   .card.special.mine:not(:global(.down)):hover .frame,
   .card.special.mine:not(:global(.down)):focus-visible .frame,

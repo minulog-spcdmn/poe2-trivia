@@ -2,7 +2,7 @@
 // per-frame tasks (emitters, comets), and drives the renderer only while
 // something is alive. Also runs camera shake and adapts quality to the device.
 //
-// Effects are off when the user turned them off, when the system asks for
+// Effects are off while the battery saver is on, when the system asks for
 // reduced motion, or when WebGL2 isn't available; every call below is then a
 // cheap no-op, so callers never need to check.
 //
@@ -22,11 +22,11 @@ import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
 import { cornerOnScreen } from '../corner';
 import { zoomOf } from '../stage';
-import { readStored, writeStored } from '../storage';
+import { readStored, removeStored, writeStored } from '../storage';
 import { whenIdle } from '../idle';
 import { scrollFollow } from '../scrollFollow';
 import { pageScroll } from '../pageScroll';
-import { switchedOff, type Switch } from '../switchedOff';
+import { endlessFxFps, fxCapFps, switchedOff, type Switch } from '../switchedOff';
 import { frameEvent, timed } from '../fpsMeter';
 import { GpuBudget, type Layer, type Saved } from './gpuBudget';
 import type { GpuDraw } from './gpuTimer';
@@ -156,7 +156,16 @@ type LiveTask = { fn: Task; age: number; life: number; keep: boolean; group: num
 
 // ---------- state ----------
 
-let userOn = readStored('fx') !== '0';
+/**
+ * The battery saver (the settings' Screen): no effects drawn, so the
+ * overlay costs nothing, as on a device without WebGL2. Kept as 'saver';
+ * the visual effects switch it replaced kept 'fx', '0' while off, and
+ * whoever had them off has it on.
+ */
+let saver = readStored('saver') === null ? readStored('fx') === '0' : readStored('saver') === '1';
+/** Marks the page html[data-saver] while it's on, for CSS and lib/motion.svelte.ts: set as this loads, before the first paint, so no loop starts only to stop. (A test's made-up page may have no such call.) */
+const markSaver = () => typeof document !== 'undefined' && document.documentElement?.toggleAttribute?.('data-saver', saver);
+markSaver();
 const reduce = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 const coarse = typeof matchMedia === 'function' ? matchMedia('(pointer: coarse)') : null;
 
@@ -190,7 +199,7 @@ let awayAt = 0;
 let viewW = 1;
 let viewH = 1;
 let dpr = 1;
-const listeners = new Set<(on: boolean) => void>();
+const listeners = new Set<() => void>();
 const awayListeners = new Set<(away: boolean) => void>();
 
 /**
@@ -216,34 +225,49 @@ let resizeDueAt = 0;
  * the pace the GPU keeps up with (fxSlowGap), every frame where it can.
  */
 let calm = false;
+/** Calm, with all that's alive endless (a streak's fire between moments): ?fxfps paces it (lib/switchedOff.ts). */
+let endlessCalm = false;
+/** ?fxfps: the least gap between two frames while endlessCalm (ms), or 0. */
+const ENDLESS_GAP = endlessFxFps ? 1000 / endlessFxFps : 0;
+/** ?fxcap: the least gap between any two frames (ms), or 0. */
+const CAP_GAP = fxCapFps ? 1000 / fxCapFps : 0;
 let lastDraw = 0;
 /** Fastest a particle may move and still count as calm: about 7px per frame at 30fps. */
 const CALM_SPEED = 200;
 
+/** ?off=fx: no effects at all, to weigh what they cost (lib/switchedOff.ts). */
+const noFx = switchedOff('fx');
+/** The effects left out: the battery saver (?fxfps and ?fxcap keep them under it, at those rates: what a saver that only slows them would save), or ?off=fx. */
+const saverOff = () => (saver && !endlessFxFps && !fxCapFps) || noFx;
+
 /** Are effects being drawn right now? */
 export function fxActive() {
-  return (!!renderer || coming()) && userOn && !reduce?.matches;
+  return (!!renderer || coming()) && !saverOff() && !reduce?.matches;
 }
 
-/** The user's setting (effects may still be off for reduced motion or missing WebGL2). */
-export function fxUserOn() {
-  return userOn;
-}
-
+/** Whether effects could be drawn: the renderer there (or coming), and no reduced motion. */
 export function fxAvailable() {
   return (!!renderer || coming()) && !reduce?.matches;
 }
 
-export function setFxOn(on: boolean) {
-  userOn = on;
-  writeStored('fx', on ? '1' : '0');
-  if (!fxActive()) clearAll();
-  // (Not made while they were off: made now.)
-  else hurry();
-  for (const l of listeners) l(on);
+/** Whether the battery saver is on (lib/motion.svelte.ts says what else it holds still). */
+export function batterySaver() {
+  return saver;
 }
 
-export function onFxChange(fn: (on: boolean) => void) {
+export function setBatterySaver(on: boolean) {
+  saver = on;
+  markSaver();
+  writeStored('saver', on ? '1' : '0');
+  removeStored('fx');
+  if (!fxActive()) clearAll();
+  // (Not made while it was on: made now.)
+  else hurry();
+  for (const l of listeners) l();
+}
+
+/** Calls `fn` whenever effects come or go: the battery saver, reduced motion, the renderer made or lost. */
+export function onFxChange(fn: () => void) {
   listeners.add(fn);
   return () => listeners.delete(fn);
 }
@@ -925,8 +949,11 @@ function frameUntimed(nowMs: number) {
     steer(nowMs);
   }
 
-  const draw = !calm || nowMs - lastDraw >= fxSlowGap();
-  if (draw) lastDraw = nowMs;
+  // (?fxfps and ?fxcap: on the beat, as the backdrop's ?bgfps is.)
+  const paced = (endlessCalm && ENDLESS_GAP > 0) || CAP_GAP > 0;
+  const gap = Math.max(fxSlowGap(), endlessCalm ? ENDLESS_GAP : 0, CAP_GAP);
+  const draw = (!calm && !CAP_GAP) || nowMs - lastDraw >= gap - (paced ? 4 : 0);
+  if (draw) lastDraw = paced && nowMs - lastDraw < 2 * gap ? lastDraw + gap : nowMs;
   let busy = false;
   try {
     busy = simulate(Math.min(rawDt, 1 / 15), nowMs, draw);
@@ -1078,6 +1105,7 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   // while the page scrolls, or a phone's toolbars slide, it would trail its
   // element, jumping after it every other frame.)
   calm = (!!coarse?.matches || (nShapes > 0 && shapesEndless)) && shapesCalm && !anchorsMoved && !shaking() && pool.fastest < CALM_SPEED * CALM_SPEED;
+  endlessCalm = calm && nShapes > 0 && shapesEndless;
 
   advanceShake(nowMs);
 
@@ -1450,11 +1478,11 @@ function teardown() {
   covers.clear();
   stopShake();
   hide();
-  for (const l of listeners) l(userOn);
+  for (const l of listeners) l();
 }
 
 /** Whether effects would be drawn, once the renderer is made. */
-const wanted = () => userOn && !reduce?.matches;
+const wanted = () => !saverOff() && !reduce?.matches;
 
 /**
  * Gets the overlay on `c` ready to take effects: the particle pool now, the
@@ -1584,7 +1612,7 @@ function setup(c: HTMLCanvasElement, r: FxRenderer) {
   shown = true;
   show(false);
   warm(r);
-  for (const l of listeners) l(userOn);
+  for (const l of listeners) l();
   // (resize() woke the loop: anything asked for meanwhile plays from now.)
 }
 
@@ -1626,7 +1654,7 @@ export function startFx(c: HTMLCanvasElement): () => void {
   const onMotion = () => {
     if (!fxActive()) clearAll();
     else hurry();
-    for (const l of listeners) l(userOn);
+    for (const l of listeners) l();
   };
   reduce?.addEventListener('change', onMotion);
   setHidden(document.hidden);

@@ -88,7 +88,7 @@ export const PAINTED: Painted[] = [
   {
     file: 'src/components/DelveLadder.svelte',
     keyframes: ['var(--holes)'],
-    selectors: ['.glow', '.plate'],
+    selectors: ['.glow', '.plate', ':global(html[data-saver]) .descent .glow'],
     why: 'Once, as a star is stamped on the ladder: its hole in the plate’s and the glow’s masks carved (0.5 s), and the gold one’s carried down with it (1 to 2.1 s). The descent-hole keyframes, named in the markup (holesMotion): each the ladder’s whole svg, drawn again while it runs.',
   },
   {
@@ -107,8 +107,8 @@ export const PAINTED: Painted[] = [
   {
     file: 'src/components/DelveLadder.svelte',
     keyframes: ['comet', 'reveal', 'draw', 'blend-stroke', 'blend-fill', 'blend-halo', 'blend-glory'],
-    selectors: ['.hot', '.reveal', '.draw', '.both-star .glory', '.both-star :is(.star-line, .star-ridge, .star-hatch)', '.both-star .star-ground', '.both-star .halo'],
-    why: 'The ladder draws itself once as it shows (the comet, the reveal, the stars’ lines); a star for two bests drifts from gold to red and back, 7 s each way, for as long as it shows: a star’s lines on the ladder.',
+    selectors: ['.hot', '.reveal', '.draw', '.both-star .glory', '.both-star :is(.star-line, .star-ridge, .star-hatch)', '.both-star .star-ground', '.both-star .halo', ':global(html[data-saver]) .descent .both-star .glory'],
+    why: 'The ladder draws itself once as it shows (the comet, the reveal, the stars’ lines); a star for two bests drifts from gold to red and back, 7 s each way, for as long as it shows (not with the battery saver, which keeps only the drawing in): a star’s lines on the ladder.',
   },
   { file: 'src/components/GameOver.svelte', keyframes: ['ignite'], selectors: ['.ranking li.first'], why: 'Once, 1.2 s, as the winner’s row is set down: its edge kindles (its border’s colour), the row’s own box.' },
   { file: 'src/components/Phial.svelte', keyframes: ['glint'], selectors: ['.glint'], why: 'A phial’s glint runs along its edge now and then, for as long as it shows: a stroke 16 px long on a small svg.' },

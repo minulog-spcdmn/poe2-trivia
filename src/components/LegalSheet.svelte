@@ -159,9 +159,6 @@
       opacity: 0;
     }
   }
-  :global(:root[data-still]) .sheet::backdrop {
-    animation: none;
-  }
   @media (prefers-reduced-motion: reduce) {
     .sheet::backdrop {
       animation: none;

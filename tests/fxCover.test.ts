@@ -253,14 +253,14 @@ test('a tremor shakes the view by what its source gives, as a shiver, until it l
   undo();
 });
 
-test('turning the effects off drops every cover', () => {
+test('turning the battery saver on drops every cover', () => {
   let asked = 0;
   fx.cover(() => {
     asked++;
     return [{ box: rect(0, 0, 10, 10) }];
   });
-  fx.setFxOn(false);
-  fx.setFxOn(true);
+  fx.setBatterySaver(true);
+  fx.setBatterySaver(false);
   const s = glow();
   fx.fxStep(1 / 60);
   assert.equal(asked, 0);

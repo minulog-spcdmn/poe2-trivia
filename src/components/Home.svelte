@@ -1098,9 +1098,6 @@
   .greeting-cell > * {
     grid-area: 1 / 1;
   }
-  :global(html[data-still]) .greeting {
-    transition: none;
-  }
   .hello {
     display: flex;
     flex-wrap: wrap;

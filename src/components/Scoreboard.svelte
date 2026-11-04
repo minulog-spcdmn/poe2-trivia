@@ -445,8 +445,8 @@
    * first chamber without a ward, `wards` being how many they had), a flare
    * or dynamite to its engraving beside the phial (or the avatar), its place
    * kept for it meanwhile. Whoever got it hears it flow in. Its `fed` turns true, a tick
-   * later, once the sparks do fly (with effects off, or no answer or place
-   * to fly between, nothing does). `banked`: a vein's haul going into the
+   * later, once the sparks do fly (without the effects, or no answer or
+   * place to fly between, nothing does). `banked`: a vein's haul going into the
    * pack, its wards flowing from the way out's card (its lantern) as it
    * leaves, or, the dig ended by itself, from the strike's right answer.
    */
@@ -799,8 +799,8 @@
       }
     };
     set(o);
-    // Effects switched off and on, or the GL context lost and restored, wipe
-    // every shape: light it again on the new one.
+    // The battery saver switched on and off, or the GL context lost and
+    // restored, wipe every shape: light it again on the new one.
     const relight = onFxChange(() => {
       fire?.stop(0);
       light();
@@ -1093,7 +1093,7 @@
     --bs1-color: color-mix(in srgb, var(--c), transparent 70%);
     transform: translateY(-2px) scale(1.04);
   }
-  /* On a streak: the entry smoulders under its flames (and still glows with effects off). */
+  /* On a streak: the entry smoulders under its flames (and still glows without the effects). */
   li.ablaze {
     /* Orange, blue at the top of a streak, and in Delve on up the daily's colours (lib/fx/streaks). */
     --flame: rgb(var(--flame-rgb, 255, 110, 30));
@@ -1114,6 +1114,10 @@
       0 calc(-6px * var(--heat)) calc(14px + 26px * var(--heat)) color-mix(in srgb, var(--flame) calc(20% + 40% * var(--heat)), transparent);
     /* A fixed pace: changing an infinite animation's duration as the heat steps up makes it jump. */
     animation: smoulder 0.9s ease-in-out infinite alternate;
+  }
+  /* (The battery saver holds it lit, as reduced motion does.) */
+  :global(html[data-saver]) li.ablaze::before {
+    animation: none;
   }
   @keyframes smoulder {
     to {
@@ -1388,8 +1392,9 @@
     outline: 1px solid var(--gold-hi);
     outline-offset: 1px;
   }
-  :global(html[data-still]) .revive::before,
-  :global(html[data-still]) .heart {
+  /* (The battery saver holds it at rest, as reduced motion does.) */
+  :global(html[data-saver]) .revive::before,
+  :global(html[data-saver]) .heart {
     animation: none;
   }
   /* Just brought back: the entry glows rose for a moment. */
@@ -1743,9 +1748,6 @@
       li.wide .info {
         animation: none;
       }
-    }
-    :global(html[data-still]) li.wide .info {
-      animation: none;
     }
     /* Delve: a slimmer phial (and finds beside it) under the name, so the
        pill stands no taller than the avatars beside it. */

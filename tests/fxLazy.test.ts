@@ -620,18 +620,18 @@ test('without WebGL2 nothing is on its way: effects are off from the start', (ct
   }
 });
 
-test('with effects switched off, the renderer waits until they are on (and the switch stays there)', (ctx) => {
-  fx.setFxOn(false);
-  ctx.after(() => fx.setFxOn(true));
+test('with the battery saver on, the renderer waits until it is off (and the switch stays there)', (ctx) => {
+  fx.setBatterySaver(true);
+  ctx.after(() => fx.setBatterySaver(false));
   const o = overlay();
   const stop = mounted(ctx, o.canvas);
   frame();
   frame();
   idle();
-  assert.equal(o.c.asked, 0, 'not made while off');
+  assert.equal(o.c.asked, 0, 'not made while it is on');
   assert.ok(fx.fxAvailable());
-  fx.setFxOn(true);
-  assert.equal(o.c.asked, 1, 'made once on');
+  fx.setBatterySaver(false);
+  assert.equal(o.c.asked, 1, 'made once it is off');
   stop();
 });
 

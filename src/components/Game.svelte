@@ -442,7 +442,7 @@
   });
   /** Svelte transition: the blasted question goes at once (its shards fly in an overlay of their own, see above), or cross-fades. */
   function swingOut(_node: Element) {
-    // Reduced motion, or the effects held still: a blast only cross-fades.
+    // Reduced motion: a blast only cross-fades.
     if (!swingSide || !motion.still) return { duration: 0 };
     return { duration: 200, css: (t: number) => `opacity: ${t}` };
   }

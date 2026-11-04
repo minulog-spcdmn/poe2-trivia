@@ -1082,10 +1082,6 @@
       animation: none;
     }
   }
-  :global(:root[data-still]) :is(.hero > *, .tabs, .end),
-  :global(:root[data-still]) .rising :is(.page > :global(*), .page > :global(.delve-page > *), .collection > *) {
-    animation: none;
-  }
 
   /* ---- title ---- */
   .hero {

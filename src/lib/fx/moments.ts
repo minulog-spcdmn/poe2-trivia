@@ -1008,8 +1008,8 @@ export function descended() {
 
 /**
  * Delve: a new zone's name locks in on its title card (components/zonecard):
- * the backdrop's embers flare and all take the zone's colour. Even with the
- * effects off, as the colour is the zone's.
+ * the backdrop's embers flare and all take the zone's colour. Even with no
+ * effects drawn, as the colour is the zone's.
  */
 export function zoneArrival() {
   backdropEmbers.flare(0.85, 2.4);

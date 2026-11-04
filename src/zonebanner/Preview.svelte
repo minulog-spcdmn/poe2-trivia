@@ -32,7 +32,8 @@
   let phone = $state(stored('phone', '0') === '1');
   let freeze = $state(stored('freeze', '0') === '1');
   let at = $state(Number(stored('at', '2850')) || 2850);
-  let still = $state(false);
+  /** The battery saver, as the frame's fx/core keeps it (no effects drawn on the card: its CSS alone). */
+  const saver = readStored('saver') === null ? readStored('fx') === '0' : readStored('saver') === '1';
   const reduced = readStored('labReduceMotion') === '1';
   $effect(() => {
     writeStored('zones.zone', zone);
@@ -70,10 +71,10 @@
     if (freeze) api()?.seek(at);
   });
 
-  function setStill(on: boolean) {
-    still = on;
-    frame.contentDocument?.documentElement.toggleAttribute('data-still', on);
-    replay();
+  /** Read as the frame loads (fx/core), so it takes on its next load, which plays the card again. */
+  function setSaver(on: boolean) {
+    writeStored('saver', on ? '1' : '0');
+    frame.contentWindow?.location.reload();
   }
   function setReduced(on: boolean) {
     writeStored('labReduceMotion', on ? '1' : '0');
@@ -111,7 +112,7 @@
     {#if freeze}
       <label class="tog at"><input type="range" min="0" max="7000" step="50" bind:value={at} /> {(at / 1000).toFixed(2)} s</label>
     {/if}
-    <label class="tog"><input type="checkbox" checked={still} onchange={(e) => setStill(e.currentTarget.checked)} /> Effects off</label>
+    <label class="tog"><input type="checkbox" checked={saver} onchange={(e) => setSaver(e.currentTarget.checked)} /> Battery saver</label>
     <label class="tog"><input type="checkbox" checked={reduced} onchange={(e) => setReduced(e.currentTarget.checked)} /> Reduced motion</label>
     <span class="hint">Click the screen once for sound.</span>
   </header>
