@@ -2,15 +2,17 @@
 // clock running, the answer shown, right and wrong), played through the
 // engine to there, from the seat whose turn it is and from one watching it.
 // Delve alone and together, deeper down too, with finds among the cards and a
-// vein's dig, the vote's clock running out and a teammate to bring back; the
-// host's kick, and a duelist sent to the bench.
+// vein's dig, the vote's clock running out and a teammate to bring back, and a
+// run's end, the end screen coming in; the host's kick, and a duelist sent to
+// the bench.
 
 import { MAX_PLAYERS, PRESETS, TALL_ART_GROUPS, type GameState, type Knobs, type Settings } from '../../lib/game.ts';
 import { DELVE_IDLE_ROUNDS, WAY_OUT, livesOf, voteClosesAt } from '../../lib/delve.ts';
 import { ACHIEVEMENTS } from '../../lib/achievements.ts';
 import { DELVE_FLAMES } from '../../lib/fx/streaks.ts';
+import type { Answer } from '../../lib/codex.ts';
 import type { Control, Values } from '../bench.ts';
-import { longestNamed, longestWord } from '../build/engine.ts';
+import { longestNamed, longestWord, sceneEngine } from '../build/engine.ts';
 import { pid } from '../build/people.ts';
 import { Table } from '../build/play.ts';
 import type { Built, Scene, Seat, Step } from '../scene.ts';
@@ -907,6 +909,38 @@ export function gameScenes(): Scene[] {
           at,
           // (Alone, on this device: no room code on the line.)
           ...(delve ? { seat: ALONE, hereOnly: true } : {}),
+          steps: [{ wait: LOOK_FIRST }, { then: t.s, at: t.clock.now }],
+        } satisfies Built;
+      },
+    },
+    // A run's end: its last answer shown, then the end screen coming in as the screens swap, from just under its
+    // size (App.svelte's screenIn). It fits the window as it will stand once in (GameOver.svelte's straighten), so
+    // the page doesn't scroll once it's there. A long first run, its panel full: what it earned, its uniques new
+    // to the codex.
+    {
+      ...scene('delve-ends', 'Delve alone', 'A run’s last answer, then the end screen coming in', [ALONE], () => table(['Kalguur'])),
+      build: () => {
+        const t = table(['Kalguur'], { mode: 'delve' }, { host: null }).start();
+        let last = { state: t.s, at: t.clock.now };
+        t.playTo(
+          (s) => {
+            if (s.phase !== 'over') last = { state: s, at: t.clock.now };
+            return s.phase === 'over';
+          },
+          (_, round) => round < 25,
+        );
+        const run = t.s.delve!.startedAt;
+        const log = sceneEngine()
+          .items.slice(0, 26)
+          .map((it, i): Answer => ({ t: run + 1 + i, id: it.id, mode: 'name', ok: true, difficulty: 'cruel', race: false, depth: Math.min(t.s.round, 1 + i), run }));
+        return {
+          state: last.state,
+          act: t.room,
+          at: last.at,
+          hereOnly: true,
+          delveResult: { id: run, depth: t.s.round, previousBest: null, best: true },
+          earned: ['depth-10', 'prima-materia', 'streak-25'],
+          log,
           steps: [{ wait: LOOK_FIRST }, { then: t.s, at: t.clock.now }],
         } satisfies Built;
       },
