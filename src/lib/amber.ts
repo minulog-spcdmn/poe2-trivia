@@ -328,7 +328,7 @@ const dither = (v: number, r: number) => (v <= 0 ? 0 : Math.max(0, Math.min(255,
 /** The colour of the light the seams, flakes and cracks catch: the lamp's, pale gold. */
 const SHEEN: [number, number, number] = [1, 0.93, 0.75];
 /** The room's light on the back, from in front (no lamp behind it there): the resin dark, its colour and flows only just showing. */
-const ROOM = 0.2;
+const ROOM = 0.09;
 
 /** Paints one image of the slab: RGBA, `job.W` x `job.H`, straight (not premultiplied) alpha. */
 export function paintAmber(job: AmberJob): Uint8ClampedArray {

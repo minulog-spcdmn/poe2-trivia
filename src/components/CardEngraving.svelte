@@ -219,14 +219,15 @@
 <!-- A glint: the motif again in pale light, seen through a band that runs
      across the card while the drawing inside it runs back, so the light
      moves and the lines stay put (the flare's and the dynamite's flare up
-     in place instead). A travelling one is built anew when the card's width
-     changes (a phone turned): Safari keeps a running animation's distances
-     from when it started, and the band's and the drawing's fell out of
-     step, the light's copy of the lines off the lines. -->
+     in place instead; a fossil's runs down it). A travelling one is built
+     anew when the card's size changes (a phone turned): Safari keeps a
+     running animation's distances from when it started, and the band's and
+     the drawing's fell out of step, the light's copy of the lines off the
+     lines. -->
 {#snippet glint()}
-  {#key travels ? Math.round(box?.width ?? w) : 0}
-    <span class="glint" class:flicker={find === 'flare'} class:flash={find === 'dynamite'}>
-      <span class="through" style:--w="{box?.width ?? w}px">
+  {#key travels ? `${Math.round(box?.width ?? w)} ${Math.round(box?.height ?? h)}` : 0}
+    <span class="glint" class:flicker={find === 'flare'} class:flash={find === 'dynamite'} class:runs={!!lit}>
+      <span class="through" style:--w="{box?.width ?? w}px" style:--h="{box?.height ?? h}px">
         <span class="drawing" style:width="{box?.width ?? w}px" style:height="{box?.height ?? h}px">
           <svg viewBox="0 0 {w} {h}">
             {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
@@ -725,9 +726,43 @@
     stroke-width: 0.5px;
     opacity: 0.85;
   }
-  /* A fossil's glint is the lamp's warm light, not a crystal's cold one; its glow breathes as a flame does. */
+  /* A fossil's glint is the lamp's warm light, not a crystal's cold one,
+     and it runs down its lines as sap runs, not across them: a band a
+     quarter of the card high, gathering a while at the top (over the arch,
+     its sap), then falling faster and faster to the foot, every 8.4 s. */
   [data-fossil] .glint {
     color: #fff1d0;
+  }
+  .glint.runs .through {
+    right: 0;
+    bottom: auto;
+    width: auto;
+    height: calc(var(--h) / 4);
+    -webkit-mask-image: linear-gradient(180deg, transparent, #000 40%, #000 60%, transparent);
+    mask-image: linear-gradient(180deg, transparent, #000 40%, #000 60%, transparent);
+    animation: run-down 8.4s cubic-bezier(0.7, 0, 0.9, 0.55) infinite;
+  }
+  .glint.runs .drawing {
+    animation: run-up 8.4s cubic-bezier(0.7, 0, 0.9, 0.55) infinite;
+  }
+  /* The band from its own height over the card to past its foot; the drawing the same distance back. */
+  @keyframes run-down {
+    0% {
+      transform: translateY(-100%);
+    }
+    40%,
+    100% {
+      transform: translateY(500%);
+    }
+  }
+  @keyframes run-up {
+    0% {
+      transform: translateY(calc(var(--h) / 4));
+    }
+    40%,
+    100% {
+      transform: translateY(calc(var(--h) / -0.8));
+    }
   }
   [data-fossil] .glow {
     animation: breathe 5.6s ease-in-out infinite;

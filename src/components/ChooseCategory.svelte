@@ -2243,6 +2243,10 @@
   .card[data-fossil] :is(.frame, .back) > :global(.engraving) {
     opacity: 0.8;
   }
+  /* On the back, which no lamp lights, they're no brighter than another card's back's. */
+  .card[data-fossil] .back > :global(.engraving) {
+    opacity: 0.6;
+  }
   /* Its emblem caught in the amber, as the creature in a fossil's icon:
      olive-brown, thick and dark at its core, thinner toward its edges and
      up toward the lamp, multiplied over the amber so its light and planes
