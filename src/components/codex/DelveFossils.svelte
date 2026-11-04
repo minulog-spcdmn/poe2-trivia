@@ -593,13 +593,13 @@
     --rim: rgba(200, 48, 12, 0.16);
   }
   .slot.rare.got {
-    --rim: color-mix(in srgb, var(--fossil-rare-edge) 62%, transparent);
-    background: color-mix(in srgb, var(--fossil-rare-resin) 48%, #0a0503);
+    --rim: color-mix(in srgb, var(--fossil-rare-edge) 42%, transparent);
+    background: color-mix(in srgb, var(--fossil-rare-resin) 16%, rgba(0, 0, 0, 0.32));
   }
   .slot.rare.got::before {
     background:
       var(--dither),
-      radial-gradient(closest-side, color-mix(in srgb, var(--fossil-rare-mid) 30%, transparent), color-mix(in srgb, var(--fossil-rare-edge) 10%, transparent) 70%, transparent);
+      radial-gradient(closest-side, color-mix(in srgb, var(--fossil-rare-mid) 22%, transparent), color-mix(in srgb, var(--fossil-rare-edge) 6%, transparent) 70%, transparent);
   }
   .slot img {
     position: absolute;
