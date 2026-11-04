@@ -136,8 +136,14 @@
   --unique: #af6025;
   --unique-hi: #e08a44;
   --text: #ddd3c2;
-  /* Secondary text (docs/design-rules.md, "Secondary text"). A note, a line
-     to read: a hint, a status, a waiting line, an empty state, a caption. */
+  /* The greys under it, brightest first (docs/design-rules.md, "Secondary
+     text"). A line just under the text, leading others: a setting's name, a
+     caption over a list, an earned achievement's text. */
+  --text-lo: #c8bba2;
+  /* A step under that: a tile's name not yet had, a tagline. */
+  --note-hi: #b9ab94;
+  /* A note, a line to read: a hint, a status, a waiting line, an empty
+     state, a caption. */
   --note: #ab9d88;
   /* At its dimmest: a label, a date, a count, an aside. No grey text is
      dimmer (tests/legible.test.ts). */

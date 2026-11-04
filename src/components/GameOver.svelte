@@ -1669,7 +1669,7 @@
   .ach span {
     font-size: 0.95rem;
     line-height: 1.3;
-    color: #cbbfa8;
+    color: var(--text-lo);
   }
 
   /* ---- where your lives went ---- */
@@ -1955,7 +1955,7 @@
     margin: 0.2rem 0 0.7rem;
     font-style: italic;
     font-size: 1rem;
-    color: #c4b69c;
+    color: var(--text-lo);
   }
   /* The run's facts hang from the chart's ground line: the first one's mark centred on it (--ground: lib/runsPlate's GROUND_Y). */
   .chart-row {
@@ -2134,7 +2134,7 @@
     font-size: 0.8em;
     font-style: italic;
     letter-spacing: 0;
-    color: #c4b69c;
+    color: var(--text-lo);
   }
 
   /* Share run: the lobby's small Lock button. */

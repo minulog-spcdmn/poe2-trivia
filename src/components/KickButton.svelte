@@ -51,7 +51,7 @@
     border-radius: 999px;
     border: 1px solid rgba(201, 164, 92, 0.34);
     background: radial-gradient(circle at 50% 30%, #1f160e, #0d0a07 72%);
-    color: #a8987f;
+    color: var(--note);
     /* Larger than a cross would be: the ring inside the seal needs the room to read. */
     --mark-size: min(calc(var(--size) * 0.42), 11px);
     transition:

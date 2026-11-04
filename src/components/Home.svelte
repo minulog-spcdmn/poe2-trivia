@@ -1425,7 +1425,7 @@
     line-height: 20px;
     letter-spacing: 0.2em;
     text-transform: uppercase;
-    color: #a99c86;
+    color: var(--note);
   }
   /* The Codex and Settings (or an invite's way to everything else) as the
      list's entries are set, a size down, each with a chevron that says it goes somewhere. */

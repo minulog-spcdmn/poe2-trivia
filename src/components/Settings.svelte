@@ -511,7 +511,7 @@
     font-size: 1rem;
     letter-spacing: 0;
     text-transform: none;
-    color: #c4b69c;
+    color: var(--text-lo);
   }
   .blurb {
     grid-column: 1 / -1;
@@ -878,7 +878,7 @@
   .key-name {
     justify-self: start;
     font-size: 1rem;
-    color: #c4b69c;
+    color: var(--text-lo);
   }
   /* A key on the seal the answers wear in a game (QuestionView's .key), drawn
      out for a key whose name is a word; a waiting one is lit and breathes. */

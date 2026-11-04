@@ -1114,7 +1114,7 @@
   .tagline {
     margin: 0.6rem 0 0;
     font-style: italic;
-    color: #b8ab95;
+    color: var(--note-hi);
     /* The line going and the one coming over each other as they cross-fade. */
     display: grid;
   }

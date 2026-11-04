@@ -1162,7 +1162,7 @@
     flex: 1;
     min-width: 0;
     font-size: 1rem;
-    color: #b8ab95;
+    color: var(--note-hi);
   }
   .invite-row {
     position: relative;
@@ -1264,7 +1264,7 @@
   .count {
     font-family: var(--font-cinzel);
     font-size: 0.75rem;
-    color: #ab9d88;
+    color: var(--note);
   }
 
   /* The game's own player chips (Scoreboard), so the party carries on into the game. */
@@ -1378,7 +1378,7 @@
     font-weight: 400;
     letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: #ab9d88;
+    color: var(--note);
   }
   .gallery h3 :global(.eye) {
     --eye-size: 16px;
@@ -1530,7 +1530,7 @@
     font-size: 1rem;
     letter-spacing: 0;
     text-transform: none;
-    color: #c4b69c;
+    color: var(--text-lo);
   }
   .setting.row .blurbs {
     grid-column: 1 / -1;

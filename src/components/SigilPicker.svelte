@@ -144,7 +144,7 @@
     margin: 0;
     font-size: 1rem;
     font-style: italic;
-    color: #cbbfa8;
+    color: var(--text-lo);
   }
   .acts {
     display: flex;
@@ -212,7 +212,7 @@
     font-family: var(--font-display);
     font-size: 1rem;
     letter-spacing: 0.04em;
-    color: #b9ab94;
+    color: var(--note-hi);
   }
   .have .name {
     color: var(--gold-hi);

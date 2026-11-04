@@ -254,7 +254,7 @@
     font-family: var(--font-display);
     font-size: 0.95rem;
     letter-spacing: 0.04em;
-    color: #b9ab94;
+    color: var(--note-hi);
   }
   .won .title {
     color: var(--gold-hi);
@@ -274,7 +274,7 @@
   }
   /* (Earned, a step brighter than one still to earn, as its title steps up to gold.) */
   .won .text {
-    color: #cbbfa8;
+    color: var(--text-lo);
   }
   .when {
     font-size: 0.9375rem;

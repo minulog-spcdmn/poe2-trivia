@@ -127,7 +127,7 @@
     margin: 0;
     font-style: italic;
     font-size: 15px;
-    color: #a99c86;
+    color: var(--note);
   }
   /* A phone's shorter wording, as Today's unique words it. */
   .short {
