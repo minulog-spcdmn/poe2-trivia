@@ -40,11 +40,11 @@ export type NewItems = { name: string; count: number } | null;
  */
 export function codexLine(met: number | null, total: number, deepest: number, fresh: NewItems = null): string {
   if (!met) return 'Every unique you meet in a game is kept here.';
-  return `Every unique you have met: ${met} of ${total}${fresh ? `; ${fresh.count} came with ${fresh.name}` : ''}.${deepest > 0 ? ` Deepest delve: ${deepest}.` : ''}`;
+  return `Uniques discovered: ${met} of ${total}${fresh ? `; ${fresh.count} came with ${fresh.name}` : ''}.${deepest > 0 ? ` Deepest delve: ${deepest}.` : ''}`;
 }
 
 /** The same in one column, where the Codex has half a phone's width: shorter, a line each. */
 export function codexLines(met: number | null, total: number, deepest: number, fresh: NewItems = null): string[] {
   if (!met) return ['Kept as you play.'];
-  return [`${met} of ${total} met.`, ...(fresh ? [`${fresh.count} came with ${fresh.name}.`] : []), ...(deepest > 0 ? [`Deepest delve: ${deepest}.`] : [])];
+  return [`Uniques: ${met} of ${total}.`, ...(fresh ? [`${fresh.count} came with ${fresh.name}.`] : []), ...(deepest > 0 ? [`Deepest delve: ${deepest}.`] : [])];
 }
