@@ -46,7 +46,7 @@
     const boxes = [...el.querySelectorAll<HTMLElement>('.glyph')];
     const show = () => boxes.forEach((b, i) => b.style.setProperty('--h', String(turned[i] ?? to)));
     cancelAnimationFrame(frame);
-    if (motion.still || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (motion.still) {
       turned.fill(to);
       show();
       return;
@@ -273,6 +273,12 @@
       animation: none;
       display: none;
     }
+  }
+  /* (The battery saver holds them at rest too.) */
+  :global(html[data-saver]) .gleam,
+  :global(html[data-saver]) .glyph::before {
+    animation: none;
+    display: none;
   }
   @keyframes drop {
     from {

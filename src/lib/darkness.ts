@@ -89,7 +89,7 @@ interface Shape {
 
 /**
  * Each outcome's shape: as the game moves, and gentler, shorter and with no
- * overshoot when held still (reduced motion, or the effects off). A right
+ * overshoot when held still (reduced motion). A right
  * answer has no surge: the dark is driven back from where it was at once.
  */
 const SHAPES: Record<DarkOutcome, [Shape, Shape]> = {
@@ -171,8 +171,8 @@ let settling: { kind: DarkOutcome; from: number; at: number; gentle: boolean; ho
 /**
  * The question has ended (its reveal, as the answer is marked right or
  * wrong): the dark settles as it went for this device's player (see
- * resolution), from where it was. `gentle`: held still (reduced motion, or
- * the effects off). A perish holds until endHold.
+ * resolution), from where it was. `gentle`: held still (reduced motion).
+ * A perish holds until endHold.
  */
 export function resolveDark(kind: DarkOutcome, gentle = false, now = performance.now()) {
   const from = pressureLevel(now);

@@ -63,8 +63,8 @@ export const T = {
 } as const;
 
 /**
- * How the card plays: in full; held still (reduced motion or the effects
- * off: it fades in whole, holds and fades out); or compact, for a screen
+ * How the card plays: in full; held still (reduced motion: it fades in
+ * whole, holds and fades out); or compact, for a screen
  * that saw the run move on late, with less time to the deal (faded in and
  * out whole, sooner).
  */

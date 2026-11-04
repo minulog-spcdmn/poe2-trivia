@@ -161,6 +161,7 @@ owner can use it.
 | `layers.mjs [--do "<js>"]` | The tab's compositing layers: what, how many, why. With `--do`, which painted while that ran. |
 | `profile.mjs <label.prof.json>` | What ran in each phase of a `game.mjs` run with `PROFILE=1`, by file and line in `src/`. |
 | `timeline.mjs <a> [b]` | What a run's timeline (`TIMELINE=1`) recorded in each phase: styles, layouts and paints, and who forced them. |
+| `battery.py <s> <every s>` | The phone's own power draw from its battery gauge, a line of JSON every few seconds (run it with `python -I`; see "Measuring on iOS"). |
 
 `codex.mjs` and `game.mjs` take a `SETUP`: script to run in the page
 before they start, or a file of it from `scripts/iphone/setups/`:
@@ -200,6 +201,16 @@ doesn't:
 - **Taking things away**: the `?off=` switches, or a style put in with
   `ask.mjs` (`filter: none` on the codex's tiles, say), one at a time,
   each against the build as it is.
+- **Power** (`battery.py`): the whole phone's draw in mW, screen included,
+  from its battery gauge over USB. The gauge updates every 20 s or so, so a
+  setting takes 100 s of it after 20 to settle; the mean over a window is
+  the change in `accLoad` over the change in `n`. Readings spread by about
+  100 mW on a still screen and 250 while a game is played, and drift as
+  much again over half an hour as the screen dims with the room: take each
+  setting twice in turn, against its neighbours, never against a reading
+  from another run. Something asking the page every 150 ms (a script's
+  `until`) costs some 250 to 400 mW itself. Never attach a second inspector
+  to the tab mid-run: the first loses it.
 - `Runtime.evaluate` takes `emulateUserGesture: true`, so what wants a
   tap (sound) works. Where a press matters, tap with `tap()`
   (`phone.mjs`), a finger's events, not `click()`: see "A script's
@@ -485,3 +496,31 @@ the sizes the grid's tiles take. Most pictures are 72 px high at any
 width; the 23 wider than they are high (belts, and a relic) are as wide as
 the tile where 72 px high wouldn't fit in it, and so change size with the
 screen.
+
+November 2026, the battery saver (the settings): what costs the phone's
+power, from its gauge (`battery.py`), the owner's iPhone in Chrome. The
+start page drew about 2,750 mW as it was, a question left waiting about
+2,150, a Delve run played about 5,100 (some 300 of that the script's own
+asking), and a screen where nothing moved about 1,300.
+
+- **A rune circle turning every frame costs a third of the phone.** The
+  start page's circle (57 endless animations, 21 of them big layers
+  turning) took it from about 1,850 mW to 2,750. Moved on 24 times a
+  second (`ArcaneStage.svelte`, on touch screens) it took about 2,300, at
+  12 about 1,950; its 27 breathing glows, opacity only, nothing measurable.
+- **Small loops cost only together.** The title's gleam, the Play button's
+  smoulder, the glints, a card's breathing, the phial's chambers: none
+  stopped alone saved anything measurable, all of them together some 300
+  to 400 mW once nothing else moved every frame. While one runs, the screen
+  is drawn every frame anyway.
+- **The backdrop's drift is cheap**: about 150 to 200 mW at 30 fps, and 24,
+  12 or 8 fps saved less still. A streak's fire too: nothing measurable
+  while anything else moved, about 170 mW at 30 fps with the rest still,
+  120 at 12.
+- **A running audio context costs even in silence.** With the ambience off,
+  the context woken by a sound ran on for good; resting again after the
+  last sound (`rest` in `src/lib/sound.ts`), a game drew what it drew
+  muted. All the sound together came to about 175 mW in a game.
+- **Effects while a game is played didn't stand out of the spread.** Off,
+  they measured 0 to 500 mW less in three runs; drawn at most 30 or 15
+  times a second, or without their glow, saved nothing beyond that.

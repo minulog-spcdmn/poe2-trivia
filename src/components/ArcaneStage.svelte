@@ -3,8 +3,9 @@
   import { drawIn, type Pen } from '../lib/drawIn';
   import { HOLLOW_CLEAR, type Plate, type StageLayer } from '../lib/engraver';
   import { WHOLE, insideOut, placed, type Box } from '../lib/plateBox';
-  import { switchedOff } from '../lib/switchedOff';
+  import { circleFps, switchedOff } from '../lib/switchedOff';
   import { holdSettled } from '../lib/settled';
+  import { motion } from '../lib/motion.svelte';
 
   export type { StageLayer };
 
@@ -177,6 +178,52 @@
   const STEPS = 6;
   /** The mood the rings not yet turned still show the colour of (null: none held). */
   let was = $state<'idle' | 'good' | 'bad' | null>(null);
+  // On a touch screen what never ends here (the turning, the swaying, the
+  // breathing) is held and moved on 24 times a second rather than every
+  // frame: the circles turn slowly enough to look the same, and every frame
+  // cost an iPhone about a sixth of its power on the start page
+  // (docs/iphone.md). A layer that comes on late is held with the rest; one
+  // whose motion the battery saver or a mood ends (its animation idle) is let
+  // go, never moved on again. At rest (reduced motion, the battery saver)
+  // nothing here is endless, so nothing ticks either. ?circlefps=12 sets the
+  // rate, anywhere (lib/switchedOff.ts).
+  const pace = circleFps ?? (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches ? 24 : 0);
+  $effect(() => {
+    if (!pace || !summon || motion.resting) return;
+    const root = summon;
+    const held = new Set<Animation>();
+    // The circle's animations are asked for only after one has started (a
+    // layer coming on late, the battery saver switched off): asked every
+    // tick, getAnimations gathered every animation on the page each time
+    // (see movedAmong in lib/backdropShadow.ts).
+    let look = true;
+    const started = () => (look = true);
+    root.addEventListener('animationstart', started);
+    let t = performance.now();
+    const tick = setInterval(() => {
+      const now = performance.now();
+      if (look) {
+        look = false;
+        for (const a of root.getAnimations({ subtree: true }))
+          if (!held.has(a) && a.playState === 'running' && a.effect?.getTiming().iterations === Infinity) {
+            a.pause();
+            held.add(a);
+          }
+      }
+      for (const a of held) {
+        if (a.playState === 'idle') held.delete(a);
+        else a.currentTime = Number(a.currentTime ?? 0) + (now - t);
+      }
+      t = now;
+    }, 1000 / pace);
+    return () => {
+      clearInterval(tick);
+      root.removeEventListener('animationstart', started);
+      // (Let go as they stand: one paused here would stay paused, CSS's own play-state never reaching it again.)
+      for (const a of held) if (a.playState === 'paused') a.play();
+    };
+  });
+
   /** How far each ring (by its place in `outward`) has come over to the mood's own colour, 0 to 1 (always set whole). */
   let over = $state.raw<number[]>([]);
   let moodSeen = untrack(() => mood);
@@ -456,6 +503,23 @@
   .fluttering {
     animation: flutter var(--flutter) ease-in-out calc(var(--flutter-delay) - var(--late)) infinite;
   }
+  /* With the battery saver the rings wind into place and rest there, and
+     nothing riding them turns, sways, breathes or stirs: a circle drawn
+     draws nothing more (reduced motion: app.css cuts all short). */
+  /* (In the order of the rules above, so a layer that is two of them takes
+     the same one.) */
+  :global(html[data-saver]) .spin {
+    animation: wind 2.6s var(--ease-out) calc(0s - var(--late)) both;
+  }
+  :global(html[data-saver]) :is(.turning, .swaying) {
+    animation: none;
+  }
+  :global(html[data-saver]) .upright {
+    animation: wind 2.6s var(--ease-out) calc(0s - var(--late)) both;
+  }
+  :global(html[data-saver]) :is(.breathing, .fluttering) {
+    animation: none;
+  }
   /* A wrong answer jars the circle: each turning ring, in its box (.hold),
      about the circle's centre. Not on the ring itself, whose animations a
      mood never changes: one taken out (its winding in, by the jar) starts
@@ -528,6 +592,9 @@
       arcane-glow-in 1.4s 0.8s ease-out both,
       arcane-breathe 6s 2.2s ease-in-out infinite alternate;
   }
+  :global(html[data-saver]) .arcane :global(.glow) {
+    animation: arcane-glow-in 1.4s 0.8s ease-out both;
+  }
   .arcane .summon :global(.glow *) {
     stroke-width: 2;
   }
@@ -596,6 +663,13 @@
       arcane-glow-in 1.4s 0.8s ease-out both,
       arcane-breathe 6s 2.2s ease-in-out infinite alternate,
       beat 9s 5s infinite;
+  }
+  /* (Nor does it beat, with the battery saver.) */
+  :global(html[data-saver]) .point svg {
+    animation: none;
+  }
+  :global(html[data-saver]) .arcane .point .glow {
+    animation: arcane-glow-in 1.4s 0.8s ease-out both;
   }
 
   /* A light at the centre: it blooms as the circle is summoned and flares

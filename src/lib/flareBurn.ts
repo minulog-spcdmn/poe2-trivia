@@ -19,9 +19,9 @@
 //
 // Only transform and opacity move here, a handful of pieces each painted
 // once; the clock's box is measured once (and again on a resize). Holding
-// still (reduced motion, or the effects off) it is a calm glow: no streak,
-// no sparks, no flicker, a still light behind the UI in the middle dimming
-// where it is.
+// still (reduced motion) it is a calm glow: no streak, no sparks, no
+// flicker, a still light behind the UI in the middle dimming where it is.
+// (The battery saver lets it all play: it runs its course with the seconds.)
 
 import dither from '../assets/dither.png';
 import { currentFrame, fxActive, type CoverBox, type Point } from './fx/core';

@@ -13,7 +13,8 @@
 // the page clock, so they catch the same light; between sweeps nothing
 // animates, and a sweep lights only what is on screen. A light that travels reaches things further down and to the
 // right a moment later, as if it passed over the page. A light can also kindle
-// sparks as it leaves: a small star that flares and fades.
+// sparks as it leaves: a small star that flares and fades. Resting (reduced
+// motion, or the battery saver) no light passes.
 
 import { motion } from './motion.svelte';
 
@@ -92,7 +93,7 @@ export function passingLight(every: number, sweep: number, { travel = false } = 
   }
 
   function pass() {
-    if (!document.hidden && !motion.still) {
+    if (!document.hidden && !motion.resting) {
       // Every position is read, once a place, before any animation starts, so the page is laid out once a pass.
       const delays = new Map<Element, number>();
       const delayOf = (el: Element) => {

@@ -107,6 +107,15 @@
       background-position: -60% 0;
     }
   }
+  /* (None with the battery saver or reduced motion.) */
+  :global(html[data-saver]) .gleam {
+    animation: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .gleam {
+      animation: none;
+    }
+  }
   .line {
     display: block;
     flex: none;

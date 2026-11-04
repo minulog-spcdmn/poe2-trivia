@@ -33,7 +33,7 @@ noise (`nhash`, `vnoise`, `fbm`, `ridge`, `gauss`, `rgb`) and before
 | `xy` | `p / (W, H)`: 0 to 1 across and down the screen |
 | `S` | `sqrt(W * H)`, CSS px: the scene's scale (so a feature is the same share of a phone and a large screen) |
 | `W`, `H` | the screen's width and the height the scene is laid out for, CSS px |
-| `tm` | the backdrop's clock, s. It stands still while the effects are switched off (calm mode), and holds at 0 under reduced motion, so anything moving on `tm` rests by itself |
+| `tm` | the backdrop's clock, s. It stands still while the battery saver is on, and holds at 0 under reduced motion, so anything moving on `tm` rests by itself |
 | `sink` | how far the scene has sunk, in screens (it grows by 0.6 with every new depth of a run, easing over 1.9 s). Add `sink * H` times a share to `p.y` for parallax: the walls go up by all of it, nearer layers by more, farther ones by less |
 | `strength` | 0 to 1: how far the effect has come in. 0 means it is not drawn at all (the caller skips it; return at once anyway) |
 | `c0`, `c1`, `c2` | its three colour stops, 0 to 1 a channel. Which stop is which is the effect's own (the tool names them, see `ENV_TONES` in `backdropData.ts`) |

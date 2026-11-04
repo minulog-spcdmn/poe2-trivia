@@ -18,9 +18,9 @@
   // subtitle follows, then what is new from here, each with its mark. Then
   // it leaves, as its place has it (./family.ts and the families beside it:
   // burning, shattering, drifting off...), and the bars open as the cards
-  // are dealt. Held still (reduced motion, the effects off) it fades in
-  // whole, holds and fades out; a screen that saw the run move on late gets
-  // the same, sooner (compact). It lies over the game (portalled), under
+  // are dealt. Held still (reduced motion) it fades in whole, holds and
+  // fades out; a screen that saw the run move on late gets the same,
+  // sooner (compact). It lies over the game (portalled), under
   // toasts and dialogs, and takes no clicks but on its bars, which cover
   // the header's stale depth. It is scaled up with the stage on large
   // windows (lib/stage.ts), as the header is, so what it measures on screen

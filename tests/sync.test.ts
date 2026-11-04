@@ -397,6 +397,17 @@ test('what is sent to be taken in is what is stored; what comes in is checked', 
   assert.deepEqual(takeIn(null), []);
 });
 
+test('the battery saver stays on the device it was switched on: never sent, never taken in', () => {
+  writeStored('saver', '1');
+  assert.deepEqual(Object.keys(takenNow()), []);
+  for (const kind of ['codex', 'delve', 'practice'] as const) assert.equal(ownNow(kind), null);
+  assert.equal(chosenNow('name'), null);
+  assert.equal(chosenNow('colour'), null);
+  store.clear();
+  assert.deepEqual(takeIn({ saver: '1' }), []);
+  assert.equal(readStored('saver'), null);
+});
+
 // ---- what the player chose ---------------------------------------------------------
 
 const said = (v: string | null, at: number) => JSON.stringify({ v, at });

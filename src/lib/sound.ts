@@ -135,11 +135,27 @@ export function setMuted(value: boolean) {
 /** Whoever shows the sound's settings (the settings page, which reads back what it sets), told when one changes. */
 const listeners = new Set<() => void>();
 const changed = () => listeners.forEach((fn) => fn());
-/** Calls `fn` whenever muting, the volume or the ambience's changes; returns the way to stop. */
+/** Calls `fn` whenever muting, the volume or the ambience's changes, or the battery saver; returns the way to stop. */
 export function onSoundChange(fn: () => void) {
   listeners.add(fn);
   return () => void listeners.delete(fn);
 }
+
+/**
+ * The battery saver (html[data-saver], set by fx/core.ts) silences the game
+ * as muting does, the player's own setting left as it is: nothing plays, and
+ * the audio context rests (see rest), which a running one never does even
+ * when all it plays is silence.
+ */
+const page = typeof document === 'undefined' ? null : document.documentElement;
+export const saverSilences = () => !!page?.hasAttribute?.('data-saver');
+/** Nothing plays: muted, or the battery saver on. */
+const silent = () => muted || saverSilences();
+if (page && typeof MutationObserver === 'function')
+  new MutationObserver(() => {
+    updateAmbience();
+    changed();
+  }).observe(page, { attributes: true, attributeFilter: ['data-saver'] });
 
 /** The player's volume, 0 to 1, on top of the mix level (desktop slider). */
 let volume = (() => {
@@ -315,7 +331,7 @@ function framerUsed() {
  */
 export async function soundWithFramer(ms = 2000): Promise<void> {
   framed = true;
-  if (muted || !audio()) return;
+  if (silent() || !audio()) return;
   const files = [...MOMENT_FILES].filter((f) => !GENERATED[f]);
   await Promise.race([Promise.allSettled(files.map(load)), new Promise((done) => setTimeout(done, ms))]);
 }
@@ -536,7 +552,7 @@ function buildSoon(ambience: boolean) {
       building = false;
       const start = ambienceToo;
       ambienceToo = false;
-      if (muted) return;
+      if (silent()) return;
       build();
       if (allowed()) {
         audio();
@@ -925,7 +941,7 @@ export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number; from?: So
   // would wake the audio context that rest() put to sleep, and keep it running.
   if (typeof document !== 'undefined' && document.hidden) return undefined;
   // (Muted, it's still told as it would sound: see Sounded.)
-  if (muted) return void sounded({ name, at: performance.now() + Math.max(0, opts.inMs ?? 0), gainDb: 0 });
+  if (silent()) return void sounded({ name, at: performance.now() + Math.max(0, opts.inMs ?? 0), gainDb: 0 });
   const gap = MIN_GAP[name];
   if (gap) {
     const now = performance.now();
@@ -966,6 +982,14 @@ export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number; from?: So
   // again for next time, once its wait is over (see load).
   for (const f of m.layers.flatMap(layerFiles)) if (!ready.has(f)) void load(f).catch(() => {});
   if (!layers.length) return undefined;
+  // (With no loop wanted, the context rests again once the last of these has ended: see rest.)
+  clearTimeout(resting);
+  for (const { src } of layers) {
+    live++;
+    src.onended = () => {
+      if (--live === 0 && !wanted(AMBIENCE)) rest();
+    };
+  }
   let stopped = false;
   return () => {
     if (stopped) return;
@@ -1234,7 +1258,7 @@ function prepareDelve(b: Bus) {
 const rumbles = () => descent(depth).deep > 0.12;
 
 /** Sound is on and the tab is visible. */
-const audible = () => !muted && document.visibilityState === 'visible';
+const audible = () => !silent() && document.visibilityState === 'visible';
 
 /**
  * Each loop plays while audible (the fire only during a deathmatch, the
@@ -1303,16 +1327,22 @@ function hurry() {
 }
 
 /**
- * While muted or out of sight, the audio context is suspended once the loops
- * have faded out: a running one keeps the audio hardware and its render
- * thread busy even when all it plays is silence. The next sound (or the
- * ambience coming back) resumes it (see audio()).
+ * While muted (or the battery saver on) or out of sight, the audio context
+ * is suspended once the loops have faded out, and with the ambience off
+ * once the last sound has ended
+ * (sfx): a running one keeps the audio hardware and its render thread busy
+ * even when all it plays is silence (an iPhone playing with the ambience off
+ * drew as much as muted only once it rested: docs/iphone.md). The next sound
+ * (or the ambience coming back) resumes it (see audio()).
  */
 let resting: ReturnType<typeof setTimeout> | undefined;
+/** The layers of sounds (sfx) scheduled or playing. */
+let live = 0;
 function rest() {
   clearTimeout(resting);
   resting = setTimeout(() => {
-    if (bus && !wanted(AMBIENCE) && bus.ac.state === 'running') void bus.ac.suspend().catch(() => {});
+    // (Audible, not under a sound still playing: its own end rests it, see sfx.)
+    if (bus && !wanted(AMBIENCE) && (live === 0 || !audible()) && bus.ac.state === 'running') void bus.ac.suspend().catch(() => {});
   }, 1500);
 }
 
@@ -1512,7 +1542,7 @@ export function installUiSounds() {
   const warm = (e: Event) => {
     pressedAt = performance.now();
     lastPress = { at: pressedAt, key: e.type === 'keydown' };
-    if (muted) return;
+    if (silent()) return;
     if (!bus && e.type === 'pointerdown') {
       if (canHear()) buildSoon(true);
       return;

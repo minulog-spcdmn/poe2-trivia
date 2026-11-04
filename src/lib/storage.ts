@@ -9,7 +9,7 @@ export const LAB = typeof document !== 'undefined' && document.documentElement.h
 /**
  * The backdrop tool (backdrop.html, src/backdropTool: dev and beta builds
  * only) marks its page `<html data-backdrop-tool>`, and its keys get a start
- * of their own the same way (its drafts, and the effects setting it runs
+ * of their own the same way (its drafts, and the battery saver it runs
  * with), apart from the game's and the lab's.
  */
 export const BACKDROP_TOOL = typeof document !== 'undefined' && document.documentElement.hasAttribute('data-backdrop-tool');

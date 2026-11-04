@@ -426,7 +426,7 @@ export class GpuBudget {
   private known: Partial<Record<Layer, number>> = {};
   /** The display's refresh (ms), as the frames show it: the quickest they keep coming at. */
   private refresh = FRAME_MS;
-  /** Whether effects were off, as of the last frame. */
+  /** Whether effects were off (none drawn), as of the last frame. */
   private off = false;
   private kept: Saved | null = null;
   private levels: Ladder;
@@ -633,7 +633,8 @@ export class GpuBudget {
 
   /**
    * One frame, `ms` since the one before (`nowMs`: a clock in ms), drawn
-   * while effects play (`busy`) or not, with effects switched `off` or not.
+   * while effects play (`busy`) or not, with effects `off` (none drawn: the
+ * battery saver, reduced motion, no renderer) or not.
    * Each tells the pace of its kind. For the level, those that count are
    * weighed: while effects play, and while they're off where the GPU is
    * timed (untimed, slow frames with nothing but the page to draw are the

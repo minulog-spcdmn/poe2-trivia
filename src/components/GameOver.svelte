@@ -21,7 +21,7 @@
   import SiteFooter from './SiteFooter.svelte';
   import AchievementSeal from './AchievementSeal.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { fxActive, fxUserOn, onFxChange, overPage } from '../lib/fx/core';
+  import { fxActive, onFxChange, overPage } from '../lib/fx/core';
   import { victory, winnerIgnites } from '../lib/fx/moments';
   import { fallen } from '../lib/fx/delveEnd';
   import { shareText } from '../lib/delveShare';
@@ -638,12 +638,14 @@
     return () => h.stop();
   });
 
-  // Without the effects layer (no WebGL2), simpler gold sparks on a 2D canvas;
-  // also once it turns out not to come, should it still be on its way now.
+  // Without the effects layer (no WebGL2), simpler gold sparks on a 2D
+  // canvas; also once it turns out not to come, should it still be on its
+  // way now. Not with the battery saver, which leaves the effects out, not
+  // for a full-screen canvas to stand in for them.
   onMount(() => {
     let stop: (() => void) | null = null;
     const start = () => {
-      if (stop || matchMedia('(prefers-reduced-motion: reduce)').matches || fxActive() || !fxUserOn() || iLost || run) return;
+      if (stop || matchMedia('(prefers-reduced-motion: reduce)').matches || motion.saving || fxActive() || iLost || run) return;
       stop = sparks();
     };
     start();
@@ -1458,6 +1460,15 @@
         0 0;
     }
   }
+  /* (Nor with the battery saver or reduced motion.) */
+  :global(:root[data-saver]) .gold.gleams {
+    animation: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .gold.gleams {
+      animation: none;
+    }
+  }
   /* Delve: no victory. The depth is cold silver and holds still, gold only for a new best or a first run. */
   .delve .gold {
     background: linear-gradient(180deg, #ece4d4 8%, #a89f90 55%, #5f574b);
@@ -1863,8 +1874,7 @@
       animation: none;
     }
   }
-  :global(:root[data-still]) .ranking li.first,
-  :global(:root[data-still]) .ranking li.first::after {
+  :global(:root[data-saver]) .ranking li.first::after {
     animation: none;
   }
   .ranking li.you:not(.first),
@@ -2287,6 +2297,15 @@
     50% {
       opacity: 0.25;
       transform: scale(0.7);
+    }
+  }
+  /* With the battery saver or reduced motion it just stays lit: the line beside it says what it waits for. */
+  :global(:root[data-saver]) .pulse {
+    animation: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pulse {
+      animation: none;
     }
   }
 

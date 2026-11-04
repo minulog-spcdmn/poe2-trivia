@@ -244,4 +244,13 @@
       translate: 0 -6px;
     }
   }
+  /* It hangs still with the battery saver or reduced motion. */
+  :global(html[data-saver]) .float {
+    animation: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .float {
+      animation: none;
+    }
+  }
 </style>

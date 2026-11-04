@@ -14,16 +14,17 @@
   // the edges, a shade of deep indigo at the very edges and a dimming of the
   // whole scene. Each arm is one soft drawing (tentacle below, made once),
   // half of them turned the other way, and they sway slowly, as the billows
-  // drift, each on its own cycle (still with reduced motion or the effects
-  // off). As a question ends the dark settles as it went (resolveDark): a
+  // drift, each on its own cycle (still with reduced motion or the battery
+  // saver). As a question ends the dark settles as it went (resolveDark): a
   // miss reaches the arms right across the scene and dims it deep, and a
   // right answer's light, past the dark it drove off, warms the scene a
   // touch for a moment. Only opacity, a custom property and transforms
-  // change, so nothing is laid out again; holding still it follows the
-  // clock in steps of a twentieth. Each arm and billow is a picture drawn
-  // once (an img): Chrome scales a layer that's one picture as it is, where
-  // one painted in CSS it drew again at each step of the reach, 400k px a
-  // 60th of a second as a question came in (#353).
+  // change, so nothing is laid out again; at rest (reduced motion, the
+  // battery saver) it follows the clock in steps of a twentieth. Each arm
+  // and billow is a picture drawn once (an img): Chrome scales a layer
+  // that's one picture as it is, where one painted in CSS it drew again at
+  // each step of the reach, 400k px a 60th of a second as a question came
+  // in (#353).
 
   type Side = 'top' | 'right' | 'bottom' | 'left';
   /**
@@ -184,7 +185,7 @@
     function frame(now: number) {
       raf = 0;
       const p = pressureLevel(now);
-      if (Math.abs(p - shown) > (motion.still ? 0.05 : 0.004) || (p === 0 && shown !== 0)) {
+      if (Math.abs(p - shown) > (motion.resting ? 0.05 : 0.004) || (p === 0 && shown !== 0)) {
         shown = p;
         const on = p > 0.001;
         el.style.visibility = on ? 'visible' : 'hidden';
@@ -421,7 +422,7 @@
       transform: rotate(8deg) skewX(-6deg) scaleX(1.05);
     }
   }
-  :global(html[data-still]) :is(.arm, .billow) {
+  :global(html[data-saver]) :is(.arm, .billow) {
     animation: none;
   }
   @media (prefers-reduced-motion: reduce) {

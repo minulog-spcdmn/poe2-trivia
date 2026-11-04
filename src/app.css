@@ -489,10 +489,6 @@ input {
   background-position-x: 0%;
   background-position-y: 0;
 }
-:root[data-still] .panel::before,
-:root[data-still] .panel[role='dialog']::after {
-  animation: none;
-}
 @media (prefers-reduced-motion: reduce) {
   .panel::before,
   .panel[role='dialog']::after {
@@ -689,6 +685,10 @@ input {
 .btn.primary::after {
   opacity: 0.6;
   animation: smoulder 2.8s ease-in-out infinite;
+}
+/* (The battery saver holds it at rest, as reduced motion does.) */
+:root[data-saver] .btn.primary::after {
+  animation: none;
 }
 .btn.primary:hover:not(:disabled) {
   border-color: #f1d99b;
