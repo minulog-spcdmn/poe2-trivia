@@ -15,6 +15,7 @@ import { Table } from '../build/play.ts';
 import type { Built, Scene, Seat, Step } from '../scene.ts';
 import { FOSSILS, fossilMask, type FossilId, type FossilTier } from '../../lib/fossils.ts';
 import { serializeFossils, type FossilStore } from '../../lib/fossilStore.ts';
+import backdrops from '../../data/backdrops.json' with { type: 'json' };
 
 /** Who sits down, in order: any game's players are the first so many. */
 const SEATED = ['Kalguur', 'Doryani', 'Una of the Vaal', 'Rog', 'Alva', 'Dannig', 'Hooded One', 'Zelina', 'Oswin', 'Finn', 'Sekhema Asala', 'Renly'];
@@ -127,6 +128,14 @@ const FOSSIL_CAT: Control = {
     ].map((c) => ({ value: c, label: c })),
   ],
 };
+/** The zone it's asked in (each its own backdrop, the hall's amber light swelling through it): a few depths into it. */
+const FOSSIL_ZONE: Control = {
+  kind: 'choice',
+  key: 'zone',
+  label: 'Its zone',
+  default: '0',
+  options: backdrops.zones.map((z, k) => ({ value: String(k), label: z.name })),
+};
 /** A fossil's question asked by name, or by picture (deeper down, where pictures come). */
 const FOSSIL_ASKED: Control = {
   kind: 'choice',
@@ -154,6 +163,8 @@ function fossilPicked(t: Table, v: Values, tier: FossilTier) {
     const at = t.s;
     if (cat !== 'dealt') t.s.offered = t.s.offered.map((c, k) => (k === 0 ? cat : c === cat ? at.offered[0] : c));
     t.s.delve!.fossil = { category: t.s.offered[0], tier };
+    // (No find on its card: a find's question would be asked in its place.)
+    t.s.delve!.finds = (t.s.delve!.finds ?? []).filter((f) => f.category !== t.s.offered[0]);
     t.pick();
     if ((t.q.mode === 'art') === art) break;
     t.s = at;
@@ -509,15 +520,16 @@ export function gameScenes(): Scene[] {
         return { state: shown, act: t.room, at, steps: [{ wait: BLOW_AFTER }, { then: t.s, at: t.clock.now }] } satisfies Built;
       },
     },
-    // A fossil's question, its stage set in the card's amber with the lamp
-    // turned low (StageAmber.svelte), answered as it happens
-    // (lib/fossilFlight.ts): right, the lamp comes up, the fossil the card never
-    // named shows in the light and comes free, lit, named, then flown to the
-    // line; wrong, the lamp goes out and the fossil is lost; dynamite shatters
-    // the amber with the question. Still up, the question as it's asked.
+    // A fossil's question, the fossil card's seals in its name plate on panes
+    // of amber lit from behind (NamePlate.svelte's `fossil`), answered as it
+    // happens (lib/fossilFlight.ts): right, the seals flare and the fossil the
+    // card never named comes out of the left one into the circle's heart,
+    // named, then flown to the line; wrong, the seals go out and the fossil is
+    // lost; dynamite shatters their amber with the question. Still up, the
+    // question as it's asked.
     {
       ...scene('delve-fossil-found', 'Delve alone', 'A fossil’s question answered right: kept, which one shown, flown to the line', [ALONE], delveAlone, {
-        controls: [FOSSIL_TIER, FOSSIL_ASKED, FOSSIL_CAT, FOSSILS_HELD, FOSSIL_UP, FOSSIL_RIGHT, DEEPER_EARLY, FOSSIL_BLAST],
+        controls: [FOSSIL_TIER, FOSSIL_ASKED, FOSSIL_CAT, FOSSIL_ZONE, FOSSILS_HELD, FOSSIL_UP, FOSSIL_RIGHT, DEEPER_EARLY, FOSSIL_BLAST],
         states: [
           { label: 'A common kept', values: {} },
           { label: 'A rare kept', values: { tier: 'rare' } },
@@ -534,7 +546,10 @@ export function gameScenes(): Scene[] {
       build: (v = {}) => {
         const tier = v.tier === 'rare' ? 'rare' : 'common';
         const held = heldBefore(Number(v.held ?? 6), tier);
-        const t = delveAlone();
+        const zone = Number(v.zone ?? 0);
+        const t = zone ? delveAlone().playTo((s) => s.round >= 10 * zone + 3 && s.phase === 'choosing') : delveAlone();
+        // (None found on the way down: a run gives each player one.)
+        if (zone) t.s = { ...t.s, delve: { ...t.s.delve!, fossils: [], fossilsMissed: [] } };
         t.engine.setFossilsHeld((ids) => ids.map(() => fossilMask(held)));
         if (v.blast) t.s = { ...t.s, delve: { ...t.s.delve!, inventory: { [pid('Kalguur')]: { wards: 0, flares: 0, dynamite: 1 } } } };
         fossilPicked(t, v, tier);

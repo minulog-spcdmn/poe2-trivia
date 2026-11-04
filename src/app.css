@@ -993,59 +993,25 @@ h3,
   --bs-fill-paint: transparent;
 }
 
-/* Find moment: a fossil kept (lib/fossilFlight.ts), held to the lamp. A
-   copy of the stage's amber (StageAmber.svelte) lies over the stage and is
-   lit, the item fading into its light; in it the fossil's shape darkens in,
-   caught in the amber (its body multiplied over it, its rim screened); then
-   the fossil itself comes free, whole, in its own art; a band of lamplight
-   sweeps it and it goes sharp; its name is written in beneath, its count
-   under that, and it flies to the line. All of it hangs on the body,
-   outside the game's stage, zoomed as the stage is (global for that). The
-   big light round it is the backdrop's (lights.ts), dithered; the amber is
-   dithered as painted, and the veil that stands in for it is dithered too. */
+/* Find moment: a fossil kept (lib/fossilFlight.ts). The fossil comes out
+   of the name plate's left seal into the circle's heart, whole, in its own
+   art (inside its outline, --outline: its picture's alpha has a haze that an
+   overbright copy shows as a square); a band of lamplight sweeps it; its
+   name is written in beneath, its count under that, and it flies to the
+   line. All of it hangs on the body, outside the game's stage, zoomed as the
+   stage is (global for that). The big light round it is the backdrop's
+   (lights.ts), dithered. */
 .fossil-reveal {
   position: fixed;
   inset: 0;
   z-index: 50;
   pointer-events: none;
 }
-.fossil-reveal .fr-slab {
-  position: absolute;
-  overflow: clip;
-  opacity: 0;
-}
-/* No amber to light (a stage too small for it): the resin's dark, as a veil over the question. */
-.fossil-reveal .fr-slab.bare {
-  image-rendering: pixelated;
-  background:
-    radial-gradient(closest-side, rgba(26, 7, 3, 0.8) 55%, transparent),
-    var(--dither);
-}
-/* The fossil's shape in the amber: its body darkening the light, its rim lit from behind. It, and the
-   fossil, inside the fossil's outline (--outline, lib/fossilFlight.ts): its picture's alpha has a haze. */
-.fossil-reveal .fr-inc {
-  position: absolute;
-  opacity: 0;
-  background: center / contain no-repeat;
-  mix-blend-mode: multiply;
-}
-.fossil-reveal :is(.fr-inc, .fr-piece) {
-  -webkit-mask: var(--outline, linear-gradient(#000, #000)) center / contain no-repeat;
-  mask: var(--outline, linear-gradient(#000, #000)) center / contain no-repeat;
-}
-.fossil-reveal .fr-inc.rim {
-  mix-blend-mode: screen;
-}
-/* (Its picture, dark, where its shape couldn't be painted.) */
-.fossil-reveal .fr-flat {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  filter: brightness(0.2) sepia(1) saturate(2);
-}
 .fossil-reveal .fr-piece {
   position: absolute;
   opacity: 0;
+  -webkit-mask: var(--outline, linear-gradient(#000, #000)) center / contain no-repeat;
+  mask: var(--outline, linear-gradient(#000, #000)) center / contain no-repeat;
 }
 .fossil-reveal .fr-art,
 .fossil-reveal .fr-sweep {
@@ -1054,9 +1020,6 @@ h3,
   width: 100%;
   height: 100%;
   object-fit: contain;
-}
-.fossil-reveal .fr-art {
-  filter: brightness(2.3) saturate(0.8) blur(3px);
 }
 /* The band of lamplight: the fossil again, overbright, under a stripe that slides across it (as glint.ts's). */
 .fossil-reveal .fr-sweep {
@@ -1072,17 +1035,6 @@ h3,
 /* A rare's second sweep, red-gold. */
 .fossil-reveal .fr-sweep.red {
   filter: brightness(1.9) sepia(1) saturate(4) hue-rotate(-18deg);
-}
-/* A rare's ring of light, running out over the stage. */
-.fossil-reveal .fr-ring {
-  position: absolute;
-  opacity: 0;
-  border-radius: 50%;
-  border: 2px solid var(--fossil-rare-core);
-  box-shadow:
-    0 0 8px 1px color-mix(in srgb, var(--fossil-rare-mid) 85%, transparent),
-    inset 0 0 8px 1px color-mix(in srgb, var(--fossil-rare-edge) 85%, transparent);
-  transform: translate(-50%, -50%);
 }
 .fossil-reveal .fr-label {
   position: absolute;

@@ -535,15 +535,14 @@ test('a fossil card missed is kept in the run for the end screen: its depth, tie
   assert.deepEqual(missedFossils({ delve: { fossilsMissed: [{ depth: 3, tier: 'gold', to: [] }, null, { depth: 4, tier: 'rare', to: ['p0'] }] } } as unknown as GameState), [{ depth: 4, tier: 'rare', to: ['p0'] }]);
 });
 
-test('the reveal: the lamp comes up, the fossil shows in the amber and comes free, sharp, is named, held, then flies to the line', () => {
+test('the reveal: the fossil comes out of the plate’s seal into the circle’s heart, lands, is named, held, then flies to the line', () => {
   const f = FOSSIL_REVEAL;
-  const beats = [f.KINDLE, f.SHAPE, f.LIT, f.FREE, f.NAME, f.COUNT, f.SHOWN, f.FLY, f.LANDS];
+  const beats = [f.LAUNCH, f.ARRIVES, f.NAME, f.COUNT, f.SHOWN, f.FLY, f.LANDS];
   assert.deepEqual([...beats].sort((a, b) => a - b), beats, 'in order');
-  assert.ok(f.KINDLE < f.SHAPE && f.SHAPE < f.FREE, 'its shape shows in the light before it comes free');
-  assert.ok(f.FREE < f.GLINTS && f.GLINTS < f.SWEPT && f.SWEPT <= f.SHARP && f.SHARP < f.COUNT, 'it glints as the band of light crosses it, sharp before its count comes');
-  assert.ok(f.KINDLE < f.SURGE && f.SURGE < f.FREE, 'a rare’s lamp surges again before it comes free');
-  assert.ok(f.RARE_LATER > 0 && beatAt(f.FREE, true) === f.FREE + f.RARE_LATER && beatAt(f.LIT, true) === f.LIT, 'a rare comes free later; what comes before is the same');
-  assert.ok(f.FREE + f.RARE_SWEEP >= f.SWEPT - 60 && f.FREE + f.RARE_SWEEP < f.SHOWN, 'a rare’s second sweep follows the first as it ends, before the hold');
+  assert.ok(f.ARRIVES - f.LAUNCH >= 400 && f.ARRIVES - f.LAUNCH <= 700, 'its way from the seal to the heart is seen, and quick');
+  assert.ok(f.ARRIVES < f.GLINTS && f.GLINTS < f.SETTLED && f.SETTLED < f.SWEPT && f.SWEPT < f.COUNT, 'it glints as it settles and the band of light crosses it, before its count comes');
+  assert.ok(f.RARE_LATER > 0 && beatAt(f.LAUNCH, true) === f.LAUNCH + f.RARE_LATER && beatAt(f.LAUNCH - 1, true) === f.LAUNCH - 1, 'a rare comes out later, its seals surging longer');
+  assert.ok(f.ARRIVES + f.RARE_SWEEP >= f.SWEPT - 60 && f.ARRIVES + f.RARE_SWEEP < f.SHOWN, 'a rare’s second sweep follows the first as it ends, before the hold');
   assert.ok(f.FLY - f.SHOWN >= 1000, 'its name is read a while before it flies');
   assert.ok(f.LINE_LEAD < f.LANDS - f.FLY, 'the line’s words come in during the flight');
   assert.deepEqual([f.SIZE.desk, f.SIZE.upright, f.SIZE.flat], [120, 88, 64]);

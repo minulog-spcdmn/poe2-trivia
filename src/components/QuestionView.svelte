@@ -45,8 +45,6 @@
   import { FOSSIL_COUNT, fossilArt, fossilById, type FossilId } from '../lib/fossils';
   import { foundCount, loadFossils } from '../lib/fossilStore';
   import { revealFossil } from '../lib/fossilFlight';
-  import { stageSeed, type StageLamp } from '../lib/stageAmber';
-  import StageAmber from './StageAmber.svelte';
   import AnswerMark from './AnswerMark.svelte';
   import VerdictSign from './VerdictSign.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
@@ -319,10 +317,13 @@
   /** The line's picture, where the fossil lands. */
   let fossilSlot = $state<HTMLElement | null>(null);
   let questionEl = $state<HTMLElement | null>(null);
-  /** A fossil's question (Delve): its tier, the stage (or each picture) set in its card's amber (StageAmber). */
-  const amberTier = $derived(s.delve && q.fossil ? q.fossil : null);
-  /** The lamp behind the amber: low while the question is up and once a fossil is kept; out, it lost. */
-  const amberLamp = $derived<StageLamp>(reveal && !reveal.correct ? 'out' : 'low');
+  /** A fossil's question (Delve): its tier, its card's seals in the name plate (NamePlate's `fossil`). */
+  const fossilTier = $derived(s.delve && q.fossil ? q.fossil : null);
+  /**
+   * Their light: up while the question is; taken with a fossil this screen's player keeps (it comes out of
+   * them here); still up with one only others kept (theirs comes out on their screens); out with it lost.
+   */
+  const fossilLight = $derived(!reveal ? 'up' : fossilLine?.mine ? 'taken' : fossilLine ? 'up' : 'out');
   /** Ends the moment under way, all of it going to the line (Delve Deeper pressed early, or the question going). */
   let stopFind: (() => void) | null = null;
   $effect(() => () => stopFind?.());
@@ -945,21 +946,28 @@
       if (iWon && pill && fill && fxActive()) setTimeout(() => sfx('fill', { from: { from: optionEls[r.correctIndex], to: pill, seconds: FILL_LEAD / 1000 } }), FILL_START * 1000 - FILL_LEAD);
       // (A vein's ward dug out makes no sound of gain here: it is only in hand. The pack hears it as the
       // haul goes in, at the way out or as the dig ends, where its sparks land: Scoreboard.svelte.)
-      // A fossil this device's player kept: the lamp behind the stage's amber comes up, the fossil shows
-      // in it and comes free, lit, says which it is, and flies to the line (lib/fossilFlight.ts), once the
+      // A fossil this device's player kept: the plate's seals flare, the fossil comes out of the left one
+      // into the circle's heart, says which it is, and flies to the line (lib/fossilFlight.ts), once the
       // answer is marked. Kept already (session's noteFossil), so the count holds it; counted in here should
       // it not be yet.
       const mine = fossilLine?.mine;
       if (mine) {
         const store = loadFossils();
         fossilCount = foundCount(store) + (store.found[mine] ? 0 : 1);
+        // (Asked by pictures, it lands on the right one, its name in place of the picture's.)
+        const right = q.mode === 'art' ? (optionEls[r.correctIndex] ?? null) : null;
+        const under = right ? right.querySelector('.pic') : artEl?.querySelector('.frame');
+        const caption = right?.querySelector('.caption');
         stopFind = revealFossil({
           id: mine,
           count: fossilCount,
           total: FOSSIL_COUNT,
-          amber: questionEl?.querySelector('.stage-amber.moment') ?? null,
-          art: artEl,
+          seal: questionEl?.querySelector('.head .plate.fossil .pane-at.left .dark') ?? null,
+          art: right ?? artEl,
           stage: questionEl,
+          dim: [...(under ? [{ el: under, to: 0.3 }] : []), ...(caption ? [{ el: caption, to: 0 }] : [])],
+          avoid: right ? null : (artEl?.querySelector('.details .lens') ?? null),
+          onPicture: !!right,
           to: () => fossilSlot,
           size: upright.current ? 'upright' : flat.current ? 'flat' : 'desk',
           still: motion.still,
@@ -1400,7 +1408,7 @@
       {@render rims()}
       <div class="head" data-cursor="plate" style:--plate-scale={plateScale}>
         <!-- Lit from the start; a right answer's glint runs over it (a wrong one's is quiet), as when naming the art. -->
-        <NamePlate fit bind:scale={plateScale} glint={!!(reveal && iWon)} />
+        <NamePlate fit bind:scale={plateScale} glint={!!(reveal && iWon)} fossil={fossilTier} {fossilLight} />
         <div class="head-text">
           <span class="iname" class:veiled={waiting} use:oneLine>{waiting || !q.prompt ? '\u00a0' : q.prompt}</span>
           <!-- Name over base, as every tooltip: the category until the reveal names the base. -->
@@ -1425,8 +1433,6 @@
         style:--n={count}
         style:--rows={Math.ceil(count / (count === 6 ? 3 : count === 10 ? 5 : 4))}
       >
-        <!-- A fossil's: the pictures' amber as one slab, only for the moment to light (each picture has its own). -->
-        {#if amberTier}<StageAmber tier={amberTier} seed={stageSeed(q.askedAt)} circle={false} moment ghost />{/if}
         {#each q.labels as _, i (i)}
           {@const st = optionState(i)}
           {@const known = !!reveal && !!q.options[i]}
@@ -1455,7 +1461,6 @@
             onpointermove={glare}
             in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
           >
-            {#if amberTier}<StageAmber tier={amberTier} seed={stageSeed(q.askedAt, i + 1)} lamp={amberLamp} circle={false} />{/if}
             <span class="sheen"></span>
             <!-- Answered, its number (no key answers now) gives way to a lens: the picture opens its item's details. -->
             <span class="key" class:lens-key={!!shownItem} class:wide={!shownItem && [...(optionCap(i) ?? '')].length > 1}>{#if shownItem}<svg viewBox="0 0 24 24" aria-hidden="true" in:fade={{ duration: 200, delay: 120 }}><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></svg>{:else}{optionCap(i) ?? ''}{/if}</span>
@@ -1516,7 +1521,7 @@
         {@render rims()}
         <div class="head" data-cursor="plate" style:--plate-scale={plateScale}>
           <!-- The gems stay dark until the item is identified; lit by a right answer, with its glint, by a wrong one quietly. -->
-          <NamePlate fit bind:scale={plateScale} lit={!!(reveal && item)} glint={!!(reveal && iWon)} />
+          <NamePlate fit bind:scale={plateScale} lit={!!(reveal && item)} glint={!!(reveal && iWon)} fossil={fossilTier} {fossilLight} />
           {#if reveal && item}
             <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
               <span class="iname" use:oneLine={flat.current || upright.current}>{item.name}</span>
@@ -1531,8 +1536,6 @@
           {/if}
         </div>
         <div class="art" data-cursor="art" bind:this={artEl} use:backdropShadow={{ fill: 'stage' }}>
-          <!-- A fossil's: the stage set in its card's amber, lit low (the moment lights a copy of it). -->
-          {#if amberTier}<StageAmber tier={amberTier} seed={stageSeed(q.askedAt)} lamp={amberLamp} moment />{/if}
           {#if !circleOff}<Circle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />{/if}
           <div class="frame">
             {#if media?.veil && showFull && drawn}
