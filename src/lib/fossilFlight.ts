@@ -352,7 +352,7 @@ export function revealFossil(u: Reveal): () => void {
           [
             { opacity: 0, color: FOSSIL_AMBER.fleck },
             { opacity: 1, color: FOSSIL_AMBER.fleck, offset: 0.3 },
-            { opacity: 1, color: '#aa9e82' },
+            { opacity: 1, color: '#b6a98b' },
           ],
           { duration: 420, delay: i * each, easing: 'ease-out', fill: 'backwards' },
         ),
