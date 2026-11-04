@@ -45,6 +45,8 @@
   import { FOSSIL_COUNT, fossilArt, fossilById, type FossilId } from '../lib/fossils';
   import { foundCount, loadFossils } from '../lib/fossilStore';
   import { revealFossil } from '../lib/fossilFlight';
+  import { stageSeed, type StageLamp } from '../lib/stageAmber';
+  import StageAmber from './StageAmber.svelte';
   import AnswerMark from './AnswerMark.svelte';
   import VerdictSign from './VerdictSign.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
@@ -317,8 +319,10 @@
   /** The line's picture, where the fossil lands. */
   let fossilSlot = $state<HTMLElement | null>(null);
   let questionEl = $state<HTMLElement | null>(null);
-  /** The fossil's light on the question (a fossil card's), where the moment rises from. */
-  let markEl = $state<HTMLElement | null>(null);
+  /** A fossil's question (Delve): its tier, the stage (or each picture) set in its card's amber (StageAmber). */
+  const amberTier = $derived(s.delve && q.fossil ? q.fossil : null);
+  /** The lamp behind the amber: low while the question is up and once a fossil is kept; out, it lost. */
+  const amberLamp = $derived<StageLamp>(reveal && !reveal.correct ? 'out' : 'low');
   /** Ends the moment under way, all of it going to the line (Delve Deeper pressed early, or the question going). */
   let stopFind: (() => void) | null = null;
   $effect(() => () => stopFind?.());
@@ -941,8 +945,8 @@
       if (iWon && pill && fill && fxActive()) setTimeout(() => sfx('fill', { from: { from: optionEls[r.correctIndex], to: pill, seconds: FILL_LEAD / 1000 } }), FILL_START * 1000 - FILL_LEAD);
       // (A vein's ward dug out makes no sound of gain here: it is only in hand. The pack hears it as the
       // haul goes in, at the way out or as the dig ends, where its sparks land: Scoreboard.svelte.)
-      // A fossil this device's player kept: the light that waited on the question rises to the item, the
-      // fossil comes up in it, lit, shows which it is, and flies to the line (lib/fossilFlight.ts), once the
+      // A fossil this device's player kept: the lamp behind the stage's amber comes up, the fossil shows
+      // in it and comes free, lit, says which it is, and flies to the line (lib/fossilFlight.ts), once the
       // answer is marked. Kept already (session's noteFossil), so the count holds it; counted in here should
       // it not be yet.
       const mine = fossilLine?.mine;
@@ -953,8 +957,8 @@
           id: mine,
           count: fossilCount,
           total: FOSSIL_COUNT,
-          from: markEl,
-          art: q.mode === 'art' ? null : artEl,
+          amber: questionEl?.querySelector('.stage-amber.moment') ?? null,
+          art: artEl,
           stage: questionEl,
           to: () => fossilSlot,
           size: upright.current ? 'upright' : flat.current ? 'flat' : 'desk',
@@ -1118,22 +1122,6 @@
   {#if s.delve && q.fossil}<span class="muted fossil-lost">The fossil is lost.</span>{/if}
 {/snippet}
 
-<!-- A fossil's card (Delve): its light waits on the question, lit amber as
-     the card's window, until the answer. A right one takes it up into the
-     moment (lib/fossilFlight.ts), a wrong one puts it out; dynamite shatters
-     it with the question (Game.svelte), and the new question has none. -->
-{#snippet fossilMark()}
-  {#if s.delve && q.fossil}
-    <span
-      class="fossil-mark"
-      class:rare={q.fossil === 'rare'}
-      class:taken={!!reveal && iWon}
-      class:out={!!reveal && !iWon}
-      aria-hidden="true"
-      bind:this={markEl}
-    ></span>
-  {/if}
-{/snippet}
 
 <!-- What the reveal says happened: the sentence beside the verdict, or on a phone upright over the art (the task line). -->
 {#snippet outcome()}
@@ -1413,7 +1401,6 @@
       <div class="head" data-cursor="plate" style:--plate-scale={plateScale}>
         <!-- Lit from the start; a right answer's glint runs over it (a wrong one's is quiet), as when naming the art. -->
         <NamePlate fit bind:scale={plateScale} glint={!!(reveal && iWon)} />
-        {@render fossilMark()}
         <div class="head-text">
           <span class="iname" class:veiled={waiting} use:oneLine>{waiting || !q.prompt ? '\u00a0' : q.prompt}</span>
           <!-- Name over base, as every tooltip: the category until the reveal names the base. -->
@@ -1438,6 +1425,8 @@
         style:--n={count}
         style:--rows={Math.ceil(count / (count === 6 ? 3 : count === 10 ? 5 : 4))}
       >
+        <!-- A fossil's: the pictures' amber as one slab, only for the moment to light (each picture has its own). -->
+        {#if amberTier}<StageAmber tier={amberTier} seed={stageSeed(q.askedAt)} circle={false} moment ghost />{/if}
         {#each q.labels as _, i (i)}
           {@const st = optionState(i)}
           {@const known = !!reveal && !!q.options[i]}
@@ -1466,6 +1455,7 @@
             onpointermove={glare}
             in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
           >
+            {#if amberTier}<StageAmber tier={amberTier} seed={stageSeed(q.askedAt, i + 1)} lamp={amberLamp} circle={false} />{/if}
             <span class="sheen"></span>
             <!-- Answered, its number (no key answers now) gives way to a lens: the picture opens its item's details. -->
             <span class="key" class:lens-key={!!shownItem} class:wide={!shownItem && [...(optionCap(i) ?? '')].length > 1}>{#if shownItem}<svg viewBox="0 0 24 24" aria-hidden="true" in:fade={{ duration: 200, delay: 120 }}><circle cx="10.5" cy="10.5" r="6" /><path d="m15 15 5 5" /></svg>{:else}{optionCap(i) ?? ''}{/if}</span>
@@ -1541,6 +1531,8 @@
           {/if}
         </div>
         <div class="art" data-cursor="art" bind:this={artEl} use:backdropShadow={{ fill: 'stage' }}>
+          <!-- A fossil's: the stage set in its card's amber, lit low (the moment lights a copy of it). -->
+          {#if amberTier}<StageAmber tier={amberTier} seed={stageSeed(q.askedAt)} lamp={amberLamp} moment />{/if}
           {#if !circleOff}<Circle state={reveal ? (iWon ? 'good' : 'bad') : 'idle'} />{/if}
           <div class="frame">
             {#if media?.veil && showFull && drawn}
@@ -1582,7 +1574,6 @@
               <span class="loading big" aria-label="Loading"></span>
             {/if}
           </div>
-          {@render fossilMark()}
           {#if reveal && item}
             <!-- Once answered, the art opens the item's details (ItemWindow). -->
             <button class="details" onclick={() => drawn && inspect(drawn)} aria-label="{item.name}: see its details" title="See its details" in:fade={{ duration: 200, delay: 120 }}>
@@ -2134,87 +2125,6 @@
   }
   .fossil-lost {
     margin-left: 0.25em;
-  }
-  /* A fossil card's light on the question: a small pane of the card's lit
-     amber (app.css's --fossil-*: its middle to its edge, a resin rim), its
-     heart drifting as if a lamp passed behind it. It sits at the art's foot
-     (on the plate's, picking art). Small, so its glow can't band. */
-  .fossil-mark {
-    position: absolute;
-    left: 50%;
-    bottom: 6px;
-    z-index: 2;
-    width: 18px;
-    height: 18px;
-    margin-left: -9px;
-    overflow: hidden;
-    border-radius: 3px;
-    transform: rotate(45deg);
-    background: radial-gradient(circle at 50% 50%, var(--fossil-mid), var(--fossil-edge) 75%);
-    box-shadow:
-      inset 0 0 0 1px color-mix(in srgb, var(--fossil-resin) 90%, transparent),
-      0 0 0 1px color-mix(in srgb, var(--fossil-core) 35%, transparent),
-      0 0 10px 2px color-mix(in srgb, var(--fossil-mid) 45%, transparent);
-    transition:
-      opacity 0.3s ease-out,
-      filter 0.4s ease-out;
-    pointer-events: none;
-  }
-  .head > .fossil-mark {
-    bottom: -9px;
-  }
-  /* The light inside, drifting. */
-  .fossil-mark::before {
-    content: '';
-    position: absolute;
-    inset: -40%;
-    background: radial-gradient(circle at 50% 50%, var(--fossil-fleck), var(--fossil-core) 22%, transparent 55%);
-    animation: fossil-mark-drift 5.2s ease-in-out infinite alternate;
-  }
-  .fossil-mark.rare {
-    background: radial-gradient(circle at 50% 50%, var(--fossil-rare-core), var(--fossil-rare-edge) 78%);
-    box-shadow:
-      inset 0 0 0 1px color-mix(in srgb, var(--fossil-rare-resin) 90%, transparent),
-      0 0 0 1px color-mix(in srgb, var(--fossil-rare-core) 40%, transparent),
-      0 0 12px 3px color-mix(in srgb, var(--fossil-rare-edge) 50%, transparent);
-  }
-  .fossil-mark.rare::before {
-    background:
-      radial-gradient(circle at 30% 70%, var(--fossil-fleck) 0 1px, transparent 2px),
-      radial-gradient(circle at 70% 35%, var(--fossil-fleck) 0 1px, transparent 2px),
-      radial-gradient(circle at 50% 50%, var(--fossil-fleck), var(--fossil-rare-core) 22%, transparent 55%);
-  }
-  /* Dynamite: it shatters into amber shards (Game.svelte), not flung whole with the question's pieces. */
-  :global(.blast-copy) .fossil-mark {
-    visibility: hidden;
-  }
-  /* Taken up into the moment: its light is what rises. */
-  .fossil-mark.taken {
-    opacity: 0;
-  }
-  /* Answered wrong: it goes out. */
-  .fossil-mark.out {
-    filter: grayscale(1) brightness(0.45);
-  }
-  .fossil-mark.out::before {
-    animation: none;
-    opacity: 0;
-  }
-  @keyframes fossil-mark-drift {
-    0% {
-      transform: translate(-14%, 10%);
-    }
-    50% {
-      transform: translate(8%, -12%);
-    }
-    100% {
-      transform: translate(14%, 8%);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .fossil-mark::before {
-      animation: none;
-    }
   }
   /* Delve: what a find earned, its engraving standing on the line's baseline. */
   .found-glyph {

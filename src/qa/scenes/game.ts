@@ -105,8 +105,65 @@ const FOSSILS_HELD: Control = { kind: 'range', key: 'held', label: 'Fossils held
 const FOSSIL_RIGHT: Control = { kind: 'toggle', key: 'right', label: 'Answered right', default: true };
 const DEEPER_EARLY: Control = { kind: 'toggle', key: 'early', label: 'Delve Deeper mid-flight', default: false };
 const FOSSIL_BLAST: Control = { kind: 'toggle', key: 'blast', label: 'Dynamite instead', default: false };
-/** Delve Deeper, pressed as the fossil flies to the line (lib/fossilFlight.ts, FOSSIL_REVEAL: 2.7 to 3.36 s). */
-const pressedEarly = (v: Values): Step[] => (v.early ? [{ wait: 2950 }, { click: '[data-cursor="next"]' }] : []);
+/** The category a fossil's card is in (any can carry one: its emblem caught in the amber), or as dealt. */
+const FOSSIL_CAT: Control = {
+  kind: 'choice',
+  key: 'cat',
+  label: 'Its category',
+  default: 'dealt',
+  options: [
+    { value: 'dealt', label: 'As dealt' },
+    ...[
+      'One-Handed Weapons',
+      'Two-Handed Weapons',
+      'Off-Hands',
+      'Body Armours',
+      'Helmets',
+      'Gloves & Boots',
+      'Rings',
+      'Amulets & Belts',
+      'Flasks, Charms, Jewels, Relics & Tablets',
+      'Lineage Gems',
+    ].map((c) => ({ value: c, label: c })),
+  ],
+};
+/** A fossil's question asked by name, or by picture (deeper down, where pictures come). */
+const FOSSIL_ASKED: Control = {
+  kind: 'choice',
+  key: 'asked',
+  label: 'Asked as',
+  default: 'name',
+  options: [
+    { value: 'name', label: 'Names' },
+    { value: 'art', label: 'Pictures' },
+  ],
+};
+/** The question held up, its fossil waiting in it, never answered. */
+const FOSSIL_UP: Control = { kind: 'toggle', key: 'up', label: 'Still up', default: false };
+/**
+ * A fossil's question, from a table at its cards: the fossil's card is the
+ * first, in `cat` if a category is chosen (swapped with the card that held
+ * it), and picked. Asked by picture: until a pick comes as pictures, that
+ * depth is played on without the fossil (answered right) and the next one's
+ * cards tried (a depth's draw is the same every time it's dealt).
+ */
+function fossilPicked(t: Table, v: Values, tier: FossilTier) {
+  const cat = String(v.cat ?? 'dealt');
+  const art = v.asked === 'art';
+  for (let i = 0; i < 60; i++) {
+    const at = t.s;
+    if (cat !== 'dealt') t.s.offered = t.s.offered.map((c, k) => (k === 0 ? cat : c === cat ? at.offered[0] : c));
+    t.s.delve!.fossil = { category: t.s.offered[0], tier };
+    t.pick();
+    if ((t.q.mode === 'art') === art) break;
+    t.s = at;
+    delete t.s.delve!.fossil;
+    t.pick().answer(null, true).wait(1000).next();
+  }
+  return t;
+}
+/** Delve Deeper, pressed as the fossil flies to the line (lib/fossilFlight.ts, FOSSIL_REVEAL: 3.15 to 3.81 s, a rare's 0.26 s later). */
+const pressedEarly = (v: Values): Step[] => (v.early ? [{ wait: v.tier === 'rare' ? 3700 : 3450 }, { click: '[data-cursor="next"]' }] : []);
 
 /** How long a scene played on from a question shows it before it moves on (ms). */
 const BLOW_AFTER = 1200;
@@ -422,27 +479,7 @@ export function gameScenes(): Scene[] {
               { value: 'two', label: 'A vein and a flare' },
             ],
           },
-          {
-            kind: 'choice',
-            key: 'cat',
-            label: 'Its category',
-            default: 'dealt',
-            options: [
-              { value: 'dealt', label: 'As dealt' },
-              ...[
-                'One-Handed Weapons',
-                'Two-Handed Weapons',
-                'Off-Hands',
-                'Body Armours',
-                'Helmets',
-                'Gloves & Boots',
-                'Rings',
-                'Amulets & Belts',
-                'Flasks, Charms, Jewels, Relics & Tablets',
-                'Lineage Gems',
-              ].map((c) => ({ value: c, label: c })),
-            ],
-          },
+          FOSSIL_CAT,
           { kind: 'toggle', key: 'rare', label: 'A rare one', default: false },
           { kind: 'toggle', key: 'held', label: 'Dynamite in the pack', default: false },
           { kind: 'toggle', key: 'hook', label: 'The first one, at depth 5', default: false },
@@ -472,17 +509,21 @@ export function gameScenes(): Scene[] {
         return { state: shown, act: t.room, at, steps: [{ wait: BLOW_AFTER }, { then: t.s, at: t.clock.now }] } satisfies Built;
       },
     },
-    // A fossil's question answered, played as it happens (lib/fossilFlight.ts):
-    // its light waits on the question; right, it rises to the item and the
-    // fossil the card never named is there in it, lit, named, then flown to
-    // the line; wrong, the light goes out and the fossil is lost; dynamite
-    // shatters the light with the question.
+    // A fossil's question, its stage set in the card's amber with the lamp
+    // turned low (StageAmber.svelte), answered as it happens
+    // (lib/fossilFlight.ts): right, the lamp comes up, the fossil the card never
+    // named shows in the light and comes free, lit, named, then flown to the
+    // line; wrong, the lamp goes out and the fossil is lost; dynamite shatters
+    // the amber with the question. Still up, the question as it's asked.
     {
       ...scene('delve-fossil-found', 'Delve alone', 'A fossil’s question answered right: kept, which one shown, flown to the line', [ALONE], delveAlone, {
-        controls: [FOSSIL_TIER, FOSSILS_HELD, FOSSIL_RIGHT, DEEPER_EARLY, FOSSIL_BLAST],
+        controls: [FOSSIL_TIER, FOSSIL_ASKED, FOSSIL_CAT, FOSSILS_HELD, FOSSIL_UP, FOSSIL_RIGHT, DEEPER_EARLY, FOSSIL_BLAST],
         states: [
           { label: 'A common kept', values: {} },
           { label: 'A rare kept', values: { tier: 'rare' } },
+          { label: 'Still up: a common’s question', values: { up: true } },
+          { label: 'Still up: a rare’s, asked by pictures', values: { up: true, tier: 'rare', asked: 'art' } },
+          { label: 'Asked by pictures, kept', values: { asked: 'art' } },
           { label: 'The first fossil', values: { held: 0 } },
           { label: 'The 25th: the set complete', values: { held: 24, tier: 'rare' } },
           { label: 'Answered wrong: the fossil lost', values: { right: false } },
@@ -495,11 +536,11 @@ export function gameScenes(): Scene[] {
         const held = heldBefore(Number(v.held ?? 6), tier);
         const t = delveAlone();
         t.engine.setFossilsHeld((ids) => ids.map(() => fossilMask(held)));
-        t.s.delve!.fossil = { category: t.s.offered[0], tier };
         if (v.blast) t.s = { ...t.s, delve: { ...t.s.delve!, inventory: { [pid('Kalguur')]: { wards: 0, flares: 0, dynamite: 1 } } } };
-        t.pick();
+        fossilPicked(t, v, tier);
         const shown = t.s;
         const at = t.clock.now + INTO;
+        if (v.up) return { state: shown, act: t.room, at, stored: storedFossils(held) } satisfies Built;
         const answered = v.blast ? t.wait(INTO + BLOW_AFTER).act({ type: 'blast', askedAt: t.q.askedAt }, null).s : t.answer(null, v.right !== false, INTO + BLOW_AFTER).s;
         return {
           state: shown,
