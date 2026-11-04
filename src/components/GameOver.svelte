@@ -1486,7 +1486,7 @@
     font-size: var(--sub);
     font-style: italic;
     line-height: 1.35;
-    color: var(--muted);
+    color: var(--note);
   }
 
   /* ---- words ---- */
@@ -1680,7 +1680,7 @@
   .ach span {
     font-size: 0.95rem;
     line-height: 1.3;
-    color: #cbbfa8;
+    color: var(--text-lo);
   }
 
   /* ---- where your lives went ---- */
@@ -1745,12 +1745,10 @@
     font-size: 1.05em;
     color: #f3c37e;
   }
-  /* (Under 13.5px on a phone, so in the text's own colour, as is a plate's depth: --muted reads only from 13.5px.) */
   .what .where {
-    /* (Of the line's 16px on a phone, 17px wider.) */
     font-size: 0.82em;
     font-style: italic;
-    color: var(--text);
+    color: var(--muted);
   }
   .vial {
     --phial-w: 50px;
@@ -1951,7 +1949,7 @@
   .dep {
     font-size: 0.8rem;
     font-style: italic;
-    color: var(--text);
+    color: var(--muted);
   }
   .revived {
     flex: none;
@@ -1967,7 +1965,7 @@
     margin: 0.2rem 0 0.7rem;
     font-style: italic;
     font-size: 1rem;
-    color: var(--muted);
+    color: var(--text-lo);
   }
   /* The run's facts hang from the chart's ground line: the first one's mark centred on it (--ground: lib/runsPlate's GROUND_Y). */
   .chart-row {
@@ -2143,11 +2141,10 @@
   }
   .found .count {
     font-family: var(--font-body);
-    /* (Of the heading's 20px.) */
     font-size: 0.8em;
     font-style: italic;
     letter-spacing: 0;
-    color: var(--muted);
+    color: var(--text-lo);
   }
 
   /* Share run: the lobby's small Lock button. */
@@ -2236,7 +2233,7 @@
     margin: 0;
     font-style: italic;
     font-size: 0.95rem;
-    color: var(--muted);
+    color: var(--note);
   }
   .note.warn {
     color: #eab3a3;
@@ -2283,7 +2280,7 @@
     gap: 0.7rem;
     margin: 0;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
   .pulse {
     display: block;

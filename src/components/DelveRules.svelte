@@ -131,7 +131,7 @@
     margin: 0.1rem 0 0;
     font-size: 0.9375rem;
     line-height: 1.1;
-    color: var(--muted);
+    color: var(--note);
   }
   .finds .miss {
     color: color-mix(in srgb, var(--find) 45%, var(--muted));
@@ -142,6 +142,6 @@
     font-size: 0.9375rem;
     font-style: italic;
     line-height: 1.1;
-    color: var(--muted);
+    color: var(--note);
   }
 </style>

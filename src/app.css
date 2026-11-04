@@ -134,18 +134,20 @@
   --gold-hi: #f1d99b;
   --gold-lo: #7d6333;
   --unique: #af6025;
-  /* (A shade lighter than it was, #e08a44, so its small capitals, the kicker
-     under the title, read: APCA Lc 54 on the page.) */
-  --unique-hi: #e59450;
+  --unique-hi: #e08a44;
   --text: #ddd3c2;
-  /* Secondary text (docs/design-rules.md, "Secondary text"): a note under
-     something, a status, a label, an aside. A step under --text and still
-     read without effort: APCA Lc 66 on the page, 60 and up on what's
-     behind it almost everywhere (src/qa/legible.ts; tests/legible.test.ts). */
-  --muted: #c6baa6;
-  /* Dim on purpose, for what isn't there to be read now: a thing not found
-     yet, a control that's off, a separator. Never for a line someone needs. */
-  --faint: #968a77;
+  /* The greys under it, brightest first (docs/design-rules.md, "Secondary
+     text"). A line just under the text, leading others: a setting's name, a
+     caption over a list, an earned achievement's text. */
+  --text-lo: #c8bba2;
+  /* A step under that: a tile's name not yet had, a tagline. */
+  --note-hi: #b9ab94;
+  /* A note, a line to read: a hint, a status, a waiting line, an empty
+     state, a caption. */
+  --note: #ab9d88;
+  /* At its dimmest: a label, a date, a count, an aside. No grey text is
+     dimmer (tests/legible.test.ts). */
+  --muted: #968a77;
   --bad: #e0553f;
   /* A verdict's sign (VerdictSign.svelte): its line, and the tint of its disc,
      rim and glow (r, g, b). Right, wrong and out of time. */
@@ -850,8 +852,9 @@ input {
   margin-bottom: 0.5em;
 }
 
+/* A note set inline: a status, a waiting line, a sentence beside a name. */
 .muted {
-  color: var(--muted);
+  color: var(--note);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -20,7 +20,7 @@
 
 A frame starts with nothing of its own (its storage keys start apart, `src/lib/storage.ts`, and are cleared as it opens and closes), so nothing it shows reaches the game's saves, and no two frames share a player. At a device's size it pretends to be that device: the pixel ratio, and a touch screen's lack of hover and coarse pointer. That is close, not exact: it is still drawn at your screen's pixel ratio, and the mouse is still a mouse.
 
-Each frame checks itself once it comes to rest, and again after a click in it: something off the side of the screen, text cut off without an ellipsis, console errors, pictures that didn't load, em dashes, and text too faint to read (**Hard to read**: each run's contrast, as APCA's Lc, against what its size and face need, `src/qa/legible.ts`; the frame can only hold light text up to the page's own dark, the best it could have, so the sweep's `--faint` measures it again against what's actually behind it). What it finds is outlined and listed under the top line.
+Each frame checks itself once it comes to rest, and again after a click in it: something off the side of the screen, text cut off without an ellipsis, console errors, pictures that didn't load, em dashes, and text too faint to read (**Hard to read**: each run's contrast, as APCA's Lc, under that of `--muted`, the game's dimmest grey, on the page, `src/qa/legible.ts`; the frame can only hold light text up to the page's own dark, the best it could have, so the sweep's `--faint` measures it again against what's actually behind it). What it finds is outlined and listed under the top line.
 
 ## Adding a bench
 

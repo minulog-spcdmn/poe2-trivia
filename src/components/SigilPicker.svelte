@@ -144,7 +144,7 @@
     margin: 0;
     font-size: 1rem;
     font-style: italic;
-    color: var(--muted);
+    color: var(--text-lo);
   }
   .acts {
     display: flex;
@@ -212,7 +212,7 @@
     font-family: var(--font-display);
     font-size: 1rem;
     letter-spacing: 0.04em;
-    color: var(--text);
+    color: var(--note-hi);
   }
   .have .name {
     color: var(--gold-hi);
@@ -252,9 +252,7 @@
   .strip .line {
     grid-area: 1 / 2 / 3 / 3;
     line-height: 1.35;
-    /* (A question to answer, so in the text's own colour; 0.9rem keeps it on one line beside the avatar.) */
     font-size: 0.9rem;
-    color: var(--text);
   }
   .strip.asking .line {
     grid-row: 1;

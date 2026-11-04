@@ -831,13 +831,13 @@
             <header>
               {@render glyph(sec.stats.category)}
               <h3>{sec.stats.category}</h3>
-              <span class="muted">{sec.stats.seen} / {sec.stats.total} discovered{sec.stats.n ? ` • ${pct(sec.stats)} accuracy` : ''}</span>
+              <span class="count">{sec.stats.seen} / {sec.stats.total} discovered{sec.stats.n ? ` • ${pct(sec.stats)} accuracy` : ''}</span>
             </header>
             {#if sec.stats.groups.length > 1}
               <ul class="groups">
                 {#each sec.stats.groups as g (g.group)}
                   <li title="{g.seen} of {g.total} discovered{g.n ? `, ${g.ok} of ${answers(g.n)} right` : ''}">
-                    {g.group} <span class="muted">{g.seen}/{g.total}{g.n ? ` • ${pct(g)}` : ''}</span>
+                    {g.group} <span class="count">{g.seen}/{g.total}{g.n ? ` • ${pct(g)}` : ''}</span>
                   </li>
                 {/each}
               </ul>
@@ -1110,7 +1110,7 @@
   .tagline {
     margin: 0.6rem 0 0;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note-hi);
     /* The line going and the one coming over each other as they cross-fade. */
     display: grid;
   }
@@ -1159,7 +1159,7 @@
   .tab-note {
     font-family: var(--font-cinzel);
     font-size: 0.78rem;
-    color: var(--muted);
+    color: var(--gold-lo);
     transition: color 0.25s;
   }
   .tab-in::after {
@@ -1251,7 +1251,7 @@
     font-size: 1rem;
     line-height: 1.3;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
   .medal-value {
     font-size: 3.2rem;
@@ -1316,7 +1316,7 @@
     margin: 0;
     font-size: 1rem;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
 
   .bars {
@@ -1648,6 +1648,10 @@
   .cat-section header span {
     font-size: 0.92rem;
   }
+  /* A count, in --muted as labels are. */
+  .count {
+    color: var(--muted);
+  }
   .groups {
     list-style: none;
     margin: 0 0 0.7rem;
@@ -1759,13 +1763,15 @@
     user-select: none;
   }
   .unknown .name {
+    /* (Dim on purpose: an item not found yet.) */
     font-style: italic;
-    color: var(--faint);
+    color: var(--muted);
+    opacity: 0.6;
   }
   .none {
     text-align: center;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
 
   /* The table: every column fits, nothing scrolls sideways. */
@@ -1885,6 +1891,7 @@
   }
   .item-name small {
     font-size: 0.9375rem;
+    opacity: 0.75;
     color: #d8a26a;
   }
   tbody tr:hover .item-name {
@@ -1916,7 +1923,7 @@
     margin-top: 1rem;
     text-align: center;
     font-size: 1rem;
-    color: var(--muted);
+    color: var(--note);
   }
   .end p {
     margin: 0;

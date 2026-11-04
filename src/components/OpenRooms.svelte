@@ -339,7 +339,7 @@
     margin: 0 0 0 auto;
     font-style: italic;
     font-size: 15px;
-    color: var(--muted);
+    color: var(--note);
   }
   .refresh {
     width: 32px;
@@ -453,7 +453,7 @@
     text-align: center;
     font-style: italic;
     font-size: 17px;
-    color: var(--muted);
+    color: var(--note);
     border: 1px dashed rgba(125, 99, 51, 0.55);
     border-radius: 4px;
   }

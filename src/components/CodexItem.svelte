@@ -298,6 +298,7 @@
     font-family: var(--font-display);
     font-size: 0.9375rem;
     color: #d8a26a;
+    opacity: 0.85;
   }
   /* Centred in the empty end of the name plate. */
   .close {
@@ -451,6 +452,7 @@
     background: linear-gradient(90deg, transparent, rgba(175, 96, 37, 0.55) 22%, rgba(175, 96, 37, 0.55) 78%, transparent);
   }
   .seg > button {
+    /* (Dim on purpose: the tabs not chosen; the chosen one lights, .on.) */
     position: relative;
     padding: 0.55rem 0.15rem 0.5rem;
     font-family: var(--font-display);
@@ -529,13 +531,17 @@
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
-    color: #adb7c2;
+    color: #8f9aa6;
     font-size: 1rem;
     line-height: 1.3;
   }
   .lines b {
     font-weight: 500;
     color: #a9c3dc;
+  }
+  .lines i {
+    /* (Dim on purpose: a record not there yet, never asked.) */
+    color: #6d7782;
   }
   .label {
     margin: 0 0 0.45rem;

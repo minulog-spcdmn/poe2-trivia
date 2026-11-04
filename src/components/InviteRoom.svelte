@@ -150,7 +150,7 @@
     margin: 0.8rem 0 0;
     font-size: 1rem;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
   /* Joining won't work as it stands (or not as a player at once). */
   .hint.warn {
@@ -182,7 +182,7 @@
   }
   .asking .name {
     font-style: italic;
-    color: var(--faint);
+    color: var(--muted);
   }
 
 </style>

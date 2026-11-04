@@ -1021,8 +1021,7 @@
     margin: 0;
     font-size: max(0.8rem, calc(var(--R) * 0.05));
     font-style: italic;
-    /* (A lighter tint than the kicker's: on a phone it's at its floor, small.) */
-    color: #f0c8bb;
+    color: #e6b8aa;
   }
   .skip {
     display: flex;

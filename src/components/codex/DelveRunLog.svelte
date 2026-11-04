@@ -138,7 +138,7 @@
 <section class="log" aria-labelledby="log-h">
   <div class="bar">
     <h2 id="log-h">Run log</h2>
-    <span class="muted"
+    <span class="count"
       >{#if runs.length}{listed} {listed === 1 ? 'run' : 'runs'}{otherCount ? `, ${otherCount} under other rules` : ''}{:else}{otherCount}
         {otherCount === 1 ? 'run' : 'runs'} under other rules{/if}</span
     >
@@ -212,9 +212,11 @@
     letter-spacing: 0.18em;
     color: var(--gold-hi);
   }
-  .bar .muted {
+  /* A count, in --muted as labels are. */
+  .bar .count {
     font-size: 1rem;
     font-style: italic;
+    color: var(--muted);
   }
 
   /* The Collection's table. */
@@ -406,7 +408,7 @@
     text-align: center;
     font-size: 1rem;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
 
   @media (max-width: 560px) {

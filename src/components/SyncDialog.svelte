@@ -548,7 +548,7 @@
     margin: 0.2rem 0 0;
     font-style: italic;
     line-height: 1.35;
-    color: var(--muted);
+    color: var(--note);
     transition: color 0.2s;
   }
   .line.good {
@@ -598,7 +598,7 @@
   /* At the links' size (set down to their small letters: app.css .bullet). */
   .sep {
     font-size: 0.95rem;
-    color: var(--faint);
+    color: var(--gold-lo);
   }
   .actions {
     grid-area: actions;

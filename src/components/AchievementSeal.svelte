@@ -165,6 +165,7 @@
 
 <style>
   .seal {
+    /* (Not text: the colour the seal's lines draw in.) */
     position: relative;
     display: inline-block;
     flex: none;
