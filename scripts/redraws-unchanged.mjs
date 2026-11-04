@@ -18,6 +18,7 @@ import { appendFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmS
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildBeta } from './beta-build.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const WORKFLOW = '.github/workflows/redraws.yml';
@@ -33,11 +34,14 @@ const git = (/** @type {string[]} */ ...args) => {
 };
 
 /**
- * The sweep and every file it imports, and theirs (paths from the root,
- * with forward slashes): the check's own code, which no build has.
+ * The sweep and every file it imports, and theirs, with any file under
+ * scripts/ one of them names (a helper it reads or runs by its path, as
+ * find-banding.py): the check's own code, which no build has. Paths from
+ * the root, with forward slashes.
  */
 export function sweepFiles(root = ROOT) {
   const files = new Set();
+  let text = '';
   const walk = (/** @type {string} */ file) => {
     const found = [file, `${file}.ts`, `${file}.js`, `${file}.mjs`, path.join(file, 'index.ts')].find((f) => existsSync(f) && statSync(f).isFile());
     if (!found) return;
@@ -45,9 +49,15 @@ export function sweepFiles(root = ROOT) {
     if (files.has(rel)) return;
     files.add(rel);
     if (!/\.(m?js|ts)$/.test(found)) return;
-    for (const m of readFileSync(found, 'utf8').matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)['"](\.{1,2}\/[^'"]+)['"]/g)) walk(path.join(path.dirname(found), m[1] ?? ''));
+    const code = readFileSync(found, 'utf8');
+    // (The game's own files name scripts only to say what made them, and change the check whatever they say.)
+    if (!rel.startsWith('src/')) text += code;
+    for (const m of code.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)['"](\.{1,2}\/[^'"]+)['"]/g)) walk(path.join(path.dirname(found), m[1] ?? ''));
   };
   walk(path.join(root, 'scripts', 'sweep.mjs'));
+  for (const e of readdirSync(path.join(root, 'scripts'), { recursive: true, withFileTypes: true })) {
+    if (e.isFile() && new RegExp(`(?<![\\w.-])${e.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(text)) files.add(path.relative(root, path.join(e.parentPath, e.name)).replaceAll('\\', '/'));
+  }
   return files;
 }
 
@@ -61,13 +71,6 @@ export function sweepFiles(root = ROOT) {
  */
 export function matters(/** @type {string} */ file, /** @type {Set<string>} */ own) {
   return /^(src|public)\//.test(file) || (!file.includes('/') && !file.endsWith('.md')) || file === WORKFLOW || file === THIS || own.has(file);
-}
-
-/** Builds the beta of the checkout into `out`, as the sweep does (buildBeta in sweep.mjs); whether it built. */
-function build(/** @type {string} */ out) {
-  const vite = path.join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js');
-  const r = spawnSync(process.execPath, [vite, 'build', '--outDir', out, '--emptyOutDir', '--logLevel', 'error'], { cwd: ROOT, env: { ...process.env, VITE_CHANNEL: 'beta' }, stdio: 'inherit' });
-  return r.status === 0;
 }
 
 /** Each file under `dir`, by its path from there, with its contents' hash. */
@@ -95,7 +98,7 @@ export function unchanged() {
   if (parents.length !== 2) return { same: false, why: 'HEAD isn’t a pull request merged onto main (its parents not fetched?)' };
   const main = /** @type {string} */ (parents[0]);
   const head = git('rev-parse', 'HEAD');
-  const changed = git('diff', '--name-only', '--no-renames', main, 'HEAD')?.split('\n').filter(Boolean);
+  const changed = git('diff', '--name-only', '--no-renames', '-z', main, 'HEAD')?.split('\0').filter(Boolean);
   if (!head || !changed) return { same: false, why: 'git couldn’t say what it changes' };
   const own = sweepFiles();
   const hit = changed.find((f) => matters(f, own));
@@ -110,10 +113,10 @@ export function unchanged() {
   try {
     const after = path.join(dir, 'after');
     const before = path.join(dir, 'before');
-    if (!build(after)) return { same: false, why: 'its beta didn’t build' };
+    if (buildBeta(ROOT, after) !== 0) return { same: false, why: 'its beta didn’t build' };
     if (git('checkout', '-q', '--detach', main) === null) return { same: false, why: 'main couldn’t be checked out' };
     try {
-      if (!build(before)) return { same: false, why: 'main’s beta didn’t build' };
+      if (buildBeta(ROOT, before) !== 0) return { same: false, why: 'main’s beta didn’t build' };
     } finally {
       git('checkout', '-q', '--detach', head);
     }
@@ -129,6 +132,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const { same, why } = unchanged();
   const text = same ? `Nothing the redraw check sees changed: ${why}. It passes without watching the scenes again.` : `The redraw check runs in full: ${why}.`;
   console.log(text);
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `same=${same}\n`);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## Redraws\n\n${text}\n`);
+  // (Written last, so a job that fails along the way says nothing.)
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `same=${same}\n`);
 }

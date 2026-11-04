@@ -92,13 +92,21 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # main's copy of the script says, so a pull request that changes it isn't judged by its own
+      # change (main's sees the script changed, and every job runs). With none on main, every job runs.
       - id: same
-        run: node scripts/redraws-unchanged.mjs
+        run: |
+          if git show HEAD^1:scripts/redraws-unchanged.mjs > scripts/redraws-unchanged.main.mjs; then
+            node scripts/redraws-unchanged.main.mjs
+          else
+            echo "main has no scripts/redraws-unchanged.mjs yet: every job runs."
+            echo "same=false" >> "$GITHUB_OUTPUT"
+          fi
 
   redraws:
     needs: unchanged
-    # (Whatever became of that job: one that failed or didn't run leaves every job here to run.)
-    if: ${{ !cancelled() && github.event_name != 'push' && needs.unchanged.outputs.same != 'true' }}
+    # (Unless that job passed and found nothing changed: one that failed or didn't run leaves every job here to run.)
+    if: ${{ !cancelled() && github.event_name != 'push' && !(needs.unchanged.result == 'success' && needs.unchanged.outputs.same == 'true') }}
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 20

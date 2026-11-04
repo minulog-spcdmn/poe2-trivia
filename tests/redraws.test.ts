@@ -148,15 +148,19 @@ test('CI’s parts of the scenes at rest are each of them once, of one count', (
 });
 
 test('Redraws passes on every job passing, or on the pull request changing nothing the check sees, never on jobs skipped otherwise', () => {
-  assert.match(workflow, /redraws:\n\s+needs: unchanged\n(?:\s+#.*\n)*\s+if: \$\{\{ !cancelled\(\) && github\.event_name != 'push' && needs\.unchanged\.outputs\.same != 'true' \}\}/);
-  assert.ok(workflow.includes("SAME: ${{ needs.unchanged.result == 'success' && needs.unchanged.outputs.same == 'true' }}"), 'nothing changed, as that job found it');
+  const same = "needs.unchanged.result == 'success' && needs.unchanged.outputs.same == 'true'";
+  assert.ok(workflow.includes(`if: \${{ !cancelled() && github.event_name != 'push' && !(${same}) }}`), 'the jobs run unless that job passed and found nothing changed');
+  assert.ok(workflow.includes(`SAME: \${{ ${same} }}`), 'the verdict holds to the same');
   assert.match(workflow, /if \[ "\$SAME" = true \] && \[ "\$WATCHED" = skipped \]; then\n.*\n\s+exit 0\n\s+fi\n\s+test "\$WATCHED" = success/);
+  // (main's copy says: a pull request's own change to the script doesn't judge it.)
+  assert.match(workflow, /git show HEAD\^1:scripts\/redraws-unchanged\.mjs > (\S+); then\n\s+node \1\n/);
 });
 
 test('a pull request passes without watching only on files the check doesn’t run, then on its build', () => {
   const own = sweepFiles();
-  for (const f of ['scripts/sweep.mjs', 'qaServer.ts', 'src/qa/redraws.ts']) assert.ok(own.has(f), `the sweep runs ${f}`);
-  for (const f of ['src/lib/game.ts', 'public/icons/lineage-gems.avif', 'index.html', 'vite.config.ts', 'package-lock.json', 'qaBefore.ts', '.github/workflows/redraws.yml', 'scripts/redraws-unchanged.mjs', 'scripts/sweep.mjs']) {
+  // (find-banding.py by its path, not imported.)
+  for (const f of ['scripts/sweep.mjs', 'scripts/beta-build.mjs', 'qaServer.ts', 'src/qa/redraws.ts', 'scripts/find-banding.py']) assert.ok(own.has(f), `the sweep runs ${f}`);
+  for (const f of ['src/lib/game.ts', 'public/icons/lineage-gems.avif', 'index.html', 'vite.config.ts', 'package-lock.json', 'qaBefore.ts', '.github/workflows/redraws.yml', 'scripts/redraws-unchanged.mjs', 'scripts/find-banding.py']) {
     assert.ok(matters(f, own), `${f} can change what the check sees`);
   }
   for (const f of ['docs/qa.md', 'CLAUDE.md', 'tests/redraws.test.ts', 'scripts/iphone/fresh.mjs', '.claude/agents/worker.md', '.github/workflows/tests.yml']) {

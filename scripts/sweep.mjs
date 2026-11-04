@@ -48,6 +48,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
+import { buildBeta as viteBeta } from './beta-build.mjs';
 import { SIZES } from '../src/qa/sizes.ts';
 import { touched } from '../src/qa/change.ts';
 import { FLOOR, MARK, MOMENTS, PAGE_FLOOR, WEBGL_SCENES, atRest, kpx, overBaseline, pageAtRest, readTrace, redraws, unread, withoutMark } from '../src/qa/redraws.ts';
@@ -152,9 +153,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
 function buildBeta(root, out, what) {
   console.log(`Building the beta of ${what}…`);
   const started = Date.now();
-  const vite = path.join(root, 'node_modules', 'vite', 'bin', 'vite.js');
-  const r = spawnSync(process.execPath, [vite, 'build', '--outDir', out, '--emptyOutDir', '--logLevel', 'error'], { cwd: root, env: { ...process.env, VITE_CHANNEL: 'beta' }, stdio: 'inherit' });
-  if (r.status !== 0) process.exit(r.status ?? 1);
+  const status = viteBeta(root, out);
+  if (status !== 0) process.exit(status);
   console.log(`Built in ${((Date.now() - started) / 1000).toFixed(0)} s.`);
 }
 
@@ -163,13 +163,13 @@ async function serveDir(dir) {
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
     let file = path.join(dir, decodeURIComponent(url.pathname));
-    if (!file.startsWith(dir)) return void res.writeHead(403).end();
+    if (file !== dir && !file.startsWith(dir + path.sep)) return void res.writeHead(403).end();
     if (existsSync(file) && statSync(file).isDirectory()) file = path.join(file, 'index.html');
     if (!existsSync(file)) return void res.writeHead(404).end();
     // (No Date header: the game's clock (lib/clock.ts) takes a server's time over the page's own, and a
     // watched page's is CLOCK's, 20 October, not today, so a scene shows the same on any day.)
     res.sendDate = false;
-    res.writeHead(200,{ 'Content-Type': MIME[path.extname(file)] ?? 'application/octet-stream' });
+    res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] ?? 'application/octet-stream' });
     createReadStream(file).pipe(res);
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
