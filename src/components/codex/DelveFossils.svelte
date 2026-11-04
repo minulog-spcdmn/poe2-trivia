@@ -8,8 +8,8 @@
   // the width is too narrow), a little larger. Each kind under the fossil
   // card's own seal. One not kept yet is an empty well holding only its
   // shape, as the Collection shows an item not seen yet, and nothing to
-  // choose; one kept lies in it in its own colours with a slight glow, a
-  // rare one's rim touched with gold. Now and then a band of lamplight
+  // choose; one kept lies in it in its own colours on a slight glow, a
+  // rare one in the rare fossil card's reds. Now and then a band of lamplight
   // passes over the kept ones, a rare one's more often.
   import { pointedRay } from '../../lib/arcane';
   import { notched, Plate } from '../../lib/cardEngraving';
@@ -296,7 +296,7 @@
       {#each GROUPS as g (g.key)}
         {@const n = g.fossils.filter((f) => found[f.id]).length}
         <div class="group {g.key}">
-          <h3 class="head" id="{uid}-{g.key}">
+          <h3 class="head {g.key}" id="{uid}-{g.key}">
             <svg class="seal {g.key}" viewBox={g.key === 'rare' ? '-15.5 -15.5 31 31' : '-12 -12 24 24'} aria-hidden="true">{#each SEALS[g.key] as s, i (i)}<path class={s.cls} d={s.d} />{/each}</svg>
             <span>{g.name}</span><span class="tally" title="{n} of {g.fossils.length} found">{n}/{g.fossils.length}</span></h3>
           <ul class="grid {g.key}" aria-labelledby="{uid}-{g.key}">
@@ -354,7 +354,7 @@
   <section class="panel fossils" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="{uid}-h" bind:this={root}>
     <header>
       <h2 id="{uid}-h">Fossils</h2>
-      <span class="col-label">{#if complete}All <span class="n">{FOSSIL_COUNT}</span>{:else}<span class="n">{count}</span> of <span class="n">{FOSSIL_COUNT}</span>{/if}</span>
+      <span class="col-label" title="{count} of {FOSSIL_COUNT} found">{count}/{FOSSIL_COUNT}</span>
     </header>
     {@render set()}
   </section>
@@ -482,12 +482,18 @@
     height: 1.6rem;
     margin-right: -0.15em;
     overflow: visible;
+    /* Its middle on the capitals' middle, not the line's (which sits lower). */
+    translate: 0 -0.09rem;
   }
   /* The rare one's rays stand outside its circle, as wide as the common one's. */
   .seal.rare {
     width: calc(1.6rem * 31 / 24);
     height: calc(1.6rem * 31 / 24);
     margin: -0.25rem -0.15em -0.25rem -0.25rem;
+  }
+  /* A rare one's name in the rare fossil card's ink. */
+  .head.rare {
+    color: color-mix(in srgb, var(--fossil-rare-ink) 78%, #d8a26a);
   }
   .seal path {
     fill: none;
@@ -553,24 +559,47 @@
    * eased, its floor darker than the panel, shadowed under its rim and its
    * lower lip catching the light; empty, a place a fossil goes into, its
    * shape in the floor as the Collection shows an item not seen yet. Kept,
-   * the fossil lies in it in its own colours with a slight glow of its
-   * own, a rare one's rim touched with gold.
+   * the fossil lies in it in its own colours on a slight glow; a rare
+   * one in the rare fossil card's reds, its floor stained with the resin.
    */
   .slot {
-    --well: inset 0 1px 0 rgba(0, 0, 0, 0.7), inset 0 0 0 1px rgba(0, 0, 0, 0.45), inset 0 2px 3px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 222, 176, 0.07);
+    /* Crisp lines only (a soft shadow this dark bands): shadow under the rim, a lip catching the light. */
+    --well: inset 0 1px 0 rgba(0, 0, 0, 0.75), inset 0 0 0 1px rgba(0, 0, 0, 0.45), inset 0 2px 0 rgba(0, 0, 0, 0.28), 0 1px 0 rgba(255, 222, 176, 0.07);
+    --rim: transparent;
     position: relative;
     display: block;
     width: 100%;
     height: 100%;
     border-radius: 3px;
     background: rgba(0, 0, 0, 0.32);
-    box-shadow: var(--well);
-    transition: box-shadow 0.2s;
-  }
-  .slot.rare.got {
     box-shadow:
       var(--well),
-      inset 0 0 0 1px rgba(201, 164, 92, 0.32);
+      inset 0 0 0 1px var(--rim);
+    transition: box-shadow 0.2s;
+  }
+  /* The light behind a kept one, dithered (app.css, --dither) or it bands. */
+  .slot.got::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    image-rendering: pixelated;
+    background:
+      var(--dither),
+      radial-gradient(closest-side, rgba(236, 142, 44, 0.2), rgba(236, 142, 44, 0.06) 70%, transparent);
+  }
+  /* A rare one, in the rare card's reds: its floor stained with the resin, its rim and its light the card's edge. */
+  .slot.rare {
+    --rim: rgba(200, 48, 12, 0.16);
+  }
+  .slot.rare.got {
+    --rim: color-mix(in srgb, var(--fossil-rare-edge) 62%, transparent);
+    background: color-mix(in srgb, var(--fossil-rare-resin) 48%, #0a0503);
+  }
+  .slot.rare.got::before {
+    background:
+      var(--dither),
+      radial-gradient(closest-side, color-mix(in srgb, var(--fossil-rare-mid) 30%, transparent), color-mix(in srgb, var(--fossil-rare-edge) 10%, transparent) 70%, transparent);
   }
   .slot img {
     position: absolute;
@@ -584,10 +613,7 @@
     user-select: none;
   }
   .slot > img {
-    filter: drop-shadow(0 0 5px rgba(236, 142, 44, 0.32)) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.6));
-  }
-  .slot.rare > img {
-    filter: drop-shadow(0 0 7px rgba(240, 130, 36, 0.42)) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.6));
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7));
   }
   .slot:not(.got) > img {
     filter: brightness(0);
@@ -596,18 +622,20 @@
   .still .slot {
     transition: none;
   }
-  /* The one whose tooltip shows: its rim lit, as a Collection tile under the pointer, nothing moving. */
+  /* The one whose tooltip shows: its rim lit, nothing moving. */
   .cell.on .slot {
+    --rim: var(--gold-lo);
     box-shadow:
       var(--well),
-      inset 0 0 0 1px var(--gold-lo),
-      0 0 14px rgba(201, 164, 92, 0.18);
+      inset 0 0 0 1px var(--rim),
+      0 0 0 1px rgba(201, 164, 92, 0.22);
   }
   .cell.on .slot.rare {
+    --rim: var(--fossil-rare-ink);
     box-shadow:
       var(--well),
-      inset 0 0 0 1px var(--gold),
-      0 0 14px rgba(201, 164, 92, 0.22);
+      inset 0 0 0 1px var(--rim),
+      0 0 0 1px color-mix(in srgb, var(--fossil-rare-ink) 28%, transparent);
   }
 
   /*
