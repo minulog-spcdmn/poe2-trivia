@@ -68,6 +68,8 @@ export async function bootPiece(asked: URLSearchParams) {
   ]);
   piece.values = valuesOf(bench.controls, Object.fromEntries([...asked].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v])));
   sound.installUiSounds();
+  // The piece sounds once the desk's been used, as a scene's first frame does (./boot.ts).
+  if (asked.get('frame') === 'p0') await sound.soundWithFramer?.();
   spatial.installSpatial();
   fxUi.installUiFx();
   if (!switchedOff('cursor')) cursor.installCursor();

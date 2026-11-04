@@ -181,6 +181,17 @@
   const myVote = $derived(coop && me ? (votes[me] ?? null) : null);
   const votersOf = (cat: string) => s.players.filter((p) => votes[p.id] === cat);
   const nameOf = (id: string) => s.players.find((p) => p.id === id)?.name ?? '?';
+  // A teammate's vote landing (or moving to another card) is heard at its card,
+  // from farther off; one cast at this screen is heard as it's cast (vote).
+  // Once for any number landing together, and not for those there already.
+  let heardVotes: Record<string, string> = untrack(() => ({ ...votes }));
+  $effect(() => {
+    const now = votes;
+    const at = Object.entries(now).find(([id, cat]) => id !== me && heardVotes[id] !== cat && session.mode !== 'local' && !s.players.find((p) => p.id === id)?.local);
+    const i = at ? s.offered.indexOf(at[1]) : -1;
+    if (i >= 0) untrack(() => sfx('vote', { from: { from: cardEls[i], far: true } }));
+    heardVotes = { ...now };
+  });
   /** The host's clock, ticking while the vote is open (its window, and the grace after a host's reload). */
   let hostNow = $state(session.hostNow());
   $effect(() => {
@@ -686,6 +697,8 @@
     const turn = flipAt(i) - start;
     const total = turn + FLIP;
     let down = true;
+    let slid = false;
+    let turned = false;
     const rot = (i - (n - 1) / 2) * 7;
     const axis = rows.current ? 'X' : 'Y';
     return {
@@ -704,7 +717,20 @@
       // counted from here ran ahead of it: the turn starts only after the
       // mount's long frame, and the face came up while it still faced away.
       tick: (t: number) => {
-        if (down && t * total >= turn + FLIP / 2) {
+        const u = t * total;
+        // Heard on the same clock: one breath for the hand as the first card
+        // slides, from the row where they land, and a flap of air for each
+        // card's turn (soundDesign deal, dealTurn). Not once a long frame has
+        // carried the card past the half of it.
+        if (!slid && u > 0) {
+          slid = true;
+          if (i === 0 && u < DEAL / 2) sfx('deal', { from: { from: node.closest('.cards') } });
+        }
+        if (!turned && u >= turn) {
+          turned = true;
+          if (u < turn + FLIP / 2) sfx('dealTurn', { from: { from: node } });
+        }
+        if (down && u >= turn + FLIP / 2) {
           down = false;
           card?.classList.remove('down');
         }

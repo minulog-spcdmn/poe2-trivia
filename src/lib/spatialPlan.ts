@@ -40,6 +40,19 @@ export function travel(from: number | null, to: number | null, seconds: number, 
   return (t) => a + (b - a) * along(t);
 }
 
+/**
+ * How far off (0 to `far`) a sound is `t` s from its start: as far all
+ * through, or one travelling between you and a teammate (`way`, as
+ * SoundPlace has it) losing its distance as it comes in, or gaining it as
+ * it goes out, in step with its travel (above). One that sits where it
+ * lands, not moving, is heard there: close come in, far gone out.
+ */
+export function distance(far: number, seconds: number, moving: boolean, way: 'in' | 'out' | null): (t: number) => number {
+  if (!way) return () => far;
+  const along = (t: number) => (seconds > 0 && moving ? ease(Math.min(1, t / seconds)) : 1);
+  return way === 'in' ? (t) => far * (1 - along(t)) : (t) => far * along(t);
+}
+
 /** A pointer's hovers this close together (s) are a sweep across controls. */
 export const HOVER_SWEEP = 0.5;
 /** How much quieter (dB) each hover in a sweep comes than the one before, and how many steps down it goes at most. */

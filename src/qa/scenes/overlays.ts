@@ -15,6 +15,8 @@ import { endScenes } from './over.ts';
 import { PRESETS, type Settings } from '../../lib/game.ts';
 import { ACHIEVEMENTS } from '../../lib/achievements.ts';
 import { METALS, TIERS, type Tier } from '../../lib/metals.ts';
+// (A namespace: the code before this change has no ACHIEVEMENT_SOUNDS, and a name it lacks fails the whole screen there.)
+import * as soundDesign from '../../lib/soundDesign.ts';
 import type { Built, Scene, Seat, Step } from '../scene.ts';
 
 const THREE = ['Kalguur', 'Doryani', 'Una of the Vaal'];
@@ -45,13 +47,14 @@ const endItem = (steps: Step[]): Built => {
   const { state, delveResult, log, runs } = endScenes().find((e) => e.key === 'd-solo')!;
   return { state, delveResult, log, runs, steps: [{ wait: 2500 }, { click: 'button.thumb' }, { wait: 800 }, ...steps] };
 };
-/** A question, then the notices for achievements of `tier` (the first four not kept secret): one alone, then three at once. */
+/** A question, then the notices for achievements of `tier` (the first four not kept secret): one alone, then three at once, sounding in their metal. */
 const achievementNotices = (tier: Tier): Built => {
   const [alone, ...burst] = ACHIEVEMENTS.filter((a) => a.tier === tier && !a.secret).slice(0, 4);
   const seal = (a: typeof alone) => ({ sign: a.sign, tier: a.tier });
   return inGame([
     { toast: alone.title, opts: { title: 'Achievement earned', seal: seal(alone) } },
     { toast: burst.map((a) => a.title).join(' • '), opts: { title: `${burst.length} achievements earned`, seal: seal(burst[0]) } },
+    { sound: soundDesign.ACHIEVEMENT_SOUNDS?.[tier], from: '.toasts' },
   ]);
 };
 const overlay = (key: string, label: string, seats: Seat[], build: () => Built): Scene => ({ key: `overlay/${key}`, screen: 'overlay', group: 'Over the game', label, seats, build });

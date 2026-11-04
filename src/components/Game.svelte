@@ -11,7 +11,7 @@
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import TimerRing from './TimerRing.svelte';
-  import { fireAmbience, sfx } from '../lib/sound';
+  import { backSound, fireAmbience, sfx } from '../lib/sound';
   import { onMount } from 'svelte';
   import { DEATHMATCH_INTRO, deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
   import { stageZoom } from '../lib/stage';
@@ -54,7 +54,12 @@
   // as it's closed, not once its flight away is done, so a Back meanwhile isn't lost on it.
   const itemOpen = $derived(!!itemWindow.item);
   $effect(() => {
-    if (itemOpen) return backGuard.layer(closeItemWindow);
+    if (itemOpen)
+      return backGuard.layer(() => {
+        // (Back closes it as its ✕ would, and sounds so: backSound.)
+        sfx(backSound(), { from: { from: document.querySelector('[aria-labelledby="item-window-name"] .close') } });
+        closeItemWindow();
+      });
   });
   // The worker that makes the pictures' shadows, loaded and warm before the first question with art waits for it.
   onMount(warmCasts);

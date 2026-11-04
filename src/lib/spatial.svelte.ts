@@ -18,7 +18,7 @@
 // mix was chosen by ear on the lab's pages (CHOSEN).
 
 import { HALL_SECONDS, VEIN_NEAR, db, filter, setPlacer, type Placer, type SoundPlace, type Sfx } from './sound';
-import { hoverDuck, roomPlan, screenX, travel, type HoverMemory } from './spatialPlan';
+import { distance, hoverDuck, roomPlan, screenX, travel, type HoverMemory } from './spatialPlan';
 import { whenIdle } from './idle';
 import { BLAST_IN_DELAY_MS } from './blastTiming';
 import { ROOMS, roomSeed, roomSteps } from './acoustics';
@@ -649,7 +649,9 @@ const placer: Placer = {
     const to = edge ? edge * BLAST_SWEEP.to : where?.to ? pointOf(where.to) : null;
     const seconds = to !== null ? (edge ? BLAST_SWEEP.seconds : (where?.seconds ?? 0)) : 0;
     const big = s.size && WIDE.has(name);
-    const far = where?.far && !DISTANT.has(name) ? s.far : 0;
+    const way = where?.way && to !== null && !DISTANT.has(name) ? where.way : null;
+    const far = (where?.far || way) && !DISTANT.has(name) ? s.far : 0;
+    const farAt = distance(far, seconds, s.moving, way);
     if (from === null && to === null && !big && !far) {
       listener?.({ begin: start, seconds: 0.8, az: () => 0, far: 0, wide: false });
       return null;
@@ -676,17 +678,21 @@ const placer: Placer = {
     }
     const place = big ? wide(ac) : PLACES[s.renderer](ac, dryHover);
     place.output.connect(mixOf(ac));
-    // Dry: far off (duller, quieter), then placed.
+    // Dry: far off (duller, quieter), then placed. (Going in or out, its distance changes as it travels: set below.)
+    const dull = (f: number) => 20000 * Math.pow(1200 / 20000, f);
     const dry = ac.createGain();
     let chain: AudioNode = dry;
-    if (far) chain = chain.connect(filter(ac, 'lowpass', 20000 * Math.pow(1200 / 20000, far))).connect(gainNode(ac, db(-9 * far)));
+    const dryFar = far ? { lp: filter(ac, 'lowpass', dull(far)), gain: gainNode(ac, db(-9 * far)) } : null;
+    if (dryFar) chain = chain.connect(dryFar.lp).connect(dryFar.gain);
     if (soften) chain = chain.connect(filter(ac, 'highshelf', 4000, 0.707, soften));
     chain.connect(place.input);
     // Wet: as far off, with more of the room the farther; from its side, or the middle.
     const wet = ac.createGain();
     const sendPan = ac.createStereoPanner();
     let toRoom: AudioNode = wet;
-    if (far) toRoom = toRoom.connect(filter(ac, 'lowpass', 20000 * Math.pow(1200 / 20000, far))).connect(gainNode(ac, db(-9 * far) * (1 + 0.6 * far)));
+    const wetLevel = (f: number) => db(-9 * f) * (1 + 0.6 * f);
+    const wetFar = far ? { lp: filter(ac, 'lowpass', dull(far)), gain: gainNode(ac, wetLevel(far)) } : null;
+    if (wetFar) toRoom = toRoom.connect(wetFar.lp).connect(wetFar.gain);
     // A ducked hover's room as dull as the hover.
     if (soften) toRoom = toRoom.connect(filter(ac, 'highshelf', 4000, 0.707, soften));
     toRoom.connect(sendPan).connect(wetTo ?? wetOf(ac));
@@ -706,6 +712,12 @@ const placer: Placer = {
     const set = (t: number, ramp: boolean) => {
       place.at(az(t), start + t, ramp);
       move(sendPan.pan, sendAz(t), start + t, ramp);
+      if (way && dryFar && wetFar) {
+        const f = farAt(t);
+        for (const lp of [dryFar.lp, wetFar.lp]) move(lp.frequency, dull(f), start + t, ramp);
+        move(dryFar.gain.gain, db(-9 * f), start + t, ramp);
+        move(wetFar.gain.gain, wetLevel(f), start + t, ramp);
+      }
     };
     set(0, false);
     if (s.moving && seconds > 0) for (let t = STEP; t < seconds + STEP; t += STEP) set(Math.min(t, seconds), true);

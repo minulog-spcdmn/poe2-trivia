@@ -14,6 +14,9 @@
 import { loadAchievements, type Achievement, type Check } from './achievements.ts';
 import { achievementsIn, loadSigils, sigilsFor, sigilsToUnlock } from './sigils.ts';
 import { toasts } from './toasts.svelte';
+import { sfx } from './sound';
+import { sinceEndHeard } from './gameEnd';
+import { ACHIEVEMENT_SOUNDS } from './soundDesign';
 
 /** More than this at once come as one notice naming them all. */
 const ONE_BY_ONE = 2;
@@ -82,6 +85,9 @@ function sigilsLeft() {
   });
 }
 
+/** How long (ms) a game's end rings out: what it earned arrives within it, heard already. */
+const END_RINGS_MS = 6000;
+
 function flush() {
   timer = null;
   const list = [...new Map(pending.map((a) => [a.id, a])).values()];
@@ -89,6 +95,8 @@ function flush() {
   if (list.length <= ONE_BY_ONE) {
     for (const a of list) toasts.show(a.title, 'info', { title: 'Achievement earned', seal: sealOf(a) });
   } else toasts.show(list.map((a) => a.title).join(' • '), 'info', { title: `${list.length} achievements earned`, seal: sealOf(best(list)) });
+  // Once for the lot, from the notices' corner, in the hardest one's metal.
+  if (sinceEndHeard() > END_RINGS_MS) sfx(ACHIEVEMENT_SOUNDS[best(list).tier], { from: { from: globalThis.document?.querySelector('.toasts') } });
   sigilNotice();
 }
 

@@ -4,11 +4,12 @@
   import { fade, fly } from '../lib/transitions';
   import { MAX_NAME, NAMELESS, cleanName, isHeldName, nameRefusal, nameUsable, unlockHeldName } from '../lib/names';
   import { onOwnerKey, ownerUnlocked } from '../lib/ownerKey';
-  import { refuseName } from '../lib/nameField';
+  import { pressed, refuseName } from '../lib/nameField';
   import { calm, motion } from '../lib/motion.svelte';
   import { toasts } from '../lib/toasts.svelte';
   import { engine, session, savedName, saveName, NAME_KEY, CODE_LENGTH } from '../lib/session.svelte';
   import { refuse } from '../lib/fx/moments';
+  import { sfx } from '../lib/sound';
   import { openCodex, codexRoute } from '../lib/codexRoute.svelte';
   import { openSettings, settingsRoute } from '../lib/settingsRoute.svelte';
   import { typing } from '../lib/keybinds.svelte';
@@ -219,11 +220,15 @@
   }
   function saveRename(e?: Event) {
     e?.preventDefault();
-    if (keepName(checkName(draft, renameField))) renaming = false;
+    if (!keepName(checkName(draft, renameField))) return;
+    pressed(e);
+    renaming = false;
   }
   function renameKeys(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       e.stopPropagation();
+      // A key's press, from Cancel.
+      sfx('key', { from: { from: renameField?.form?.querySelector('.link') } });
       renaming = false;
     }
   }
@@ -373,6 +378,7 @@
     e?.preventDefault();
     const n = knownName() ?? keepName(checkName(nameInput, nameField));
     if (!n) return;
+    pressed(e);
     busy = 'create';
     session.host(n);
   }
@@ -395,12 +401,14 @@
       return;
     }
     if (code.length < CODE_LENGTH) return codeShort();
+    pressed(e);
     // A join that failed left its code here: trying it again is still the try it was (an invite link's, say).
     startJoin(code, n, 'join', left?.code === code ? left.via : 'code');
   }
   /** The Code too short notice up, if one is: it goes once the code is whole. */
   let shortNotice: number | null = null;
   function codeShort() {
+    sfx('refuse', { from: { from: codeField } });
     codeError = true;
     if (codeField) refuse(codeField);
     codeField?.focus();
@@ -425,8 +433,11 @@
   function phoneJoin(e: Event) {
     e.preventDefault();
     if (code.length < CODE_LENGTH) return codeShort();
-    if (!asking && !knownName()) return askName();
-    join();
+    if (!asking && !knownName()) {
+      pressed(e);
+      return askName();
+    }
+    join(e);
   }
   /** Join's row asks the name (on one column, in the code's place). */
   function askName() {
@@ -550,7 +561,10 @@
       // Claimed while a row is open, joining or not: it doesn't open the settings over a join.
       if (open) {
         e.preventDefault();
-        if (!connecting) closeRow();
+        if (connecting) return;
+        // A key's press, from the row's entry (in one column, the row: the entry comes back in its place).
+        sfx('key', { from: { from: entryEls[ENTRIES.indexOf(open)] ?? rowEl() } });
+        closeRow();
       }
       return;
     }
@@ -562,6 +576,7 @@
       entryEls[next]?.focus();
     } else if (e.key === 'Enter' && (!t || t === document.body)) {
       e.preventDefault();
+      sfx('key', { from: { from: entryEls[cursor] } });
       choose(ENTRIES[cursor]);
     }
   }
@@ -608,6 +623,7 @@
     // (Saved once the room takes it, as Join a room's.)
     const n = checkName(inviteName, inviteField);
     if (!n) return;
+    pressed(e);
     // Out of the address first: the guard Back meets in the room (lib/backGuard.ts)
     // goes up in this tap over this entry, and leaving the room goes back to it,
     // which mustn't be the invite again, to join it once more. (The screen stays
@@ -711,7 +727,7 @@
       <form class="slot row" class:join={act} onsubmit={joinInvite} aria-labelledby={act ? 'invite-label' : undefined} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
         <!-- svelte-ignore a11y_autofocus -->
         <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" enterkeyhint={act ? 'go' : undefined} onfocus={selectMade} autofocus />
-        <button class="btn primary" type="submit">Join</button>
+        <button class="btn primary" type="submit" data-sfx="none">Join</button>
       </form>
     {/if}
   </div>
@@ -750,7 +766,7 @@
             autocorrect="off"
             onkeydown={renameKeys}
           />
-          <button class="btn" type="submit">Save</button>
+          <button class="btn" type="submit" data-sfx="none">Save</button>
           <button class="link" type="button" onclick={() => (renaming = false)}>Cancel</button>
         </form>
       {:else}
@@ -813,7 +829,7 @@
             {#if open === 'create' && !connecting}
               <form class="slot row tall" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
                 <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" enterkeyhint="go" />
-                <button class="btn" class:primary={!joinReady || open === 'create'} type="submit">Start</button>
+                <button class="btn" class:primary={!joinReady || open === 'create'} type="submit" data-sfx="none">Start</button>
               </form>
             {:else}
               <button class="btn big" class:primary={!joinReady || open === 'create'} bind:this={entryEls[0]} onclick={() => choose('create')} in:fade={SWAP_OUT}>New game</button>
@@ -855,7 +871,7 @@
                   {@render codeInput(false)}
                 {/if}
                 <!-- Lit once a join can go, and New game gives up its gold: one lit button at a time. -->
-                <button class="btn" class:primary={joinReady && open !== 'create'} type="submit">Join</button>
+                <button class="btn" class:primary={joinReady && open !== 'create'} type="submit" data-sfx="none">Join</button>
               </form>
             {/if}
           </div>
@@ -894,7 +910,7 @@
               {:else if isOpen && e === 'create'}
                 <form class="slot row" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
                   <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" />
-                  <button class="btn primary" type="submit">Start</button>
+                  <button class="btn primary" type="submit" data-sfx="none">Start</button>
                 </form>
               {:else if isOpen && e === 'join'}
                 <form class="slot row" onsubmit={join} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
@@ -902,7 +918,7 @@
                     <input class="field name short" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" />
                   {/if}
                   {@render codeInput(!known)}
-                  <button class="btn primary" type="submit">Join</button>
+                  <button class="btn primary" type="submit" data-sfx="none">Join</button>
                 </form>
               {:else}
                 <p class="about" in:fly={SWAP_IN} out:fade={SWAP_OUT}>{about[e]}</p>

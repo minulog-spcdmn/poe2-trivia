@@ -10,6 +10,7 @@
   import { onDestroy } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { flip } from 'svelte/animate';
+  import { clickedControl, sfx } from '../lib/sound';
   import { cubicOut } from 'svelte/easing';
   import { calm } from '../lib/motion.svelte';
   import { pinnedOut } from '../lib/stage';
@@ -48,6 +49,11 @@
   let confirming = $state<string | null>(null);
   const kicker = kickConfirm((id) => (confirming = id));
   onDestroy(kicker.dispose);
+  /** Closed by a press outside: its click heard where the pointer pressed, but for a finger's (it may be starting a scroll, not a tap). */
+  function closeSounded(e: PointerEvent) {
+    if (e.pointerType !== 'touch') sfx('click', { from: { x: e.clientX } });
+    open = false;
+  }
 </script>
 
 <!-- Escape takes an armed kick back, or else closes the list (focus back on the line). A press outside closes it. -->
@@ -55,12 +61,18 @@
   onkeydown={(e) => {
     if (e.key !== 'Escape') return;
     if (confirming) (e.preventDefault(), kicker.disarm());
-    else if (open) (e.preventDefault(), (open = false), toggle?.focus());
+    else if (open) {
+      e.preventDefault();
+      sfx('key', { from: { from: toggle } });
+      open = false;
+      toggle?.focus();
+    }
   }}
   onpointerdown={(e) => {
     const t = e.target as Element;
     if (!t.closest?.('.kick.armed')) kicker.disarm();
-    if (open && !root?.contains(t)) open = false;
+    // (A press on another control closes it too, heard as that control's own click.)
+    if (open && !root?.contains(t)) clickedControl(t) ? (open = false) : closeSounded(e);
   }}
 />
 

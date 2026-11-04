@@ -756,6 +756,7 @@
   /** How large the plate's ends are drawn (NamePlate's `fit`), for the name to keep clear of them. */
   let plateScale = $state<number>();
   let verdictEl = $state<HTMLElement | null>(null);
+  let nextEl = $state<HTMLElement | null>(null);
   let charge: Handle | null = null;
   /** The scorer's streak of correct answers, for the result line. */
   // From the reveal itself (the host has already counted this answer into
@@ -971,8 +972,9 @@
     );
   }
 
-  function next() {
-    sfx('click');
+  /** On to the next: pressed, its button clicks; by a key (Enter or Space on it, or Next's own), a key's press from it. */
+  function next(e?: MouseEvent) {
+    sfx(e?.detail ? 'click' : 'key', { from: { from: nextEl } });
     session.dispatch({ type: 'next' });
   }
 
@@ -1212,6 +1214,7 @@
         class:primary={canNext}
         use:backdropShadow
         data-cursor="next"
+        bind:this={nextEl}
         data-sfx="none"
         disabled={!canNext}
         title={canNext ? undefined : race ? 'The host moves the race on' : coop ? 'The team moves the run on' : `${active.name} or the host moves on`}
@@ -1394,7 +1397,13 @@
             aria-label={shownItem ? `${shownItem.name}${st === 'right' || st === 'wrong' ? `, ${st}` : ''}: see its details` : struckAt.has(i) ? `Option ${i + 1}, crossed out: ${struckBy(i)} picked it and it’s wrong` : undefined}
             title={shownItem ? 'See its details' : undefined}
             disabled={reveal ? !shownItem : !mine || chosen !== null || waiting || struckAt.has(i)}
-            onclick={() => (shownItem ? inspect(shownItem) : answer(i))}
+            onclick={(e) => {
+              // (An answer has its own sound; a named picture opening its details clicks, as the art's Details does, or from a key sounds a key's press.)
+              if (shownItem) {
+                sfx(e.detail > 0 ? 'click' : 'key', { from: { from: e.currentTarget } });
+                inspect(shownItem);
+              } else answer(i);
+            }}
             onpointermove={glare}
             in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
           >

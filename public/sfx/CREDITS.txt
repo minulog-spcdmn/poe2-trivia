@@ -168,3 +168,22 @@ How they are layered and filtered is set in src/lib/soundDesign.ts.
                        by aerror, https://freesound.org/s/847807/
   amb-vein-shaft.mp3   Dangerous mine shaft, edited (an Azurite Vein's tunnel)
                        by bkamuse, edited by pbmzbr, https://freesound.org/s/625296/
+  achievement-torch.mp3  Torch - Ignite flame on soft (an achievement earned,
+                       lead to silver)
+                       by ldezem, https://freesound.org/s/386385/
+  achievement-surge.mp3  Magic Smite.wav (an achievement earned, lead to silver)
+                       by spookymodem, https://freesound.org/s/249819/
+  achievement-rune.mp3 Dark Magic Loop (an achievement earned, copper to gold)
+                       by qubodup, https://freesound.org/s/442825/
+  achievement-bloom.mp3  Cinematic Woosh SFX-010.wav (an achievement earned,
+                       copper to gold)
+                       by AudioPapkin, https://freesound.org/s/648729/
+  sigil-lock.mp3       Lock - strong door (a class sigil unlocked)
+                       by Vrymaa, https://freesound.org/s/734641/
+  sigil-bell.mp3       bell2.wav (a class sigil unlocked)
+                       by Tairblenn, https://freesound.org/s/549897/
+  refuse-rattle.mp3    Locked doorknob rattle 3 (a name or room code turned down)
+                       by CastIronCarousel, https://freesound.org/s/216875/
+  deal-air-1.mp3 to -4, deal-flap-1.mp3 to -4  no recording: noise
+                       shaped to the deal's cards flying in and turning,
+                       made for the game

@@ -8,6 +8,7 @@
   import { phone } from '../lib/layout';
   import { closeItemWindow, readPlace, writePlace, type WindowPlace } from '../lib/itemWindow.svelte';
   import { hideLightIn } from '../lib/fx/core';
+  import { sfx } from '../lib/sound';
   import { zoomOf } from '../lib/stage';
   import NamePlate, { SOCKET_X } from './NamePlate.svelte';
   import ItemDetails, { loadStats, statsLoaded } from './ItemDetails.svelte';
@@ -184,6 +185,8 @@
     onkeydown={(e) => {
       if (e.key !== 'Escape') return;
       e.stopPropagation();
+      // A key's press, from its ✕.
+      sfx('key', { from: { from: e.currentTarget.querySelector('.close') } });
       closeItemWindow();
     }}
     role="dialog"

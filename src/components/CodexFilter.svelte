@@ -1,10 +1,12 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { fly } from 'svelte/transition';
+  import { sfx } from '../lib/sound';
 
   // A dropdown in the site's style (a native one can't style its list):
   // the category emblems in gold, with how much of each is discovered.
-  // Arrow keys, Home/End, Enter and Escape work as in a native select.
+  // Arrow keys, Home/End, Enter and Escape work as in a native select; the
+  // keys that open, choose and close sound a key's press, as a click would.
 
   type Option = { value: string; label: string; icon?: string; note?: string };
   let { value = $bindable(''), options, label }: { value?: string; options: Option[]; label: string } = $props();
@@ -38,8 +40,13 @@
     else if (e.key === 'ArrowUp') active = Math.max(0, active - 1);
     else if (e.key === 'Home') active = 0;
     else if (e.key === 'End') active = last;
-    else if (e.key === 'Enter' || e.key === ' ') choose(options[active].value);
-    else if (e.key === 'Escape') hide();
+    else if (e.key === 'Enter' || e.key === ' ') {
+      sfx('key', { from: { from: list?.querySelectorAll('[role="option"]')[active] } });
+      choose(options[active].value);
+    } else if (e.key === 'Escape') {
+      sfx('key', { from: { from: button } });
+      hide();
+    }
     else if (e.key === 'Tab') hide(false);
     else return;
     if (e.key !== 'Tab') e.preventDefault();
@@ -48,6 +55,7 @@
   function onButtonKey(e: KeyboardEvent) {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
+      sfx('key', { from: { from: button } });
       void show();
     }
   }

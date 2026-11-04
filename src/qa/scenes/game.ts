@@ -10,6 +10,8 @@ import { MAX_PLAYERS, PRESETS, TALL_ART_GROUPS, type GameState, type Knobs, type
 import { DELVE_IDLE_ROUNDS, WAY_OUT, livesOf, voteClosesAt } from '../../lib/delve.ts';
 import { ACHIEVEMENTS } from '../../lib/achievements.ts';
 import { DELVE_FLAMES } from '../../lib/fx/streaks.ts';
+// (A namespace: the code before this change has no ACHIEVEMENT_SOUNDS, and a name it lacks fails the whole screen there.)
+import * as soundDesign from '../../lib/soundDesign.ts';
 import type { Answer } from '../../lib/codex.ts';
 import type { Control, Values } from '../bench.ts';
 import { longestNamed, longestWord, sceneEngine } from '../build/engine.ts';
@@ -645,7 +647,9 @@ export function gameScenes(): Scene[] {
         const t = delveAlone().playTo((s) => (s.players[0].streak ?? 0) >= Number(v.streak ?? 80) && s.phase === 'choosing');
         const earned = ['saving-grace', 'streak-100'].slice(0, Number(v.notices ?? 1)).map((id) => ACHIEVEMENTS.find((a) => a.id === id)!);
         const toasts = earned.map((a) => ({ toast: a.title, opts: { title: 'Achievement earned', seal: { sign: a.sign, tier: a.tier } } }));
-        return { state: t.s, act: t.room, at: t.clock.now, steps: [{ wait: 800 }, ...toasts] } satisfies Built;
+        // One sound for them all, the hardest one's metal (lib/achievementToasts.ts).
+        const sound = { sound: soundDesign.ACHIEVEMENT_SOUNDS?.[Math.max(...earned.map((a) => a.tier))], from: '.toasts' };
+        return { state: t.s, act: t.room, at: t.clock.now, steps: [{ wait: 800 }, ...toasts, sound] } satisfies Built;
       },
     },
     // The game's own arrival: the run moves on into the zone while the screen

@@ -12,6 +12,7 @@ import type { RetriedPage } from '../lib/retriedPages.ts';
 import type { Standing } from '../lib/presence.ts';
 import type { SizeKey } from './sizes.ts';
 import type { ToastKind, ToastOptions } from '../lib/toasts.svelte.ts';
+import type { Sfx } from '../lib/sound.ts';
 import type { Control, State, Values } from './bench.ts';
 
 /** Where in the game a scene is: the desk groups and orders them by it. */
@@ -54,6 +55,8 @@ export type Step =
   | { crash: 1 | 2 }
   /** A notice arrives (lib/toasts.svelte.ts), worded as the game words it (an achievement earned, say: lib/achievementToasts.ts); it stays up, its fuse held, until closed. */
   | { toast: string; kind?: ToastKind; opts?: ToastOptions }
+  /** A moment's sound (lib/soundDesign.ts), from the first element `from` finds, as the game plays it with what the steps before showed (an achievement's notice's, say). */
+  | { sound: Sfx; from?: string }
   /** The browser's back (Android's button, an iPhone's swipe), on the frame's history of its own (lib/backGuard.ts). */
   | { back: true }
   /** A guest's link to the host (the session's status and gaveUp): `lost`, reconnecting; `gaveUp`, given up on; `back`, there again. */
