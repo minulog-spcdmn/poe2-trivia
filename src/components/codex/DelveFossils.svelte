@@ -99,7 +99,17 @@
   import { onStoredElsewhere } from '../../lib/storage';
   import { shownDepth } from '../../lib/delve';
   import { backdropShadow } from '../../lib/backdropShadow';
+  import { fossilGlow } from '../../lib/fossilGlow';
   import { motion } from '../../lib/motion.svelte';
+
+  /** Svelte action: a kept fossil's light (lib/fossilGlow.ts) into its image once made. */
+  function glowOf(node: HTMLImageElement, f: Fossil) {
+    let live = true;
+    void fossilGlow(f.id, f.rare).then((url) => {
+      if (live && url) node.src = url;
+    });
+    return { destroy: () => (live = false) };
+  }
 
   /** `store`: what to show instead of this browser's (the Codex's own, refreshed as it is erased; the QA desk's; the end screen's). */
   let { store = undefined, embedded = false }: { store?: FossilStore; embedded?: boolean } = $props();
@@ -230,8 +240,16 @@
 {#snippet slot(f: Fossil)}
   {@const got = found[f.id]}
   <span class="slot" class:got={!!got} class:rare={f.rare}>
-    {#if got}<img class="glow" src={fossilArt(f.id, 128)} alt="" loading="lazy" draggable="false" />{/if}
+    {#if got}
+      <!-- The light it gives off, cast by its own shape on the well's floor (lib/fossilGlow.ts). -->
+      <span class="light"><img class="halo" alt="" draggable="false" use:glowOf={f} /></span>
+    {/if}
     <img src={fossilArt(f.id, 128)} alt="" loading="lazy" draggable="false" />
+    {#if got}
+      <!-- Lit from within, as the card's amber is: a bright heart, its thick edges deep. -->
+      <span class="within deep" style:--art="url({fossilArt(f.id, 128)})"></span>
+      <span class="within heart" style:--art="url({fossilArt(f.id, 128)})"></span>
+    {/if}
     {#if got && !motion.still}
       <!-- The lamplight: a band of light passing over a brighter copy of it. -->
       <span class="lamp"><span class="slit" use:sweep={f.rare}><img src={fossilArt(f.id, 128)} alt="" loading="lazy" draggable="false" /></span></span>
@@ -280,7 +298,7 @@
 
 {#snippet set()}
   <p class="about">
-    {#if complete}You’ve found every fossil Delve holds, common and rare.{:else}Some Delve cards hold a fossil. Answer the card right and it’s yours.{/if}
+    {#if complete}All {FOSSIL_COUNT} fossils found. There are no more to find.{:else}Delve cards sometimes hold a fossil. Answer that card right to add it here.{/if}
   </p>
   <div class="wrap" class:still={motion.still} bind:this={wrap}>
     <div
@@ -579,29 +597,56 @@
     transition: box-shadow 0.2s;
   }
   /*
-   * A kept one's glow: its own shape, blurred and brightened, under it, so
-   * the light comes off the fossil itself. Dithered (app.css, --dither) on
-   * a layer between the glow and the fossil, or its fall-off bands.
+   * A kept one's light. Under it, the light it gives off (lib/fossilGlow.ts:
+   * its own shape blurred, gold near the stone cooling to ember, dithered),
+   * kept inside the well, lighting its floor. Over it, lit from within as
+   * the card's amber is held to the lamp: its heart screened brighter, its
+   * thick edges multiplied deep, both cut to its shape.
    */
   .slot.got {
     isolation: isolate;
   }
-  .slot.got::before {
-    content: '';
+  .light {
     position: absolute;
     inset: 0;
-    border-radius: inherit;
-    image-rendering: pixelated;
-    background: var(--dither);
-  }
-  .slot img.glow {
     z-index: -1;
-    filter: blur(5px) brightness(1.25) saturate(1.15) hue-rotate(-12deg);
-    opacity: 0.6;
+    overflow: hidden;
+    border-radius: inherit;
+    pointer-events: none;
   }
-  .slot.rare img.glow {
-    filter: blur(6px) brightness(1.3) saturate(1.2) hue-rotate(-16deg);
-    opacity: 0.75;
+  /* The art's box (12% in, 76% across) with the glow's room (GLOW_PAD of GLOW_ART) round it. */
+  .slot img.halo {
+    left: calc(12% - 76% * 40 / 128);
+    top: calc(12% - 76% * 40 / 128);
+    width: calc(76% * 208 / 128);
+    height: calc(76% * 208 / 128);
+  }
+  .slot img.halo:not([src]) {
+    visibility: hidden;
+  }
+  .within {
+    position: absolute;
+    left: 12%;
+    top: 12%;
+    width: 76%;
+    height: 76%;
+    pointer-events: none;
+    -webkit-mask: var(--art) center / contain no-repeat;
+    mask: var(--art) center / contain no-repeat;
+  }
+  .heart {
+    mix-blend-mode: screen;
+    background: radial-gradient(closest-side at 46% 42%, rgba(255, 238, 178, 0.62), rgba(255, 196, 96, 0.26) 45%, transparent 85%);
+  }
+  .deep {
+    mix-blend-mode: multiply;
+    background: radial-gradient(closest-side at 46% 42%, transparent 40%, rgba(150, 62, 14, 0.5) 85%, rgba(90, 32, 4, 0.8) 110%);
+  }
+  .rare .heart {
+    background: radial-gradient(closest-side at 46% 42%, rgba(255, 226, 150, 0.7), rgba(255, 168, 70, 0.3) 45%, transparent 85%);
+  }
+  .rare .deep {
+    background: radial-gradient(closest-side at 46% 42%, transparent 38%, rgba(160, 44, 10, 0.5) 85%, rgba(74, 18, 4, 0.85) 110%);
   }
   /* A rare one: its rim in the rare card's edge red, its glow a little stronger. */
   .slot.rare {
@@ -621,7 +666,7 @@
     -webkit-user-select: none;
     user-select: none;
   }
-  .slot > img:not(.glow) {
+  .slot > img {
     filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7));
   }
   .slot:not(.got) > img {
