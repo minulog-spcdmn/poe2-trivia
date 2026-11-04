@@ -7,7 +7,7 @@
   import { closeLegal, legalSheet } from '../lib/legalSheet.svelte';
   import { dialogIn, dialogOut, play } from '../lib/dialogIn';
   import { tick, untrack } from 'svelte';
-  import { sfx } from '../lib/sound';
+  import { backSound, sfx } from '../lib/sound';
 
   let dialog = $state<HTMLDialogElement>();
   let back = $state<HTMLButtonElement>();
@@ -65,9 +65,9 @@
     dialog?.close();
   }
 
-  /** Closed by the browser's Back: sounded from the back button, where the mouse's click would come from. */
+  /** Closed by the browser's Back: sounded (backSound) from the back button, where the mouse's click would come from. */
   const closeSounded = () => {
-    sfx('click', { from: { from: back } });
+    sfx(backSound(), { from: { from: back } });
     closeLegal();
   };
 

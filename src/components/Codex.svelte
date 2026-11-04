@@ -2,7 +2,7 @@
   import { flushSync, onMount, tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { fade, slide } from 'svelte/transition';
-  import { sfx } from '../lib/sound';
+  import { backSound, sfx } from '../lib/sound';
   import { calm, motion } from '../lib/motion.svelte';
   import { engine, savedName, session } from '../lib/session.svelte';
   import { nameUsable } from '../lib/names';
@@ -393,7 +393,7 @@
   const itemOpen = $derived(!!open);
   $effect(() => {
     if (itemOpen) return pageLayers.layer(() => {
-      sfx('click', { from: { from: document.querySelector('[aria-labelledby="codex-item-name"] .close') } });
+      sfx(backSound(), { from: { from: document.querySelector('[aria-labelledby="codex-item-name"] .close') } });
       open = null;
     });
   });

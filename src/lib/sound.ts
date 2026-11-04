@@ -1440,6 +1440,15 @@ let lastClick = { at: -Infinity, pointer: false };
 /** Whether what's happening now came of a pointer's click (a form sent with its button, not with Enter): the mouse's click, not a key's press. */
 export const pointerClicked = () => lastClick.pointer && performance.now() - lastClick.at < 100;
 
+/** The last press on the page (installUiSounds), and whether a key made it. */
+let lastPress = { at: -Infinity, key: false };
+/**
+ * How the browser's Back is heard, standing in for the ✕ or back button it
+ * closes as: a key's press just after a key (Alt+←, ⌘[), else the mouse's
+ * click (the browser's own button, a mouse's back button, a phone's gesture).
+ */
+export const backSound = (): Sfx => (lastPress.key && performance.now() - lastPress.at < 500 ? 'key' : 'click');
+
 /**
  * UI sounds for every control: a faint brush when the mouse moves onto one,
  * a click when it's pressed with a mouse, a finger or a pen, and a key's own
@@ -1502,6 +1511,7 @@ export function installUiSounds() {
   // Chrome warns of, and may let run from then on, playing nothing.)
   const warm = (e: Event) => {
     pressedAt = performance.now();
+    lastPress = { at: pressedAt, key: e.type === 'keydown' };
     if (muted) return;
     if (!bus && e.type === 'pointerdown') {
       if (canHear()) buildSoon(true);

@@ -11,7 +11,7 @@
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
   import TimerRing from './TimerRing.svelte';
-  import { fireAmbience, sfx } from '../lib/sound';
+  import { backSound, fireAmbience, sfx } from '../lib/sound';
   import { onMount } from 'svelte';
   import { DEATHMATCH_INTRO, deathmatchIntro, deathmatchMood, gameStart, turnBanner } from '../lib/fx/moments';
   import { stageZoom } from '../lib/stage';
@@ -56,8 +56,8 @@
   $effect(() => {
     if (itemOpen)
       return backGuard.layer(() => {
-        // (Back closes it as its ✕ would, and sounds so.)
-        sfx('click', { from: { from: document.querySelector('[aria-labelledby="item-window-name"] .close') } });
+        // (Back closes it as its ✕ would, and sounds so: backSound.)
+        sfx(backSound(), { from: { from: document.querySelector('[aria-labelledby="item-window-name"] .close') } });
         closeItemWindow();
       });
   });

@@ -14,7 +14,7 @@
   import { light } from './lib/lights';
   import { calm, motion } from './lib/motion.svelte';
   import { session } from './lib/session.svelte';
-  import { depthAmbience, getVolume, isMuted, setMuted, setVolume, sfx, veinAmbience } from './lib/sound';
+  import { backSound, depthAmbience, getVolume, isMuted, setMuted, setVolume, sfx, veinAmbience } from './lib/sound';
   import { actionOf, keybinds, readLayout, typing } from './lib/keybinds.svelte';
   import { keyName } from './lib/keys';
   import { fxUserOn, onFxChange, shakeTarget } from './lib/fx/core';
@@ -611,13 +611,13 @@
     });
   }
 
-  /** A click for the browser's Back's doing, from the button the mouse would have pressed. */
-  const clickAt = (sel: string, root: ParentNode = document) => sfx('click', { from: { from: root.querySelector(sel) } });
+  /** The browser's Back's doing, heard (backSound) from the button the mouse would have pressed. */
+  const backAt = (sel: string, root: ParentNode = document) => sfx(backSound(), { from: { from: root.querySelector(sel) } });
   /** The settings' ✕: in the header on their page, on their sheet over a game. */
   const settingsClose = () => (codexAllowed ? '.tools .icon-btn' : '.settings-over .icon-btn');
   // The browser's Back closing the settings or the codex sounds as their ✕ does.
-  settingsRoute.onBack = () => clickAt(settingsClose());
-  codexRoute.onBack = () => clickAt('.tools .icon-btn');
+  settingsRoute.onBack = () => backAt(settingsClose());
+  codexRoute.onBack = () => backAt('.tools .icon-btn');
 
   let soundToast: number | null = null;
   /** The mute key: the sound off, or back on (at half, were it all the way down), said in a notice since nothing else on screen shows it. */
