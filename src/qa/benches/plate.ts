@@ -7,8 +7,9 @@
 // taller plate's height, as a name that wraps makes it in a question. A
 // fossil's question (Delve): the fossil card's own seals at its ends, each on
 // a pane of its amber lit from behind (a rare's sun breaking out over the
-// tracery), flaring as the fossil is taken (it comes out of the left one) or
-// gone out with it lost.
+// tracery), its lamp low until the item is known and up once it is,
+// flaring as the fossil is taken (it comes out of the left one) or gone
+// out with it lost.
 
 import type { PieceBench } from '../bench.ts';
 
@@ -17,7 +18,7 @@ export const plate: PieceBench = {
   key: 'plate',
   label: 'Name plate',
   about:
-    "The plate behind a unique's name: dark, or lit with its seals' bloom breathing, flared by a right answer's glint; seals left empty for a button; ends sized to a taller plate; a fossil's question, the fossil card's seals on lit amber, taken or lost.",
+    "The plate behind a unique's name: dark, or lit with its seals' bloom breathing, flared by a right answer's glint; seals left empty for a button; ends sized to a taller plate; a fossil's question, the fossil card's seals on amber lit low till the item is known, then up, taken or lost.",
   files: ['src/components/NamePlate.svelte', 'src/lib/drawIn.ts', 'src/lib/weave.ts', 'weaveTile.ts', 'src/lib/alchemy.ts', 'src/lib/fossilSeals.ts', 'src/lib/fossilReveal.ts'],
   controls: [
     { kind: 'toggle', key: 'lit', label: 'Lit', default: true },

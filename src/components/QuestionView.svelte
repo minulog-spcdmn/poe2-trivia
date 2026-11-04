@@ -1117,8 +1117,9 @@
   {#if f.mine}
     <span class="found-fossil" class:words={fossilPhase !== 'none'} class:landed={fossilPhase === 'landed'}
       >{#if !coop}<span class="before">You unearth a fossil.</span>{/if}<span class="after"
-        ><img src={fossilArt(f.mine, 128)} alt="" aria-hidden="true" bind:this={fossilSlot} /><span class="fossil-name">{fossilById(f.mine).name}</span>
-        {fossilCount}/{FOSSIL_COUNT}</span
+        ><img src={fossilArt(f.mine, 128)} alt="" aria-hidden="true" bind:this={fossilSlot} /><span class="fossil-name">{fossilById(f.mine).name}</span><span class="fossil-count"
+          >{fossilCount}/{FOSSIL_COUNT}</span
+        ></span
       ></span
     >
   {/if}
@@ -2122,10 +2123,21 @@
   .found-fossil.landed img {
     opacity: 1;
   }
-  /* Named as a PoE tooltip names a currency item. */
+  /* Named as a PoE tooltip names a currency item, its capitals as tall as
+     the line's (Fontin's stand 3% over EB Garamond's at one size). */
   .fossil-name {
     font-family: var(--font-tooltip);
+    font-size: 0.97em;
     color: #aa9e82;
+  }
+  /* Its count in Cinzel's figures, as numbers are, a little under the line's
+     capitals (as the end screen and the codex set them in text), clear of the name. */
+  .fossil-count {
+    margin-left: 0.5em;
+    font-family: var(--font-cinzel);
+    font-variant-numeric: lining-nums;
+    font-size: 0.88em;
+    letter-spacing: 0.03em;
   }
   .fossil-lost {
     margin-left: 0.25em;
