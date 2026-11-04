@@ -34,37 +34,42 @@
   }
   /* The slit's mask is three names wide with the band in its middle, and at
      rest it waits off to the left of the name; lib/glint.ts slides the mask
-     across. The slit is slanted, and its copy slanted back over the letters,
-     both held still. */
+     across. The band is drawn slanted (20° off upright, as the slit was once
+     skewed), the slit and its copy held still over the letters: a skewed slit
+     reached past the name's ends, and the name read as wider than its letters
+     (a lobby chip faded its end). It reaches past them above and below, so
+     its light isn't cut off there (--foil-room, which the box clipping the
+     name keeps). */
   .glint {
     position: absolute;
-    inset: 0;
+    inset: calc(-1 * var(--foil-room)) 0;
     display: flex;
     align-items: center;
     pointer-events: none;
     -webkit-user-select: none;
     user-select: none;
-    -webkit-mask-image: linear-gradient(90deg, transparent calc(50% - 16% / 3), #000 50%, transparent calc(50% + 16% / 3));
-    mask-image: linear-gradient(90deg, transparent calc(50% - 16% / 3), #000 50%, transparent calc(50% + 16% / 3));
+    -webkit-mask-image: linear-gradient(110deg, transparent calc(50% - 16% / 3), #000 50%, transparent calc(50% + 16% / 3));
+    mask-image: linear-gradient(110deg, transparent calc(50% - 16% / 3), #000 50%, transparent calc(50% + 16% / 3));
     -webkit-mask-size: 300% 100%;
     mask-size: 300% 100%;
     -webkit-mask-repeat: no-repeat;
     mask-repeat: no-repeat;
     -webkit-mask-position: 100% 0;
     mask-position: 100% 0;
-    transform: skewX(-20deg);
   }
   .glint > span {
     flex: none;
     white-space: nowrap;
     color: #fffaf0;
     text-shadow: 0 0 5px rgba(255, 236, 190, 0.85);
-    transform: skewX(20deg);
   }
   /* Read out after the name, never shown (the tooltip says it on hover), and
-     left out when the name is copied. */
+     left out when the name is copied. At the name's start, not its end, so
+     it never reaches past the letters. */
   .hint {
     position: absolute;
+    left: 0;
+    top: 0;
     width: 1px;
     height: 1px;
     overflow: hidden;

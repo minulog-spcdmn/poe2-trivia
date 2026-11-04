@@ -4,6 +4,7 @@
   import { calm, motion } from '../lib/motion.svelte';
   import { fly } from '../lib/transitions';
   import { inFrame, onceFontsIn } from '../lib/inFrame';
+  import { nameFit } from '../lib/creator';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
@@ -137,10 +138,11 @@
       const names = [...board.querySelectorAll<HTMLElement>('.name')].filter((n) => n.offsetParent);
       if (whole < 2 || !names.length) return;
       let lo = Math.round(9.5 * parseFloat(getComputedStyle(document.documentElement).fontSize));
-      // (Each name whole: one squeezed already has its .cut clip it, so what that hides is added back.)
+      // (Each name whole: one squeezed already has its .cut clip it, so what that hides is added back: nameFit, lib/creator.ts.)
       const fullWidth = (n: HTMLElement) => {
         const cut = n.querySelector<HTMLElement>('.cut');
-        return n.scrollWidth + (cut ? cut.scrollWidth - cut.clientWidth : 0);
+        const fit = cut && nameFit(cut);
+        return n.scrollWidth + (fit ? Math.max(0, fit.letters - fit.room) : 0);
       };
       let hi = Math.max(...names.map(fullWidth));
       if (lo >= hi) return;
