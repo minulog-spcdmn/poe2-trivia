@@ -139,9 +139,9 @@
   .line {
     flex: 1;
     margin: 0;
-    font-size: 0.98rem;
+    font-size: 1rem;
     font-style: italic;
-    color: #cbbfa8;
+    color: var(--muted);
   }
   .acts {
     display: flex;
@@ -204,17 +204,18 @@
   .class.asked .art {
     filter: none;
   }
+  /* The tile's name leads its state under it ("Locked", in --muted): brighter, and no smaller. */
   .name {
     font-family: var(--font-display);
-    font-size: 0.85rem;
+    font-size: 1rem;
     letter-spacing: 0.04em;
-    color: #b9ab94;
+    color: var(--text);
   }
   .have .name {
     color: var(--gold-hi);
   }
   .state {
-    font-size: 0.78rem;
+    font-size: 0.9375rem;
     font-style: italic;
     color: var(--muted);
   }
@@ -248,7 +249,9 @@
   .strip .line {
     grid-area: 1 / 2 / 3 / 3;
     line-height: 1.35;
+    /* (A question to answer, so in the text's own colour; 0.9rem keeps it on one line beside the avatar.) */
     font-size: 0.9rem;
+    color: var(--text);
   }
   .strip.asking .line {
     grid-row: 1;

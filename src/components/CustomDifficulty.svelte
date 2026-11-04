@@ -192,7 +192,7 @@
     transition: color 0.3s;
   }
   .hint {
-    font-size: 0.88rem;
+    font-size: 0.9375rem;
     font-style: italic;
     line-height: 1.25;
     color: var(--muted);

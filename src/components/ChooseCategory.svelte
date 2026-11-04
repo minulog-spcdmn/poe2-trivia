@@ -1203,6 +1203,10 @@
   .say {
     grid-area: 1 / 1;
   }
+  /* Another's turn or the team's vote: a status, so the italic, a name in it too (the player's own prompt stays upright). */
+  .say:has(.muted) {
+    font-style: italic;
+  }
   /* A vein's lamp at the prompt's right end: the line and the clock as the
      question's task line has them (QuestionView's .task and .clock, its
      sizes below too), so the ring stays put as the strike comes in. */

@@ -1057,11 +1057,13 @@
     text-transform: uppercase;
     color: var(--unique-hi);
   }
+  /* A caption to the title, so the italic, as every page's line under its title is. */
   .blurb {
     position: relative;
     margin: 2px 0 0;
+    font-style: italic;
     font-size: 17px;
-    color: #a99c86;
+    color: var(--muted);
   }
 
   /* ---- the greeting ---- */
@@ -1252,7 +1254,8 @@
     background: none;
     border: 0;
     cursor: pointer;
-    font-style: italic;
+    /* (Upright, a control, as every small link is.) */
+    font-style: normal;
     font-size: 15px;
     color: var(--muted);
     text-decoration: underline;
@@ -1306,7 +1309,7 @@
     margin: 6px 0 0;
     font-style: italic;
     font-size: 16px;
-    color: #ab9d88;
+    color: var(--muted);
   }
   .under {
     display: grid;
@@ -1406,7 +1409,7 @@
     line-height: 20px;
     letter-spacing: 0.2em;
     text-transform: uppercase;
-    color: #a99c86;
+    color: var(--muted);
   }
   /* The Codex and Settings (or an invite's way to everything else) as the
      list's entries are set, a size down, each with a chevron that says it goes somewhere. */
@@ -1458,7 +1461,8 @@
     background: none;
     border: 0;
     cursor: pointer;
-    font-style: italic;
+    /* (Upright, a control, as every small link is.) */
+    font-style: normal;
     font-size: 15px;
     color: var(--gold);
     white-space: nowrap;
@@ -1496,7 +1500,7 @@
     border-color: var(--gold-lo);
   }
   .act .code::placeholder {
-    color: #8a7d68;
+    color: var(--muted);
   }
   .slot.row.join .code,
   .slot.row.join .name {
@@ -1547,7 +1551,7 @@
     font-style: italic;
     font-size: 15px;
     line-height: 1.3;
-    color: #ab9d88;
+    color: var(--muted);
   }
 
   /* Under 980 tall (900, say): a tighter rhythm. 16 + 574 + 8 + 144 + 32 +

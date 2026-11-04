@@ -65,7 +65,7 @@
     font-size: 13px;
     letter-spacing: 0.18em;
     text-transform: uppercase;
-    color: #9b8e89;
+    color: var(--muted);
   }
   .maker {
     font-size: 15px;
@@ -158,12 +158,14 @@
     visibility: visible;
     translate: -50% 0;
   }
+  /* Small, to keep the band on one line on a wide window, so it's set bright:
+     a first visit reads here that the site isn't Grinding Gear's. */
   .fine {
     margin: 0;
     text-align: center;
     font-size: 13px;
     line-height: 1.55;
-    color: var(--muted);
+    color: var(--text);
   }
   .fine a,
   .legal a {
@@ -171,7 +173,7 @@
     text-decoration-color: var(--gold-lo);
     text-underline-offset: 3px;
   }
-  /* As on the other pages: no underline, the footer's muted colour. */
+  /* As on the other pages: no underline. */
   .legal a {
     text-decoration: none;
   }
@@ -179,7 +181,10 @@
     display: flex;
     gap: 0.4rem;
     font-size: 13px;
-    color: var(--muted);
+    color: var(--text);
+  }
+  .legal span {
+    color: var(--faint);
   }
   .fine a:hover,
   .legal a:hover {

@@ -9,6 +9,7 @@
   import { categoryGlyph, itemSrcset, itemThumb, playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
+  import You from './You.svelte';
   import { endCircle, endHollow } from './gameCircles.svelte';
   import WatchToggle from './WatchToggle.svelte';
   import WatchEye from './WatchEye.svelte';
@@ -790,7 +791,7 @@
 {#snippet say(parts: Part[])}
   {#each parts as p, i (i)}
     {#if typeof p === 'string'}{p}{:else if 'n' in p}<b class="n">{p.n}</b>{:else if 'who' in p}<span class="who"
-        ><PlayerName name={nameOf(p.who)} />{#if p.who === me}<em class="you">&nbsp;(you)</em>{/if}</span
+        ><PlayerName name={nameOf(p.who)} />{#if p.who === me}<em class="you"><You /></em>{/if}</span
       >{:else if 'item' in p}<button class="it" onclick={() => inspect(p.item)} title="Open in the codex">{itemName(p.item)}</button>{:else}{p.cat}{/if}
   {/each}
 {/snippet}
@@ -947,7 +948,7 @@
   {@const mark = markFor(x.p)}
   <span class="rank">{x.rank}</span>
   <Avatar name={x.p.name} hue={x.p.hue} sigil={x.p.sigil} size={28} dim={gone} />
-  <span class="name"><PlayerName name={x.p.name} />{#if you}<em class="you">&nbsp;(you)</em>{/if}</span>
+  <span class="name cut-name"><span class="cut"><PlayerName name={x.p.name} /></span>{#if you}<em class="you"><You /></em>{/if}</span>
   {#if mark && !pin}<StandingMark {mark} />{/if}
   <span class="pts">{score(x.p.score)}</span>
 {/snippet}
@@ -1123,6 +1124,7 @@
                 class:first
                 class:you={x.p.id === me}
                 class:gone={!local && !x.p.connected}
+                data-dim={(!local && !x.p.connected) || undefined}
                 data-cursor="row:{s.players.indexOf(x.p)}"
                 in:rankIn|global={{ i, n: rows.length, top: first }}
                 onanimationstart={(e) => {
@@ -1139,10 +1141,10 @@
             {#each delvers as d, i (d.id)}
               {@const p = s.players.find((x) => x.id === d.id)}
               {#if p}
-                <li class:you={d.id === me} class:gone={!p.connected} data-cursor="row:{s.players.indexOf(p)}" in:settle|global={{ delay: 450 + i * 60, y: 10 }}>
+                <li class:you={d.id === me} class:gone={!p.connected} data-dim={!p.connected || undefined} data-cursor="row:{s.players.indexOf(p)}" in:settle|global={{ delay: 450 + i * 60, y: 10 }}>
                   <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={plateAvatar} dim={!p.connected} />
                   <span class="who-col">
-                    <span class="name"><PlayerName name={p.name} />{#if d.id === me}<em class="you">&nbsp;(you)</em>{/if}</span>
+                    <span class="name cut-name"><span class="cut"><PlayerName name={p.name} /></span>{#if d.id === me}<em class="you"><You /></em>{/if}</span>
                     <span class="dep">Depth <b class="n">{shownDepth(d.depth)}</b></span>
                   </span>
                   {#if d.revived}<span class="revived" title="Brought back by a teammate"><HeartOfLight /></span>{/if}
@@ -1504,7 +1506,6 @@
     text-underline-offset: 3px;
   }
   em.you {
-    font-size: 0.78em;
     font-style: italic;
     color: var(--muted);
   }
@@ -1626,7 +1627,8 @@
     background: none;
     border: 0;
     font: inherit;
-    font-style: italic;
+    /* (Upright, a control, as every small link is.) */
+    font-style: normal;
     color: var(--muted);
     cursor: pointer;
     transition: color 0.2s;
@@ -1732,10 +1734,12 @@
     font-size: 1.05em;
     color: #f3c37e;
   }
+  /* (Under 13.5px on a phone, so in the text's own colour, as is a plate's depth: --muted reads only from 13.5px.) */
   .what .where {
+    /* (Of the line's 16px on a phone, 17px wider.) */
     font-size: 0.82em;
     font-style: italic;
-    color: var(--muted);
+    color: var(--text);
   }
   .vial {
     --phial-w: 50px;
@@ -1801,12 +1805,10 @@
     font-size: 1.05rem;
     color: var(--muted);
   }
+  /* (Short of room, the name gives way and never the "(you)" after it: app.css .cut-name.) */
   .ranking .name {
     flex: 1;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     font-size: 1.05rem;
   }
   .pts {
@@ -1932,19 +1934,14 @@
     flex-direction: column;
     line-height: 1.1;
   }
-  /* Clipped for its ellipsis, so its box reaches down past the descenders (a g, a y), as the lobby's chips do. */
+  /* (The name alone is cut, never the "(you)" after it: app.css .cut-name.) */
   .who-col .name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     font-size: 0.95rem;
-    padding-bottom: 0.2em;
-    margin-bottom: -0.2em;
   }
   .dep {
     font-size: 0.8rem;
     font-style: italic;
-    color: var(--muted);
+    color: var(--text);
   }
   .revived {
     flex: none;
@@ -1960,7 +1957,7 @@
     margin: 0.2rem 0 0.7rem;
     font-style: italic;
     font-size: 1rem;
-    color: #c4b69c;
+    color: var(--muted);
   }
   /* The run's facts hang from the chart's ground line: the first one's mark centred on it (--ground: lib/runsPlate's GROUND_Y). */
   .chart-row {
@@ -2136,10 +2133,11 @@
   }
   .found .count {
     font-family: var(--font-body);
+    /* (Of the heading's 20px.) */
     font-size: 0.8em;
     font-style: italic;
     letter-spacing: 0;
-    color: #c4b69c;
+    color: var(--muted);
   }
 
   /* Share run: the lobby's small Lock button. */
@@ -2274,6 +2272,7 @@
     align-items: center;
     gap: 0.7rem;
     margin: 0;
+    font-style: italic;
     color: var(--muted);
   }
   .pulse {

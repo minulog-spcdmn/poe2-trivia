@@ -12,6 +12,7 @@
   import { inviteLine, type InviteAnswer } from '../lib/roomInfo';
   import HostMark from './HostMark.svelte';
   import RoomCodeGlyphs from './RoomCodeGlyphs.svelte';
+  import You from './You.svelte';
 
   let { code, info, name }: { code: string; info: InviteAnswer; name: string } = $props();
 
@@ -42,7 +43,7 @@
       <!-- Your chip, as it will stand beside the host's: it takes your name as you write it. -->
       <li class="you" class:empty={!mine}>
         <span class="orb" aria-hidden="true">{initialOf(mine)}</span>
-        <span class="name">{#if mine}{mine}<em>&nbsp;(you)</em>{:else}You{/if}</span>
+        <span class="name">{#if mine}{mine}<em><You /></em>{:else}You{/if}</span>
       </li>
     </ul>
     {#key line.text}
@@ -109,7 +110,6 @@
   }
   .name em {
     color: var(--muted);
-    font-size: 0.85em;
   }
   /* Unlit: the Avatar's shape and ring, before the room gives it a colour. */
   .orb {
@@ -148,9 +148,9 @@
     align-items: center;
     gap: 0.5rem;
     margin: 0.8rem 0 0;
-    font-size: 0.95rem;
+    font-size: 1rem;
     font-style: italic;
-    color: #ab9d88;
+    color: var(--muted);
   }
   /* Joining won't work as it stands (or not as a player at once). */
   .hint.warn {
@@ -182,7 +182,7 @@
   }
   .asking .name {
     font-style: italic;
-    color: var(--muted);
+    color: var(--faint);
   }
 
 </style>

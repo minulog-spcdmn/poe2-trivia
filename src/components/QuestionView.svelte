@@ -1805,10 +1805,9 @@
     font-family: var(--font-display);
     font-size: 0.95rem;
     color: #d8a26a;
-    opacity: 0.85;
   }
   /* An extra tooltip line, cool against the warm name and base. In Cinzel's
-     small capitals (its lower case), not faked on EB Garamond: the capital
+     small capitals (its lower case), not faked on the body font: the capital
      stands as tall as the base's above it. */
   .mirrored {
     display: block;
@@ -3976,7 +3975,7 @@
     }
     .spectate,
     .blasting .hint .spectate {
-      font-size: 0.92rem;
+      font-size: 0.9375rem;
       line-height: 1.25;
     }
   }

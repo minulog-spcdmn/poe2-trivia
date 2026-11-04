@@ -3,7 +3,7 @@
 // review and handoff: each page at each size of a preset, in headless
 // Chromium, once its fonts are in (document.fonts.ready, then each of the
 // project's faces the page actually uses loaded and checked: Maragsa,
-// Maragsa Title, Cinzel, EB Garamond, Fontin SmallCaps, Fontin), the network
+// Maragsa Title, Cinzel, Manuale Andada, Fontin SmallCaps, Fontin), the network
 // is idle, its pictures are decoded and its layout has stopped moving.
 // Writes the shots, named <page>-<size>-<w>x<h>.png, and a manifest.json
 // (each shot's url, size, device scale and which fonts were confirmed) into
@@ -50,7 +50,7 @@ const PRESETS = Object.fromEntries(
 );
 
 /** The faces app.css declares (and @fontsource brings in), the ones whose loading is confirmed. */
-const FAMILIES = ['Maragsa', 'Maragsa Title', 'Cinzel', 'EB Garamond', 'Fontin SmallCaps', 'Fontin'];
+const FAMILIES = ['Maragsa', 'Maragsa Title', 'Cinzel', 'Manuale Andada', 'Fontin SmallCaps', 'Fontin'];
 
 /** Chromium on Android, for the touch sizes, so the page sees a phone or tablet as Claude's own browser pane does. */
 const MOBILE_UA =

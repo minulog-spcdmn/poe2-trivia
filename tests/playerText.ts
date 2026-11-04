@@ -200,7 +200,7 @@ export function straightApostrophe(raw: string, afterExpr: boolean): boolean {
 /**
  * Whether a whole string quotes words with straight double quotes ("Open
  * rooms", "${name}"). CSS and markup keep theirs (url("…"), 1rem "Fontin",
- * "EB Garamond", serif, d="…").
+ * "Manuale Andada", serif, d="…").
  */
 export function straightQuotes(whole: string): boolean {
   const text = unentity(whole).replaceAll('${…}', 'X');
