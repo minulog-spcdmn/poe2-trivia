@@ -259,7 +259,6 @@
             <button class:on={!session.hideCode} onclick={() => session.setHideCode(false)}>Shown</button>
             <button class:on={session.hideCode} onclick={() => session.setHideCode(true)}>Hidden</button>
           </div>
-          <p class="blurb">Hidden, it stays off your stream until you reveal it in the lobby.</p>
         </div>
       </section>
 

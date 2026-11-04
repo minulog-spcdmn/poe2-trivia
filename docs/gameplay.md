@@ -557,13 +557,13 @@ Undiscovered items show as
 dark silhouettes, and the codex can't be opened while in a room. It is kept in this
 browser's localStorage only (`src/lib/codex.ts`).
 
-The start menu's Codex entry says how far it has come: "Every unique you
-have met: 462 of 540. Deepest delve: 12." (on a phone, in its half of the
-pair, a line each: "462 of 540 met.", "Deepest delve: 12."; before
+The start menu's Codex entry says how far it has come: "Uniques
+discovered: 462 of 540. Deepest delve: 12." (on a phone, in its half of the
+pair, a line each: "Uniques: 462 of 540.", "Deepest delve: 12."; before
 anything is met, what the Codex is for). While any item new with the
 newest release is still to meet, it says how many came with it, so a
 returning player knows why their share fell and that there's something
-new to find: "Every unique you have met: 462 of 540; 39 came with 1.0.
+new to find: "Uniques discovered: 462 of 540; 39 came with 1.0.
 Deepest delve: 12." (on a phone a line of its own, "39 came with 1.0.",
 between the two). Once all of them are met it goes back to the line
 before. Which items came with a release is the day a refresh first listed

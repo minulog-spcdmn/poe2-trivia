@@ -156,6 +156,9 @@
   --verdict-late-icon: #cdb4ee;
   --verdict-late-tint: 165, 125, 225;
   --radius: 6px;
+  /* How far the creator's name glows past its letters (PlayerName.svelte's foil, and its glint): the room a box that
+     clips the name keeps round them, given back by its margins so nothing moves (.cut-name, Gallery, the duel's faces). */
+  --foil-room: 6px;
   --font-display: 'Maragsa', 'Cinzel', 'Trajan Pro', Georgia, serif;
   --font-title: 'Maragsa Title', var(--font-display);
   /* Room codes, the in-game header and avatars. */
@@ -520,6 +523,11 @@ input {
   text-overflow: ellipsis;
   padding-bottom: 0.2em;
   margin-bottom: -0.2em;
+}
+/* The creator's name glows: its clip keeps room for the glow all round (--foil-room). */
+.cut-name > .cut:has(> .creator) {
+  padding: var(--foil-room);
+  margin: calc(-1 * var(--foil-room));
 }
 .cut-name > em {
   flex: none;

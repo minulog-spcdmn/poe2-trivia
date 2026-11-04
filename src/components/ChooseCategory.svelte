@@ -1065,12 +1065,6 @@
               <span class="sheen"></span>
               {#if filled}
                 {@render filigree()}
-                {#if kindOf(cat)}
-                  {@const kind = kindOf(cat)!}
-                  <span class="find-tag" data-zoom>{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span>
-                {:else if isWayOut(cat)}
-                  <span class="find-tag out-tag" data-zoom>{out.tag(haul)}</span>
-                {/if}
               {/if}
               <span class="icon" class:none={isWayOut(cat)}>
                 {#if filled}
@@ -1093,6 +1087,16 @@
               {#if filled && kindOf(cat) === 'azurite'}
                 <!-- The vein's crystals in the corner stand in front of the item. -->
                 <CardEngraving side="face" find="azurite" front />
+              {/if}
+              {#if filled}
+                <!-- Its plaque stands in front of the vein's crystals, as the nameplate does: on a small card it's
+                     drawn larger than the card (.cards .find-tag) and reaches over the seal in the corner. -->
+                {#if kindOf(cat)}
+                  {@const kind = kindOf(cat)!}
+                  <span class="find-tag" data-zoom>{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span>
+                {:else if isWayOut(cat)}
+                  <span class="find-tag out-tag" data-zoom>{out.tag(haul)}</span>
+                {/if}
               {/if}
               <span class="title" class:long={cardName(cat).length > 30} use:fitPlate
                 >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span

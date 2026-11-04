@@ -9,7 +9,8 @@
   import ModeIcon from './ModeIcon.svelte';
   import { bestOf, deepestShown, findsMet, lastOf, loadRecords } from '../lib/delveRecord';
   import { MAX_NAME, nameRefusal, nameTooShort } from '../lib/names';
-  import { creatorShown } from '../lib/creator';
+  import { creatorShown, nameFit } from '../lib/creator';
+  import { onceFontsIn } from '../lib/inFrame';
   import { pressed, refuseName } from '../lib/nameField';
   import { sfx } from '../lib/sound';
   import { inviteUrl } from '../lib/site';
@@ -123,13 +124,29 @@
    * A chip's name that runs short of room fades out at its end rather than being cut to an ellipsis, the fade as long as
    * what's cut (to a point): as its room narrows a frame at a time (markRoom), it eases under the fade, nothing jumping.
    * (Marked data-fade-cut, so the QA desk takes the cut as meant, as it does an ellipsis.)
+   * The creator's keeps room round its letters for its glow (app.css, --foil-room): what's cut is read from the letters
+   * (nameFit, lib/creator.ts), and the fade ends where they do
+   * once they're cut (--cut-end, from the box's end): the glow past the last one goes as they run short, not at once.
    */
   function fadeCut(node: HTMLElement) {
     node.dataset.fadeCut = '';
-    const measure = () => node.style.setProperty('--cut', `${Math.min(18, 1.5 * Math.max(0, node.scrollWidth - node.clientWidth))}px`);
+    const measure = () => {
+      const { letters, room, after } = nameFit(node);
+      const over = Math.max(0, letters - room);
+      node.style.setProperty('--cut', `${Math.min(18, 1.5 * over)}px`);
+      node.style.setProperty('--cut-end', `${Math.min(after, 2 * over)}px`);
+    };
+    // (Its border box: a name that turns out the creator's takes its room as padding, the content box unchanged. And
+    // again once the fonts are in, the letters widening in a box held to its room.)
     const seen = new ResizeObserver(measure);
-    seen.observe(node);
-    return { destroy: () => seen.disconnect() };
+    seen.observe(node, { box: 'border-box' });
+    const fontsIn = onceFontsIn(measure);
+    return {
+      destroy: () => {
+        seen.disconnect();
+        fontsIn();
+      },
+    };
   }
   function arriving(node: HTMLElement, name: string) {
     if (!settled) return;
@@ -1286,8 +1303,8 @@
   /* Cut short, its end fades (fadeCut) instead of an ellipsis, which would jump as a mark takes its room. */
   .chips .name .cut {
     text-overflow: clip;
-    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--cut, 0px)), transparent);
-    mask-image: linear-gradient(to right, #000 calc(100% - var(--cut, 0px)), transparent);
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--cut-end, 0px) - var(--cut, 0px)), transparent calc(100% - var(--cut-end, 0px)));
+    mask-image: linear-gradient(to right, #000 calc(100% - var(--cut-end, 0px) - var(--cut, 0px)), transparent calc(100% - var(--cut-end, 0px)));
   }
   .mark-room {
     flex: none;
@@ -1407,7 +1424,8 @@
     line-height: 1.1;
     overflow: visible;
   }
-  .onlookers .name .cut {
+  /* (The creator's keeps its room all round: app.css.) */
+  .onlookers .name .cut:not(:has(> :global(.creator))) {
     padding-bottom: 0.15em;
     margin-bottom: -0.15em;
   }

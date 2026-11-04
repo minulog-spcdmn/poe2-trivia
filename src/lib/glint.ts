@@ -6,8 +6,10 @@
 // over what it copies: had the copy moved as well (the slit sliding one way,
 // the copy back the other), the two would round to slightly different pixels
 // on a phone frame by frame, and the lines would jitter as the light passed.
-// The slit is slanted (skewed), and its copy skewed back to match, both held
-// still. Only what the light crosses repaints, and only while it does.
+// The slit is slanted (skewed, and its copy skewed back to match; on a name,
+// whose box mustn't reach past its letters, the band is drawn slanted
+// instead), both held still. Only what the light crosses repaints, and only
+// while it does.
 //
 // A light (passingLight) sweeps everything it lights together, on the beat of
 // the page clock, so they catch the same light; between sweeps nothing
