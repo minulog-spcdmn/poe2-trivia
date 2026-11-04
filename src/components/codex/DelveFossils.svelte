@@ -1,15 +1,16 @@
 <script lang="ts" module>
   // The set of 25 fossils Delve turns up (lib/fossils.ts), as PoE's Delve
-  // stash tab lays them out: a fixed square slot for each, a tile as the
-  // Collection's. The 17 common ones lie as tightly as 17 squares are known to go
-  // into a square: John Bidwell's packing (lib/squarePacking.ts), seven of
-  // them askew. The 8 rare ones stand together beside it in two columns of
-  // four (under it in two rows where the width is too narrow), a little
-  // larger. Each kind under the fossil card's own seal. One not kept yet
-  // holds only its shape, its edge dashed, as the Collection shows an item
-  // not seen yet, and nothing to choose; one kept shows in its own colours,
-  // a rare one's edge in gold. Now and then a band of lamplight passes over
-  // the kept ones, a rare one's more often.
+  // stash tab lays them out: a fixed square slot for each, a well pressed
+  // into the panel. The 17 common ones lie as tightly as 17 squares are
+  // known to go into a square: John Bidwell's packing
+  // (lib/squarePacking.ts), seven of them askew. The 8 rare ones stand
+  // together beside it in two columns of four (under it in two rows where
+  // the width is too narrow), a little larger. Each kind under the fossil
+  // card's own seal. One not kept yet is an empty well holding only its
+  // shape, as the Collection shows an item not seen yet, and nothing to
+  // choose; one kept lies in it in its own colours with a slight glow, a
+  // rare one's rim touched with gold. Now and then a band of lamplight
+  // passes over the kept ones, a rare one's more often.
   import { pointedRay } from '../../lib/arcane';
   import { notched, Plate } from '../../lib/cardEngraving';
   import { ammoniteSeal } from '../../lib/findEngraving';
@@ -18,15 +19,15 @@
 
   /**
    * The fossil card's seals, small, beside each kind's name: a common's
-   * ammonite in its double ring; a rare's, smaller, in a sun of eight
+   * ammonite in its double ring; a rare's, as large, in a sun of eight
    * pointed rays, long and short in turn, each hatched down one side.
    */
   function seal(rare: boolean) {
     const p = new Plate();
-    const r0 = rare ? 6.6 : 10;
+    const r0 = 10;
     ammoniteSeal(p, [0, 0], r0);
     for (let k = 0; rare && k < 8; k++) {
-      const ray = pointedRay([0, 0], k * 45, r0 + 0.9, k % 2 ? 9.8 : 11.6, (Math.asin(1.5 / (r0 + 0.9)) * 180) / Math.PI, 0.6);
+      const ray = pointedRay([0, 0], k * 45, r0 + 0.9, k % 2 ? 13.2 : 15, (Math.asin(1.5 / (r0 + 0.9)) * 180) / Math.PI, 0.6);
       p.add(ray.lines, 'hair');
       p.add(ray.hatch, 'hatch');
     }
@@ -242,7 +243,7 @@
     {@render keptCell(f)}
   {:else}
     <!-- Not kept yet: only its shape, as the Collection shows an item not seen yet; nothing to choose. -->
-    <span class="cell" role="img" aria-label={f.rare ? 'A rare fossil not kept yet' : 'A fossil not kept yet'}>{@render slot(f)}</span>
+    <span class="cell" role="img" aria-label={f.rare ? 'A rare fossil, not found yet' : 'A fossil, not found yet'}>{@render slot(f)}</span>
   {/if}
 {/snippet}
 
@@ -278,7 +279,7 @@
 
 {#snippet set()}
   <p class="about">
-    {#if complete}Every fossil kept.{:else}Now and then a Delve card holds a fossil: answer it right to keep one for your codex. Your run is unchanged.{/if}
+    {#if complete}All {FOSSIL_COUNT} found.{:else}Some Delve cards hold a fossil. Answer the card right and it’s yours.{/if}
   </p>
   <div class="wrap" class:still={motion.still} bind:this={wrap}>
     <div
@@ -296,8 +297,8 @@
         {@const n = g.fossils.filter((f) => found[f.id]).length}
         <div class="group {g.key}">
           <h3 class="head" id="{uid}-{g.key}">
-            <svg class="seal" viewBox="-12 -12 24 24" aria-hidden="true">{#each SEALS[g.key] as s, i (i)}<path class={s.cls} d={s.d} />{/each}</svg>
-            <span>{g.name}</span><span class="tally"><span class="n">{n}</span> of <span class="n">{g.fossils.length}</span></span></h3>
+            <svg class="seal {g.key}" viewBox={g.key === 'rare' ? '-15.5 -15.5 31 31' : '-12 -12 24 24'} aria-hidden="true">{#each SEALS[g.key] as s, i (i)}<path class={s.cls} d={s.d} />{/each}</svg>
+            <span>{g.name}</span><span class="tally" title="{n} of {g.fossils.length} found">{n}/{g.fossils.length}</span></h3>
           <ul class="grid {g.key}" aria-labelledby="{uid}-{g.key}">
             {#each g.fossils as f, i (f.id)}
               {#if g.key === 'common'}
@@ -338,7 +339,7 @@
           {#if chosen.rare}<p class="mark">Rare</p>{/if}
         </div>
         <div class="tbody">
-          <p class="line">Kept: <span class="white">{date(got.at)}</span></p>
+          <p class="line">Found: <span class="white">{date(got.at)}</span></p>
           <p class="line">Depth: <span class="white">{shownDepth(got.depth)}</span></p>
           {#if got.together}<p class="line">In a run together</p>{/if}
         </div>
@@ -348,7 +349,7 @@
 {/snippet}
 
 {#if embedded}
-  <div class="fossils embedded" role="group" aria-label="Fossils, {count} of {FOSSIL_COUNT} kept" bind:this={root}>{@render set()}</div>
+  <div class="fossils embedded" role="group" aria-label="Fossils, {count} of {FOSSIL_COUNT} found" bind:this={root}>{@render set()}</div>
 {:else}
   <section class="panel fossils" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="{uid}-h" bind:this={root}>
     <header>
@@ -482,6 +483,12 @@
     margin-right: -0.15em;
     overflow: visible;
   }
+  /* The rare one's rays stand outside its circle, as wide as the common one's. */
+  .seal.rare {
+    width: calc(1.6rem * 31 / 24);
+    height: calc(1.6rem * 31 / 24);
+    margin: -0.25rem -0.15em -0.25rem -0.25rem;
+  }
   .seal path {
     fill: none;
     stroke: currentColor;
@@ -497,12 +504,12 @@
     fill: currentColor;
     stroke: none;
   }
+  /* As the codex's tabs count (Codex.svelte, .tab-note). */
   .tally {
-    letter-spacing: 0.08em;
-    color: var(--muted);
-  }
-  .tally .n {
-    font-size: 1em;
+    font-family: var(--font-cinzel);
+    font-size: 0.78rem;
+    letter-spacing: 0;
+    color: var(--gold-lo);
   }
   /* The packing: a square PACKED_SIDE of its slots' cells across, each cell laid where the packing puts it, turned as it is. */
   .grid {
@@ -542,29 +549,28 @@
   }
 
   /*
-   * The slot: a tile as the Collection's (Codex.svelte), square to its
-   * corners, since what the packing packs is squares. Kept, its fossil in
-   * its own colours over the tile's faint warmth; a rare one's edge in
-   * gold. Not kept yet, its edge dashed and only its fossil's shape, as the
-   * Collection shows an item not seen yet.
+   * The slot: a square well pressed into the panel, its corners barely
+   * eased, its floor darker than the panel, shadowed under its rim and its
+   * lower lip catching the light; empty, a place a fossil goes into, its
+   * shape in the floor as the Collection shows an item not seen yet. Kept,
+   * the fossil lies in it in its own colours with a slight glow of its
+   * own, a rare one's rim touched with gold.
    */
   .slot {
+    --well: inset 0 1px 0 rgba(0, 0, 0, 0.7), inset 0 0 0 1px rgba(0, 0, 0, 0.45), inset 0 2px 3px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 222, 176, 0.07);
     position: relative;
     display: block;
     width: 100%;
     height: 100%;
-    border: 1px solid var(--line);
-    background: radial-gradient(ellipse at 50% 35%, rgba(175, 96, 37, 0.1), transparent 70%), rgba(0, 0, 0, 0.35);
-    transition:
-      border-color 0.2s,
-      box-shadow 0.25s;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.32);
+    box-shadow: var(--well);
+    transition: box-shadow 0.2s;
   }
   .slot.rare.got {
-    border-color: var(--gold-lo);
-  }
-  .slot:not(.got) {
-    background: rgba(0, 0, 0, 0.25);
-    border-style: dashed;
+    box-shadow:
+      var(--well),
+      inset 0 0 0 1px rgba(201, 164, 92, 0.32);
   }
   .slot img {
     position: absolute;
@@ -578,22 +584,30 @@
     user-select: none;
   }
   .slot > img {
-    filter: drop-shadow(0 4px 7px rgba(0, 0, 0, 0.7));
+    filter: drop-shadow(0 0 5px rgba(236, 142, 44, 0.32)) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.6));
+  }
+  .slot.rare > img {
+    filter: drop-shadow(0 0 7px rgba(240, 130, 36, 0.42)) drop-shadow(0 3px 4px rgba(0, 0, 0, 0.6));
   }
   .slot:not(.got) > img {
     filter: brightness(0);
-    opacity: 0.7;
+    opacity: 0.55;
   }
   .still .slot {
     transition: none;
   }
-  /* The one whose tooltip shows: as a Collection tile under the pointer, without the lift (nothing in the set moves). */
+  /* The one whose tooltip shows: its rim lit, as a Collection tile under the pointer, nothing moving. */
   .cell.on .slot {
-    border-color: var(--gold-lo);
-    box-shadow: 0 0 16px rgba(201, 164, 92, 0.2);
+    box-shadow:
+      var(--well),
+      inset 0 0 0 1px var(--gold-lo),
+      0 0 14px rgba(201, 164, 92, 0.18);
   }
   .cell.on .slot.rare {
-    border-color: var(--gold);
+    box-shadow:
+      var(--well),
+      inset 0 0 0 1px var(--gold),
+      0 0 14px rgba(201, 164, 92, 0.22);
   }
 
   /*
