@@ -70,8 +70,8 @@ test('first-time visitors start a public Delve room', () => {
   assert.equal(roomSettings(p).public, true);
 });
 
-test('first-time visitors get a hidden room code', () => {
-  assert.equal(loadPrefs().hideCode, true);
+test('first-time visitors see the room code', () => {
+  assert.equal(loadPrefs().hideCode, false);
   store.clear();
   const ls = globalThis.localStorage as { getItem: (k: string) => string | null };
   const getItem = ls.getItem;
@@ -81,7 +81,7 @@ test('first-time visitors get a hidden room code', () => {
   store.set(PREFS_KEY, 'kept');
   store.set('poe2trivia.hideCode', '1');
   try {
-    assert.equal(loadPrefs().hideCode, true);
+    assert.equal(loadPrefs().hideCode, false);
     // Private couldn't be made to stick, so the room isn't listed either.
     assert.equal(loadPrefs().public, false);
   } finally {
