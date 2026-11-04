@@ -40,7 +40,7 @@
   import { backdropDropShadow } from '../lib/backdropDropShadow';
   import { outWithoutInert } from '../lib/leaving';
   import { switchedOff } from '../lib/switchedOff';
-  import { shatterFossilMark, stopFossilFlight } from '../lib/fossilFlight';
+  import { shatterFossilSeals, stopFossilFlight } from '../lib/fossilFlight';
 
   const s = $derived(session.state!);
   // The circles behind the coming question and at the game's end, built ahead away from the page.
@@ -417,8 +417,8 @@
       // Blown apart as it still shows (the DOM is the old question's until this flush ends).
       const old = document.querySelector<HTMLElement>('.questions .q-slot');
       if (!still && old) {
-        // A fossil card's light on it shatters with it, in amber (lib/fossilFlight.ts).
-        shatterFossilMark(old);
+        // A fossil's question: the panes of amber in its plate's seals shatter with it (lib/fossilFlight.ts).
+        shatterFossilSeals(old);
         blastAway({ node: old, side: b.side, mine: !!b.by && (b.by === session.myPlayerId || session.mode === 'local') });
       }
       // A fresh question, as on a new turn: back up to its art (on phones the
