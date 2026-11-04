@@ -10,7 +10,8 @@
   import { bestOf, deepestShown, findsMet, lastOf, loadRecords } from '../lib/delveRecord';
   import { MAX_NAME, nameRefusal, nameTooShort } from '../lib/names';
   import { creatorShown } from '../lib/creator';
-  import { refuseName } from '../lib/nameField';
+  import { pressed, refuseName } from '../lib/nameField';
+  import { sfx } from '../lib/sound';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
   import KickButton from './KickButton.svelte';
@@ -87,6 +88,7 @@
       refuseName((e.currentTarget as HTMLFormElement).querySelector('input'), refusal, (on) => (nameError = on));
       return;
     }
+    pressed(e);
     // Keep the name to fix it up if it was turned down (hot-seat applies it right away).
     if (session.seatLocal(name)) newName = '';
   }
@@ -407,8 +409,12 @@
     const open = MODES.filter((m) => !offline(m.id));
     const i = open.findIndex((m) => m.id === s.settings.mode);
     const next = open[(i + step + open.length) % open.length].id;
+    // (Heard only as the choice moves: with one mode open, it stays.)
+    const moves = next !== s.settings.mode;
     setMode(next);
-    (e.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-mode="${next}"]`)?.focus();
+    const chosen = (e.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-mode="${next}"]`);
+    if (moves) sfx('key', { from: { from: chosen } });
+    chosen?.focus();
   }
   /** Delve together: a room of two or more online plays as a team. */
   const together = $derived(!local && s.players.length > 1);
@@ -598,7 +604,7 @@
 {#snippet adder(placeholder: string)}
   <form class="add" onsubmit={addLocal}>
     <input class="field" class:shake={nameError} bind:value={newName} maxlength={MAX_NAME} autocomplete="off" spellcheck="false" autocorrect="off" {placeholder} aria-label={placeholder} />
-    <button class="btn" type="submit" disabled={nameTooShort(newName)}>Add</button>
+    <button class="btn" type="submit" data-sfx="none" disabled={nameTooShort(newName)}>Add</button>
   </form>
 {/snippet}
 

@@ -9,8 +9,9 @@
 // which sits above dialogs so their controls light up, dims its light outside
 // the dialog and hides the page's light behind it (lib/fx/core.ts).
 //
-// A dialog's backdrop element takes `use:dialogBackdrop`, which also moves it
-// to the end of <body>. Its opacity (as it fades in and out) sets how far the
+// A dialog's backdrop element takes `use:dialogBackdrop` (lib/dialogBackdrop.ts,
+// which also closes it), which moves it to the end of <body> and hands it here
+// (backdropUp). Its opacity (as it fades in and out) sets how far the
 // page is dimmed, and the [role="dialog"] inside it is the box the effects
 // layer leaves clear.
 //
@@ -39,22 +40,23 @@ export const DIALOG_BLUR = 3;
 
 const backdrops: HTMLElement[] = [];
 
-/** Svelte action for a dialog's backdrop: moves it to the end of <body>, at the page's scale, and dims the page while it's there. */
-export function dialogBackdrop(node: HTMLElement) {
+/** A dialog's backdrop up (dialogBackdrop): moved to the end of <body>, at the page's scale, dimming the page while it's there. Returns the way to take it down. */
+export function backdropUp(node: HTMLElement): () => void {
   document.body.append(node);
   // Out of the app's shell, so scaled here as the shell is on large windows
   // (lib/stage.ts): every dialog at the page's scale, whoever writes it.
   node.style.zoom = 'var(--stage-zoom, 1)';
   backdrops.push(node);
   changed();
-  return {
-    destroy() {
-      backdrops.splice(backdrops.indexOf(node), 1);
-      node.remove();
-      changed();
-    },
+  return () => {
+    backdrops.splice(backdrops.indexOf(node), 1);
+    node.remove();
+    changed();
   };
 }
+
+/** The backdrops up, the last on top. */
+export const backdropsUp = (): readonly HTMLElement[] => backdrops;
 
 export type OpenDialog = {
   /** How far the page is dimmed, 0 to 1. */

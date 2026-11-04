@@ -18,6 +18,7 @@
   import { onStoredElsewhere } from '../lib/storage';
   import { savedName, session } from '../lib/session.svelte';
   import { NAMELESS } from '../lib/names';
+  import { sfx } from '../lib/sound';
   import { COLOUR_KEY, loadColour } from '../lib/colour';
   import { reservedHueOf } from '../lib/game';
   import Avatar from './Avatar.svelte';
@@ -65,8 +66,10 @@
       session.wearSigil();
     } else if (left) asking = asking === c ? null : c;
   }
-  function unlock() {
+  function unlock(e: MouseEvent) {
     if (!ask) return;
+    // Heard from the class it turns gold on, in place of the button's click.
+    sfx('sigilUnlock', { from: { from: (e.currentTarget as Element).closest('.sigils')?.querySelector('.class.asked') ?? (e.currentTarget as Element) } });
     sigils = unlockSigil(ask, achievements) ?? sigils;
     session.wearSigil();
     asking = null;
@@ -96,7 +99,7 @@
     <!-- Kept in place while hidden, so the line never moves when it shows. -->
     <div class="acts" class:off={!ask} inert={!ask}>
       <button class="btn small ghost" onclick={() => (asking = null)}>Not yet</button>
-      <button class="btn small primary" onclick={unlock}>Unlock</button>
+      <button class="btn small primary" data-sfx="none" onclick={unlock}>Unlock</button>
     </div>
   </div>
 

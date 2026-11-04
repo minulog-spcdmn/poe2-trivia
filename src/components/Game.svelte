@@ -54,7 +54,12 @@
   // as it's closed, not once its flight away is done, so a Back meanwhile isn't lost on it.
   const itemOpen = $derived(!!itemWindow.item);
   $effect(() => {
-    if (itemOpen) return backGuard.layer(closeItemWindow);
+    if (itemOpen)
+      return backGuard.layer(() => {
+        // (Back closes it as its ✕ would, and sounds so.)
+        sfx('click', { from: { from: document.querySelector('[aria-labelledby="item-window-name"] .close') } });
+        closeItemWindow();
+      });
   });
   // The worker that makes the pictures' shadows, loaded and warm before the first question with art waits for it.
   onMount(warmCasts);

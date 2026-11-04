@@ -22,7 +22,7 @@
   import { openPrivacy } from './lib/legalSheet.svelte';
   import { backGuard } from './lib/backGuard';
   import LegalSheet from './components/LegalSheet.svelte';
-  import { dialogBackdrop } from './lib/behindDialog';
+  import { dialogBackdrop } from './lib/dialogBackdrop';
   import { dialogIn, dialogOut } from './lib/dialogIn';
   import { wantDelveBackdrop } from './lib/backdrop';
   import { wantDelveLights } from './lib/lightsAhead';
@@ -587,6 +587,7 @@
     if (settingsRoute.open && (action === 'settings' || e.key === 'Escape')) {
       if (!e.defaultPrevented) {
         e.preventDefault();
+        sfx('key', { from: { from: document.querySelector(settingsClose()) } });
         closeSettings();
       }
       return;
@@ -603,13 +604,22 @@
     // or an armed kick, whose handlers take it.
     if (document.querySelector('[role="dialog"], [aria-modal="true"]')) return;
     setTimeout(() => {
-      if (!e.defaultPrevented && !settingsRoute.open) openSettings();
+      if (e.defaultPrevented || settingsRoute.open) return;
+      // A key's press, from the gear its click would come from (none on the start page: centred).
+      sfx('key', { from: { from: document.querySelector('[data-cursor="gear"]') } });
+      openSettings();
     });
   }
 
+  /** A click for the browser's Back's doing, from the button the mouse would have pressed. */
+  const clickAt = (sel: string, root: ParentNode = document) => sfx('click', { from: { from: root.querySelector(sel) } });
+  /** The settings' ✕: in the header on their page, on their sheet over a game. */
+  const settingsClose = () => (codexAllowed ? '.tools .icon-btn' : '.settings-over .icon-btn');
+  // The browser's Back closing the settings or the codex sounds as their ✕ does.
+  settingsRoute.onBack = () => clickAt(settingsClose());
+  codexRoute.onBack = () => clickAt('.tools .icon-btn');
+
   let soundToast: number | null = null;
-  /** The last press on the settings' backdrop began there, beside the sheet. */
-  let pressedBeside = false;
   /** The mute key: the sound off, or back on (at half, were it all the way down), said in a notice since nothing else on screen shows it. */
   function toggleMute() {
     const off = !(isMuted() || getVolume() === 0);
@@ -617,7 +627,8 @@
     else {
       if (getVolume() === 0) setVolume(0.5);
       setMuted(false);
-      sfx('click');
+      // The key's press: the first thing heard, now there's sound again.
+      sfx('key');
     }
     const key = keybinds.map.mute[0];
     // One notice for the sound: the last one's taken down for the new.
@@ -941,13 +952,11 @@
 
 <!-- In a room: the settings over the game, which runs on beneath (the page's keys wait while a dialog is open). -->
 {#if settingsOver}
-  <!-- Closed by a press that both begins and ends beside the sheet: not a slider's drag let go out there. -->
+  <!-- Closed by a press that both begins and ends beside the sheet (not a slider's drag let go out there), or Escape. -->
   <div
     class="modal-backdrop settings-over"
-    use:dialogBackdrop
+    use:dialogBackdrop={{ close: closeSettings, closer: '.icon-btn' }}
     transition:fade={{ duration: 150 }}
-    onpointerdown={(e) => (pressedBeside = e.target === e.currentTarget)}
-    onclick={(e) => pressedBeside && e.target === e.currentTarget && closeSettings()}
     role="presentation"
   >
     <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -968,8 +977,8 @@
 {/if}
 
 {#if confirmLeave}
-  <div class="modal-backdrop" use:dialogBackdrop transition:fade={{ duration: 150 }} onclick={() => (confirmLeave = false)}
-    onkeydown={(e) => e.key === 'Escape' && (confirmLeave = false)}
+  <!-- A press beside it or Escape stays, as Stay does. -->
+  <div class="modal-backdrop" use:dialogBackdrop={{ close: () => (confirmLeave = false), closer: '.btn.ghost' }} transition:fade={{ duration: 150 }}
     role="presentation"
   >
     {#if legalHidden && legalNav}

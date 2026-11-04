@@ -119,9 +119,9 @@
     flash(el, colour);
   }
   /** Plays `name` along a path, a dot flying it. */
-  function along(name: Sfx, a: Element | null | undefined, b: Element | null | undefined, seconds: number, what: string, colour: string, far = false) {
+  function along(name: Sfx, a: Element | null | undefined, b: Element | null | undefined, seconds: number, what: string, colour: string, far = false, way?: 'in' | 'out') {
     if (!a || !b) return missing(what);
-    play(name, { from: a, to: b, seconds, far });
+    play(name, { from: a, to: b, seconds, far, way });
     spark(a, b, seconds, colour);
   }
 
@@ -163,8 +163,8 @@
     { name: 'Item blown up', run: () => from('itemBlown', myRow(), 'your entry', RED) },
     { name: 'Your flare', run: () => along('flare', myRow(), timer(), FLARE_IGNITE_MS / 1000, 'the clock (ask a question)', '#ff6a8a') },
     { name: 'A teammate’s flare', run: () => along('flare', mateRow(1) ?? mateRow(), timer(), FLARE_IGNITE_MS / 1000, 'a teammate and the clock', '#ff6a8a', true) },
-    { name: 'You revive a teammate', run: () => along('revive', myRow(), mateRow(), GIFT_LANDS, 'a teammate (2 players or more)', '#ff8a80') },
-    { name: 'A teammate revives you', run: () => along('revive', mateRow(1) ?? mateRow(), myRow(), GIFT_LANDS, 'a teammate (2 players or more)', '#ff8a80', true) },
+    { name: 'You revive a teammate', run: () => along('revive', myRow(), mateRow(), GIFT_LANDS, 'a teammate (2 players or more)', '#ff8a80', false, 'out') },
+    { name: 'A teammate revives you', run: () => along('revive', mateRow(1) ?? mateRow(), myRow(), GIFT_LANDS, 'a teammate (2 players or more)', '#ff8a80', false, 'in') },
     // As the game has it: the session doesn't know which answer, so it is only farther off.
     {
       name: 'A teammate strikes one',

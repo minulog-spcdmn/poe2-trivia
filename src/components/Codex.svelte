@@ -2,6 +2,7 @@
   import { flushSync, onMount, tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
   import { fade, slide } from 'svelte/transition';
+  import { sfx } from '../lib/sound';
   import { calm, motion } from '../lib/motion.svelte';
   import { engine, savedName, session } from '../lib/session.svelte';
   import { nameUsable } from '../lib/names';
@@ -13,7 +14,7 @@
   import { closeCodex, codexRoute } from '../lib/codexRoute.svelte';
   import { pageLayers } from '../lib/backGuard';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { dialogBackdrop } from '../lib/behindDialog';
+  import { dialogBackdrop } from '../lib/dialogBackdrop';
   import { dialogIn, dialogOut } from '../lib/dialogIn';
   import { savingData } from '../lib/saveData';
   import { canWrap, gridHeight, type GridMeasure } from '../lib/heldGrid';
@@ -391,7 +392,10 @@
   // (lib/backGuard.ts PageLayers); one step however many items are opened from it in turn.
   const itemOpen = $derived(!!open);
   $effect(() => {
-    if (itemOpen) return pageLayers.layer(() => (open = null));
+    if (itemOpen) return pageLayers.layer(() => {
+      sfx('click', { from: { from: document.querySelector('[aria-labelledby="codex-item-name"] .close') } });
+      open = null;
+    });
   });
   let confirmReset = $state(false);
   function reset() {
@@ -569,6 +573,7 @@
     e.preventDefault();
     const i = TABS.findIndex((t) => t.key === tab);
     turn(TABS[(i + step + TABS.length) % TABS.length].key);
+    sfx('key', { from: { from: tabs.get(tab) } });
     tabs.get(tab)?.focus();
   }
 </script>
@@ -944,8 +949,8 @@
 {/if}
 
 {#if confirmReset}
-  <div class="backdrop" use:dialogBackdrop transition:fade={{ duration: 150 }} onclick={() => (confirmReset = false)}
-    onkeydown={(e) => e.key === 'Escape' && (confirmReset = false)}
+  <!-- A press beside it or Escape keeps the codex, as Keep it does. -->
+  <div class="backdrop" use:dialogBackdrop={{ close: () => (confirmReset = false), closer: '.btn.ghost' }} transition:fade={{ duration: 150 }}
     role="presentation"
   >
     <!-- svelte-ignore a11y_click_events_have_key_events -->

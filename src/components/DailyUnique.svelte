@@ -214,6 +214,7 @@
   async function pick(i: number) {
     if (answered || disabled) return;
     if (held !== null) {
+      if (held !== i) sfx('select', { from: { from: optEls[i] } });
       held = i;
       return;
     }
@@ -226,6 +227,8 @@
     const asking = practice ? undefined : clock.known() ? clock.refresh() : clock.ready(CLOCK_WAIT_MS);
     if (asking) {
       held = i;
+      // Heard picked at once, as in a game, while its answer waits for the day.
+      sfx('select', { from: { from: optEls[i] } });
       await Promise.race([asking, new Promise((done) => setTimeout(done, CLOCK_WAIT_MS))]);
       i = held ?? i;
       held = null;
