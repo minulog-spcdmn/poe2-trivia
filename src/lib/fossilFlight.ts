@@ -30,7 +30,7 @@
 //                 1500); a rare's rays behind it;
 //   1100          glints ring off its edges, a light flashes behind it;
 //   1280 to 1900  its name is written in beneath, letter by letter;
-//   1900 to 2150  its count comes in under it ("7/25"; "Rare" for a rare);
+//   1900 to 2150  its count comes in under it ("7 of 25"; "Rare" for a rare);
 //   1480          a rare: its second sweep, red-gold;
 //   2150 to 3150  held, the hall's light easing;
 //   3150 to 3810  it flies to the line along an arc that rises before it
@@ -236,7 +236,7 @@ export function revealFossil(u: Reveal): () => void {
     name.append(...letters);
     const count = document.createElement('span');
     count.className = 'fr-count';
-    count.textContent = u.count >= u.total ? `${u.count}/${u.total} • every fossil unearthed` : `${u.count}/${u.total}`;
+    count.textContent = u.count >= u.total ? `${u.count} of ${u.total} • every fossil found` : `${u.count} of ${u.total}`;
     label.append(name, count);
     let rareWord: HTMLElement | null = null;
     if (rare) {
