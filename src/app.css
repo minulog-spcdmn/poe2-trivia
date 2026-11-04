@@ -3,12 +3,85 @@
 @import '@fontsource/cinzel/500.css';
 @import '@fontsource/cinzel/700.css';
 @import '@fontsource/cinzel/900.css';
-/* EB Garamond with all its scripts (Latin Extended, Vietnamese, Cyrillic,
-   Greek), each behind a unicode-range: a browser fetches a script's file
-   only when text on the page needs it, such as a player's name. */
+/* EB Garamond, behind the text font (below) for what it doesn't draw: the
+   Cyrillic and Greek in a player's name, and its rarer letters. Each script
+   sits behind a unicode-range, so a browser fetches a file only when text on
+   the page needs it; the Latin ones, which the text font has, never. */
 @import '@fontsource/eb-garamond/400.css';
 @import '@fontsource/eb-garamond/500.css';
 @import '@fontsource/eb-garamond/400-italic.css';
+
+/* The text font (--font-body): Manuale upright, and for the italic, the voice
+   of the game's secondary lines (a hint, a note, an aside), Andada Pro's,
+   wider and more open than Manuale's own. Both have a tall x-height and firm
+   strokes that hold up at a note's size on the dark, where EB Garamond's
+   italic thinned to hairlines. Both are variable fonts, so every weight is
+   drawn true, from one file per style and script.
+   Both are drawn smaller than they're set (size-adjust). The game's sizes
+   were chosen for EB Garamond, the text font before them, and at the same
+   size Manuale's lower case stands a fifth taller and its lines run 14%
+   longer: at 93% its lines keep about their length, its small letters still
+   a tenth taller than EB Garamond's. The italic is 4% smaller again (89%),
+   so its small letters stand about as tall as Manuale's: an italic word in
+   an upright line sits level with it. (Round "(you)" its brackets are cut
+   to the lower case's height: You.svelte.)
+   Latin, Latin Extended and Vietnamese, each behind its unicode-range as
+   @fontsource has them, in its order: where ranges overlap (a combining
+   accent) the face declared last wins, the Latin one a page has already. */
+@font-face {
+  font-family: 'Manuale Andada';
+  src: url('@fontsource-variable/manuale/files/manuale-vietnamese-wght-normal.woff2') format('woff2-variations');
+  font-weight: 300 800;
+  font-style: normal;
+  font-display: swap;
+  size-adjust: 93%;
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+@font-face {
+  font-family: 'Manuale Andada';
+  src: url('@fontsource-variable/manuale/files/manuale-latin-ext-wght-normal.woff2') format('woff2-variations');
+  font-weight: 300 800;
+  font-style: normal;
+  font-display: swap;
+  size-adjust: 93%;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Manuale Andada';
+  src: url('@fontsource-variable/manuale/files/manuale-latin-wght-normal.woff2') format('woff2-variations');
+  font-weight: 300 800;
+  font-style: normal;
+  font-display: swap;
+  size-adjust: 93%;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Manuale Andada';
+  src: url('@fontsource-variable/andada-pro/files/andada-pro-vietnamese-wght-italic.woff2') format('woff2-variations');
+  font-weight: 400 840;
+  font-style: italic;
+  font-display: swap;
+  size-adjust: 89%;
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+@font-face {
+  font-family: 'Manuale Andada';
+  src: url('@fontsource-variable/andada-pro/files/andada-pro-latin-ext-wght-italic.woff2') format('woff2-variations');
+  font-weight: 400 840;
+  font-style: italic;
+  font-display: swap;
+  size-adjust: 89%;
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Manuale Andada';
+  src: url('@fontsource-variable/andada-pro/files/andada-pro-latin-wght-italic.woff2') format('woff2-variations');
+  font-weight: 400 840;
+  font-style: italic;
+  font-display: swap;
+  size-adjust: 89%;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 /* Maragsâ Display by Jad Maza (free license, gum.co/Maragsa). The license
    allows web use only as WOFF/WOFF2 through @font-face. It has a single weight,
@@ -78,9 +151,18 @@
   --gold-hi: #f1d99b;
   --gold-lo: #7d6333;
   --unique: #af6025;
-  --unique-hi: #e08a44;
+  /* (A shade lighter than it was, #e08a44, so its small capitals, the kicker
+     under the title, read: APCA Lc 54 on the page.) */
+  --unique-hi: #e59450;
   --text: #ddd3c2;
-  --muted: #968a77;
+  /* Secondary text (docs/design-rules.md, "Secondary text"): a note under
+     something, a status, a label, an aside. A step under --text and still
+     read without effort: APCA Lc 66 on the page, 60 and up on what's
+     behind it almost everywhere (src/qa/legible.ts; tests/legible.test.ts). */
+  --muted: #c6baa6;
+  /* Dim on purpose, for what isn't there to be read now: a thing not found
+     yet, a control that's off, a separator. Never for a line someone needs. */
+  --faint: #968a77;
   --bad: #e0553f;
   /* A verdict's sign (VerdictSign.svelte): its line, and the tint of its disc,
      rim and glow (r, g, b). Right, wrong and out of time. */
@@ -91,11 +173,14 @@
   --verdict-late-icon: #cdb4ee;
   --verdict-late-tint: 165, 125, 225;
   --radius: 6px;
+  /* How far the creator's name glows past its letters (PlayerName.svelte's foil, and its glint): the room a box that
+     clips the name keeps round them, given back by its margins so nothing moves (.cut-name, Gallery, the duel's faces). */
+  --foil-room: 6px;
   --font-display: 'Maragsa', 'Cinzel', 'Trajan Pro', Georgia, serif;
   --font-title: 'Maragsa Title', var(--font-display);
   /* Room codes, the in-game header and avatars. */
   --font-cinzel: 'Cinzel', 'Trajan Pro', Georgia, serif;
-  --font-body: 'EB Garamond', Garamond, Georgia, serif;
+  --font-body: 'Manuale Andada', 'EB Garamond', Georgia, serif;
   /* Item tooltips, as the game sets them. */
   --font-tooltip: 'Fontin SmallCaps', var(--font-body);
   --font-tooltip-italic: 'Fontin', var(--font-body);
@@ -198,19 +283,17 @@ html[data-fullscreen]::-webkit-scrollbar {
   display: none;
 }
 
-/* Every element takes the cursor handed down to it (themedCursors.ts), rather
-   than inheriting its parent's: one set on an element alone stays there. */
+/* Every element inherits the cursor (over the browser's own for links and
+   fields), the parent's own value, unchanged. One named through a variable
+   is a picture read afresh on every element at every restyle: named on every
+   element (cursor: var(--cursor-now), as it was), it was a third of a
+   question's style in Chrome. And WebKit counts a named picture
+   changed each time, so it restyles all the element holds: a vein's tremor
+   (a translate on .shell, every frame) restyled the whole game and repainted
+   every card, 46 Mpx in 2.5 s on an iPhone with a desktop's pointer. The
+   pressed pointer, set on one element alone, keeps off what that element
+   holds by handing its children the cursor themselves (lib/ownCursor.ts). */
 :where(*) {
-  cursor: var(--cursor-now, auto);
-}
-/* In WebKit (lib/ownCursor.ts marks it) every element inherits it instead.
-   WebKit makes a picture cursor afresh each time an element that names one is
-   restyled, and counts it changed, so everything the element holds is
-   restyled with it: with one named on every element, a vein's tremor (a
-   translate on .shell, every frame) restyled the whole game and repainted
-   every card, 46 Mpx in 2.5 s on an iPhone with a desktop's pointer. An
-   inherited one is the parent's own, unchanged. */
-:where(:root[data-cursor-inherited] *) {
   cursor: inherit;
 }
 
@@ -449,11 +532,33 @@ input {
   }
 }
 
-/* A bullet between words in the body font, set down to the middle of their small letters: EB Garamond sets it at
-   half a capital's height, high beside lowercase words. */
+/* A player's name with "(you)" after it (You.svelte), in a row short of room: the name (.cut) gives way and the
+   "(you)" stays whole. The name is clipped for its ellipsis, so its box reaches down past the descenders (a g, a y). */
+.cut-name {
+  display: flex;
+  white-space: nowrap;
+}
+.cut-name > .cut {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-bottom: 0.2em;
+  margin-bottom: -0.2em;
+}
+/* The creator's name glows: its clip keeps room for the glow all round (--foil-room). */
+.cut-name > .cut:has(> .creator) {
+  padding: var(--foil-room);
+  margin: calc(-1 * var(--foil-room));
+}
+.cut-name > em {
+  flex: none;
+}
+
+/* A bullet between words in the body font, set down to the middle of their small letters: Manuale sets it a tenth
+   of an em above them, high beside lowercase words. */
 .bullet {
   position: relative;
-  top: 0.16em;
+  top: 0.1em;
 }
 
 .btn {
@@ -473,7 +578,11 @@ input {
   text-transform: uppercase;
   color: var(--gold-hi);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7);
-  background: linear-gradient(180deg, #3f301c 0%, #251b10 52%, #1a120a 100%);
+  /* Dithered (--dither-step, below): each stop a level up, which the
+     dither's 0 to 2 taken off evens out. */
+  background: var(--dither-step), linear-gradient(180deg, #40311d 0%, #261c11 52%, #1b130b 100%);
+  background-blend-mode: difference, normal;
+  image-rendering: pixelated;
   border: 1px solid var(--gold-lo);
   border-radius: 3px;
   cursor: pointer;
@@ -490,6 +599,12 @@ input {
     text-shadow 0.25s,
     filter 0.25s;
   white-space: nowrap;
+}
+/* (Only the dither is drawn pixelated: what's in the button is drawn as usual.) */
+.btn > *,
+.btn::before,
+.btn::after {
+  image-rendering: auto;
 }
 /* A band of light that sweeps across on hover. */
 .btn::before {
@@ -557,7 +672,7 @@ input {
   filter: saturate(0.5);
 }
 .btn.primary {
-  background: linear-gradient(180deg, #b0742c 0%, #86521b 38%, #5a340f 72%, #43260a 100%);
+  background: var(--dither-step), linear-gradient(180deg, #b1752d 0%, #87531c 38%, #5b3510 72%, #44270b 100%);
   border-color: #d8b56e;
   color: #fff6de;
   text-shadow:
@@ -641,7 +756,7 @@ input {
 }
 /* For what can't be undone: the primary button in crimson. */
 .btn.danger {
-  background: linear-gradient(180deg, #a8392a 0%, #7c2519 38%, #551710 72%, #3e0f0a 100%);
+  background: var(--dither-step), linear-gradient(180deg, #a93a2b 0%, #7d261a 38%, #561811 72%, #3f100b 100%);
   border-color: #e0806a;
   color: #fff0ea;
   text-shadow:
@@ -674,6 +789,7 @@ input {
 }
 .btn.ghost {
   background: rgba(0, 0, 0, 0.2);
+  background-blend-mode: normal;
   border-color: var(--line);
   color: var(--muted);
   box-shadow: none;
@@ -860,7 +976,14 @@ h3,
    styled from JS imports the tile itself, as zonecard/fume.ts does). */
 :root {
   --dither: url('./assets/dither.png');
+  --dither-step: url('./assets/dither-step.png');
 }
+/* A bright gradient (a button's) the near-black tile can't stir evenly: it
+   takes up to 7 levels off a bright colour and next to none off a dark one.
+   --dither-step is opaque, 0, 1 or 2 of 255 a pixel (white noise, seeded),
+   laid first over the gradient with background-blend-mode: difference, so
+   it takes 0 to 2 levels off every channel alike, whatever its brightness;
+   the gradient's stops each a level up even that out. Pixelated too. */
 
 /* Soft outer shadows the WebGL backdrop can draw (see lib/backdropShadow.ts).
    An element declares up to two as `0 var(--bsN) var(--bsN-color)` (y offset,

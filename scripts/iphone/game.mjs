@@ -158,6 +158,6 @@ if (got.extra) log('extra', JSON.stringify(got.extra));
 if (got.ins) for (const x of got.ins) log('inserted', x.mark, x.n, 'js~' + x.sinceRaf, 'style+layout ' + x.styleLayout, 'to frame ' + x.toRaf, 'frame ' + x.afterRaf, '|', x.top);
 const rows = phases(got);
 printPhases(rows);
-writeFileSync(join(out, `${label}.game.json`), JSON.stringify({ label, url, MODE, SETUP, rows, timings, raf: got.raf, marks: got.marks }));
+writeFileSync(join(out, `${label}.game.json`), JSON.stringify({ label, url, MODE, SETUP, rows, timings, raf: got.raf, marks: got.marks, late: got.late, extra: got.extra }));
 if (records.length) writeFileSync(join(out, `${label}.timeline.json`), JSON.stringify(records));
 process.exit(0);

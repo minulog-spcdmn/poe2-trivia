@@ -3,16 +3,17 @@
  * `default`, `not-allowed`, `text`, `zoom-in`, `grab` and `grabbing` reads its picture from a variable, falling back to
  * the system's own where it isn't set (pages that don't draw one).
  *
- * And every cursor is handed down as a variable rather than inherited:
- * `cursor: X` becomes `--cursor-now: X; cursor: var(--cursor-now)`, and
- * app.css gives every element `cursor: var(--cursor-now)`. So a cursor set
- * on one element alone (the pressed pointer, ownCursor.ts) stays on it: what
- * it holds keeps taking the variable, unchanged, and isn't restyled. (An
- * inherited cursor changed on a big element restyles all it holds.)
+ * And every cursor is handed down as a variable too: `cursor: X` becomes
+ * `--cursor-now: X; cursor: var(--cursor-now)`. The rest of the elements
+ * inherit theirs (app.css), but a cursor set on one element alone (the
+ * pressed pointer, ownCursor.ts) stays on it: its children are given
+ * `var(--cursor-now)` for the press, so what they hold inherits theirs,
+ * unchanged, and isn't restyled. (An inherited cursor changed on a big
+ * element restyles all it holds.)
  *
- * `cursor: inherit` is left as it is: in WebKit app.css has every element
- * inherit its cursor instead (see there). So are `unset`, `initial`,
- * `revert` and `revert-layer`, which mean nothing as a variable's value.
+ * `cursor: inherit` is left as it is, as app.css gives every element (see
+ * there). So are `unset`, `initial`, `revert` and `revert-layer`, which
+ * mean nothing as a variable's value.
  */
 const CSS_WIDE = /^(inherit|initial|unset|revert|revert-layer)$/i;
 const CURSOR_VARS: Record<string, string> = {

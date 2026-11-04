@@ -239,6 +239,9 @@
     overflow: hidden;
     border-radius: 50%;
     pointer-events: none;
+    /* On a layer of its own, so a pass draws again only the seal, not what it sits in (the end screen's panel,
+       60k px a frame for as long as the light crossed). */
+    will-change: opacity;
   }
   .slit {
     position: absolute;

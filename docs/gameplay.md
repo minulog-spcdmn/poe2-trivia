@@ -638,6 +638,20 @@ Undiscovered items show as
 dark silhouettes, and the codex can't be opened while in a room. It is kept in this
 browser's localStorage only (`src/lib/codex.ts`).
 
+The start menu's Codex entry says how far it has come: "Uniques
+discovered: 462 of 540. Deepest delve: 12." (on a phone, in its half of the
+pair, a line each: "Uniques: 462 of 540.", "Deepest delve: 12."; before
+anything is met, what the Codex is for). While any item new with the
+newest release is still to meet, it says how many came with it, so a
+returning player knows why their share fell and that there's something
+new to find: "Uniques discovered: 462 of 540; 39 came with 1.0.
+Deepest delve: 12." (on a phone a line of its own, "39 came with 1.0.",
+between the two). Once all of them are met it goes back to the line
+before. Which items came with a release is the day a refresh first listed
+them (`src/lib/releases.ts`; docs/development.md, "Refreshing item data");
+until 1.0's refresh none have, so the line says nothing of it
+(`src/lib/startMenu.ts`, `codexLine`).
+
 The Codex has two tabs: **Collection** (the above) and **Delve**, built
 from the same parts. Alone and together are kept apart and never summed:
 the kind you played most leads (on a tie, the one that got deeper). Delve
@@ -789,10 +803,16 @@ they're worth more sigils than are unlocked already. Kept in this browser (`src/
     click (there's no device to bar). See `Player.local` and `aside` in
     `src/lib/game.ts`.
   - **No connection:** a room that can't go online (no connection to the
-    matchmaking server, or a page that can't seal pictures) opens anyway, on
-    this device only: nobody can join, players at the screen are added in
-    its lobby, and a reload picks it up there (`hostHere` in
-    `src/lib/session.svelte.ts`).
+    matchmaking server after 20 seconds of trying, or a page that can't seal
+    pictures) opens anyway, on this device only: nobody can join, players at
+    the screen are added in its lobby, and a reload picks it up there
+    (`hostHere` in `src/lib/session.svelte.ts`). Until then a network that
+    drops for a moment is tried again (`openAgain`), and a slow one is
+    waited for. A page back from the background (switching apps to share
+    the code) gets its 20 seconds afresh, and a join its 30 (`nudge`,
+    `backFromAway`); a page that stays hidden still gives up. A reopened
+    room whose server never answers a try in 20 seconds isn't reopened,
+    and stays saved for a refresh.
   - Players who refresh or drop out rejoin automatically. Outside Delve, the
     host can skip the turn of a player who is disconnected. Opening the same room in a
     second tab moves your seat there, and the first tab lets it go.

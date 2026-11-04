@@ -38,6 +38,10 @@ export const net = {
   connected: [] as string[],
   /** Off: nobody's peer can open (network trouble). */
   down: false,
+  /** Silent: a peer's socket never hears back, neither opening nor failing (a server slow to answer, a handshake lost on the way). */
+  silent: false,
+  /** How long the server takes to answer a peer, ms (a slow link: congested mobile data, satellite). */
+  answerIn: 0,
   reset() {
     for (const p of net.made) p.destroy();
     net.held.clear();
@@ -45,6 +49,8 @@ export const net = {
     net.pinged = [];
     net.connected = [];
     net.down = false;
+    net.silent = false;
+    net.answerIn = 0;
   },
 };
 
@@ -72,6 +78,9 @@ class Socket extends Emitter {
 class Conn extends Emitter {
   open = false;
   serialization = 'binary';
+  /** As PeerJS's: the peer it was made on, until it's closed (a joiner's attempt still negotiating has one). */
+  provider: object | null = {};
+  peerConnection = null;
   readonly peer: string;
   constructor(peer: string) {
     super();
@@ -80,6 +89,7 @@ class Conn extends Emitter {
   _handleDataMessage() {}
   _handleChunk() {}
   close() {
+    this.provider = null;
     this.emit('close');
   }
 }
@@ -98,8 +108,9 @@ export default class Peer extends Emitter {
     this.socket = new Socket(this);
     net.made.push(this);
     const own = this.id;
-    queueMicrotask(() => {
-      if (this.destroyed) return;
+    const answer = (f: () => void) => (net.answerIn ? setTimeout(f, net.answerIn) : queueMicrotask(f));
+    answer(() => {
+      if (this.destroyed || net.silent) return;
       if (net.down) return this.emit('error', { type: 'network', message: 'Lost connection to server.' });
       if (net.held.has(own) && net.held.get(own) !== this) return this.emit('error', { type: 'unavailable-id', message: `ID "${own}" is taken` });
       net.held.set(own, this);

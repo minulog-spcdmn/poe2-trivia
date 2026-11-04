@@ -1,12 +1,15 @@
 <script lang="ts">
   import { sfx } from '../lib/sound';
   import { cubicOut } from 'svelte/easing';
+  import { calm, motion } from '../lib/motion.svelte';
   import { fly } from '../lib/transitions';
   import { inFrame, onceFontsIn } from '../lib/inFrame';
+  import { nameFit } from '../lib/creator';
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
+  import You from './You.svelte';
   import Phial from './Phial.svelte';
   import Inventory from './Inventory.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -79,7 +82,7 @@
     if (!tight || !boardEl) return;
     void s.turn;
     void s.phase;
-    boardEl.querySelector<HTMLElement>('li.active, li.you')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    boardEl.querySelector<HTMLElement>('li.active, li.you')?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: motion.still ? 'auto' : 'smooth' });
   });
   // And smaller, as far as it must (down to 70%) for every entry to fit the
   // row: it scrolls only past that. Again whenever the row's width or an
@@ -135,7 +138,13 @@
       const names = [...board.querySelectorAll<HTMLElement>('.name')].filter((n) => n.offsetParent);
       if (whole < 2 || !names.length) return;
       let lo = Math.round(9.5 * parseFloat(getComputedStyle(document.documentElement).fontSize));
-      let hi = Math.max(...names.map((n) => n.scrollWidth));
+      // (Each name whole: one squeezed already has its .cut clip it, so what that hides is added back: nameFit, lib/creator.ts.)
+      const fullWidth = (n: HTMLElement) => {
+        const cut = n.querySelector<HTMLElement>('.cut');
+        const fit = cut && nameFit(cut);
+        return n.scrollWidth + (fit ? Math.max(0, fit.letters - fit.room) : 0);
+      };
+      let hi = Math.max(...names.map(fullWidth));
       if (lo >= hi) return;
       capAt(lo);
       const fewest = rows();
@@ -180,6 +189,52 @@
   /** Delve together: nobody has a turn; on phones your own entry is the one spelled out. */
   const coop = $derived(!!run && isGroupRun(s));
   const me = $derived(session.mode === 'local' ? null : session.myPlayerId);
+  /** The entry spelled out on phones (wide): the turn's, the race's winner, or in co-op your own; none in a full room. */
+  const wideId = $derived.by(() => {
+    if (bare) return null;
+    if (coop) return me;
+    if (race) return s.phase === 'reveal' ? (s.reveal?.winnerId ?? null) : null;
+    return s.phase !== 'over' ? (s.players[s.turn]?.id ?? null) : null;
+  });
+  /**
+   * Phones: as the entry spelled out changes, the one opening grows to its
+   * width and the one closing shrinks to its own, the row moving with them,
+   * rather than each taking its width at once and passing over its neighbour.
+   * Their widths are read before the change and after it.
+   */
+  let widthsWere = new Map<Element, number>();
+  let resizing = false;
+  $effect.pre(() => {
+    void wideId;
+    if (!boardEl || motion.still) return;
+    resizing = true;
+    widthsWere = new Map([...boardEl.children].map((li) => [li, parseFloat(getComputedStyle(li).width)]));
+  });
+  $effect(() => {
+    void wideId;
+    const was = widthsWere;
+    widthsWere = new Map();
+    resizing = false;
+    // With an entry leaving (a kick), the widths change as its room closes, in step with it (leave):
+    // the row then moves one way, rather than the others being pushed out before it closes.
+    // Each width it's going to is the one it will have once they've gone, not squeezed by them on the way out.
+    const gone = [...was.keys()].filter((li): li is HTMLElement => leaving.has(li) && li instanceof HTMLElement);
+    const closing = gone.length > 0;
+    for (const li of gone) li.style.display = 'none';
+    const tos = new Map([...was.keys()].map((li) => [li, parseFloat(getComputedStyle(li).width)]));
+    for (const li of gone) li.style.display = '';
+    for (const [li, from] of was) {
+      if (!li.isConnected || leaving.has(li)) continue;
+      const to = tos.get(li)!;
+      if (Math.abs(to - from) < 1) continue;
+      li.animate([{ width: `${from}px`, minWidth: '0px' }, { width: `${to}px`, minWidth: '0px' }], {
+        duration: closing ? LEAVE_MS * (1 - SHUT_FROM) : 350,
+        delay: closing ? LEAVE_MS * SHUT_FROM : 0,
+        fill: 'backwards',
+        easing: 'cubic-bezier(0.33, 1, 0.68, 1)',
+      });
+    }
+  });
   /** Delve together: who answered the question in play (wrong, or it would be over). */
   const struck = $derived(new Set(coop && s.phase === 'question' ? (s.question?.struck ?? []).map((x) => x.by) : []));
 
@@ -211,11 +266,11 @@
   }
   /** Cave-ins already heard: one per player per vein, however their losses interleave (several on one device). */
   const cavesHeard = new Set<string>();
-  /** The cave-in's sound, once per cave-in (`key` from caveInOf), from the entry it caves in on. */
-  function caveInHeard(key: string, from: Element | null) {
+  /** The cave-in's sound, once per cave-in (`key` from caveInOf), from the entry it caves in on; a teammate's (`far`) from farther off. */
+  function caveInHeard(key: string, from: Element | null, far = false) {
     if (cavesHeard.has(key)) return;
     cavesHeard.add(key);
-    sfx('caveIn', { from: { from } });
+    sfx('caveIn', { from: { from, far } });
   }
   // Delve: a life lost makes the player's entry flinch, and the chamber of the
   // phial pours its light out, in step with the reveal's verdict, a moment
@@ -239,7 +294,9 @@
   let livesSeen: Record<string, number> = {};
   let lossesSeen: Record<string, number> = {};
   let runSeen = 0;
-  $effect(() => {
+  // Before the board updates, so the phial never shows the new count for a
+  // moment before it's held (its last life's red would flash on and fade).
+  $effect.pre(() => {
     if (!run) return;
     if (run.startedAt !== runSeen) {
       runSeen = run.startedAt;
@@ -281,7 +338,7 @@
             if (mine) {
               if (caved) caveInHeard(caved, li);
               sfx('lifeLost', { from: { from: chamber ?? li } });
-            }
+            } else if (caved) caveInHeard(caved, li, true);
             later(() => {
               if (hit[id] === left) delete hit[id];
             }, POUR * 1000);
@@ -484,7 +541,7 @@
         if (mine) {
           if (caved) caveInHeard(caved, li);
           for (let i = 0; i < n; i++) setTimeout(() => sfx('wardShatter', { from: { from: barriers[i] ?? vessel ?? li } }), i * WARD_NEXT * 1000);
-        }
+        } else if (caved) caveInHeard(caved, li, true);
       } else if (kind === 'flare' || kind === 'dynamite') {
         const el = counts?.querySelector(`[data-pip="${kind}"]`);
         if (el && kind === 'flare') flareFound(el);
@@ -550,8 +607,11 @@
       const chamber = from?.phial.querySelector(`.chamber[data-k="${k}"]`) ?? giver;
       const target = to?.phial.querySelector(`.chamber[data-k="${into}"]`) ?? to?.phial;
       if (giver && taker && chamber && target) lifeGiven(chamber, giver, target, taker);
-      // Heard streaming across with the light; a teammate's (not one at this screen) from farther off.
-      sfx('revive', { from: { from: chamber, to: target, seconds: GIFT_LANDS, far: session.mode !== 'local' && r.by !== session.myPlayerId } });
+      // Heard streaming across with the light: one given you from far off at first, coming close as it
+      // lands; yours going off to them; between teammates (not at this screen), far all through.
+      const me = session.mode !== 'local' ? session.myPlayerId : null;
+      const way = !me ? undefined : r.to === me ? 'in' : r.by === me ? 'out' : undefined;
+      sfx('revive', { from: { from: chamber, to: target, seconds: GIFT_LANDS, far: !!me && !way, way } });
       later(() => {
         if (giving[r.by] === k) delete giving[r.by];
       }, POUR * 1000);
@@ -770,11 +830,59 @@
    * active entry's own transform stays.
    */
   function glide(node: Element, { from, to }: { from: DOMRect; to: DOMRect }) {
+    // (An entry opening or closing as this happens moves the row by its width, below: a glide to where it ends would pass over it.)
+    if (resizing) return { duration: 0 };
     // Measured on screen: in the entry's own px under the stage's zoom.
     const z = zoomOf(node);
     const dx = (from.left - to.left) / z;
     const dy = (from.top - to.top) / z;
     return { duration: 400, easing: cubicOut, css: (_t: number, u: number) => `translate: ${u * dx}px ${u * dy}px` };
+  }
+
+  /**
+   * A kicked player's entry fades out where it stands, then closes its room
+   * (the row's gap after it with it), the others sliding over in the row as
+   * it does: none passes over it while it's still there, and nothing of it is
+   * cut off, as it's gone from sight before it narrows. Svelte lifts a
+   * leaving entry out of the row and pins it in place with a transform
+   * (animate:glide's), which the entry's own transform transition would carry
+   * off, over its neighbour: that's undone first, so it stays in the row.
+   */
+  const leaving = new WeakSet<Element>();
+  /** How long a leaving entry takes, and from what share of it its room closes (the widths change with it). */
+  const LEAVE_MS = 500;
+  const SHUT_FROM = 0.3;
+  function leave(node: HTMLElement) {
+    leaving.add(node);
+    Object.assign(node.style, { position: '', width: '', height: '', transform: '' });
+    const cs = getComputedStyle(node);
+    const [w, pl, pr] = [cs.width, cs.paddingLeft, cs.paddingRight].map(parseFloat);
+    const gap = parseFloat(getComputedStyle(node.parentElement!).columnGap) || 0;
+    return calm({
+      duration: LEAVE_MS,
+      css: (_t: number, u: number) => {
+        // u runs evenly from 0 to 1: the first 35% fades it out; from SHUT_FROM its room closes, quick and then settling, as a glide does.
+        const shut = cubicOut(Math.max(0, (u - SHUT_FROM) / (1 - SHUT_FROM)));
+        const k = 1 - shut;
+        return `min-width: 0; width: ${k * w}px; padding-left: ${k * pl}px; padding-right: ${k * pr}px; border-width: ${k < 0.05 ? 0 : 1}px; margin-right: ${-shut * gap}px; opacity: ${1 - cubicOut(Math.min(1, u / 0.35))}; pointer-events: none`;
+      },
+    });
+  }
+
+  /**
+   * The revive heart grows in from a small size and shrinks away (its own wrapper, so the beat is left alone),
+   * opening its room in the entry as it comes and closing it as it goes: the entry widens and narrows with it,
+   * the others gliding aside, rather than jumping.
+   */
+  function bloom(node: Element) {
+    const cs = getComputedStyle(node);
+    const [w, ml, mr] = [cs.width, cs.marginLeft, cs.marginRight].map(parseFloat);
+    const gap = parseFloat(getComputedStyle(node.parentElement!).columnGap) || 0;
+    return calm({
+      duration: 250,
+      easing: cubicOut,
+      css: (t: number, u: number) => `opacity: ${t}; scale: ${0.6 + 0.4 * t}; width: ${t * w}px; margin-left: ${t * ml - u * gap}px; margin-right: ${t * mr}px`,
+    });
   }
 
   // Stuck (phones upright): the strip sticks 1px above the top of the screen, so
@@ -805,8 +913,12 @@
 <svelte:window
   onkeydown={(e) => {
     if (e.key !== 'Escape') return;
-    if (asking) (e.preventDefault(), closeAsk());
-    else if (kicker.disarm()) e.preventDefault();
+    if (asking) {
+      e.preventDefault();
+      // A key's press, from Not now.
+      sfx('key', { from: { from: document.querySelector('.revive-ask .btn.ghost') } });
+      closeAsk();
+    } else if (kicker.disarm()) e.preventDefault();
   }}
   onpointerdown={(e) => !(e.target as Element).closest?.('.kick.armed') && kicker.disarm()}
 />
@@ -818,7 +930,7 @@
   <ol class="board" class:crowded={fullRoom(s.players.length)} class:tight bind:this={boardEl}>
     {#each s.players as p, i (p.id)}
       {@const active = race ? s.phase === 'reveal' && s.reveal?.winnerId === p.id : !coop && i === s.turn && s.phase !== 'over'}
-      {@const wide = !bare && (coop ? p.id === me : active)}
+      {@const wide = p.id === wideId}
       {@const out = (race && s.phase !== 'over' && missed.has(p.id)) || struck.has(p.id) || (!!s.deathmatch && s.phase !== 'over' && s.deathmatch.results[p.id] === false)}
       {@const benched = !!s.deathmatch && s.phase !== 'over' && !s.deathmatch.alive.includes(p.id)}
       {@const duelist = !!s.deathmatch && s.phase !== 'over' && s.deathmatch.alive.includes(p.id)}
@@ -841,12 +953,13 @@
         style:--heat={fire}
         style:--flame-rgb={flameOf(streakShown, !!run).css}
         class:armed={confirming === p.id}
-        class:active class:you={coop && p.id === me} class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide style:--c={playerColor(p.hue)}>
+        class:active class:you={coop && p.id === me} class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide out:leave style:--c={playerColor(p.hue)}>
+        <span class="armed-wash" aria-hidden="true"></span>
         <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={32} dim={!p.connected} wrong={out} />
         <div class="info">
           <span class="name-row">
-            <span class="name">
-              <PlayerName name={p.name} />{#if session.mode !== 'local' && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}
+            <span class="name cut-name">
+              <span class="cut"><PlayerName name={p.name} /></span>{#if session.mode !== 'local' && p.id === session.myPlayerId && s.players.length > 1}<em><You /></em>{/if}
             </span>
             <!-- Online, room for the offline mark after the name is always kept, so nothing moves when it comes. -->
             {#if session.mode !== 'local'}<span class="off-slot">{#if !p.connected}{@render offline()}{/if}</span>{/if}
@@ -895,6 +1008,7 @@
                light in the entry, beating as the phial's lives do. -->
           <button
             class="revive"
+            transition:bloom
             class:open={asking === p.id}
             onclick={() => (asking = asking === p.id ? null : p.id)}
             aria-label="Revive {p.name}: give them one of your lives"
@@ -947,6 +1061,7 @@
   }
   li {
     position: relative;
+    isolation: isolate;
     display: flex;
     align-items: center;
     gap: 0.6rem;
@@ -964,6 +1079,8 @@
       --bs-ring 0.35s,
       --bs1-color 0.35s,
       transform 0.35s var(--ease-out),
+      background-color 0.35s,
+      filter 0.35s,
       opacity 0.35s;
   }
   li.active .name {
@@ -1003,14 +1120,22 @@
       opacity: 0.55;
     }
   }
-  li.active::after {
+  li::after {
     content: '';
     position: absolute;
     left: 50%;
     bottom: -10px;
-    translate: -50% 0;
+    translate: -50% -3px;
     border: 5px solid transparent;
     border-top-color: var(--c);
+    opacity: 0;
+    transition:
+      opacity 0.35s,
+      translate 0.35s var(--ease-out);
+  }
+  li.active::after {
+    opacity: 1;
+    translate: -50% 0;
   }
   /* The kick, as the lobby's (KickButton): a small seal on the entry's
      corner, shown while the entry is pointed at; pointed at itself, it and
@@ -1037,7 +1162,20 @@
   /* Armed: the whole entry asks, in the wrong-answer colours, the avatar dimmed. */
   li.armed {
     border-color: #8e4434;
+  }
+  /* The armed colours, cross-faded on a layer of their own (a gradient can't be transitioned). */
+  .armed-wash {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
     background: linear-gradient(90deg, rgba(78, 32, 22, 0.9), rgba(34, 15, 11, 0.92));
+    opacity: 0;
+    transition: opacity 0.35s;
+    pointer-events: none;
+  }
+  li.armed .armed-wash {
+    opacity: 1;
   }
   li.armed :global(.avatar:not(:has(> .face-down))) {
     filter: saturate(0.4) brightness(0.75);
@@ -1066,12 +1204,13 @@
       opacity 0.9s ease,
       filter 0.9s ease;
   }
+  /* (Kept to the phial's height, so under 13.5px, and in the text's own colour: --muted reads only from 13.5px (CLAUDE.md). The fallen row's fade says the rest.) */
   .fell-at {
     animation: fell-in 0.6s ease both;
     font-size: 0.8rem;
     font-style: italic;
     line-height: 1;
-    color: var(--muted);
+    color: var(--text);
   }
   @keyframes fell-in {
     from {
@@ -1311,18 +1450,18 @@
      verdict's full colour (scoped, these never reach the avatar, its own
      component), and a ward's rim keeps its own flare. The transition as
      :where, so a child's own transition wins over it. */
-  li > :where(:not(.kick-at, .revive, .ward-rim)) {
+  li > :where(:not(.kick-at, .revive, .ward-rim, .armed-wash)) {
     transition: opacity 0.35s;
   }
   li.out {
     border-color: rgba(224, 85, 63, 0.45);
   }
-  li.out > :not(.kick-at, .revive, .ward-rim),
+  li.out > :not(.kick-at, .revive, .ward-rim, .armed-wash),
   li.out .kick-at > :global(.kick) {
     opacity: 0.75;
   }
   /* Perished as well: set back further, as the two together always were. */
-  li.out.fallen.revivable > :not(.kick-at, .revive, .ward-rim) {
+  li.out.fallen.revivable > :not(.kick-at, .revive, .ward-rim, .armed-wash) {
     opacity: calc(0.45 * 0.75);
   }
   .negative {
@@ -1357,18 +1496,12 @@
     z-index: 1;
     font-size: 0.98rem;
     line-height: 1.1;
-    white-space: nowrap;
-    overflow: hidden;
     /* No width of its own: the name takes what the row has, and is cut short only once the row runs out, or where cutting saves a row (--name-cap, set above). */
-    text-overflow: ellipsis;
     max-width: var(--name-cap, none);
-    /* Room for descenders (g, y) that overflow: hidden would clip at line-height 1.1 */
-    padding-bottom: 0.2em;
-    margin-bottom: -0.2em;
   }
+  /* (Short of room, the name gives way and never the "(you)" after it: app.css .cut-name.) */
   .name em {
     color: var(--muted);
-    font-size: 0.85em;
   }
   .bar {
     height: 3px;
@@ -1598,6 +1731,21 @@
     }
     li.wide .info {
       min-width: 0;
+      /* Fades in just after the glide, as the entry opens. */
+      animation: info-in 0.25s 0.3s both;
+    }
+    @keyframes info-in {
+      from {
+        opacity: 0;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      li.wide .info {
+        animation: none;
+      }
+    }
+    :global(html[data-still]) li.wide .info {
+      animation: none;
     }
     /* Delve: a slimmer phial (and finds beside it) under the name, so the
        pill stands no taller than the avatars beside it. */
@@ -1640,8 +1788,9 @@
     /* An entry shrunk to its avatar takes the heart in beside it, the heart
        laid a little over the avatar's edge so the entry grows only a little;
        with four or more such entries the row breaks in two rather than run
-       off the screen. */
-    li.revivable:not(.wide) {
+       off the screen. (Set by the heart itself, not .revivable, so it holds
+       while the heart shrinks away: the entry narrows smoothly with it.) */
+    li:not(.wide):has(> .revive) {
       gap: 0;
       padding-right: 3px;
     }

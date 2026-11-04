@@ -33,7 +33,8 @@ export const METALS: Record<Tier, Metal> = {
   0: {
     name: 'Lead',
     color: '#6e7073',
-    label: '#a2a7ac',
+    // (A shade lighter than its sheen, so its small capitals read on the page: APCA Lc 57.)
+    label: '#a8adb2',
     sheen: { color: '#a2a7ac', opacity: 0.38 },
     light: { every: 13000, sweep: 2400, band: 26, gleam: '#d9dde1', strength: 0.35 },
   },

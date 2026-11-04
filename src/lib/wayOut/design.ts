@@ -9,7 +9,7 @@ export interface WayOutDesign {
   /** The small plaque over the keystone, with `haul` wards in hand (0 to 3): what taking it keeps. */
   tag(haul: number): string;
   /**
-   * The note under the card (EB Garamond: no bullets, a semicolon at most),
+   * The note under the card (the body font: no bullets, a semicolon at most),
    * with `haul` wards in hand; `team`, the team's haul in a run together.
    */
   note(haul: number, team: boolean): string;

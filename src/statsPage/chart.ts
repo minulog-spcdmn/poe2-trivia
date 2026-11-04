@@ -2,7 +2,7 @@
 // and days are written on them.
 
 /** A round step for an axis that reaches `max` in about `ticks` steps. */
-export function niceStep(max: number, ticks = 3): number {
+function niceStep(max: number, ticks = 3): number {
   if (max <= 0) return 1;
   const raw = max / ticks;
   const mag = 10 ** Math.floor(Math.log10(raw));
@@ -18,6 +18,8 @@ export function axis(peak: number, ticks = 3): { top: number; ticks: number[] } 
 }
 
 export const fmt = (n: number) => n.toLocaleString('en');
+/** A share as a whole percent ("35%"); a dash where there's none. */
+export const pct = (v: number | null) => (v === null ? '–' : `${Math.round(v)}%`);
 /** A site as people say it: "reddit.com", from GoatCounter's "https://www.reddit.com". */
 export const siteName = (name: string) => name.replace(/^[a-z-]+:\/\//, '').replace(/^www\./, '').replace(/\/$/, '');
 /** A figure a day on average: one decimal under 10 ("2.5"), whole above. */
@@ -27,6 +29,12 @@ export const compact = (n: number) => (n >= 1000 ? new Intl.NumberFormat('en', {
 const at = (d: string) => new Date(`${d}T12:00:00Z`);
 /** "Oct 9", for an axis. */
 export const shortDay = (d: string) => at(d).toLocaleDateString('en', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+/** "Oct 5 to Nov 3", with the years where they differ ("Nov 5, 2025 to Nov 3, 2026"): without them a year reads as a range run backwards. */
+export const dayRange = (from: string, to: string) => {
+  if (from.slice(0, 4) === to.slice(0, 4)) return `${shortDay(from)} to ${shortDay(to)}`;
+  const day = (d: string) => at(d).toLocaleDateString('en', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return `${day(from)} to ${day(to)}`;
+};
 /** "Fri, Oct 9", or "Week of Oct 9" for a week. */
 export const longDay = (d: string, week = false) =>
   week ? `Week of ${shortDay(d)}` : at(d).toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });

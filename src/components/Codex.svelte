@@ -1,7 +1,9 @@
 <script lang="ts">
   import { flushSync, onMount, tick } from 'svelte';
   import { SvelteSet } from 'svelte/reactivity';
-  import { fade } from 'svelte/transition';
+  import { fade, slide } from 'svelte/transition';
+  import { backSound, sfx } from '../lib/sound';
+  import { calm, motion } from '../lib/motion.svelte';
   import { engine, savedName, session } from '../lib/session.svelte';
   import { nameUsable } from '../lib/names';
   import { CODEX_KEY, PRACTICE_KEY, RECENT, loadCodex, loadPractice, resetCodex, type Tally } from '../lib/codex';
@@ -12,7 +14,7 @@
   import { closeCodex, codexRoute } from '../lib/codexRoute.svelte';
   import { pageLayers } from '../lib/backGuard';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { dialogBackdrop } from '../lib/behindDialog';
+  import { dialogBackdrop } from '../lib/dialogBackdrop';
   import { dialogIn, dialogOut } from '../lib/dialogIn';
   import { savingData } from '../lib/saveData';
   import { canWrap, gridHeight, type GridMeasure } from '../lib/heldGrid';
@@ -234,7 +236,7 @@
   // a name's width and font, each time it lays out at a new size (a
   // ResizeObserver runs after layout, so this reads no layout of its own),
   // and a name's lines come from its width in that font.
-  type Pitch = GridMeasure & { lines: (text: string, unknown: boolean) => number };
+  type Pitch = GridMeasure & { lines: (text: string) => number };
   let pitch = $state.raw<Pitch | null>(null);
   $effect(() => {
     const grid = gridEls[0];
@@ -260,22 +262,20 @@
     const base = ownRect(tile).height - ownRect(name).height;
     if (!(line > 0) || !(width > 0)) return null;
     // Read now, not as names are measured: the element may be gone by then.
-    const fonts = ['normal', 'italic'].map((style) => `${style} ${ns.fontWeight} ${ns.fontSize} ${ns.fontFamily}`);
+    const font = `${ns.fontWeight} ${ns.fontSize} ${ns.fontFamily}`;
     const spacing = ns.letterSpacing === 'normal' ? '0px' : ns.letterSpacing;
-    const at = `${fonts[0]}|${spacing}|${width}`;
+    const at = `${font}|${spacing}|${width}`;
     if (at !== lineCountsAt) {
       lineCounts.clear();
       lineCountsAt = at;
     }
     // Two lines where it's wider than the line and can break, else one.
-    const lines = (text: string, unknown: boolean) => {
-      const font = fonts[+unknown];
-      const key = `${+unknown}${text}`;
-      let n = lineCounts.get(key);
+    const lines = (text: string) => {
+      let n = lineCounts.get(text);
       if (n === undefined) {
         ctx.font = font;
         (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = spacing;
-        lineCounts.set(key, (n = canWrap(text) && ctx.measureText(text).width > width ? 2 : 1));
+        lineCounts.set(text, (n = canWrap(text) && ctx.measureText(text).width > width ? 2 : 1));
       }
       return n;
     };
@@ -285,7 +285,7 @@
   const heldHeights = $derived.by(() => {
     const p = pitch;
     if (!p) return null;
-    return sections.map(({ items }) => gridHeight(items.map((it) => (codex.items[it.id] ? p.lines(it.name, false) : p.lines('Undiscovered', true))), p).toFixed(2));
+    return sections.map(({ items }) => gridHeight(items.map((it) => p.lines(codex.items[it.id] ? it.name : 'Undiscovered')), p).toFixed(2));
   });
 
   /** Each category's items, by group then name. While searching, only discovered matches. */
@@ -347,12 +347,32 @@
     });
   });
   function sortBy(key: SortKey) {
+    resort();
     if (sortKey === key) sortDown = !sortDown;
     else {
       sortKey = key;
       // Names read A to Z; numbers start with the most.
       sortDown = key !== 'name' && key !== 'type';
     }
+  }
+
+  /**
+   * Sorted afresh, the rows fade in in their new order, in place: hundreds
+   * of them reordered take a long frame or two, which ate most of a slide.
+   * So the body is held clear as they're reordered, and fades in from the
+   * first frame after (a frame of their own).
+   */
+  let ledgerBody = $state<HTMLElement>();
+  function resort() {
+    const body = ledgerBody;
+    if (!body || motion.still) return;
+    body.style.opacity = '0';
+    void tick().then(() =>
+      requestAnimationFrame(() => {
+        body.style.opacity = '';
+        body.animate({ opacity: [0, 1] }, { duration: 180, easing: 'ease-out' });
+      }),
+    );
   }
 
   let collection = $state<HTMLElement>();
@@ -373,7 +393,10 @@
   // (lib/backGuard.ts PageLayers); one step however many items are opened from it in turn.
   const itemOpen = $derived(!!open);
   $effect(() => {
-    if (itemOpen) return pageLayers.layer(() => (open = null));
+    if (itemOpen) return pageLayers.layer(() => {
+      sfx(backSound(), { from: { from: document.querySelector('[aria-labelledby="codex-item-name"] .close') } });
+      open = null;
+    });
   });
   let confirmReset = $state(false);
   function reset() {
@@ -391,6 +414,12 @@
     achievements = loadAchievements();
     wins = loadWins();
     confirmReset = false;
+  }
+  /** The tabs going as it's erased: they close their room as they fade, the column's gap after them with it, so the page glides up. */
+  function closeTabs(node: HTMLElement) {
+    const gap = parseFloat(getComputedStyle(node.parentElement!).rowGap) || 0;
+    const s = slide(node, calm({ duration: 250 }));
+    return { ...s, css: (t: number, u: number) => `${s.css?.(t, u) ?? ''};opacity: ${t};margin-bottom: ${-u * gap}px` };
   }
   /**
    * The sections near the screen as the last dialog opened, and those that
@@ -429,8 +458,8 @@
    */
   let rising = $state(true);
   let codexEl = $state<HTMLElement>();
-  /** The motions that are the page coming in (the styles here, and app.css's filigree). */
-  const RISING = /codex-rise$|^filigree-in$/;
+  /** The motions that are the page coming in (the styles here and in its pages, and app.css's filigree). */
+  const RISING = /codex-(rise|fill|ring)$|^filigree-in$/;
   $effect(() => {
     if (!rising || !codexEl) return;
     const el = codexEl;
@@ -456,6 +485,44 @@
       live = false;
     };
   });
+  /**
+   * The panels' bars and the seals' rings fill from empty as each first
+   * comes into view, as the medallion's arc fills: on screen as the page
+   * comes in, they wait for their panel to rise (--rise-delay); below it,
+   * till they're scrolled to (opened on a laptop, most of them are). Held
+   * empty from the first frame (data-fill, set before it's painted), let go
+   * as the observer sees them. Only the panels' bars, never the tiles'.
+   */
+  const filled = new WeakSet<Element>();
+  let fillSeen: IntersectionObserver | undefined;
+  $effect(() => {
+    void tab;
+    void kept;
+    void stats;
+    if (!codexEl) return;
+    // Held still (or made so meanwhile), they stand full.
+    if (motion.still) {
+      for (const el of codexEl.querySelectorAll<HTMLElement | SVGElement>('[data-fill]')) delete el.dataset.fill;
+      return;
+    }
+    fillSeen ??= new IntersectionObserver(
+      (seen) => {
+        for (const e of seen) {
+          if (!e.isIntersecting) continue;
+          (e.target as HTMLElement).dataset.fill = 'go';
+          fillSeen?.unobserve(e.target);
+        }
+      },
+      { threshold: 0.5 },
+    );
+    for (const el of codexEl.querySelectorAll<HTMLElement | SVGElement>('.panel .fill, .seal .done')) {
+      if (filled.has(el)) continue;
+      filled.add(el);
+      el.dataset.fill = 'held';
+      fillSeen.observe(el);
+    }
+  });
+  $effect(() => () => fillSeen?.disconnect());
   const within = (el: Element, a: Animation) => {
     const target = (a.effect as KeyframeEffect | null)?.target;
     return !!target && el.contains(target);
@@ -510,6 +577,7 @@
     e.preventDefault();
     const i = TABS.findIndex((t) => t.key === tab);
     turn(TABS[(i + step + TABS.length) % TABS.length].key);
+    sfx('key', { from: { from: tabs.get(tab) } });
     tabs.get(tab)?.focus();
   }
 </script>
@@ -544,17 +612,22 @@
   <header class="hero">
     <p class="kicker">Your collection</p>
     <h1>Codex</h1>
+    <!-- A tab turned, the line cross-fades in place: it stands between the title and the tabs, which stay put. -->
     <p class="tagline">
-      {tab === 'delve'
-        ? 'Every run you have made, and what it cost you.'
-        : tab === 'feats'
-          ? 'What you have earned, and how close you are to the rest.'
-          : 'Every unique and lineage gem you have seen in a game, and how well you know it.'}
+      {#key tab}
+        <span in:fade={calm({ duration: 200 })} out:fade={calm({ duration: 200 })}>
+          {tab === 'delve'
+            ? 'Every run you have made, and what it cost you.'
+            : tab === 'feats'
+              ? 'What you have earned, and how close you are to the rest.'
+              : 'Every unique and lineage gem you have seen in a game, and how well you know it.'}
+        </span>
+      {/key}
     </p>
   </header>
 
   {#if kept}
-    <div class="tabs" role="tablist" aria-label="Codex pages">
+    <div class="tabs" role="tablist" aria-label="Codex pages" out:closeTabs>
       {#each TABS as t (t.key)}
         <button
           {@attach tabRef(t.key)}
@@ -831,7 +904,7 @@
                 {/each}
               </tr>
             </thead>
-            <tbody>
+            <tbody bind:this={ledgerBody}>
               {#each rows as r (r.item.id)}
                 <tr>
                   <td>
@@ -880,15 +953,15 @@
 {/if}
 
 {#if confirmReset}
-  <div class="backdrop" use:dialogBackdrop transition:fade={{ duration: 150 }} onclick={() => (confirmReset = false)}
-    onkeydown={(e) => e.key === 'Escape' && (confirmReset = false)}
+  <!-- A press beside it or Escape keeps the codex, as Keep it does. -->
+  <div class="backdrop" use:dialogBackdrop={{ close: () => (confirmReset = false), closer: '.btn.ghost' }} transition:fade={{ duration: 150 }}
     role="presentation"
   >
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="confirm panel" in:dialogIn out:dialogOut onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <h3>Erase your codex?</h3>
-      <p class="muted">Every item you have seen, every answer, every Delve run and fossil and every achievement recorded in this browser is lost. This can’t be undone.</p>
-      {#if sync.code && sync.met}<p class="muted">This browser stops syncing too; your other devices keep theirs.</p>{/if}
+      <p>Every item you have seen, every answer, every Delve run and fossil and every achievement recorded in this browser is lost. This can’t be undone.</p>
+      {#if sync.code && sync.met}<p>This browser stops syncing too; your other devices keep theirs.</p>{/if}
       <div class="actions">
         <button class="btn ghost" onclick={() => (confirmReset = false)}>Keep it</button>
         <button class="btn danger" onclick={reset}>Erase</button>
@@ -978,6 +1051,35 @@
       translate: 0 14px;
     }
   }
+  /* The panels' bars and the seals' rings fill from empty as each comes
+     into view (fillSeen, data-fill), as the medallion's arc does
+     (CodexMedallion): during the page's rise, once their panel has risen
+     into place; scrolled to later, at once. */
+  .codex :global(.fill[data-fill]) {
+    transform-origin: left;
+  }
+  .codex :global(.fill[data-fill='held']) {
+    scale: 0 1;
+  }
+  .codex :global(.done[data-fill='held']) {
+    stroke-dasharray: 0 100;
+  }
+  .codex :global(.fill[data-fill='go']) {
+    animation: codex-fill 1s var(--ease-out) calc(var(--rise-delay, -0.25s) + 0.25s) backwards;
+  }
+  .codex :global(.done[data-fill='go']) {
+    animation: codex-ring 1s var(--ease-out) calc(var(--rise-delay, -0.25s) + 0.25s) backwards;
+  }
+  @keyframes codex-fill {
+    from {
+      scale: 0 1;
+    }
+  }
+  @keyframes codex-ring {
+    from {
+      stroke-dasharray: 0 100;
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     .hero > *,
     .tabs,
@@ -1018,7 +1120,12 @@
   .tagline {
     margin: 0.6rem 0 0;
     font-style: italic;
-    color: #b8ab95;
+    color: var(--muted);
+    /* The line going and the one coming over each other as they cross-fade. */
+    display: grid;
+  }
+  .tagline > span {
+    grid-area: 1 / 1;
   }
 
   /* ---- the three pages ---- */
@@ -1062,7 +1169,7 @@
   .tab-note {
     font-family: var(--font-cinzel);
     font-size: 0.78rem;
-    color: var(--gold-lo);
+    color: var(--muted);
     transition: color 0.25s;
   }
   .tab-in::after {
@@ -1151,7 +1258,7 @@
     font-size: 1.1rem;
   }
   .stat-note {
-    font-size: 0.92rem;
+    font-size: 1rem;
     line-height: 1.3;
     font-style: italic;
     color: var(--muted);
@@ -1179,6 +1286,9 @@
   }
   .empty p {
     margin: 0 0 1.4rem;
+  }
+  .empty .muted {
+    font-style: italic;
   }
 
   /* ---- panels, as the lobby's ---- */
@@ -1214,7 +1324,7 @@
   }
   .hint {
     margin: 0;
-    font-size: 0.95rem;
+    font-size: 1rem;
     font-style: italic;
     color: var(--muted);
   }
@@ -1229,7 +1339,7 @@
   }
   .bars li {
     display: grid;
-    grid-template-columns: minmax(0, 7rem) minmax(40px, 1fr) 5.2rem;
+    grid-template-columns: minmax(0, 7rem) minmax(40px, 1fr) 5.6rem;
     align-items: center;
     gap: 0.7rem;
   }
@@ -1286,7 +1396,7 @@
   .bar-value small {
     color: var(--muted);
     font-family: var(--font-body);
-    font-size: 0.85rem;
+    font-size: 0.9375rem;
   }
   .found {
     flex: none;
@@ -1418,7 +1528,7 @@
     white-space: nowrap;
   }
   .row-name small {
-    font-size: 0.85rem;
+    font-size: 0.9375rem;
     font-style: italic;
     color: var(--muted);
   }
@@ -1635,7 +1745,7 @@
   }
   /* The accuracy bar, or "seen" without answers, on the same line. */
   .status {
-    height: 0.8rem;
+    height: 0.95rem;
     display: grid;
     align-items: center;
   }
@@ -1643,7 +1753,7 @@
     height: 4px;
   }
   .seen-only {
-    font-size: 0.75rem;
+    font-size: 0.9375rem;
     font-style: italic;
     color: var(--muted);
     line-height: 1;
@@ -1660,8 +1770,7 @@
   }
   .unknown .name {
     font-style: italic;
-    color: var(--muted);
-    opacity: 0.6;
+    color: var(--faint);
   }
   .none {
     text-align: center;
@@ -1785,9 +1894,8 @@
     white-space: nowrap;
   }
   .item-name small {
-    font-size: 0.82rem;
+    font-size: 0.9375rem;
     color: #d8a26a;
-    opacity: 0.75;
   }
   tbody tr:hover .item-name {
     color: var(--gold-hi);
@@ -1817,7 +1925,7 @@
     gap: 0.8rem;
     margin-top: 1rem;
     text-align: center;
-    font-size: 0.9rem;
+    font-size: 1rem;
     color: var(--muted);
   }
   .end p {
@@ -1842,6 +1950,10 @@
   .confirm h3 {
     color: var(--gold-hi);
     font-size: 1.2rem;
+  }
+  /* (What's lost is read before the choice, so in the text's own colour, not greyed as an aside.) */
+  .confirm p {
+    color: var(--text);
   }
   .actions {
     display: flex;
@@ -1895,7 +2007,7 @@
       font-size: 1.9rem;
     }
     .bars li {
-      grid-template-columns: minmax(0, 6.5rem) minmax(30px, 1fr) 4.8rem;
+      grid-template-columns: minmax(0, 6.5rem) minmax(30px, 1fr) 5.2rem;
       gap: 0.5rem;
     }
     .by-cat {

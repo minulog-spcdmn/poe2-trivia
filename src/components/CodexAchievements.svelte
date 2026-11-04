@@ -169,7 +169,7 @@
     font-size: 1.1rem;
   }
   .stat-note {
-    font-size: 0.92rem;
+    font-size: 1rem;
     line-height: 1.3;
     font-style: italic;
     color: var(--muted);
@@ -216,7 +216,7 @@
   }
   .hint {
     margin: 0 0 0.9rem;
-    font-size: 0.95rem;
+    font-size: 1rem;
     font-style: italic;
     color: var(--muted);
   }
@@ -254,30 +254,35 @@
     font-family: var(--font-display);
     font-size: 0.95rem;
     letter-spacing: 0.04em;
-    color: #b9ab94;
+    color: var(--muted);
   }
   .won .title {
     color: var(--gold-hi);
   }
   .hidden .title {
-    color: var(--muted);
+    color: var(--faint);
+    font-style: italic;
+  }
+  /* (Its note, "Hidden until you earn it.", stands in for a description: an aside, as its title.) */
+  .hidden .text {
     font-style: italic;
   }
   .text {
     font-size: 0.95rem;
     line-height: 1.3;
-    color: #a89c87;
+    color: var(--muted);
   }
+  /* (Earned, a step brighter than one still to earn, as its title steps up to gold.) */
   .won .text {
-    color: #cbbfa8;
+    color: var(--text);
   }
   .when {
-    font-size: 0.82rem;
+    font-size: 0.9375rem;
     font-style: italic;
-    color: var(--gold-lo);
+    color: var(--muted);
   }
   .won .when {
-    color: #b59a63;
+    color: var(--gold);
   }
   .advance {
     display: flex;
@@ -313,7 +318,7 @@
   }
   /* Where the progress stands (the category nearest, the run now), on a line of its own so it can wrap. */
   .note {
-    font-size: 0.82rem;
+    font-size: 0.9375rem;
     font-style: italic;
     color: var(--muted);
     overflow-wrap: anywhere;

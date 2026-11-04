@@ -11,7 +11,7 @@
 
 import { archetypeAt } from './backdrops.ts';
 import { descent, hallTurn, STRATA, strataAt } from './descent.ts';
-import { AMBIENCE, ARCHETYPE_AMBIENCE, CAVE_IN, DEPTH, FIRE, MIX, MOMENTS, RUMBLE, VEIN_AMBIENCE, VEIN_DUCK, ZONE_AMBIENCE, type Bed, type BedLayer, type Layer } from './soundDesign.ts';
+import { AMBIENCE, ARCHETYPE_AMBIENCE, CAVE_IN, DEPTH, FIRE, MIX, MOMENTS, RUMBLE, VEIN_AMBIENCE, VEIN_DUCK, ZONE_AMBIENCE, layerFiles, type Bed, type BedLayer, type Layer } from './soundDesign.ts';
 import { whenIdle } from './idle.ts';
 import { fillRumble, rumbleLength } from './rumbleNoise.ts';
 import type { RumbleJob } from './rumbleWorker.ts';
@@ -24,6 +24,8 @@ import { readStored, writeStored } from './storage.ts';
 export type Sfx =
   | 'hover'
   | 'click'
+  /** A key doing what a control's click would (Enter or Space on it, Escape for its ✕): its own press, not the mouse's click. */
+  | 'key'
   | 'yourTurn'
   | 'turn'
   | 'pick'
@@ -96,7 +98,24 @@ export type Sfx =
   /** ...drifting off on the air, */
   | 'zoneDrift'
   /** ...or pulled into the void. */
-  | 'zoneVoid';
+  | 'zoneVoid'
+  /** An achievement earned: its notice comes in with its seal (not while a game's end still rings out), sounding as its metal: lead's a torch catching and dark power surging out of it, */
+  | 'achievementLead'
+  /** ...copper's landing in a deep bloom, silver's with a low hum under it too, a piece more each metal of... */
+  | 'achievementCopper'
+  | 'achievementSilver'
+  /** ...gold's: the torch, then a rune's low hum of power welling up in place of the surge, released in a deep bloom. Each metal a touch louder. */
+  | 'achievementGold'
+  /** A class sigil unlocked for good: it turns from stone to gold. */
+  | 'sigilUnlock'
+  /** Sync: two devices paired, heard on both. */
+  | 'linked'
+  /** A form turned down as it's sent (a room code too short, a name refused): in place of the press's click. */
+  | 'refuse'
+  /** A deal's cards flying in: one smooth swoosh of air for them all, shaped to their slide. */
+  | 'deal'
+  /** ...and each turning face up: a short, full flap of air as it stands on edge, gone before the next one turns. */
+  | 'dealTurn';
 
 let muted = (() => {
   return readStored('muted') === '1';
@@ -217,11 +236,13 @@ let bus: Bus | null = null;
  * (client px), both (half way between them), or a screen edge (-1 the
  * left, 1 the right). With `to` and `seconds` it travels there over that
  * long from its start, as sparks flying to a slot. `far`: a teammate's, not
- * yours. `speed`: how fast (px/s) the pointer came over the control it
- * hovers. Only the placer reads it (setPlacer); without one every sound
- * plays centred.
+ * yours. `way`, travelling between you and a teammate (a life given): 'in'
+ * comes to you, far as it sets out and close as it lands; 'out' goes from
+ * you, close as it sets out and far as it lands. `speed`: how fast (px/s)
+ * the pointer came over the control it hovers. Only the placer reads it
+ * (setPlacer); without one every sound plays centred.
  */
-export type SoundPlace = { from?: Element | null; x?: number; speed?: number; edge?: -1 | 1; to?: Element | null; seconds?: number; far?: boolean };
+export type SoundPlace = { from?: Element | null; x?: number; speed?: number; edge?: -1 | 1; to?: Element | null; seconds?: number; far?: boolean; way?: 'in' | 'out' };
 
 /**
  * Places sounds in space: the game's spatial sound (lib/spatial.svelte.ts),
@@ -260,19 +281,54 @@ const buffers = new Map<string, Promise<AudioBuffer>>();
 /** Decoded and ready to play right now. */
 const ready = new Map<string, AudioBuffer>();
 /** The files the moments play (see sfx). */
-const MOMENT_FILES = new Set(Object.values(MOMENTS).flatMap((m) => m.layers.map((l) => l.file)));
+const MOMENT_FILES = new Set(Object.values(MOMENTS).flatMap((m) => m.layers.flatMap(layerFiles)));
 
 export const db = (d: number) => Math.pow(10, d / 20);
 
+type Activated = Navigator & { userActivation?: { hasBeenActive: boolean } };
+
 /** Browsers refuse audio before the first click or key press; sounds queued until then would all fire at once. */
 function allowed() {
-  const ua = (navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation;
-  return ua ? ua.hasBeenActive : true;
+  const ua = (navigator as Activated).userActivation;
+  return ua ? ua.hasBeenActive || (framed && framerUsed()) : true;
 }
 
+/** Whether this page may sound once the page framing it has been used (see soundWithFramer). */
+let framed = false;
+/** Whether the page this one is framed in, of its own origin, has had a click or key press. */
+function framerUsed() {
+  try {
+    return parent !== window && !!(parent.navigator as Activated).userActivation?.hasBeenActive;
+  } catch {
+    // Another origin's: not ours to ask.
+    return false;
+  }
+}
+
+/**
+ * For a page shown in a frame of another of its own origin (the QA desk's):
+ * it may sound once that page has been used, as the browser lets such a
+ * frame play, not only after a press in this one, which a frame loaded
+ * afresh never has. Its sounds are loaded at once then, and the promise
+ * holds until they are (at most `ms`), so what the page plays as it opens
+ * is heard.
+ */
+export async function soundWithFramer(ms = 2000): Promise<void> {
+  framed = true;
+  if (muted || !audio()) return;
+  const files = [...MOMENT_FILES].filter((f) => !GENERATED[f]);
+  await Promise.race([Promise.allSettled(files.map(load)), new Promise((done) => setTimeout(done, ms))]);
+}
+
+/** Whether making the context was refused (`new AudioContext()` throws where there's no audio device to be had, too many contexts, or audio is switched off for the site): asked once, then the game stays silent rather than throwing at every press. */
+let refused = false;
+/** Whether this browser can play the game's sound: it has Web Audio, and the context wasn't refused when it was made. */
+const canHear = () => typeof AudioContext !== 'undefined' && !refused;
+
 function audio(): Bus | null {
-  if (typeof AudioContext === 'undefined' || !allowed()) return null;
+  if (!canHear() || !allowed()) return null;
   const b = build();
+  if (!b) return null;
   if (!primed) prime(b);
   // iOS also parks the context as 'interrupted' after a call or a trip to the lock screen.
   if (b.ac.state !== 'running') wake(b.ac);
@@ -403,9 +459,15 @@ export function loopHeard(file: string, now = performance.now()): number | null 
  * plays is loaded only once it may play (prime): a touch that only scrolled
  * loads nothing.
  */
-function build(): Bus {
-  if (!bus) {
-    const ac = new AudioContext();
+function build(): Bus | null {
+  if (!bus && !refused) {
+    let ac: AudioContext;
+    try {
+      ac = new AudioContext();
+    } catch {
+      refused = true;
+      return null;
+    }
     const comp = ac.createDynamicsCompressor();
     comp.threshold.value = -18;
     comp.knee.value = 12;
@@ -875,7 +937,7 @@ export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number; from?: So
     // No bus yet, so nothing of it has loaded (load needs the bus) and
     // nothing could play: it's made in a moment (buildSoon), not here, where
     // it would hold up the hover or press that wants it.
-    if (typeof AudioContext === 'undefined' || !allowed()) return undefined;
+    if (!canHear() || !allowed()) return undefined;
     buildSoon(false);
     return void sounded({ name, at: performance.now() + Math.max(0, opts.inMs ?? 0), gainDb: (Math.random() * 2 - 1) * m.varyGain + (trims[name] ?? 0) });
   }
@@ -889,10 +951,12 @@ export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number; from?: So
   sounded({ name, at: heardAt(b.ac, b.ac.currentTime + inS), gainDb });
   // In a vein, its own moments ring in its room (Bus veinWet).
   const wetTo = inTunnel() && VEIN_MOMENTS.has(name) ? b.veinWet : undefined;
-  const into = placer && m.layers.some((l) => ready.has(l.file)) ? placer.place(b.ac, name, b.ac.currentTime + inS, opts.from, wetTo) : null;
-  for (const l of m.layers) {
+  // Each layer's file this time: one of its takes, drawn, if it has them.
+  const files = m.layers.map((l) => (l.takes ? `${l.file}-${1 + Math.floor(Math.random() * l.takes)}` : l.file));
+  const into = placer && files.some((f) => ready.has(f)) ? placer.place(b.ac, name, b.ac.currentTime + inS, opts.from, wetTo) : null;
+  for (const [i, l] of m.layers.entries()) {
     // Only layers that have loaded: a late layer would land out of step.
-    const buf = ready.get(l.file);
+    const buf = ready.get(files[i]);
     if (buf)
       layers.push(
         playLayer(b, buf, l, m.soften, pitch, gainDb, opts.holdMs === undefined ? undefined : Math.max(0, opts.holdMs) / 1000, inS, into ?? (wetTo ? { dry: b.master, wet: wetTo } : null)),
@@ -900,7 +964,7 @@ export function sfx(name: Sfx, opts: { holdMs?: number; inMs?: number; from?: So
   }
   // One that failed to load as sound started (offline for a moment) is tried
   // again for next time, once its wait is over (see load).
-  for (const l of m.layers) if (!ready.has(l.file)) void load(l.file).catch(() => {});
+  for (const f of m.layers.flatMap(layerFiles)) if (!ready.has(f)) void load(f).catch(() => {});
   if (!layers.length) return undefined;
   let stopped = false;
   return () => {
@@ -1348,7 +1412,8 @@ function updateLoop(l: Loop) {
     });
 }
 
-const HOVERABLE = 'button:not(:disabled), a[href], select:not(:disabled), input[type="checkbox"]:not(:disabled)';
+// (A listbox's options too: the site's own dropdowns, CodexFilter.)
+const HOVERABLE = 'button:not(:disabled), a[href], select:not(:disabled), input[type="checkbox"]:not(:disabled), [role="option"]';
 
 /**
  * How fast (px/s) the pointer came to (`x`, `y`) at `t` (ms) over its last
@@ -1364,11 +1429,32 @@ export function pointerSpeed(trail: readonly { x: number; y: number; t: number }
   return Math.hypot(x - from.x, y - from.y) / dt;
 }
 
+/** The control a click on `target` is heard from (installUiSounds), or null where the page's own click plays none. */
+export function clickedControl(target: EventTarget | null): Element | null {
+  const el = (target as Element | null)?.closest?.('button, a[href], [role="option"]') ?? null;
+  return !el || (el as HTMLButtonElement).disabled || el.closest('[data-sfx="none"]') ? null : el;
+}
+
+/** The last click, and whether a pointer made it (not a key). */
+let lastClick = { at: -Infinity, pointer: false };
+/** Whether what's happening now came of a pointer's click (a form sent with its button, not with Enter): the mouse's click, not a key's press. */
+export const pointerClicked = () => lastClick.pointer && performance.now() - lastClick.at < 100;
+
+/** The last press on the page (installUiSounds), and whether a key made it. */
+let lastPress = { at: -Infinity, key: false };
+/**
+ * How the browser's Back is heard, standing in for the ✕ or back button it
+ * closes as: a key's press just after a key (Alt+←, ⌘[), else the mouse's
+ * click (the browser's own button, a mouse's back button, a phone's gesture).
+ */
+export const backSound = (): Sfx => (lastPress.key && performance.now() - lastPress.at < 500 ? 'key' : 'click');
+
 /**
  * UI sounds for every control: a faint brush when the mouse moves onto one,
- * and a click when it's pressed. Controls that play their own sound (or none)
- * opt out of the click with `data-sfx="none"`. Also starts the ambience with
- * the first interaction.
+ * a click when it's pressed with a mouse, a finger or a pen, and a key's own
+ * press (not the mouse's click) when Enter or Space presses it. Controls
+ * that play their own sound (or none) opt out of both with `data-sfx="none"`. Also starts the ambience with the first
+ * interaction.
  */
 export function installUiSounds() {
   let hovered: Element | null = null;
@@ -1400,9 +1486,11 @@ export function installUiSounds() {
     'click',
     (e) => {
       pressedAt = performance.now();
-      const el = (e.target as Element | null)?.closest?.('button, a[href]');
-      if (!el || (el as HTMLButtonElement).disabled || el.closest('[data-sfx="none"]')) return;
-      sfx('click', { from: { from: el } });
+      // A key's click (Enter or Space on a control, Enter sending a form) carries no
+      // count of presses: heard as a key's press, the mouse's click kept for a mouse, a finger or a pen.
+      lastClick = { at: pressedAt, pointer: e.detail > 0 };
+      const el = clickedControl(e.target);
+      if (el) sfx(lastClick.pointer ? 'click' : 'key', { from: { from: el } });
     },
     { capture: true },
   );
@@ -1423,9 +1511,10 @@ export function installUiSounds() {
   // Chrome warns of, and may let run from then on, playing nothing.)
   const warm = (e: Event) => {
     pressedAt = performance.now();
+    lastPress = { at: pressedAt, key: e.type === 'keydown' };
     if (muted) return;
     if (!bus && e.type === 'pointerdown') {
-      if (typeof AudioContext !== 'undefined') buildSoon(true);
+      if (canHear()) buildSoon(true);
       return;
     }
     audio();

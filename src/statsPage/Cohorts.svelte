@@ -7,7 +7,9 @@
   // count of those new then, so its visits alone, set in grey and unlit
   // so they never read as one of the rest; a week the period holds none of
   // says "–". Shaded by the figure, so the fall from week to week shows at a
-  // glance.
+  // glance. The week still going (each row's last, and the newcomers of one
+  // begun in it) is only so far: in grey italics and unlit too, or a Tuesday
+  // would read as everyone leaving.
   import { fmt, shortDay } from './chart';
   import type { Cohort } from './model';
 
@@ -29,18 +31,22 @@
     </thead>
     <tbody>
       {#each cohorts as c (c.week)}
+        {@const running = c.weeks.length - 1}
         <tr>
           <th scope="row">Week of {shortDay(c.monday)}</th>
-          <td class="n soft">{c.started === null ? '–' : fmt(c.started)}</td>
+          <td class="n soft" class:so-far={c.started !== null && running === 0} title={c.started !== null && running === 0 ? `So far: ${c.soFar} ${c.soFar === 1 ? 'day' : 'days'} of the week` : undefined}>{c.started === null ? '–' : fmt(c.started)}</td>
           {#each Array.from({ length: span }, (_, k) => k) as k (k)}
             {@const n = c.weeks[k]}
             {@const s = n == null ? null : share(c, n)}
+            {@const soFar = n != null && k === running}
             <td
               class="n cell"
               class:empty={n == null}
-              class:raw={n != null && s === null}
-              title={n == null ? undefined : s === null ? `${fmt(n)} visits; how many first played that week isn't known` : `${fmt(n)} visits, ${Math.round(s)} for each 100 who first played that week`}
-              style:--lit={s === null ? 0 : Math.min(1, s / 100)}
+              class:raw={n != null && (s === null || soFar)}
+              title={n == null
+                ? undefined
+                : `${s === null ? `${fmt(n)} visits; how many first played that week isn't known` : `${fmt(n)} visits, ${Math.round(s)} for each 100 who first played that week`}${soFar ? `; so far, ${c.soFar} ${c.soFar === 1 ? 'day' : 'days'} of this week` : ''}`}
+              style:--lit={s === null || soFar ? 0 : Math.min(1, s / 100)}
             >
               {n === undefined ? '' : n === null ? '–' : fmt(Math.round(s ?? n))}
             </td>
@@ -63,8 +69,9 @@
     background: rgba(217, 176, 98, calc(0.06 + 0.34 * var(--lit, 0)));
     border-left: 2px solid var(--a-surface);
   }
-  /* Visits alone, of a week whose starters aren't known: not a figure for each 100 like the rest. */
-  .cell.raw {
+  /* Visits alone, of a week whose starters aren't known: not a figure for each 100 like the rest. Or the week still going: not a whole one. */
+  .cell.raw,
+  .so-far {
     color: var(--a-muted);
     font-style: italic;
   }

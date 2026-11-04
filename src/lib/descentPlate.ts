@@ -526,8 +526,8 @@ const ROOM_STACKED = 34;
 /** The last seal's radius (the ouroboros' body's outer edge): it must read at a glance and hold a star and its depths; set by the plate's width alone. */
 const END_R = 38;
 const END_R_MIN = 32;
-/** "uncharted" as set (EB Garamond italic, 12.5 px), with its brace (the brace's curl, its gap from the wall). */
-const UNCH_WORD = 50;
+/** "uncharted" as set (the body font's italic, Andada Pro's at 89%, 12.5 px, DelveLadder's .word): 49.1 px measured in the browser, ink and all. Then its brace (the brace's curl, its gap from the wall). */
+const UNCH_WORD = 49;
 const BRACE = 3;
 const BRACE_GAP = 3.2;
 const UNCH_W = UNCH_WORD + 3 + 2 * BRACE + BRACE_GAP;

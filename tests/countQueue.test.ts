@@ -50,3 +50,12 @@ test('a newcomer who taps New game and leaves within a second is still counted a
   assert.deepEqual(paths().slice(0, 4), ['/', 'new/acted', 'new/create', 'new/host']);
   assert.ok(paths().includes('reach/page') && paths().includes('reach/host'), 'the rest still go, after');
 });
+
+test("a newcomer's second and fifth game are counted apart, once each", () => {
+  const before = paths().length;
+  countStep('reach/games-2');
+  countStep('reach/games-5');
+  countStep('reach/games-2');
+  fire('pagehide');
+  assert.deepEqual(paths().slice(before).sort(), ['new/games-2', 'new/games-5', 'reach/games-2', 'reach/games-5']);
+});

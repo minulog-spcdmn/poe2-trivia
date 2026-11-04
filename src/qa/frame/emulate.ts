@@ -63,6 +63,8 @@ function rewrite(rules: CSSRuleList, size: Size) {
 
 /** From now on, this frame answers as `size`'s device. */
 export function emulate(size: Size) {
+  // (The cards' plates are printed into pixels the browser counts at the screen's own ratio, not this one: where
+  // the two disagree, lib/printPlacing draws a print at the larger and scales it to its pixels.)
   Object.defineProperty(window, 'devicePixelRatio', { get: () => size.dpr, configurable: true });
   Object.defineProperty(navigator, 'maxTouchPoints', { get: () => (size.touch ? 5 : 0), configurable: true });
   // A phone's scrollbar shows over the page only while it scrolls, and takes no room.

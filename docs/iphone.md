@@ -381,10 +381,11 @@ with its numbers in the comments.
   repainted every card: 3.4 ms of styles a write, 1,223 paints (48 Mpx) in
   2.5 s, 47.9 fps. That was the QA desk's `size=desktop`, which plays a
   fine pointer and so draws the cursors; a phone draws none, but Safari on a
-  Mac with a mouse does. In WebKit every element inherits the cursor now
-  (`data-cursor-inherited`, `src/lib/ownCursor.ts` and `app.css`), an
-  inherited one being the parent's own, unchanged: 0.2 ms, 32 paints
-  (1.2 Mpx), 60.1 fps, as at `size=fit` with no cursors at all. A scene
+  Mac with a mouse does. Every element inherits the cursor now (`app.css`;
+  in Chrome too, where a picture named on every element was a third of a
+  question's style), an inherited one being the parent's own,
+  unchanged: 0.2 ms, 32 paints (1.2 Mpx), 60.1 fps, as at `size=fit` with
+  no cursors at all. A scene
   measured on the phone at `size=desktop` has the cursors; `size=fit` has
   none.
 - **Every compositing layer is put on screen as it mounts, empty or not.**
@@ -403,6 +404,20 @@ with its numbers in the comments.
   hand of cards gained the same way: each side's engraving drawn in a frame of
   its own while its card lies unseen (`CardEngraving.svelte`) took
   Begin's worst frame from 116 to 85 ms (6 and 5 runs, #331).
+- **A new screen's style is worked out by whatever reads it first.** At
+  Begin the game screen's flush (22 to 35 ms, 131 nodes) held a style pass
+  of the whole new screen, forced by its first read: `fitPlate`'s
+  `document.fonts.status`, which on WebKit works out every style left to
+  do (`document.fonts` itself is free), or else `lib/transitions`'
+  `getComputedStyle`. Faking the status only moved the pass to the next
+  read; what it costs goes with how much is new in that frame. The cards'
+  sides made a frame after the cards, which lie unseen until they fade in
+  from 150 ms (`filled` in `ChooseCategory.svelte`), took Begin's worst
+  frame from 80 to 73 ms (median of 5 runs each, alternated). The rest of
+  that frame is the backdrop's `getBoundingClientRect` laying the screen
+  out (10 to 14 ms) and about 35 ms outside script. A pick's question was
+  left whole: without its rune circle at all (`?off=circle`) its worst
+  frame went only from 35 to 31 ms.
 - **A tab's process keeps pages it has left.** WebKit keeps a page left for
   another address in the tab's page process (its back-forward cache: three
   pages here), and every port on the PC is one site to it, so runs going

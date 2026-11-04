@@ -11,7 +11,7 @@ import type { DelveRun } from '../../lib/delveRecord.ts';
 import { id, pid, player, spectator } from '../build/people.ts';
 import { sceneEngine } from '../build/engine.ts';
 import { valuesOf, type Control, type State, type Values } from '../bench.ts';
-import type { Scene, Seat } from '../scene.ts';
+import type { Scene, Seat, Step } from '../scene.ts';
 import type { PlateName } from '../../lib/plates/index.ts';
 import type { SizeKey } from '../sizes.ts';
 import type { Standing } from '../../lib/presence.ts';
@@ -47,6 +47,8 @@ export interface EndScene {
   standing?: Record<string, Standing>;
   /** Other things this device keeps, by their storage names (../scene.ts' stored): its fossils. */
   stored?: Record<string, string>;
+  /** What comes in once the screen is up (../scene.ts' steps): an achievement judged late, the codex read again. */
+  steps?: Step[];
   /** What can be set in it (../bench.ts' Control), its named states, and the game as they set it. */
   controls?: Control[];
   states?: State[];
@@ -110,6 +112,18 @@ const deathmatch = () =>
     recap: turnsRecap('Doryani', "Atziri's Disdain", { answers: { [pid('Doryani')]: { n: 10, ok: 10, ms: 1800, dn: 3, dok: 2 }, [K]: { n: 10, ok: 10, ms: 2000, dn: 3, dok: 3 } }, misses: misses('Doryani', ['Death Rush'], true) }),
     extra: { deathmatch: { alive: [K], entrants: [K, pid('Doryani')], round: 3, results: {}, eliminated: [pid('Doryani')], out: { [pid('Doryani')]: 3 }, startedAt: 0 } },
   });
+/**
+ * The room after the game, as it changes under the host: Alva goes (her row dims, "All 5" gives way to "4 of 5"),
+ * comes back, and Finn comes to watch and play the next game ("Finn joins next" opens out).
+ */
+function comingAndGoing(): { state: GameState; steps: Step[] } {
+  const s = game(FIVE, { recap: turnsRecap('Doryani', "Atziri's Disdain", { answers: { [K]: { n: 10, ok: 10, ms: 2400 } } }) });
+  const alva = (connected: boolean): GameState => ({ ...s, players: s.players.map((p) => (p.name === 'Alva' ? { ...p, connected } : p)) });
+  return {
+    state: s,
+    steps: [{ wait: 1200 }, { then: alva(false) }, { wait: 2000 }, { then: alva(true) }, { wait: 2000 }, { then: { ...s, spectators: [spectator('Finn')] } }],
+  };
+}
 function left() {
   const s = game(FIVE, {
     recap: turnsRecap('Doryani', "Atziri's Disdain", { answers: { [K]: { n: 10, ok: 10, ms: 2400 } } }),
@@ -238,8 +252,23 @@ const range = (key: string, label: string, min: number, max: number, dflt: numbe
 const choice = (key: string, label: string, options: [string, string][]): Control => ({ kind: 'choice', key, label, default: options[0][0], options: options.map(([value, label]) => ({ value, label })) });
 
 /** What a game as set builds: its state, who this device is, and what it keeps. */
-type AsSet = Pick<EndScene, 'state' | 'delveResult' | 'earned' | 'log' | 'runs' | 'met'> & { seat: Seat };
+type AsSet = Pick<EndScene, 'state' | 'delveResult' | 'earned' | 'log' | 'runs' | 'met' | 'steps'> & { seat: Seat };
 
+/** What the screen takes in a moment after it's up (the codex's uniques only alone in Delve): the refit after it glides. */
+const LATE_FEAT: [string, string] = ['feat', 'Its last achievement, a moment after'];
+/** When it comes (ms after the screen): the codex's within the screen's second reading of it (GameOver, 1.5 s). */
+const LATE_MS = 1000;
+const CODEX_LATE_MS = 900;
+/** `earned` as the screen gets them: the last one late, if so set. */
+function judged(earned: string[], late: unknown): { earned: string[]; steps?: Step[] } {
+  if (late !== 'feat' || !earned.length) return { earned };
+  return { earned: earned.slice(0, -1), steps: [{ wait: LATE_MS }, { earn: earned.slice(-1) }] };
+}
+
+/** A list's "+N" (the missed items') pressed a moment after the screen is up, if it folded. */
+const PRESSED: Control = choice('pressed', 'Pressed', [['', 'Nothing'], ['missed', 'The missed list’s +N']]);
+/** Share run pressed (Delve alone). */
+const SHARED: Control = { kind: 'toggle', key: 'shared', label: 'Share run pressed', default: false };
 const GAME_CONTROLS: Control[] = [
   choice('kind', 'Game', [['turns', 'Take turns'], ['race', 'Race'], ['dm', 'Deathmatch'], ['hot', 'Hot-seat']]),
   range('players', 'Players', 1, 12, 5),
@@ -247,6 +276,8 @@ const GAME_CONTROLS: Control[] = [
   { kind: 'toggle', key: 'guest', label: "In someone else's room", default: false },
   range('missed', 'Missed', 0, 30, 0),
   range('earned', 'Achievements earned', 0, 8, 0),
+  choice('late', 'Read in late', [['', 'Nothing'], LATE_FEAT]),
+  PRESSED,
   choice('twist', 'Besides', [['', 'Nothing'], ['one-point', 'A game to 1 point'], ['negative', 'Scores below nothing'], ['idle', 'You never answered'], ['gems', 'Gems and many-pictured items'], ['default', 'A deathmatch won by default'], ['no-recap', 'No highlights (an older host)']]),
 ];
 const GAME_EARNED = ['first-victory', 'tide-turner', 'great-work', 'sweet-revenge', 'fooled-twice', 'prima-materia', 'mercurial', 'twofold'];
@@ -304,10 +335,13 @@ function anyGame(v: Values): AsSet {
     s.winners = [a];
   }
   if (watching) s.spectators = [spectator('Kalguur', v.place === 'watches')];
+  const told = judged(watching ? [] : GAME_EARNED.slice(0, Number(v.earned)), v.late);
+  const pressed: Step[] = v.pressed === 'missed' ? [{ wait: 1000 }, { click: `[data-more="${hot ? 'hot' : 'missed'}"]`, ifThere: true }] : [];
   return {
     state: s,
     seat: hot ? { mode: 'local', me: null } : { mode: guest ? 'client' : 'host', me: K },
-    earned: watching ? [] : GAME_EARNED.slice(0, Number(v.earned)),
+    ...told,
+    ...(pressed.length ? { steps: [...pressed, ...(told.steps ?? [])] } : {}),
   };
 }
 
@@ -319,6 +353,7 @@ const ALONE_CONTROLS: Control[] = [
   range('finds', 'Finds', 0, 6, 1),
   range('fresh', 'Uniques new to the codex', 0, 40, 0),
   range('earned', 'Achievements earned', 0, 5, 0),
+  choice('late', 'Read in late', [['', 'Nothing'], LATE_FEAT, ['codex', 'The new uniques, the codex read again']]),
   choice('twist', 'Besides', [['', 'Nothing'], ['cave', 'A cave-in took two lives'], ['wards', 'Wards took a cave-in and a life'], ['tall', 'Lives lost on tall art'], ['flat', 'Every run as deep'], ['no-codex', "Its lives in another tab's codex"], ['mixed', 'Finished under newer rules'], ['quiet', 'No highlights']]),
 ];
 /** The depths earlier runs ended at, the deepest first scaled to it. */
@@ -354,13 +389,17 @@ function anyAlone(v: Values): AsSet {
   const before = Number(v.before);
   const best = twist === 'flat' ? d : v.best === 'short' ? d + 4 : v.best === 'level' ? d : Math.max(1, d - 6);
   const earlier = twist === 'flat' ? Array(before).fill(d) : EARLIER.slice(0, before).map((x) => Math.max(1, Math.round((x * best) / 27)));
+  const fresh = uniques(Number(v.fresh), lost).map((name, i) => hit(1 + i, name, Math.min(d, 1 + i)));
+  // (Read in late: the run's last answers still on their way as the screen came up, in the codex by its second reading.)
+  const lateCodex = v.late === 'codex' && fresh.length > 0 && twist !== 'no-codex';
   const log = [
-    ...uniques(Number(v.fresh), lost).map((name, i) => hit(1 + i, name, Math.min(d, 1 + i))),
+    ...(lateCodex ? [] : fresh),
     ...(twist === 'wards' ? [miss(999, 'Mageblood', deep(33), { find: 'azurite', lives: 0, wards: 2 })] : []),
     // (The cave-in's two lives one wrong answer: its find took the second.)
     ...losses.slice(0, twist === 'cave' ? 2 : 3).map((at, i) => miss(1000 + i, lost[i], at, twist === 'cave' && i === 1 ? { find: 'azurite', lives: 2, wards: 0 } : {})),
     ...(twist === 'wards' ? [miss(1005, 'Chainsting', Math.max(1, d - 3), { warded: true })] : []),
   ];
+  const feats = [d > 50 ? 'depth-50' : 'depth-10', 'saving-grace', 'chain-reaction', 'fully-laden', 'streak-25'].slice(0, Number(v.earned));
   return {
     state: s,
     seat: v.you === 'host' ? { mode: 'host', me: K } : { mode: 'local', me: null },
@@ -368,7 +407,7 @@ function anyAlone(v: Values): AsSet {
     log: twist === 'no-codex' ? [] : log,
     runs: runs(earlier, d, false),
     ...(before ? {} : { met: [] }),
-    earned: [d > 50 ? 'depth-50' : 'depth-10', 'saving-grace', 'chain-reaction', 'fully-laden', 'streak-25'].slice(0, Number(v.earned)),
+    ...(lateCodex ? { earned: feats, steps: [{ wait: CODEX_LATE_MS }, { logged: fresh }] } : judged(feats, v.late)),
   };
 }
 
@@ -485,6 +524,7 @@ export function endScenes(): EndScene[] {
     },
     { key: 'n-dm', group: 'Normal games', label: 'Lost a deathmatch', boards: { desktop: 'n-dm' }, view: D, mode: 'client', me: doryani, state: deathmatch() },
     { key: 'n-left', group: 'Normal games', label: 'Alva went offline; two join next', boards: { desktop: 'n-left' }, view: D, mode: 'host', me: K, state: left(), earned: ['first-victory', 'untarnished'] },
+    { key: 'n-coming-going', group: 'Normal games', label: 'Alva goes and comes back, then Finn joins next (host)', view: D, mode: 'host', me: K, ...comingAndGoing() },
     { key: 'n-twelve', group: 'Normal games', label: '12 players (you are Dannig)', boards: { desktop: 'n-twelve', air13: 'n-air13-twelve' }, view: D, mode: 'client', me: dannig, state: twelve() },
     { key: 'n-phone-twelve', group: 'Normal games', label: '12 on a phone: your row on the dock', boards: { phone: 'n-phone-twelve' }, view: P, mode: 'client', me: pid('Oswin'), state: twelve() },
     { key: 'n-hot', group: 'Normal games', label: 'Hot-seat', boards: { desktop: 'n-hot' }, view: D, mode: 'local', me: null, state: hotSeat() },
@@ -492,7 +532,24 @@ export function endScenes(): EndScene[] {
     // The host gone from the screen (the room is off the list meanwhile): the line under the game says so, their row has the lobby's mark.
     { key: 'n-host-away', group: 'Normal games', label: 'Host away: a spectator who plays next', view: D, mode: 'client', me: pid('Watcher'), state: watched(won()), standing: { [K]: 'away', [pid('Rog')]: 'idle' } },
     { key: 'n-host-idle', group: 'Normal games', label: 'Host idle: a guest waits (phone)', view: P, mode: 'client', me: una(), state: lost(), standing: { [K]: 'idle' } },
-    { key: 'd-solo', group: 'Delve', label: 'Alone: four short of the best', boards: { desktop: 'd-solo', air13: 'd-air13', phone: 'd-phone-full' }, view: D, mode: 'local', me: null, state: solo(), ...solo23() },
+    {
+      key: 'd-solo',
+      group: 'Delve',
+      label: 'Alone: four short of the best',
+      boards: { desktop: 'd-solo', air13: 'd-air13', phone: 'd-phone-full' },
+      view: D,
+      mode: 'local',
+      me: null,
+      state: solo(),
+      ...solo23(),
+      controls: [SHARED],
+      states: [
+        { label: 'Alone: four short of the best', values: {} },
+        { label: 'Share run pressed: Copied fades in in its place, and back', values: { shared: true } },
+      ],
+      // (Copied whether or not the frame may write to the clipboard.)
+      vary: (v) => ({ seat: { mode: 'local', me: null }, state: solo(), ...solo23(), ...(v.shared ? { steps: [{ clipboard: true }, { wait: 1000 }, { click: '.share' }] } : {}) }),
+    },
     {
       key: 'd-first',
       group: 'Delve',
@@ -607,12 +664,16 @@ export function endScenes(): EndScene[] {
     asSet('game', 'Normal games', 'Any game, as set', GAME_CONTROLS, [
       { label: 'Any game, as set', values: {} },
       { label: 'The fullest game: twelve players, 24 missed, eight earned', values: { players: 12, place: 'second', missed: 24, earned: 8, joining: 3 } },
+      { label: 'An achievement judged a moment late: the column steps tighter, the circle and all glide there', values: { players: 3, place: 'second', missed: 6, earned: 1, late: 'feat' } },
+      { label: 'The fullest game, the missed list’s +N pressed: it opens, what’s below glides down', values: { players: 12, place: 'second', missed: 24, earned: 8, joining: 3, pressed: 'missed' } },
       { label: 'The fullest hot-seat: six players, 30 missed', values: { kind: 'hot', players: 6, missed: 30 } },
     ], anyGame),
     asSet('alone', 'Delve', 'Any run alone, as set', ALONE_CONTROLS, [
       { label: 'Any run alone, as set', values: {} },
       { label: 'The fullest run alone: a new best, four finds, 20 new uniques, five earned', values: { depth: 51, before: 14, best: 'best', finds: 4, fresh: 20, earned: 5 } },
       { label: 'A first run to depth 40, every unique new', values: { depth: 40, before: 0, fresh: 40, earned: 3 } },
+      { label: 'New in your codex, read in late', values: { fresh: 6, late: 'codex' } },
+      { label: 'The fullest run alone, its last achievement judged a moment late', values: { depth: 51, before: 14, best: 'best', finds: 4, fresh: 20, earned: 5, late: 'feat' } },
     ], anyAlone),
     asSet('together', 'Delve', 'Any run together, as set', TOGETHER_CONTROLS, [
       { label: 'Any run together, as set', values: {} },

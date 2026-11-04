@@ -6,7 +6,7 @@
 
 import { emulate } from './emulate.ts';
 import { freeze, installFreeze } from './freeze.ts';
-import { check, listen, outline } from './checks.ts';
+import { check, listen, outline, publish } from './checks.ts';
 import { settle } from './settle.ts';
 import { handOnKeys, trackWebgl } from './boot.ts';
 import { maybe } from './optional.ts';
@@ -68,6 +68,8 @@ export async function bootPiece(asked: URLSearchParams) {
   ]);
   piece.values = valuesOf(bench.controls, Object.fromEntries([...asked].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v])));
   sound.installUiSounds();
+  // The piece sounds once the desk's been used, as a scene's first frame does (./boot.ts).
+  if (asked.get('frame') === 'p0') await sound.soundWithFramer?.();
   spatial.installSpatial();
   fxUi.installUiFx();
   if (!switchedOff('cursor')) cursor.installCursor();
@@ -92,7 +94,7 @@ export async function bootPiece(asked: URLSearchParams) {
     const problems = check(heard);
     tell({ qa: 'checked', slot, settled, problems });
     // (For a shot of it taken as a page of its own: it has come to rest.)
-    (window as Window & { __qa?: unknown }).__qa = { settled, problems };
+    publish(settled, problems);
   };
   const soon = () => {
     clearTimeout(again);

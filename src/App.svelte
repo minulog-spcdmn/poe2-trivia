@@ -5,15 +5,16 @@
   import { isGroupRun, shownDepth } from './lib/delve';
   import { dealing, followDeal, shownRound } from './lib/dealing.svelte';
   import { arrival, beginArrival, endArrival } from './lib/zoneArrival.svelte';
+  import { T as ZONE_T } from './lib/zoneTitleTiming';
   import { ownRect, stageZoom } from './lib/stage';
   import { onMount, untrack, type Component } from 'svelte';
   import { fade as plainFade, type TransitionConfig } from 'svelte/transition';
   import { fade } from './lib/transitions';
   import { cubicIn, cubicOut, quintOut } from 'svelte/easing';
   import { light } from './lib/lights';
-  import { motion } from './lib/motion.svelte';
+  import { calm, motion } from './lib/motion.svelte';
   import { session } from './lib/session.svelte';
-  import { depthAmbience, getVolume, isMuted, setMuted, setVolume, sfx, veinAmbience } from './lib/sound';
+  import { backSound, depthAmbience, getVolume, isMuted, setMuted, setVolume, sfx, veinAmbience } from './lib/sound';
   import { actionOf, keybinds, readLayout, typing } from './lib/keybinds.svelte';
   import { keyName } from './lib/keys';
   import { fxUserOn, onFxChange, shakeTarget } from './lib/fx/core';
@@ -21,7 +22,7 @@
   import { openPrivacy } from './lib/legalSheet.svelte';
   import { backGuard } from './lib/backGuard';
   import LegalSheet from './components/LegalSheet.svelte';
-  import { dialogBackdrop } from './lib/behindDialog';
+  import { dialogBackdrop } from './lib/dialogBackdrop';
   import { dialogIn, dialogOut } from './lib/dialogIn';
   import { wantDelveBackdrop } from './lib/backdrop';
   import { wantDelveLights } from './lib/lightsAhead';
@@ -56,6 +57,12 @@
 
   /** Shown again after a crash (Root.svelte). */
   let { recovered = false }: { recovered?: boolean } = $props();
+
+  // A game the page reloaded on is picked up before anything here reads the
+  // session, so the first screen is the game's own (`shown` below), coming in
+  // by itself, rather than the start page mounting and fading out for it.
+  // (Not after a crash (Root.svelte): what was there is still there, or was left on purpose.)
+  if (!untrack(() => recovered)) untrack(() => session.resume());
 
   // Beta and dev only: ?record keeps how this player plays, for the room bots (lib/recorder.ts).
   let recording = $state(wantsRecording());
@@ -97,8 +104,6 @@
   }
 
   onMount(() => {
-    // (Not after a crash (Root.svelte): what was there is still there, or was left on purpose.)
-    if (!recovered) session.resume();
     // Camera shake moves the UI (#app clips it, so it can't add scrolling).
     // Anything fixed to the viewport must live outside .shell: App's own
     // overlays sit after it, and the screens' go to <body> with use:portal.
@@ -228,6 +233,25 @@
   const zoneCard = $derived(
     arrival.card && screen === 'game' && dealing.held && gs?.delve?.startedAt === arrival.card.run && gs.round === arrival.card.depth ? arrival.card : null,
   );
+
+  /**
+   * The zone card whose letterbox has closed over the header (its key): the
+   * line there takes the zone's depth and name then, at once and unseen,
+   * rather than at the deal (shownRound), after the bars have opened again.
+   * The card has just announced them.
+   */
+  let barsShut = $state<string | null>(null);
+  $effect(() => {
+    const c = zoneCard;
+    if (!c) return;
+    const shut = c.t0 + (c.tl.mode !== 'full' ? 900 : ZONE_T.BARS + ZONE_T.BARS_MS) + 50;
+    const t = setTimeout(() => (barsShut = c.key), Math.max(0, shut - performance.now()));
+    return () => clearTimeout(t);
+  });
+  /** The header's line is behind the zone card's bars: what changes there changes at once. */
+  const underBars = () => !!zoneCard && barsShut === zoneCard.key;
+  /** The depth the header's line shows: the one dealt (shownRound), or under the closed bars already the zone's. */
+  const metaRound = (s: NonNullable<typeof gs>) => (underBars() ? s.round : shownRound(s));
 
   /** How long the outgoing screen takes to go (the .screen transition below). */
   const SCREEN_OUT_MS = 130;
@@ -364,6 +388,74 @@
     if (screen !== 'home') headerFor = screen;
   });
   const headerPage = $derived(headerFor === 'codex' || headerFor === 'settings');
+  /**
+   * The screen the header's line (the round, the room) is for: the one
+   * showing, held while the last one goes and changed as the next arrives
+   * (arrive()), so it never runs ahead of the screen it describes. The start
+   * page has none: the header keeps the line it had as it goes.
+   */
+  let metaFor = $state(untrack(() => screen));
+  $effect.pre(() => {
+    if (shown !== null && shown !== 'home') metaFor = shown;
+  });
+  /** How long the header's line takes to change. */
+  const META_MS = 250;
+  /** A line going, fading where it stood (centred, as the next one is). */
+  const metaOut = (node: Element) => plainFade(node, calm({ duration: META_MS }));
+  /**
+   * The next line coming, fading in where it goes. What both lines say (the
+   * room code, Delve: marked data-keep) isn't faded out and in again a little
+   * way off: the old one is hidden and the new one glides there from where
+   * the old one stood, as the line grows or shrinks about it.
+   */
+  function metaIn(node: HTMLElement): TransitionConfig {
+    if (motion.still) return plainFade(node, calm({ duration: META_MS }));
+    const old = [...(node.parentElement?.children ?? [])].find((c) => c !== node && c.classList.contains('meta-line'));
+    const was = old?.querySelector<HTMLElement>('[data-keep]');
+    const keep = node.querySelector<HTMLElement>('[data-keep]');
+    if (!was || !keep || was.textContent !== keep.textContent) return plainFade(node, { duration: META_MS });
+    const dx = ownRect(was).left - ownRect(keep).left;
+    was.style.visibility = 'hidden';
+    const timing = { duration: META_MS, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' };
+    if (Math.abs(dx) > 0.5) keep.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], timing);
+    for (const c of node.children) if (c !== keep) c.animate([{ opacity: 0 }, { opacity: 1 }], { ...timing, easing: 'linear' });
+    return { duration: META_MS };
+  }
+  /**
+   * A number changing: the old one rises out as the new one rises in under
+   * it. Its figures are all as wide (.fig), so a number with as many keeps
+   * the line's width; one with more or fewer (9 to 10) eases the line to its
+   * new width as it rolls, rather than stepping there.
+   */
+  function roll(node: HTMLElement, { out = false } = {}): TransitionConfig {
+    const { duration } = calm({ duration: underBars() ? 0 : 200 });
+    const by = out ? -4 : 4;
+    if (!out) easeWidth(node, duration);
+    return { duration, easing: cubicOut, css: (t, u) => `opacity: ${t}; transform: translateY(${u * by}px)` };
+  }
+  /**
+   * What comes in (`node`) where something else is going, the two in one
+   * place: the place eases from the width of the one going to the width of
+   * the one coming, so the line about it moves there rather than stepping.
+   * (Not where the place has a width of its own, as the zone does on a phone,
+   * on a line of its own.)
+   */
+  function easeWidth(node: HTMLElement, duration: number) {
+    const box = node.parentElement;
+    const old = box && [...box.children].find((c): c is HTMLElement => c !== node && c instanceof HTMLElement);
+    if (!box || !old || !duration) return;
+    const [from, to] = [ownRect(old).width, ownRect(node).width];
+    if (Math.abs(from - to) < 0.5 || Math.abs(ownRect(box).width - Math.max(from, to)) > 0.5) return;
+    box.animate([{ width: `${from}px` }, { width: `${to}px` }], { duration, easing: 'cubic-bezier(0.33, 1, 0.68, 1)' });
+  }
+  /** A new zone's name (after a zone card, already there under its bars): the place for it eases to its width as the last one fades, and it fades in once it's announced. */
+  function zoneIn(node: HTMLElement): TransitionConfig {
+    // (Under the zone card's bars, unseen: at once.)
+    if (underBars()) return {};
+    easeWidth(node, calm({ duration: 500 }).duration);
+    return plainFade(node, calm({ duration: 900, delay: 500 }));
+  }
+  const zoneOut = (node: Element) => (underBars() ? {} : plainFade(node, calm({ duration: 300 })));
   const showHeader = () => (headerOn = screen !== 'home');
   $effect(() => {
     if (screen !== 'home' === untrack(() => headerOn)) return;
@@ -454,7 +546,7 @@
   // use, the codex. (All of it from here: anything queued as the page starts, before
   // App has mounted, would go ahead of the lobby.)
   onMount(() => {
-    const undo = [whenSettled(loadLobby), preloadPeerJs(), whenSettled(loadGamePages), preloadEd25519(), loadFontsAhead(), whenSettled(fetchCodexPage)];
+    const undo = [whenSettled(loadLobby), preloadPeerJs(), whenSettled(loadGamePages), preloadEd25519(), loadFontsAhead(), whenSettled(fetchCodexPage), whenSettled(loadSettingsPage)];
     return () => undo.forEach((f) => f());
   });
   // From the moment a room is being made or joined, while it still connects:
@@ -495,6 +587,7 @@
     if (settingsRoute.open && (action === 'settings' || e.key === 'Escape')) {
       if (!e.defaultPrevented) {
         e.preventDefault();
+        sfx('key', { from: { from: document.querySelector(settingsClose()) } });
         closeSettings();
       }
       return;
@@ -511,13 +604,22 @@
     // or an armed kick, whose handlers take it.
     if (document.querySelector('[role="dialog"], [aria-modal="true"]')) return;
     setTimeout(() => {
-      if (!e.defaultPrevented && !settingsRoute.open) openSettings();
+      if (e.defaultPrevented || settingsRoute.open) return;
+      // A key's press, from the gear its click would come from (none on the start page: centred).
+      sfx('key', { from: { from: document.querySelector('[data-cursor="gear"]') } });
+      openSettings();
     });
   }
 
+  /** The browser's Back's doing, heard (backSound) from the button the mouse would have pressed. */
+  const backAt = (sel: string, root: ParentNode = document) => sfx(backSound(), { from: { from: root.querySelector(sel) } });
+  /** The settings' ✕: in the header on their page, on their sheet over a game. */
+  const settingsClose = () => (codexAllowed ? '.tools .icon-btn' : '.settings-over .icon-btn');
+  // The browser's Back closing the settings or the codex sounds as their ✕ does.
+  settingsRoute.onBack = () => backAt(settingsClose());
+  codexRoute.onBack = () => backAt('.tools .icon-btn');
+
   let soundToast: number | null = null;
-  /** The last press on the settings' backdrop began there, beside the sheet. */
-  let pressedBeside = false;
   /** The mute key: the sound off, or back on (at half, were it all the way down), said in a notice since nothing else on screen shows it. */
   function toggleMute() {
     const off = !(isMuted() || getVolume() === 0);
@@ -525,7 +627,8 @@
     else {
       if (getVolume() === 0) setVolume(0.5);
       setMuted(false);
-      sfx('click');
+      // The key's press: the first thing heard, now there's sound again.
+      sfx('key');
     }
     const key = keybinds.map.mute[0];
     // One notice for the sound: the last one's taken down for the new.
@@ -631,10 +734,12 @@
 <svelte:window bind:innerWidth={winW} bind:innerHeight={winH} onkeydown={anywhereKeys} />
 
 <div class="shell" class:swapping data-behind-dialog bind:this={shell}>
+  <!-- Back to the start page, the header and the links under the screen fade with the screen going (.leaving),
+       holding their place till it has gone, when they are taken away (showHeader) and the start page comes. -->
   {#if headerOn}
     <!-- (Out of reach while a zone's card covers it with its bar: no focus lands on what can't be seen.) -->
     <!-- data-cursor: where other players' pointers are placed (PeerCursors) over the header, the same on every screen. -->
-    <header data-cursor="header" class:folded class:full={folded && fullRoom(gs?.players.length ?? 0)} in:fade={{ duration: 300 }} bind:this={headerEl} bind:offsetHeight={headerHeight} use:heightVar={'header-h'} inert={!!zoneCard}>
+    <header data-cursor="header" class:folded class:full={folded && fullRoom(gs?.players.length ?? 0)} class:leaving={screen === 'home'} in:fade|global={calm({ duration: 300 })} bind:this={headerEl} bind:offsetHeight={headerHeight} use:heightVar={'header-h'} inert={!!zoneCard}>
       <button class="brand" data-cursor="brand" onclick={() => (page ? closePage() : askLeave())} title={headerPage ? 'Back to the start' : 'Leave game'}>
         <span class="brand-mark" aria-hidden="true">
           {#each ['', 'hot'] as cls (cls)}
@@ -644,57 +749,64 @@
         <span>PoE2.Quest{#if BETA}{' '}<small class="beta">Beta</small>{:else if LOCAL}{' '}<small class="beta">Local</small>{/if}</span>
       </button>
       <div class="meta" data-cursor="meta" bind:this={metaEl}>
-        {#if gs?.delve && (screen === 'game' || screen === 'over')}
-          <!-- Delve: no target, just how deep. -->
-          {#if folded}
-            <!-- (Folded: no room code, the depth and zone alone.) -->
-          {:else if session.code && !session.hideCode}
-            <span>Room <b class="code" data-copy {@attach codePress.attach}>{session.code}</b></span>
-          {:else}
-            <span>Delve</span>
-          {/if}
-          {#if session.spectating}
-            {#if !folded}<span class="dot">•</span>{/if}
-            <span class="spectating" title={session.justWatching ? "You’re watching without playing." : "You’ll play in the next game."}>Spectating</span>
-          {/if}
-          <!-- The depth as players count it (shownDepth). A run under way at 0
-               names none here: the banner below has its start line (Game.svelte),
-               too long for this line on a phone. -->
-          <!-- (Going down into a new zone, the depth before until its cards are dealt: lib/dealing.svelte.ts.) -->
-          {@const round = shownRound(gs)}
-          {#if screen !== 'game' || shownDepth(round) > 0}
-            {#if !folded || session.spectating}<span class="dot">•</span>{/if}
-            <span class="depth" style:--accent={accentAt(round)} in:fade={{ duration: 600 }}>Depth <b>{shownDepth(round)}</b></span>
-          {/if}
-          <!-- And the zone it's in, in its colour; a new one fades in as it's announced. -->
-          {#if !folded || session.spectating || shownDepth(round) > 0}<span class="dot zone-dot">•</span>{/if}
-          {#key zoneAt(round)}
-            <span class="zone" style:--accent={accentAt(round)} in:fade={{ duration: 900, delay: 500 }}>{zoneAt(round)}</span>
-          {/key}
-        {:else if gs && screen === 'game'}
-          {#if session.code && !session.hideCode && !folded}
-            <span>Room <b class="code" data-copy {@attach codePress.attach}>{session.code}</b></span>
-            <span class="dot">•</span>
-          {/if}
-          {#if session.spectating}
-            <span class="spectating" title={session.justWatching ? "You’re watching without playing." : "You’ll play in the next game."}>Spectating</span>
-            <span class="dot">•</span>
-          {/if}
-          {#if gs.deathmatch}
-            <span class="deathmatch"><DuelMark /> Deathmatch</span>
-            <span class="dot">•</span>
-            <span>Round {gs.deathmatch.round}</span>
-          {:else}
-            <span>{gs.settings.mode === 'race' ? 'Question' : 'Round'} {gs.round}</span>
-            <span class="dot target">•</span>
-            <span class="target">First to <b>{gs.settings.targetScore}</b></span>
-          {/if}
-        {:else if session.mode === 'local' || session.hereOnly}
-          <span>On this device</span>
-        {:else if session.code && screen !== 'lobby'}
-          <!-- The lobby shows the code in big letters. (Hidden for streaming, a copy still gives it.) -->
-          <span>Room <b class="code" data-copy {@attach codePress.attach}>{session.hideCode ? '••••••' : session.code}</b></span>
-        {/if}
+        <!-- Changed with the screen it is for (metaFor), the old line fading as the new one comes. -->
+        {#key metaFor}
+          <div class="meta-line" in:metaIn out:metaOut>
+            {#if gs?.delve && (metaFor === 'game' || metaFor === 'over')}
+              <!-- Delve: no target, just how deep. -->
+              {#if folded}
+                <!-- (Folded: no room code, the depth and zone alone.) -->
+              {:else if session.code && !session.hideCode}
+                <span data-keep>Room <b class="code" data-copy {@attach codePress.attach}>{session.code}</b></span>
+              {:else}
+                <span data-keep>Delve</span>
+              {/if}
+              {#if session.spectating}
+                {#if !folded}<span class="dot">•</span>{/if}
+                <span class="spectating" title={session.justWatching ? "You’re watching without playing." : "You’ll play in the next game."}>Spectating</span>
+              {/if}
+              <!-- The depth as players count it (shownDepth). A run under way at 0
+                   names none here: the banner below has its start line (Game.svelte),
+                   too long for this line on a phone. -->
+              <!-- (Going down into a new zone, the depth before until its cards are dealt: lib/dealing.svelte.ts.) -->
+              {@const round = metaRound(gs)}
+              {#if metaFor !== 'game' || shownDepth(round) > 0}
+                {#if !folded || session.spectating}<span class="dot">•</span>{/if}
+                <span class="depth" style:--accent={accentAt(round)} in:fade={{ duration: 600 }}>Depth <b>{@render rolled(shownDepth(round))}</b></span>
+              {/if}
+              <!-- And the zone it's in, in its colour; a new one fades in as it's announced. -->
+              {#if !folded || session.spectating || shownDepth(round) > 0}<span class="dot zone-dot">•</span>{/if}
+              <span class="zone-box">
+                {#key zoneAt(round)}
+                  <span class="zone" style:--accent={accentAt(round)} in:zoneIn out:zoneOut>{zoneAt(round)}</span>
+                {/key}
+              </span>
+            {:else if gs && metaFor === 'game'}
+              {#if session.code && !session.hideCode && !folded}
+                <span data-keep>Room <b class="code" data-copy {@attach codePress.attach}>{session.code}</b></span>
+                <span class="dot">•</span>
+              {/if}
+              {#if session.spectating}
+                <span class="spectating" title={session.justWatching ? "You’re watching without playing." : "You’ll play in the next game."}>Spectating</span>
+                <span class="dot">•</span>
+              {/if}
+              {#if gs.deathmatch}
+                <span class="deathmatch"><DuelMark /> Deathmatch</span>
+                <span class="dot">•</span>
+                <span>Round {@render rolled(gs.deathmatch.round)}</span>
+              {:else}
+                <span>{gs.settings.mode === 'race' ? 'Question' : 'Round'} {@render rolled(gs.round)}</span>
+                <span class="dot target">•</span>
+                <span class="target">First to <b>{gs.settings.targetScore}</b></span>
+              {/if}
+            {:else if session.mode === 'local' || session.hereOnly}
+              <span data-keep>On this device</span>
+            {:else if session.code && metaFor !== 'lobby'}
+              <!-- The lobby shows the code in big letters. (Hidden for streaming, a copy still gives it.) -->
+              <span data-keep>Room <b class="code" data-copy {@attach codePress.attach}>{session.hideCode ? '••••••' : session.code}</b></span>
+            {/if}
+          </div>
+        {/key}
         <CopyNote press={codePress} />
       </div>
       <div class="tools">
@@ -777,9 +889,10 @@
     {/key}
   </main>
 
-  <!-- The end of a game closes with the start page's footer, the legal links in it. -->
-  {#if headerOn && screen !== 'over'}
-    <nav class="legal" class:hidden={legalHidden} aria-label="Legal" bind:this={legalNav} use:heightVar={'legal-h'}>
+  <!-- The end of a game closes with the start page's footer, the legal links in it.
+       (headerFor: going home from it, these don't come for the moment the header still fades.) -->
+  {#if headerOn && headerFor !== 'over'}
+    <nav class="legal" class:hidden={legalHidden} class:leaving={screen === 'home'} in:fade|global={calm({ duration: 300 })} aria-label="Legal" bind:this={legalNav} use:heightVar={'legal-h'}>
       {@render legalLinks()}
     </nav>
   {/if}
@@ -803,6 +916,15 @@
     <p>Part of the game couldn’t be loaded.</p>
     <button class="btn primary" onclick={() => location.reload()}>Reload</button>
   </div>
+{/snippet}
+
+<!-- A number in the header (the round, the depth) that rolls over as it changes. -->
+{#snippet rolled(n: number)}
+  <span class="roll">
+    {#key n}
+      <span in:roll out:roll={{ out: true }}>{#each [...String(n)] as d, i (i)}<span class="fig"><span>{d}</span></span>{/each}</span>
+    {/key}
+  </span>
 {/snippet}
 
 {#snippet legalLinks()}
@@ -830,13 +952,11 @@
 
 <!-- In a room: the settings over the game, which runs on beneath (the page's keys wait while a dialog is open). -->
 {#if settingsOver}
-  <!-- Closed by a press that both begins and ends beside the sheet: not a slider's drag let go out there. -->
+  <!-- Closed by a press that both begins and ends beside the sheet (not a slider's drag let go out there), or Escape. -->
   <div
     class="modal-backdrop settings-over"
-    use:dialogBackdrop
+    use:dialogBackdrop={{ close: closeSettings, closer: '.icon-btn' }}
     transition:fade={{ duration: 150 }}
-    onpointerdown={(e) => (pressedBeside = e.target === e.currentTarget)}
-    onclick={(e) => pressedBeside && e.target === e.currentTarget && closeSettings()}
     role="presentation"
   >
     <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -857,8 +977,8 @@
 {/if}
 
 {#if confirmLeave}
-  <div class="modal-backdrop" use:dialogBackdrop transition:fade={{ duration: 150 }} onclick={() => (confirmLeave = false)}
-    onkeydown={(e) => e.key === 'Escape' && (confirmLeave = false)}
+  <!-- A press beside it or Escape stays, as Stay does. -->
+  <div class="modal-backdrop" use:dialogBackdrop={{ close: () => (confirmLeave = false), closer: '.btn.ghost' }} transition:fade={{ duration: 150 }}
     role="presentation"
   >
     {#if legalHidden && legalNav}
@@ -934,6 +1054,13 @@
     padding: calc(0.8rem + env(safe-area-inset-top)) 1.25rem 0.8rem;
     border-bottom: 1px solid rgba(125, 99, 51, 0.22);
     background: linear-gradient(180deg, rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0));
+    transition: opacity 0.3s;
+  }
+  /* Going with the screen, as fast (App's SCREEN_OUT_MS). */
+  header.leaving,
+  .legal.leaving {
+    opacity: 0;
+    transition: opacity 0.13s ease-in;
   }
   /* A gold hairline, brightest in the middle, over the header's lower edge. */
   header::after {
@@ -1007,9 +1134,9 @@
     }
   }
 
+  /* The line in it, and while it changes the one going, in the same place. */
   .meta {
-    display: flex;
-    gap: 0.55rem;
+    display: grid;
     align-items: center;
     font-family: var(--font-cinzel);
     font-size: 0.78rem;
@@ -1017,8 +1144,44 @@
     text-transform: uppercase;
     color: var(--muted);
   }
+  /* Centred in its place, the one going and the one coming alike, so neither moves as the other changes the width. */
+  .meta-line {
+    grid-area: 1 / 1;
+    display: flex;
+    justify-content: center;
+    gap: 0.55rem;
+    align-items: center;
+  }
   .meta b {
     color: var(--gold-hi);
+  }
+  /* A number rolling over: the one going and the one coming in one place. */
+  /* The one going and the one coming centred in one place, which eases between their widths (roll()). */
+  .roll {
+    display: inline-grid;
+    justify-items: center;
+  }
+  .roll > span {
+    grid-area: 1 / 1;
+    white-space: nowrap;
+  }
+  /* Each figure as wide as the widest (Cinzel's digits differ in width): every digit,
+     unseen and of no height, laid in its place under it. So 1 to 2 or 14 to 15 never changes the line's width. */
+  .fig {
+    display: inline-grid;
+    justify-items: center;
+  }
+  /* (After the digit: the first item gives the box its baseline, the digit's.) */
+  .fig::after {
+    content: '0\A 1\A 2\A 3\A 4\A 5\A 6\A 7\A 8\A 9';
+    grid-area: 1 / 1;
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    white-space: pre;
+  }
+  .fig > span {
+    grid-area: 1 / 1;
   }
   .dot {
     color: var(--gold-lo);
@@ -1033,6 +1196,14 @@
     transition:
       color 1.2s,
       text-shadow 1.2s;
+  }
+  /* The zone's name, and while it changes the one going, in one place. */
+  .zone-box {
+    display: inline-grid;
+    justify-items: center;
+  }
+  .zone-box > .zone {
+    grid-area: 1 / 1;
   }
   .zone {
     color: color-mix(in srgb, var(--accent) 75%, var(--gold-hi));
@@ -1156,8 +1327,9 @@
     display: flex;
     justify-content: center;
     gap: 0.6rem;
-    padding: 0.6rem 1rem 1rem;
-    font-size: 0.8rem;
+    /* At 15px, the foot's 0.2rem less padding keeping the row's height. */
+    padding: 0.6rem 1rem 0.8rem;
+    font-size: 0.9375rem;
     color: var(--muted);
     transition:
       opacity 0.3s,
@@ -1167,12 +1339,23 @@
     color: var(--muted);
     text-decoration: none;
   }
+  .legal span {
+    color: var(--faint);
+  }
   .legal a:hover {
     color: var(--gold-hi);
   }
+  /* In a game the links, hidden (two clicks away in the Leave dialog), take
+     no height under it, so the game fits the window; nor a click as they
+     fade. */
   .legal.hidden {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
     opacity: 0;
     visibility: hidden;
+    pointer-events: none;
     transition:
       opacity 0.3s,
       visibility 0s 0.3s;
@@ -1268,7 +1451,7 @@
     .brand span:last-child {
       display: none;
     }
-    .meta {
+    .meta-line {
       justify-content: center;
       flex-wrap: wrap;
       font-size: 0.66rem;
@@ -1278,8 +1461,10 @@
     .zone-dot {
       display: none;
     }
-    .zone {
+    .zone-box {
       flex-basis: 100%;
+    }
+    .zone {
       text-align: center;
       font-size: 0.6rem;
       line-height: 1.2;
@@ -1302,7 +1487,7 @@
     header.folded .brand {
       visibility: hidden;
     }
-    header.folded .meta {
+    header.folded .meta-line {
       gap: 0.45rem;
       letter-spacing: 0.12em;
     }
@@ -1315,14 +1500,6 @@
     .brand {
       white-space: nowrap;
     }
-    /* The game's links, hidden (two clicks away in the Leave dialog), take no
-       height under it: there is none to spare. */
-    .legal.hidden {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
-    }
   }
   /* Narrower ones keep the header to one line: the name goes without its Beta, as on phones. */
   @media (orientation: landscape) and (max-height: 500px) and (min-width: 561px) and (max-width: 760px) {
@@ -1331,18 +1508,11 @@
     }
   }
   /* A phone upright (lib/layout.ts `upright`): a game is as tall as the room
-     under the header and no taller (Game.svelte fills it), and its links,
-     hidden, take no height under it. */
+     under the header and no taller (Game.svelte fills it). */
   @media (orientation: portrait) and (max-width: 640px) {
     .screen:has(> :global(.game)) {
       display: flex;
       flex-direction: column;
-    }
-    .legal.hidden {
-      position: absolute;
-      left: 0;
-      right: 0;
-      bottom: 0;
     }
   }
 

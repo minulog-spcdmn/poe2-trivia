@@ -91,6 +91,18 @@ export const PAINTED: Painted[] = [
     selectors: ['.glow', '.plate'],
     why: 'Once, as a star is stamped on the ladder: its hole in the plate’s and the glow’s masks carved (0.5 s), and the gold one’s carried down with it (1 to 2.1 s). The descent-hole keyframes, named in the markup (holesMotion): each the ladder’s whole svg, drawn again while it runs.',
   },
+  {
+    file: 'src/components/Codex.svelte',
+    keyframes: ['codex-ring'],
+    selectors: [".codex :global(.done[data-fill='go'])"],
+    why: 'Once, 1 s, as a seal’s ring fills when it comes into view in the codex: that seal’s ring, a small svg.',
+  },
+  {
+    file: 'src/components/Inventory.svelte',
+    keyframes: ['close'],
+    selectors: ['.count.last:not(:only-child)'],
+    why: 'Once, about half a second, as the last flare or stick is used: its count’s place closing up in the pack, a box a few dozen px wide.',
+  },
   // ---- for as long as it shows
   {
     file: 'src/components/DelveLadder.svelte',
@@ -116,13 +128,7 @@ export const PAINTED: Painted[] = [
     file: 'src/components/ChooseCategory.svelte',
     keyframes: ['pulse'],
     selectors: ['.card.dm.mine:not(:global(.down)) .pulse', '.card.special.mine:not(:global(.down)) .pulse'],
-    why: 'A card you can pick swells, 2.4 s a breath (a duel’s) or 3.2 s (a find’s), for as long as the cards lie there: on a span of no size beside its face (--bs-pulse), which the WebGL backdrop reads for the card’s light (lib/backdropShadow), so Chrome paints nothing for it.',
-  },
-  {
-    file: 'src/components/ChooseCategory.svelte',
-    keyframes: ['pulse-paint'],
-    selectors: ['.card.dm.mine:not(:global(.down)) .frame:not(:global([data-bs-on]))', '.card.special.mine:not(:global(.down)) .frame:not(:global([data-bs-on]))'],
-    why: 'The same swell where CSS paints the card’s light, without WebGL (no data-bs-on): the face’s own shadow (--bs1), so the face is drawn again each frame it runs, where faces are sharp its own layer at twice its size. Only on the cards yours to pick, face up; not measured, as no scene the redraw check watches has one (each scene’s faces read 0 px at rest). A layer of its own can’t make it smaller: the shadow is the face’s own.',
+    why: 'A card you can pick swells, 2.4 s a breath (a duel’s) or 3.2 s (a find’s), for as long as the cards lie there: on a span beside its face (--bs-pulse), which the WebGL backdrop reads for the card’s light (lib/backdropShadow), so Chrome paints nothing for it. Of no size while the backdrop draws the light; where CSS paints it, the span holds it on its ::before and ::after, layers of their own whose opacities swell, and --bs-pulse is read by nothing it paints.',
   },
   // ---- played from a script (element.animate)
   {
@@ -170,4 +176,9 @@ export const PAINTED: Painted[] = [
   },
   { file: 'src/components/zonecard/ZoneSeal.svelte', animate: { in: ['draw'], props: ['stroke-dashoffset', 'stroke-dasharray'] }, why: 'Once, about 1.3 s, as a zone’s seal draws itself on its title card: its rings and sigil, an svg 36 to 72 px across.' },
   { file: 'src/components/zonecard/NewsMark.svelte', animate: { in: ['onMount'], props: ['stroke-dashoffset', 'stroke-dasharray'] }, why: 'Once, 0.3 s, as what’s new on a zone’s title card gets its mark: the mark’s rings, a small svg in a box 6.5 rem wide.' },
+  { file: 'src/App.svelte', animate: { in: ['easeWidth'], props: ['width'] }, why: 'Once, 0.2 to 0.5 s, as the header’s depth gains or loses a digit or its zone changes (unless under a zone card’s bars): the line’s box, one line of text in the header.' },
+  { file: 'src/components/CodexDelve.svelte', animate: { in: ['open'], props: ['height'] }, why: 'Once, 0.35 s, as “Show all zones” opens on the codex’s Delve page: that list’s box.' },
+  { file: 'src/components/Lobby.svelte', animate: { in: ['settle'], props: ['clip-path', 'margin-bottom'] }, why: 'Once, a few tenths of a second, as a hint in the lobby’s room panel grows or goes (the lock’s): the hint’s box, a line or two.' },
+  { file: 'src/components/Lobby.svelte', animate: { in: ['untrack'], props: ['margin-top', 'margin-bottom'] }, why: 'Once, 0.26 s, as Begin glides when a mode’s settings change height, below a desktop: Begin’s row.' },
+  { file: 'src/components/Scoreboard.svelte', animate: { in: ['$effect'], props: ['min-width', 'width'] }, why: 'Once, about 0.35 s, as the scoreboard’s entries take their new widths (a player removed, a heart given): each entry, a pill one line tall.' },
 ];

@@ -4,11 +4,12 @@
   import { fade, fly } from '../lib/transitions';
   import { MAX_NAME, NAMELESS, cleanName, isHeldName, nameRefusal, nameUsable, unlockHeldName } from '../lib/names';
   import { onOwnerKey, ownerUnlocked } from '../lib/ownerKey';
-  import { refuseName } from '../lib/nameField';
+  import { pressed, refuseName } from '../lib/nameField';
   import { calm, motion } from '../lib/motion.svelte';
   import { toasts } from '../lib/toasts.svelte';
   import { engine, session, savedName, saveName, NAME_KEY, CODE_LENGTH } from '../lib/session.svelte';
   import { refuse } from '../lib/fx/moments';
+  import { sfx } from '../lib/sound';
   import { openCodex, codexRoute } from '../lib/codexRoute.svelte';
   import { openSettings, settingsRoute } from '../lib/settingsRoute.svelte';
   import { typing } from '../lib/keybinds.svelte';
@@ -20,7 +21,8 @@
   import { STARTED_KEY, hasStarted } from '../lib/started';
   import { isMadeName } from '../lib/madeName';
   import { shownDepth } from '../lib/delve';
-  import { ENTRIES, codexLine, codexLines, cursorKey, lastEntry, rememberEntry, type Entry } from '../lib/startMenu';
+  import { ENTRIES, codexLine, codexLines, cursorKey, lastEntry, rememberEntry, type Entry, type NewItems } from '../lib/startMenu';
+  import { releaseNote } from '../lib/releases';
   import GameTitle from './GameTitle.svelte';
   import Connecting from './Connecting.svelte';
   import DailyUnique from './DailyUnique.svelte';
@@ -92,11 +94,14 @@
   let discovered = $state<number | null>(null);
   /** Whether any game here has had an answer of this player's (the Daily and its practice give none); null until the codex is read. A game from before lib/started.ts says so by it. */
   let answered = $state<boolean | null>(null);
+  /** The newest release's items, while any is still to meet (lib/releases.ts): the Codex line counts them. */
+  let fresh = $state<NewItems>(null);
   const readDiscovered = () =>
     import('../lib/codex').then(({ loadCodex }) => {
       const codex = loadCodex();
       const seen = codex.items;
       discovered = engine.items.filter((it) => seen[it.id]).length;
+      fresh = releaseNote(engine.items, seen);
       answered = Object.keys(codex.byDifficulty).length > 0;
     })
     // Not to be had (a download that failed): taken as no answer yet, so the Daily still offers a way on.
@@ -215,11 +220,15 @@
   }
   function saveRename(e?: Event) {
     e?.preventDefault();
-    if (keepName(checkName(draft, renameField))) renaming = false;
+    if (!keepName(checkName(draft, renameField))) return;
+    pressed(e);
+    renaming = false;
   }
   function renameKeys(e: KeyboardEvent) {
     if (e.key === 'Escape') {
       e.stopPropagation();
+      // A key's press, from Cancel.
+      sfx('key', { from: { from: renameField?.form?.querySelector('.link') } });
       renaming = false;
     }
   }
@@ -229,6 +238,10 @@
   /** An entry's description giving way to its fields, and back. */
   const SWAP_IN = { y: 4, duration: 240, delay: 90 };
   const SWAP_OUT = { duration: 140 };
+  /** The greeting and its rename form, crossing in place: a tap on the quill (or Cancel) answers at once, the form ready to type in. */
+  const RENAME_SWAP = { duration: 120 };
+  /** The greeting's height as laid out, which its box eases to. */
+  let greetingH = $state(0);
 
   /** The keyboard cursor: arrows move it, Enter chooses, it follows the mouse. */
   let cursor = $state(untrack(() => invite) ? 0 : lastEntry());
@@ -365,6 +378,7 @@
     e?.preventDefault();
     const n = knownName() ?? keepName(checkName(nameInput, nameField));
     if (!n) return;
+    pressed(e);
     busy = 'create';
     session.host(n);
   }
@@ -387,12 +401,14 @@
       return;
     }
     if (code.length < CODE_LENGTH) return codeShort();
+    pressed(e);
     // A join that failed left its code here: trying it again is still the try it was (an invite link's, say).
     startJoin(code, n, 'join', left?.code === code ? left.via : 'code');
   }
   /** The Code too short notice up, if one is: it goes once the code is whole. */
   let shortNotice: number | null = null;
   function codeShort() {
+    sfx('refuse', { from: { from: codeField } });
     codeError = true;
     if (codeField) refuse(codeField);
     codeField?.focus();
@@ -417,8 +433,11 @@
   function phoneJoin(e: Event) {
     e.preventDefault();
     if (code.length < CODE_LENGTH) return codeShort();
-    if (!asking && !knownName()) return askName();
-    join();
+    if (!asking && !knownName()) {
+      pressed(e);
+      return askName();
+    }
+    join(e);
   }
   /** Join's row asks the name (on one column, in the code's place). */
   function askName() {
@@ -435,6 +454,13 @@
 
   /** How many rooms the Open rooms list shows; Join points down to them. */
   let roomCount = $state(0);
+  /** Whether the count last went up (its number steps up into place) or down. */
+  let roomsBefore = 0;
+  const roomsRose = $derived.by(() => {
+    const rose = roomCount >= roomsBefore;
+    roomsBefore = roomCount;
+    return rose;
+  });
   /** Whether any of them has a seat (none: they are all rooms to watch, games under way or full lobbies). */
   let roomSeats = $state(false);
   function toRooms() {
@@ -535,7 +561,10 @@
       // Claimed while a row is open, joining or not: it doesn't open the settings over a join.
       if (open) {
         e.preventDefault();
-        if (!connecting) closeRow();
+        if (connecting) return;
+        // A key's press, from the row's entry (in one column, the row: the entry comes back in its place).
+        sfx('key', { from: { from: entryEls[ENTRIES.indexOf(open)] ?? rowEl() } });
+        closeRow();
       }
       return;
     }
@@ -547,6 +576,7 @@
       entryEls[next]?.focus();
     } else if (e.key === 'Enter' && (!t || t === document.body)) {
       e.preventDefault();
+      sfx('key', { from: { from: entryEls[cursor] } });
       choose(ENTRIES[cursor]);
     }
   }
@@ -593,6 +623,7 @@
     // (Saved once the room takes it, as Join a room's.)
     const n = checkName(inviteName, inviteField);
     if (!n) return;
+    pressed(e);
     // Out of the address first: the guard Back meets in the room (lib/backGuard.ts)
     // goes up in this tap over this entry, and leaving the room goes back to it,
     // which mustn't be the invite again, to join it once more. (The screen stays
@@ -649,8 +680,8 @@
   const about = $derived<Record<Entry, string>>({
     create: 'Host your party online or at one screen, or play alone.',
     join: 'With the code a friend sent you.',
-    codex: codexLine(discovered, total, deepest),
-    settings: 'Sound, keys, your name, colour and class sigil.',
+    codex: codexLine(discovered, total, deepest, fresh),
+    settings: 'Your name, colour and sigil; sound and keys.',
   });
   const PAIR = [
     { e: 'codex', name: 'Codex' },
@@ -658,8 +689,8 @@
   ] as const;
   /** The pair's lines in one column, short enough for half a phone's width. */
   const pairLines = $derived<Record<'codex' | 'settings', string[]>>({
-    codex: codexLines(discovered, total, deepest),
-    settings: ['Sound, keys, sigil.'],
+    codex: codexLines(discovered, total, deepest, fresh),
+    settings: ['Name, look, sound.'],
   });
 </script>
 
@@ -696,7 +727,7 @@
       <form class="slot row" class:join={act} onsubmit={joinInvite} aria-labelledby={act ? 'invite-label' : undefined} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
         <!-- svelte-ignore a11y_autofocus -->
         <input class="field name" bind:this={inviteField} bind:value={inviteName} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" enterkeyhint={act ? 'go' : undefined} onfocus={selectMade} autofocus />
-        <button class="btn primary" type="submit">Join</button>
+        <button class="btn primary" type="submit" data-sfx="none">Join</button>
       </form>
     {/if}
   </div>
@@ -714,9 +745,12 @@
     </p>
 
     <!-- The greeting: the name is asked once, then greeted (and changed here). -->
-    <div class="greeting" in:fade|global={calm({ duration: 600, delay: 350 })}>
+    <!-- Its height follows what it holds, eased (two lines to one as a chosen name drops the quill's words on touch), so the menu under it glides rather than jumps. -->
+    <div class="greeting" style:height={greetingH ? `${greetingH}px` : undefined} in:fade|global={calm({ duration: 600, delay: 350 })}>
+      <!-- The greeting and the rename form share one cell, so one fades into the other where it stood. -->
+      <div class="greeting-cell" bind:offsetHeight={greetingH}>
       {#if renaming}
-        <form class="row" onsubmit={saveRename}>
+        <form class="row" onsubmit={saveRename} in:fade={calm(RENAME_SWAP)} out:fade={calm(RENAME_SWAP)}>
           <!-- No autofill on the name fields: its list is the browser's own and drops the game's cursor; the game remembers the name itself.
                No autocorrect either (tests/nameFields.test.ts): a gamer tag is seldom a word, and Gboard and iOS would make it one (Wolfsberg went in as Wolfsburg).
                The first letter is still capitalised as the keyboard likes: that only sets the shift key, and a name typed lower case stays so. -->
@@ -732,11 +766,11 @@
             autocorrect="off"
             onkeydown={renameKeys}
           />
-          <button class="btn" type="submit">Save</button>
+          <button class="btn" type="submit" data-sfx="none">Save</button>
           <button class="link" type="button" onclick={() => (renaming = false)}>Cancel</button>
         </form>
       {:else}
-        <p class="hello" class:named={!!known} class:choose={askChoose}>
+        <p class="hello" class:named={!!known} class:choose={askChoose} in:fade={calm(RENAME_SWAP)} out:fade={calm(RENAME_SWAP)}>
           <span class="greet">{welcomeBack ? 'Welcome back,' : 'Welcome,'}</span>
           {#if invite}
             <!-- An invite asks the name in its own row: the greeting only greets. -->
@@ -753,6 +787,7 @@
           {/if}
         </p>
       {/if}
+      </div>
     </div>
 
     <nav class="menu" class:renaming class:lit aria-label="Start" onfocusin={focusIn} onfocusout={focusOut}>
@@ -794,7 +829,7 @@
             {#if open === 'create' && !connecting}
               <form class="slot row tall" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
                 <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" enterkeyhint="go" />
-                <button class="btn" class:primary={!joinReady || open === 'create'} type="submit">Start</button>
+                <button class="btn" class:primary={!joinReady || open === 'create'} type="submit" data-sfx="none">Start</button>
               </form>
             {:else}
               <button class="btn big" class:primary={!joinReady || open === 'create'} bind:this={entryEls[0]} onclick={() => choose('create')} in:fade={SWAP_OUT}>New game</button>
@@ -813,13 +848,16 @@
           <div class="act-top">
             <h2 class="act-head" id="join-label">Join a room</h2>
             <!-- Open rooms sit below Today's unique: when there are any, this says so from up here. -->
+            <!-- The code or the rooms, in one cell: one fades out as the other fades in, and a count that changes steps up or down in place. -->
+            <div class="to-cell">
             {#if asking && !connecting}
-              <button class="to-rooms" onclick={backToCode} aria-label="Change the code, {code}" in:fade={{ duration: 300 }}>Code <span class="shown-code">{code}</span> • change</button>
+              <button class="to-rooms" onclick={backToCode} aria-label="Change the code, {code}" in:fade={calm({ duration: 300 })} out:fade={calm(SWAP_OUT)}>Code <span class="shown-code">{code}</span> • change</button>
             {:else if roomCount && !connecting}
-              <button class="to-rooms" onclick={toRooms} in:fade={{ duration: 300 }}>
-                <span><span class="n">{roomCount}</span> {roomSeats ? `open ${roomCount === 1 ? 'room' : 'rooms'}` : `${roomCount === 1 ? 'room' : 'rooms'} to watch`}</span><span class="down"><DrawnMark shape="chevron" /></span>
+              <button class="to-rooms" onclick={toRooms} in:fade={calm({ duration: 300 })} out:fade={calm(SWAP_OUT)}>
+                <span><span class="n">{#key roomCount}<span in:fly={calm({ y: roomsRose ? 6 : -6, duration: 240 })} out:fly={calm({ y: roomsRose ? -6 : 6, duration: 240 })}>{roomCount}</span>{/key}</span> {roomSeats ? `open ${roomCount === 1 ? 'room' : 'rooms'}` : `${roomCount === 1 ? 'room' : 'rooms'} to watch`}</span><span class="down"><DrawnMark shape="chevron" /></span>
               </button>
             {/if}
+            </div>
           </div>
           <div class="under">
             {#if busyEntry === 'join'}
@@ -833,7 +871,7 @@
                   {@render codeInput(false)}
                 {/if}
                 <!-- Lit once a join can go, and New game gives up its gold: one lit button at a time. -->
-                <button class="btn" class:primary={joinReady && open !== 'create'} type="submit">Join</button>
+                <button class="btn" class:primary={joinReady && open !== 'create'} type="submit" data-sfx="none">Join</button>
               </form>
             {/if}
           </div>
@@ -872,7 +910,7 @@
               {:else if isOpen && e === 'create'}
                 <form class="slot row" onsubmit={host} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
                   <input class="field name" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" />
-                  <button class="btn primary" type="submit">Start</button>
+                  <button class="btn primary" type="submit" data-sfx="none">Start</button>
                 </form>
               {:else if isOpen && e === 'join'}
                 <form class="slot row" onsubmit={join} in:fly={SWAP_IN} out:fade={SWAP_OUT}>
@@ -880,7 +918,7 @@
                     <input class="field name short" bind:this={nameField} bind:value={nameInput} maxlength={MAX_NAME} placeholder="Your name" aria-label="Your name" autocomplete="off" spellcheck="false" autocorrect="off" />
                   {/if}
                   {@render codeInput(!known)}
-                  <button class="btn primary" type="submit">Join</button>
+                  <button class="btn primary" type="submit" data-sfx="none">Join</button>
                 </form>
               {:else}
                 <p class="about" in:fly={SWAP_IN} out:fade={SWAP_OUT}>{about[e]}</p>
@@ -898,7 +936,10 @@
     {:else}
       <!-- A newcomer's way on from it holds the gold while no row's Start or Join has it and no join is on its way.
            (On a phone New game's gold is a scroll away up the page: the two are never on screen together.) -->
-      <DailyUnique disabled={connecting} {newcomer} onIdentify={delveAlone} lead={!open && !connecting} />
+      <!-- Coming from an invite's "Something else" (a tap, so it answers quickly), it fades in with the menu flying in (and the room's card just goes). -->
+      <div in:fade={calm({ duration: 400, delay: 300 })}>
+        <DailyUnique disabled={connecting} {newcomer} onIdentify={delveAlone} lead={!open && !connecting} />
+      </div>
     {/if}
   </div>
 
@@ -1032,20 +1073,33 @@
     text-transform: uppercase;
     color: var(--unique-hi);
   }
+  /* A caption to the title, so the italic, as every page's line under its title is. */
   .blurb {
     position: relative;
     margin: 2px 0 0;
+    font-style: italic;
     font-size: 17px;
-    color: #a99c86;
+    color: var(--muted);
   }
 
   /* ---- the greeting ---- */
   .greeting {
+    margin: 16px 0;
+    transition: height 0.2s var(--ease-out);
+  }
+  .greeting-cell {
     /* A long name wraps the greeting onto a second line. */
     min-height: 44px;
-    margin: 16px 0;
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
     align-items: center;
+    justify-items: start;
+  }
+  .greeting-cell > * {
+    grid-area: 1 / 1;
+  }
+  :global(html[data-still]) .greeting {
+    transition: none;
   }
   .hello {
     display: flex;
@@ -1216,7 +1270,8 @@
     background: none;
     border: 0;
     cursor: pointer;
-    font-style: italic;
+    /* (Upright, a control, as every small link is.) */
+    font-style: normal;
     font-size: 15px;
     color: var(--muted);
     text-decoration: underline;
@@ -1270,7 +1325,7 @@
     margin: 6px 0 0;
     font-style: italic;
     font-size: 16px;
-    color: #ab9d88;
+    color: var(--muted);
   }
   .under {
     display: grid;
@@ -1370,7 +1425,7 @@
     line-height: 20px;
     letter-spacing: 0.2em;
     text-transform: uppercase;
-    color: #a99c86;
+    color: var(--muted);
   }
   /* The Codex and Settings (or an invite's way to everything else) as the
      list's entries are set, a size down, each with a chevron that says it goes somewhere. */
@@ -1405,6 +1460,13 @@
   .act-top + .under {
     min-height: 44px;
   }
+  .to-cell {
+    display: grid;
+    justify-items: end;
+  }
+  .to-cell > * {
+    grid-area: 1 / 1;
+  }
   .to-rooms {
     display: inline-flex;
     align-items: center;
@@ -1415,7 +1477,8 @@
     background: none;
     border: 0;
     cursor: pointer;
-    font-style: italic;
+    /* (Upright, a control, as every small link is.) */
+    font-style: normal;
     font-size: 15px;
     color: var(--gold);
     white-space: nowrap;
@@ -1435,6 +1498,13 @@
     font-style: normal;
     font-weight: 700;
     font-size: 0.86em;
+    /* A count that changes steps in place: the old and the new share one cell, clipped to its line
+       (clip, not hidden, which would move its baseline). */
+    display: inline-grid;
+    overflow: clip;
+  }
+  .to-rooms .n > * {
+    grid-area: 1 / 1;
   }
   .to-rooms .down {
     --mark-size: 9px;
@@ -1446,7 +1516,7 @@
     border-color: var(--gold-lo);
   }
   .act .code::placeholder {
-    color: #8a7d68;
+    color: var(--muted);
   }
   .slot.row.join .code,
   .slot.row.join .name {
@@ -1497,7 +1567,7 @@
     font-style: italic;
     font-size: 15px;
     line-height: 1.3;
-    color: #ab9d88;
+    color: var(--muted);
   }
 
   /* Under 980 tall (900, say): a tighter rhythm. 16 + 574 + 8 + 144 + 32 +

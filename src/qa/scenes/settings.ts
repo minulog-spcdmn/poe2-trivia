@@ -48,6 +48,20 @@ const ASKED: Control = {
   default: 'none',
 };
 
+/** Where the settings are first opened from. */
+const FROM: Control = {
+  kind: 'choice',
+  key: 'from',
+  label: 'Opened from',
+  options: [
+    { value: 'start', label: 'The start page' },
+    { value: 'game', label: 'The header’s gear, over a game' },
+  ],
+  default: 'start',
+};
+/** When: after the page has settled and fetched the settings ahead (App.svelte), the start page's circle drawn in. */
+const FIRST_OPEN_MS = 4000;
+
 /** A code to be paired with, the same every time (as the sync bench's). */
 const SYNC_CODE = 'K7QXM2PA9FHE3TDW';
 
@@ -124,12 +138,86 @@ export function settingsScenes(): Scene[] {
       },
     },
     {
+      // Settings opened for the first time since the page loaded, a few seconds in (once the page has settled, when its
+      // chunk is fetched ahead): from the start page's menu, or over a game from the header's gear, the sheet.
+      key: 'settings/first-open',
+      screen: 'settings',
+      group: 'Settings',
+      label: 'Opened for the first time since the page loaded',
+      seats: [{ mode: 'none', me: null }],
+      controls: [FROM],
+      states: [
+        { label: 'From the start page’s Settings', values: {} },
+        { label: 'Over a question, from the header’s gear: the sheet', values: { from: 'game' } },
+      ],
+      build: (v = {}): Built =>
+        v.from === 'game'
+          ? { ...overAQuestion(), hash: undefined, seat: { mode: 'local', me: null }, steps: [{ wait: FIRST_OPEN_MS }, { click: 'header [data-cursor="gear"]' }] }
+          : { state: null, rooms: [], steps: [{ wait: FIRST_OPEN_MS }, { click: ':is(.entry:nth-child(4 of .entry) .pick, .pair .pair-pick:nth-child(2))' }] },
+    },
+    {
+      // Pairing, by hand: Pair a device, its code; Enter a code, and Back; the code typed and paired; the other device
+      // there a moment later. Each view's title, heart, what's under it and the line fade into the next's.
+      key: 'settings/sync-dialog',
+      screen: 'settings',
+      group: 'Settings',
+      label: 'The pairing dialog, from view to view',
+      seats: [{ mode: 'none', me: null }],
+      build: (): Built => ({
+        state: null,
+        hash: '#settings',
+        steps: [
+          { wait: 1000 },
+          { click: '.sync-row .btn.small' },
+          { wait: 1600 },
+          { click: '.sync .routes .route:last-of-type' },
+          { wait: 1400 },
+          { click: '.sync .actions .btn.ghost' },
+          { wait: 1400 },
+          { click: '.sync .routes .route:last-of-type' },
+          { wait: 900 },
+          { fill: '.sync .code-field', text: SYNC_CODE },
+          { wait: 500 },
+          { click: '.sync .actions .btn.primary' },
+          { wait: 1600 },
+          { sync: { code: SYNC_CODE, met: true, status: 'linked', linked: 1, lastAt: Date.now() } },
+        ],
+      }),
+    },
+    {
+      // Paired, the other device coming and going: the light and the line fade on and off.
+      key: 'settings/sync-light',
+      screen: 'settings',
+      group: 'Settings',
+      label: 'Sync’s light coming on and going off',
+      seats: [{ mode: 'none', me: null }],
+      build: (): Built => {
+        const now = Date.now();
+        return {
+          state: null,
+          hash: '#settings',
+          sync: { code: SYNC_CODE, met: true, status: 'waiting', linked: 0, lastAt: now - 25 * 60_000 },
+          steps: [
+            { wait: 1000 },
+            { sync: { status: 'linked', linked: 1 } },
+            { wait: 2200 },
+            { sync: { status: 'waiting', linked: 0, lastAt: now } },
+            { wait: 2200 },
+            { sync: { status: 'offline' } },
+            { wait: 2200 },
+            { sync: { status: 'linked', linked: 2 } },
+          ],
+        };
+      },
+    },
+    {
       key: 'settings/key',
       screen: 'settings',
       group: 'Settings',
       label: 'A key waiting to be set',
       seats: [{ mode: 'none', me: null }],
-      build: (): Built => ({ state: null, hash: '#settings', steps: [{ click: '.seal' }] }),
+      // (Keys only where there's a keyboard: a phone has none to set, Settings.svelte.)
+      build: (): Built => ({ state: null, hash: '#settings', steps: [{ click: '.seal', ifThere: true }] }),
     },
     {
       key: 'settings/over',

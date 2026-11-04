@@ -8,7 +8,7 @@
 
 import { emulate } from './emulate.ts';
 import { freeze, installFreeze } from './freeze.ts';
-import { check, listen, outline } from './checks.ts';
+import { check, listen, outline, publish } from './checks.ts';
 import { settle } from './settle.ts';
 import { maybe } from './optional.ts';
 import { isSizeKey, sizeOf } from '../sizes.ts';
@@ -125,6 +125,13 @@ export async function boot(asked: URLSearchParams) {
   const met = built.met ?? 5;
   const before = typeof met === 'number' ? engine.items.slice(0, met) : engine.items.filter((it) => met.includes(it.name));
   for (const it of before) meet(it.id, at - 86_400_000, at + 1);
+  // Items new with the newest release, stamped as a refresh stamps them (the frame's own copy of the items), some of them met.
+  if (built.released) {
+    const { RELEASES } = await import('../../lib/releases.ts');
+    const came = engine.items.slice(engine.items.length - built.released.count);
+    for (const it of came) it.added = RELEASES.at(-1)!.from;
+    for (const it of came.slice(0, built.released.met)) meet(it.id, at - 86_400_000, at + 1);
+  }
   storage.writeKey(codex.CODEX_KEY, codex.serializeCodex(c));
   // Its Delve runs, oldest first, this one last.
   records.resetRecords();
@@ -140,6 +147,8 @@ export async function boot(asked: URLSearchParams) {
   if (built.sound?.volume !== undefined) sound.setVolume(built.sound.volume);
   if (built.sound?.ambience !== undefined) sound.setAmbience(built.sound.ambience);
   for (const [name, value] of Object.entries(built.stored ?? {})) storage.writeStored(name, value);
+  // A game saved before a reload, where the page looks for it as it loads ('session.v4', lib/session.svelte.ts' SAVE).
+  if (built.saved) storage.writeStored('session.v4', JSON.stringify(built.saved), 'session');
   if (built.stored?.keys) (await import('../../lib/keybinds.svelte.ts')).reloadKeys();
   // How its sync stands (only where the scene says: sync's link is loaded for those scenes alone).
   if (built.sync) {
@@ -174,13 +183,22 @@ export async function boot(asked: URLSearchParams) {
     session.hostNow = () => now;
   }
   const said = (what: string) => toasts.show(what, 'info', { title: 'Preview' });
-  session.dispatch = (a) => said(a.type === 'restart' ? (a.play ? 'The next game would start now.' : 'Everyone would go back to the lobby.') : `Would send: ${a.type}`);
+  session.dispatch = (a) => {
+    // A scene whose host's moves count (Built.own) plays them through the room, as the host would.
+    if (built.own && built.act && seat.mode === 'host' && session.state) session.state = built.act(session.state, a);
+    else said(a.type === 'restart' ? (a.play ? 'The next game would start now.' : 'Everyone would go back to the lobby.') : `Would send: ${a.type}`);
+  };
   session.watch = (on) => said(on ? 'You would just watch the next game.' : 'You would play in the next game.');
   session.leave = () => said('You would leave the room.');
   session.closeAsOwner = () => said('The room would close for everyone in it.');
 
   if (built.circle !== undefined) (await import('../../components/gameCircles.svelte.ts')).putEndCircle(built.circle);
   sound.installUiSounds();
+  // The stage's first frame sounds once the desk's been used, its sounds loaded
+  // before the scene shows, so what it plays as it opens is heard; the others
+  // (more seats, states side by side) stay quiet until clicked, not all at once.
+  // (The code before this change has no soundWithFramer.)
+  if (asked.get('frame') === 's0') await sound.soundWithFramer?.();
   spatial.installSpatial();
   fxUi.installUiFx();
   if (!switchedOff('cursor')) cursor.installCursor();
@@ -204,6 +222,29 @@ export async function boot(asked: URLSearchParams) {
     }
   };
   await pictures(state);
+
+  const slot = asked.get('frame') ?? '';
+  const tell = (m: FrameMessage) => parent.postMessage(m, deskOrigin(asked));
+  handOnKeys(tell);
+  addEventListener('pagehide', () => {
+    // Lets go of its WebGL at once as it goes, so the next frame's shaders don't wait on this one's.
+    for (const gl of gls) gl.getExtension('WEBGL_lose_context')?.loseContext();
+    clear();
+  });
+  // Shown: the desk takes its Loading away now, so what the steps do plays in view (and Freeze or S reach it meanwhile).
+  tell({ qa: 'ready', slot });
+
+  // Checked once at rest (once the steps are done), and again whenever what it shows changes (a click in it, a toast).
+  outline(asked.get('o') !== '0');
+  addEventListener('message', (e) => {
+    if (e.origin !== deskOrigin(asked) || !isDeskMessage(e.data)) return;
+    if (e.data.qa === 'outlines') outline(e.data.on);
+    else if (e.data.qa === 'freeze') freeze(e.data.on);
+    else if (e.data.qa === 'css') {
+      const on = e.data.on;
+      void import('../../lib/backdrop.ts').then((b) => b.leaveUiToCss(on));
+    }
+  });
 
   // What the scene does once it shows.
   for (const step of built.steps ?? []) {
@@ -246,37 +287,61 @@ export async function boot(asked: URLSearchParams) {
       }
     }
     else if ('toast' in step) toasts.hold(toasts.show(step.toast, step.kind, step.opts));
+    // (Missing where the code before this change doesn't have the sound.)
+    else if ('sound' in step) step.sound && sound.sfx(step.sound, { from: { from: step.from ? document.querySelector(step.from) : null } });
+    else if ('clock' in step) {
+      const now = step.clock;
+      session.clockOffset = now - Date.now();
+      session.hostNow = () => now;
+    } else if ('link' in step) {
+      // (With no peer the session never reconnects by itself; Retry counts its tries down to given up, as it would.)
+      session.status = step.link === 'back' ? 'ready' : 'lost';
+      session.gaveUp = step.link === 'gaveUp';
+    } else if ('earn' in step) {
+      const game = session.state?.startedAt;
+      if (game !== undefined) session.earned = { game, ids: [...new Set([...(session.earned?.game === game ? session.earned.ids : []), ...step.earn])] };
+    } else if ('logged' in step) {
+      // Met for the first time as answered, whatever the scene had met before.
+      for (const a of step.logged) {
+        c.log.push(a);
+        delete c.items[a.id];
+        meet(a.id, a.t, a.t);
+      }
+      storage.writeKey(codex.CODEX_KEY, codex.serializeCodex(c));
+    }
     // (In a tree before the back guard there's no Back of the game's to show: the tab's own history is the desk's.)
     else if ('back' in step) steps?.back();
-    else (await found(step.click))?.click();
+    else if ('scroll' in step) document.querySelector(step.scroll)?.scrollIntoView({ block: 'center', behavior: 'instant' });
+    else if ('rooms' in step) {
+      // Found from now on; then a look at once, once the list's last look is over (Refresh waits out its 1.5 s).
+      rooms.useMadeUpRooms(step.rooms, built.invite);
+      for (let i = 0; i < 100; i++) {
+        const refresh = document.querySelector<HTMLButtonElement>('button.refresh');
+        if (refresh && !refresh.disabled) {
+          refresh.click();
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    } else if ('sync' in step) {
+      const { sync } = await import('../../lib/sync/link.svelte.ts');
+      Object.assign(sync, step.sync);
+    } else if ('clipboard' in step) {
+      // Written if the frame may, and taken as written either way.
+      const real = navigator.clipboard as Clipboard | undefined;
+      const write = real?.writeText.bind(real);
+      const writeText = (text: string) => (write ? write(text) : Promise.resolve()).catch(() => undefined);
+      if (real) Object.defineProperty(real, 'writeText', { configurable: true, value: writeText });
+      else Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    }
+    else (await found(step.click, step.ifThere))?.click();
   }
 
-  const slot = asked.get('frame') ?? '';
-  const tell = (m: FrameMessage) => parent.postMessage(m, deskOrigin(asked));
-  handOnKeys(tell);
-  addEventListener('pagehide', () => {
-    // Lets go of its WebGL at once as it goes, so the next frame's shaders don't wait on this one's.
-    for (const gl of gls) gl.getExtension('WEBGL_lose_context')?.loseContext();
-    clear();
-  });
-  tell({ qa: 'ready', slot });
-
-  // Checked once at rest, and again whenever what it shows changes (a click in it, a toast).
-  outline(asked.get('o') !== '0');
-  addEventListener('message', (e) => {
-    if (e.origin !== deskOrigin(asked) || !isDeskMessage(e.data)) return;
-    if (e.data.qa === 'outlines') outline(e.data.on);
-    else if (e.data.qa === 'freeze') freeze(e.data.on);
-    else if (e.data.qa === 'css') {
-      const on = e.data.on;
-      void import('../../lib/backdrop.ts').then((b) => b.leaveUiToCss(on));
-    }
-  });
   const run = async () => {
     const settled = await settle();
     const problems = check(heard);
     tell({ qa: 'checked', slot, settled, problems });
-    (window as Window & { __qa?: unknown }).__qa = { settled, problems };
+    publish(settled, problems);
   };
   await run();
   // In the desk, checked again once what it shows has changed after a click
@@ -316,14 +381,14 @@ export function handOnKeys(tell: (m: FrameMessage) => void, digits = false) {
   addEventListener('keyup', (e) => hand(e, true));
 }
 
-/** The first element `selector` finds, once there is one (null after 5 s). */
-async function found(selector: string): Promise<HTMLElement | null> {
+/** The first element `selector` finds, once there is one (null after 5 s, an error unless the step asked for it only `ifThere`). */
+async function found(selector: string, ifThere = false): Promise<HTMLElement | null> {
   for (let i = 0; i < 50; i++) {
     const el = document.querySelector<HTMLElement>(selector);
     if (el) return el;
     await new Promise((r) => setTimeout(r, 100));
   }
-  console.error(`The scene's step found nothing at ${selector}`);
+  if (!ifThere) console.error(`The scene's step found nothing at ${selector}`);
   return null;
 }
 

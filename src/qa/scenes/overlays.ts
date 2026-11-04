@@ -3,16 +3,20 @@
 // leaving one (the owner's with Close room too; the header's
 // leave, or the browser's back, which closes what's open first, the codex's
 // item card too), news arriving mid-question (where the stack stands on a
-// phone, either way up), and coming back from a crash (Root.svelte: a guest
+// phone, either way up), a guest's link to the host lost, an item's window
+// as another item opens in it, and coming back
+// from a crash (Root.svelte: a guest
 // leaves the room, a second crash soon after leaves any game, and one with
 // no game left stops the page).
 
 import { pid, player } from '../build/people.ts';
 import { Table } from '../build/play.ts';
 import { endScenes } from './over.ts';
-import type { Settings } from '../../lib/game.ts';
+import { PRESETS, type Settings } from '../../lib/game.ts';
 import { ACHIEVEMENTS } from '../../lib/achievements.ts';
 import { METALS, TIERS, type Tier } from '../../lib/metals.ts';
+// (A namespace: the code before this change has no ACHIEVEMENT_SOUNDS, and a name it lacks fails the whole screen there.)
+import * as soundDesign from '../../lib/soundDesign.ts';
 import type { Built, Scene, Seat, Step } from '../scene.ts';
 
 const THREE = ['Kalguur', 'Doryani', 'Una of the Vaal'];
@@ -23,6 +27,12 @@ const inGame = (steps: Step[], answered = false, owner?: string): Built => {
   if (owner) t.s.owner = { id: pid(owner) };
   // (Turned out, it lands on the start page: its room list finds nothing.)
   return { state: t.s, act: t.room, at: t.clock.now + 3000, steps, rooms: [] };
+};
+/** A question asked in pictures, Doryani's pick wrong: the reveal names two, each opening its item's window. */
+const pictured = (steps: Step[], seed?: number): Built => {
+  const t = new Table(THREE, { difficulty: 'custom', custom: { ...PRESETS.merciless, artChance: 1 } }, { seed }).start().pick();
+  t.answer(t.turn, false);
+  return { state: t.s, act: t.room, at: t.clock.now, steps: [{ wait: 1200 }, ...steps], rooms: [] };
 };
 /** The lobby, its host editing the custom difficulty (the edit button on Custom). */
 const CUSTOM: Settings['custom'] = { options: 6, similarNames: 1, fakes: 2, artChance: 0.5, veil: 'slow', grayscale: 'art', mirror: 0.3, lockout: 3 };
@@ -37,13 +47,14 @@ const endItem = (steps: Step[]): Built => {
   const { state, delveResult, log, runs } = endScenes().find((e) => e.key === 'd-solo')!;
   return { state, delveResult, log, runs, steps: [{ wait: 2500 }, { click: 'button.thumb' }, { wait: 800 }, ...steps] };
 };
-/** A question, then the notices for achievements of `tier` (the first four not kept secret): one alone, then three at once. */
+/** A question, then the notices for achievements of `tier` (the first four not kept secret): one alone, then three at once, sounding in their metal. */
 const achievementNotices = (tier: Tier): Built => {
   const [alone, ...burst] = ACHIEVEMENTS.filter((a) => a.tier === tier && !a.secret).slice(0, 4);
   const seal = (a: typeof alone) => ({ sign: a.sign, tier: a.tier });
   return inGame([
     { toast: alone.title, opts: { title: 'Achievement earned', seal: seal(alone) } },
     { toast: burst.map((a) => a.title).join(' • '), opts: { title: `${burst.length} achievements earned`, seal: seal(burst[0]) } },
+    { sound: soundDesign.ACHIEVEMENT_SOUNDS?.[tier], from: '.toasts' },
   ]);
 };
 const overlay = (key: string, label: string, seats: Seat[], build: () => Built): Scene => ({ key: `overlay/${key}`, screen: 'overlay', group: 'Over the game', label, seats, build });
@@ -70,6 +81,19 @@ export function overlayScenes(): Scene[] {
         { toast: 'Too quick to count: the question had only just reached you. Answer again.', kind: 'error' },
       ]),
     ),
+    // A guest's link to the host lost under a notice already up: its row pinned at the head of the stack (the notice
+    // moving over for it), its words and seal cross-fading as reconnecting is given up, then gone as the link comes back.
+    overlay('lost', 'A guest’s link to the host lost: reconnecting, given up, back', [doryani], () =>
+      inGame([
+        { toast: 'Brea', opts: { title: 'Spectator joined', who: { name: 'Brea' } } },
+        { wait: 1200 },
+        { link: 'lost' },
+        { wait: 2600 },
+        { link: 'gaveUp' },
+        { wait: 2600 },
+        { link: 'back' },
+      ]),
+    ),
     // Achievements earned mid-question, worded as lib/achievementToasts.ts words them: one alone, and three as one notice under the first's seal, all of the metal picked.
     {
       ...overlay('achievement', 'Achievements earned during a question', [doryani], () => achievementNotices(3)),
@@ -86,6 +110,9 @@ export function overlayScenes(): Scene[] {
     overlay('back-item', "Back with an item's window open: it closes, the game stays", [kalguur], () => inGame([{ click: 'button.details' }, { wait: 800 }, { back: true }], true)),
     overlay('back-codex-item', "Back in the codex with an item open: it closes, the codex stays as it was", [{ mode: 'none', me: null }], () => codexItem([{ back: true }])),
     overlay('back-end-item', "Back on the end screen with an item open: it closes, the room stays", [{ mode: 'local', me: null }], () => endItem([{ back: true }])),
+    // The item's window open, another item opened in it: its name and tooltip cross-fade, and its top glides with the roll as the height changes.
+    // (Seed 39: the pick's tooltip some eight lines shorter than the answer's, so the roll and the plate's glide show.)
+    overlay('item-switch', "An item's window: another item opened in it", [kalguur], () => pictured([{ click: '.tile.inspect' }, { wait: 1800 }, { click: '.tile.inspect ~ .tile.inspect' }], 39)),
     overlay('crash-host', 'The host crashed once: back on its feet', [kalguur], () => inGame([{ crash: 1 }])),
     overlay('crash-guest', 'A guest crashed once: out of the room', [doryani], () => inGame([{ crash: 1 }])),
     overlay('crash-twice', 'The host crashed twice: out of the game', [kalguur], () => inGame([{ crash: 2 }])),

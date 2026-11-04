@@ -27,6 +27,7 @@
   import { doused, reveal } from '../lib/fx/moments';
   import { whenIdle } from '../lib/idle';
   import { holdSettled } from '../lib/settled';
+  import { calm } from '../lib/motion.svelte';
   import { onStoredElsewhere } from '../lib/storage';
   import { turnOf } from '../lib/turns';
   import { loadPlate } from '../lib/plateStore.svelte';
@@ -213,6 +214,7 @@
   async function pick(i: number) {
     if (answered || disabled) return;
     if (held !== null) {
+      if (held !== i) sfx('select', { from: { from: optEls[i] } });
       held = i;
       return;
     }
@@ -225,6 +227,8 @@
     const asking = practice ? undefined : clock.known() ? clock.refresh() : clock.ready(CLOCK_WAIT_MS);
     if (asking) {
       held = i;
+      // Heard picked at once, as in a game, while its answer waits for the day.
+      sfx('select', { from: { from: optEls[i] } });
       await Promise.race([asking, new Promise((done) => setTimeout(done, CLOCK_WAIT_MS))]);
       i = held ?? i;
       held = null;
@@ -348,6 +352,8 @@
   }
 
   const upper = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  /** The question being asked, as its answers are keyed: a new one (practice, or a new day) fades its words in. */
+  const asking = $derived(q.askedAt + ':' + q.itemId);
   /** What the item is, in the legend's line: "A shield", "An amulet or belt", "Gloves". */
   const topic = $derived(aTopic(questionTopic(q, true)));
 </script>
@@ -386,10 +392,15 @@
           <p class="line">{drawn?.base}</p>
         </div>
       {:else}
-        <h2 class="title">{practice ? 'Practice' : 'Today’s unique'}</h2>
-        <!-- The line always describes the item: what kind it is while asking (the
-             four answers and the caption say what to do), its base once answered. -->
-        <p class="line">{topic}{practice ? '.' : ', the same for every exile today.'}</p>
+        <!-- Each new question's words fade in as its answers fly in (practice, or a new day), not only the first. -->
+        {#key asking}
+          <div in:fade|global={calm({ duration: 300 })}>
+            <h2 class="title">{practice ? 'Practice' : 'Today’s unique'}</h2>
+            <!-- The line always describes the item: what kind it is while asking (the
+                 four answers and the caption say what to do), its base once answered. -->
+            <p class="line">{topic}{practice ? '.' : ', the same for every exile today.'}</p>
+          </div>
+        {/key}
       {/if}
     </div>
   </div>
@@ -427,15 +438,17 @@
 
   <div class="after" aria-live="polite">
     {#if !answered}
-      {#if practice}
-        <!-- Practice is apart from the day's question: say so, and when the next one comes. -->
-        <p class="caption">Practice doesn’t count<span class="more">{' '}toward your streak</span>; <span aria-live="off">{nextIn(now, 'daily')}</span>.</p>
-      {:else if graceOn(rec, today)}
-        <!-- Yesterday went unanswered and the run lives on by its grace (lib/daily GRACE_DAYS): say so before the answer that keeps it. -->
-        <p class="caption">You skipped a day; answer right to keep your streak.</p>
-      {:else}
-        <p class="caption">Watch for look-alikes: one name may be made up.</p>
-      {/if}
+      {#key asking}
+        {#if practice}
+          <!-- Practice is apart from the day's question: say so, and when the next one comes. -->
+          <p class="caption" in:fade|global={calm({ duration: 300 })}>Practice doesn’t count<span class="more">{' '}toward your streak</span>; <span aria-live="off">{nextIn(now, 'daily')}</span>.</p>
+        {:else if graceOn(rec, today)}
+          <!-- Yesterday went unanswered and the run lives on by its grace (lib/daily GRACE_DAYS): say so before the answer that keeps it. -->
+          <p class="caption" in:fade|global={calm({ duration: 300 })}>You skipped a day; answer right to keep your streak.</p>
+        {:else}
+          <p class="caption" in:fade|global={calm({ duration: 300 })}>Watch for look-alikes: one name may be made up.</p>
+        {/if}
+      {/key}
     {:else}
       <p class="tally" in:fade={{ duration: 300, delay: 150 }}>
         {#if practice}
@@ -446,12 +459,15 @@
             <!-- The game's streak badge, counted in days, burning with the game's fire. -->
             <DailyStreak days={streak} {burning} />
           {:else if todays && todays.ended >= 1}
-            <span use:douse={justMissed}>Streak ended at <span class="num">{todays.ended}</span> {todays.ended === 1 ? 'day' : 'days'}</span>
+            <!-- On a phone "Streak" goes, and "minutes" shortens to "min" below, or Practice more drops to a line of its own. -->
+            <span use:douse={justMissed}><span class="full">Streak ended</span><span class="short">Ended</span> at <span class="num">{todays.ended}</span> {todays.ended === 1 ? 'day' : 'days'}</span>
           {:else}
             <span>Missed today</span>
           {/if}
           <span class="sep" aria-hidden="true">·</span>
-          <span aria-live="off">{nextIn(now)}</span>
+          {@const when = nextIn(now)}
+          {@const cut = when.match(/^(.* min)(utes?)$/)}
+          <span aria-live="off">{#if cut}{cut[1]}<span class="full">{cut[2]}</span>{:else}{when}{/if}</span>
         {/if}
       </p>
       <!-- After the result, as in the game: what happened first, then the way on;
@@ -559,7 +575,7 @@
     font-style: italic;
     font-size: var(--daily-line-size, 16px);
     line-height: var(--daily-line-lh, 22px);
-    color: #ab9d88;
+    color: var(--muted);
     text-wrap: balance;
     text-shadow: 0 0 8px rgba(0, 0, 0, 0.95);
   }
@@ -603,6 +619,7 @@
       transform 0.25s var(--ease-out),
       border-color 0.3s,
       opacity 0.4s,
+      filter 0.4s,
       --bs-ring 0.3s,
       --bs1 0.3s,
       --bs1-color 0.3s,
@@ -817,7 +834,7 @@
     font-family: var(--font-body);
     font-weight: 400;
     font-style: italic;
-    font-size: 13px;
+    font-size: 15px;
     line-height: 1.1;
     letter-spacing: 0;
     color: var(--unique-hi);
@@ -897,7 +914,7 @@
     text-wrap: balance;
     font-style: italic;
     font-size: 17px;
-    color: #a99c86;
+    color: var(--muted);
   }
   .tally {
     display: flex;
@@ -906,7 +923,18 @@
     margin: 0;
     font-style: italic;
     font-size: 15px;
-    color: #a99c86;
+    color: var(--muted);
+  }
+  .tally .sep {
+    color: var(--faint);
+  }
+  /* A phone's shorter wording (below). */
+  .tally .short {
+    display: none;
+  }
+  /* The way on keeps to the right, even on a line of its own. */
+  .after .btn {
+    margin-inline-start: auto;
   }
   .num {
     font-family: var(--font-cinzel);
@@ -937,11 +965,13 @@
     .option {
       height: 58px;
     }
-    /* Room for the answered state's two lines (result, then Practice more) from the start, so nothing below moves when it comes. */
+    /* Room for two lines from the start (a caption may take two), so nothing below moves when the answer comes.
+       The result and Practice more keep to one line, at 375 wide too (the longest, Ended at 365 days · next in 23 hours, by 6px),
+       the result at the left and the button at the right, as on wider screens. */
     .after {
-      justify-content: center;
       align-content: center;
       min-height: 62px;
+      column-gap: 0.625rem;
     }
     .caption {
       font-size: 15px;
@@ -950,7 +980,14 @@
       display: none;
     }
     .tally {
+      gap: 0.375rem;
       margin: 0;
+    }
+    .tally .full {
+      display: none;
+    }
+    .tally .short {
+      display: inline;
     }
   }
 </style>

@@ -12,20 +12,20 @@
 </script>
 
 <script lang="ts">
-  // Shares of visitors, a row each, in the order given (a journey's steps,
-  // the minutes a visit stayed): how many, the share, a bar as long as it
-  // with a line where the period before stood, and the change in points. A
-  // share that wasn't counted says "–". Neither line nor change where the
-  // period before wasn't counted in full (COMPARE).
+  // Shares of visitors (or page loads, `counted`), a row each, in the order
+  // given (a journey's steps, the minutes a visit stayed): how many, the
+  // share, a bar as long as it with a line where the period before stood,
+  // and the change in points. A share that wasn't counted says "–".
+  // Neither line nor change where the period before wasn't counted in full
+  // (COMPARE).
   import { getContext } from 'svelte';
-  import { fmt } from './chart';
+  import { fmt, pct } from './chart';
   import Delta from './Delta.svelte';
   import { COMPARE } from './read';
 
-  let { rows, head, label }: { rows: ShareRow[]; head: string; label: string } = $props();
+  let { rows, head, counted = 'Visits', label }: { rows: ShareRow[]; head: string; counted?: string; label: string } = $props();
 
   const compare = getContext<(() => boolean) | undefined>(COMPARE) ?? (() => true);
-  const pct = (v: number | null) => (v === null ? '–' : `${Math.round(v)}%`);
 </script>
 
 <div class="scroll-x shares">
@@ -33,7 +33,7 @@
     <thead>
       <tr>
         <th scope="col">{head}</th>
-        <th scope="col" class="n opt">Visits</th>
+        <th scope="col" class="n opt">{counted}</th>
         <th scope="col" class="n">Share</th>
         <th scope="col" class="bar"><span class="sr">The share{compare() ? ', the line where it stood before' : ''}</span></th>
         {#if compare()}<th scope="col">Change</th>{/if}
@@ -93,6 +93,15 @@
   .change :global(.delta) {
     flex-wrap: nowrap;
   }
+  /* A phone: where it stood goes under the change, so the column gives up its width rather than clip. */
+  @media (max-width: 600px) {
+    .change {
+      white-space: normal;
+    }
+    .change :global(.delta) {
+      flex-wrap: wrap;
+    }
+  }
   /* Kept to the width it's given, a half of the page among them: there the bar goes and the change says where it stood in words. */
   .shares {
     container-type: inline-size;
@@ -104,6 +113,12 @@
   @container (min-width: 36rem) {
     .shares .table tbody th[scope='row'] {
       min-width: 12rem;
+    }
+  }
+  /* With the room for it (a big monitor's column), each name on its line: the bar gives up the width. */
+  @container (min-width: 44rem) {
+    .shares .table tbody th[scope='row'] {
+      white-space: nowrap;
     }
   }
   @container (max-width: 36rem) {

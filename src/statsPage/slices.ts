@@ -8,8 +8,8 @@
 // together. Pure, so the tests can feed it.
 
 import type { Named } from './api.ts';
-import { beyondChanceOf, rateBeyondChance, reachedOf } from './insights.ts';
-import { DAILY_FROM, MODES, MODE_NAMES, RETURNS, deviceOf, type Counts, type Mode } from './model.ts';
+import { countsApart, gamesSpread, rateBeyondChance, reachedOf } from './insights.ts';
+import { DAILY_FROM, MODES, MODE_NAMES, RETURNS, deviceOf, zFor, type Counts, type Mode } from './model.ts';
 
 /**
  * What people do, each a set of the paths count.ts sends; `loads` and
@@ -36,7 +36,6 @@ export const GROUPS: readonly { group: Group; name: string }[] = [
   { group: 'joined', name: 'Joined a room' },
   { group: 'failed', name: 'Met a failure' },
 ];
-export const groupName = (g: Group) => GROUPS.find((x) => x.group === g)?.name ?? g;
 
 /** The steps the overview reads (insights.ts stepsOf), and so the groups' share who played. */
 const playedSteps = (c: Counts) => reachedOf(c, ['played', 'finished']);
@@ -311,7 +310,7 @@ export function sliceCalls(c: Counts): { group: Group; dim: Dim; paths: string[]
 }
 
 /** The groups looked at for what stands out: the biggest countries, both kinds of device, the biggest systems. */
-export function lookedAt(s: Slices): SegmentRow[] {
+function lookedAt(s: Slices): SegmentRow[] {
   const known = (r: SegmentRow) => r.who.name !== 'Unknown' && r.who.name !== 'Other';
   return [...segments(s, 'place', 8), ...segments(s, 'device'), ...segments(s, 'system', 5)].filter(known);
 }
@@ -348,30 +347,36 @@ export interface Apart {
  * Whether `who`'s figures are apart from the rest of their list's (everyone
  * less them: a country's against the other countries') by more than chance
  * makes: a share by how many it's of (insights.ts rateBeyondChance), a
- * count for the visits (games, failures) by its size against the group's
- * part of everyone's. With a few dozen visits a group's figures swing far
- * by chance alone.
+ * count for the visits (games, failures) against the rest's for as many
+ * visits (insights.ts countsApart; games widened by how many a player
+ * plays, gamesSpread). With a few dozen visits a group's figures swing far
+ * by chance alone. `z`: how far beyond, twice the swing for a group's own
+ * table; more where many groups are read for what stands out.
  */
-export function apartFrom(s: Slices, who: Who): Apart {
+export function apartFrom(s: Slices, who: Who, z = 2): Apart {
   const c = countsIn(s, who);
   const t = countsIn(s, null, dimOf(who.kind));
   /** The group's `k` of `n` against the rest's, `K` of `N` being everyone's. */
-  const share = (k: number, n: number, K: number, N: number) => n > 0 && N > n && rateBeyondChance((100 * k) / n, n, (100 * (K - k)) / (N - n), N - n);
-  /** The group's count against its visits' part of everyone's. */
-  const count = (k: number, K: number) => t.visit > 0 && beyondChanceOf(k, (K * c.visit) / t.visit);
+  const share = (k: number, n: number, K: number, N: number) => n > 0 && N > n && rateBeyondChance((100 * k) / n, n, (100 * (K - k)) / (N - n), N - n, z);
+  /** The group's count `k` against the rest's for as many visits, `K` being everyone's. */
+  const count = (k: number, K: number, per = 1) => t.visit > c.visit && c.visit > 0 && countsApart(k, K - k, { scale: c.visit / (t.visit - c.visit), per, z });
   const games = (n: Record<Group, number>) => MODES.reduce((g, m) => g + n[m], 0);
+  const per = gamesSpread(games(t), t.played);
   return {
     played: share(c.played, c.loads, t.played, t.loads),
-    games: count(games(c), games(t)),
+    games: count(games(c), games(t), per),
     daily: share(c.daily, c.asked, t.daily, t.asked),
     back: share(c.back, c.new + c.back, t.back, t.new + t.back),
     app: share(c.app, c.visit, t.app, t.visit),
     joins: share(c.joined, c.join, t.joined, t.join),
     failures: count(c.failed, t.failed),
     part: Object.fromEntries(MODES.map((m) => [m, share(c[m], games(c), t[m], games(t))])) as Record<Mode, boolean>,
-    rate: Object.fromEntries(MODES.map((m) => [m, count(c[m], t[m])])) as Record<Mode, boolean>,
+    rate: Object.fromEntries(MODES.map((m) => [m, count(c[m], t[m], per)])) as Record<Mode, boolean>,
   };
 }
+
+/** The figures standouts sets each group against everyone by: played, games, Today's unique, back, joins, failures, and each mode's part. */
+const FIGURES = 6 + MODES.length;
 
 /**
  * What stands out among the groups, most first: a mode far more of their
@@ -381,17 +386,21 @@ export function apartFrom(s: Slices, who: Who): Apart {
  * failures met. Only groups big enough that a handful of players can't make it up
  * (`min` visitors, and enough games or tries behind the figure), and only
  * a difference from the rest of everyone that chance couldn't have made
- * (a share by how many it's of, a count for the visits by its size).
+ * (a share by how many it's of, a count for the visits by its size), for
+ * one of every figure of every group looked at (model.ts zFor): fifteen
+ * groups of nine figures each at twice the swing name two or three by
+ * chance alone.
  */
 export function standouts(s: Slices, top = 6, min = 30): Standout[] {
   const floor = Math.max(min, profileIn(s, null).visitors * 0.03);
   const out: Standout[] = [];
   const weigh = (mine: number, theirs: number, n: number) => Math.abs(Math.log(mine / theirs)) * Math.sqrt(n);
-  for (const { who, profile: p } of lookedAt(s)) {
-    if (p.visitors < floor) continue;
+  const looked = lookedAt(s).filter((g) => g.profile.visitors >= floor);
+  const z = zFor(looked.length * FIGURES);
+  for (const { who, profile: p } of looked) {
     // Set against everyone in the same list: a system's against all systems'.
     const all = profileIn(s, null, dimOf(who.kind));
-    const sure = apartFrom(s, who);
+    const sure = apartFrom(s, who, z);
     for (const m of p.modes) {
       const a = all.modes.find((x) => x.mode === m.mode)!;
       if (p.games >= 20 && a.share >= 5 && m.share >= a.share * 1.3 && sure.part[m.mode]) out.push({ who, what: 'mode', mode: m.mode, mine: m.share, all: a.share, tone: 'flat', score: weigh(m.share, a.share, m.count) });

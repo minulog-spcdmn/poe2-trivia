@@ -6,15 +6,17 @@
   // "from 1,785", the period it's from in its title (the page's header says
   // it once for all).
   // `rate`: the figures are percents, the change in points.
-  // A change chance could have made (insights.ts beyondChanceOf) is said
-  // but not coloured: 3 visitors against 1 is no news. Counts are weighed
-  // by themselves; a rate by `of`, how many each period's percent is of; an
-  // average by `of` too, the counts behind it (the period before's brought
-  // to as many days). Without `of`, a rate or an average is taken as sure.
+  // A change chance could have made (insights.ts countsApart) is said but
+  // not coloured: 3 visitors against 1 is no news. Counts are weighed by
+  // themselves, both periods' being chance's; a rate by `of`, how many each
+  // period's percent is of; an average by `of` too, the counts behind it
+  // (the period before's brought to as many days), `of.per` widening their
+  // swing where each one behind them brings several (a player's games).
+  // Without `of`, a rate or an average is taken as sure.
   // Nothing at all where the period before wasn't counted in full (COMPARE).
   import { getContext } from 'svelte';
   import { fmt } from './chart';
-  import { beyondChanceOf, rateBeyondChance } from './insights';
+  import { countsApart, rateBeyondChance } from './insights';
   import { COMPARE } from './read';
 
   let {
@@ -25,7 +27,7 @@
     period,
     digits = 0,
     of,
-  }: { now: number | null; before: number | null; rate?: boolean; worse?: 'up' | 'down' | 'neither'; period: string; digits?: number; of?: { now: number; before: number } } = $props();
+  }: { now: number | null; before: number | null; rate?: boolean; worse?: 'up' | 'down' | 'neither'; period: string; digits?: number; of?: { now: number; before: number; per?: number } } = $props();
 
   const compare = getContext<(() => boolean) | undefined>(COMPARE) ?? (() => true);
 
@@ -43,8 +45,8 @@
   const sure = $derived.by(() => {
     if (now === null || before === null) return false;
     if (rate) return of ? rateBeyondChance(now, of.now, before, of.before) : true;
-    if (of) return beyondChanceOf(of.now, of.before);
-    return digits ? true : beyondChanceOf(now, before);
+    if (of) return countsApart(of.now, of.before, { per: of.per });
+    return digits ? true : countsApart(now, before);
   });
   const tone = $derived(step === null || step === 0 || worse === 'neither' || !sure ? 'flat' : (step > 0) === (worse === 'down') ? 'up' : 'down');
 </script>

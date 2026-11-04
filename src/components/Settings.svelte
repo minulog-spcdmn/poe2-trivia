@@ -16,7 +16,7 @@
   import { fxAvailable, fxUserOn, onFxChange, setFxOn } from '../lib/fx/core';
   import { NAME_KEY, session, savedName, saveName } from '../lib/session.svelte';
   import { MAX_NAME, nameRefusal } from '../lib/names';
-  import { refuseName } from '../lib/nameField';
+  import { pressed, refuseName } from '../lib/nameField';
   import { fingerSlide } from '../lib/fingerSlide';
   import { backdropShadow } from '../lib/backdropShadow';
   import { ACTIONS, OPTIONS, SLOTS, actionDoes, actionName, bindable, keyName, type Action } from '../lib/keys';
@@ -52,6 +52,8 @@
     // Drawn up from muted, the sound comes back.
     if (muted && volume > 0) setMuted(false);
   }
+  /** Whether the volume was last moved with the keys: let go of with a pointer, it clicks at its new level; stepped with the arrows, each step sounds a key's press at it. */
+  let slidByKey = false;
 
   // ---- the screen ----
 
@@ -82,6 +84,7 @@
       refuseName(nameField ?? null, n ? refusal : { reason: null }, (on) => (shaking = on));
       return;
     }
+    pressed(e);
     saveName(n);
     name = draft = n;
     nameField?.blur();
@@ -170,7 +173,10 @@
     e.preventDefault();
     e.stopPropagation();
     const { action, slot } = listening;
+    // Taken or cleared, a key's press, from the seal it went to.
+    const seal = { from: { from: e.target as Element | null } };
     if (e.code === 'Backspace') {
+      sfx('key', seal);
       clearKey(action, slot);
       listening = null;
       return;
@@ -179,9 +185,9 @@
     if (!bindable(e.code)) return;
     const from = ACTIONS.find((a) => a !== action && keybinds.map[a].includes(e.code));
     setKey(action, slot, e.code);
+    sfx('key', seal);
     moved = from ? { key: e.code, from } : null;
     listening = null;
-    sfx('click');
   }
 
   /** A press anywhere but on a seal stops the wait. */
@@ -228,7 +234,7 @@
         <div class="row">
           <label class="label" for="set-volume">Volume</label>
           <div class="slide">
-            <input id="set-volume" use:fingerSlide type="range" min="0" max="1" step="0.05" value={shownVolume} oninput={slideVolume} onchange={() => sfx('click')} style:--level={shownVolume} />
+            <input id="set-volume" use:fingerSlide type="range" min="0" max="1" step="0.05" value={shownVolume} oninput={slideVolume} onkeydown={() => (slidByKey = true)} onpointerdown={() => (slidByKey = false)} onchange={() => sfx(slidByKey ? 'key' : 'click')} style:--level={shownVolume} />
             <span class="num">{Math.round(shownVolume * 100)}</span>
           </div>
         </div>
@@ -258,7 +264,6 @@
             <button class:on={!session.hideCode} onclick={() => session.setHideCode(false)}>Shown</button>
             <button class:on={session.hideCode} onclick={() => session.setHideCode(true)}>Hidden</button>
           </div>
-          <p class="blurb">Hidden, it stays off your stream until you reveal it in the lobby.</p>
         </div>
       </section>
 
@@ -302,7 +307,7 @@
             autocorrect="off"
             enterkeyhint="done"
           />
-          <button class="btn" type="submit" disabled={draft.trim() === name}>Save</button>
+          <button class="btn" type="submit" data-sfx="none" disabled={draft.trim() === name}>Save</button>
         </form>
         <div class="row sync-row">
           <span class="label">Sync</span>
@@ -506,12 +511,12 @@
     font-size: 1rem;
     letter-spacing: 0;
     text-transform: none;
-    color: #c4b69c;
+    color: var(--muted);
   }
   .blurb {
     grid-column: 1 / -1;
     margin: 0;
-    font-size: 0.92rem;
+    font-size: 0.9375rem;
     font-style: italic;
     color: var(--muted);
   }
@@ -679,6 +684,10 @@
   .sync-row .unseen {
     visibility: hidden;
   }
+  /* The line turns green as the link comes up, and back as it goes, with the light. */
+  .sync-row .say {
+    transition: color 0.4s;
+  }
   .sync-row .blurb.linked {
     color: var(--verdict-good-icon);
   }
@@ -694,6 +703,11 @@
     border-radius: 50%;
     border: 1px solid var(--gold-lo);
     vertical-align: 0.08em;
+    /* (A dot this small: its glow is cheap to fade.) */
+    transition:
+      background-color 0.4s,
+      border-color 0.4s,
+      box-shadow 0.4s;
   }
   /* Every line after the light's in line with the words beside it, the light hung out in front. */
   .sync-row .paired {
@@ -711,7 +725,7 @@
   }
   .sync-row .sep {
     margin-left: 0.4rem;
-    color: var(--gold-lo);
+    color: var(--faint);
     font-style: normal;
   }
   /* The colours as the avatars wear them, a ring of gold round the one picked. */
@@ -794,7 +808,8 @@
     border: 0;
     cursor: pointer;
     font-family: var(--font-body);
-    font-style: italic;
+    /* (Upright, a control, in the italic status line it sits in.) */
+    font-style: normal;
     font-size: 0.95rem;
     color: var(--muted);
     text-decoration: underline;
@@ -863,7 +878,7 @@
   .key-name {
     justify-self: start;
     font-size: 1rem;
-    color: #c4b69c;
+    color: var(--text);
   }
   /* A key on the seal the answers wear in a game (QuestionView's .key), drawn
      out for a key whose name is a word; a waiting one is lit and breathes. */

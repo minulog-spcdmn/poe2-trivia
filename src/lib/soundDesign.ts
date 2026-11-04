@@ -9,10 +9,16 @@ import type { Sfx } from './sound';
 /**
  * `len` (s of the recording, before `rate`): play only that much, dying away
  * over its last 1.5 s (see playLayer in lib/sound.ts), as cut on the sound
- * board; the file itself stays whole.
+ * board; the file itself stays whole. `takes`: the recording comes in that
+ * many takes (`file-1` to `file-N`), one drawn at random each play, so a
+ * sound heard again and again close together (a deal's cards) never lays the
+ * same take over itself, which rings hollow.
  */
-export type Layer = { file: string; gain: number; rate: number; delay: number; hp: number; lp: number; send: number; len?: number };
+export type Layer = { file: string; gain: number; rate: number; delay: number; hp: number; lp: number; send: number; len?: number; takes?: number };
 export type Moment = { layers: Layer[]; soften: number; varyPitch: number; varyGain: number };
+
+/** A layer's files: its one, or each of its takes. */
+export const layerFiles = (l: Layer): string[] => (l.takes ? Array.from({ length: l.takes }, (_, i) => `${l.file}-${i + 1}`) : [l.file]);
 
 /**
  * Whole mix: master volume (dB) and 'warmth', a high-shelf cut (dB) above 5
@@ -242,6 +248,9 @@ function distant(m: Moment): Moment {
   };
 }
 
+/** Each metal's achievement sound (MOMENTS below), by its tier (lib/metals.ts), lead first. */
+export const ACHIEVEMENT_SOUNDS = ['achievementLead', 'achievementCopper', 'achievementSilver', 'achievementGold'] as const satisfies readonly Sfx[];
+
 export const MOMENTS: Record<Sfx, Moment> = {
   hover: {
     soften: 5.5,
@@ -261,6 +270,22 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'click-5', gain: -41, rate: 1.1, delay: 0, hp: 20, lp: 1908, send: 0.1 },
       { file: 'click-4', gain: -28, rate: 1.6, delay: 0, hp: 1200, lp: 2946, send: 0.25 },
       { file: 'pick-5', gain: -30, rate: 1.14, delay: 0, hp: 1200, lp: 14731, send: 0.15 },
+    ],
+  },
+  // A key's press, doing what a click would: the pick's snap, slowed and
+  // muffled, with a little of the click behind it and a brush of the hover's
+  // air. Rounder than the click (about 1.4 kHz at the middle of its spectrum
+  // to the click's 2.9, nothing crisp over 4 kHz), quieter (3.5 phon under
+  // it, by ear model), and with no low body to thud.
+  key: {
+    soften: 4,
+    varyPitch: 0.03,
+    varyGain: 1.5,
+    layers: [
+      { file: 'pick-5', gain: -32.2, rate: 0.9, delay: 0, hp: 400, lp: 3200, send: 0.15 },
+      { file: 'click-4', gain: -34.2, rate: 1.4, delay: 0, hp: 900, lp: 2600, send: 0.25 },
+      { file: 'click-5', gain: -46.2, rate: 1, delay: 0, hp: 150, lp: 1600, send: 0.1 },
+      { file: 'hover-2', gain: -44.2, rate: 1.6, delay: 0, hp: 563, lp: 5000, send: 0.25 },
     ],
   },
   yourTurn: {
@@ -705,6 +730,115 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'select-4', gain: -41, rate: 1, delay: 0, hp: 124, lp: 1235, send: 0.05 },
       { file: 'layer-sub-5', gain: -38, rate: 1, delay: 0, hp: 87, lp: 20000, send: 0 },
     ],
+  },
+  // An achievement earned, as its notice comes in and ignites, by its seal's
+  // metal: lead's a torch catching and dark power surging up out of it; gold's
+  // the torch too, then a rune's low hum welling up (the recording a sixth
+  // higher) in place of the surge, released in a deep bloom. Between them
+  // each metal takes a piece more of gold's: copper's surge lands in the
+  // bloom, silver's has the hum low under it too. (Crossfaded instead, the
+  // hum stood out from copper up and the three sounded alike: a steady hum is
+  // heard over noise louder than itself.) No tune and nothing that rings on;
+  // each metal a touch louder than the one below (1 phon, by ear model, lead
+  // at 41), all well under a find's reward (findReward), so none stands over
+  // the game.
+  achievementLead: {
+    soften: 6,
+    varyPitch: 0.015,
+    varyGain: 0.5,
+    layers: [
+      { file: 'achievement-torch', gain: -38.7, rate: 1, delay: 0, hp: 120, lp: 2500, send: 0.4 },
+      { file: 'achievement-surge', gain: -42.7, rate: 1, delay: 0, hp: 60, lp: 3000, send: 0.35 },
+    ],
+  },
+  achievementCopper: {
+    soften: 6,
+    varyPitch: 0.015,
+    varyGain: 0.5,
+    layers: [
+      { file: 'achievement-torch', gain: -38.2, rate: 1, delay: 0, hp: 120, lp: 2500, send: 0.4 },
+      { file: 'achievement-surge', gain: -42.2, rate: 1, delay: 0, hp: 60, lp: 3000, send: 0.35 },
+      { file: 'achievement-bloom', gain: -35.2, rate: 1, delay: 250, hp: 50, lp: 900, send: 0.4 },
+    ],
+  },
+  achievementSilver: {
+    soften: 6,
+    varyPitch: 0.015,
+    varyGain: 0.5,
+    layers: [
+      { file: 'achievement-torch', gain: -37.5, rate: 1, delay: 0, hp: 120, lp: 2500, send: 0.4 },
+      { file: 'achievement-surge', gain: -41.5, rate: 1, delay: 0, hp: 60, lp: 3000, send: 0.35 },
+      { file: 'achievement-rune', gain: -37.5, rate: 1.6, delay: 0, hp: 80, lp: 2000, send: 0.5 },
+      { file: 'achievement-bloom', gain: -34.5, rate: 1, delay: 150, hp: 50, lp: 900, send: 0.4 },
+    ],
+  },
+  achievementGold: {
+    soften: 6,
+    varyPitch: 0.015,
+    varyGain: 0.5,
+    layers: [
+      { file: 'achievement-torch', gain: -37.3, rate: 1, delay: 0, hp: 120, lp: 2500, send: 0.4 },
+      { file: 'achievement-rune', gain: -28, rate: 1.6, delay: 0, hp: 80, lp: 2000, send: 0.5 },
+      { file: 'achievement-bloom', gain: -32, rate: 1, delay: 150, hp: 50, lp: 900, send: 0.4 },
+    ],
+  },
+  // A class sigil unlocked: a heavy lock turning and giving, and a bell's
+  // high ping, an octave up, as it opens.
+  sigilUnlock: {
+    soften: 6,
+    varyPitch: 0.015,
+    varyGain: 0.5,
+    layers: [
+      { file: 'sigil-lock', gain: -34, rate: 1, delay: 0, hp: 150, lp: 20000, send: 0.2 },
+      { file: 'sigil-bell', gain: -44, rate: 2, delay: 140, hp: 800, lp: 20000, send: 0.8, len: 1.2 },
+    ],
+  },
+  // Sync: two devices paired. A stone tap and two chimes, a fourth apart,
+  // one for each device.
+  linked: {
+    soften: 6,
+    varyPitch: 0.01,
+    varyGain: 0.5,
+    layers: [
+      { file: 'click-5', gain: -38, rate: 1.2, delay: 0, hp: 400, lp: 6000, send: 0.3 },
+      { file: 'correct-6', gain: -38, rate: 1.12, delay: 0, hp: 116, lp: 12000, send: 0.85 },
+      { file: 'correct-6', gain: -38, rate: 1.5, delay: 170, hp: 116, lp: 12000, send: 0.9 },
+    ],
+  },
+  // A form turned down as it's sent: a locked handle rattled, then tried
+  // again a little higher. Between select and the click it stands in for,
+  // by ear model.
+  refuse: {
+    soften: 3.5,
+    varyPitch: 0.03,
+    varyGain: 1,
+    layers: [
+      { file: 'refuse-rattle', gain: -31, rate: 1, delay: 0, hp: 100, lp: 5000, send: 0.05 },
+      { file: 'refuse-rattle', gain: -34, rate: 1.06, delay: 170, hp: 100, lp: 5000, send: 0.05 },
+    ],
+  },
+  // A deal: one smooth swoosh of air for its cards flying in together, as
+  // loud as their summed speed, its band rising the faster they go (one for
+  // the hand: a whoosh a card, 70 ms apart, rang like an echo); then a short,
+  // full flap of air for each card turning face up, peaking as it stands on
+  // edge (halfway through its 0.46 s turn, cubicInOut; ChooseCategory) and
+  // gone before the next turns, 120 ms on (swelling over the whole turn, the
+  // three ran into one). The cards are big (220 x 300 and up): the swoosh has
+  // nothing under 180 Hz, which made it boom, nor grain or flutter, which made
+  // it sound made; the flaps keep down to 80 Hz, their body. In four takes
+  // each, so the turns never lay the same air over itself. Heard every deal,
+  // the whole of it is quieter than a hover (by ear model).
+  deal: {
+    soften: 5,
+    varyPitch: 0.03,
+    varyGain: 1.5,
+    layers: [{ file: 'deal-air', gain: -54.4, rate: 1, delay: 0, hp: 20, lp: 20000, send: 0.15, takes: 4 }],
+  },
+  dealTurn: {
+    soften: 5,
+    varyPitch: 0.03,
+    varyGain: 1.5,
+    layers: [{ file: 'deal-flap', gain: -51.6, rate: 1, delay: 0, hp: 20, lp: 20000, send: 0.15, takes: 4 }],
   },
   // Delve together: a life given to a teammate who perished, its light
   // streaming across and lighting as it lands.

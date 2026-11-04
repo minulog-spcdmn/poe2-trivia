@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { fade } from 'svelte/transition';
   import { engine } from '../lib/session.svelte';
+  import { tick } from 'svelte';
+  import { calm, motion } from '../lib/motion.svelte';
   import type { Codex } from '../lib/codex';
   import {
     CATEGORY_MIN,
@@ -167,6 +170,20 @@
   let allZones = $state(false);
   const zoneRows = $derived(allZones || zones.reached.length <= ZONE_ROWS + 1 ? [...zones.reached].reverse() : zones.reached.slice(-ZONE_ROWS).reverse());
   const zonesHidden = $derived(zones.reached.length - zoneRows.length);
+  let zoneList = $state<HTMLElement>();
+  /** All the zones shown, the list opens to its full height as the new rows fade in (as the run log's). */
+  async function showAllZones() {
+    const el = zoneList;
+    const from = el?.offsetHeight ?? 0;
+    allZones = true;
+    await tick();
+    if (!el || motion.still) return;
+    const to = el.offsetHeight;
+    el.style.overflow = 'clip';
+    const open = el.animate({ height: [`${from}px`, `${to}px`] }, { duration: 350, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+    await open.finished.catch(() => {});
+    el.style.overflow = '';
+  }
 </script>
 
 {#snippet meter(share: number)}
@@ -195,9 +212,9 @@
                 >
               </p>
             {/if}
-            <ol class="list zones">
+            <ol class="list zones" bind:this={zoneList}>
               {#each zoneRows as z (z.k)}
-                <li>
+                <li in:fade={calm({ duration: allZones ? 200 : 0 })}>
                   <span class="z-depth n">{shownDepth(z.depth)}</span>
                   <span class="l-name"><span>{z.name}</span></span>
                   <span class="z-when n">{date(z.at)}</span>
@@ -205,7 +222,7 @@
               {/each}
             </ol>
             {#if zonesHidden > 0}
-              <button class="more" onclick={() => (allZones = true)}>Show all {zones.reached.length} zones</button>
+              <button class="more" onclick={showAllZones}>Show all {zones.reached.length} zones</button>
             {/if}
           {:else}
             <p class="hint">The zones you reach, and when you first got there, show up here.</p>
@@ -482,7 +499,7 @@
     margin-bottom: 0.3rem;
   }
   .stat-note {
-    font-size: 0.92rem;
+    font-size: 1rem;
     line-height: 1.3;
     font-style: italic;
     color: var(--muted);
@@ -508,7 +525,7 @@
   }
   .medal-note {
     margin-top: 0.15rem;
-    font-size: 0.9rem;
+    font-size: 0.9375rem;
     font-style: italic;
     color: var(--muted);
   }
@@ -526,6 +543,9 @@
   }
   .empty p {
     margin: 0 0 1.4rem;
+  }
+  .empty .muted {
+    font-style: italic;
   }
 
   /* ---- panels ---- */
@@ -561,7 +581,7 @@
   .waiting {
     margin: 0;
     text-align: center;
-    font-size: 0.95rem;
+    font-size: 1rem;
     font-style: italic;
     color: var(--muted);
   }
@@ -581,13 +601,13 @@
   }
   .hint {
     margin: 0;
-    font-size: 0.95rem;
+    font-size: 1rem;
     font-style: italic;
     color: var(--muted);
   }
   .foot {
     margin: 0.9rem 0 0;
-    font-size: 0.9rem;
+    font-size: 1rem;
     font-style: italic;
     line-height: 1.35;
     color: var(--muted);
@@ -616,7 +636,7 @@
     gap: 0.45rem;
   }
   .bars.cats li {
-    grid-template-columns: minmax(0, 1fr) minmax(40px, 9rem) 4.4rem;
+    grid-template-columns: minmax(0, 1fr) minmax(40px, 9rem) 4.8rem;
   }
   .cat-name {
     display: flex;
@@ -640,7 +660,7 @@
   .bar-value small {
     color: var(--muted);
     font-family: var(--font-body);
-    font-size: 0.85rem;
+    font-size: 0.9375rem;
   }
   .glyph {
     flex: none;
@@ -712,7 +732,7 @@
   .row b small {
     font-family: var(--font-body);
     font-weight: 400;
-    font-size: 0.85rem;
+    font-size: 0.9375rem;
     color: var(--muted);
   }
   .row-name {
@@ -778,7 +798,7 @@
     white-space: nowrap;
   }
   .l-name small {
-    font-size: 0.85rem;
+    font-size: 0.9375rem;
     font-style: italic;
     color: var(--muted);
   }
@@ -797,7 +817,9 @@
     font-weight: 700;
     color: var(--gold-hi);
   }
+  /* (Cinzel as .n has it, said again so the rule reads whole to tests/legible.test.ts: small capitals, not lower case.) */
   .z-when {
+    font-family: var(--font-cinzel);
     font-size: 0.75rem;
     color: var(--muted);
     white-space: nowrap;
@@ -883,7 +905,7 @@
       gap: 0.5rem;
     }
     .bars.cats li {
-      grid-template-columns: minmax(0, 1fr) minmax(30px, 4rem) 3.6rem;
+      grid-template-columns: minmax(0, 1fr) minmax(30px, 4rem) 4rem;
     }
   }
 </style>

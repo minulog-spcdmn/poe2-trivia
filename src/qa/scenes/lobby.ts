@@ -1,6 +1,7 @@
 // The lobby: a room of any size, game and settings, from the host's seat, a
 // guest's and a spectator's; players at the host's screen, and a room that
-// couldn't go online; hot-seat; and the descent a Delve lobby draws from this
+// couldn't go online; hot-seat; the room as it changes (settings, a second
+// player, the gallery); and the descent a Delve lobby draws from this
 // device's records.
 
 import { MAX_PLAYERS, TIMER_STEPS, type Settings } from '../../lib/game.ts';
@@ -11,7 +12,7 @@ import type { Control, Values } from '../bench.ts';
 import { id, pid } from '../build/people.ts';
 import { Table } from '../build/play.ts';
 import { nameProblem } from '../../lib/names.ts';
-import type { Built, Scene, Seat } from '../scene.ts';
+import type { Built, Scene, Seat, Step } from '../scene.ts';
 
 const TWELVE = ['Kalguur', 'Doryani', 'Una of the Vaal', 'Hooded One', 'Rog', 'Zelina', 'Alva', 'Oswin', 'Dannig', 'Finn', 'Sekhema Asala', 'Renly'];
 const host = (name: string): Seat => ({ mode: 'host', me: pid(name) });
@@ -101,16 +102,136 @@ const RECORDS: Control = {
 const DEPTHS: Record<string, [number, number]> = { none: [0, 0], best: [38, 0], 'best-last': [46, 21], 'last-at-best': [46, 46], 'all-zones': [96, 62], 'past-100': [216, 0], 'both-past-100': [216, 150] };
 const TOGETHER: Control = { kind: 'toggle', key: 'together', label: 'Delving together', default: false };
 const FOUND: Control = { kind: 'toggle', key: 'finds', label: 'Every find met', default: true };
+/** A second player joining as it shows: the records turn from the runs alone to those together (runs of both kept). */
+const JOINS: Control = { kind: 'toggle', key: 'joins', label: 'Doryani joins, live', default: false };
+/** The runs together kept beside those alone, for the join: best 31, last 18. */
+const TOGETHER_RUNS: DelveRun[] = [31, 18].map((depth, n) => ({ id: 3100 + n, at: 3100 + n, depth, players: 2, ruleset: DELVE_RULESET, mixed: false, perished: [depth] }));
 
 function descent(v: Values = {}): Built {
-  const together = !!v.together;
+  const joins = !!v.joins;
+  const together = !!v.together && !joins;
   const [best, last] = DEPTHS[String(v.records)] ?? DEPTHS['best-last'];
   const players = together ? 3 : 1;
   const run = (n: number, depth: number): DelveRun => ({ id: 3000 + n, at: 3000 + n, depth, players, ruleset: DELVE_RULESET, mixed: false, ...(together ? { perished: [depth] } : {}) });
   const runs = [best ? run(0, best) : null, last ? run(1, last) : null].filter((r): r is DelveRun => !!r);
   const log: Answer[] = v.finds === false ? [] : FINDS_IN_ORDER.map((f, i) => ({ t: 3000 + i, id: id('Headhunter'), mode: 'name', ok: true, difficulty: 'cruel', race: false, depth: f.from, run: 3000, find: f.kind }));
   const t = new Table(together ? ['Kalguur', 'Doryani', 'Una of the Vaal'] : ['Kalguur'], { mode: 'delve' });
-  return { state: t.s, act: t.room, runs, log };
+  if (!joins) return { state: t.s, act: t.room, runs, log };
+  const shown = t.s;
+  t.act({ type: 'join', playerId: pid('Doryani'), name: 'Doryani' }, 'Doryani');
+  return { state: shown, act: t.room, runs: [...runs, ...TOGETHER_RUNS], log, steps: [{ wait: 3200 }, { then: t.s }] };
+}
+
+/** What happens in a room as it shows (the live scene's control). */
+const HAPPENS: Control = {
+  kind: 'choice',
+  key: 'happens',
+  label: 'What happens',
+  default: 'settings',
+  options: [
+    { value: 'settings', label: 'The host sets the game: points, difficulty, timer, lock' },
+    { value: 'arrives', label: 'A second player arrives' },
+    { value: 'gallery', label: 'Una of the Vaal goes to watch, and comes back' },
+    { value: 'offline', label: 'Una of the Vaal goes offline, and comes back' },
+    { value: 'host-leaves', label: 'The host leaves: Doryani hosts' },
+    { value: 'onlookers', label: 'Two arrive to watch' },
+    { value: 'sigils', label: 'Sigils put on, changed and taken off' },
+  ],
+};
+
+/**
+ * A room as it changes, a move at a time, as the host's word of each would
+ * reach the seat: the guest reading the host's settings as they change (each
+ * value dropping in), a host alone joined by a second player (the waiting
+ * line going, a seat lit), a player stepping over to the gallery and back.
+ */
+function live(v: Values = {}): Built {
+  const happens = String(v.happens ?? 'settings');
+  const t = new Table(happens === 'arrives' ? ['Kalguur'] : TWELVE.slice(0, 3));
+  const shown = t.s;
+  const steps: Step[] = [];
+  const then = (wait: number, by: () => void) => {
+    by();
+    steps.push({ wait }, { then: t.s });
+  };
+  if (happens === 'settings') {
+    then(1400, () => t.act({ type: 'settings', settings: { targetScore: 15 } }));
+    then(1200, () => t.act({ type: 'settings', settings: { difficulty: 'eternal' } }));
+    then(1200, () => t.act({ type: 'settings', settings: { timer: 32 } }));
+    then(1200, () => t.act({ type: 'settings', settings: { locked: true } }));
+  } else if (happens === 'arrives') then(1600, () => t.act({ type: 'join', playerId: pid('Doryani'), name: 'Doryani' }, 'Doryani'));
+  else if (happens === 'offline') {
+    then(1400, () => t.act({ type: 'connection', playerId: pid('Una of the Vaal'), connected: false }, null));
+    then(2200, () => t.act({ type: 'connection', playerId: pid('Una of the Vaal'), connected: true }, null));
+  } else if (happens === 'host-leaves') {
+    // (No move of the game's hands a room over: the room as a new host would carry it on, set by hand.)
+    then(1600, () => (t.s = { ...t.s, hostId: pid('Doryani'), players: t.s.players.filter((p) => p.name !== 'Kalguur') }));
+  } else if (happens === 'onlookers') {
+    then(1400, () => t.act({ type: 'join', playerId: pid('Finn'), name: 'Finn', watch: true }, 'Finn'));
+    then(1200, () => t.act({ type: 'join', playerId: pid('Renly'), name: 'Renly', watch: true }, 'Renly'));
+  } else if (happens === 'sigils') {
+    then(1400, () => t.act({ type: 'sigil', sigil: 'witch' }, 'Doryani'));
+    then(1200, () => t.act({ type: 'sigil', sigil: 'ranger' }, 'Una of the Vaal'));
+    then(1400, () => t.act({ type: 'sigil', sigil: 'monk' }, 'Doryani'));
+    then(1400, () => t.act({ type: 'sigil' }, 'Una of the Vaal'));
+  } else {
+    then(1600, () => t.act({ type: 'watch', watch: true }, 'Una of the Vaal'));
+    then(2200, () => t.act({ type: 'watch', watch: false }, 'Una of the Vaal'));
+  }
+  // The host's seat, and (but for the arrival, where there's none to see it from before) a guest's.
+  // The host's leaving from a third seat, whose host it was and who sees the banner come to Doryani.
+  const seat = happens === 'settings' ? guest('Doryani') : happens === 'arrives' ? host('Kalguur') : happens === 'host-leaves' ? guest('Una of the Vaal') : undefined;
+  return { state: shown, act: t.room, steps, ...(seat ? { seat } : {}) };
+}
+
+/** What this device's host does by hand as the room shows (the moves scene's control): each a click, a moment in, and where it's a toggle, back. */
+const DOES: Control = {
+  kind: 'choice',
+  key: 'does',
+  label: 'The host clicks',
+  default: 'mode',
+  options: [
+    { value: 'mode', label: 'Delve, then Take turns again' },
+    { value: 'lock', label: 'Lock, then unlock' },
+    { value: 'invite', label: 'Copy invite link' },
+    { value: 'hide', label: 'Hide the code, then show it' },
+    { value: 'custom', label: 'Custom’s editor, stepped through' },
+  ],
+};
+
+/** The steps for each of DOES: a wait, then a click. */
+const CLICKS: Record<string, [number, string][]> = {
+  mode: [
+    [1200, '.modes button[data-mode="delve"]'],
+    [1600, '.modes button[data-mode="turns"]'],
+  ],
+  lock: [
+    [1200, 'button.lock'],
+    [1800, 'button.lock'],
+  ],
+  invite: [[1200, 'button.invite']],
+  hide: [
+    [1200, 'button.room-tool[data-cursor="hide"]'],
+    [1800, 'button.room-tool[data-cursor="hide"]'],
+  ],
+  // Custom (picked) opens its editor; then Options, its first row, from 6 to 8, 10, 4 and back.
+  custom: [
+    [1000, '.seg button.edit'],
+    [1000, '.editor .track button:nth-of-type(3)'],
+    [900, '.editor .track button:nth-of-type(4)'],
+    [900, '.editor .track button:nth-of-type(1)'],
+    [900, '.editor .track button:nth-of-type(2)'],
+  ],
+};
+
+/** The room as its host's own clicks change it: what each click does on this device. */
+function moves(v: Values = {}): Built {
+  const does = String(v.does ?? 'mode');
+  const built = room(does === 'custom' ? { difficulty: 'custom' } : {});
+  const clicks = (CLICKS[does] ?? CLICKS.mode).flatMap(([wait, click]): Step[] => [{ wait }, { click }]);
+  // (Copied whether or not the frame may write to the clipboard.)
+  // The host's clicks change the room, as they would (Built.own), rather than only saying what they'd send.
+  return { ...built, own: true, steps: does === 'invite' ? [{ clipboard: true }, ...clicks] : clicks };
 }
 
 export function lobbyScenes(): Scene[] {
@@ -138,6 +259,40 @@ export function lobbyScenes(): Scene[] {
         { label: 'Delve together, twelve', values: { mode: 'delve', players: 12 }, group: 'Delve' },
       ],
       build: room,
+    },
+    {
+      key: 'lobby/live',
+      screen: 'lobby',
+      group: 'Lobby',
+      label: 'As the room changes',
+      seats: [host('Kalguur'), guest('Doryani')],
+      controls: [HAPPENS],
+      states: [
+        { label: 'A guest reads the host’s settings as they change', values: {} },
+        { label: 'A second player arrives', values: { happens: 'arrives' } },
+        { label: 'A player goes to the gallery, and comes back', values: { happens: 'gallery' } },
+        { label: 'A player goes offline, and comes back', values: { happens: 'offline' } },
+        { label: 'The host leaves: the banner comes to Doryani', values: { happens: 'host-leaves' } },
+        { label: 'Two arrive to watch', values: { happens: 'onlookers' } },
+        { label: 'Sigils put on, changed and taken off', values: { happens: 'sigils' } },
+      ],
+      build: live,
+    },
+    {
+      key: 'lobby/moves',
+      screen: 'lobby',
+      group: 'Lobby',
+      label: 'The host’s own clicks',
+      seats: [host('Kalguur')],
+      controls: [DOES],
+      states: [
+        { label: 'Delve picked, then Take turns: Begin glides both ways', values: {} },
+        { label: 'Locked, then unlocked', values: { does: 'lock' } },
+        { label: 'The invite link copied', values: { does: 'invite' } },
+        { label: 'The code hidden, then shown', values: { does: 'hide' } },
+        { label: 'Custom’s editor, stepped through', values: { does: 'custom' } },
+      ],
+      build: moves,
     },
     {
       key: 'lobby/at-screen',
@@ -189,6 +344,18 @@ export function lobbyScenes(): Scene[] {
         return { state: t.s, act: t.room };
       },
     },
-    { key: 'lobby/delve-descent', screen: 'lobby', group: 'Delve', label: 'Delve: the descent, by your records', seats: [host('Kalguur')], controls: [RECORDS, TOGETHER, FOUND], build: descent },
+    {
+      key: 'lobby/delve-descent',
+      screen: 'lobby',
+      group: 'Delve',
+      label: 'Delve: the descent, by your records',
+      seats: [host('Kalguur')],
+      controls: [RECORDS, TOGETHER, FOUND, JOINS],
+      states: [
+        { label: 'Delve: the descent, by your records', values: {} },
+        { label: 'A second player joins: the records turn to the co-op ones', values: { joins: true } },
+      ],
+      build: descent,
+    },
   ];
 }

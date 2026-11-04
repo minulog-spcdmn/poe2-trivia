@@ -283,10 +283,6 @@
     border-radius: var(--radius);
     color: var(--muted);
     font: 13px var(--font-cinzel);
-    opacity: 0.75;
-  }
-  .recorder:hover {
-    opacity: 1;
   }
   .dot {
     width: 8px;

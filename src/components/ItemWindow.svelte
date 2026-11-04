@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { fade, fly } from 'svelte/transition';
+  import { fly } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { type DrawnItem } from '../lib/game';
   import { portal } from '../lib/portal';
@@ -8,6 +8,7 @@
   import { phone } from '../lib/layout';
   import { closeItemWindow, readPlace, writePlace, type WindowPlace } from '../lib/itemWindow.svelte';
   import { hideLightIn } from '../lib/fx/core';
+  import { sfx } from '../lib/sound';
   import { zoomOf } from '../lib/stage';
   import NamePlate, { SOCKET_X } from './NamePlate.svelte';
   import ItemDetails, { loadStats, statsLoaded } from './ItemDetails.svelte';
@@ -104,6 +105,28 @@
     folded = false;
   });
 
+  /** The roll's pace (.roll), which the window glides at too. */
+  const ROLL_MS = 380;
+  const ROLL_EASE = 'cubic-bezier(0.215, 0.61, 0.355, 1)';
+  /** In and still: its intro has played. */
+  let settled = false;
+  let lastTop = 0;
+  // Its top follows its open height and the pinned bar: when either changes
+  // (another item opened, the bar at a reveal), it glides there with the
+  // roll rather than jumping, never while it's dragged. Each glide adds to
+  // any under way, so a change mid-glide carries on from where it is.
+  $effect(() => {
+    const t = top;
+    const d = lastTop - t;
+    lastTop = t;
+    if (!box || !settled || held?.moved || motion.still || Math.abs(d) < 0.5) return;
+    box.animate([{ translate: `0 ${d}px` }, { translate: '0 0' }], { id: 'glide', duration: ROLL_MS, easing: ROLL_EASE, composite: 'add' });
+  });
+  const stopGlides = () => box?.getAnimations().forEach((a) => a.id === 'glide' && a.cancel());
+
+  /** Another item's name and tooltip, in at once, sharpening from a ghost of themselves: no blank moment between the two. */
+  const swapIn = (_node: Element) => calm({ duration: 150, easing: cubicOut, css: (t: number) => `opacity: ${0.3 + 0.7 * t}` });
+
   /** A press that moves less than this (px) is a click, which folds the window, not a drag. */
   const CLICK_PX = 5;
   /** The drag under way: where the pointer took hold, from the window's corner, and whether it has moved yet. */
@@ -111,6 +134,7 @@
   function down(e: PointerEvent) {
     if (e.button !== 0 || (e.target as Element).closest('button')) return;
     e.preventDefault();
+    stopGlides();
     held = { id: e.pointerId, dx: e.clientX / zoom - left, dy: e.clientY / zoom - top, x: e.clientX, y: e.clientY, moved: false };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   }
@@ -154,10 +178,15 @@
     style:top="{top}px"
     in:fly|global={sideways()}
     out:fly|global={sideways()}
-    onintroend={() => (folded = false)}
+    onintroend={() => {
+      folded = false;
+      settled = true;
+    }}
     onkeydown={(e) => {
       if (e.key !== 'Escape') return;
       e.stopPropagation();
+      // A key's press, from its ✕.
+      sfx('key', { from: { from: e.currentTarget.querySelector('.close') } });
       closeItemWindow();
     }}
     role="dialog"
@@ -167,7 +196,7 @@
     <div class="head" bind:this={head} onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up} role="presentation" title="Drag to move">
       <NamePlate start="empty" end="empty" />
       {#key item.art}
-        <div class="head-text" in:fade={{ duration: 200 }}>
+        <div class="head-text" in:swapIn>
           <span class="iname" id="item-window-name">{item.name}</span>
           <span class="ibase">{item.base}</span>
         </div>
@@ -192,8 +221,9 @@
     <div class="roll" id="item-window-body" style:height="{folded ? 0 : rollH}px" inert={folded}>
       <div class="scroll" style:height="{rollH}px">
         <div class="body" bind:this={body}>
+          <!-- (Fading in with the name above.) -->
           {#key item.art}
-            <ItemDetails {item} />
+            <div in:swapIn><ItemDetails {item} /></div>
           {/key}
         </div>
       </div>
@@ -257,7 +287,6 @@
     font-family: var(--font-display);
     font-size: 0.84rem;
     color: #d8a26a;
-    opacity: 0.85;
   }
   /* The buttons in the plate's empty sockets: fold on the left, close on the right. */
   .socket {

@@ -4,7 +4,9 @@
 // that device (its pixel ratio, touch, a phone's user agent), shot and
 // checked the way the desk's frames check themselves (src/qa/frame/checks.ts:
 // off the screen, text cut off, console errors, pictures, em dashes), and
-// with --banding, scripts/find-banding.py on top. It prints what it found:
+// with --banding, scripts/find-banding.py on top, and with --faint, how
+// faint its text is on what's actually behind it in the shot
+// (src/qa/legible.ts). It prints what it found:
 // it's for the machine, so nobody has to look through its shots.
 //
 // By default it builds the beta (the only build with the desk) into
@@ -31,7 +33,7 @@
 // --moments. --canary has it watch a box drawn again every frame, which
 // has to fail.
 //
-//   npm run sweep -- [--sizes walk|full|phone,uhd,...] [--only <regex>] [--change] [--webgl] [--banding]
+//   npm run sweep -- [--sizes walk|full|phone,uhd,...] [--only <regex>] [--change] [--webgl] [--banding] [--faint]
 //                 [--url URL] [--no-build] [--concurrency N]
 //   npm run sweep -- --map
 //   npm run sweep -- --redraws --only <regex> [--webgl] [--shard i/n] [--canary]
@@ -46,9 +48,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
+import { buildBeta as viteBeta } from './beta-build.mjs';
 import { SIZES } from '../src/qa/sizes.ts';
 import { touched } from '../src/qa/change.ts';
-import { FLOOR, MARK, MOMENTS, PAGE_FLOOR, WEBGL_SCENES, atRest, kpx, overBaseline, pageAtRest, readTrace, redraws, unread, without, withoutMark } from '../src/qa/redraws.ts';
+import { FLOOR, MARK, MOMENTS, PAGE_FLOOR, WEBGL_SCENES, atRest, kpx, overBaseline, pageAtRest, readTrace, redraws, unread, withoutMark } from '../src/qa/redraws.ts';
 import { changedFiles } from '../qaServer.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -62,6 +65,7 @@ const OPTIONS = {
   build: { type: 'boolean', default: true },
   webgl: { type: 'boolean', default: false },
   banding: { type: 'boolean', default: false },
+  faint: { type: 'boolean', default: false },
   change: { type: 'boolean', default: false },
   map: { type: 'boolean', default: false },
   redraws: { type: 'boolean', default: false },
@@ -73,10 +77,10 @@ const OPTIONS = {
   help: { type: 'boolean', short: 'h', default: false },
 };
 const { values, positionals } = parseArgs({ options: OPTIONS, allowPositionals: true, allowNegative: true });
-// Bare words, for PowerShell (see capture-screens.mjs): full, webgl, banding, change, map, no-build, name=value.
+// Bare words, for PowerShell (see capture-screens.mjs): full, webgl, banding, faint, change, map, no-build, name=value.
 for (const word of positionals) {
   if (word === 'full' || word === 'walk') values.sizes = word;
-  else if (['webgl', 'banding', 'change', 'map', 'redraws', 'moments', 'baseline', 'canary', 'help'].includes(word)) values[word] = true;
+  else if (['webgl', 'banding', 'faint', 'change', 'map', 'redraws', 'moments', 'baseline', 'canary', 'help'].includes(word)) values[word] = true;
   else if (word === 'no-build') values.build = false;
   else if (word.includes('=')) values[word.split('=')[0]] = word.slice(word.indexOf('=') + 1);
   else {
@@ -92,6 +96,8 @@ if (values.help) {
   --only REGEX           only scenes whose key matches (lobby, game/delve, over/n-)
   --webgl                keep WebGL (the effects, on the GPU) and full motion
   --banding              run scripts/find-banding.py on each shot (implies --webgl; needs numpy and Pillow)
+  --faint                measure each run of text against what's behind it in the shot (src/qa/legible.ts),
+                         not only the page's own dark; the faint ones' numbers go in the manifest
   --change               only the scenes this branch's changes touch (as the desk's This change)
   --url URL              shoot a running server (the dev server, the beta) instead of building one
   --no-build             serve screens/qa-build/ as the last sweep built it
@@ -147,9 +153,8 @@ const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/jav
 function buildBeta(root, out, what) {
   console.log(`Building the beta of ${what}…`);
   const started = Date.now();
-  const vite = path.join(root, 'node_modules', 'vite', 'bin', 'vite.js');
-  const r = spawnSync(process.execPath, [vite, 'build', '--outDir', out, '--emptyOutDir', '--logLevel', 'error'], { cwd: root, env: { ...process.env, VITE_CHANNEL: 'beta' }, stdio: 'inherit' });
-  if (r.status !== 0) process.exit(r.status ?? 1);
+  const status = viteBeta(root, out);
+  if (status !== 0) process.exit(status);
   console.log(`Built in ${((Date.now() - started) / 1000).toFixed(0)} s.`);
 }
 
@@ -158,9 +163,12 @@ async function serveDir(dir) {
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
     let file = path.join(dir, decodeURIComponent(url.pathname));
-    if (!file.startsWith(dir)) return void res.writeHead(403).end();
+    if (file !== dir && !file.startsWith(dir + path.sep)) return void res.writeHead(403).end();
     if (existsSync(file) && statSync(file).isDirectory()) file = path.join(file, 'index.html');
     if (!existsSync(file)) return void res.writeHead(404).end();
+    // (No Date header: the game's clock (lib/clock.ts) takes a server's time over the page's own, and a
+    // watched page's is CLOCK's, 20 October, not today, so a scene shows the same on any day.)
+    res.sendDate = false;
     res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] ?? 'application/octet-stream' });
     createReadStream(file).pipe(res);
   });
@@ -278,6 +286,8 @@ async function shootAll(base, jobs, outDir, { coverage = false, concurrency: at 
       try {
         if (coverage) await page.coverage.startJSCoverage({ resetOnNavigation: false });
         const q = new URLSearchParams({ frame: `j${n}`, s: j.scene, seat: String(j.seat), size: j.size });
+        // (No outlines round what's wrong when the shot is measured: they'd be measured too.)
+        if (values.faint) q.set('o', '0');
         for (const [k, v] of j.values ?? []) q.set(`k.${k}`, v);
         await page.goto(`${base}qa.html?${q}`, { waitUntil: 'load', timeout: 60000 });
         const loaded = Date.now();
@@ -295,8 +305,15 @@ async function shootAll(base, jobs, outDir, { coverage = false, concurrency: at 
         // (A 4K page under a full sweep's load can take a while to give up its pixels: once more, with longer, before calling it failed.)
         const shoot = (timeout) => page.screenshot({ path: path.join(outDir, file), animations: values.webgl ? 'allow' : 'disabled', caret: 'hide', scale: values.banding ? 'device' : 'css', timeout });
         await shoot(45000).catch(() => shoot(90000));
+        // Its text against what's behind it in the shot, in place of the frame's own look against the page's dark: the runs too faint there, measured.
+        let texts;
+        if (values.faint) {
+          const found = await page.evaluate((png) => window.__qaFaint(png), readFileSync(path.join(outDir, file)).toString('base64'));
+          texts = found.texts;
+          r.problems = [...r.problems.filter((p) => p.kind !== 'faint'), ...found.problems];
+        }
         const times = { load: loaded - started, check: checked - loaded, shot: Date.now() - checked };
-        shots.push({ ...j, file, settled: r.settled, problems: r.problems, ms: Date.now() - started, times });
+        shots.push({ ...j, file, settled: r.settled, problems: r.problems, texts, ms: Date.now() - started, times });
       } catch (e) {
         shots.push({ ...j, file: null, failed: e.message.split('\n')[0], problems: [], ms: Date.now() - started, errors });
       } finally {
@@ -760,26 +777,59 @@ const seedOf = (text) => [...text].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0
 
 /**
  * The scenes to watch at rest: each scene's first state (with --webgl, of
- * WEBGL_SCENES' only), and with --shard i/n, every n-th from the i-th, so
- * each part gets some of each screen; SLOW first, each in a part of its
- * own and first in it, so it's watched beside the rest of its part, not
- * after them.
+ * WEBGL_SCENES' only), slowest first, so a slow one is watched beside the
+ * rest, not after them. With --shard i/n, the i-th of n parts as even in
+ * time as COST makes them: each scene, slowest first, into the part with
+ * the least time so far. (The same parts in every job: they're dealt from
+ * the same build's scenes.)
  */
 function scenesToWatch(scenes) {
   const seen = new Set();
   const webgl = new Set(WEBGL_SCENES.map((w) => w.scene));
   const all = scenes.filter((s) => !seen.has(s.key) && seen.add(s.key)).filter((s) => !values.webgl || webgl.has(s.key));
-  return [...all.filter((s) => SLOW.includes(s.key)), ...all.filter((s) => !SLOW.includes(s.key))].filter((s, i) => !shard || i % shard[1] === shard[0] - 1);
+  const slowestFirst = [...all].sort((a, b) => costOf(b.key) - costOf(a.key));
+  if (!shard) return slowestFirst;
+  const parts = Array.from({ length: shard[1] }, () => ({ cost: 0, scenes: [] }));
+  for (const s of slowestFirst) {
+    const part = parts.reduce((least, p) => (p.cost < least.cost ? p : least));
+    part.cost += costOf(s.key);
+    part.scenes.push(s);
+  }
+  return parts[shard[0] - 1].scenes;
 }
 
 /**
- * The scenes that take a CI runner longest to watch at rest, slowest
- * first (1 November 2026, WebGL refused): the Delve's find cards, whose
- * faces take it up to 1.6 s a frame to composite in software, with nothing
- * drawn again. Kept to the slowest, so each part's time is what the rest
- * of it takes beside one of these.
+ * The seconds a CI runner takes to watch a scene at rest (two at once, WebGL
+ * refused), for those that take longer than most: the median of three runs
+ * (4 November 2026). The Delve's and the turns' cards, whose faces take it
+ * up to 1.6 s a frame to composite in software, with nothing drawn again.
+ * Any other scene takes about USUAL. Only for dealing the parts: a scene
+ * slower or quicker now than here only makes its part longer or shorter.
  */
-const SLOW = ['game/delve-finds', 'game/delve-together-dig', 'game/delve-dig', 'game/delve-deep', 'game/delve-blow'];
+const COST = {
+  'game/turns-kick': 480,
+  'game/delve-zone': 410,
+  'game/delve-notice': 400,
+  'game/delve-depth': 390,
+  'game/delve-cards': 390,
+  'game/turns-offline': 380,
+  'game/starts': 380,
+  'game/delve-together-votes': 370,
+  'game/delve-answer': 340,
+  'game/turns-late': 340,
+  'game/delve-deep': 330,
+  'game/delve-finds': 260,
+  'game/delve-together-cards': 260,
+  'game/turns-choosing': 250,
+  'game/delve-together-dig': 230,
+  'game/delve-dig': 220,
+  'game/deathmatch': 140,
+  'game/deathmatch-out': 100,
+  'game/deathmatch-miss': 90,
+  'game/delve-blow': 70,
+};
+const USUAL = 40;
+const costOf = (key) => COST[key] ?? USUAL;
 
 /** Each of `firsts` at rest, from its first seat: the layers drawn again, and what changes meanwhile. */
 async function scenesAtRest(base, firsts, browsers) {
@@ -948,13 +998,12 @@ async function moment(base, browser, m) {
     await ready();
     const once = took();
     // (Its `seconds` from when it's set off, however long it plays: docs/qa.md, “Redraws”.)
-    const watch = await watched(browser, page, async () => {
+    const r = await watched(browser, page, async () => {
       let n = 0;
       await how.go(async () => (n += await drive.frames(1)));
       return n + (await drive.frames(Math.max(0, frames(m.seconds) - n)));
     });
-    // (What it leaves out (MOMENTS' leaveOut) left out; a 60th of a second's worth, whatever the screen's rate.)
-    const r = without(watch, m.leaveOut ?? []);
+    // (A 60th of a second's worth, whatever the screen's rate.)
     const perFrame = Math.round((r.again / Math.max(1, r.frames)) * (m.hz / 60));
     if (!process.stdout.isTTY) console.log(`  ${m.key}: ${r.frames} frames at ${m.hz} Hz, ${kpx(perFrame)} drawn again a 60th of a second; last written ${(r.last / m.hz).toFixed(2)} s in, ${r.running} animations still running at the end; at rest ${loaded}, run once ${once}, traced ${took()}`);
     return { key: m.key, label: m.label, webgl: m.webgl, hz: m.hz, perFrame, frames: r.frames, px: r.px, again: r.again, last: r.last, running: r.running, changing: r.changing, painted: r.painted, layers: r.layers.slice(0, 6), writes: r.writes };
@@ -976,8 +1025,10 @@ async function checkRedraws(base, scenes) {
     } else {
       const firsts = scenesToWatch(scenes);
       if (!firsts.length) throw new Error(only ? `No scene's key matches ${only}${values.webgl ? ' among the WebGL scenes' : ''}.` : 'No scenes.');
-      // (Two at once: a CI runner has four threads, and a page drawing in software keeps more than one busy.)
-      const at = Math.min(firsts.length, 2);
+      // (Two at once: a CI runner has four threads, and a page drawing in software keeps more than one busy.
+      // With WebGL one at a time: a page drawing WebGL in software keeps them all busy, and two took a
+      // runner over 12 minutes where one after the other take 4 to 8.)
+      const at = Math.min(firsts.length, values.webgl ? 1 : 2);
       console.log(`Redraws at rest: ${firsts.length} scenes${shard ? ` (part ${shard[0]} of ${shard[1]})` : ''}, ${at} at once, at ${REDRAW_SIZE}, ${values.webgl ? 'with WebGL' : 'WebGL refused'}, on fixed frames, from ${base}, ${runner()}`);
       for (let i = 0; i < at; i++) traceBrowsers.push(await launchTraced());
       atRestFound = await scenesAtRest(base, firsts, traceBrowsers);

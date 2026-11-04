@@ -86,7 +86,7 @@
 <span class="streak-at" style:--flame-rgb={dailyFlameOf(burning).css} style:--heat={dailyHeatOf(burning)}>
   <span class="smoulder" aria-hidden="true" use:backdropShadow></span>
   <b class="streak" use:burn={burning} use:backdropShadow in:scale={{ start: 0.5, duration: 400, delay: BADGE_IN_DELAY }}>
-    {#if days === 1}First day{:else}<span class="num">{days}</span> days in a row{/if}
+    {#if days === 1}First day{:else}<span class="num">{days}</span> days<span class="row">{' '}in a row</span>{/if}
   </b>
 </span>
 
@@ -168,5 +168,11 @@
     font-style: normal;
     font-weight: 700;
     font-size: 0.9em;
+  }
+  /* A phone keeps the badge to its days, so Practice more fits beside it (DailyUnique). */
+  @media (max-width: 640px) {
+    .row {
+      display: none;
+    }
   }
 </style>

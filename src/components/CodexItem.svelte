@@ -11,7 +11,7 @@
   import { accuracy } from '../lib/codexStats';
   import { shownDepth } from '../lib/delve';
   import { itemImage, itemThumb } from '../lib/ui';
-  import { dialogBackdrop } from '../lib/behindDialog';
+  import { dialogBackdrop } from '../lib/dialogBackdrop';
   import { dialogIn, dialogOut } from '../lib/dialogIn';
   import { artRevealed } from '../lib/fx/moments';
   import { allArt, type DrawnItem, type Item } from '../lib/game';
@@ -96,13 +96,8 @@
     return () => clearTimeout(t);
   });
 
-  /** Escape closes; Tab keeps cycling through the dialog's own buttons. */
+  /** Tab keeps cycling through the dialog's own buttons. (A press beside the card or Escape closes it: its backdrop's, lib/behindDialog.ts.) */
   function onkeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      onclose();
-      return;
-    }
     if (e.key !== 'Tab' || !box) return;
     const items = [...box.querySelectorAll<HTMLElement>('button:not(:disabled)')];
     const first = items[0];
@@ -136,7 +131,7 @@
   {/if}
 {/snippet}
 
-<div class="backdrop" use:dialogBackdrop transition:fade={{ duration: 150 }} onclick={onclose} role="presentation">
+<div class="backdrop" use:dialogBackdrop={{ close: () => onclose(), closer: '.close' }} transition:fade={{ duration: 150 }} role="presentation">
   <div class="place" class:eased={eased && !motion.still} style:padding-bottom="{spare}px">
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div
@@ -301,9 +296,8 @@
   }
   .ibase {
     font-family: var(--font-display);
-    font-size: 0.88rem;
+    font-size: 0.9375rem;
     color: #d8a26a;
-    opacity: 0.85;
   }
   /* Centred in the empty end of the name plate. */
   .close {
@@ -535,16 +529,13 @@
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
-    color: #8f9aa6;
+    color: #adb7c2;
     font-size: 1rem;
     line-height: 1.3;
   }
   .lines b {
     font-weight: 500;
     color: #a9c3dc;
-  }
-  .lines i {
-    color: #6d7782;
   }
   .label {
     margin: 0 0 0.45rem;

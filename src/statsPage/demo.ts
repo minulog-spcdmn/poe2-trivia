@@ -9,13 +9,20 @@
 // went, as the real account has them, and each device's frames (a few
 // computers' drawn in software), with a few days iPhones stuttered more,
 // as a bad deploy would show.
+//
+// The query can ask for the states a site counted for a while gets into
+// (demoStateOf): `since=<day>` (counting began partway through it, "since"
+// alone 20 days back), `compare=0` (nothing to compare with), `incomplete`
+// (GoatCounter left some out), `first` (a first load, with nothing new
+// since a read before it) and `alert` (joining and the game's own scripts
+// failing far more than usual).
 
 import { MOMENTS, SOFTWARE, framesEvent } from '../lib/stutter.ts';
 import type { Named } from './api.ts';
 import { keptChanges } from './changes.ts';
 import { sameSites, spikesOf, stepsOf } from './insights.ts';
-import { DAILY_FROM, RETURNS, ROOM_BACKS, countsOf, daysBetween, isoWeek, modesOf, type PathCount } from './model.ts';
-import type { Read } from './read.ts';
+import { DAILY_FROM, RETURNS, ROOM_BACKS, countedSpan, countsOf, daysBetween, isoWeek, modesOf, type PathCount } from './model.ts';
+import { READ_V, type Read } from './read.ts';
 import { GROUPS, type Group, type Slices } from './slices.ts';
 import { addDays, dayIn, hoursIn, midnight } from './zone.ts';
 
@@ -107,6 +114,8 @@ const BACK = [
 function dayCounts(day: string, upTo = 24): Map<string, number[]> {
   const rnd = stream(seedOf(day));
   const frames = stream(seedOf(`${day}/frames`));
+  // (Its own stream, so the paths read later don't move the rest's numbers.)
+  const later = stream(seedOf(`${day}/later`));
   const out = new Map<string, number[]>();
   const add = (path: string, h: number, n: number) => {
     if (!n || h >= upTo) return;
@@ -150,6 +159,9 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
       // Their save's first item: a game's, or Today's unique's alone.
       add('new/saved', h, firstPlayed + ofThem(fresh - firstIn, 0.2, rnd));
       add('new/finished', h, ofThem(firstPlayed, 0.74, rnd));
+      const firstSecond = ofThem(firstPlayed, 0.4, rnd);
+      add('new/games-2', h, firstSecond);
+      add('new/games-5', h, ofThem(firstSecond, 0.2, rnd));
       // The start page's steps before that: most press something, fewer get as far as a room.
       const acted = ofThem(fresh, 0.8, rnd);
       const create = ofThem(acted, 0.55, rnd);
@@ -180,9 +192,30 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
       add('reach/time-30m', h, ofThem(ten, 0.42, rnd));
       add('reach/codex', h, ofThem(came, 0.13, rnd));
       add('reach/achievements', h, ofThem(came, 0.08, rnd));
+      // Every visit's start-page steps, and how soon a first visit's page was ready (most within 2 seconds).
+      const pressed = ofThem(came, 0.7, later);
+      const created = ofThem(pressed, 0.45, later);
+      const hosted = ofThem(created, 0.8, later);
+      const answered = ofThem(pressed, 0.4, later);
+      add('reach/create', h, created);
+      add('reach/host', h, hosted);
+      add('reach/room', h, ofThem(hosted, 0.9, later));
+      add('reach/solo', h, ofThem(pressed, 0.2, later));
+      add('reach/daily', h, answered);
+      add('reach/practice', h, ofThem(answered, 0.3, later));
+      add('reach/identify', h, ofThem(answered, 0.25, later));
+      add('daily/back', h, ofThem(answered, 0.45, later));
+      let timed = ofThem(fresh, 0.9, later);
+      for (const [mark, share] of [['2s', 0.8], ['5s', 0.6], ['10s', 0.5]] as const) {
+        const n = ofThem(timed, share, later);
+        add(`load/ready-${mark}`, h, n);
+        timed -= n;
+      }
+      add('load/ready-later', h, timed);
       add('sync/paired', h, around(v * 0.006, rnd));
       const broke = rnd();
-      if (broke < 0.02) add(broke < 0.006 ? 'error/chunk' : 'error/script', h, 1);
+      // (A script's error by where it came from, as count.ts scriptErrorEvent has it; now and then where it couldn't tell.)
+      if (broke < 0.02) add(broke < 0.006 ? 'error/chunk' : broke < 0.008 ? 'error/script' : broke < 0.014 ? 'error/script/lib/sound.ts:wake' : 'error/script/components/Codex.svelte:open', h, 1);
     }
     for (const g of GAMES) {
       const started = around(v * g.share, rnd);
@@ -201,6 +234,7 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
         // Most runs end shallow, a few go far down.
         const depth = Math.floor(rnd() ** 2.2 * 6) * 10;
         if (g.mode === 'delve') add(`delve/depth-${depth}-${depth + 9}`, h, 1);
+        if (g.mode === 'delve' && later() < 0.12) add('share/delve', h, 1);
       }
       const invites = around(started * 0.75, rnd);
       add('open/invite-link', h, invites);
@@ -232,10 +266,11 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
   return out;
 }
 
-/** Every path counted over `days`, as GoatCounter's /stats/hits would give them; the last day counted up to `lastHours`. */
-function pathsOf(days: string[], lastHours: number): PathCount[] {
+/** Every path counted over `days`, as GoatCounter's /stats/hits would give them; the last day counted up to `lastHours`, the days before `began` not at all. */
+function pathsOf(days: string[], lastHours: number, began: string | null = null): PathCount[] {
   const byPath = new Map<string, PathCount>();
   days.forEach((day, i) => {
+    if (began && day <= began) return;
     for (const [path, hours] of dayCounts(day, i === days.length - 1 ? lastHours : 24)) {
       const p = byPath.get(path) ?? { path, event: path !== '/', count: 0, days: {}, hours: {} };
       const n = hours.reduce((s, v) => s + v, 0);
@@ -302,21 +337,71 @@ function dayRefs(day: string, visitors: number): Named[] {
   return extra > 0 ? out.map((r) => (r.name === 'https://www.reddit.com' ? { ...r, count: r.count + extra } : r)) : out;
 }
 
-/** A made-up read of the last `days` days, against the same many before, as Analytics' load() makes from GoatCounter's. */
-export function demoRead(days: number, at = new Date()): Read {
+/** The states the query asks the made-up read for (demoStateOf); none is a site counted from long before, read in full. */
+export interface DemoState {
+  /** The day counting began, partway through it: the periods start the day after, and compare only where whole days fill the one before. */
+  since?: string;
+  /** False: nothing compared with the period before, as though it weren't counted in full. */
+  compare?: boolean;
+  /** GoatCounter left some of the period out. */
+  incomplete?: boolean;
+  /** A first load: nothing came in since a read before it (no changes). */
+  first?: boolean;
+  /** Joining failing far more today than usual, and the game's own scripts erring in its last two days. */
+  alert?: boolean;
+}
+
+/** The state `?demo&…` asks for: `since=<day>` (or `since` alone, 20 days before `today`), `compare=0`, `incomplete`, `first`, `alert`. */
+export function demoStateOf(q: URLSearchParams, today: string): DemoState {
+  const since = q.get('since');
+  return {
+    since: since === null ? undefined : /^\d{4}-\d{2}-\d{2}$/.test(since) && since < today ? since : addDays(today, -20),
+    compare: q.get('compare') === '0' ? false : undefined,
+    incomplete: q.has('incomplete') || undefined,
+    first: q.has('first') || undefined,
+    alert: q.has('alert') || undefined,
+  };
+}
+
+/** `n` more of `path` on `day`, spread over its first `hours`. */
+function more(paths: PathCount[], path: string, day: string, n: number, hours: number) {
+  let p = paths.find((x) => x.path === path);
+  if (!p) {
+    const days = Object.keys(paths[0]?.days ?? {});
+    p = { path, event: true, count: 0, days: Object.fromEntries(days.map((d) => [d, 0])), hours: Object.fromEntries(days.map((d) => [d, Array<number>(24).fill(0)])) };
+    paths.push(p);
+  }
+  if (!(day in p.days)) return;
+  for (let i = 0; i < n; i++) p.hours![day][i % hours]++;
+  p.days[day] += n;
+  p.count += n;
+}
+
+/** A made-up read of the last `days` days, against the same many before, as Analytics' load() makes from GoatCounter's; `state`, one the query asks for. */
+export function demoRead(days: number, at = new Date(), state: DemoState = {}): Read {
   const today = dayIn(ZONE, at);
-  const from = addDays(today, -(days - 1));
+  const began = state.since ?? null;
+  // Where counting began inside the period, it starts the day after, as Analytics' does (model.ts countedSpan).
+  const counted = began ? countedSpan(began, addDays(today, -(days - 1)), addDays(today, -(2 * days - 1)), today) : { start: addDays(today, -(days - 1)), compare: true };
+  const from = counted.start;
+  const compare = counted.compare && state.compare !== false;
   const fromBefore = addDays(from, -days);
   const toBefore = addDays(today, -days);
   const hoursSoFar = Math.floor((at.getTime() - midnight(ZONE, today).getTime()) / 3_600_000) + 1;
-  const nowPaths = pathsOf(daysBetween(from, today), hoursSoFar);
+  const nowPaths = pathsOf(daysBetween(from, today), hoursSoFar, began);
+  if (state.alert) {
+    more(nowPaths, 'error/join-no-answer', today, 12 + 3 * hoursSoFar, hoursSoFar);
+    for (const day of [addDays(today, -1), today]) more(nowPaths, 'error/script/lib/session.svelte.ts:Session.openRoom', day, 20, day === today ? hoursSoFar : 24);
+  }
   const visitors = nowPaths.find((p) => p.path === '/')?.count ?? 0;
   // (Its hour so far made up whole, as the rest; a usual day is had to the minute, as on the live page.)
   const until = hoursIn(ZONE, today, at);
   const now = countsOf(nowPaths, daysBetween(from, today), ZONE, until);
-  const before = countsOf(pathsOf(daysBetween(fromBefore, toBefore), hoursSoFar), daysBetween(fromBefore, toBefore), ZONE, until);
+  const before = countsOf(pathsOf(daysBetween(fromBefore, toBefore), hoursSoFar, began), daysBetween(fromBefore, toBefore), ZONE, until);
+  // Countries are kept by the day: compared over whole days alone, the period's to yesterday and as many before (read.ts countriesWhole).
+  const wholeDays = (perDay: number[]) => perDay.slice(0, -1).reduce((n, v) => n + v, 0);
   return {
-    v: 12,
+    v: READ_V,
     span: days,
     from,
     to: today,
@@ -337,21 +422,23 @@ export function demoRead(days: number, at = new Date()): Read {
     refs: sameSites(split(visitors, REFS, false)),
     // A few links tagged with where they were posted.
     campaigns: CAMPAIGNS.map(([name, share]) => ({ name, count: Math.round(visitors * share) })).filter((c) => c.count > 0),
-    countriesBefore: split(before.visitors.total, COUNTRIES.map(([name, share]) => [name, name === 'Brazil' ? 0.015 : share])),
-    refsBefore: sameSites(split(before.visitors.total, REFS.map(([name, share]) => [name, name === 'https://www.youtube.com' ? 0.14 : share]), false)),
+    // (Read only where the period before is compared, as Analytics' are.)
+    countriesBefore: compare ? split(wholeDays(before.visitors.perDay), COUNTRIES.map(([name, share]) => [name, name === 'Brazil' ? 0.015 : share])) : [],
+    countriesWhole: compare ? split(wholeDays(now.visitors.perDay), COUNTRIES) : [],
+    refsBefore: compare ? sameSites(split(before.visitors.total, REFS.map(([name, share]) => [name, name === 'https://www.youtube.com' ? 0.14 : share]), false)) : [],
     spikeRefs: Object.fromEntries(spikesOf(now.days, now.visitors.perDay).map((sp) => [sp.day, sameSites(dayRefs(sp.day, sp.value))])),
     at: at.getTime(),
-    complete: true,
-    // (Made up as though counted from long before the longest period.)
-    compare: true,
-    began: null,
+    complete: !state.incomplete,
+    // (Made up as though counted from long before the longest period, unless the query says when.)
+    compare,
+    began,
   };
 }
 
-/** A made-up read as an update would find it: with what the hour before it brought in. */
-export function demoUpdate(days: number, at = new Date()): Read {
-  const now = demoRead(days, at);
-  return { ...now, changes: keptChanges(demoRead(days, new Date(at.getTime() - 3_600_000)), now) };
+/** A made-up read as an update would find it: with what the hour before it brought in (none on a first load). */
+export function demoUpdate(days: number, at = new Date(), state: DemoState = {}): Read {
+  const now = demoRead(days, at, state);
+  return { ...now, changes: state.first ? null : keptChanges(demoRead(days, new Date(at.getTime() - 3_600_000), state), now) };
 }
 
 /** How each country and system plays, against everyone: more of one mode, fewer answers, more joins that fail. */

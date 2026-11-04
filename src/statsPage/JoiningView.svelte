@@ -2,9 +2,10 @@
   // Joining: whether getting into a room works. Tries to join by where they
   // started, how many got in, every failure by its cause (opening a room's
   // too), open rooms that lost the matchmaking server (a guest is told
-  // there's no such room meanwhile), the game's own scripts' errors and its
-  // parts that didn't load in lines of their own (they have nothing to do
-  // with joining), and the links that bring players in.
+  // there's no such room meanwhile), the game's own scripts' errors (by
+  // where they came from) and its parts that didn't load in lines of their
+  // own (they have nothing to do with joining), and the links that bring
+  // players in.
   import Bars from './Bars.svelte';
   import { fmt } from './chart';
   import Delta from './Delta.svelte';
@@ -29,6 +30,9 @@
   const errorsOf = (c: typeof L, key: string) => c.failures.find((f) => f.key === key)?.count ?? 0;
   const scripts = $derived(errorsOf(L, 'script'));
   const scriptsBefore = $derived(errorsOf(B, 'script'));
+  /** Where the scripts' errors came from (count.ts scriptErrorEvent), shown once any says: its module and function, or where it couldn't tell. */
+  const places = $derived(L.scriptErrors.map((e) => ({ label: e.where || "Where it couldn't tell", count: e.count })));
+  const placed = $derived(L.scriptErrors.some((e) => e.where));
   const lost = $derived(errorsOf(L, 'chunk'));
   const lostBefore = $derived(errorsOf(B, 'chunk'));
   const offOf = (c: typeof L) => c.roomsOff.seen + c.roomsOff.hidden;
@@ -102,6 +106,9 @@
       {/if}
       {#if scripts || scriptsBefore}
         <p class="line"><b class:bad={scripts > 0}>{fmt(scripts)}</b> {scripts === 1 ? 'error' : 'errors'} in the game's own scripts, once a page load at most. <Delta now={scripts} before={scriptsBefore} worse="up" period={period.before} /></p>
+        {#if placed}
+          <Bars bars={places} top={5} tone="down" />
+        {/if}
       {/if}
       {#if lost || lostBefore}
         <p class="line"><b class:bad={lost > 0}>{fmt(lost)}</b> {lost === 1 ? 'page' : 'pages'} missing a part of the game that didn't load: the connection, or a page left open for weeks. <Delta now={lost} before={lostBefore} worse="up" period={period.before} /></p>

@@ -43,6 +43,13 @@ if (asked.has('live')) {
 else {
   document.documentElement.dataset.qa = slot === null ? 'desk' : slot.replace(/[^a-z0-9-]/gi, '').slice(0, 24) || 'frame';
   if (slot !== null && asked.has('b')) import('./frame/piece.ts').then(({ bootPiece }) => bootPiece(asked)).catch(failed);
-  else if (slot !== null) import('./frame/boot.ts').then(({ boot }) => boot(asked)).catch(failed);
+  else if (slot !== null) {
+    // In slow motion (&slow=4) from before the game loads, so all of it runs slow (./frame/slow.ts).
+    const slow = Number(asked.get('slow'));
+    (slow > 1 ? import('./frame/slow.ts').then(({ slowDown }) => slowDown(slow)) : Promise.resolve())
+      .then(() => import('./frame/boot.ts'))
+      .then(({ boot }) => boot(asked))
+      .catch(failed);
+  }
   else void import('./desk/start.ts');
 }

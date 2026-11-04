@@ -9,11 +9,17 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { fade, fly } from 'svelte/transition';
+  import { flip } from 'svelte/animate';
+  import { clickedControl, sfx } from '../lib/sound';
+  import { cubicOut } from 'svelte/easing';
+  import { calm } from '../lib/motion.svelte';
+  import { pinnedOut } from '../lib/stage';
   import { session } from '../lib/session.svelte';
   import { kickConfirm } from '../lib/kick';
   import KickButton from './KickButton.svelte';
   import OnlookerMark from './OnlookerMark.svelte';
   import PlayerName from './PlayerName.svelte';
+  import You from './You.svelte';
   import WatchEye from './WatchEye.svelte';
   import WatchToggle from './WatchToggle.svelte';
 
@@ -24,6 +30,14 @@
   /** Rings shown in the line (the count says how many in all). */
   const SHOWN = 4;
   const names = $derived(spectators.map((o) => o.name).join(', '));
+
+  /** A ring joining the line grows into its place (its overlap taken back as it does), so the line widens with it; one leaving goes the same way. */
+  function ring(node: Element) {
+    const room = (node as HTMLElement).offsetWidth - ((node as HTMLElement).previousElementSibling ? 6 : 0);
+    return calm({ duration: 260, easing: cubicOut, css: (t: number) => `opacity: ${t}; scale: ${0.6 + 0.4 * t}; margin-right: ${-room * (1 - t)}px;` });
+  }
+  /** A row leaving the open list fades where it stood, the others closing up (flip), under the stage's zoom too. */
+  const rowOut = pinnedOut(fade);
 
   let open = $state(false);
   let root = $state<HTMLElement>();
@@ -36,6 +50,11 @@
   let confirming = $state<string | null>(null);
   const kicker = kickConfirm((id) => (confirming = id));
   onDestroy(kicker.dispose);
+  /** Closed by a press outside: its click heard where the pointer pressed, but for a finger's (it may be starting a scroll, not a tap). */
+  function closeSounded(e: PointerEvent) {
+    if (e.pointerType !== 'touch') sfx('click', { from: { x: e.clientX } });
+    open = false;
+  }
 </script>
 
 <!-- Escape takes an armed kick back, or else closes the list (focus back on the line). A press outside closes it. -->
@@ -43,12 +62,18 @@
   onkeydown={(e) => {
     if (e.key !== 'Escape') return;
     if (confirming) (e.preventDefault(), kicker.disarm());
-    else if (open) (e.preventDefault(), (open = false), toggle?.focus());
+    else if (open) {
+      e.preventDefault();
+      sfx('key', { from: { from: toggle } });
+      open = false;
+      toggle?.focus();
+    }
   }}
   onpointerdown={(e) => {
     const t = e.target as Element;
     if (!t.closest?.('.kick.armed')) kicker.disarm();
-    if (open && !root?.contains(t)) open = false;
+    // (A press on another control closes it too, heard as that control's own click.)
+    if (open && !root?.contains(t)) clickedControl(t) ? (open = false) : closeSounded(e);
   }}
 />
 
@@ -65,17 +90,17 @@
     >
       <WatchEye />
       <span class="rings">
-        {#each spectators.slice(0, SHOWN) as o (o.id)}<OnlookerMark name={o.name} size={20} />{/each}
+        {#each spectators.slice(0, SHOWN) as o (o.id)}<span class="ring" transition:ring><OnlookerMark name={o.name} size={20} /></span>{/each}
       </span>
-      <span class="count">{spectators.length}<span class="word">&nbsp;watching</span></span>
+      <span class="count">{#key spectators.length}<span class="n" in:fade={calm({ duration: 200 })}>{spectators.length}</span>{/key}<span class="word">&nbsp;watching</span></span>
     </button>
     {#if session.spectating}<WatchToggle />{/if}
     {#if open}
       <ul class="list" id="{uid}-list" transition:fly={{ y: -6, duration: 180 }}>
         {#each spectators as o (o.id)}
-          <li class:armed={confirming === o.id}>
+          <li class:armed={confirming === o.id} animate:flip={{ duration: 300 }} in:fly={calm({ y: 6, duration: 250 })} out:rowOut={calm({ duration: 150 })}>
             <OnlookerMark name={o.name} size={24} />
-            <span class="name"><PlayerName name={o.name} />{#if o.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}</span>
+            <span class="name"><PlayerName name={o.name} />{#if o.id === session.myPlayerId}<em><You /></em>{/if}</span>
             <span class="when" class:next={!o.stay}>{o.stay ? 'Watching' : 'Next game'}</span>
             {#if canKick}
               <KickButton name={o.name} armed={confirming === o.id} onclick={() => kicker.click(o.id) && session.kick(o.id)} />
@@ -168,7 +193,10 @@
     align-items: center;
   }
   /* Overlapping, each ring's dark face over the one before. */
-  .rings > :global(.onlooker + .onlooker) {
+  .ring {
+    display: inline-flex;
+  }
+  .ring + .ring {
     margin-left: -6px;
   }
   .count {
@@ -216,9 +244,13 @@
     font-size: 0.95rem;
     color: var(--text);
   }
+  /* The creator's name glows: its clip keeps room for the glow all round (app.css, --foil-room). */
+  .name:has(> :global(.creator)) {
+    padding: var(--foil-room);
+    margin: calc(-1 * var(--foil-room));
+  }
   .name em {
     color: var(--muted);
-    font-size: 0.85em;
   }
   .when {
     flex: none;
@@ -230,6 +262,10 @@
     border-radius: 2px;
     border: 1px solid var(--line);
     color: var(--muted);
+    transition:
+      color 0.3s,
+      border-color 0.3s,
+      background-color 0.3s;
   }
   .when.next {
     border-color: var(--gold-lo);

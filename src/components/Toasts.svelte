@@ -4,7 +4,8 @@
   import { fade, fly } from 'svelte/transition';
   import { session } from '../lib/session.svelte';
   import { flat, phone } from '../lib/layout';
-  import { toasts, type ToastKind } from '../lib/toasts.svelte';
+  import { toasts, type Toast, type ToastKind } from '../lib/toasts.svelte';
+  import { calm } from '../lib/motion.svelte';
   import { playerColor } from '../lib/ui';
   import { heraldNotice, twinkle } from '../lib/fx/moments';
   import { lightOf, overPage } from '../lib/fx/core';
@@ -30,6 +31,13 @@
   // A guest's lost connection to the host stays up (with what to do about it)
   // until it's back or they leave.
   const lost = $derived(session.mode === 'client' && session.status === 'lost');
+  /**
+   * The stack: the lost connection (null) first, then the news. One list, so
+   * the others move up as it goes (animate:flip), as they do for each other.
+   */
+  const stack = $derived<(Toast | null)[]>(lost ? [null, ...toasts.list] : toasts.list);
+  /** Its state changing (reconnecting, then given up): the old fading as the new one comes, in one place. */
+  const swap = (node: Element) => fade(node, calm({ duration: 200 }));
 
   // Phones show fewer at once, so a burst of news can't cover the game: on
   // its side one, over the answers in the right half. Elsewhere the lost
@@ -93,66 +101,70 @@
   aria-label="Notifications"
   aria-live="polite"
 >
-  {#if lost}
-    <div class="toast pinned {session.gaveUp ? 'error' : 'warn'}" use:overPage in:fly={enter} out:fade={{ duration: 200 }}>
-      <span class="seal">
-        {#if session.gaveUp}
-          <span class="gem">{@render glyph('error')}</span>
-        {:else}
-          <span class="gem spin"></span>
-        {/if}
-      </span>
-      <div class="body">
-        <p class="title">{session.gaveUp ? 'Host unreachable' : 'Connection lost'}</p>
-        <p class="msg">{session.gaveUp ? 'The room may have closed.' : 'Reconnecting to the host…'}</p>
-        <div class="actions">
-          <button class="btn small" onclick={() => session.reconnect()}>Retry</button>
-          <button class="btn small ghost" onclick={() => session.leave()}>Leave</button>
-        </div>
-      </div>
-    </div>
-  {/if}
-
-  {#each toasts.list as t (t.id)}
+  {#each stack as t (t?.id ?? 'lost')}
     <div
-      class="toast {t.kind}"
-      class:held={t.held}
-      class:herald={t.herald}
-      class:feat={!!t.seal}
-      role="note"
-      style:--life="{t.life}ms"
+      class="toast {t ? t.kind : session.gaveUp ? 'error' : 'warn'}"
+      class:pinned={!t}
+      class:held={t?.held}
+      class:herald={t?.herald}
+      class:feat={!!t?.seal}
+      role={t ? 'note' : undefined}
+      style:--life={t ? `${t.life}ms` : null}
       use:overPage
-      use:sparkle={{ kind: t.kind, herald: t.herald }}
+      use:sparkle={{ kind: t?.kind ?? 'warn', herald: t?.herald }}
       animate:flip={{ duration: 260 }}
       in:fly={enter}
       out:fadeOut={{ duration: 200 }}
-      onpointerenter={() => toasts.hold(t.id)}
-      onpointerleave={() => toasts.release(t.id)}
+      onpointerenter={() => t && toasts.hold(t.id)}
+      onpointerleave={() => t && toasts.release(t.id)}
     >
-      <span class="seal">
-        {#if t.seal}
-          <AchievementSeal sign={t.seal.sign} tier={t.seal.tier} earned size={36} />
-        {:else if t.who}
-          <Avatar name={t.who.name} hue={t.who.hue ?? 0} sigil={t.who.sigil} size={28} dim={t.who.hue === undefined} />
-          {#if t.kind !== 'info'}<span class="gem badge">{@render glyph(t.kind)}</span>{/if}
-        {:else}
-          <span class="gem">{@render glyph(t.kind)}</span>
-        {/if}
-      </span>
-      <div class="body">
-        {#if t.title}<p class="title">{t.title}</p>{/if}
-        {#if t.who && t.herald}
-          <p class="msg"><b class="name"><PlayerName name={t.who.name} /></b> {t.message}</p>
-        {:else if t.who}
-          <p class="msg name" style:color={t.who.hue === undefined ? null : playerColor(t.who.hue)}><PlayerName name={t.message} /></p>
-        {:else}
-          <p class="msg">{t.message}</p>
-        {/if}
-      </div>
-      <button class="close" data-sfx="none" onclick={() => (t.onClose?.(), toasts.dismiss(t.id))} aria-label="Dismiss">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg>
-      </button>
-      {#if !t.sticky}<span class="fuse" aria-hidden="true"></span>{/if}
+      {#if !t}
+        <!-- The connection lost, up (with what to do about it) until it's back or they leave. -->
+        <span class="seal">
+          {#key session.gaveUp}
+            <span class="gem" class:spin={!session.gaveUp} in:swap out:swap>{#if session.gaveUp}{@render glyph('error')}{/if}</span>
+          {/key}
+        </span>
+        <div class="body">
+          <div class="lost">
+            {#key session.gaveUp}
+              <div in:swap out:swap>
+                <p class="title">{session.gaveUp ? 'Host unreachable' : 'Connection lost'}</p>
+                <p class="msg">{session.gaveUp ? 'The room may have closed.' : 'Reconnecting to the host…'}</p>
+              </div>
+            {/key}
+          </div>
+          <div class="actions">
+            <button class="btn small" onclick={() => session.reconnect()}>Retry</button>
+            <button class="btn small ghost" onclick={() => session.leave()}>Leave</button>
+          </div>
+        </div>
+      {:else}
+        <span class="seal">
+          {#if t.seal}
+            <AchievementSeal sign={t.seal.sign} tier={t.seal.tier} earned size={36} />
+          {:else if t.who}
+            <Avatar name={t.who.name} hue={t.who.hue ?? 0} sigil={t.who.sigil} size={28} dim={t.who.hue === undefined} />
+            {#if t.kind !== 'info'}<span class="gem badge">{@render glyph(t.kind)}</span>{/if}
+          {:else}
+            <span class="gem">{@render glyph(t.kind)}</span>
+          {/if}
+        </span>
+        <div class="body">
+          {#if t.title}<p class="title">{t.title}</p>{/if}
+          {#if t.who && t.herald}
+            <p class="msg"><b class="name"><PlayerName name={t.who.name} /></b> {t.message}</p>
+          {:else if t.who}
+            <p class="msg name" style:color={t.who.hue === undefined ? null : playerColor(t.who.hue)}><PlayerName name={t.message} /></p>
+          {:else}
+            <p class="msg">{t.message}</p>
+          {/if}
+        </div>
+        <button class="close" data-sfx="none" onclick={() => (t.onClose?.(), toasts.dismiss(t.id))} aria-label="Dismiss">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17" /></svg>
+        </button>
+        {#if !t.sticky}<span class="fuse" aria-hidden="true"></span>{/if}
+      {/if}
     </div>
   {/each}
 </div>
@@ -212,6 +224,7 @@
       0 10px 26px rgba(0, 0, 0, 0.55);
     pointer-events: auto;
     animation: ignite 1.4s var(--ease-out);
+    transition: border-color 0.2s;
   }
   /* The lost connection has no close button, so no room is kept for one. */
   .toast.pinned {
@@ -283,6 +296,14 @@
     place-items: center;
     width: 28px;
     height: 28px;
+  }
+  /* The lost connection's stone and words: the old and the new in one place as its state changes. */
+  .seal > .gem:not(.badge),
+  .lost > * {
+    grid-area: 1 / 1;
+  }
+  .lost {
+    display: grid;
   }
   .gem {
     display: grid;

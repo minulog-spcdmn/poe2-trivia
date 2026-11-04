@@ -18,6 +18,7 @@
   import { onStoredElsewhere } from '../lib/storage';
   import { savedName, session } from '../lib/session.svelte';
   import { NAMELESS } from '../lib/names';
+  import { sfx } from '../lib/sound';
   import { COLOUR_KEY, loadColour } from '../lib/colour';
   import { reservedHueOf } from '../lib/game';
   import Avatar from './Avatar.svelte';
@@ -65,8 +66,10 @@
       session.wearSigil();
     } else if (left) asking = asking === c ? null : c;
   }
-  function unlock() {
+  function unlock(e: MouseEvent) {
     if (!ask) return;
+    // Heard from the class it turns gold on, in place of the button's click.
+    sfx('sigilUnlock', { from: { from: (e.currentTarget as Element).closest('.sigils')?.querySelector('.class.asked') ?? (e.currentTarget as Element) } });
     sigils = unlockSigil(ask, achievements) ?? sigils;
     session.wearSigil();
     asking = null;
@@ -96,7 +99,7 @@
     <!-- Kept in place while hidden, so the line never moves when it shows. -->
     <div class="acts" class:off={!ask} inert={!ask}>
       <button class="btn small ghost" onclick={() => (asking = null)}>Not yet</button>
-      <button class="btn small primary" onclick={unlock}>Unlock</button>
+      <button class="btn small primary" data-sfx="none" onclick={unlock}>Unlock</button>
     </div>
   </div>
 
@@ -139,15 +142,19 @@
   .line {
     flex: 1;
     margin: 0;
-    font-size: 0.98rem;
+    font-size: 1rem;
     font-style: italic;
-    color: #cbbfa8;
+    color: var(--muted);
   }
   .acts {
     display: flex;
     gap: 0.5rem;
+    transition:
+      opacity 0.2s,
+      visibility 0.2s;
   }
   .acts.off {
+    opacity: 0;
     visibility: hidden;
   }
   .classes {
@@ -191,6 +198,8 @@
     width: 48px;
     height: 60px;
     background: var(--sigil) center / contain no-repeat;
+    /* Stone to gold as it is asked about or unlocked (a small picture: cheap to filter). */
+    transition: filter 0.4s;
   }
   .class:not(.have) .art {
     filter: grayscale(1) brightness(0.45);
@@ -198,17 +207,18 @@
   .class.asked .art {
     filter: none;
   }
+  /* The tile's name leads its state under it ("Locked", in --muted): brighter, and no smaller. */
   .name {
     font-family: var(--font-display);
-    font-size: 0.85rem;
+    font-size: 1rem;
     letter-spacing: 0.04em;
-    color: #b9ab94;
+    color: var(--text);
   }
   .have .name {
     color: var(--gold-hi);
   }
   .state {
-    font-size: 0.78rem;
+    font-size: 0.9375rem;
     font-style: italic;
     color: var(--muted);
   }
@@ -242,7 +252,9 @@
   .strip .line {
     grid-area: 1 / 2 / 3 / 3;
     line-height: 1.35;
+    /* (A question to answer, so in the text's own colour; 0.9rem keeps it on one line beside the avatar.) */
     font-size: 0.9rem;
+    color: var(--text);
   }
   .strip.asking .line {
     grid-row: 1;

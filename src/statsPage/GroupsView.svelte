@@ -11,7 +11,7 @@
   // for its visitors; with a group, the group's against everyone's (Delve's
   // depths too, slices.ts depthsIn). GoatCounter breaks a whole period
   // down, not its days.
-  import { fmt } from './chart';
+  import { fmt, pct } from './chart';
   import DelveDepths from './DelveDepths.svelte';
   import How from './How.svelte';
   import { toldFromStart } from './insights';
@@ -62,11 +62,13 @@
   const appKnown = $derived(toldFromStart(read.now));
 
   const known = (r: SegmentRow) => r.who.name !== 'Unknown' && r.who.name !== 'Other';
+  /** Whether the picked group had visits in the period: a link with a name in no list (mistyped, or from another period) gets no chip and no empty table. */
+  const counted = $derived(!mine || mine.visit > 0);
   /** The chips of a kind: its biggest groups, and the picked one even where it isn't among them (opened from a list). Those too small to tell apart only once "More" is open, the picked one always. */
   let more = $state(false);
   const chipsOf = (rows: SegmentRow[]) => {
     const ws = rows.filter(known).map((r) => r.who);
-    const all = who && who.kind === rows[0]?.who.kind && !ws.some(isWho) ? [...ws, who] : ws;
+    const all = who && counted && who.kind === rows[0]?.who.kind && !ws.some(isWho) ? [...ws, who] : ws;
     const big = (w: Who) => isWho(w) || (rows.find((r) => r.who.kind === w.kind && r.who.name === w.name)?.profile.visitors ?? 0) >= FEW;
     return { shown: more ? all : all.filter(big), small: all.filter((w) => !big(w)).length };
   };
@@ -84,7 +86,6 @@
   /** "from Germany", "on phones and tablets", "on iOS". */
   const from = (w: Who) => (w.kind === 'place' ? `from ${w.name}` : `on ${w.kind === 'device' ? (DEVICE[w.name] ?? w.name) : w.name}`);
   const times = (r: number) => `${r >= 10 ? Math.round(r) : r.toFixed(1)}×`;
-  const pct = (v: number) => `${Math.round(v)}%`;
   /** For each 100 visitors: a whole number, or one decimal while it's small. */
   const rate = (v: number) => (v >= 10 || v === 0 ? String(Math.round(v)) : v.toFixed(1));
   const per100 = (n: number, visitors: number) => (visitors ? (100 * n) / visitors : 0);
@@ -146,6 +147,8 @@
     const n = countsIn(slices, null, who && who.kind !== 'place' ? 'systems' : 'locations');
     return per100(n[mode], n.visit);
   });
+  /** A ranking of one says nothing: only once two are big enough to set side by side. */
+  const keenShown = $derived(keen.filter((r) => !r.few).length >= 2);
   const keenMax = $derived(Math.max(keenAll, ...keen.map((r) => r.rate), 0.1));
   /** The picked group's row, or a picked kind of device's systems. */
   const lit = (w: Who) => isWho(w) || (who?.kind === 'device' && deviceOf(w.name) === who.name);
@@ -260,8 +263,7 @@
 {/snippet}
 
 {#snippet keenList(m: Mode)}
-  <!-- (A ranking of one says nothing: only once two are big enough to set side by side.) -->
-  {#if keen.filter((r) => !r.few).length >= 2}
+  {#if keenShown}
     <div class="tile wide">
       <h3>Where {MODE_NAMES[m]} is played most: games for every 100 visits</h3>
       <ol class="from">
@@ -317,29 +319,39 @@
     </div>
   {/if}
 {:else}
-  {#if who && mode && mine && all && picked && everyone}
+  {#if who && !counted}
+    <header class="head">
+      <h2>{whoName(who)}</h2>
+      <p>No visits were counted {from(who)} in these days.</p>
+    </header>
+  {:else if who && mode && mine && all && picked && everyone}
     {@const M = MODE_NAMES[mode]}
     <header class="head">
       <h2>{M} {from(who)}</h2>
       {#if mine.visit < FEW}<p>So few visits ({fmt(mine.visit)}) that a handful more or less changes a lot.</p>{/if}
     </header>
-    {@render compare(pairRows, whoName(who), `${M} ${from(who)} against everyone`)}
-    {#if mode === 'delve'}
-      <section class="tile wide">
-        <h3>How deep their runs go</h3>
-        {#if groupDepths}
-          <DelveDepths ranges={groupDepths} against={allDepths} whom={whoName(who)} />
-        {:else if depthsReading}
-          <p class="soft" aria-busy="true">Reading how deep they went…</p>
-        {:else if depthsFailed}
-          <p class="note" role="alert">{depthsFailed} <button type="button" class="again" onclick={ondepths}>Try again</button></p>
-        {:else}
-          <!-- (Read by itself once picked; this, where that read was called off by the groups being read again.) -->
-          <button type="button" class="again alone" onclick={ondepths}>Read how deep they went</button>
-        {/if}
-      </section>
-    {/if}
-    {@render keenList(mode)}
+    <!-- (A big monitor: Delve's depths beside the rest, so the view is one screen.) -->
+    <div class="beside" class:delve={mode === 'delve'}>
+      <div>
+        {@render compare(pairRows, whoName(who), `${M} ${from(who)} against everyone`)}
+        {@render keenList(mode)}
+      </div>
+      {#if mode === 'delve'}
+        <section class="tile wide">
+          <h3>How deep their runs go</h3>
+          {#if groupDepths}
+            <DelveDepths ranges={groupDepths} against={allDepths} whom={whoName(who)} />
+          {:else if depthsReading}
+            <p class="soft" aria-busy="true">Reading how deep they went…</p>
+          {:else if depthsFailed}
+            <p class="note" role="alert">{depthsFailed} <button type="button" class="again" onclick={ondepths}>Try again</button></p>
+          {:else}
+            <!-- (Read by itself once picked; this, where that read was called off by the groups being read again.) -->
+            <button type="button" class="again alone" onclick={ondepths}>Read how deep they went</button>
+          {/if}
+        </section>
+      {/if}
+    </div>
   {:else if who && picked && everyone}
     <header class="head">
       <h2>{whoName(who)}</h2>
@@ -360,20 +372,24 @@
     {#if !modeFacts.started}
       <p class="soft">Nobody played it in these days.</p>
     {:else}
-      <dl class="facts">
-        <div><dt>Games started</dt><dd><b>{fmt(modeFacts.started)}</b><span>{pct(share(modeFacts.started, read.now.games.started))} of all games</span></dd></div>
-        <div><dt>Played to the end</dt><dd><b>{finishedShare(modeFacts.finished, modeFacts.started)}</b><span>of those started</span></dd></div>
-        <div><dt>Players a game</dt><dd><b>{modeFacts.perGame === null ? '–' : modeFacts.perGame.toFixed(1)}</b><span>on average</span></dd></div>
-        <div><dt>On a phone or tablet</dt><dd><b>{pct(phones)}</b><span>all games: {pct(phonesAll)}</span></dd></div>
-        <div><dt>For every 100 visits</dt><dd><b>{rate(keenAll)}</b><span>{M} games started</span></dd></div>
-      </dl>
-      {#if mode === 'delve'}
-        <section class="tile wide">
-          <h3>How deep the runs go</h3>
-          <DelveDepths ranges={read.now.delve.ranges} />
-        </section>
-      {/if}
-      {@render keenList(mode)}
+      <div class="beside" class:delve={mode === 'delve'}>
+        <div>
+          <dl class="facts">
+            <div><dt>Games started</dt><dd><b>{fmt(modeFacts.started)}</b><span>{pct(share(modeFacts.started, read.now.games.started))} of all games</span></dd></div>
+            <div><dt>Played to the end</dt><dd><b>{finishedShare(modeFacts.finished, modeFacts.started)}</b><span>of those started</span></dd></div>
+            <div><dt>Players a game</dt><dd><b>{modeFacts.perGame === null ? '–' : modeFacts.perGame.toFixed(1)}</b><span>on average</span></dd></div>
+            <div><dt>On a phone or tablet</dt><dd><b>{pct(phones)}</b><span>all games: {pct(phonesAll)}</span></dd></div>
+            <div><dt>For every 100 visits</dt><dd><b>{rate(keenAll)}</b><span>{M} games started</span></dd></div>
+          </dl>
+          {@render keenList(mode)}
+        </div>
+        {#if mode === 'delve'}
+          <section class="tile wide">
+            <h3>How deep the runs go</h3>
+            <DelveDepths ranges={read.now.delve.ranges} />
+          </section>
+        {/if}
+      </div>
     {/if}
   {:else}
     <section aria-label="What stands out">
@@ -754,6 +770,29 @@
   }
   .again.alone {
     margin-left: 0;
+  }
+  /* What sits beside Delve's depths on a big monitor: one under another everywhere else. */
+  .beside,
+  .beside > div {
+    display: contents;
+  }
+  /* A big monitor: Delve's depths beside the rest, so the view is one screen; a table no wider than keeps its figures near their names. */
+  @media (min-width: 1900px) {
+    .beside.delve {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1.25rem;
+      align-items: start;
+    }
+    .beside.delve > div {
+      display: block;
+    }
+    .beside.delve > .tile.wide {
+      margin-top: 0;
+    }
+    .compare {
+      max-width: 64rem;
+    }
   }
   @media (max-width: 600px) {
     .what {

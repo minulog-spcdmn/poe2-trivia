@@ -16,7 +16,8 @@
   //   (a link can come from anyone).
   import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { dialogBackdrop } from '../lib/behindDialog';
+  import { sfx } from '../lib/sound';
+  import { dialogBackdrop } from '../lib/dialogBackdrop';
   import { dialogIn, dialogOut } from '../lib/dialogIn';
   import { circleOf, warmCircle } from './circles';
   import { calm } from '../lib/motion.svelte';
@@ -52,6 +53,8 @@
   // svelte-ignore state_referenced_locally
   const first: View = offered ? 'offered' : (start ?? (handheld && scans && !sync.code ? 'scan' : 'show'));
   let view = $state<View>(first);
+  /** A view going and the next coming in its place (the title, the heart, what's under the stage, the line). */
+  const swap = (node: Element) => fade(node, calm({ duration: 200 }));
   /** The code shown: the one paired with, or one made for this dialog (and, once it moves to the others' code, theirs). */
   let made = $state<string | null>(null);
   const code = $derived(sync.code ?? made);
@@ -84,6 +87,14 @@
   const qr = $derived(code ? qrShape(codeLink(code, location.href)) : null);
 
   const linked = $derived(sync.status === 'linked');
+  // The two devices pairing is heard on both, as the link comes up while this is open: once (not again for a link
+  // dropped and back meanwhile), and not for one already up as it opens.
+  let heardLinked = untrack(() => linked);
+  $effect(() => {
+    if (!linked || heardLinked) return;
+    heardLinked = true;
+    untrack(() => sfx('linked', { from: { from: panel } }));
+  });
   const statusLine = $derived(syncLine());
   // Words: pairing is the act, synced the state.
   const title = $derived(
@@ -207,12 +218,6 @@
     endScan();
   });
 
-  /** Escape closes the dialog alone, heard before the settings behind it would close too (App's keys leave a key that's been had). */
-  function onKey(e: KeyboardEvent) {
-    if (e.key !== 'Escape' || e.defaultPrevented) return;
-    e.preventDefault();
-    close();
-  }
   let panel = $state<HTMLDivElement>();
   // (Focus in the dialog, not on the button behind it that opened it.)
   onMount(() => panel?.focus({ preventScroll: true }));
@@ -223,12 +228,13 @@
   else if (first === 'scan') void startScan();
 </script>
 
-<svelte:window onkeydowncapture={onKey} />
-
-<div class="backdrop" use:dialogBackdrop transition:fade|global={{ duration: 150 }} onclick={close} role="presentation">
+<!-- A press beside it or Escape (the dialog alone, not the settings behind it) closes it, heard from its close button, whichever it has. -->
+<div class="backdrop" use:dialogBackdrop={{ close, closer: '.btn.ghost, .btn.primary' }} transition:fade|global={{ duration: 150 }} role="presentation">
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="sync panel" bind:this={panel} in:dialogIn|global out:dialogOut|global onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="sync-title" tabindex="-1">
-    <h3 id="sync-title">{title}</h3>
+    <h3 id="sync-title" class="swap">
+      {#key view}<span in:swap out:swap>{title}</span>{/key}
+    </h3>
 
     <!-- The stage: the circle, and in its heart the code, the camera or the seal. -->
     <div class="stage">
@@ -236,7 +242,7 @@
         <Circle size="100%" hollow state={linked && (view === 'show' || view === 'joined') ? 'good' : 'idle'} strength={0.5} />
       </div>
       {#if view === 'show' && qr}
-        <div class="heart plate" in:fade={calm({ duration: 300 })}>
+        <div class="heart plate" in:fade={calm({ duration: 300 })} out:swap>
           <svg class="qr" viewBox="0 0 {qr.size} {qr.size}" role="img" aria-label="QR code of this device’s sync link">
             <path d={qr.eyes} />
             <path d={qr.dots} />
@@ -246,57 +252,65 @@
           </svg>
         </div>
       {:else if view === 'scan'}
-        <div class="heart lens" in:fade={calm({ duration: 300 })}>
+        <div class="heart lens" in:fade={calm({ duration: 300 })} out:swap>
           <div class="waiting" class:gone={seeing}><SyncSeal /></div>
           <!-- svelte-ignore a11y_media_has_caption -->
           <video bind:this={video} class:seeing playsinline muted onplaying={() => (seeing = true)}></video>
         </div>
       {:else}
         {#key view}
-          <div class="sigil" class:quiet={view === 'type'} class:good={linked && view === 'joined'}><SyncSeal /></div>
+          <div class="sigil" class:quiet={view === 'type'} class:good={linked && view === 'joined'} in:fade={calm({ duration: 300 })} out:swap><SyncSeal /></div>
         {/key}
       {/if}
     </div>
 
     <!-- Under the stage: the code, the field to type it in, or what to do; the same height in every view. -->
     <div class="under">
-      {#if view === 'type'}
-        <form id="sync-typed" onsubmit={submitTyped}>
-          <input
-            bind:this={field}
-            class="field code-field"
-            bind:value={typed}
-            oninput={() => (typeError = '')}
-            placeholder="XXXX-XXXX-XXXX-XXXX"
-            aria-label="Sync code"
-            autocomplete="off"
-            autocapitalize="characters"
-            autocorrect="off"
-            spellcheck="false"
-            enterkeyhint="done"
-          />
-        </form>
-      {:else if view === 'scan'}
-        <p class="how">Point the camera at your other device’s code.</p>
-      {:else if code || offered}
-        <p class="code" aria-label="Sync code" data-copy {@attach codePress.attach}>{shownCode((view === 'offered' ? offered : code)!)}</p>
-        <CopyNote press={codePress} />
-      {/if}
+      {#key view}
+        <div class="under-view" in:swap out:swap>
+          {#if view === 'type'}
+            <form id="sync-typed" onsubmit={submitTyped}>
+              <input
+                bind:this={field}
+                class="field code-field"
+                bind:value={typed}
+                oninput={() => (typeError = '')}
+                placeholder="XXXX-XXXX-XXXX-XXXX"
+                aria-label="Sync code"
+                autocomplete="off"
+                autocapitalize="characters"
+                autocorrect="off"
+                spellcheck="false"
+                enterkeyhint="done"
+              />
+            </form>
+          {:else if view === 'scan'}
+            <p class="how">Point the camera at your other device’s code.</p>
+          {:else if code || offered}
+            <p class="code" aria-label="Sync code" data-copy {@attach codePress.attach}>{shownCode((view === 'offered' ? offered : code)!)}</p>
+            <CopyNote press={codePress} />
+          {/if}
+        </div>
+      {/key}
     </div>
 
     <!-- What to do, how the link stands, or what went wrong: two lines kept for it, so nothing below moves. -->
-    <p class="line" class:good={linked && (view === 'show' || view === 'joined')} class:bad={(view === 'show' || view === 'joined') ? sync.status === 'offline' : !!(view === 'scan' ? scanError : view === 'type' ? typeError : '')} aria-live="polite">
-      {#if view === 'offered'}
-        Your codex, Delve runs and achievements will match the device that showed this code. Only accept a code from your own device.
-      {:else if view === 'scan'}
-        {scanError || 'On a computer, choose Pair a device in the settings; on a phone, Show my code.'}
-      {:else if view === 'type'}
-        {typeError || 'The code under the QR code on your other device.'}
-      {:else if view === 'show' && !linked && sync.status !== 'offline'}
-        {handheld ? 'Scan it from your other device, or enter its code there.' : "Scan it with your phone’s camera. Playing from its home screen? Pair a device in its settings."}
-      {:else}
-        {statusLine}
-      {/if}
+    <p class="line swap" class:good={linked && (view === 'show' || view === 'joined')} class:bad={(view === 'show' || view === 'joined') ? sync.status === 'offline' : !!(view === 'scan' ? scanError : view === 'type' ? typeError : '')} aria-live="polite">
+      {#key view}
+        <span in:swap out:swap>
+          {#if view === 'offered'}
+            Your codex, Delve runs and achievements will match the device that showed this code. Only accept a code from your own device.
+          {:else if view === 'scan'}
+            {scanError || 'On a computer, choose Pair a device in the settings; on a phone, Show my code.'}
+          {:else if view === 'type'}
+            {typeError || 'The code under the QR code on your other device.'}
+          {:else if view === 'show' && !linked && sync.status !== 'offline'}
+            {handheld ? 'Scan it from your other device, or enter its code there.' : "Scan it with your phone’s camera. Playing from its home screen? Pair a device in its settings."}
+          {:else}
+            {statusLine}
+          {/if}
+        </span>
+      {/key}
     </p>
 
     <!-- The other ways: a line of their own, kept in every view, so the buttons below stay one row. -->
@@ -374,6 +388,14 @@
       width: var(--stage);
       margin: 0;
     }
+  }
+  /* What changes with the view: the old and the new in one place while one fades for the other. */
+  .swap {
+    display: grid;
+  }
+  .swap > *,
+  .under > .under-view {
+    grid-area: 1 / 1;
   }
   .sync h3 {
     grid-area: title;
@@ -495,11 +517,14 @@
   /* Under the stage, one line's height in every view. */
   .under {
     grid-area: under;
+    display: grid;
+    min-height: 2.9rem;
+    margin-top: 0.4rem;
+  }
+  .under-view {
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 2.9rem;
-    margin-top: 0.4rem;
   }
   .under form {
     width: min(300px, 100%);
@@ -524,6 +549,7 @@
     font-style: italic;
     line-height: 1.35;
     color: var(--muted);
+    transition: color 0.2s;
   }
   .line.good {
     color: var(--verdict-good-icon);
@@ -557,7 +583,8 @@
     border: 0;
     background: none;
     font-family: var(--font-body);
-    font-style: italic;
+    /* (Upright, a control, as every small link is.) */
+    font-style: normal;
     font-size: 0.95rem;
     color: var(--muted);
     text-decoration: underline;
@@ -571,7 +598,7 @@
   /* At the links' size (set down to their small letters: app.css .bullet). */
   .sep {
     font-size: 0.95rem;
-    color: var(--gold-lo);
+    color: var(--faint);
   }
   .actions {
     grid-area: actions;

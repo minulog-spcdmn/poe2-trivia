@@ -1,11 +1,11 @@
 // The faces other screens use are loaded ahead once the page has settled
-// (lib/fontsAhead.ts), all four in that one moment: the browser lays the
+// (lib/fontsAhead.ts), all three in that one moment: the browser lays the
 // whole page out again each time the font set changes, whatever changed in
-// it, so one face at a time would be four of those. Nothing is fetched ahead
+// it, so one face at a time would be three of those. Nothing is fetched ahead
 // with Save-Data on, the codex still has the faces at once when it's opened
-// before they're in, and the four are loaded once. On the way into a room
+// before they're in, and the three are loaded once. On the way into a room
 // the lobby's own face (Cinzel Black) comes at once, and only that one: the
-// other three would share the link with what the room waits for.
+// other two would share the link with what the room waits for.
 import './asVite.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,12 +27,11 @@ const FAMILIES: Record<string, string> = {
   '--font-cinzel': "'Cinzel', serif",
   '--font-tooltip': "'Fontin SmallCaps', serif",
   '--font-tooltip-italic': "'Fontin', serif",
-  '--font-body': "'EB Garamond', serif",
 };
 g.getComputedStyle = () => ({ getPropertyValue: (name: string) => FAMILIES[name] ?? '' });
 
 const { loadFonts, loadFontsAhead } = await import('../src/lib/fontsAhead.ts');
-const ALL = ["900 16px 'Cinzel'", "400 16px 'Fontin SmallCaps'", "italic 400 16px 'Fontin'", "500 16px 'EB Garamond'"];
+const ALL = ["900 16px 'Cinzel'", "400 16px 'Fontin SmallCaps'", "italic 400 16px 'Fontin'"];
 
 /** The next idle moment, and what the faces it loaded resolve. */
 async function idle() {
@@ -48,7 +47,7 @@ test('with Save-Data on, nothing is queued', () => {
   assert.deepEqual(loads, []);
 });
 
-test('the four faces in one settled moment, none before it', async () => {
+test('the three faces in one settled moment, none before it', async () => {
   loadFontsAhead();
   assert.deepEqual(loads, []);
   assert.equal(idles.length, 1);
@@ -80,7 +79,7 @@ test('on the way into a room, the lobby’s face only, once and not waiting for 
   assert.deepEqual(loads.slice(from), [ALL[0], ...ALL]);
 });
 
-test('on the way into a room with the four on their way already, nothing more', async () => {
+test('on the way into a room with the three on their way already, nothing more', async () => {
   const { loadFonts: now, loadRoomFonts } = await fresh('after');
   const from = loads.length;
   void now();

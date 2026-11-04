@@ -2,7 +2,7 @@
   import { fly, fade, scale, slide } from '../lib/transitions';
   import { session, engine } from '../lib/session.svelte';
   import { glare } from '../lib/glare';
-  import { onceFontsIn } from '../lib/inFrame';
+  import { inFrame, onceFontsIn } from '../lib/inFrame';
   import { AUTO_NEXT_MS, answerDrawn, autoNextLeft, clockMs, clockRuns, drawnAs, isFake, questionTopic } from '../lib/game';
   import { shown } from '../lib/media.svelte';
   import { FINALE_MS, materialize, warmBurns, type BurnParams } from '../lib/materialize';
@@ -99,17 +99,25 @@
    * side, where the plate has no height to spare).
    */
   function oneLine(node: HTMLElement, on = true) {
+    const head = node.closest<HTMLElement>('.head');
+    // The plate's room inside its padding (the text block itself grows with an unwrapped name). Inside it, as its padding
+    // follows the plate's ends (--plate-scale, on phones) while its width stays.
+    const roomOf = (h: HTMLElement) => {
+      const hs = getComputedStyle(h);
+      return h.clientWidth - parseFloat(hs.paddingLeft) - parseFloat(hs.paddingRight);
+    };
+    /** The plate's room the name was last fitted to. */
+    let fittedTo = -1;
     const run = () => {
       node.style.fontSize = '';
       node.style.whiteSpace = '';
+      fittedTo = -1;
       if (!on) return;
       node.style.whiteSpace = 'nowrap';
       const full = parseFloat(getComputedStyle(node).fontSize);
-      // The plate's room inside its padding (the text block itself grows with an unwrapped name).
-      const head = node.closest<HTMLElement>('.head');
       if (!head) return;
-      const hs = getComputedStyle(head);
-      const room = head.clientWidth - parseFloat(hs.paddingLeft) - parseFloat(hs.paddingRight) + 0.5;
+      fittedTo = roomOf(head);
+      const room = fittedTo + 0.5;
       // The words' own width (the span itself is as wide as the plate's line).
       const range = document.createRange();
       range.selectNodeContents(node);
@@ -126,7 +134,11 @@
       }
       if (wide() > room) node.style.whiteSpace = '';
     };
-    run();
+    // Fitted in the frame's animation frame, not as it mounts (lib/inFrame.ts): measured there and then, it had the
+    // new question laid out half made, in the task that makes it, 5 to 7 ms of a picture question's pick at 4K (#331).
+    // Still before the frame is painted: the name never shows at its full size.
+    const { soon, cancel } = inFrame(run);
+    if (on) soon();
     // Again once the display font is in, and whenever the plate's width changes (a phone turned). Only while it is on: off,
     // run() measures nothing, and asking for the fonts' readiness lays the whole page out there and then (Chrome), in the
     // middle of a reveal coming in (12 ms in a trace). Asked in the frame's animation frame for that too (lib/inFrame.ts).
@@ -136,10 +148,13 @@
       fontsIn = onceFontsIn(run);
     };
     if (on) fonts();
-    const ro = new ResizeObserver(run);
-    const head = node.closest('.head');
-    // And when the name changes: once its new words are in (before the next paint).
-    const mo = new MutationObserver(run);
+    // (Its first report is of the room the animation frame has just fitted it to: left alone, as is any report of that room.)
+    const ro = new ResizeObserver(() => {
+      if (head && roomOf(head) !== fittedTo) run();
+    });
+    // And when the name changes (the clock starting turns the blank into the name): in the frame's animation frame too,
+    // not in the task that changed it, which has the rest of the question changing with it. Still before the next paint.
+    const mo = new MutationObserver(soon);
     // (Watching only while it is on.)
     const watch = () => {
       ro.disconnect();
@@ -154,10 +169,13 @@
         const was = on;
         on = now;
         watch();
-        run();
+        // Off, at once (it measures nothing); on, in the frame's animation frame, as when it mounts.
+        if (on) soon();
+        else run();
         if (on && !was) fonts();
       },
       destroy: () => {
+        cancel();
         fontsIn();
         ro.disconnect();
         mo.disconnect();
@@ -486,6 +504,18 @@
   $effect(() => {
     if (!blastSlot && slotWanted()) blastSlot = true;
   });
+  /**
+   * Detonate hides at once when it can't be used: answered, struck, the
+   * clock out. But as dynamite blasts the question away (pressed or gone off
+   * by itself) the view reads the new question a moment before the blast
+   * copies it to blow apart (lib/blastAway.ts), its clock not running yet:
+   * there it stays drawn, so it is blown away with the rest.
+   */
+  let blastShown = $state(false);
+  $effect(() => {
+    if (canBlast) blastShown = true;
+  });
+  const blastGone = $derived(!canBlast && !(blastShown && waiting && !reveal));
   let blasting = false;
   function blastThrough() {
     if (!canBlast || blasting) return;
@@ -761,6 +791,7 @@
   /** How large the plate's ends are drawn (NamePlate's `fit`), for the name to keep clear of them. */
   let plateScale = $state<number>();
   let verdictEl = $state<HTMLElement | null>(null);
+  let nextEl = $state<HTMLElement | null>(null);
   let charge: Handle | null = null;
   /** The scorer's streak of correct answers, for the result line. */
   // From the reveal itself (the host has already counted this answer into
@@ -1004,10 +1035,11 @@
     );
   }
 
-  function next() {
+  /** On to the next: pressed, its button clicks; by a key (Enter or Space on it, or Next's own), a key's press from it. */
+  function next(e?: MouseEvent) {
     // Pressed while a fossil is still coming: all of it goes to the line.
     stopFind?.();
-    sfx('click');
+    sfx(e?.detail ? 'click' : 'key', { from: { from: nextEl } });
     session.dispatch({ type: 'next' });
   }
 
@@ -1097,7 +1129,7 @@
         <span in:scale={{ start: 0.3, duration: 300 }} title={p.name}><Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={22} /></span>
       {/each}
       {#if ps.length > faces.length}
-        <span class="more" title={ps.slice(faces.length).map((p) => p.name).join(', ')}>+{ps.length - faces.length}</span>
+        <span class="more" in:scale={{ start: 0.3, duration: 300 }} title={ps.slice(faces.length).map((p) => p.name).join(', ')}>+{ps.length - faces.length}</span>
       {/if}
     </span>
   {/if}
@@ -1275,6 +1307,7 @@
         class:primary={canNext}
         use:backdropShadow
         data-cursor="next"
+        bind:this={nextEl}
         data-sfx="none"
         disabled={!canNext}
         title={canNext ? undefined : race ? 'The host moves the race on' : coop ? 'The team moves the run on' : `${active.name} or the host moves on`}
@@ -1294,10 +1327,10 @@
       <button
         class="btn blast"
         data-cursor="blast"
-        class:gone={!canBlast}
+        class:gone={blastGone}
         class:out={!mine}
         data-sfx="none"
-        disabled={!canBlast}
+        disabled={blastGone}
         aria-hidden={!canBlast}
         tabindex={canBlast ? undefined : -1}
         aria-label="Detonate: use dynamite to blast this question away and get a new one at this depth.{fuse !== null ? ' The fuse is already burning.' : ''}"
@@ -1331,7 +1364,7 @@
     {/if}
     {#if coop && myStruck && me}
       {@const others = waitingIds(s).filter((id) => id !== me)}
-      <p class="spectate out">
+      <p class="spectate out" in:fade={{ duration: 200 }}>
         {coopMissText(myStruck, livesOf(s, me), myStruck.lives + myStruck.wards > 1)}
         {#if others.length}<span class="still">Still answering: {namesOf(others, nameOf, me)}.</span>{/if}
       </p>
@@ -1351,7 +1384,7 @@
         The first right answer clears it; a wrong one costs a life.<span class="keys">{' '}Press {optionKeys(count)}.</span>
       </p>
     {:else if race && myMiss}
-      <p class="spectate out">Wrong: −1. You’re out until the next question.</p>
+      <p class="spectate out" in:fade={{ duration: 200 }}>Wrong: −1. You’re out until the next question.</p>
     {:else if race}
       <p class="spectate muted">First right answer wins. A wrong one costs a point!<span class="keys">{' '}Press {optionKeys(count)}.</span></p>
     {:else if !mine}
@@ -1375,12 +1408,12 @@
        verdict, where a long sentence (a team's, say) would make the row
        under the answers taller and push Next up: that row keeps the verdict
        and Next alone, and the art gives up what the sentence needs. The
-       line it takes the place of stays, unseen under it (.held), so the line
+       line it takes the place of stays, unseen under it (.kept), so the line
        keeps its height for a sentence no taller: the answers and the art
        under it stay where they were and the art's circle keeps its size, so
        nothing on the screen moves, or has to be drawn again, for it. -->
   <div class="task" data-cursor="task" class:snug class:timed={!!timer && clocked}>
-    <p class="task-text" class:held={!!reveal && upright.current}>
+    <p class="task-text" class:kept={!!reveal && upright.current}>
       <!-- Said to whoever can't answer as what is going on, and so it holds through the reveal. -->
       {#if !race && !coop && !session.myTurn}
         {active.name} <span class="muted">{q.mode === 'art' ? 'picks the art that matches the name' : 'names this item'}</span>
@@ -1457,7 +1490,13 @@
             aria-label={shownItem ? `${shownItem.name}${st === 'right' || st === 'wrong' ? `, ${st}` : ''}: see its details` : struckAt.has(i) ? `Option ${i + 1}, crossed out: ${struckBy(i)} picked it and it’s wrong` : undefined}
             title={shownItem ? 'See its details' : undefined}
             disabled={reveal ? !shownItem : !mine || chosen !== null || waiting || struckAt.has(i)}
-            onclick={() => (shownItem ? inspect(shownItem) : answer(i))}
+            onclick={(e) => {
+              // (An answer has its own sound; a named picture opening its details clicks, as the art's Details does, or from a key sounds a key's press.)
+              if (shownItem) {
+                sfx(e.detail > 0 ? 'click' : 'key', { from: { from: e.currentTarget } });
+                inspect(shownItem);
+              } else answer(i);
+            }}
             onpointermove={glare}
             in:scale={{ start: 0.85, duration: 450, delay: 250 + i * 80 }}
           >
@@ -1673,9 +1712,15 @@
     font-size: 1.2rem;
     line-height: 1.45;
   }
-  /* What it said, kept for its height under the outcome. */
-  .task-text.held {
+  /* What it said, kept for its height under the outcome: it fades out over
+     the outcome's delay, gone just as the outcome starts rising in its place
+     (back at once with the next question). */
+  .task-text.kept {
     visibility: hidden;
+    opacity: 0;
+    transition:
+      opacity 0.25s ease-in,
+      visibility 0s 0.25s;
   }
   /* At the top of the cell, where it stood when it took the line's place:
      a question's line that wraps (a long name picking the art) leaves the
@@ -1708,7 +1753,9 @@
   .task .clock :global(.timer span) {
     font-size: 1.15rem;
   }
-  /* Answered: stopped, and set back behind the verdict. */
+  /* Answered: stopped, and set back behind the verdict. The ring dims itself
+     as it stops (TimerRing's .stopped) over the same 0.4s as this, so the two
+     run together: one smooth dim, to 0.2. */
   .clock.done {
     opacity: 0.5;
     pointer-events: none;
@@ -1860,10 +1907,9 @@
     font-family: var(--font-display);
     font-size: 0.95rem;
     color: #d8a26a;
-    opacity: 0.85;
   }
   /* An extra tooltip line, cool against the warm name and base. In Cinzel's
-     small capitals (its lower case), not faked on EB Garamond: the capital
+     small capitals (its lower case), not faked on the body font: the capital
      stands as tall as the base's above it. */
   .mirrored {
     display: block;
@@ -2448,6 +2494,7 @@
       transform 0.25s var(--ease-out),
       border-color 0.3s,
       opacity 0.4s,
+      filter 0.4s,
       --bs-ring 0.3s,
       --bs1 0.4s,
       --bs1-color 0.4s,
@@ -2678,9 +2725,12 @@
     font-size: 1.08rem;
     color: #e9c8a2;
     letter-spacing: 0.02em;
+    /* (Delve's words coming in as the clock runs, .veiled, kept with the rest.) */
     transition:
       color 0.25s,
-      text-shadow 0.25s;
+      text-shadow 0.25s,
+      opacity 0.2s,
+      filter 0.4s;
   }
   .mark {
     font-size: 1.3rem;
@@ -2821,10 +2871,25 @@
     cursor: default;
     isolation: isolate;
     transition:
-      background 0.3s,
       border-color 0.3s,
       opacity 0.4s,
       box-shadow 0.3s;
+  }
+  /* The verdict's tint (.right, .wrong): a gradient can't ease into another,
+     so it lies over the backdrop on a layer of its own and fades in. (Plain
+     CSS: the tiles' fill isn't one the WebGL backdrop paints, unlike the rows'.) */
+  .tile::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  .tile.right::before,
+  .tile.wrong::before {
+    opacity: 1;
   }
   /* A row's height (short windows work it out from the window, below). */
   .tiles.many {
@@ -2839,7 +2904,9 @@
     flex: 1;
     width: 92%;
     min-height: 0;
-    transition: transform 0.35s var(--ease-out);
+    transition:
+      transform 0.35s var(--ease-out),
+      filter 0.3s;
   }
   .tile .key {
     position: absolute;
@@ -2914,16 +2981,20 @@
   }
   .tile.right {
     border-color: #5d8a50;
-    background: radial-gradient(ellipse at center, rgba(150, 185, 105, 0.14), rgba(14, 20, 11, 0.95) 75%);
     box-shadow: inset 0 0 0 1px #5d8a50;
+  }
+  .tile.right::before {
+    background: radial-gradient(ellipse at center, rgba(150, 185, 105, 0.14), rgba(14, 20, 11, 0.95) 75%);
   }
   .tile.right .mark {
     color: #a9cf8f;
   }
   .tile.wrong {
     border-color: #8e4434;
-    background: radial-gradient(ellipse at center, rgba(200, 90, 60, 0.12), rgba(24, 10, 7, 0.95) 75%);
     animation: shake 0.5s;
+  }
+  .tile.wrong::before {
+    background: radial-gradient(ellipse at center, rgba(200, 90, 60, 0.12), rgba(24, 10, 7, 0.95) 75%);
   }
   .tile.wrong .mark {
     color: #d98a6e;
@@ -2971,10 +3042,8 @@
     flex: 1;
     min-width: 0;
   }
-  /* Read out, not shown: and so the verdict's word in the phone's docked bar,
-     where its disc says it (a streak's count stays). */
-  .sr,
-  .dock .verdict .word:not(.count) {
+  /* Read out, not shown. */
+  .sr {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -3296,32 +3365,16 @@
     .dock .btn.blast.out {
       display: none;
     }
-    /* The docked row has the width of a phone: the verdict is its disc alone
-       (its word still read out), the sentence beside it says the rest. */
-    .dock .verdict {
-      padding: 0;
-      border: 0;
-      background: none;
-      font-size: 0.95rem;
-    }
-    .dock .verdict::after {
-      display: none;
-    }
-    /* A streak keeps its chip: the count is what the row has to say; the
-       sentence takes a line of its own under the chip and Next. */
-    .dock .result:has(.count) {
+    /* The docked row has the width of a phone: the verdict keeps its chip,
+       word and all, beside Next, and the sentence takes a line of its own
+       under them. */
+    .dock .result:has(> .verdict) {
       flex-wrap: wrap;
       row-gap: 0.4rem;
     }
-    .dock .result:has(.count) p {
+    .dock .result:has(> .verdict) > p {
       flex: 1 1 100%;
       order: 3;
-    }
-    .dock .verdict:has(.count) {
-      padding: 0.4em calc(1.1em - 0.16em) 0.4em 0.4em;
-      border: 1px solid var(--gold-lo);
-      background: rgba(0, 0, 0, 0.4);
-      font-size: 0.8rem;
     }
     /* Beside the dynamite's button, the line under the answers takes a little less room. */
     .blasting .hint .spectate {
@@ -3501,8 +3554,11 @@
     }
     .tiles.many.tall.six .tile {
       height: calc(var(--rows, 2) * var(--tile-h));
-      /* The number above the art, not on it. */
-      padding-top: 2.4rem;
+      /* The art in the middle of its tile: the room the tile's padding gives
+         (2.4rem above for the number, 0.8rem below) split evenly, so the art
+         keeps its size. */
+      padding-top: 1.6rem;
+      padding-bottom: 1.6rem;
     }
     .tiles.tall .caption {
       overflow-wrap: anywhere;
@@ -3514,7 +3570,16 @@
     }
     .tiles.many.tall .tile {
       height: calc(var(--rows, 2) * var(--tile-h));
-      padding-top: 2.4rem;
+      padding-top: 1.6rem;
+      padding-bottom: 1.6rem;
+    }
+  }
+  /* Short desktop windows pad a tile only 0.4rem below (their block, below,
+     which centres a row of six the same way): the same room, split evenly. */
+  @media (min-width: 900px) and (max-height: 820px) {
+    .tiles.many.tall .tile {
+      padding-top: 1.4rem;
+      padding-bottom: 1.4rem;
     }
   }
   /* Desktop windows a little short of the art's full 200px rows (up to about
@@ -3588,6 +3653,12 @@
     /* The pictures: their number sits over the art, so the art takes the tile. */
     .tile {
       padding: 0.45rem 0.5rem 0.4rem;
+    }
+    /* A row of tall ones keeps room for its number over the art: as much
+       below, so the art is centred. */
+    .tiles.many.tall.six .tile {
+      padding-top: 1.4rem;
+      padding-bottom: 1.4rem;
     }
     .task.timed .task-text {
       padding-inline: 54px;
@@ -3741,11 +3812,13 @@
     .tiles.many.tall .tile,
     .tiles.many.tall.six .tile {
       height: max(50px, var(--room) - 52px);
-      padding: 1.6rem 0.4rem 0.4rem;
+      /* The room for the number split above and below, so the art is centred. */
+      padding: 1rem 0.4rem;
     }
     .tiles.ten .tile {
       height: max(50px, (var(--room) - 54px) / 2);
       padding-top: 0.45rem;
+      padding-bottom: 0.4rem;
     }
     /* The name at the reveal over a tile barely taller than its picture: as
        small as upright, on a shorter shade and two lines at most, so the
@@ -3993,7 +4066,8 @@
     .tiles.many.snug.ten.armed .tile {
       height: auto;
       min-height: 0;
-      padding: 1.5rem 0.3rem 0.35rem;
+      /* The room for the number split above and below, so the art is centred. */
+      padding: 0.925rem 0.3rem;
     }
     .tiles .tile .key,
     .tiles.snug .tile .key {
@@ -4016,9 +4090,8 @@
       overflow-wrap: anywhere;
     }
     /* The row under the answers: as tall as a result and Next from the
-       start, so nothing moves when they come. The verdict is its disc alone
-       (its word read out), the sentence beside it says the rest; a streak
-       keeps its chip, the sentence under it and Next. */
+       start, so nothing moves when they come: the verdict's chip, word and
+       all (the sentence is over the art), and Next. */
     .footer {
       flex: none;
       min-height: 48px;
@@ -4027,37 +4100,6 @@
     .result p {
       font-size: 1rem;
       line-height: 1.25;
-    }
-    .footer .verdict {
-      padding: 0;
-      border: 0;
-      background: none;
-      font-size: 0.95rem;
-    }
-    .footer .verdict::after {
-      display: none;
-    }
-    .footer .verdict .word:not(.count) {
-      position: absolute;
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-      clip-path: inset(50%);
-      white-space: nowrap;
-    }
-    .footer .result:has(.count) {
-      flex-wrap: wrap;
-      row-gap: 0.4rem;
-    }
-    .footer .result:has(.count) p {
-      flex: 1 1 100%;
-      order: 3;
-    }
-    .footer .verdict:has(.count) {
-      padding: 0.4em calc(1.1em - 0.16em) 0.4em 0.4em;
-      border: 1px solid var(--gold-lo);
-      background: rgba(0, 0, 0, 0.4);
-      font-size: 0.8rem;
     }
     /* Out of this question (struck out, together), the row keeps its place but not Detonate's. */
     .footer .btn.blast.out {
@@ -4077,7 +4119,7 @@
     }
     .spectate,
     .blasting .hint .spectate {
-      font-size: 0.92rem;
+      font-size: 0.9375rem;
       line-height: 1.25;
     }
   }
