@@ -1,5 +1,5 @@
 // Prints of the category cards' engraved plates (lib/cardEngraving): each
-// still layer of a side (its glow, its lines) drawn once into an image, at
+// still layer of a side (its glow, its lines, a fossil's resin) drawn once into an image, at
 // the size it's drawn at, and shown in place of its svg (CardEngraving),
 // which keeps only its hairlines, cheap for Chrome to draw (pathsOf).
 //
@@ -22,8 +22,8 @@
 import type { Engraved, Fade } from './cardEngraving';
 import { whenIdle } from './idle';
 
-/** The layers of a side that are printed: the still ones. */
-export type Layer = 'glow' | 'lines';
+/** The layers of a side that are printed: the still ones (a fossil's resin, its lines' shadows, only on a fossil). */
+export type Layer = 'resin' | 'glow' | 'lines';
 /** A layer's print as shown: its URL ('' if it left every path to the svg), and the paths it leaves to its svg (leftKey). */
 export type Shown = { url: string; left: Set<string> };
 /** A layer as drawn: the size of its svg's viewBox (w, h), of its box (CSS px), the device pixels to its CSS px (its zoom, all of it, times the screen's density), and its box in whole device pixels, where the print is drawn. */

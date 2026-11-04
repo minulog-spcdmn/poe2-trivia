@@ -87,7 +87,7 @@
   // Chrome draws for a fraction of what their strokes cost it.
   import { engrave } from '../lib/cardEngraving';
   import { findVariant, fossilSlab, fossilVariant } from '../lib/findEngraving';
-  import { leftKey, printing, pull, pulled, type At, type Layer } from '../lib/platePrint.svelte';
+  import { leftKey, printing, pull, pulled, type At, type Layer, type Shown } from '../lib/platePrint.svelte';
   import { layoutZoomOf } from '../lib/stage';
   import type { FindKind } from '../lib/delve';
   import type { Variant } from '../lib/cardEngraving';
@@ -167,7 +167,8 @@
   /** A fossil's slab (lib/amber.ts): where its lamp's light is, which its lines are seen dark against. */
   const slab = $derived(lit && w && h ? fossilSlab(side, w, h, lit) : null);
 
-  const LAYERS: Layer[] = ['glow', 'lines'];
+  /** Its still layers, printed: a fossil's resin under the rest. */
+  const LAYERS = $derived<Layer[]>(slab ? ['resin', 'glow', 'lines'] : ['glow', 'lines']);
   /** The still layers' svgs, which their prints are pulled from. */
   const svgs: Partial<Record<Layer, SVGSVGElement>> = $state({});
   /** How it's drawn, if it's printed. */
@@ -178,7 +179,7 @@
   const prints = $derived.by(() => {
     void pulls;
     const p = plate;
-    return at && p ? { glow: pulled(p, 'glow', at, ink), lines: pulled(p, 'lines', at, ink) } : null;
+    return at && p ? (Object.fromEntries(LAYERS.map((layer) => [layer, pulled(p, layer, at, ink)])) as Partial<Record<Layer, Shown | null>>) : null;
   });
   /** Whether its hold is over (or a print couldn't be pulled): its svgs are drawn from then on while their prints are pulled. */
   let waited = $state(false);
@@ -280,37 +281,8 @@
         <path d={plate.window} style:fill="url(#{uid}-warm)" />
       </svg>
     {/if}
-    {#if slab}
-      <!-- A fossil's card: under its gilt lines, where its lamp shines through, a hair of shadow along each on
-           the side away from the light, so they read over the lit amber as over the dark resin. -->
-      <svg class="resin" viewBox="0 0 {w} {h}">
-        {#if plate.fade}
-          <defs>
-            <radialGradient id="{uid}-resin-g" cx={plate.fade.c[0]} cy={plate.fade.c[1]} r={plate.fade.r} gradientUnits="userSpaceOnUse">
-              {#if plate.fade.from}<stop offset={plate.fade.from / plate.fade.r} stop-color="#000" />{/if}
-              <stop offset={Math.max(0.35, (plate.fade.from + 22) / plate.fade.r)} stop-color="#fff" />
-              <stop offset="1" stop-color="#000" />
-            </radialGradient>
-            <mask id="{uid}-resin-fade" maskUnits="userSpaceOnUse" x="0" y="0" width={w} height={h}>
-              <rect width={w} height={h} fill="url(#{uid}-resin-g)" />
-            </mask>
-          </defs>
-        {/if}
-        {#if knockout.length}
-          <defs>
-            <mask id="{uid}-resin-ko" maskUnits="userSpaceOnUse" x={-50} y={-50} width={w + 100} height={h + 100}>
-              <rect x={-50} y={-50} width={w + 100} height={h + 100} fill="#fff" />
-              {#each knockout as d, i (i)}<path {d} class="ko" />{/each}
-            </mask>
-          </defs>
-        {/if}
-        <g transform="translate(0.5 0.5)" mask={knockout.length ? `url(#${uid}-resin-ko)` : undefined}>
-          {#each strokes as { cls, d }, i (i)}
-            <path {d} class={cls} mask={cls === 'ray' && plate.fade ? `url(#${uid}-resin-fade)` : undefined} />
-          {/each}
-        </g>
-      </svg>
-    {/if}
+    <!-- (A fossil's card, first: its resin, under its gilt lines where its lamp shines through, a hair of shadow
+         along each on the side away from the light, so they read over the lit amber as over the dark resin.) -->
     {#each LAYERS as layer (layer)}
       {@const shown = prints?.[layer]}
       <!-- The layer, one element from the first: what moves on it (a find's breath, the way out's swell) and its
@@ -342,12 +314,13 @@
                 </mask>
               </defs>
             {/if}
-            <g mask={knockout.length ? `url(#${uid}-${layer}-ko)` : undefined}>
-              {#each strokes.filter((s) => !s.motif && (!shown || shown.left.has(leftKey(s.cls, false)))) as { cls, d } (cls)}
+            <!-- (The resin's, every line, the motif's too, a hair off them toward the foot and the right.) -->
+            <g transform={layer === 'resin' ? 'translate(0.5 0.5)' : undefined} mask={knockout.length ? `url(#${uid}-${layer}-ko)` : undefined}>
+              {#each strokes.filter((s) => (layer === 'resin' || !s.motif) && (!shown || shown.left.has(leftKey(s.cls, false)))) as { cls, d, motif } (leftKey(cls, !!motif))}
                 <path {d} class={cls} mask={cls === 'ray' && plate.fade ? `url(#${uid}-${layer}-fade)` : undefined} />
               {/each}
             </g>
-            {#if !(plate.gilt && layer === 'lines')}
+            {#if !(plate.gilt && layer === 'lines') && layer !== 'resin'}
               {#each motif.filter((s) => !shown || shown.left.has(leftKey(s.cls, true))) as { cls, d } (cls)}
                 <path {d} class={cls} />
               {/each}
@@ -705,8 +678,10 @@
      line's shadow, a hair of the resin's dark beside it on the side away
      from the light, under the gilt line itself, as a line cut in amber held
      to a lamp is shadowed in its groove; fading out as the light does (on
-     the light's own reach), where the dark resin needs none. Still: drawn
-     once. */
+     the light's own reach), where the dark resin needs none. Still, and
+     printed as the glow and the lines are (its svg was 44 paths with their
+     masks, which Chrome drew again on the CPU every time the face was:
+     the first hover's frame 29 to 38 ms against 17 for a find's). */
   .resin {
     color: var(--resin, #3a1103);
     opacity: 0.75;
