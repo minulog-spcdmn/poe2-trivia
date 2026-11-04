@@ -230,6 +230,7 @@
 {#snippet slot(f: Fossil)}
   {@const got = found[f.id]}
   <span class="slot" class:got={!!got} class:rare={f.rare}>
+    {#if got}<img class="glow" src={fossilArt(f.id, 128)} alt="" loading="lazy" draggable="false" />{/if}
     <img src={fossilArt(f.id, 128)} alt="" loading="lazy" draggable="false" />
     {#if got && !motion.still}
       <!-- The lamplight: a band of light passing over a brighter copy of it. -->
@@ -279,7 +280,7 @@
 
 {#snippet set()}
   <p class="about">
-    {#if complete}You’ve found every fossil Delve holds, all {FOSSIL_COUNT} of them, common and rare. Each one is here with the day you found it and how deep you were.{:else}Some Delve cards hold a fossil. Answer the card right and it’s yours.{/if}
+    {#if complete}You’ve found every fossil Delve holds, common and rare.{:else}Some Delve cards hold a fossil. Answer the card right and it’s yours.{/if}
   </p>
   <div class="wrap" class:still={motion.still} bind:this={wrap}>
     <div
@@ -577,28 +578,37 @@
       inset 0 0 0 1px var(--rim);
     transition: box-shadow 0.2s;
   }
-  /* The light behind a kept one, dithered (app.css, --dither) or it bands. */
+  /*
+   * A kept one's glow: its own shape, blurred and brightened, under it, so
+   * the light comes off the fossil itself. Dithered (app.css, --dither) on
+   * a layer between the glow and the fossil, or its fall-off bands.
+   */
+  .slot.got {
+    isolation: isolate;
+  }
   .slot.got::before {
     content: '';
     position: absolute;
     inset: 0;
     border-radius: inherit;
     image-rendering: pixelated;
-    background:
-      var(--dither),
-      radial-gradient(closest-side, rgba(236, 142, 44, 0.36), rgba(236, 142, 44, 0.12) 70%, transparent);
+    background: var(--dither);
   }
-  /* A rare one: its rim in the rare card's edge red, its light a little stronger. */
+  .slot img.glow {
+    z-index: -1;
+    filter: blur(5px) brightness(1.25) saturate(1.15) hue-rotate(-12deg);
+    opacity: 0.6;
+  }
+  .slot.rare img.glow {
+    filter: blur(6px) brightness(1.3) saturate(1.2) hue-rotate(-16deg);
+    opacity: 0.75;
+  }
+  /* A rare one: its rim in the rare card's edge red, its glow a little stronger. */
   .slot.rare {
     --rim: rgba(200, 48, 12, 0.16);
   }
   .slot.rare.got {
     --rim: color-mix(in srgb, var(--fossil-rare-edge) 42%, transparent);
-  }
-  .slot.rare.got::before {
-    background:
-      var(--dither),
-      radial-gradient(closest-side, rgba(240, 140, 40, 0.42), rgba(236, 120, 36, 0.14) 70%, transparent);
   }
   .slot img {
     position: absolute;
@@ -611,7 +621,7 @@
     -webkit-user-select: none;
     user-select: none;
   }
-  .slot > img {
+  .slot > img:not(.glow) {
     filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7));
   }
   .slot:not(.got) > img {
