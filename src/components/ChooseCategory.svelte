@@ -1151,13 +1151,12 @@
         </p>
       {/each}
       {#if fossilNote === 'full'}
+        {@const fossil = fossilShown?.tier === 'rare' ? 'a rare fossil' : 'a fossil'}
+        <!-- As a find's: what to do in bold, then what it gives; for those watching, one plain line. -->
         <p class="note find-note" data-find="fossil" data-tier={fossilShown?.tier} id="{uid}-note-fossil" style:--col={fossilCol + 1} data-side={sideOf(fossilCol, noteCols)}>
-          <strong>{fossilShown?.tier === 'rare' ? 'A rare fossil.' : 'A fossil.'}</strong>
-          {coop
-            ? 'Answer right and each of you keeps one for your own codex; the run is unchanged.'
-            : mine
-              ? 'Answer right to keep one for your codex; your run is unchanged.'
-              : `Answered right, one is kept for ${active.name}’s codex; the run is unchanged.`}
+          {#if coop}<strong>Answer right to excavate {fossil}.</strong> Each of you keeps one in your codex. The run is unaffected.{:else if mine}<strong
+              >Answer right to excavate {fossil}.</strong
+            > It’s kept in your codex. Your run is unaffected.{:else}A right answer excavates {fossil} for {active.name}’s codex. The run is unaffected.{/if}
         </p>
       {:else if fossilNote === 'line'}
         <!-- With what stays unused on the finds: on one line where there's room (a phone on its side), else under it. -->
