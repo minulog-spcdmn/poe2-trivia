@@ -491,7 +491,7 @@
     font-size: 1rem;
     line-height: 1.3;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
   .medal-label {
     font-family: var(--font-display);
@@ -516,7 +516,7 @@
     margin-top: 0.15rem;
     font-size: 0.9375rem;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
 
   .empty {
@@ -566,7 +566,7 @@
     text-align: center;
     font-size: 1rem;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
   .panel h2 {
     font-size: 0.95rem;
@@ -586,14 +586,14 @@
     margin: 0;
     font-size: 1rem;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
   .foot {
     margin: 0.9rem 0 0;
     font-size: 1rem;
     font-style: italic;
     line-height: 1.35;
-    color: var(--muted);
+    color: var(--note);
   }
   .foot b {
     font-weight: 400;

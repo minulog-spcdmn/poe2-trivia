@@ -172,7 +172,7 @@
     font-size: 1rem;
     line-height: 1.3;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
   .medal-value {
     font-size: 3.2rem;
@@ -218,7 +218,7 @@
     margin: 0 0 0.9rem;
     font-size: 1rem;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
 
   /* Three to a row; a group of nine fills three rows, on a phone nine. On a tablet, two to a row, the ninth centred under them. */
@@ -270,7 +270,7 @@
   .text {
     font-size: 0.95rem;
     line-height: 1.3;
-    color: #a89c87;
+    color: var(--note);
   }
   /* (Earned, a step brighter than one still to earn, as its title steps up to gold.) */
   .won .text {
@@ -320,7 +320,7 @@
   .note {
     font-size: 0.9375rem;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
     overflow-wrap: anywhere;
   }
 

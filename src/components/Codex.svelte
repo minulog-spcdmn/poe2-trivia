@@ -1255,7 +1255,7 @@
     font-size: 1rem;
     line-height: 1.3;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
   .medal-value {
     font-size: 3.2rem;
@@ -1320,7 +1320,7 @@
     margin: 0;
     font-size: 1rem;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
 
   .bars {
@@ -1770,7 +1770,7 @@
   .none {
     text-align: center;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
 
   /* The table: every column fits, nothing scrolls sideways. */
@@ -1922,7 +1922,7 @@
     margin-top: 1rem;
     text-align: center;
     font-size: 1rem;
-    color: var(--muted);
+    color: var(--note);
   }
   .end p {
     margin: 0;

@@ -136,9 +136,11 @@
   --unique: #af6025;
   --unique-hi: #e08a44;
   --text: #ddd3c2;
-  /* Secondary text at its dimmest (docs/design-rules.md, "Secondary text"):
-     a label, a date, an aside. A note to read runs a step or two brighter
-     where it's set. No grey text is dimmer (tests/legible.test.ts). */
+  /* Secondary text (docs/design-rules.md, "Secondary text"). A note, a line
+     to read: a hint, a status, a waiting line, an empty state, a caption. */
+  --note: #ab9d88;
+  /* At its dimmest: a label, a date, a count, an aside. No grey text is
+     dimmer (tests/legible.test.ts). */
   --muted: #968a77;
   --bad: #e0553f;
   /* A verdict's sign (VerdictSign.svelte): its line, and the tint of its disc,
@@ -844,8 +846,9 @@ input {
   margin-bottom: 0.5em;
 }
 
+/* A note set inline: a status, a waiting line, a sentence beside a name. */
 .muted {
-  color: var(--muted);
+  color: var(--note);
 }
 
 @media (prefers-reduced-motion: reduce) {

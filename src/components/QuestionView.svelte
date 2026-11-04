@@ -3052,7 +3052,7 @@
   }
   .still {
     display: block;
-    color: var(--muted);
+    color: var(--note);
   }
   /* Struck by a teammate's wrong pick: out of play for everyone, its striker
      beside the ✕. Unlike an answer dynamite blew away (scorched, its words

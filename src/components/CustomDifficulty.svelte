@@ -190,7 +190,7 @@
     font-size: 0.9375rem;
     font-style: italic;
     line-height: 1.25;
-    color: var(--muted);
+    color: var(--note);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

@@ -1912,7 +1912,7 @@
   .go-note {
     margin: 0;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
   .go-note .num {
     font-style: normal;

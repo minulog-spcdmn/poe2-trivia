@@ -1079,7 +1079,7 @@
     margin: 2px 0 0;
     font-style: italic;
     font-size: 17px;
-    color: #a99c86;
+    color: var(--note);
   }
 
   /* ---- the greeting ---- */
@@ -1325,7 +1325,7 @@
     margin: 6px 0 0;
     font-style: italic;
     font-size: 16px;
-    color: #ab9d88;
+    color: var(--note);
   }
   .under {
     display: grid;
@@ -1567,7 +1567,7 @@
     font-style: italic;
     font-size: 15px;
     line-height: 1.3;
-    color: #ab9d88;
+    color: var(--note);
   }
 
   /* Under 980 tall (900, say): a tighter rhythm. 16 + 574 + 8 + 144 + 32 +

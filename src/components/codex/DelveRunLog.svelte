@@ -406,7 +406,7 @@
     text-align: center;
     font-size: 1rem;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
 
   @media (max-width: 560px) {

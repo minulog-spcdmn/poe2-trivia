@@ -518,7 +518,7 @@
     margin: 0;
     font-size: 0.9375rem;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
 
   /* The lobby's setting buttons. */
@@ -964,7 +964,7 @@
     margin: 0.2rem 0 0;
     font-size: 0.95rem;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
 
   @media (max-width: 760px) {

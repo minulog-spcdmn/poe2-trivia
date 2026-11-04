@@ -548,7 +548,7 @@
     margin: 0.2rem 0 0;
     font-style: italic;
     line-height: 1.35;
-    color: var(--muted);
+    color: var(--note);
     transition: color 0.2s;
   }
   .line.good {

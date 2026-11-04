@@ -150,7 +150,7 @@
     margin: 0.8rem 0 0;
     font-size: 1rem;
     font-style: italic;
-    color: #ab9d88;
+    color: var(--note);
   }
   /* Joining won't work as it stands (or not as a player at once). */
   .hint.warn {

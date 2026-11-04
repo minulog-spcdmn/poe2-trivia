@@ -137,7 +137,7 @@
     font-size: 0.9375rem;
     font-style: italic;
     line-height: 1.3;
-    color: var(--muted);
+    color: var(--note);
   }
   .n {
     font-family: var(--font-cinzel);

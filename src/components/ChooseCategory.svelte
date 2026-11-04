@@ -2585,7 +2585,7 @@
     font-size: 1rem;
   }
   .idle {
-    color: var(--muted);
+    color: var(--note);
   }
   /* The vote closed: its line and the rule under it fade as the draw plays, keeping their room. */
   .vote-status,

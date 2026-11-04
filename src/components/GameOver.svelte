@@ -1475,7 +1475,7 @@
     font-size: var(--sub);
     font-style: italic;
     line-height: 1.35;
-    color: var(--muted);
+    color: var(--note);
   }
 
   /* ---- words ---- */
@@ -2223,7 +2223,7 @@
     margin: 0;
     font-style: italic;
     font-size: 0.95rem;
-    color: var(--muted);
+    color: var(--note);
   }
   .note.warn {
     color: #eab3a3;
@@ -2270,7 +2270,7 @@
     gap: 0.7rem;
     margin: 0;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
   .pulse {
     display: block;
