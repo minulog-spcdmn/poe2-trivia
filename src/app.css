@@ -1047,12 +1047,12 @@ h3,
   white-space: nowrap;
   text-align: center;
 }
-/* Named as a PoE tooltip names a currency item. */
+/* Named as a PoE tooltip names a currency item (its #aa9e82 a shade lighter, to read on the page). */
 .fossil-reveal .fr-name {
   font-family: var(--font-tooltip);
   font-size: 1.3rem;
   line-height: 1.15;
-  color: #aa9e82;
+  color: #b6a98b;
   --drop-shadow: 0 1px 2px rgba(0, 0, 0, 0.95), 0 0 12px rgba(0, 0, 0, 0.85);
   text-shadow: var(--drop-shadow-paint, var(--drop-shadow));
 }

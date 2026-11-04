@@ -2127,9 +2127,10 @@
   /* Named as a PoE tooltip names a currency item, its capitals as tall as
      the line's (Fontin's stand 3% over EB Garamond's at one size). */
   .fossil-name {
+    /* (Of the line's 18.4px, .result p's 1.15rem.) PoE's currency name colour, a shade lighter to read on the page. */
     font-family: var(--font-tooltip);
     font-size: 0.97em;
-    color: #aa9e82;
+    color: #b6a98b;
   }
   /* Its count in Cinzel's figures, as numbers are, a little under the line's
      capitals (as the end screen and the codex set them in text), clear of the name. */
