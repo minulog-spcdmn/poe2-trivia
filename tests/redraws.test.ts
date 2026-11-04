@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FLOOR, MARK, MOMENTS, PAGE_FLOOR, WEBGL_SCENES, atRest, layerName, overBaseline, pageAtRest, readTrace, redraws, slackOf, unread, withoutMark, type TraceEvent } from '../src/qa/redraws.ts';
 import { SCREENS } from '../src/qa/scene.ts';
+import { matters, sweepFiles } from '../scripts/redraws-unchanged.mjs';
 
 test('a layer is named by its element, Svelte’s classes left out', () => {
   assert.equal(layerName("LayoutFlexibleBox (relative positioned) DIV class='shell svelte-1n46o8q'"), 'div.shell');
@@ -144,6 +145,27 @@ test('CI’s parts of the scenes at rest are each of them once, of one count', (
     Array.from({ length: [...counts][0]! }, (_, i) => i + 1),
   );
   for (const a of jobArgs) if (a.includes('--shard')) assert.ok(!/--only|--webgl|--moments/.test(a), `a part of the scenes at rest is all of its scenes, WebGL refused: ${a}`);
+});
+
+test('Redraws passes on every job passing, or on the pull request changing nothing the check sees, never on jobs skipped otherwise', () => {
+  const same = "needs.unchanged.result == 'success' && needs.unchanged.outputs.same == 'true'";
+  assert.ok(workflow.includes(`if: \${{ !cancelled() && github.event_name != 'push' && !(${same}) }}`), 'the jobs run unless that job passed and found nothing changed');
+  assert.ok(workflow.includes(`SAME: \${{ ${same} }}`), 'the verdict holds to the same');
+  assert.match(workflow, /if \[ "\$SAME" = true \] && \[ "\$WATCHED" = skipped \]; then\n.*\n\s+exit 0\n\s+fi\n\s+test "\$WATCHED" = success/);
+  // (main's copy says: a pull request's own change to the script doesn't judge it.)
+  assert.match(workflow, /git show HEAD\^1:scripts\/redraws-unchanged\.mjs > (\S+); then\n\s+node \1\n/);
+});
+
+test('a pull request passes without watching only on files the check doesn’t run, then on its build', () => {
+  const own = sweepFiles();
+  // (find-banding.py by its path, not imported.)
+  for (const f of ['scripts/sweep.mjs', 'scripts/beta-build.mjs', 'qaServer.ts', 'src/qa/redraws.ts', 'scripts/find-banding.py']) assert.ok(own.has(f), `the sweep runs ${f}`);
+  for (const f of ['src/lib/game.ts', 'public/icons/lineage-gems.avif', 'index.html', 'vite.config.ts', 'package-lock.json', 'qaBefore.ts', '.github/workflows/redraws.yml', 'scripts/redraws-unchanged.mjs', 'scripts/find-banding.py']) {
+    assert.ok(matters(f, own), `${f} can change what the check sees`);
+  }
+  for (const f of ['docs/qa.md', 'CLAUDE.md', 'tests/redraws.test.ts', 'scripts/iphone/fresh.mjs', '.claude/agents/worker.md', '.github/workflows/tests.yml']) {
+    assert.ok(!matters(f, own), `${f} is left to the builds to tell`);
+  }
 });
 
 test('only what the check finds fails a job: the report’s upload, timing out, can’t', () => {
