@@ -965,7 +965,7 @@
           seal: questionEl?.querySelector('.head .plate.fossil .pane-at.left .dark') ?? null,
           art: right ?? artEl,
           stage: questionEl,
-          dim: [...(under ? [{ el: under, to: 0.3 }] : []), ...(caption ? [{ el: caption, to: 0 }] : [])],
+          dim: [...(under ? [{ el: under, to: 0 }] : []), ...(caption ? [{ el: caption, to: 0 }] : [])],
           avoid: right ? null : (artEl?.querySelector('.details .lens') ?? null),
           onPicture: !!right,
           to: () => fossilSlot,
@@ -1110,15 +1110,15 @@
 
 <!-- The fossils the answer gave (lib/fossils.ts). Yours lands here once
      shown (lib/fossilFlight.ts): its picture, its name as a PoE tooltip
-     names it, the count. Until then, alone, that you keep one is said in
+     names it, the count. Until then, alone, that you unearth one is said in
      its place, the two crossing over in one cell so nothing moves. Then who
      else kept one. -->
 {#snippet fossilWords(f: { mine: FossilId | null; rest: string })}
   {#if f.mine}
     <span class="found-fossil" class:words={fossilPhase !== 'none'} class:landed={fossilPhase === 'landed'}
-      >{#if !coop}<span class="before">You keep a fossil.</span>{/if}<span class="after"
-        ><img src={fossilArt(f.mine, 128)} alt="" aria-hidden="true" bind:this={fossilSlot} /><span class="fossil-name">{fossilById(f.mine).name}</span>; {fossilCount}
-        of {FOSSIL_COUNT}.</span
+      >{#if !coop}<span class="before">You unearth a fossil.</span>{/if}<span class="after"
+        ><img src={fossilArt(f.mine, 128)} alt="" aria-hidden="true" bind:this={fossilSlot} /><span class="fossil-name">{fossilById(f.mine).name}</span>
+        {fossilCount}/{FOSSIL_COUNT}</span
       ></span
     >
   {/if}
@@ -2089,7 +2089,7 @@
   }
 
   /* Delve: a fossil kept (lib/fossilFlight.ts). Until it lands, alone,
-     “You keep a fossil.” holds its cell; the line's words cross over it
+     “You unearth a fossil.” holds its cell; the line's words cross over it
      as the fossil comes, and its picture shows as it lands (the flight's
      piece taking its place), standing on the baseline as a find's engraving
      does. */
@@ -2112,7 +2112,8 @@
     display: inline-block;
     width: 1.3em;
     height: 1.3em;
-    margin-right: 0.35em;
+    /* (A word's space from the name, with the picture's own clear margin.) */
+    margin-right: 0.12em;
     vertical-align: -0.3em;
     object-fit: contain;
     filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));

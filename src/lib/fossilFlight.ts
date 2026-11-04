@@ -5,7 +5,7 @@
 // (NamePlate.svelte's `fossil`). On the verdict the lamp behind them comes up
 // and they flare, until the fossil comes out of the left one, the ammonite's:
 // thrown up out of the plate and over into the circle's heart, lit and
-// growing as it comes, the item dimming under it, sparks shed along its way.
+// growing as it comes, the item fading out under it, sparks shed along its way.
 // It lands a touch past its size and settles; glints ring off its edges, the
 // light of it swells through the hall (the backdrop's lights) and a band of
 // lamplight sweeps it. Its name is written in beneath, letter by letter, as
@@ -24,13 +24,13 @@
 //    520          it comes out of the left seal, a spark and a flash there,
 //                 drawn out and tossed up and over into the circle's heart
 //                 (to 1060), growing as it comes near, turning, lit; the item
-//                 dims under it; the light swells through the hall;
+//                 fades out under it; the light swells through the hall;
 //   1060          it lands a touch past its size, settled by 1340, sharp and
 //                 in its own light; the band of lamplight crosses it (1120 to
 //                 1500); a rare's rays behind it;
 //   1100          glints ring off its edges, a light flashes behind it;
 //   1280 to 1900  its name is written in beneath, letter by letter;
-//   1900 to 2150  its count comes in under it ("7 of 25"; "Rare" for a rare);
+//   1900 to 2150  its count comes in under it ("7/25"; "Rare" for a rare);
 //   1480          a rare: its second sweep, red-gold;
 //   2150 to 3150  held, the hall's light easing;
 //   3150 to 3810  it flies to the line along an arc that rises before it
@@ -86,7 +86,7 @@ export type Reveal = {
   /** The item's stage (or the right picture), where it lands, and the question, for a stage too small. */
   art: Element | null;
   stage: Element | null;
-  /** What dims under it while it's shown (the item, or the pictures and the right one's name), and how far. */
+  /** What fades under it while it's shown (the item, or the right picture and its name), and how far. */
   dim: { el: Element; to: number }[];
   /** What its name keeps clear of where they'd meet (the stage's Details button). */
   avoid: Element | null;
@@ -236,7 +236,7 @@ export function revealFossil(u: Reveal): () => void {
     name.append(...letters);
     const count = document.createElement('span');
     count.className = 'fr-count';
-    count.textContent = u.count >= u.total ? `${u.count} of ${u.total} • every fossil kept` : `${u.count} of ${u.total}`;
+    count.textContent = u.count >= u.total ? `${u.count}/${u.total} • every fossil unearthed` : `${u.count}/${u.total}`;
     label.append(name, count);
     let rareWord: HTMLElement | null = null;
     if (rare) {
@@ -314,7 +314,7 @@ export function revealFossil(u: Reveal): () => void {
       light(u.seal, { color: rare ? amberLight('rareMid', 1.1) : AMBER, radius: 110, intensity: 0.55, hold: 0.05, decay: 0.6 });
     }
     for (const f of [0.35, 0.65]) at(b(LAUNCH) + flight * f, () => glints(piece, { count: 3, color: rare ? RED_GOLD : AMBER_HOT, area: 'edge', size: [2.5, 5], life: [0.35, 0.65] }));
-    // The item dims under it as it comes, and stays dim while it's shown.
+    // The item fades out under it as it comes, and stays gone while it's shown.
     dimmed = u.dim.map(({ el, to }) => el.animate([{ opacity: 1 }, { opacity: to }], { duration: flight - 80, easing: 'cubic-bezier(0.3, 0, 0.4, 1)', fill: 'forwards' }));
     // Its light swells through the hall as it comes, most as it lands (a rare's red-gold), and eases as it's held.
     // (Short of the hall's edges, where the zone keeps its own colour: a cold zone lit edge to edge goes muddy.)
