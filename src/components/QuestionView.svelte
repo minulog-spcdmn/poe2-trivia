@@ -320,10 +320,11 @@
   /** A fossil's question (Delve): its tier, its card's seals in the name plate (NamePlate's `fossil`). */
   const fossilTier = $derived(s.delve && q.fossil ? q.fossil : null);
   /**
-   * Their light: up while the question is; taken with a fossil this screen's player keeps (it comes out of
-   * them here); still up with one only others kept (theirs comes out on their screens); out with it lost.
+   * Their light: low while the question is up; taken with a fossil this screen's player keeps (it comes
+   * out of them here), up after; up quietly with one only others kept (theirs comes out on their screens);
+   * out with it lost.
    */
-  const fossilLight = $derived(!reveal ? 'up' : fossilLine?.mine ? 'taken' : fossilLine ? 'up' : 'out');
+  const fossilLight = $derived(!reveal ? 'low' : fossilLine?.mine ? 'taken' : fossilLine ? 'up' : 'out');
   /** Ends the moment under way, all of it going to the line (Delve Deeper pressed early, or the question going). */
   let stopFind: (() => void) | null = null;
   $effect(() => () => stopFind?.());

@@ -7,9 +7,9 @@
 // taller plate's height, as a name that wraps makes it in a question. A
 // fossil's question (Delve): the fossil card's own seals at its ends, each on
 // a pane of its amber lit from behind (a rare's sun breaking out over the
-// tracery), its lamp low until the item is known and up once it is,
-// flaring as the fossil is taken (it comes out of the left one) or gone
-// out with it lost.
+// tracery), its lamp low while the question is up, flaring as the fossil
+// is taken (it comes out of the left one) and staying up, up quietly with
+// one another player kept, or gone out with it lost.
 
 import type { PieceBench } from '../bench.ts';
 
@@ -18,7 +18,7 @@ export const plate: PieceBench = {
   key: 'plate',
   label: 'Name plate',
   about:
-    "The plate behind a unique's name: dark, or lit with its seals' bloom breathing, flared by a right answer's glint; seals left empty for a button; ends sized to a taller plate; a fossil's question, the fossil card's seals on amber lit low till the item is known, then up, taken or lost.",
+    "The plate behind a unique's name: dark, or lit with its seals' bloom breathing, flared by a right answer's glint; seals left empty for a button; ends sized to a taller plate; a fossil's question, the fossil card's seals on amber lit low till it's answered, then taken and up, up quietly (another's) or lost.",
   files: ['src/components/NamePlate.svelte', 'src/lib/drawIn.ts', 'src/lib/weave.ts', 'weaveTile.ts', 'src/lib/alchemy.ts', 'src/lib/fossilSeals.ts', 'src/lib/fossilReveal.ts'],
   controls: [
     { kind: 'toggle', key: 'lit', label: 'Lit', default: true },
@@ -49,10 +49,11 @@ export const plate: PieceBench = {
       kind: 'choice',
       key: 'light',
       label: 'Its seals’ light',
-      default: 'up',
+      default: 'low',
       options: [
-        { value: 'up', label: 'Up (the question)' },
+        { value: 'low', label: 'Low (the question)' },
         { value: 'taken', label: 'Taken (right)' },
+        { value: 'up', label: 'Up (another player’s)' },
         { value: 'out', label: 'Out (wrong)' },
       ],
     },
@@ -69,6 +70,8 @@ export const plate: PieceBench = {
     { label: 'A fossil’s question', values: { lit: false, fossil: 'common' } },
     { label: 'A rare fossil’s question', values: { lit: false, fossil: 'rare' } },
     { label: 'A rare fossil’s, a name that wraps', values: { lit: false, fossil: 'rare', height: 92 } },
+    { label: 'A fossil taken (a right answer)', values: { fossil: 'common', light: 'taken' } },
+    { label: 'A rare fossil taken', values: { fossil: 'rare', light: 'taken' } },
     { label: 'A fossil lost (a wrong answer)', values: { fossil: 'common', light: 'out', glint: false } },
   ],
   actions: [
