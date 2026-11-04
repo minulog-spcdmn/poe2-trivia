@@ -4,7 +4,7 @@
   import { session } from '../lib/session.svelte';
   import { KNOB_STEPS, knobsOf, type Knobs } from '../lib/game';
   import { KNOB_TEXT } from '../lib/difficultyText';
-  import { dialogBackdrop } from '../lib/behindDialog';
+  import { dialogBackdrop } from '../lib/dialogBackdrop';
   import { dialogIn, dialogOut } from '../lib/dialogIn';
 
   let { onclose }: { onclose: () => void } = $props();
@@ -28,13 +28,8 @@
     return () => before?.focus?.();
   });
 
-  /** Escape closes; Tab keeps cycling through the dialog's own buttons. */
+  /** Tab keeps cycling through the dialog's own buttons. (A press on the backdrop or Escape closes it: its backdrop's, lib/behindDialog.ts.) */
   function onkeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      onclose();
-      return;
-    }
     if (e.key !== 'Tab' || !box) return;
     const items = [...box.querySelectorAll<HTMLElement>('button:not(:disabled)')];
     const first = items[0];
@@ -50,7 +45,7 @@
   }
 </script>
 
-<div class="backdrop" use:dialogBackdrop transition:fade={{ duration: 150 }} onclick={onclose} role="presentation">
+<div class="backdrop" use:dialogBackdrop={{ close: () => onclose(), closer: '.close' }} transition:fade={{ duration: 150 }} role="presentation">
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
     class="editor panel"

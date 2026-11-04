@@ -11,12 +11,22 @@ export class HashRoute {
   readonly hash: string;
   /** What its history entry is marked with, to know a back goes where it was opened from. */
   readonly key: string;
+  /** Called when the browser's Back closes it (not close), to sound as its own close does. */
+  onBack: (() => void) | null = null;
+  /** Closing itself (close): what history does next isn't the browser's Back. */
+  private closing = false;
 
   constructor(hash: string, key: string) {
     this.hash = hash;
     this.key = key;
     this.open = this.here();
-    const sync = () => (this.open = this.here());
+    const sync = () => {
+      const was = this.open;
+      this.open = this.here();
+      if (this.open) return;
+      if (was && !this.closing) this.onBack?.();
+      this.closing = false;
+    };
     addEventListener('popstate', sync);
     addEventListener('hashchange', sync);
   }
@@ -28,6 +38,7 @@ export class HashRoute {
 
   show() {
     if (this.open) return;
+    this.closing = false;
     history.pushState(withTab({ [this.key]: true }), '', this.hash);
     this.open = true;
   }
@@ -39,6 +50,7 @@ export class HashRoute {
    */
   close() {
     if (!this.open) return;
+    this.closing = true;
     const over = layerDepth(history.state);
     if ((history.state as Record<string, unknown> | null)?.[this.key]) {
       history.go(-(over + 1));
@@ -76,5 +88,6 @@ export class HashRoute {
     if (!this.open) return;
     history.replaceState(withTab(null), '', location.pathname + location.search);
     this.open = false;
+    this.closing = false;
   }
 }

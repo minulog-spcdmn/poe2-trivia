@@ -264,11 +264,11 @@
   }
   /** Cave-ins already heard: one per player per vein, however their losses interleave (several on one device). */
   const cavesHeard = new Set<string>();
-  /** The cave-in's sound, once per cave-in (`key` from caveInOf), from the entry it caves in on. */
-  function caveInHeard(key: string, from: Element | null) {
+  /** The cave-in's sound, once per cave-in (`key` from caveInOf), from the entry it caves in on; a teammate's (`far`) from farther off. */
+  function caveInHeard(key: string, from: Element | null, far = false) {
     if (cavesHeard.has(key)) return;
     cavesHeard.add(key);
-    sfx('caveIn', { from: { from } });
+    sfx('caveIn', { from: { from, far } });
   }
   // Delve: a life lost makes the player's entry flinch, and the chamber of the
   // phial pours its light out, in step with the reveal's verdict, a moment
@@ -336,7 +336,7 @@
             if (mine) {
               if (caved) caveInHeard(caved, li);
               sfx('lifeLost', { from: { from: chamber ?? li } });
-            }
+            } else if (caved) caveInHeard(caved, li, true);
             later(() => {
               if (hit[id] === left) delete hit[id];
             }, POUR * 1000);
@@ -539,7 +539,7 @@
         if (mine) {
           if (caved) caveInHeard(caved, li);
           for (let i = 0; i < n; i++) setTimeout(() => sfx('wardShatter', { from: { from: barriers[i] ?? vessel ?? li } }), i * WARD_NEXT * 1000);
-        }
+        } else if (caved) caveInHeard(caved, li, true);
       } else if (kind === 'flare' || kind === 'dynamite') {
         const el = counts?.querySelector(`[data-pip="${kind}"]`);
         if (el && kind === 'flare') flareFound(el);
@@ -605,8 +605,11 @@
       const chamber = from?.phial.querySelector(`.chamber[data-k="${k}"]`) ?? giver;
       const target = to?.phial.querySelector(`.chamber[data-k="${into}"]`) ?? to?.phial;
       if (giver && taker && chamber && target) lifeGiven(chamber, giver, target, taker);
-      // Heard streaming across with the light; a teammate's (not one at this screen) from farther off.
-      sfx('revive', { from: { from: chamber, to: target, seconds: GIFT_LANDS, far: session.mode !== 'local' && r.by !== session.myPlayerId } });
+      // Heard streaming across with the light: one given you from far off at first, coming close as it
+      // lands; yours going off to them; between teammates (not at this screen), far all through.
+      const me = session.mode !== 'local' ? session.myPlayerId : null;
+      const way = !me ? undefined : r.to === me ? 'in' : r.by === me ? 'out' : undefined;
+      sfx('revive', { from: { from: chamber, to: target, seconds: GIFT_LANDS, far: !!me && !way, way } });
       later(() => {
         if (giving[r.by] === k) delete giving[r.by];
       }, POUR * 1000);
@@ -908,8 +911,12 @@
 <svelte:window
   onkeydown={(e) => {
     if (e.key !== 'Escape') return;
-    if (asking) (e.preventDefault(), closeAsk());
-    else if (kicker.disarm()) e.preventDefault();
+    if (asking) {
+      e.preventDefault();
+      // A key's press, from Not now.
+      sfx('key', { from: { from: document.querySelector('.revive-ask .btn.ghost') } });
+      closeAsk();
+    } else if (kicker.disarm()) e.preventDefault();
   }}
   onpointerdown={(e) => !(e.target as Element).closest?.('.kick.armed') && kicker.disarm()}
 />

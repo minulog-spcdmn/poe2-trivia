@@ -16,7 +16,8 @@
   //   (a link can come from anyone).
   import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { dialogBackdrop } from '../lib/behindDialog';
+  import { sfx } from '../lib/sound';
+  import { dialogBackdrop } from '../lib/dialogBackdrop';
   import { dialogIn, dialogOut } from '../lib/dialogIn';
   import { circleOf, warmCircle } from './circles';
   import { calm } from '../lib/motion.svelte';
@@ -86,6 +87,14 @@
   const qr = $derived(code ? qrShape(codeLink(code, location.href)) : null);
 
   const linked = $derived(sync.status === 'linked');
+  // The two devices pairing is heard on both, as the link comes up while this is open: once (not again for a link
+  // dropped and back meanwhile), and not for one already up as it opens.
+  let heardLinked = untrack(() => linked);
+  $effect(() => {
+    if (!linked || heardLinked) return;
+    heardLinked = true;
+    untrack(() => sfx('linked', { from: { from: panel } }));
+  });
   const statusLine = $derived(syncLine());
   // Words: pairing is the act, synced the state.
   const title = $derived(
@@ -209,12 +218,6 @@
     endScan();
   });
 
-  /** Escape closes the dialog alone, heard before the settings behind it would close too (App's keys leave a key that's been had). */
-  function onKey(e: KeyboardEvent) {
-    if (e.key !== 'Escape' || e.defaultPrevented) return;
-    e.preventDefault();
-    close();
-  }
   let panel = $state<HTMLDivElement>();
   // (Focus in the dialog, not on the button behind it that opened it.)
   onMount(() => panel?.focus({ preventScroll: true }));
@@ -225,9 +228,8 @@
   else if (first === 'scan') void startScan();
 </script>
 
-<svelte:window onkeydowncapture={onKey} />
-
-<div class="backdrop" use:dialogBackdrop transition:fade|global={{ duration: 150 }} onclick={close} role="presentation">
+<!-- A press beside it or Escape (the dialog alone, not the settings behind it) closes it, heard from its close button, whichever it has. -->
+<div class="backdrop" use:dialogBackdrop={{ close, closer: '.btn.ghost, .btn.primary' }} transition:fade|global={{ duration: 150 }} role="presentation">
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div class="sync panel" bind:this={panel} in:dialogIn|global out:dialogOut|global onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="sync-title" tabindex="-1">
     <h3 id="sync-title" class="swap">

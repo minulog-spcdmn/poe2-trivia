@@ -48,6 +48,8 @@ import { prepareMedia, shown, warmMedia, type PreparedMedia } from './media.svel
 import { keyMsg, makeSealKey, newKid, sealAvailable, sealMsg, SealedStore, type SealedMsg, type SealKey } from './seal';
 import { drawAhead, takeAhead, type Ahead } from './drawAhead';
 import { sfx } from './sound';
+import { scoreRowOf } from './scoreRows';
+import { endHeard } from './gameEnd';
 import { VEIN_AFTER } from './soundDesign';
 import { prefsFrom, roomPrefs, roomSettings, savePrefs } from './prefs';
 import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
@@ -3353,6 +3355,13 @@ class Session {
       const here = (id: string) => id === me || !!next.players.find((p) => p.id === id)?.local;
       const lost = this.mode !== 'local' && !!me && next.players.some((p) => p.id === me) && !next.winners.some(here);
       sfx(next.delve ? 'fallen' : lost ? 'defeat' : 'victory');
+      endHeard();
+      return;
+    }
+    // A question asked afresh in place of the one under way (the host's, or its
+    // art wouldn't load): heard as a question coming in. (A blast's has its own.)
+    if (!blast && prev.phase === 'question' && next.phase === 'question' && prev.question && next.question && next.question.askedAt !== prev.question.askedAt) {
+      sfx('reveal');
       return;
     }
     if (next.settings.mode === 'race' && next.phase !== 'over') {
@@ -3362,8 +3371,12 @@ class Session {
         sfx(w && w === me ? 'correct' : w ? 'turn' : 'wrong');
       } else if (next.phase === 'question' && prev.phase !== 'question') {
         sfx('reveal');
-      } else if (next.phase === 'question' && missedNow(next) && !missedNow(prev)) {
-        sfx('wrong');
+      } else if (next.phase === 'question') {
+        if (missedNow(next) && !missedNow(prev)) sfx('wrong');
+        // Someone else's blind guess, heard from farther off (as a teammate's in Delve), from their row;
+        // one landing with your own too.
+        const by = next.question?.misses.slice(prev.question?.misses.length ?? 0).find((m) => m.playerId !== me)?.playerId;
+        if (by) sfx('struck', { from: { from: scoreRowOf(by), far: true } });
       }
       return;
     }
@@ -3385,7 +3398,9 @@ class Session {
         const strain = r.strike === 1 ? 'veinStrain1' : r.strike === 2 ? 'veinStrain2' : null;
         if (strain && !r.banked && digOf(next)) sfx(strain, { inMs: VEIN_AFTER[strain] });
       }
-    } else if (prev.phase !== next.phase && next.phase === 'choosing') {
+    } else if ((prev.phase !== next.phase || prev.turnCount !== next.turnCount) && next.phase === 'choosing') {
+      // (A turn skipped, or passed on from one who left, while still choosing:
+      // choosing again, the next player's.)
       // Delve: a new depth's deal is heard as the descent (App.svelte plays 'plunge').
       if (!next.delve) {
         const up = next.players[next.turn];
@@ -3414,7 +3429,7 @@ class Session {
         // toll (onNewState). Before it, your own perishing is heard as it
         // would be, a teammate's from far off.
         const mine = this.mode !== 'local' && !!this.myPlayerId && n.playerId === this.myPlayerId;
-        if (standingIds(s).length && s.phase !== 'over') sfx(mine ? 'fallen' : 'fallenFar');
+        if (standingIds(s).length && s.phase !== 'over') sfx(mine ? 'fallen' : 'fallenFar', mine ? {} : { from: { from: scoreRowOf(n.playerId) } });
         break;
       }
     }

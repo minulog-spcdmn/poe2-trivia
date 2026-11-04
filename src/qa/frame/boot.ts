@@ -194,6 +194,11 @@ export async function boot(asked: URLSearchParams) {
 
   if (built.circle !== undefined) (await import('../../components/gameCircles.svelte.ts')).putEndCircle(built.circle);
   sound.installUiSounds();
+  // The stage's first frame sounds once the desk's been used, its sounds loaded
+  // before the scene shows, so what it plays as it opens is heard; the others
+  // (more seats, states side by side) stay quiet until clicked, not all at once.
+  // (The code before this change has no soundWithFramer.)
+  if (asked.get('frame') === 's0') await sound.soundWithFramer?.();
   spatial.installSpatial();
   fxUi.installUiFx();
   if (!switchedOff('cursor')) cursor.installCursor();
@@ -282,6 +287,8 @@ export async function boot(asked: URLSearchParams) {
       }
     }
     else if ('toast' in step) toasts.hold(toasts.show(step.toast, step.kind, step.opts));
+    // (Missing where the code before this change doesn't have the sound.)
+    else if ('sound' in step) step.sound && sound.sfx(step.sound, { from: { from: step.from ? document.querySelector(step.from) : null } });
     else if ('clock' in step) {
       const now = step.clock;
       session.clockOffset = now - Date.now();

@@ -18,8 +18,8 @@
    */
   const BEFORE: { lift: number; trims: Partial<Record<Sfx, number>>; change: string } = {
     lift: MIX.lift,
-    trims: { deathmatch: 10, defeat: 6 },
-    change: 'deathmatch 10 dB and defeat 6 dB quieter, to sit with start and victory',
+    trims: { refuse: -3 },
+    change: 'the new refuse 3 dB louder, nearer the click it stands in for (the new achievement and deal sound the same both ways)',
   };
 
   function apply(s: Side) {
@@ -29,8 +29,8 @@
 
   const GROUPS: { name: string; ids: Sfx[] }[] = [
     { name: 'Big moments', ids: ['start', 'deathmatch', 'victory', 'defeat', 'stratum', 'blast', 'caveIn', 'fallen', 'itemBlown', 'flare', 'plunge'] },
-    { name: 'Answers and lives', ids: ['reveal', 'correct', 'wrong', 'pick', 'select', 'burn', 'fill', 'lifeLost', 'wardShatter', 'findReward', 'revive', 'struck', 'fallenFar'] },
-    { name: 'Turns and controls', ids: ['hover', 'click', 'tick', 'turn', 'yourTurn', 'join', 'vote', 'draw', 'fuse'] },
+    { name: 'Answers and lives', ids: ['reveal', 'correct', 'wrong', 'pick', 'select', 'burn', 'fill', 'lifeLost', 'wardShatter', 'findReward', 'revive', 'struck', 'fallenFar', 'achievementLead', 'achievementCopper', 'achievementSilver', 'achievementGold', 'sigilUnlock'] },
+    { name: 'Turns and controls', ids: ['hover', 'click', 'key', 'tick', 'turn', 'yourTurn', 'join', 'vote', 'draw', 'fuse', 'deal', 'dealTurn', 'refuse', 'linked'] },
     { name: 'Zone card', ids: ['zoneTick', 'zoneLock', 'zoneSting', 'zoneBurn', 'zoneShatter', 'zoneDrift', 'zoneVoid'] },
   ];
   // Any sound added to the game since, so none is left off the page.
