@@ -8,8 +8,8 @@
   // the width is too narrow), a little larger. Each kind under the fossil
   // card's own seal. One not kept yet is an empty well holding only its
   // shape, as the Collection shows an item not seen yet, and nothing to
-  // choose; one kept lies in it in its own colours on a slight glow, a
-  // rare one in the rare fossil card's reds. Now and then a band of lamplight
+  // choose; one kept lies in it in its own colours on its glow, a rare
+  // one's rim in the rare fossil card's red. Now and then a band of lamplight
   // passes over the kept ones, a rare one's more often.
   import { pointedRay } from '../../lib/arcane';
   import { notched, Plate } from '../../lib/cardEngraving';
@@ -279,7 +279,7 @@
 
 {#snippet set()}
   <p class="about">
-    {#if complete}All {FOSSIL_COUNT} found.{:else}Some Delve cards hold a fossil. Answer the card right and it’s yours.{/if}
+    {#if complete}You’ve found every fossil Delve holds, all {FOSSIL_COUNT} of them, common and rare. Each one is here with the day you found it and how deep you were.{:else}Some Delve cards hold a fossil. Answer the card right and it’s yours.{/if}
   </p>
   <div class="wrap" class:still={motion.still} bind:this={wrap}>
     <div
@@ -559,8 +559,8 @@
    * eased, its floor darker than the panel, shadowed under its rim and its
    * lower lip catching the light; empty, a place a fossil goes into, its
    * shape in the floor as the Collection shows an item not seen yet. Kept,
-   * the fossil lies in it in its own colours on a slight glow; a rare
-   * one in the rare fossil card's reds, its floor stained with the resin.
+   * the fossil lies in it in its own colours on its glow; a rare one's
+   * rim in the rare fossil card's red, its glow a little stronger.
    */
   .slot {
     /* Crisp lines only (a soft shadow this dark bands): shadow under the rim, a lip catching the light. */
@@ -586,20 +586,19 @@
     image-rendering: pixelated;
     background:
       var(--dither),
-      radial-gradient(closest-side, rgba(236, 142, 44, 0.2), rgba(236, 142, 44, 0.06) 70%, transparent);
+      radial-gradient(closest-side, rgba(236, 142, 44, 0.36), rgba(236, 142, 44, 0.12) 70%, transparent);
   }
-  /* A rare one, in the rare card's reds: its floor stained with the resin, its rim and its light the card's edge. */
+  /* A rare one: its rim in the rare card's edge red, its light a little stronger. */
   .slot.rare {
     --rim: rgba(200, 48, 12, 0.16);
   }
   .slot.rare.got {
     --rim: color-mix(in srgb, var(--fossil-rare-edge) 42%, transparent);
-    background: color-mix(in srgb, var(--fossil-rare-resin) 16%, rgba(0, 0, 0, 0.32));
   }
   .slot.rare.got::before {
     background:
       var(--dither),
-      radial-gradient(closest-side, color-mix(in srgb, var(--fossil-rare-mid) 22%, transparent), color-mix(in srgb, var(--fossil-rare-edge) 6%, transparent) 70%, transparent);
+      radial-gradient(closest-side, rgba(240, 140, 40, 0.42), rgba(236, 120, 36, 0.14) 70%, transparent);
   }
   .slot img {
     position: absolute;
