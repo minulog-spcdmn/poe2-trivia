@@ -2282,6 +2282,7 @@
     color: var(--fossil-rare-core);
   }
   .kept-at {
+    /* (Of the line's 15px at its smallest, a short screen's Delve; 17px wider.) */
     font-size: 0.9em;
     color: var(--muted);
   }
