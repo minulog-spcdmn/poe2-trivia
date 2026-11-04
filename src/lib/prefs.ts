@@ -2,7 +2,7 @@
 // open starts the way they left the last one.
 
 import { DEFAULT_SETTINGS, cleanKnobs, difficultyOf, isDifficulty, snapTimer, type Difficulty, type GameMode, type Knobs, type Settings } from './game.ts';
-import { removeLegacy, storeKey, tryReadStored, writeStored } from './storage.ts';
+import { readLegacy, removeLegacy, storeKey, tryReadStored, writeStored } from './storage.ts';
 
 export interface RoomPrefs {
   targetScore: number;
@@ -29,8 +29,7 @@ export const DEFAULT_PREFS: RoomPrefs = {
   difficulty: DEFAULT_SETTINGS.difficulty,
   mode: 'delve',
   public: true,
-  // Hidden until the host shows it, so a streamer can't put it on screen by accident.
-  hideCode: true,
+  hideCode: false,
 };
 
 const isInt = (v: unknown, min: number, max: number): v is number =>
@@ -93,8 +92,7 @@ const PRIVATE_PREFS: RoomPrefs = { ...DEFAULT_PREFS, public: false };
 
 /**
  * The saved settings. A missing, malformed or outdated entry is replaced with
- * the defaults (which hide the room code, so a streamer's code doesn't
- * suddenly show up on screen).
+ * the defaults (the room code shown, unless the old setting hid it).
  */
 export function loadPrefs(): RoomPrefs {
   const raw = tryReadStored(PREFS);
@@ -103,6 +101,7 @@ export function loadPrefs(): RoomPrefs {
   const saved = parsePrefs(raw);
   if (saved) return saved;
   const fresh = { ...(raw === null ? DEFAULT_PREFS : PRIVATE_PREFS) };
+  if (readLegacy(LEGACY_HIDE_KEY) === '1') fresh.hideCode = true;
   // The old key goes only once the new entry holds its value.
   if (write(fresh)) removeLegacy(LEGACY_HIDE_KEY);
   return fresh;
