@@ -120,7 +120,7 @@ const lensReach = (c: Pt, deg: number, { a, b, r }: Lens) => {
 };
 
 /** A rectangle with its corners notched by quarter circles of radius `n` about them, its sides `d` in, broken at `holes`. */
-const notched = (x0: number, y0: number, x1: number, y1: number, n: number, d: number, holes: Hole[] = []) => {
+export const notched = (x0: number, y0: number, x1: number, y1: number, n: number, d: number, holes: Hole[] = []) => {
   const s = Math.sqrt(n * n - d * d);
   const o = { holes };
   const corner = (from: Pt, to: Pt) => `M${pt(from)}A${n} ${n} 0 0 0 ${pt(to)}`;

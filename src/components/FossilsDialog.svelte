@@ -77,9 +77,10 @@
   .backdrop::-webkit-scrollbar {
     display: none;
   }
+  /* As wide as the set (DelveFossils) needs: its packing at full size, the rare ones beside it. */
   .set {
     margin: auto;
-    width: min(900px, 100%);
+    width: min(36rem, 100%);
     padding: 1rem 1.4rem 1.4rem;
     outline: none;
   }
