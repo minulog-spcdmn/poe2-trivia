@@ -3,29 +3,29 @@
 // which takes only a few elements at once, too few for the set's 25). The
 // art's alpha is blurred twice in floating point, a tight light and a wide
 // one, and coloured as the card's amber lights (app.css, --fossil-*): the
-// tight one the light's warm gold, the wide one falling to the edge's ember,
-// so the light cools as it leaves the stone, as lamplight through amber
-// does. Rounded to 8 bits with a triangular dither, or its fall-off bands.
+// nearer one the light's warm middle, the wider one falling to the edge's
+// ember, so the light cools as it leaves the stone, as lamplight through
+// amber does. Rounded to 8 bits with a triangular dither, or its fall-off bands.
 // Made once per fossil and size, kept as an object URL.
 
 import { fossilArt, type FossilId } from './fossils';
 
 /** The art's side (px) the glow is made from, and the room round it for the light to spread into. */
 export const GLOW_ART = 128;
-export const GLOW_PAD = 40;
+export const GLOW_PAD = 64;
 
 /** Each light: its colour (sRGB 0-1), its strength, and its spread (px of the art). */
 type Light = { c: [number, number, number]; a: number; sigma: number };
 const LIGHTS: Record<'common' | 'rare', Light[]> = {
-  // --fossil-core over --fossil-edge.
+  // --fossil-mid over --fossil-edge: no tight band round the stone (that reads as an outline), only light spread over the floor.
   common: [
-    { c: [1, 0.82, 0.38], a: 0.55, sigma: 5 },
-    { c: [0.93, 0.42, 0.06], a: 0.42, sigma: 15 },
+    { c: [1, 0.67, 0.17], a: 0.3, sigma: 14 },
+    { c: [0.93, 0.42, 0.06], a: 0.26, sigma: 28 },
   ],
-  // --fossil-rare-core over --fossil-rare-edge, a little stronger and wider.
+  // --fossil-rare-mid over --fossil-rare-edge, a little stronger.
   rare: [
-    { c: [1, 0.76, 0.26], a: 0.66, sigma: 6 },
-    { c: [0.78, 0.19, 0.05], a: 0.55, sigma: 18 },
+    { c: [0.95, 0.49, 0.11], a: 0.36, sigma: 15 },
+    { c: [0.78, 0.19, 0.05], a: 0.32, sigma: 30 },
   ],
 };
 
