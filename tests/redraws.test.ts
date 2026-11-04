@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FLOOR, MARK, MOMENTS, PAGE_FLOOR, WEBGL_SCENES, atRest, layerName, overBaseline, pageAtRest, readTrace, redraws, slackOf, unread, withoutMark, type TraceEvent } from '../src/qa/redraws.ts';
 import { SCREENS } from '../src/qa/scene.ts';
+import { matters, sweepFiles } from '../scripts/redraws-unchanged.mjs';
 
 test('a layer is named by its element, Svelte’s classes left out', () => {
   assert.equal(layerName("LayoutFlexibleBox (relative positioned) DIV class='shell svelte-1n46o8q'"), 'div.shell');
@@ -144,6 +145,23 @@ test('CI’s parts of the scenes at rest are each of them once, of one count', (
     Array.from({ length: [...counts][0]! }, (_, i) => i + 1),
   );
   for (const a of jobArgs) if (a.includes('--shard')) assert.ok(!/--only|--webgl|--moments/.test(a), `a part of the scenes at rest is all of its scenes, WebGL refused: ${a}`);
+});
+
+test('Redraws passes on every job passing, or on the pull request changing nothing the check sees, never on jobs skipped otherwise', () => {
+  assert.match(workflow, /redraws:\n\s+needs: unchanged\n(?:\s+#.*\n)*\s+if: \$\{\{ !cancelled\(\) && github\.event_name != 'push' && needs\.unchanged\.outputs\.same != 'true' \}\}/);
+  assert.ok(workflow.includes("SAME: ${{ needs.unchanged.result == 'success' && needs.unchanged.outputs.same == 'true' }}"), 'nothing changed, as that job found it');
+  assert.match(workflow, /if \[ "\$SAME" = true \] && \[ "\$WATCHED" = skipped \]; then\n.*\n\s+exit 0\n\s+fi\n\s+test "\$WATCHED" = success/);
+});
+
+test('a pull request passes without watching only on files the check doesn’t run, then on its build', () => {
+  const own = sweepFiles();
+  for (const f of ['scripts/sweep.mjs', 'qaServer.ts', 'src/qa/redraws.ts']) assert.ok(own.has(f), `the sweep runs ${f}`);
+  for (const f of ['src/lib/game.ts', 'public/icons/lineage-gems.avif', 'index.html', 'vite.config.ts', 'package-lock.json', 'qaBefore.ts', '.github/workflows/redraws.yml', 'scripts/redraws-unchanged.mjs', 'scripts/sweep.mjs']) {
+    assert.ok(matters(f, own), `${f} can change what the check sees`);
+  }
+  for (const f of ['docs/qa.md', 'CLAUDE.md', 'tests/redraws.test.ts', 'scripts/iphone/fresh.mjs', '.claude/agents/worker.md', '.github/workflows/tests.yml']) {
+    assert.ok(!matters(f, own), `${f} is left to the builds to tell`);
+  }
 });
 
 test('only what the check finds fails a job: the report’s upload, timing out, can’t', () => {
