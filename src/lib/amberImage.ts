@@ -53,7 +53,7 @@ function pngHere(px: Uint8ClampedArray, W: number, H: number): Promise<Blob | un
 }
 
 /** An emblem caught in the amber, painted here: its body and rim. */
-async function inclusionHere({ image, W, H, s, grain }: InclusionJob): Promise<AmberAnswer> {
+async function inclusionHere({ image, W, H, s, rare, grain }: InclusionJob): Promise<AmberAnswer> {
   const bitmap = await createImageBitmap(image);
   const canvas = document.createElement('canvas');
   [canvas.width, canvas.height] = [W, H];
@@ -63,7 +63,7 @@ async function inclusionHere({ image, W, H, s, grain }: InclusionJob): Promise<A
   const rgba = g.getImageData(0, 0, W, H).data;
   const alpha = new Float32Array(W * H);
   for (let p = 0; p < W * H; p++) alpha[p] = rgba[p * 4 + 3] / 255;
-  const { body, rim } = paintInclusion(alpha, W, H, s, grain);
+  const { body, rim } = paintInclusion(alpha, W, H, s, rare, grain);
   return { id: 0, png: await pngHere(body, W, H), rim: await pngHere(rim, W, H) };
 }
 
@@ -126,15 +126,16 @@ function maskImage(url: string) {
 /**
  * A fossil's emblem as the amber caught it (lib/amber's paintInclusion),
  * from its mask at `url` drawn `contain` in a box `bw` x `bh` layout px at
- * `s` device px to one (`grain`, as lib/amber's AmberJob's): its body's and its rim's URLs.
+ * `s` device px to one, in a rare's amber or a common's (`grain`, as
+ * lib/amber's AmberJob's): its body's and its rim's URLs.
  */
-export async function inclusionImages(url: string, bw: number, bh: number, s: number, grain = 1): Promise<{ body: string; rim: string } | null> {
+export async function inclusionImages(url: string, bw: number, bh: number, s: number, rare: boolean, grain = 1): Promise<{ body: string; rim: string } | null> {
   try {
     const { image, w, h } = await maskImage(url);
     const k = Math.min(bw / w, bh / h) * s;
     const [W, H] = [Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))];
-    const job: InclusionJob = { image, W, H, s, grain };
-    const us = await painted(`inclusion ${url} ${W} ${H} ${s} ${grain}`, { inclusion: job }, () => inclusionHere(job));
+    const job: InclusionJob = { image, W, H, s, rare, grain };
+    const us = await painted(`inclusion ${url} ${W} ${H} ${s} ${rare} ${grain}`, { inclusion: job }, () => inclusionHere(job));
     return us ? { body: us[0]!, rim: us[1]! } : null;
   } catch {
     return null;

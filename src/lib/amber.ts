@@ -9,28 +9,25 @@
 // Lambert: what's left of each colour falls off exponentially with the
 // thickness crossed, each at its own rate, SIGMA). So it's painted as a
 // thickness, not a colour: deeper away from the lamp's heart and toward the
-// slab's edges, as the icons are, and in it what a slab of real amber holds
-// up to the light:
-//   the drop  the resin that ran over what it caught, clearer than the
-//             older amber it lies in, the step between them sharp;
-//   flows     the layers the rest was laid down in, nested round the drop,
-//             each its own density, a sharp step from one to the next and,
-//             where a film of dust lay between two, a fine dark line with a
-//             hair of light on its side toward the lamp, showing in runs;
-//   clouds    broad and soft, denser and clearer;
-//   spangles  a rare's sun spangles, flat discs of fracture seen aslant,
-//             gold where they turn to the lamp, fine ridges running out
-//             from where each began, their rim a line of light; each its
-//             own image too, to catch the light in turn;
-//   specks    of debris, a few, most deep and soft.
+// slab's edges, as the icons are, and in it:
+//   flows   the layers it was laid down in, round the drop that caught what's
+//           inside, each its own density, a sharp step from one to the next
+//           and, here and there where they meet, the light bent along it: a
+//           fine seam of it; broad, soft bands of denser resin among them;
+//   flakes  of fracture seen aslant, each a little clearer than the amber
+//           round it and lit across from its side toward the lamp;
+//   crazing hairline cracks in patches, a hair of light beside each;
+//   specks  of debris, some sharp, some deep and soft;
+//   spangles for a rare, sun spangles, flat gold discs of fracture that catch
+//           the light (each its own small image, gold, screened).
 //
 // The page lays it over the lamp (FossilAmber.svelte): the lamp's moving
 // heart and its bloom are CSS gradients (lampLight, below), and the amber, a
-// still image (`body`, the light its seams and spangles catch worked in), is
+// still image (`body`, the light its seams and flakes catch worked in), is
 // multiplied over the one and under the other. So wherever the heart goes as
 // the card tilts, the amber colours it, flows and all, as a lamp passing
-// behind it would. The back, seen only as it's dealt, is one still image of
-// it all (`flat`).
+// behind it would. The back, seen only as
+// it's dealt, is one still image of it all (`flat`).
 //
 // What the amber caught (a fossil's emblem) is painted here too, from its
 // mask (paintInclusion): thick and dark where its body is, letting the
@@ -40,8 +37,8 @@
 // rounded to 8 bits (CLAUDE.md, "No banding"), strongly enough that a sharp
 // face's filter, which smooths what it's given before it's shrunk, still
 // finds the noise; the gradients over and under it are carried through by
-// its grain. Pure: no DOM, so the worker (amberWorker.ts) and the page alike
-// can paint it.
+// its grain.
+// Pure: no DOM, so the worker (amberWorker.ts) and the page alike can paint it.
 
 export type Pt = [number, number];
 export type AmberLayer = 'body' | 'flat' | 'spangle';
@@ -72,28 +69,31 @@ export type AmberSlab = {
  */
 export type AmberJob = { layer: AmberLayer; slab: AmberSlab; W: number; H: number; s: number; ox: number; oy: number; grain?: number };
 
-/** How fast amber takes each colour (red, green, blue) per unit of thickness; a rare's deeper, red-gold. */
+/**
+ * How fast amber takes each colour (red, green, blue) per unit of
+ * thickness: a common's warm honey, a rare's deeper and redder, the
+ * red-gold of old amber.
+ */
 const SIGMA: Record<'common' | 'rare', [number, number, number]> = {
-  common: [0.035, 0.42, 4.5],
+  common: [0.04, 0.44, 2.9],
   rare: [0.07, 0.6, 5.6],
 };
 /** Thickness at the lamp's heart, and how much it deepens out to the light's reach: a rare's hotter at its heart and redder at its edges, the brighter card. */
 const DEPTH: Record<'common' | 'rare', [number, number]> = {
-  common: [0.5, 3.1],
-  rare: [0.72, 3.8],
+  common: [0.55, 2.5],
+  rare: [0.5, 3.8],
 };
 /** The lamp's colour (a flame's, through a little smoke), and the light left far from it. */
-const LAMP: [number, number, number] = [1, 0.95, 0.82];
+const LAMP: Record<'common' | 'rare', [number, number, number]> = {
+  common: [1, 0.94, 0.8],
+  rare: [1.12, 1.06, 0.9],
+};
 const AMBIENT = 0.035;
 /** How much of the light at the heart is too bright for the amber: the bloom's colour and strength. */
 const BLOOM: Record<'common' | 'rare', { c: [number, number, number]; a: number; r: number }> = {
-  common: { c: [1, 0.9, 0.4], a: 0.2, r: 0.3 },
-  rare: { c: [1, 0.84, 0.32], a: 0.3, r: 0.32 },
+  common: { c: [1, 0.86, 0.42], a: 0.26, r: 0.3 },
+  rare: { c: [1, 0.84, 0.32], a: 0.38, r: 0.32 },
 };
-/** The colour of the light the seams and spangles catch: the lamp's, pale gold. */
-const SHEEN: [number, number, number] = [1, 0.92, 0.62];
-/** A spangle's gold, where it turns to the lamp: the lamp's light come back through the amber. */
-const GOLD: [number, number, number] = [1, 0.52, 0.06];
 
 // ---- noise ----------------------------------------------------------------------
 
@@ -211,22 +211,17 @@ export function lampLight(slab: AmberSlab, ox: number, oy: number): { light: str
   return { light: `radial-gradient(${rad(D)}, ${light.join(', ')})`, bloom: `radial-gradient(${rad(E)}, ${bloom.join(', ')})` };
 }
 
-/** A speck of debris, at its depth (how soft). */
+/** What lies in the amber, placed from the slab's seed: specks of debris, each at its depth (how soft); flakes of fracture; a rare's sun spangles. */
 type Speck = { x: number; y: number; r: number; soft: number; dark: number };
-/**
- * A sun spangle: a disc of fracture `r` across, seen aslant (`flat` as deep
- * as wide), turned `turn`; where its fracture began (`from`, in the disc's
- * own units), its ridges `n`. Each catches the light in its turn as its own
- * image, the body holding only its ghost.
- */
-export type Spangle = { x: number; y: number; r: number; turn: number; flat: number; from: Pt; n: number; shine: number; seed: number };
-
-/** What lies in the amber, placed from the slab's seed: specks of debris, each at its depth (how soft), and sun spangles round the drop. */
+/** A flake of fracture seen aslant: a small convex polygon, its side `edge` (from point `edge` to the next) the one toward the lamp, which catches its light, `lit` strong. */
+type Flake = { pts: Pt[]; c: Pt; reach: number; edge: number; lit: number };
+type Spangle = { x: number; y: number; r: number; turn: number; flat: number; seed: number };
 function inclusions(slab: AmberSlab) {
   const rnd = stream(slab.seed * 7919 + (slab.rare ? 13 : 0) + 1);
   const area = slab.w * slab.h;
   const specks: Speck[] = [];
   const spangles: Spangle[] = [];
+  const flakes: Flake[] = [];
   // Mostly near the light (where they show), thinning out to the edges.
   const place = (): Pt => {
     for (let i = 0; i < 8; i++) {
@@ -235,83 +230,91 @@ function inclusions(slab: AmberSlab) {
     }
     return [slab.lamp[0] + (rnd() - 0.5) * slab.rx, slab.lamp[1] + (rnd() - 0.5) * slab.ry];
   };
-  const nSpecks = Math.round(area / 6000);
+  const nSpecks = Math.round(area / 9000);
   for (let i = 0; i < nSpecks; i++) {
     const [x, y] = place();
     // Most lie deep, soft and faint; a few near the face, small and sharp.
     const deep = rnd() < 0.75;
-    specks.push({ x, y, r: 0.2 + rnd() * rnd() * 0.5, soft: deep ? 0.8 + rnd() * 1.4 : 0.12, dark: deep ? 0.1 + rnd() * 0.16 : 0.22 + rnd() * 0.22 });
+    specks.push({ x, y, r: 0.2 + rnd() * rnd() * 0.6, soft: deep ? 0.8 + rnd() * 1.4 : 0.12, dark: deep ? 0.1 + rnd() * 0.18 : 0.25 + rnd() * 0.25 });
   }
-  // A rare's sun spangles: four round the lamp in the light's reach (a row's two), outside the drop
-  // and apart, a large one and a small in turn.
-  const row = slab.w > slab.h;
-  const want = !slab.rare ? 0 : row ? 2 : 4;
-  const outside = slab.drop ? dropDistance(slab.drop) : () => Infinity;
-  for (let tries = 0; spangles.length < want && tries < 80; tries++) {
-    const a = rnd() * Math.PI * 2;
-    const k = 0.62 + rnd() * 0.36;
-    const [ax, ay] = row ? [slab.ry * 1.3, slab.ry * 0.6] : [slab.rx, slab.ry];
-    const x = slab.lamp[0] + Math.sin(a) * ax * k;
-    const y = slab.lamp[1] - Math.cos(a) * ay * k;
-    const r = (row ? 0.62 : 1) * (spangles.length % 2 === 0 ? 7.5 + rnd() * 3.5 : 4.8 + rnd() * 2);
-    if (x < 10 || y < 10 || x > slab.w - 10 || y > slab.h - 10 || outside(x, y) < 6) continue;
-    // Clear of what's set over the amber: a tall face's nameplate and its seals in the top corners, a row's name.
-    if (row ? x > 108 : y > slab.h * 0.74 || (y < 62 && (x < 62 || x > slab.w - 62))) continue;
-    if (spangles.some((o) => Math.hypot(o.x - x, o.y - y) < (o.r + r) * 1.6 + 8)) continue;
-    const flat = 0.42 + rnd() * 0.4;
-    const from: Pt = [(rnd() - 0.5) * 0.5, (rnd() - 0.5) * 0.5];
-    // How squarely it faces the lamp: all catch some of it, some much.
-    const shine = 0.6 + 0.4 * rnd() ** 0.7;
-    spangles.push({ x, y, r, turn: rnd() * Math.PI, flat, from, n: Math.max(12, Math.round((2 * Math.PI * r) / 1.1)), shine, seed: Math.floor(rnd() * 1e6) });
+  if (slab.rare) {
+    const n = Math.max(4, Math.round(area / 9000));
+    for (let i = 0; i < n; i++) {
+      // Round the drop, never on the emblem's heart.
+      const a = (i / n) * Math.PI * 2 + rnd() * 0.9;
+      const k = 0.42 + rnd() * 0.5;
+      spangles.push({ x: slab.lamp[0] + Math.sin(a) * slab.rx * k, y: slab.lamp[1] - Math.cos(a) * slab.ry * k * 0.95, r: 2.2 + rnd() * 2.4, turn: rnd() * Math.PI, flat: 0.3 + rnd() * 0.4, seed: Math.floor(rnd() * 1e6) });
+    }
   }
-  return { specks, spangles };
+  // The flakes: many small, a few larger, each a few points round its middle, flattened as it lies aslant.
+  const nFlakes = Math.round(area / (slab.rare ? 4200 : 5400));
+  for (let i = 0; i < nFlakes; i++) {
+    const c = place();
+    const r = 2.6 + rnd() * rnd() * 11;
+    const n = 5 + Math.floor(rnd() * 3);
+    const [turn, flat] = [rnd() * Math.PI, 0.35 + rnd() * 0.5];
+    const [ct, st] = [Math.cos(turn), Math.sin(turn)];
+    const pts: Pt[] = [];
+    for (let k = 0; k < n; k++) {
+      const a = ((k + 0.25 + rnd() * 0.5) / n) * Math.PI * 2;
+      const [u, v] = [Math.cos(a) * r * (0.82 + rnd() * 0.18), Math.sin(a) * r * flat * (0.82 + rnd() * 0.18)];
+      pts.push([c[0] + u * ct - v * st, c[1] + u * st + v * ct]);
+    }
+    // The side whose outward normal turns most toward the lamp.
+    const toward = Math.atan2(slab.lamp[1] - c[1], slab.lamp[0] - c[0]);
+    let [edge, best] = [0, -Infinity];
+    for (let k = 0; k < n; k++) {
+      const [a, b] = [pts[k], pts[(k + 1) % n]];
+      const mid: Pt = [(a[0] + b[0]) / 2 - c[0], (a[1] + b[1]) / 2 - c[1]];
+      const facing = Math.cos(Math.atan2(mid[1], mid[0]) - toward);
+      if (facing > best) [edge, best] = [k, facing];
+    }
+    flakes.push({ pts, c, reach: r * 1.05, edge, lit: (0.45 + rnd() * 0.55) * lightAt(slab, c[0], c[1]) ** 0.4 });
+  }
+  return { specks, spangles, flakes };
 }
 
-/** A rare's spangles, which catch the light in turn, each its own small image (FossilAmber). */
+/** The slab's inclusions, as the page places a rare's spangles (each its own small image that catches the light in its turn). */
 export const spanglesOf = (slab: AmberSlab) => inclusions(slab).spangles;
 
-/**
- * A spangle at a point (layout px), lit from `toward` (radians, the way to
- * the lamp in the slab): how much of the lamp's light it throws back, gold
- * (0 to about 1), how much clearer the amber is where it lies, and a hair
- * of dark along its rim on the side away from the light. Zero outside it.
- * A flat fracture, seen aslant: its rim lobed, as a crack's is; its face a
- * mirror catching the light, brighter on its side toward the lamp, and
- * streaked out from where it began (what makes it a sun), the streaks
- * alternately catching it and not.
- */
-function spangleAt(sp: Spangle, x: number, y: number, toward: number): [number, number, number, number] {
-  const [c, sn] = [Math.cos(sp.turn), Math.sin(sp.turn)];
-  const [dx, dy] = [x - sp.x, y - sp.y];
-  const [px, py] = [dx * c + dy * sn, -dx * sn + dy * c];
-  const u = px / sp.r;
-  const v = py / (sp.r * sp.flat);
-  const d = Math.hypot(u, v);
-  if (d > 1.35) return [0, 0, 0, 0];
-  const th = Math.atan2(v, u);
-  const ph = sp.seed % 997;
-  const lobe = 1 + 0.08 * Math.sin(3 * th + ph) + 0.05 * Math.sin(5 * th + ph * 1.7) + 0.03 * Math.sin(9 * th + ph * 2.3);
-  // How far from its rim, in layout px (the ellipse's radius that way).
-  const reach = (sp.r * sp.flat) / Math.hypot(sp.flat * Math.cos(th), Math.sin(th));
-  const off = (d / lobe - 1) * reach * lobe;
-  const inside = 1 - smooth(-0.3, 0.3, off);
-  if (!inside && off > 0.9) return [0, 0, 0, 0];
-  // Toward the lamp across it, -1 to 1.
-  const facing = Math.cos(Math.atan2(dy, dx) - toward) * Math.min(1, Math.hypot(dx, dy) / sp.r);
-  // The streaks: fine lines out from where it began, each a little off its place and its own
-  // brightness, on a face that's itself faintly lit.
-  const [fu, fv] = [u - sp.from[0], v - sp.from[1]];
-  const turns = ((Math.atan2(fv, fu) / (2 * Math.PI)) * sp.n + sp.n) % sp.n;
-  const k = Math.round(turns) % sp.n;
-  const along = Math.hypot(fu, fv);
-  const across = Math.abs(((turns - Math.round(turns) - (hash(k, 7, sp.seed) - 0.5) * 0.5) * 2 * Math.PI) / sp.n) * along * reach;
-  const streak = (0.35 + 0.65 * hash(k, 3, sp.seed)) * Math.exp(-((across / 0.3) ** 2)) * smooth(0.1, 0.45, along);
-  const face = inside * sp.shine * (0.5 + 0.5 * facing) * (0.22 + 0.78 * streak);
-  // Its rim catching the light on its side toward the lamp, and dark on the other.
-  const rim = Math.exp(-((off / 0.34) ** 2));
-  const lit = rim * Math.max(0, facing) * 0.75;
-  const dark = rim * Math.max(0, -facing) * 0.15;
-  return [face, lit, inside * 0.25, dark];
+/** How far (x, y) lies from the segment a to b. */
+function toSegment(x: number, y: number, a: Pt, b: Pt) {
+  const [ex, ey] = [b[0] - a[0], b[1] - a[1]];
+  const t = Math.min(1, Math.max(0, ((x - a[0]) * ex + (y - a[1]) * ey) / (ex * ex + ey * ey || 1)));
+  return Math.hypot(x - a[0] - ex * t, y - a[1] - ey * t);
+}
+
+/** Where (x, y) lies to a flake: how far inside it (less than 0, outside), how far from its lit side, and from its nearest other side. */
+function flakeAt(fl: Flake, x: number, y: number): [number, number, number] {
+  const n = fl.pts.length;
+  let inside = Infinity;
+  let other = Infinity;
+  for (let k = 0; k < n; k++) {
+    const [a, b] = [fl.pts[k], fl.pts[(k + 1) % n]];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    // (Inward, whichever way round its points go.)
+    let d = ((x - a[0]) * (b[1] - a[1]) - (y - a[1]) * (b[0] - a[0])) / len;
+    if ((fl.c[0] - a[0]) * (b[1] - a[1]) - (fl.c[1] - a[1]) * (b[0] - a[0]) < 0) d = -d;
+    inside = Math.min(inside, d);
+    if (k !== fl.edge) other = Math.min(other, Math.abs(d));
+  }
+  return [inside, toSegment(x, y, fl.pts[fl.edge], fl.pts[(fl.edge + 1) % n]), other];
+}
+
+/** How far (x, y) lies from the nearest crack of the slab's crazing (its cells about 13 px across), in layout px. */
+function crackAt(x: number, y: number, seed: number) {
+  const S = 13;
+  const [gx, gy] = [x / S, y / S];
+  const [ix, iy] = [Math.floor(gx), Math.floor(gy)];
+  let [d1, d2] = [9, 9];
+  for (let dj = -1; dj <= 1; dj++)
+    for (let di = -1; di <= 1; di++) {
+      const [cx, cy] = [ix + di + hash(ix + di, iy + dj, seed), iy + dj + hash(ix + di, iy + dj, seed + 1)];
+      const d = (gx - cx) ** 2 + (gy - cy) ** 2;
+      if (d < d1) [d2, d1] = [d1, d];
+      else if (d < d2) d2 = d;
+    }
+  return ((Math.sqrt(d2) - Math.sqrt(d1)) * S) / 2;
 }
 
 // ---- painting -------------------------------------------------------------------
@@ -320,6 +323,8 @@ function spangleAt(sp: Spangle, x: number, y: number, toward: number): [number, 
 const DITHER = 3.6;
 /** Rounds `v` (0 to 1) to 8 bits, dithered by `r` (a triangle, -1 to 1): a slow gradient never shows its steps. Nothing stays nothing. */
 const dither = (v: number, r: number) => (v <= 0 ? 0 : Math.max(0, Math.min(255, Math.floor(v * 255 + 0.5 + r * DITHER))));
+/** The colour of the light the seams, flakes and cracks catch: the lamp's, pale gold. */
+const SHEEN: [number, number, number] = [1, 0.93, 0.75];
 
 /** Paints one image of the slab: RGBA, `job.W` x `job.H`, straight (not premultiplied) alpha. */
 export function paintAmber(job: AmberJob): Uint8ClampedArray {
@@ -333,12 +338,13 @@ export function paintAmber(job: AmberJob): Uint8ClampedArray {
 
   if (layer === 'spangle') return paintSpangle(job, out, tri);
 
-  const { tau, bent, glow, gild, light } = field(job);
-  // What passes: each colour by how far it's carried through, the light as the planes bend it; and
-  // the light the seams and spangles throw back, screened over that as it will be once the face's
-  // moving light is under it (the body is multiplied over the light: worked in as the light stands
-  // at rest). On the back, the lamp's light and bloom worked in too.
+  const { tau, glow, light } = field(job);
+  // What passes: each colour by how far it's carried through; and the light the seams and flakes
+  // catch, screened over that as it will be once the face's moving light is under it (the body is
+  // multiplied over the light: worked in as the light stands at rest). On the back, the lamp's
+  // light and bloom worked in too.
   const sigma = SIGMA[tier];
+  const lamp = LAMP[tier];
   const flat = layer === 'flat';
   const b = BLOOM[tier];
   const screen = (v: number, a: number) => 1 - (1 - v) * (1 - a);
@@ -351,15 +357,12 @@ export function paintAmber(job: AmberJob): Uint8ClampedArray {
       // The lamp's colour and its light as it falls off, but for the share that moves (the face's
       // light), or all of it, dimmer, on the back.
       const sway = flat ? 1 : swayAt(slab, x, y);
-      const L = (flat ? light[p] * 0.8 : light[p] / sway) * bent[p];
-      const top = flat ? 0.8 : 1 / sway;
-      const [a, g] = [Math.min(1, glow[p]), Math.min(1, gild[p])];
+      const L = flat ? light[p] * 0.8 : light[p] / sway;
+      const a = Math.min(1, glow[p]) * (flat ? 0.8 : 1);
       const rgb = [0, 0, 0];
       for (let c = 0; c < 3; c++) {
-        let v = Math.exp(-sigma[c] * t) * L * LAMP[c];
-        v += a * SHEEN[c] * (top - v);
-        v += g * GOLD[c] * (top - v);
-        rgb[c] = Math.min(1, v);
+        const v = Math.exp(-sigma[c] * t) * L * lamp[c];
+        rgb[c] = Math.min(1, v + a * SHEEN[c] * (1 / sway - v));
       }
       if (flat) {
         const [dx, dy] = [(x - slab.lamp[0]) / slab.rx, (y - slab.lamp[1]) / slab.ry];
@@ -375,43 +378,22 @@ export function paintAmber(job: AmberJob): Uint8ClampedArray {
 }
 
 /**
- * The flows' layers: where each starts (out from the drop's outline, in
- * layout px), how dense it is and how it bends the light (a layer laid down
- * a little lens-shaped gathers it or spreads it), and the film of dust along
- * its inner edge, if any (0 to 1).
- */
-type Flow = { at: number; density: number; bend: number; film: number };
-/** The slab's flows, from well inside the drop to past its corners: wider further out, each its own, about half with a film. */
-function flowsOf(seed: number): Flow[] {
-  const rnd = stream(seed * 977 + 5);
-  const flows: Flow[] = [];
-  for (let at = -90; at < 320; ) {
-    const film = rnd() < (at < 0 ? 0.5 : 0.62) ? 0.45 + rnd() * 0.55 : 0;
-    flows.push({ at, density: rnd() - 0.5, bend: rnd() - 0.5, film });
-    at += (at < 0 ? 16 : 8 + Math.min(1, at / 150) * 14) * (0.6 + rnd() * 0.9);
-  }
-  return flows;
-}
-
-/**
- * The slab at each pixel of `job`: its thickness (how far the light is
- * carried through it), how its planes bend the light there, the light its
- * seams throw back (pale) and its spangles (gold), and the lamp's light.
+ * The slab's thickness at each pixel of `job` (how far the light is carried
+ * through it), the light it catches on its way (the seams', the flakes' and
+ * the cracks'), and the lamp's light there.
  */
 function field(job: AmberJob) {
   const { slab, W, H, s, ox, oy } = job;
   const tier = slab.rare ? 'rare' : 'common';
   const [t0, deepen] = DEPTH[tier];
-  const { specks, spangles } = inclusions(slab);
+  const { specks, spangles, flakes } = inclusions(slab);
   const tau = new Float32Array(W * H);
-  const bent = new Float32Array(W * H);
   const glow = new Float32Array(W * H);
-  const gild = new Float32Array(W * H);
   const light = new Float32Array(W * H);
   const sd = slab.seed * 131;
-  // The slow fields (the clouds; the flows' warp, broad and gentle so they run in long curves, not
-  // wobbles; where the layering shows; where each seam shows), on a grid every 3 of the slab's layout
-  // px, eased between: on the slab's own grid, so strips of it painted apart meet.
+  // The slow fields (clouds, the flows' warp and how strongly each shows, the crazing's patches), on
+  // a grid every 3 of the slab's layout px, eased between: on the slab's own grid, so strips of it
+  // painted apart meet.
   const step = 3;
   const [gx0, gy0] = [Math.floor(ox / step) * step, Math.floor(oy / step) * step];
   const gw = Math.ceil((ox + W / s - gx0) / step) + 3;
@@ -419,8 +401,8 @@ function field(job: AmberJob) {
   const cloud = new Float32Array(gw * gh);
   const warp = new Float32Array(gw * gh);
   const showing = new Float32Array(gw * gh);
-  const seamA = new Float32Array(gw * gh);
-  const seamB = new Float32Array(gw * gh);
+  const fine = new Float32Array(gw * gh);
+  const crazed = new Float32Array(gw * gh);
   for (let gj = 0; gj < gh; gj++)
     for (let gi = 0; gi < gw; gi++) {
       const [x, y] = [gx0 + (gi - 1) * step, gy0 + (gj - 1) * step];
@@ -428,10 +410,10 @@ function field(job: AmberJob) {
       // (The clouds swirled: looked up where a slower field pushes them.)
       const [qx, qy] = [fbm(x / 70, y / 64, sd + 5, 2) - 0.5, fbm(x / 64 + 9, y / 70, sd + 6, 2) - 0.5];
       cloud[g] = fbm(x / 40 + qx * 2.4, y / 46 + qy * 2.4, sd + 1, 4);
-      warp[g] = (fbm(x / 96 + 3.1, y / 88, sd + 2, 2) - 0.5) * 30 + (fbm(x / 34, y / 30 + 5, sd + 12, 2) - 0.5) * 6;
-      showing[g] = smooth(0.4, 0.64, fbm(x / 30, y / 34 + 7, sd + 3, 3));
-      seamA[g] = fbm(x / 30, y / 34, sd + 11, 2);
-      seamB[g] = fbm(x / 28 + 17, y / 31, sd + 13, 2);
+      warp[g] = fbm(x / 34 + 3.1, y / 30, sd + 2, 3) - 0.5;
+      showing[g] = smooth(0.42, 0.7, fbm(x / 26, y / 30 + 7, sd + 3, 3));
+      fine[g] = fbm(x / 9, y / 13, sd + 4, 2) - 0.5;
+      crazed[g] = smooth(0.62, 0.78, fbm(x / 48 + 4, y / 52 - 2, sd + 7, 3));
     }
   const ease = (f: Float32Array, x: number, y: number) => {
     const [gx, gy] = [(x - gx0) / step + 1, (y - gy0) / step + 1];
@@ -440,22 +422,16 @@ function field(job: AmberJob) {
     const g = j * gw + i;
     return f[g] + (f[g + 1] - f[g]) * u + (f[g + gw] - f[g]) * v + (f[g] - f[g + 1] - f[g + gw] + f[g + gw + 1]) * u * v;
   };
+  /** A peak at the middle of each band, `w` of it wide: a layer of denser resin. */
+  const band = (phase: number, w: number) => {
+    const fr = phase - Math.floor(phase) - 0.5;
+    return Math.exp(-((fr / w) ** 2));
+  };
   /** Half a device px, in layout px: the sharp edges' easing. */
   const aa = 0.5 / s;
-  /** A seam's width, in layout px: a hair, never less than a device px. */
-  const hair = Math.max(0.45, 1.1 * aa);
   // The flows lie round the drop (on the back, round the lamp).
   const outside = slab.drop ? dropDistance(slab.drop) : (x: number, y: number) => Math.hypot(x - slab.lamp[0], (y - slab.lamp[1]) * 0.9) - 40;
-  const flows = flowsOf(slab.seed);
-  // Which flow a point lies in, looked up by how far out it lies (an eighth of a layout px at a time).
-  const U0 = flows[0].at;
-  const lut = new Int16Array(Math.ceil((flows.at(-1)!.at - U0) * 8) + 1);
-  for (let i = 0, k = 0; i < lut.length; i++) {
-    const u = U0 + i / 8;
-    while (k + 1 < flows.length && flows[k + 1].at <= u) k++;
-    lut[i] = k;
-  }
-  const flowAt = (u: number) => lut[Math.max(0, Math.min(lut.length - 1, Math.floor((u - U0) * 8)))];
+  const layerOf = (n: number) => hash(n, 7, sd) - 0.5;
   for (let j = 0; j < H; j++)
     for (let i = 0; i < W; i++) {
       const [x, y] = [ox + (i + 0.5) / s, oy + (j + 0.5) / s];
@@ -463,76 +439,61 @@ function field(job: AmberJob) {
       const [dx, dy] = [(x - slab.lamp[0]) / slab.rx, (y - slab.lamp[1]) / slab.ry];
       const L = (light[p] = lightAt(slab, x, y));
       let t = t0 + deepen * Math.pow(Math.sqrt(dx * dx + dy * dy), 1.6);
-      // A slab, not a lens: thinner toward the upper left, where the plate's light falls, thicker toward the lower right.
-      t += 0.32 * (dx * 0.55 + dy * 0.75);
-      t += (ease(cloud, x, y) - 0.5) * 1.15;
-      // The flows: each its own density and its own bend of the light, a sharp step from one to the
-      // next, where the layering shows.
+      t += (ease(cloud, x, y) - 0.5) * 1.0;
+      // The flows: the drop's offsets, warped, broad layers showing and fading by turns.
+      const wp = ease(warp, x, y);
       const dd = outside(x, y);
-      const u = dd + ease(warp, x, y);
-      const k = flowAt(u);
-      const f = flows[k];
-      const next = flows[Math.min(flows.length - 1, k + 1)];
-      const prev = flows[Math.max(0, k - 1)];
-      const toNext = next.at - u;
-      const fromHere = u - f.at;
-      // (Eased over a device px either side of each step.)
-      let [density, bend] = [f.density, f.bend];
-      if (toNext < aa) {
-        const e = smooth(aa, -aa, toNext);
-        [density, bend] = [density + (next.density - density) * e, bend + (next.bend - bend) * e];
-      } else if (fromHere < aa) {
-        const e = smooth(aa, -aa, fromHere);
-        [density, bend] = [density + (prev.density - density) * e, bend + (prev.bend - bend) * e];
-      }
+      const u = dd + wp * 22;
       const shows = ease(showing, x, y);
-      t += 0.55 * shows * density;
-      let b = 1 + 0.22 * shows * bend;
-      // Its film, along its inner edge, where a seam runs: the light bent away from a fine line just
-      // outside it and gathered in a hair just inside (toward the lamp), as a seam in clear resin shows.
-      for (const [g, o] of [
-        [f, fromHere],
-        [next, -toNext],
-      ] as [Flow, number][]) {
-        if (!g.film || Math.abs(o) > 2.5) continue;
-        const run = smooth(0.46, 0.66, ease((flows.indexOf(g) & 1) === 0 ? seamA : seamB, x, y));
-        if (run <= 0) continue;
-        const line = Math.exp(-(((o - 0.2) / hair) ** 2));
-        b *= 1 - 0.4 * g.film * run * line;
-        t += 0.25 * g.film * run * line;
-        glow[p] += 0.42 * g.film * run * L * Math.exp(-(((o + 0.6) / hair) ** 2));
+      t += 0.22 * shows * band(u / 11 + wp * 0.8, 0.3);
+      // Layers of resin laid one over another, each its own density, a sharp step between one and
+      // the next; and where one meets the next, the light bent along it: a fine seam, lit.
+      const ph = u / 7.5 + wp * 1.3;
+      const kf = Math.floor(ph);
+      const fr = ph - kf;
+      t += shows * 0.75 * (layerOf(kf - 1) + (layerOf(kf) - layerOf(kf - 1)) * smooth(0, (aa * 2) / 7.5, fr));
+      const off = Math.min(fr, 1 - fr) * 7.5;
+      const seam = Math.exp(-((off / Math.max(0.32, aa)) ** 2)) * shows * smooth(0.45, 0.85, hash(kf, 11, sd));
+      t -= 0.3 * seam;
+      glow[p] += 0.42 * seam * L;
+      t += ease(fine, x, y) * 0.14;
+      // The crazing, in patches: hairline cracks, dark, a hair of light beside each.
+      const cz = ease(crazed, x, y);
+      if (cz > 0.01) {
+        // (Warped, and broken into runs: cracks, not a net.)
+        const k = crackAt(x + wp * 9, y - wp * 7, sd + 9);
+        const run = cz * smooth(0.48, 0.66, fbm(x / 7, y / 7, sd + 8, 2));
+        t += 0.3 * run * Math.exp(-((k / Math.max(0.26, aa)) ** 2));
+        glow[p] += 0.1 * run * L * Math.exp(-(((k - 0.5) / Math.max(0.28, aa)) ** 2));
       }
-      // The drop: clearer than the amber round it, the step between them sharp, and clearer still toward its heart.
-      // Deeper again just inside its outline, where the drop's resin curves away (its meniscus).
-      if (slab.drop) t += -0.22 * smooth(-aa, aa, -dd) - 0.12 * smooth(0, 30, -dd) + 0.42 * smooth(-aa, aa, -dd) * Math.exp(dd / 5);
-      // Deeper toward the slab's edges, as a piece of amber is (in the slab's own px: the light's layer runs past them).
+      // Clear inside the drop, where it caught what it holds.
+      if (slab.drop) t -= 0.24 * smooth(0, 16, -dd);
+      // Deeper toward the slab's edges, as a piece of amber is.
       const e = Math.min(x, slab.w - x, y, slab.h - y);
       t += 0.8 * (1 - smooth(0, 18, e));
       tau[p] = t;
-      bent[p] = b;
     }
-  // The spangles: clearer where they lie, their face and rim throwing back the lamp's light, gold
-  // (only faintly here: each one's own image catches the rest), a hair of dark on the far side.
+  // The flakes: clearer where they lie, and lit across from their side toward the lamp (a glint
+  // fading over the flake, not a bright line along it); a fine dark line round their other sides.
   const clear = new Float32Array(W * H);
   const dark = new Float32Array(W * H);
-  const kept = 0.35;
-  for (const sp of spangles) {
-    const toward = Math.atan2(slab.lamp[1] - sp.y, slab.lamp[0] - sp.x);
-    const Ls = lightAt(slab, sp.x, sp.y) ** 0.5;
-    stamp(job, sp.x, sp.y, sp.r * 1.4 + 1, (x, y, p) => {
-      const [face, lit, cl, dk] = spangleAt(sp, x, y, toward);
-      bent[p] *= 1 + 1.4 * face * kept;
-      gild[p] += 0.15 * face * kept * Ls;
-      glow[p] += lit * kept * Ls;
-      dark[p] += dk * 0.3;
-      return cl;
+  for (const fl of flakes) {
+    stamp(job, fl.c[0], fl.c[1], fl.reach + 1.5, (x, y, p) => {
+      const [inside, lit, other] = flakeAt(fl, x, y);
+      if (inside < -1.2) return 0;
+      const within = smooth(-aa, aa, inside);
+      glow[p] += fl.lit * 0.3 * within * Math.exp(-lit / (fl.reach * 0.4));
+      dark[p] += within * 0.12 * fl.lit * Math.exp(-((other / Math.max(0.24, aa)) ** 2));
+      return within * fl.lit * (0.18 + 0.4 * Math.exp(-lit / (fl.reach * 0.35)));
     }, clear, W, H);
   }
+  // A rare's spangles: flat discs, clearer (their gold is their own images').
+  for (const sp of spangles) stamp(job, sp.x, sp.y, sp.r + 1, (x, y) => spangleAt(sp, x, y) * 0.3, clear, W, H);
   // Specks: darker resin, sharp or soft as they lie near the face or deep.
   for (const sp of specks)
-    stamp(job, sp.x, sp.y, sp.r + sp.soft * 2.2, (x, y) => sp.dark * Math.exp(-((Math.max(0, Math.hypot(x - sp.x, y - sp.y) - sp.r) / (0.25 + sp.soft)) ** 2)), dark, W, H);
-  for (let p = 0; p < W * H; p++) tau[p] = Math.max(0.05, tau[p] * (1 - Math.min(0.6, clear[p])) + 2.2 * Math.min(0.9, dark[p]));
-  return { tau, bent, glow, gild, light };
+    stamp(job, sp.x, sp.y, sp.r + sp.soft * 2 + 0.5, (x, y) => sp.dark * Math.exp(-((Math.max(0, Math.hypot(x - sp.x, y - sp.y) - sp.r) / (0.25 + sp.soft)) ** 2)), dark, W, H);
+  for (let p = 0; p < W * H; p++) tau[p] = Math.max(0.05, tau[p] * (1 - Math.min(0.85, clear[p])) + 2.2 * Math.min(0.9, dark[p]));
+  return { tau, glow, light };
 }
 
 /** Runs `f` (a point in layout px, and its pixel's index, to a value) over the device px within `reach` of `x`, `y`, adding what it gives into `into`. */
@@ -547,21 +508,40 @@ function stamp(job: AmberJob, x: number, y: number, reach: number, f: (x: number
     }
 }
 
-/** One spangle alone, as its own small image (`job.ox` its index among them), its face and rim in gold. */
+/**
+ * A sun spangle at a point: a flat disc of fracture seen aslant (an
+ * ellipse, `flat` as deep as wide, turned), gold through, its rim a fine
+ * line of light, brightest on the side toward the light (its upper left).
+ * 0 to 1.
+ */
+function spangleAt(sp: Spangle, x: number, y: number) {
+  const [c, sn] = [Math.cos(sp.turn), Math.sin(sp.turn)];
+  const [dx, dy] = [x - sp.x, y - sp.y];
+  const u = (dx * c + dy * sn) / sp.r;
+  const v = (-dx * sn + dy * c) / (sp.r * sp.flat);
+  const d = Math.hypot(u, v);
+  if (d > 1.3) return 0;
+  // (Its rim's width in the disc's own units: a fine line, a third of a layout px.)
+  const fine = 0.34 / (sp.r * sp.flat);
+  const lit = 0.25 + 0.75 * Math.max(0, Math.cos(Math.atan2(dy, dx) + 2.3));
+  const rim = Math.exp(-(((d - 1) / fine) ** 2)) * lit;
+  const body = 0.34 * (1 - smooth(0.9, 1, d)) * (0.75 + 0.25 * noise(u * 2.2 + 3, v * 2.2, sp.seed));
+  return Math.min(1, rim + body);
+}
+
+/** One spangle alone, as its own small image (`job.ox` its index among the slab's), gold. */
 function paintSpangle(job: AmberJob, out: Uint8ClampedArray, tri: () => number) {
-  const sp = spanglesOf(job.slab)[job.ox];
-  const { W, H, s, slab } = job;
+  const sp = inclusions(job.slab).spangles[job.ox];
+  const { W, H, s } = job;
   if (!sp) return out;
-  const toward = Math.atan2(slab.lamp[1] - sp.y, slab.lamp[0] - sp.x);
   for (let j = 0; j < H; j++)
     for (let i = 0; i < W; i++) {
       const [x, y] = [sp.x + (i + 0.5 - W / 2) / s, sp.y + (j + 0.5 - H / 2) / s];
       const o = (j * W + i) * 4;
-      const [face, lit] = spangleAt(sp, x, y, toward);
-      out[o] = 255 * GOLD[0];
-      out[o + 1] = 255 * GOLD[1];
-      out[o + 2] = 255 * GOLD[2];
-      out[o + 3] = dither(Math.min(1, 0.8 * face + lit), tri());
+      out[o] = 255;
+      out[o + 1] = 204;
+      out[o + 2] = 104;
+      out[o + 3] = dither(Math.min(1, spangleAt(sp, x, y)), tri());
     }
   return out;
 }
@@ -570,11 +550,12 @@ function paintSpangle(job: AmberJob, out: Uint8ClampedArray, tri: () => number) 
 
 /**
  * What a fossil's creature takes of each colour per unit of its thickness:
- * where it's thickest, multiplied over the amber's light, an olive brown,
- * dark but never black (as the icons' are); where it thins, the amber's
- * own light through it.
+ * where it's thickest, multiplied over the amber's light, dark but never
+ * black (as the icons' are); where it thins, the amber's own light through
+ * it. In a common's honey a grey olive, its red taken nearly as fast as its
+ * green; in a rare's red-gold a deep red-brown.
  */
-const CAUGHT: [number, number, number] = [0.6, 1.25, 3.2];
+const CAUGHT = { common: [0.75, 1.08, 2.6], rare: [0.6, 1.25, 3.2] };
 /** The light that wraps its edges from behind, and the veil of amber in front of it: the amber's pale gold. */
 const WRAP: [number, number, number] = [1, 0.8, 0.32];
 
@@ -618,10 +599,11 @@ function depthIn(inside: Uint8Array, W: number, H: number) {
  * screened over it: the lamp's light wrapping its edges from behind, a hair
  * of it brighter along its edge toward the light (its upper left, as the
  * plate's light falls), and a veil of the amber in front of it all, which
- * it lies in, not on. Both opaque: the emblem's mask cuts them. `grain`,
- * as an AmberJob's.
+ * it lies in, not on. Both opaque: the emblem's mask cuts them. `rare`
+ * and `grain`, as an AmberJob's.
  */
-export function paintInclusion(alpha: Float32Array, W: number, H: number, s: number, grain = 1) {
+export function paintInclusion(alpha: Float32Array, W: number, H: number, s: number, rare: boolean, grain = 1) {
+  const caught = CAUGHT[rare ? 'rare' : 'common'];
   const rnd = stream(W * 31 + H);
   const tri = () => (rnd() + rnd() - 1) * grain;
   const inside = new Uint8Array(W * H);
@@ -649,7 +631,7 @@ export function paintInclusion(alpha: Float32Array, W: number, H: number, s: num
       const wrap = Math.exp(-dIn / 0.5) * 0.12;
       const veil = 0.04;
       for (let c = 0; c < 3; c++) {
-        body[o + c] = dither(Math.exp(-CAUGHT[c] * th), tri());
+        body[o + c] = dither(Math.exp(-caught[c] * th), tri());
         const a = Math.min(1, veil + wrap + 0.45 * edge);
         lit[o + c] = dither(WRAP[c] * a, tri());
       }

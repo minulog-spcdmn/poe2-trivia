@@ -741,14 +741,12 @@ function spandrels(kind: FindKind, p: Plate, sol: Hole, luna: Hole, w: number) {
 // double and a flow inside it, as resin runs down over what it catches: the
 // emblem is caught in it. A rare's seal is the ammonite in a sun of pointed
 // rays, so large it breaks the arch; its sign electrum, amber's old name
-// (Sol in Luna's horns); its drop drawn a third time, and thorns on the
-// arch closing in on it, square to its outline, long and short in turn
-// (not the flare's burst out of a ring). The back holds the ammonite in the
-// mandorla's glory (a rare's in its sun); a row, the drop round the emblem
-// and the ammonite at the row's far end.
-
-/** How fast an ammonite's whorls widen (each `W` times the one inside it) and how many it has: slow and many, so its outline is nearly round, an ammonite's and not a snail's. */
-const AMMONITE = { W: 1.9, turns: 3.9 };
+// (Sol in Luna's horns); its drop drawn a third time, and sap set in runs
+// that hang from the inside of the arch toward the drop like stalactites,
+// their stalagmites on the floor below, mirrored about the card's middle.
+// The back holds the ammonite in the mandorla's glory (a rare's in its
+// sun); a row, the drop round the emblem (a rare's, the ammonite in its sun
+// at the row's far end).
 
 /**
  * An ammonite seen from the side, `R` to the outside of its last whorl:
@@ -759,7 +757,7 @@ const AMMONITE = { W: 1.9, turns: 3.9 };
  * of each whorl turned from the light (the lower right) hatched between its
  * ribs, out from the keel, and the seam under each whorl shaded.
  */
-export function ammonite(p: Plate, c: Pt, R: number, { mouth = 228, turns = AMMONITE.turns, W = AMMONITE.W, ribs = 30 } = {}) {
+export function ammonite(p: Plate, c: Pt, R: number, { mouth = 228, turns = 3.1, W = 2.45, ribs = 26 } = {}) {
   const b = Math.log(W) / 360;
   const rho = (a: number) => R * Math.exp(b * (a - mouth));
   const a0 = mouth - turns * 360;
@@ -806,38 +804,37 @@ export function ammonite(p: Plate, c: Pt, R: number, { mouth = 228, turns = AMMO
 }
 
 /**
- * Where an ammonite sits in a ring, `r` inside it: its spiral's heart, as far
- * from the ring's centre `c` as the shell's outline is lopsided (its last
- * whorl wider than the rest), and its last whorl's size, so the outline's
- * smallest enclosing circle is the ring's, and the shell sits even in it.
+ * Where an ammonite's heart goes, and how large it's drawn, to sit balanced
+ * in a circle `r` about `c`: a spiral's heart isn't its middle (its last
+ * whorl is half again as far from it on the mouth's side as across), so the
+ * shell's own middle (between its outline's box's and its weight's) is put
+ * on `c`, and its farthest point at `r`.
  */
-export function fitAmmonite(c: Pt, r: number, { mouth = 228, W = AMMONITE.W } = {}) {
-  // The outline, round its heart, as the shell is drawn with its last whorl 1 across.
+function ammoniteIn(c: Pt, r: number, mouth = 228, W = 2.45): { heart: Pt; R: number } {
   const b = Math.log(W) / 360;
   const edge: Pt[] = [];
-  for (let a = mouth - 360; a <= mouth; a += 3) edge.push(at([0, 0], a, Math.exp(b * (a - mouth))));
-  // Its smallest enclosing circle: the centre that keeps the farthest point nearest (convex: narrowed in on a grid).
-  const far = (q: Pt) => Math.max(...edge.map((e) => Math.hypot(e[0] - q[0], e[1] - q[1])));
-  let [best, step]: [Pt, number] = [[0, 0], 0.25];
-  for (let k = 0; k < 24; k++) {
-    let next = best;
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]] as Pt[]) {
-      const q: Pt = [best[0] + dx * step, best[1] + dy * step];
-      if (far(q) < far(next)) next = q;
-    }
-    if (next === best) step /= 2;
-    best = next;
+  for (let a = mouth - 360; a <= mouth; a += 2.5) edge.push(at([0, 0], a, Math.exp(b * (a - mouth))));
+  const xs = edge.map((q) => q[0]);
+  const ys = edge.map((q) => q[1]);
+  const box: Pt = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+  // Its weight: the outline's area's centroid.
+  let [A, wx, wy] = [0, 0, 0];
+  for (let i = 0; i < edge.length; i++) {
+    const [p0, p1] = [edge[i], edge[(i + 1) % edge.length]];
+    const x = p0[0] * p1[1] - p1[0] * p0[1];
+    [A, wx, wy] = [A + x, wx + (p0[0] + p1[0]) * x, wy + (p0[1] + p1[1]) * x];
   }
-  const R = r / far(best);
-  return { heart: [c[0] - best[0] * R, c[1] - best[1] * R] as Pt, R };
+  const mid: Pt = [(box[0] + wx / (3 * A)) / 2, (box[1] + wy / (3 * A)) / 2];
+  const R = r / Math.max(...edge.map((q) => Math.hypot(q[0] - mid[0], q[1] - mid[1])));
+  return { heart: [c[0] - mid[0] * R, c[1] - mid[1] * R], R };
 }
 
-/** The fossil's seal: an ammonite in a double ring `r` across, sitting even in it, the plate stopping short of the ring. */
+/** The fossil's seal: an ammonite in a double ring `r` across, balanced in it, the plate stopping short of the ring. */
 export function ammoniteSeal(p: Plate, c: Pt, r: number) {
   p.add(arc(c, r, 0, 360), 'thin');
   p.add(arc(c, r - 1.3, 0, 360), 'hair');
-  const fit = fitAmmonite(c, r - 2.6);
-  ammonite(p, fit.heart, fit.R);
+  const { heart, R } = ammoniteIn(c, r - 3.2);
+  ammonite(p, heart, R);
   p.knockout += disc(c, r + 1.6);
 }
 
@@ -850,8 +847,8 @@ export function ammoniteSeal(p: Plate, c: Pt, r: number) {
 function sunSeal(p: Plate, c: Pt, r0: number, r: number, room: (a: number) => number = () => Infinity) {
   p.add(arc(c, r0, 0, 360), 'thin');
   p.add(arc(c, r0 - 1.3, 0, 360), 'hair');
-  const fit = fitAmmonite(c, r0 - 2.8);
-  ammonite(p, fit.heart, fit.R);
+  const { heart, R } = ammoniteIn(c, r0 - 3.4);
+  ammonite(p, heart, R);
   let fine = '';
   for (let k = 0; k < 16; k++) {
     const a = k * 22.5 + 11.25;
@@ -990,116 +987,159 @@ function fossilGlory(rare: boolean) {
   };
 }
 
-/** A point `s` along a drop's outline from its tip (round `c`, radius `r`, its tip at `tipY`), clockwise, and the way its outline faces there (degrees, its outward normal). */
-function alongDrop(c: Pt, r: number, tipY: number, s: number): { q: Pt; a: number } {
-  const phi = dropTurn(c, r, tipY);
-  const tip: Pt = [c[0], tipY];
-  const side = Math.sqrt(Math.max(0, (c[1] - tipY) ** 2 - r * r));
-  const mirror = s < 0;
-  const t = Math.abs(s);
-  let q: Pt;
-  let a: number;
-  if (t <= side) [q, a] = [lerp(tip, at(c, phi, r), t / side), phi];
-  else {
-    a = phi + ((t - side) / r) * (180 / Math.PI);
-    q = at(c, a, r);
-  }
-  return mirror ? { q: [2 * c[0] - q[0], q[1]], a: -a } : { q, a };
-}
-
-/** How many thorns a rare's drop has either side, on a tall face. */
-const THORNS = 7;
-
-/**
- * A thorn standing at `b`, pointing `a` (degrees), `len` long and `hw`
- * either side at its foot: its sides bowed in (arcs from its foot to its
- * point, a little over half its width deep), a ridge down its middle,
- * hatched down the side turned from the light. Returns its lines and
- * hatching, and its outline for the plate to stop short of.
- */
-function thorn(b: Pt, a: number, len: number, hw: number) {
-  const u = at([0, 0], a, 1);
-  const n: Pt = [-u[1], u[0]];
-  const tip: Pt = [b[0] + u[0] * len, b[1] + u[1] * len];
-  // The side turned from the light (the lower right): hatched.
-  const dark = n[0] * 0.6 + n[1] * 0.8 > 0 ? 1 : -1;
-  const foot = (k: number): Pt => [b[0] + n[0] * hw * k, b[1] + n[1] * hw * k];
-  const [l, r] = [foot(-1), foot(1)];
-  const chord = Math.hypot(tip[0] - l[0], tip[1] - l[1]);
-  const sag = hw * 0.55;
-  const R = (chord * chord) / 4 / (2 * sag) + sag / 2;
-  const lines = `M${pt(l)}A${f(R)} ${f(R)} 0 0 0 ${pt(tip)}A${f(R)} ${f(R)} 0 0 0 ${pt(r)}` + line(b, tip);
-  const hatching = hatch(b, foot(dark * 0.82), lerp(b, tip, 0.86), 0.7);
-  return { lines, hatching, outline: [foot(-1.3), tip, foot(1.3)] as Pt[] };
-}
-
-/**
- * A rare's thorns round its drop (round `c`, radius `r`, its tip at
- * `tipY`), closing in on it: each stands on what frames the drop, `end`
- * away from just off its outline along its normal, and points in at it,
- * square to its outline, so they take the drop's own shape (those at its
- * sides square to them, those round its round toward its middle); `n` either
- * side, spaced evenly along it from beside the tip to short of its foot,
- * long ones to just short of it and short ones halfway, in turn. The plate
- * stops short of each.
- */
-function dropThorns(p: Plate, c: Pt, r: number, tipY: number, k: number, n: number, end: (b: Pt, a: number) => number) {
-  const phi = dropTurn(c, r, tipY);
-  const side = Math.sqrt(Math.max(0, (c[1] - tipY) ** 2 - r * r));
-  // From a little off the tip to 50° short of straight down.
-  const [s0, s1] = [side * 0.16, side + r * (((180 - 50 - phi) * Math.PI) / 180)];
-  for (const m of [1, -1])
-    for (let i = 0; i < n; i++) {
-      const s = s0 + ((s1 - s0) * i) / (n - 1);
-      const { q, a } = alongDrop(c, r, tipY, m * s);
-      const long = i % 2 === 0;
-      const u = at([0, 0], a, 1);
-      const b: Pt = [q[0] + u[0] * 1.2 * k, q[1] + u[1] * 1.2 * k];
-      const out = end(b, a);
-      const len = long ? out - 2.2 * k : (out - 2.2 * k) * 0.5;
-      if (len < 5 * k) continue;
-      const t = thorn([b[0] + u[0] * out, b[1] + u[1] * out], a + 180, len, (long ? 3.4 : 2.6) * k);
-      p.add(t.lines, 'thin');
-      p.add(t.hatching, 'hatch');
-      p.knockout += poly(t.outline);
-    }
-}
-
 /** A rare's sun in Sol's place, on a card 218 wide: its ring, and how far its long rays reach (the flare's burst's reach). */
 const SUN = { ring: 15, rays: 30 };
 
-/** How far a line out of `c` at `a` runs before it meets the arch's inner line (or below the springing, its side's), on a tall face. */
-const toArch = (c: Pt, a: number, g: TallLayout) => {
-  const u = at([0, 0], a, 1);
-  const { A, ri } = g.arch;
-  const [fx, fy] = [c[0] - A[0], c[1] - A[1]];
-  const b = fx * u[0] + fy * u[1];
-  const t = -b + Math.sqrt(b * b - (fx * fx + fy * fy - ri * ri));
-  if (c[1] + u[1] * t > A[1]) return (u[0] > 0 ? A[0] + ri - c[0] : A[0] - ri - c[0]) / u[0];
-  return t;
-};
+/** A run of set sap's measures: half its width where it leaves the arch (`root`), the radius of its rounded foot (`tip`) and of the arcs where it leaves the arch (`rho`); `layered`, whether the run it grew over shows inside it. */
+type Drip = { root: number; tip: number; rho: number; layered: boolean };
 
-/** A fossil's tall face: the resin's drop round the emblem; a rare's thorns standing on the arch, closing in on it, clear of the pedestal. */
+/**
+ * A run of sap hanging from the arch's inner line (round `A`, `ri`) at `x`,
+ * `len` from the line to its foot, as resin hangs once it has set: a
+ * stalactite, not a drop on a thread. Wide where it leaves the line, an arc
+ * either side meeting the line and its side (as sap meets what it runs
+ * from); its sides straight, narrowing to its foot, a small round end they
+ * touch.
+ * Resin sets in layers, each run over the last: in a `layered` one the run
+ * it grew over shows through it, a smaller one inside its lower part, its
+ * sides stopping short. Shaded by a line inside its right side; the plate
+ * stops short of it, and the arch's line runs into it. Given a `floor`, a
+ * stalagmite: the same run standing on the floor's line at that height,
+ * rising `len` from it (`A` and `ri` unused).
+ */
+function sapDrip(p: Plate, A: Pt, ri: number, x: number, len: number, { root, tip, rho, layered }: Drip, floor?: number) {
+  // (A stalagmite is worked out as a run hanging from the floor's line, each point then turned back up about it.)
+  if (floor !== undefined) [A, ri] = [[x, floor + 1e4], 1e4];
+  const Y = (v: Pt): Pt => (floor === undefined ? v : [v[0], 2 * floor - v[1]]);
+  const [no, yes] = floor === undefined ? [0, 1] : [1, 0];
+  const top = A[1] - Math.sqrt(ri * ri - (x - A[0]) ** 2);
+  const T: Pt = [x, top + len - tip];
+  const unit = (v: Pt): Pt => [v[0] / Math.hypot(...v), v[1] / Math.hypot(...v)];
+  /** Where `q + u t` meets the circle `r` about `c`, the larger `t`. */
+  const meet = (q: Pt, u: Pt, c: Pt, r: number) => {
+    const o: Pt = [q[0] - c[0], q[1] - c[1]];
+    const b = o[0] * u[0] + o[1] * u[1];
+    return -b + Math.sqrt(Math.max(0, b * b - (o[0] * o[0] + o[1] * o[1] - r * r)));
+  };
+  /** Where a line from `q` touches the circle `r` about `c` on the `s` side of it. */
+  const touch = (q: Pt, c: Pt, r: number, s: number): Pt => {
+    const d = Math.hypot(q[0] - c[0], q[1] - c[1]);
+    const [ux, uy] = [(q[0] - c[0]) / d, (q[1] - c[1]) / d];
+    const a = Math.acos(Math.min(1, r / d));
+    const both = [a, -a].map((t): Pt => [c[0] + r * (ux * Math.cos(t) - uy * Math.sin(t)), c[1] + r * (ux * Math.sin(t) + uy * Math.cos(t))]);
+    return both.find((v) => s * (v[0] - c[0]) > 0)!;
+  };
+  /** One side (`s`, -1 the left): its line down to where it touches the foot, and the arc joining it to the arch's line. */
+  const side = (s: number) => {
+    const N = touch([x + s * root, top], T, tip, s);
+    // Up the side, and outward from the run's middle.
+    const u = unit([x + s * root - N[0], top - N[1]]);
+    const m: Pt = [-s * u[1], s * u[0]];
+    const out = (q: Pt, d: number): Pt => [q[0] + m[0] * d, q[1] + m[1] * d];
+    // The arc at the arch: `rho` out from the side, `rho` in from the arch's line.
+    const F = (() => {
+      const q = out(N, rho);
+      const t = meet(q, u, A, ri - rho);
+      return [q[0] + u[0] * t, q[1] + u[1] * t] as Pt;
+    })();
+    return { F, N, m, atArch: [A[0] + ((F[0] - A[0]) * ri) / (ri - rho), A[1] + ((F[1] - A[1]) * ri) / (ri - rho)] as Pt, top: out(F, -rho) };
+  };
+  const [L, R] = [side(-1), side(1)];
+  const [r, q] = [f(rho), f(tip)];
+  p.add(`M${pt(Y(L.atArch))}A${r} ${r} 0 0 ${yes} ${pt(Y(L.top))}L${pt(Y(L.N))}A${q} ${q} 0 1 ${no} ${pt(Y(R.N))}L${pt(Y(R.top))}A${r} ${r} 0 0 ${yes} ${pt(Y(R.atArch))}`, 'thin');
+  // The run it grew over, inside its lower part: half as round at the foot, which stands a quarter of the run higher, its sides stopping short a third of the way down.
+  let shade = '';
+  if (layered) {
+    const t2 = tip * 0.5;
+    const T2: Pt = [x, T[1] - len * 0.24];
+    const [l, rr] = [-1, 1].map((s) => touch([x + s * (root - tip + t2) * 0.62, top], T2, t2, s));
+    const upTo = top + len * 0.36;
+    const along = (v: Pt, s: number): Pt => {
+      const u = unit([x + s * (root - tip + t2) * 0.62 - v[0], top - v[1]]);
+      const t = (upTo - v[1]) / u[1];
+      return [v[0] + u[0] * t, v[1] + u[1] * t];
+    };
+    const t2s = f(t2);
+    shade += `M${pt(Y(along(l!, -1)))}L${pt(Y(l!))}A${t2s} ${t2s} 0 1 ${no} ${pt(Y(rr!))}L${pt(Y(along(rr!, 1)))}`;
+  }
+  // Down its right side, turned from the light, inside it.
+  const inset = Math.min(0.6, tip * 0.45);
+  const [a0, a1] = [lerp(R.top, R.N, 0.1), lerp(R.top, R.N, 0.94)];
+  shade += line(Y([a0[0] - R.m[0] * inset, a0[1] - R.m[1] * inset]), Y([a1[0] - R.m[0] * inset, a1[1] - R.m[1] * inset]));
+  p.add(shade, 'hatch');
+  // The plate stops short of it: its outline moved out (its arcs' circles shrunk, its foot's grown), and across the arch's line between where its arcs meet it.
+  const gap = Math.min(1.2, rho * 0.7);
+  const angle = (c: Pt, v: Pt) => (Math.atan2(v[0] - c[0], -(v[1] - c[1])) * 180) / Math.PI;
+  const round = (c: Pt, rr: number, from: Pt, to: Pt, way: 1 | -1, k = 6) => {
+    const a0 = angle(c, from);
+    let a1 = angle(c, to);
+    while (way * (a1 - a0) < 0) a1 += way * 360;
+    return Array.from({ length: k + 1 }, (_, i) => at(c, a0 + ((a1 - a0) * i) / k, rr));
+  };
+  const up = (v: Pt): Pt => [A[0] + ((v[0] - A[0]) * (ri + 0.7)) / ri, A[1] + ((v[1] - A[1]) * (ri + 0.7)) / ri];
+  const shape: Pt[] = [
+    up(L.atArch),
+    ...round(L.F, rho - gap, L.atArch, L.top, 1),
+    ...round(T, tip + gap, L.N, R.N, -1, 18),
+    ...round(R.F, rho - gap, R.top, R.atArch, 1),
+    up(R.atArch),
+  ];
+  p.knockout += poly(shape.map(Y));
+}
+
+/**
+ * A rare's sap on a tall face, set where it ran: runs of it hanging from
+ * the arch's inner line toward the drop, five either side of the card's
+ * middle, mirrored about it, short and long in turn, each long one as far
+ * as the drop lets it run (short of the drop's third line and the gap round
+ * it), so their feet follow the drop's outline, and the short ones about
+ * half that. The long ones grown in layers. Under the outer ones, on the
+ * floor clear of the pedestal, their stalagmites, rising to meet them as
+ * far as the drop lets them, long under long and short under short.
+ */
+function sapDrips(p: Plate, g: TallLayout, d: ReturnType<typeof tallDrop>) {
+  const { A, ri } = g.arch;
+  const k = d.k;
+  const clear = dropPoly(d.c, d.r + 2.6 * k + 6 * k, d.tipY - (2.6 + 6) * k * 1.5);
+  const cap = 46 * k;
+  for (let i = 0; i < 5; i++) {
+    const long = i % 2 === 1;
+    const deg = 14 + i * 12.5;
+    for (const s of [-1, 1]) {
+      const x = A[0] + s * ri * Math.sin(rad(deg));
+      const top = A[1] - Math.sqrt(ri * ri - (x - A[0]) ** 2);
+      const cut = inPoly([x, top], [x, top + 400], clear);
+      const room = Math.min(cap, cut ? cut[0] * 400 : Infinity);
+      const len = long ? room : Math.min(room, Math.max(9 * k, room * 0.52));
+      if (len < 8 * k) continue;
+      sapDrip(p, A, ri, x, len, long ? { root: 3.4 * k, tip: 1.35 * k, rho: 2 * k, layered: len > 24 * k } : { root: 2.8 * k, tip: 1.15 * k, rho: 1.7 * k, layered: false });
+      // Its stalagmite on the floor under it, where the floor's clear of the pedestal and the arch's side; a little slimmer, as the floor's narrow there.
+      const drip = long ? { root: 3 * k, tip: 1.35 * k, rho: 1.6 * k } : { root: 2.4 * k, tip: 1.15 * k, rho: 1.4 * k };
+      const reach = drip.root + drip.rho + 1.2;
+      if (Math.abs(x - A[0]) - reach < g.pedestal.baseR + 2.5 || Math.abs(x - A[0]) + reach > ri - 1) continue;
+      const rise = inPoly([x, g.floor], [x, g.floor - 400], clear);
+      const up = Math.min(cap, rise ? rise[0] * 400 : Infinity, g.floor - (top + len) - 14 * k);
+      const tall = long ? up : Math.min(up, Math.max(9 * k, up * 0.52));
+      if (tall >= 8 * k) sapDrip(p, A, ri, x, tall, { ...drip, layered: long && tall > 24 * k }, g.floor);
+    }
+  }
+}
+
+/** A fossil's tall face: the resin's drop round the emblem; a rare's sap dripping from the arch toward it. */
 function fossilTall(p: Plate, g: TallLayout, rare: boolean) {
   const d = tallDrop(g);
   resinDrop(p, d.c, d.r, d.tipY, { polys: [grow(pedestal(g), 1.5)], holes: [] }, rare, d.k);
-  if (!rare) return;
-  // Round the drop's third line, each on the arch's inner line (none whose foot would stand below the pedestal's cap).
-  const [r0, t0] = dropIn(d.c, d.r, d.tipY, -2.6 * d.k);
-  dropThorns(p, d.c, r0, t0, d.k, THORNS, (b, a) => {
-    const out = toArch(b, a, g) - 0.7;
-    return b[1] + at([0, 0], a, out)[1] > g.pedestal.capTop - 6 ? 0 : out;
-  });
+  if (rare) sapDrips(p, g, d);
 }
 
-/** A fossil in a row: the drop round the emblem (a rare's thorns need the arch to stand on, so a row has none), and the ammonite at the row's far end (a rare's in its sun). */
+/** A fossil in a row: the drop round the emblem (a rare's sap needs the arch to hang from, so a row has none); a rare's ammonite in its sun at the row's far end, a common's row bare there. */
 function fossilRow(p: Plate, g: RowLayout, rare: boolean) {
   const d = rowDrop(g);
   const k = Math.min(1, d.k);
   resinDrop(p, d.c, d.r, d.tipY, NONE, rare, k);
+  if (!rare) return;
   const r = Math.min(g.h * 0.32, 35);
   const c: Pt = [g.w - r - 13, g.h / 2];
-  if (!rare) return ammoniteSeal(p, c, r * 0.86);
   // Its sun short of the row's edges.
   const room = (a: number) => {
     const u = at([0, 0], a, 1);
@@ -1136,7 +1176,7 @@ function fossilSpandrels(p: Plate, sol: Hole, luna: Hole, w: number, rare: boole
     return;
   }
   // The plate stops short of its ring.
-  ammoniteSeal(p, sol.c, Math.min(sol.r * 1.12, 14.6 * k));
+  ammoniteSeal(p, sol.c, Math.min(sol.r * 1.15, 15 * k));
   earthSign(p, luna.c, luna.r * 0.86);
 }
 

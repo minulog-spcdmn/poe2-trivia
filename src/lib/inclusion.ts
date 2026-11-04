@@ -9,9 +9,9 @@
 import { inclusionImages } from './amberImage';
 import { layoutZoomOf, zoomOf } from './stage';
 
-export type InclusionPart = { url: string; part: 'body' | 'rim' } | null;
+export type InclusionPart = { url: string; part: 'body' | 'rim'; rare: boolean } | null;
 
-/** Svelte action: `node`'s background, the emblem at `url` as the amber caught it, its `part`. */
+/** Svelte action: `node`'s background, the emblem at `url` as the amber caught it (a rare's or a common's), its `part`. */
 export function inclusion(node: HTMLElement, at: InclusionPart) {
   let run = 0;
   let frame = 0;
@@ -27,7 +27,7 @@ export function inclusion(node: HTMLElement, at: InclusionPart) {
     const s = Math.min(4, Math.round(z * devicePixelRatio * 100) / 100);
     // (A sharp face's filter leaves about a third of the grain: stirred three times as hard there.)
     const grain = z / zoomOf(node) > 1.5 ? 3 : 1;
-    const got = await inclusionImages(at.url, bw, bh, s, grain);
+    const got = await inclusionImages(at.url, bw, bh, s, at.rare, grain);
     if (mine !== run) return;
     if (got) node.style.backgroundImage = `url('${got[at.part]}')`;
     else node.style.removeProperty('background-image');
@@ -42,7 +42,7 @@ export function inclusion(node: HTMLElement, at: InclusionPart) {
   seen.observe(node);
   return {
     update(next: InclusionPart) {
-      if (next?.url === at?.url && next?.part === at?.part) return;
+      if (next?.url === at?.url && next?.part === at?.part && next?.rare === at?.rare) return;
       at = next;
       later();
     },

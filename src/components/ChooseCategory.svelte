@@ -850,6 +850,23 @@
     tiltTo(frame, (0.5 - y) * 20, (x - 0.5) * 24);
     const light = frame.querySelector<HTMLElement>('.glare > .light');
     if (light) glareAt(light, x, y);
+    const hand = frame.querySelector<HTMLElement>('.amber .hand > .spot');
+    if (hand) handAt(hand, x, y);
+  }
+  /**
+   * Moves the light held behind a fossil's amber (FossilAmber's .hand) to
+   * `x`, `y` (across and down the card, 0 to 1), by its transform only: its
+   * middle there, as the slab inside the face's rim lies.
+   */
+  function handAt(spot: HTMLElement, x: number, y: number) {
+    const box = spot.parentElement!;
+    const [w, h] = [box.offsetWidth, box.offsetHeight];
+    const card = spot.closest('.frame') as HTMLElement;
+    const [cw, ch] = [card.offsetWidth, card.offsetHeight];
+    // (The slab's own fractions: it lies (cw - w) / 2 in from the face's edge.)
+    const [sx, sy] = [(x * cw - (cw - w) / 2) / w, (y * ch - (ch - h) / 2) / h];
+    const side = spot.offsetWidth;
+    spot.style.transform = `translate(${(((sx * w) / side) * 100 - 50).toFixed(2)}%, ${(((sy * h) / side) * 100 - 50).toFixed(2)}%)`;
   }
   /** How far the glare reaches: it fades out this far towards the card's farthest corner from it. */
   const GLARE_REACH = 0.45;
@@ -1047,7 +1064,8 @@
               {:else if isWayOut(cat)}
                 <span class="find-tag out-tag" data-zoom>{out.tag(haul)}</span>
               {/if}
-              <span class="icon" class:none={isWayOut(cat)}>
+              <!-- The emblem, the items behind it, and (on a fossil) each as the amber caught it, its `part`. -->
+              {#snippet emblem(part?: 'body' | 'rim')}
                 {#if heap}
                   {@const at = heap.at}
                   <span class="lit moons" style:--spread={heap.spread}>
@@ -1055,19 +1073,18 @@
                       {#if at[c.kind]}
                         {@const [x, y, k, turn] = at[c.kind]}
                         <span class="moon" style:--mx={x} style:--my={y} style:--mk={k} style:--mr={turn}
-                          ><span class="glyph" class:fit={!!fits[c.url]} style={fitStyle(c.url, { k })} style:--src="url('{maskOf(c.url)}')" use:fineMask={maskOf(c.url)}></span></span
+                          ><span class="glyph" class:fit={!!fits[c.url]} style={fitStyle(c.url, { k })} style:--src="url('{maskOf(c.url)}')" use:fineMask={maskOf(c.url)} use:inclusion={part ? { url: maskOf(c.url), part, rare: fossilTierAt(cat) === 'rare' } : null}></span></span
                         >
                       {/if}
                     {/each}
                   </span>
                 {/if}
-                <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')" use:fineMask={maskOf(iconOf(cat))} use:inclusion={fossilTierAt(cat) ? { url: maskOf(iconOf(cat)), part: 'body' } : null}></span></span>
-              </span>
+                <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')" use:fineMask={maskOf(iconOf(cat))} use:inclusion={part ? { url: maskOf(iconOf(cat)), part, rare: fossilTierAt(cat) === 'rare' } : null}></span></span>
+              {/snippet}
+              <span class="icon" class:none={isWayOut(cat)}>{@render emblem(fossilTierAt(cat) ? 'body' : undefined)}</span>
               {#if fossilTierAt(cat)}
-                <!-- A fossil's emblem again, only the light along its edge toward the lamp: screened, where the emblem itself is multiplied. -->
-                <span class="icon rimlight" aria-hidden="true"
-                  ><span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')" use:fineMask={maskOf(iconOf(cat))} use:inclusion={{ url: maskOf(iconOf(cat)), part: 'rim' }}></span></span
-                ></span>
+                <!-- A fossil's emblem and the items behind it again, only the light along their edges toward the lamp: screened, where they themselves are multiplied. -->
+                <span class="icon rimlight" aria-hidden="true">{@render emblem('rim')}</span>
               {/if}
               {#if kindOf(cat) === 'azurite'}
                 <!-- The vein's crystals in the corner stand in front of the item. -->
@@ -2253,9 +2270,9 @@
     opacity: 1;
     scale: 1.05;
   }
-  /* The glare on it is the polished slab's: brighter than a plain card's. */
-  .card[data-fossil] .glare > .light {
-    background: radial-gradient(circle closest-side, rgba(255, 240, 200, 0.2), transparent);
+  /* No glare on its face: the pointer's light shines through the amber from behind instead (FossilAmber's .hand). */
+  .card[data-fossil] .frame > .glare {
+    display: none;
   }
   .card.special .glyph {
     background: var(--f-glyph);

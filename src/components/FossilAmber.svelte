@@ -42,7 +42,7 @@
    * face's on a dpr 2 screen.
    */
   let s = $state(0);
-  /** How much harder the grain is stirred: 3 on a sharp face, whose filter leaves about a third of it, else 1 (lib/amber's AmberJob). */
+  /** How much harder the grain is stirred: 5 on a sharp face, whose filter leaves about a third of it (at 3 the dark edges still banded), else 1 (lib/amber's AmberJob). */
   let grain = $state(1);
 
   function sized(node: HTMLElement) {
@@ -50,7 +50,7 @@
       const [cw, ch] = [node.clientWidth, node.clientHeight];
       const z = layoutZoomOf(node);
       const k = Math.min(4, Math.round(z * devicePixelRatio * 100) / 100);
-      const g = z / zoomOf(node) > 1.5 ? 3 : 1;
+      const g = z / zoomOf(node) > 1.5 ? 5 : 1;
       if (cw !== w || ch !== h || k !== s || g !== grain) [w, h, s, grain] = [cw, ch, k, g];
     };
     const ro = new ResizeObserver(look);
@@ -118,6 +118,8 @@
         {#each parts as part, i (i)}<img src={urls[i]} alt="" style:top="{part.top}px" style:height="{part.height}px" />{/each}
       </span>
       {#if side === 'face' && lamp}
+        <!-- A light held behind it where the pointer is (ChooseCategory's tilt moves it), while the card's hovered. -->
+        <span class="layer hand"><span class="spot"></span></span>
         <span class="layer bloom lamp" style={wide}><span class="fill" style:background={lamp.bloom}></span></span>
       {/if}
       {#each spangles as sp (sp.i)}
@@ -188,6 +190,46 @@
   .bloom,
   .spangle {
     mix-blend-mode: screen;
+  }
+  /* A light held behind the slab where the pointer is, while the card's
+     hovered: the amber shines through there, in its own colours, as it does
+     where more light comes through it from behind (each colour it lets
+     through scaled up, the red first filling to the full and going gold);
+     what's caught in it stays dark against it and the lines cut on it stay
+     unlit, as both lie over it. Not a glare on the face, which is white
+     wherever it falls. Dodged over the amber: a grey's v scales what's
+     under it by 1 / (1 - v), and its black leaves it as it is. Its own
+     layer, moved by its transform only (ChooseCategory's handAt). */
+  .hand {
+    overflow: clip;
+    opacity: 0;
+    transition: opacity 0.35s;
+    mix-blend-mode: color-dodge;
+  }
+  .spot {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 120%;
+    aspect-ratio: 1;
+    background: radial-gradient(
+      circle closest-side,
+      rgb(128 121 106) 0%,
+      rgb(122 115 100) 8%,
+      rgb(106 99 85) 18%,
+      rgb(84 78 66) 30%,
+      rgb(60 55 46) 44%,
+      rgb(37 34 28) 58%,
+      rgb(18 16 13) 74%,
+      rgb(6 5 4) 88%,
+      rgb(0 0 0) 100%
+    );
+    /* (At rest, behind the emblem.) */
+    transform: translate(-8.3%, -6%);
+    will-change: transform;
+  }
+  :global(.card.mine:not(.down):hover) .hand {
+    opacity: 1;
   }
   /* The lamp: its swing with the tilt is set a frame at a time while the
      card tilts (.tilting); once the pointer's gone, it eases back. (A layer

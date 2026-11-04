@@ -5,8 +5,8 @@
 
 import { paintAmber, paintInclusion, type AmberJob } from './amber';
 
-/** An emblem caught in the amber: its mask's image, drawn W x H at `s` device px to a layout px. */
-export type InclusionJob = { image: Blob; W: number; H: number; s: number; grain: number };
+/** An emblem caught in the amber: its mask's image, drawn W x H at `s` device px to a layout px, in a rare's amber or a common's. */
+export type InclusionJob = { image: Blob; W: number; H: number; s: number; rare: boolean; grain: number };
 export type AmberAsk = { id: number; job: AmberJob } | { id: number; inclusion: InclusionJob };
 export type AmberAnswer = { id: number; png?: Blob; rim?: Blob };
 
@@ -23,7 +23,7 @@ self.onmessage = async ({ data }: MessageEvent<AmberAsk>) => {
       self.postMessage({ id: data.id, png: await png(paintAmber(data.job), W, H) } satisfies AmberAnswer);
       return;
     }
-    const { image, W, H, s, grain } = data.inclusion;
+    const { image, W, H, s, rare, grain } = data.inclusion;
     const bitmap = await createImageBitmap(image);
     const canvas = new OffscreenCanvas(W, H);
     const g = canvas.getContext('2d', { willReadFrequently: true })!;
@@ -32,7 +32,7 @@ self.onmessage = async ({ data }: MessageEvent<AmberAsk>) => {
     const rgba = g.getImageData(0, 0, W, H).data;
     const alpha = new Float32Array(W * H);
     for (let p = 0; p < W * H; p++) alpha[p] = rgba[p * 4 + 3] / 255;
-    const { body, rim } = paintInclusion(alpha, W, H, s, grain);
+    const { body, rim } = paintInclusion(alpha, W, H, s, rare, grain);
     const [b, r] = await Promise.all([png(body, W, H), png(rim, W, H)]);
     self.postMessage({ id: data.id, png: b, rim: r } satisfies AmberAnswer);
   } catch {
