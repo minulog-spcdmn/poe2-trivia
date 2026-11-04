@@ -3,6 +3,7 @@
   import { cubicOut } from 'svelte/easing';
   import { session } from '../lib/session.svelte';
   import { inFrame, onceFontsIn } from '../lib/inFrame';
+  import { nameFit } from '../lib/creator';
   import { pageScroll } from '../lib/pageScroll';
   import { playerColor } from '../lib/ui';
   import Scoreboard from './Scoreboard.svelte';
@@ -214,8 +215,9 @@
    */
   function evenFaces(node: HTMLElement) {
     const measure = () => {
-      // (Ceiled a pixel past, as scrollWidth rounds: a name exactly its width never shows an ellipsis.)
-      const w = Math.max(0, ...[...node.querySelectorAll<HTMLElement>('.face b')].map((b) => b.scrollWidth));
+      // (Ceiled a pixel past, as the widths round: a name exactly its width never shows an ellipsis. The creator's,
+      // whose box keeps room round it for its glow, read from its letters: nameFit, lib/creator.ts.)
+      const w = Math.max(0, ...[...node.querySelectorAll<HTMLElement>('.face b')].map((b) => nameFit(b).letters));
       node.style.setProperty('--name-w', `${w + 1}px`);
     };
     // In the frame's animation frame, as it mounts and again as its font comes in (lib/inFrame.ts).
@@ -998,6 +1000,12 @@
     font-family: var(--font-display);
     font-size: max(0.85rem, calc(var(--R) * 0.055));
     color: #ffe0d4;
+  }
+  /* The creator's name glows: its clip keeps room for the glow all round (app.css, --foil-room), the letters as wide as before. */
+  .face b:has(> :global(.creator)) {
+    max-width: calc(100% + 2 * var(--foil-room));
+    padding: var(--foil-room);
+    margin: calc(-1 * var(--foil-room));
   }
   .vs {
     height: var(--face);

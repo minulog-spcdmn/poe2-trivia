@@ -244,6 +244,11 @@
     font-size: 0.95rem;
     color: var(--text);
   }
+  /* The creator's name glows: its clip keeps room for the glow all round (app.css, --foil-room). */
+  .name:has(> :global(.creator)) {
+    padding: var(--foil-room);
+    margin: calc(-1 * var(--foil-room));
+  }
   .name em {
     color: var(--muted);
   }
