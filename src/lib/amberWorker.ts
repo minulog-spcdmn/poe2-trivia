@@ -1,13 +1,17 @@
 // Paints the fossils' amber (lib/amber.ts) away from the page's main thread:
 // a card's amber is up to a million pixels, each worked out from its
 // thickness, its pours and planes and what lies in it, a few hundred ms of
-// the CPU; and what a fossil's emblem is in it (its body and rim, from its mask).
+// the CPU; and what a fossil's emblem is in it (its body and rim, from its mask);
+// and the light a kept fossil gives off in the codex (lib/fossilGlow.ts).
 
 import { paintAmber, paintInclusion, type AmberJob } from './amber';
+import { GLOW_SIDE, paintGlow } from './fossilGlow';
 
 /** An emblem caught in the amber: its mask's image, drawn W x H at `s` device px to a layout px, in a rare's amber or a common's. */
 export type InclusionJob = { image: Blob; W: number; H: number; s: number; rare: boolean; grain: number };
-export type AmberAsk = { id: number; job: AmberJob } | { id: number; inclusion: InclusionJob };
+/** A kept fossil's glow: its art's image, and whether it is a rare one. */
+export type GlowJob = { image: Blob; rare: boolean };
+export type AmberAsk = { id: number; job: AmberJob } | { id: number; inclusion: InclusionJob } | { id: number; glow: GlowJob };
 export type AmberAnswer = { id: number; png?: Blob; rim?: Blob };
 
 const png = (px: Uint8ClampedArray, W: number, H: number) => {
@@ -21,6 +25,14 @@ self.onmessage = async ({ data }: MessageEvent<AmberAsk>) => {
     if ('job' in data) {
       const { W, H } = data.job;
       self.postMessage({ id: data.id, png: await png(paintAmber(data.job), W, H) } satisfies AmberAnswer);
+      return;
+    }
+    if ('glow' in data) {
+      const art = await createImageBitmap(data.glow.image);
+      const canvas = new OffscreenCanvas(GLOW_SIDE, GLOW_SIDE);
+      const px = paintGlow(canvas.getContext('2d', { willReadFrequently: true })!, art, data.glow.rare);
+      art.close();
+      self.postMessage({ id: data.id, png: await png(px, GLOW_SIDE, GLOW_SIDE) } satisfies AmberAnswer);
       return;
     }
     const { image, W, H, s, rare, grain } = data.inclusion;

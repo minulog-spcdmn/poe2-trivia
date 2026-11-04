@@ -145,6 +145,8 @@ function outlineOf(id: FossilId): Promise<string | null> {
       }
     })();
     outlines.set(id, made);
+    // (Not kept if it failed: made again for the next reveal.)
+    void made.then((url) => url || outlines.delete(id));
   }
   return made;
 }

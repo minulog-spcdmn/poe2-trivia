@@ -393,12 +393,17 @@
    * Delve: the fossil on a card (lib/fossils.ts), as dealt, kept like the
    * finds while the chosen card's moment plays. A tag on an ordinary card:
    * its category stays, and no note goes under the cards (the tag says it).
+   * Taken from the deal while the cards are open, and held as it was once
+   * they close: what a card shows doesn't change under it.
    */
-  let dealtFossil: CardFossil | null = null;
-  const fossilShown = $derived.by(() => {
-    if (s.phase === 'choosing') dealtFossil = fossilOffer(s);
-    else if (s.question?.fossil && !dealtFossil) dealtFossil = { category: s.question.category, tier: s.question.fossil };
-    return dealtFossil;
+  let fossilShown = $state.raw<CardFossil | null>(null);
+  $effect.pre(() => {
+    if (s.phase === 'choosing') fossilShown = fossilOffer(s);
+    // Come in after the cards closed (no deal seen): the question in play still says what its card was.
+    else if (s.question?.fossil) {
+      const dealt = { category: s.question.category, tier: s.question.fossil };
+      untrack(() => (fossilShown ??= dealt));
+    }
   });
   /** The tier of the fossil on a card, or null: never which fossil (that is drawn on the right answer). */
   const fossilTierAt = (cat: string): FossilTier | null => (fossilShown?.category === cat ? fossilShown.tier : null);

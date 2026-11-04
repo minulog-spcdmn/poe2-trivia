@@ -976,8 +976,9 @@ export function gameScenes(): Scene[] {
     ),
     // A fossil on the team's cards with Doryani's one for the run already
     // found (the card is for the others, its note says so), and one cleared,
-    // played as it happens: only the one who named it keeps it, and its
-    // piece flies on their screen alone.
+    // played as it happens: everyone standing who can take one keeps one of
+    // their own (Doryani none, having had this run's), each piece flying on
+    // its keeper's screen.
     scene(
       'delve-together-fossil',
       'Delve together',

@@ -99,10 +99,10 @@
   import { onStoredElsewhere } from '../../lib/storage';
   import { shownDepth } from '../../lib/delve';
   import { backdropShadow } from '../../lib/backdropShadow';
-  import { fossilGlow } from '../../lib/fossilGlow';
+  import { fossilGlow } from '../../lib/amberImage';
   import { motion } from '../../lib/motion.svelte';
 
-  /** Svelte action: a kept fossil's light (lib/fossilGlow.ts) into its image once made. */
+  /** Svelte action: a kept fossil's light (lib/fossilGlow.ts, made in a worker: lib/amberImage.ts) into its image once made. */
   function glowOf(node: HTMLImageElement, f: Fossil) {
     let live = true;
     void fossilGlow(f.id, f.rare).then((url) => {
@@ -216,6 +216,9 @@
     if (open && chosen) place();
   });
   // While it shows: kept beside its slot as the set's width changes, and put away by a press anywhere off the set, or Escape.
+  // Escape is heard before anything else on the page (on the window, in capture) and taken (default prevented), so it
+  // puts away only the tooltip: the dialog round the set (FossilsDialog, lib/dialogBackdrop.ts) leaves a key already
+  // had, and a second Escape closes it.
   $effect(() => {
     if (!open || !root) return;
     const sized = new ResizeObserver(() => place());
@@ -224,14 +227,16 @@
       if (!(e.target instanceof Element) || !e.target.closest('.cell') || !root!.contains(e.target)) open = false;
     };
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') open = false;
+      if (e.key !== 'Escape' || e.defaultPrevented || e.isComposing) return;
+      e.preventDefault();
+      open = false;
     };
     document.addEventListener('pointerdown', off, true);
-    document.addEventListener('keydown', key);
+    addEventListener('keydown', key, true);
     return () => {
       sized.disconnect();
       document.removeEventListener('pointerdown', off, true);
-      document.removeEventListener('keydown', key);
+      removeEventListener('keydown', key, true);
     };
   });
   $effect(() => () => clearTimeout(linger));

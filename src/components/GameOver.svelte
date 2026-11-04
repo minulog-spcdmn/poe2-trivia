@@ -62,7 +62,7 @@
   // Read as the screen comes in, not a moment after, so what they fill (your lives, what you earned) is there in its first
   // frame instead of pushing the column down. (The game has loaded both by its end anyway.)
   import { loadCodex } from '../lib/codex';
-  import { FOSSIL_FROM, fossilArt, fossilById, type FossilId } from '../lib/fossils';
+  import { FOSSIL_FROM, fossilArt, fossilArticle, fossilById, type FossilId } from '../lib/fossils';
   import { loadFossils } from '../lib/fossilStore';
   import { achievementById, type Achievement } from '../lib/achievements';
   import { readsShellHeights } from '../lib/shellHeights.svelte';
@@ -78,8 +78,6 @@
     | { kind: 'held' | 'none' | 'all'; count: number; total: number };
   /** A line among the run's facts: the engine's, or the fossil line. */
   type Fact = Line | { fossil: FossilFact };
-  const anOrA = (name: string) => (/^[AEIOU]/.test(name) ? 'an' : 'a');
-
 
   // The end of a game, as the lobby is laid out: on the left the result in
   // a rune circle, the eye or the monad, or after a Delve the moth (the
@@ -939,7 +937,7 @@
     <li class="fossil-line prize" class:rare={fossil.rare} data-fossil="found">
       <span class="ic" aria-hidden="true"><img class="kept-ic" src={fossilArt(f.id, 128)} alt="" use:backdropDropShadow /></span>
       <span class="txt">
-        <span class="kept">Kept {anOrA(fossil.name)} <span class="fossil-name">{fossil.name}</span></span>
+        <span class="kept">Kept {fossilArticle(f.id)} <span class="fossil-name">{fossil.name}</span></span>
         <span class="kept-at">at depth <b class="n">{f.depth}</b>; {@render count(f, '')}.</span>
       </span>
     </li>

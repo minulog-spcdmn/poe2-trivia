@@ -90,11 +90,10 @@ const BY_ID = new Map(FOSSILS.map((f) => [f.id as string, f]));
 export const isFossilId = (v: unknown): v is FossilId => typeof v === 'string' && BY_ID.has(v);
 export const fossilById = (id: FossilId): Fossil => BY_ID.get(id)!;
 
+/** The article a fossil's name takes in a sentence: an (Aberrant Fossil), a (Jagged Fossil). */
+export const fossilArticle = (id: FossilId) => (/^[AEIOU]/.test(fossilById(id).name) ? 'an' : 'a');
 /** A fossil's name with its article, as a sentence names it: an Aberrant Fossil, a Jagged Fossil. */
-export const aFossil = (id: FossilId) => {
-  const name = fossilById(id).name;
-  return `${/^[AEIOU]/.test(name) ? 'an' : 'a'} ${name}`;
-};
+export const aFossil = (id: FossilId) => `${fossilArticle(id)} ${fossilById(id).name}`;
 
 /** A fossil's picture (public/fossils/, upscaled as the items' are: scripts/upscale-art.py --fossils), full size or its `size` px copy. */
 export const fossilArt = (id: FossilId, size?: 128 | 256) => `${import.meta.env.BASE_URL}fossils/${size ? `${size}/` : ''}${encodeURIComponent(id)}.avif`;

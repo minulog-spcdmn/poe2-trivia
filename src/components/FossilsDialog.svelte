@@ -5,7 +5,7 @@
   // a cheat sheet), but the set shows no item's knowledge, so it can.
   import { onMount } from 'svelte';
   import { fade } from 'svelte/transition';
-  import { dialogBackdrop } from '../lib/behindDialog';
+  import { dialogBackdrop } from '../lib/dialogBackdrop';
   import { dialogIn, dialogOut } from '../lib/dialogIn';
   import type { FossilStore } from '../lib/fossilStore';
   import DelveFossils from './codex/DelveFossils.svelte';
@@ -15,9 +15,10 @@
   let box = $state<HTMLElement>();
   onMount(() => box?.focus());
 
-  /** Escape closes; Tab keeps cycling through the dialog's own buttons. */
+  /** Escape closes (unless the set had it first: its tooltip up); Tab keeps cycling through the dialog's own buttons. */
   function onkeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
+      if (e.defaultPrevented) return;
       e.stopPropagation();
       onclose();
       return;

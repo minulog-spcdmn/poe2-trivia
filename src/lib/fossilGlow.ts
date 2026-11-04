@@ -6,13 +6,14 @@
 // nearer one the light's warm middle, the wider one falling to the edge's
 // ember, so the light cools as it leaves the stone, as lamplight through
 // amber does. Rounded to 8 bits with a triangular dither, or its fall-off bands.
-// Made once per fossil and size, kept as an object URL.
+// Painted here for a canvas, the page's or a worker's: in the amber's workers
+// (amberImage.ts's fossilGlow, amberWorker.ts), once per fossil and kind, as a
+// set mounting with most of its 25 kept would hold the page a while.
 
-import { fossilArt, type FossilId } from './fossils';
-
-/** The art's side (px) the glow is made from, and the room round it for the light to spread into. */
+/** The art's side (px) the glow is made from, the room round it for the light to spread into, and the whole image's side. */
 export const GLOW_ART = 128;
 export const GLOW_PAD = 64;
+export const GLOW_SIDE = GLOW_ART + 2 * GLOW_PAD;
 
 /** Each light: its colour (sRGB 0-1), its strength, and its spread (px of the art). */
 type Light = { c: [number, number, number]; a: number; sigma: number };
@@ -29,38 +30,21 @@ const LIGHTS: Record<'common' | 'rare', Light[]> = {
   ],
 };
 
-const made = new Map<string, Promise<string>>();
-
-/** The glow's image (an object URL), for the art drawn GLOW_ART across with GLOW_PAD round it. */
-export function fossilGlow(id: FossilId, rare: boolean): Promise<string> {
-  const key = `${id}:${rare ? 1 : 0}`;
-  let p = made.get(key);
-  if (!p) {
-    p = make(id, rare);
-    made.set(key, p);
-  }
-  return p;
-}
-
-async function make(id: FossilId, rare: boolean): Promise<string> {
-  const img = new Image();
-  img.decoding = 'async';
-  img.src = fossilArt(id, GLOW_ART);
-  await img.decode();
-  const side = GLOW_ART + 2 * GLOW_PAD;
-  const cv = document.createElement('canvas');
-  cv.width = cv.height = side;
-  const cx = cv.getContext('2d', { willReadFrequently: true })!;
+/**
+ * The glow of the art in `art`, drawn GLOW_ART across with GLOW_PAD round it
+ * on `cx` (a canvas GLOW_SIDE square, the page's or a worker's): its pixels.
+ */
+export function paintGlow(cx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, art: ImageBitmap, rare: boolean): Uint8ClampedArray {
+  const side = GLOW_SIDE;
   // As object-fit: contain lays it in its square.
-  const k = GLOW_ART / Math.max(img.naturalWidth, img.naturalHeight);
-  const [w, h] = [img.naturalWidth * k, img.naturalHeight * k];
-  cx.drawImage(img, GLOW_PAD + (GLOW_ART - w) / 2, GLOW_PAD + (GLOW_ART - h) / 2, w, h);
-  const px = cx.getImageData(0, 0, side, side);
+  const k = GLOW_ART / Math.max(art.width, art.height);
+  const [w, h] = [art.width * k, art.height * k];
+  cx.drawImage(art, GLOW_PAD + (GLOW_ART - w) / 2, GLOW_PAD + (GLOW_ART - h) / 2, w, h);
+  const out = cx.getImageData(0, 0, side, side).data;
   const alpha = new Float32Array(side * side);
-  for (let i = 0; i < alpha.length; i++) alpha[i] = px.data[i * 4 + 3] / 255;
+  for (let i = 0; i < alpha.length; i++) alpha[i] = out[i * 4 + 3] / 255;
 
   const lights = LIGHTS[rare ? 'rare' : 'common'].map((l) => ({ ...l, m: blur(alpha, side, l.sigma) }));
-  const out = px.data;
   for (let i = 0; i < alpha.length; i++) {
     // Each light over the next, premultiplied ("over", the tight one on top).
     let [r, g, b, a] = [0, 0, 0, 0];
@@ -84,9 +68,7 @@ async function make(id: FossilId, rare: boolean): Promise<string> {
     out[o + 2] = round((b / a) * 255 + n());
     out[o + 3] = round(a * 255 + n());
   }
-  cx.putImageData(px, 0, 0);
-  const blob = await new Promise<Blob | null>((res) => cv.toBlob(res, 'image/png'));
-  return blob ? URL.createObjectURL(blob) : '';
+  return out;
 }
 
 const round = (v: number) => Math.max(0, Math.min(255, Math.round(v)));

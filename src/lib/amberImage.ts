@@ -1,10 +1,13 @@
 // The fossils' amber as images (lib/amber.ts paints them): each image of a
 // slab at a size, and each emblem caught in it, painted once in a worker
-// (amberWorker.ts), kept for the visit as a URL to show. Where no worker can
-// run, painted here.
+// (amberWorker.ts), kept for the visit as a URL to show; and in the same
+// workers, a kept fossil's glow (lib/fossilGlow.ts). Where no worker can run,
+// painted here.
 
 import { paintAmber, paintInclusion, type AmberJob } from './amber';
-import type { AmberAnswer, AmberAsk, InclusionJob } from './amberWorker';
+import type { AmberAnswer, AmberAsk, GlowJob, InclusionJob } from './amberWorker';
+import { GLOW_ART, GLOW_SIDE, paintGlow } from './fossilGlow';
+import { fossilArt, type FossilId } from './fossils';
 
 /** Images kept, by what was painted: a few slabs' worth at the sizes a window passes through. */
 const kept = new Map<string, Promise<string[] | null>>();
@@ -67,6 +70,27 @@ async function inclusionHere({ image, W, H, s, rare, grain }: InclusionJob): Pro
   return { id: 0, png: await pngHere(body, W, H), rim: await pngHere(rim, W, H) };
 }
 
+/** A fossil's glow painted here. */
+async function glowHere({ image, rare }: GlowJob): Promise<AmberAnswer> {
+  const art = await createImageBitmap(image);
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = GLOW_SIDE;
+  const px = paintGlow(canvas.getContext('2d', { willReadFrequently: true })!, art, rare);
+  art.close();
+  return { id: 0, png: await pngHere(px, GLOW_SIDE, GLOW_SIDE) };
+}
+
+/** What's asked, painted in a worker or here. */
+function answered(ask: { job: AmberJob } | { inclusion: InclusionJob } | { glow: GlowJob }, here: () => Promise<AmberAnswer>): Promise<AmberAnswer> {
+  const all = pool();
+  if (!all) return here();
+  return new Promise((done) => {
+    const id = ++lastId;
+    waiting.set(id, done);
+    all[next++ % all.length].postMessage({ ...ask, id } as AmberAsk);
+  });
+}
+
 /** What's asked painted, in a worker or here; the same thing again, the same URLs. */
 function painted(key: string, ask: { job: AmberJob } | { inclusion: InclusionJob }, here: () => Promise<AmberAnswer>): Promise<string[] | null> {
   const known = kept.get(key);
@@ -76,21 +100,17 @@ function painted(key: string, ask: { job: AmberJob } | { inclusion: InclusionJob
     kept.set(key, known);
     return known;
   }
-  const all = pool();
-  const answer: Promise<AmberAnswer> = all
-    ? new Promise((done) => {
-        const id = ++lastId;
-        waiting.set(id, done);
-        all[next++ % all.length].postMessage({ ...ask, id } as AmberAsk);
-      })
-    : here();
-  const urls = answer
+  const urls = answered(ask, here)
     .then((a) => {
       const blobs = [a.png, ...('inclusion' in ask ? [a.rim] : [])];
       return blobs.every(Boolean) ? blobs.map((b) => URL.createObjectURL(b!)) : null;
     })
     .catch(() => null);
   kept.set(key, urls);
+  // (Not kept if it failed, as when a worker crashed with it waiting: painted again on the next ask, here if the workers are gone.)
+  void urls.then((us) => {
+    if (!us && kept.get(key) === urls) kept.delete(key);
+  });
   if (kept.size > KEEP) {
     const [oldest, gone] = kept.entries().next().value!;
     kept.delete(oldest);
@@ -102,6 +122,33 @@ function painted(key: string, ask: { job: AmberJob } | { inclusion: InclusionJob
 /** `job` painted, as a URL to show (null if it couldn't be). The same job again is the same URL. */
 export function amberImage(job: AmberJob): Promise<string | null> {
   return painted(JSON.stringify(job), { job }, async () => ({ id: 0, png: await pngHere(paintAmber(job), job.W, job.H) })).then((us) => us?.[0] ?? null);
+}
+
+/** The glows made, by fossil and kind: kept for the visit. */
+const glows = new Map<string, Promise<string | null>>();
+
+/**
+ * A kept fossil's glow (lib/fossilGlow.ts), for its art drawn GLOW_ART
+ * across with GLOW_PAD round it, as a URL; null if it couldn't be made (not
+ * kept: made again on the next ask). Never fails.
+ */
+export function fossilGlow(id: FossilId, rare: boolean): Promise<string | null> {
+  const key = `${id}:${rare ? 1 : 0}`;
+  let made = glows.get(key);
+  if (!made) {
+    made = (async () => {
+      try {
+        const job: GlowJob = { image: await (await fetch(fossilArt(id, GLOW_ART))).blob(), rare };
+        const { png } = await answered({ glow: job }, () => glowHere(job));
+        return png ? URL.createObjectURL(png) : null;
+      } catch {
+        return null;
+      }
+    })();
+    glows.set(key, made);
+    void made.then((url) => url || glows.delete(key));
+  }
+  return made;
 }
 
 /** The masks read, by URL: the image and its size. */
