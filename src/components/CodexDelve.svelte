@@ -308,8 +308,11 @@
         <DelveLastRun run={last} {story} median={lastOf.median} best={lastOf.best} {onopen} />
       {/if}
 
-      <!-- The set of 25 fossils Delve turns up (lib/fossils.ts). -->
-      <DelveFossils store={fossils} />
+      <!-- The set of 25 fossils Delve turns up (lib/fossils.ts), beside the zones reached: what the descent has given up. -->
+      <div class="found">
+        <DelveFossils store={fossils} />
+        {@render zonesPanel()}
+      </div>
 
       {#if allRuns >= MIN_RUNS}
       <div class="split">
@@ -385,8 +388,6 @@
         {#if teamed}{@render teamPanel()}{/if}
 
         {@render findPanels()}
-
-        {@render zonesPanel()}
       </div>
       {:else}
         <p class="waiting">
@@ -396,7 +397,6 @@
         <div class="insights">
           {#if teamed}{@render teamPanel()}{/if}
           {@render findPanels()}
-          {@render zonesPanel()}
         </div>
       {/if}
     {:else}
@@ -529,6 +529,12 @@
   }
 
   /* ---- panels ---- */
+  /* The fossil set as wide as it needs, the zones reached in the rest of the row. */
+  .found {
+    display: grid;
+    grid-template-columns: minmax(0, 35rem) minmax(0, 1fr);
+    gap: 1rem;
+  }
   .split {
     display: grid;
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
@@ -848,6 +854,7 @@
       grid-template-columns: 1fr 1fr;
       row-gap: 1rem;
     }
+    .found,
     .split {
       grid-template-columns: 1fr;
     }
