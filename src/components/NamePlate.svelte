@@ -195,10 +195,12 @@
   // a name that wraps makes it, draws them larger), so the frame's rules
   // always run along its edges; `scale` (bindable) says how large, so what
   // sits on the plate can keep clear of the ends. `fossil`: a fossil's
-  // question, its card's seals at the ends in place of Sol and Luna, lit in
-  // its amber whatever `lit` says; `fossilLight`, how that stands: lit while
-  // the question is up, flaring as the fossil is taken (it comes out of the
-  // left seal: lib/fossilFlight.ts), gone out with it lost.
+  // question, its card's seals at the ends in place of Sol and Luna, each on
+  // a pane of its amber; `lit` turns up the lamp behind them, as it lights
+  // the plate's own signs (low till the item is known); `fossilLight`, how
+  // that stands: up while the question is, flaring as the fossil is taken
+  // (it comes out of the left seal: lib/fossilFlight.ts), gone out with it
+  // lost.
   let {
     lit = true,
     glint = true,
@@ -422,12 +424,18 @@
     </span>
   {/each}
   <!-- A fossil's panes, placed as the blooms are but on nothing pressed in or
-       fading (which would keep them to themselves): over each, the lamp
-       flaring as the fossil is taken (.flash, screened over it), or the dark
-       of it gone out (.dark, multiplied over it, the sign still cut in it). -->
+       fading (which would keep them to themselves): over each, the dark of
+       the lamp turned low or gone out (.dark, multiplied over it, the sign
+       still cut in it), or the lamp flaring as the fossil is taken (.flash,
+       screened over it), the sign again over that light while it flares:
+       cut in the amber, it stands dark against the light behind it. -->
   {#if fossil}
-    {#each ['left', 'right'] as side (side)}
-      <span class="pane-at {side}" style:--pane="{((PANE_R / BLOOM_R) * 100).toFixed(2)}%"><span class="dark"></span><span class="flash"></span></span>
+    {#each [['left', signs.start], ['right', signs.end]] as [side, sign] (side)}
+      <span class="pane-at {side}" style:--pane="{((PANE_R / BLOOM_R) * 100).toFixed(2)}%"
+        ><span class="dark"></span><span class="flash"></span><svg class="flash-cut" viewBox="{-BLOOM_R} {-BLOOM_R} {2 * BLOOM_R} {2 * BLOOM_R}"
+          ><g class="cut">{#each FOSSIL_SEALS[sign as FossilSign].sign as { d, cls }, k (k)}<path {d} class={cls} />{/each}</g></svg
+        ></span
+      >
     {/each}
   {/if}
 </span>
@@ -653,6 +661,16 @@
     opacity: 0.55;
     animation: breathe-amber 6s 0.8s ease-in-out infinite alternate;
   }
+  /* Till the item is known the lamp is low, as the plate's own signs are dark
+     till then: the amber deeper, the light round it faint. Lit, it comes up
+     (with the reveal, as they light) and stays up. */
+  .plate.fossil:not(.lit) .bloom {
+    opacity: 0.16;
+    animation: none;
+  }
+  .plate.fossil:not(.lit) .dark {
+    opacity: 0.62;
+  }
   .plate.fossil.taken .bloom {
     animation:
       kindle var(--launch) ease-in both,
@@ -678,10 +696,11 @@
   .dark {
     background: #4a1f10;
     mix-blend-mode: multiply;
-    transition: opacity 0.9s ease-in;
+    transition: opacity 0.8s ease-out;
   }
   .plate.out .dark {
     opacity: 1;
+    transition: opacity 0.9s ease-in;
   }
   .flash {
     inset: calc((100% - var(--pane)) / 2 - 6%);
@@ -699,10 +718,27 @@
   .plate.rare.taken .flash {
     animation-name: flash-rare, flash-out;
   }
+  .flash-cut {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    opacity: 0;
+  }
+  .plate.taken .flash-cut {
+    animation:
+      flash var(--launch) ease-in both,
+      flash-out 0.7s var(--launch) ease-out forwards;
+  }
+  .plate.rare.taken .flash-cut {
+    animation-name: flash-rare, flash-out;
+  }
   @media (prefers-reduced-motion: reduce) {
     .plate.fossil .bloom,
     .plate.fossil.taken .bloom,
-    .plate.taken .flash {
+    .plate.taken .flash,
+    .plate.taken .flash-cut {
       animation: none;
     }
   }
