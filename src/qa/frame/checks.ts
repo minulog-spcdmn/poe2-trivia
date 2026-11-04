@@ -12,7 +12,7 @@
 
 import { CRASH_MESSAGE } from './crashCue.svelte.ts';
 import { FLAT, UPRIGHT } from '../../lib/layout.ts';
-import { CAPS_FACES, PAGE, lc, luminance, needs, over, type RGB } from '../legible.ts';
+import { FLOOR, PAGE, lc, luminance, over, type RGB } from '../legible.ts';
 
 /** What a frame finds wrong; and banding, which only the sweep can see (scripts/sweep.mjs, in a screenshot). Faint text is measured in both: in a frame against the page's own dark, in the sweep against its shot. */
 export type Kind = 'offscreen' | 'clipped' | 'error' | 'image' | 'dash' | 'scrolls' | 'banding' | 'faint';
@@ -193,7 +193,7 @@ export function check(heard: { errors: string[]; images: string[] }): Problem[] 
  * colour (its alpha times its own opacity: a whole row or tile faded with
  * the opacity of something around it is a state, a choice not taken or a
  * player gone, dim on purpose, as is anything in one marked data-dim where
- * the fade sits on the text itself), its face and whether it's in capitals.
+ * the fade sits on the text itself), its size and face.
  */
 interface TextRun {
   el: Element;
@@ -201,10 +201,8 @@ interface TextRun {
   lines: DOMRect[];
   rgba: [number, number, number, number];
   size: number;
-  weight: number;
   italic: boolean;
   font: string;
-  caps: boolean;
 }
 
 /** A colour as the browser gives it, as numbers: rgb() or rgba(), or color(srgb ...) for a mix (anything else null). */
@@ -291,10 +289,9 @@ function textRuns(keep: (run: Omit<TextRun, 'lines'>) => boolean, one: boolean):
     rgba[3] *= Number(cs.opacity);
     if (rgba[3] < 0.05) continue;
     const font = cs.fontFamily.split(',')[0].replace(/["']/g, '').trim();
-    const caps = cs.textTransform === 'uppercase' || cs.fontVariantCaps !== 'normal' || CAPS_FACES.has(font) || !/\p{Ll}/u.test(text);
     // (An SVG's text is sized in its own units: on screen, times the drawing's scale.)
     const scale = el instanceof SVGGraphicsElement ? Math.hypot(el.getScreenCTM()?.a ?? 1, el.getScreenCTM()?.b ?? 0) : 1;
-    const run = { el, text, rgba, size: parseFloat(cs.fontSize) * scale, weight: Number(cs.fontWeight), italic: cs.fontStyle === 'italic', font, caps };
+    const run = { el, text, rgba, size: parseFloat(cs.fontSize) * scale, italic: cs.fontStyle === 'italic', font };
     if (!keep(run)) continue;
     // (Or in a box round it that's a pixel wide: a phone's scoreboard keeps the others' names so, behind their avatars.)
     if (shutIn(el)) continue;
@@ -318,7 +315,7 @@ function textRuns(keep: (run: Omit<TextRun, 'lines'>) => boolean, one: boolean):
   return runs;
 }
 
-/** A run of text too faint to read well: its Lc against what's behind it, what it needs, and the colours measured. */
+/** A run of text too faint to read well: its Lc against what's behind it, the floor it falls under, and the colours measured. */
 export interface Faint {
   el: Element;
   where: string;
@@ -376,20 +373,16 @@ function behind(shot: ImageData, l: DOMRect, rgba: [number, number, number, numb
  * light run against the page's own dark, the best it can have (whatever's
  * behind it only takes from that), leaving dark text, which sits on
  * something light, to the sweep; with the sweep's shot of the page (at CSS
- * pixels: shotPixels), each line against what's actually behind it there. Text in
- * `--faint` is dim on purpose (app.css) and left out.
+ * pixels: shotPixels), each line against what's actually behind it there.
  */
 export function faintText(shot?: ImageData): Faint[] {
-  // (--faint's own colour, read without touching the page: a check mustn't draw anything again. A run in it, painted or filled, is left be.)
-  const dim = getComputedStyle(document.documentElement).getPropertyValue('--faint').trim().match(/[\da-f]{2}/gi)?.map((h) => parseInt(h, 16));
   const found: Faint[] = [];
-  // (A run in --faint is left out before its lines are found. And without a shot each run is judged on the page's own dark alone:
-  // one that reads there, or dark text, the sweep's, is left out then too.)
+  // (Without a shot each run is judged on the page's own dark alone, before its lines are found: one that reads there, or dark
+  // text, the sweep's, is left out then.)
   const keep = (run: Omit<TextRun, 'lines'>) => {
-    if (dim && run.rgba.slice(0, 3).every((v, i) => Math.round(v) === dim[i])) return false;
     if (shot) return true;
     const seen = over(run.rgba, PAGE);
-    return luminance(seen) >= 0.18 && lc(seen, PAGE) < needs({ ...run, rgb: [run.rgba[0], run.rgba[1], run.rgba[2]] });
+    return luminance(seen) >= 0.18 && lc(seen, PAGE) < FLOOR;
   };
   for (const run of textRuns(keep, !shot)) {
     let worst: { lc: number; bg: RGB; seen: RGB } | null = null;
@@ -401,14 +394,13 @@ export function faintText(shot?: ImageData): Faint[] {
       const v = lc(seen, bg);
       if (!worst || v < worst.lc) worst = { lc: v, bg, seen };
     }
-    const need = needs({ ...run, rgb: [run.rgba[0], run.rgba[1], run.rgba[2]] });
-    if (worst && worst.lc < need)
+    if (worst && worst.lc < FLOOR)
       found.push({
         el: run.el,
         where: describe(run.el),
         text: run.text.slice(0, 60),
         lc: Math.round(worst.lc * 10) / 10,
-        needs: need,
+        needs: Math.round(FLOOR * 10) / 10,
         bg: hex(worst.bg),
         seen: hex(worst.seen),
         size: run.size,

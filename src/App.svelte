@@ -1339,9 +1339,6 @@
     color: var(--muted);
     text-decoration: none;
   }
-  .legal span {
-    color: var(--faint);
-  }
   .legal a:hover {
     color: var(--gold-hi);
   }

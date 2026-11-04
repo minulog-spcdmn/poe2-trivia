@@ -575,7 +575,7 @@
     font-style: italic;
     font-size: var(--daily-line-size, 16px);
     line-height: var(--daily-line-lh, 22px);
-    color: var(--muted);
+    color: #ab9d88;
     text-wrap: balance;
     text-shadow: 0 0 8px rgba(0, 0, 0, 0.95);
   }
@@ -914,7 +914,7 @@
     text-wrap: balance;
     font-style: italic;
     font-size: 17px;
-    color: var(--muted);
+    color: #a99c86;
   }
   .tally {
     display: flex;
@@ -923,10 +923,7 @@
     margin: 0;
     font-style: italic;
     font-size: 15px;
-    color: var(--muted);
-  }
-  .tally .sep {
-    color: var(--faint);
+    color: #a99c86;
   }
   /* A phone's shorter wording (below). */
   .tally .short {

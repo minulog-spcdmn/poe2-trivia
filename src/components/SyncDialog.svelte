@@ -598,7 +598,7 @@
   /* At the links' size (set down to their small letters: app.css .bullet). */
   .sep {
     font-size: 0.95rem;
-    color: var(--faint);
+    color: var(--gold-lo);
   }
   .actions {
     grid-area: actions;

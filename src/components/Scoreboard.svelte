@@ -1204,13 +1204,12 @@
       opacity 0.9s ease,
       filter 0.9s ease;
   }
-  /* (Kept to the phial's height, so under 13.5px, and in the text's own colour: --muted reads only from 13.5px (CLAUDE.md). The fallen row's fade says the rest.) */
   .fell-at {
     animation: fell-in 0.6s ease both;
     font-size: 0.8rem;
     font-style: italic;
     line-height: 1;
-    color: var(--text);
+    color: var(--muted);
   }
   @keyframes fell-in {
     from {

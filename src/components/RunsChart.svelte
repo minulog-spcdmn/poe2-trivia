@@ -117,8 +117,7 @@
     /* The last run's star: old blood, as the lobby's descent has it. */
     --red: #b4432f;
     --red-hi: #cf5e45;
-    /* (Its depth, light enough to read at 13px: APCA Lc 52.) */
-    --red-num: #e0907a;
+    --red-num: #dc8a73;
   }
   path,
   circle {
@@ -184,12 +183,11 @@
     stroke-dasharray: 0.8 2.6;
     stroke-linecap: round;
   }
-  /* (Kept to the room lib/runsPlate leaves right of the shafts, SIDE, so 13px, and in the text's own colour: --muted reads only from 13.5px (CLAUDE.md).) */
   .usual-label {
     font-family: var(--font-body);
     font-style: italic;
     font-size: 13px;
-    fill: var(--text);
+    fill: var(--muted);
   }
 
   /* ---- the shafts: sunk from the ground down, in their zone's colour ---- */

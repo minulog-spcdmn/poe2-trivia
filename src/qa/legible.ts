@@ -1,8 +1,11 @@
 // How well a run of text reads: its contrast with what's behind it as
 // APCA's Lc (the contrast measure built for how type reads on screens,
-// apcacontrast.com), against what its size and face need. The QA desk's
-// frames check every run against the page's own dark (checks.ts), the
-// sweep's --faint against what's actually behind it in its shot.
+// apcacontrast.com), against the game's floor: no text dimmer than its
+// dimmest grey, --muted, on the page's own dark. The game's notes run a step
+// or two brighter where they're read; a label, a date or an aside may sit at
+// --muted, and nothing under it. The QA desk's frames check every run against
+// the page's own dark (checks.ts), the sweep's --faint against what's
+// actually behind it in its shot.
 
 export type RGB = [number, number, number];
 
@@ -35,46 +38,8 @@ export const over = ([r, g, b, a]: [number, number, number, number], bg: RGB): R
   b * a + bg[2] * (1 - a),
 ];
 
-/**
- * Each face's lower case as a share of its size (Cinzel's small capitals),
- * against the 0.52 of the Helvetica APCA's sizes are read in: a face with a
- * smaller lower case reads as a smaller size than it's set at. The text font
- * (app.css) is Manuale upright and Andada Pro's italic, set to the same
- * height and drawn smaller than set (0.49 at 93%, 0.51 at 89%); EB
- * Garamond, behind it for other scripts, stands at 0.41.
- */
-const X_HEIGHT: Record<string, number> = {
-  'Manuale Andada': 0.45,
-  'EB Garamond': 0.41,
-  Cinzel: 0.6,
-  Maragsa: 0.5,
-  'Maragsa Title': 0.5,
-  'Fontin SmallCaps': 0.54,
-  Fontin: 0.51,
-};
+/** app.css --muted, the dimmest grey the game sets text in (tests/legible.test.ts holds the two the same). */
+export const MUTED: RGB = [0x96, 0x8a, 0x77];
 
-/** A run's size as it reads, in Helvetica's px. */
-export const readingSize = ({ size, font }: { size: number; font: string }) => (size * (X_HEIGHT[font] ?? 0.52)) / 0.52;
-
-/** Faces whose lower case is drawn as small capitals. */
-export const CAPS_FACES = new Set(['Cinzel', 'Fontin SmallCaps']);
-
-/**
- * The least Lc a run of text needs: by the size it reads at, its weight, and
- * whether it's set in capitals (`caps`: uppercased, a small-caps face, or no
- * lower case in it), which a reader takes in by their outline a step sooner
- * than lower case (the gold small-caps labels read at Lc 55). Small lower
- * case has to be bright to read at all: the text font under about 13px needs
- * all but the body's own colour.
- */
-export function needs(run: { size: number; weight: number; font: string; caps?: boolean; rgb?: RGB }): number {
-  const size = readingSize(run);
-  // APCA weighs lightness alone; a strong hue (gold, the unique orange) stands off a dark grey ground by its colour too, worth about 5 (Helmholtz-Kohlrausch).
-  const hue = run.rgb && Math.max(...run.rgb) - Math.min(...run.rgb) > 50 ? 5 : 0;
-  if (size >= 24 || (size >= 18 && run.weight >= 600)) return 45;
-  // (A bold weight reads a step sooner than its size's own row, never more: small and bold still needs more than 16px does.)
-  const bold = run.weight >= 600;
-  if (run.caps || size >= 16 || (bold && size >= 11.5)) return 55 - hue;
-  if (size >= 11.5 || bold) return 60 - hue;
-  return 75 - hue;
-}
+/** The least Lc a run of text needs: --muted's on the page's own dark (about 40). */
+export const FLOOR = lc(MUTED, PAGE);

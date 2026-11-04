@@ -800,9 +800,7 @@
     font-weight: 700;
     color: var(--gold-hi);
   }
-  /* (Cinzel as .n has it, said again so the rule reads whole to tests/legible.test.ts: small capitals, not lower case.) */
   .z-when {
-    font-family: var(--font-cinzel);
     font-size: 0.75rem;
     color: var(--muted);
     white-space: nowrap;

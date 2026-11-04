@@ -134,18 +134,12 @@
   --gold-hi: #f1d99b;
   --gold-lo: #7d6333;
   --unique: #af6025;
-  /* (A shade lighter than it was, #e08a44, so its small capitals, the kicker
-     under the title, read: APCA Lc 54 on the page.) */
-  --unique-hi: #e59450;
+  --unique-hi: #e08a44;
   --text: #ddd3c2;
-  /* Secondary text (docs/design-rules.md, "Secondary text"): a note under
-     something, a status, a label, an aside. A step under --text and still
-     read without effort: APCA Lc 66 on the page, 60 and up on what's
-     behind it almost everywhere (src/qa/legible.ts; tests/legible.test.ts). */
-  --muted: #c6baa6;
-  /* Dim on purpose, for what isn't there to be read now: a thing not found
-     yet, a control that's off, a separator. Never for a line someone needs. */
-  --faint: #968a77;
+  /* Secondary text at its dimmest (docs/design-rules.md, "Secondary text"):
+     a label, a date, an aside. A note to read runs a step or two brighter
+     where it's set. No grey text is dimmer (tests/legible.test.ts). */
+  --muted: #968a77;
   --bad: #e0553f;
   /* A verdict's sign (VerdictSign.svelte): its line, and the tint of its disc,
      rim and glow (r, g, b). Right, wrong and out of time. */

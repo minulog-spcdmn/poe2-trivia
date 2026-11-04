@@ -158,9 +158,7 @@
     align-items: center;
     gap: 0.1rem;
   }
-  /* (Cinzel as .n has it, said again so the rule reads whole to tests/legible.test.ts: small capitals, not lower case.) */
   .at {
-    font-family: var(--font-cinzel);
     font-size: 0.7rem;
     line-height: 1;
     color: var(--muted);
@@ -197,7 +195,7 @@
   }
   .thumb.none {
     font-family: var(--font-cinzel);
-    color: var(--faint);
+    color: var(--muted);
   }
 
   @media (max-width: 560px) {

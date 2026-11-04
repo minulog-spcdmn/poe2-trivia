@@ -254,13 +254,13 @@
     font-family: var(--font-display);
     font-size: 0.95rem;
     letter-spacing: 0.04em;
-    color: var(--muted);
+    color: #b9ab94;
   }
   .won .title {
     color: var(--gold-hi);
   }
   .hidden .title {
-    color: var(--faint);
+    color: var(--muted);
     font-style: italic;
   }
   /* (Its note, "Hidden until you earn it.", stands in for a description: an aside, as its title.) */
@@ -270,19 +270,19 @@
   .text {
     font-size: 0.95rem;
     line-height: 1.3;
-    color: var(--muted);
+    color: #a89c87;
   }
   /* (Earned, a step brighter than one still to earn, as its title steps up to gold.) */
   .won .text {
-    color: var(--text);
+    color: #cbbfa8;
   }
   .when {
     font-size: 0.9375rem;
     font-style: italic;
-    color: var(--muted);
+    color: var(--gold-lo);
   }
   .won .when {
-    color: var(--gold);
+    color: #b59a63;
   }
   .advance {
     display: flex;

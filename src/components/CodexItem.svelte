@@ -298,6 +298,7 @@
     font-family: var(--font-display);
     font-size: 0.9375rem;
     color: #d8a26a;
+    opacity: 0.85;
   }
   /* Centred in the empty end of the name plate. */
   .close {
@@ -529,13 +530,16 @@
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
-    color: #adb7c2;
+    color: #8f9aa6;
     font-size: 1rem;
     line-height: 1.3;
   }
   .lines b {
     font-weight: 500;
     color: #a9c3dc;
+  }
+  .lines i {
+    color: #6d7782;
   }
   .label {
     margin: 0 0 0.45rem;

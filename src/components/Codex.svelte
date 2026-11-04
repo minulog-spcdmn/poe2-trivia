@@ -1114,7 +1114,7 @@
   .tagline {
     margin: 0.6rem 0 0;
     font-style: italic;
-    color: var(--muted);
+    color: #b8ab95;
     /* The line going and the one coming over each other as they cross-fade. */
     display: grid;
   }
@@ -1163,7 +1163,7 @@
   .tab-note {
     font-family: var(--font-cinzel);
     font-size: 0.78rem;
-    color: var(--muted);
+    color: var(--gold-lo);
     transition: color 0.25s;
   }
   .tab-in::after {
@@ -1764,7 +1764,8 @@
   }
   .unknown .name {
     font-style: italic;
-    color: var(--faint);
+    color: var(--muted);
+    opacity: 0.6;
   }
   .none {
     text-align: center;
@@ -1889,6 +1890,7 @@
   }
   .item-name small {
     font-size: 0.9375rem;
+    opacity: 0.75;
     color: #d8a26a;
   }
   tbody tr:hover .item-name {

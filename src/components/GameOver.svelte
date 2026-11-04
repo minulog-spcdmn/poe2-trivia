@@ -1734,12 +1734,10 @@
     font-size: 1.05em;
     color: #f3c37e;
   }
-  /* (Under 13.5px on a phone, so in the text's own colour, as is a plate's depth: --muted reads only from 13.5px.) */
   .what .where {
-    /* (Of the line's 16px on a phone, 17px wider.) */
     font-size: 0.82em;
     font-style: italic;
-    color: var(--text);
+    color: var(--muted);
   }
   .vial {
     --phial-w: 50px;
@@ -1941,7 +1939,7 @@
   .dep {
     font-size: 0.8rem;
     font-style: italic;
-    color: var(--text);
+    color: var(--muted);
   }
   .revived {
     flex: none;
@@ -1957,7 +1955,7 @@
     margin: 0.2rem 0 0.7rem;
     font-style: italic;
     font-size: 1rem;
-    color: var(--muted);
+    color: #c4b69c;
   }
   /* The run's facts hang from the chart's ground line: the first one's mark centred on it (--ground: lib/runsPlate's GROUND_Y). */
   .chart-row {
@@ -2133,11 +2131,10 @@
   }
   .found .count {
     font-family: var(--font-body);
-    /* (Of the heading's 20px.) */
     font-size: 0.8em;
     font-style: italic;
     letter-spacing: 0;
-    color: var(--muted);
+    color: #c4b69c;
   }
 
   /* Share run: the lobby's small Lock button. */
