@@ -8,7 +8,7 @@
 
 import { emulate } from './emulate.ts';
 import { freeze, installFreeze } from './freeze.ts';
-import { check, listen, outline } from './checks.ts';
+import { check, listen, outline, publish } from './checks.ts';
 import { settle } from './settle.ts';
 import { maybe } from './optional.ts';
 import { isSizeKey, sizeOf } from '../sizes.ts';
@@ -341,7 +341,7 @@ export async function boot(asked: URLSearchParams) {
     const settled = await settle();
     const problems = check(heard);
     tell({ qa: 'checked', slot, settled, problems });
-    (window as Window & { __qa?: unknown }).__qa = { settled, problems };
+    publish(settled, problems);
   };
   await run();
   // In the desk, checked again once what it shows has changed after a click

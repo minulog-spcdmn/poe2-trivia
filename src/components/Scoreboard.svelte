@@ -8,6 +8,7 @@
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
   import PlayerName from './PlayerName.svelte';
+  import You from './You.svelte';
   import Phial from './Phial.svelte';
   import Inventory from './Inventory.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
@@ -136,7 +137,12 @@
       const names = [...board.querySelectorAll<HTMLElement>('.name')].filter((n) => n.offsetParent);
       if (whole < 2 || !names.length) return;
       let lo = Math.round(9.5 * parseFloat(getComputedStyle(document.documentElement).fontSize));
-      let hi = Math.max(...names.map((n) => n.scrollWidth));
+      // (Each name whole: one squeezed already has its .cut clip it, so what that hides is added back.)
+      const fullWidth = (n: HTMLElement) => {
+        const cut = n.querySelector<HTMLElement>('.cut');
+        return n.scrollWidth + (cut ? cut.scrollWidth - cut.clientWidth : 0);
+      };
+      let hi = Math.max(...names.map(fullWidth));
       if (lo >= hi) return;
       capAt(lo);
       const fewest = rows();
@@ -950,8 +956,8 @@
         <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={32} dim={!p.connected} wrong={out} />
         <div class="info">
           <span class="name-row">
-            <span class="name">
-              <PlayerName name={p.name} />{#if session.mode !== 'local' && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}
+            <span class="name cut-name">
+              <span class="cut"><PlayerName name={p.name} /></span>{#if session.mode !== 'local' && p.id === session.myPlayerId && s.players.length > 1}<em><You /></em>{/if}
             </span>
             <!-- Online, room for the offline mark after the name is always kept, so nothing moves when it comes. -->
             {#if session.mode !== 'local'}<span class="off-slot">{#if !p.connected}{@render offline()}{/if}</span>{/if}
@@ -1196,12 +1202,13 @@
       opacity 0.9s ease,
       filter 0.9s ease;
   }
+  /* (Kept to the phial's height, so under 13.5px, and in the text's own colour: --muted reads only from 13.5px (CLAUDE.md). The fallen row's fade says the rest.) */
   .fell-at {
     animation: fell-in 0.6s ease both;
     font-size: 0.8rem;
     font-style: italic;
     line-height: 1;
-    color: var(--muted);
+    color: var(--text);
   }
   @keyframes fell-in {
     from {
@@ -1487,18 +1494,12 @@
     z-index: 1;
     font-size: 0.98rem;
     line-height: 1.1;
-    white-space: nowrap;
-    overflow: hidden;
     /* No width of its own: the name takes what the row has, and is cut short only once the row runs out, or where cutting saves a row (--name-cap, set above). */
-    text-overflow: ellipsis;
     max-width: var(--name-cap, none);
-    /* Room for descenders (g, y) that overflow: hidden would clip at line-height 1.1 */
-    padding-bottom: 0.2em;
-    margin-bottom: -0.2em;
   }
+  /* (Short of room, the name gives way and never the "(you)" after it: app.css .cut-name.) */
   .name em {
     color: var(--muted);
-    font-size: 0.85em;
   }
   .bar {
     height: 3px;

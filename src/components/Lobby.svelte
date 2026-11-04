@@ -18,6 +18,7 @@
   import OnlookerMark from './OnlookerMark.svelte';
   import WatchEye from './WatchEye.svelte';
   import PlayerName from './PlayerName.svelte';
+  import You from './You.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { backdropDropShadow } from '../lib/backdropDropShadow';
   import { kickConfirm } from '../lib/kick';
@@ -121,8 +122,10 @@
   /**
    * A chip's name that runs short of room fades out at its end rather than being cut to an ellipsis, the fade as long as
    * what's cut (to a point): as its room narrows a frame at a time (markRoom), it eases under the fade, nothing jumping.
+   * (Marked data-fade-cut, so the QA desk takes the cut as meant, as it does an ellipsis.)
    */
   function fadeCut(node: HTMLElement) {
+    node.dataset.fadeCut = '';
     const measure = () => node.style.setProperty('--cut', `${Math.min(18, 1.5 * Math.max(0, node.scrollWidth - node.clientWidth))}px`);
     const seen = new ResizeObserver(measure);
     seen.observe(node);
@@ -746,10 +749,11 @@
               data-id={p.id}
               class:armed={confirming === p.id}
               class:absent={notReady(mark)}
+              data-dim={notReady(mark) || undefined}
               style:--c={playerColor(p.hue)}
             >
               <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={32} dim={greyed(mark)} />
-              <span class="name" title={p.name} use:fadeCut><PlayerName name={p.name} />{#if !local && p.id === session.myPlayerId && s.players.length > 1}<em>&nbsp;(you)</em>{/if}</span>
+              <span class="name cut-name" title={p.name}><span class="cut" use:fadeCut><PlayerName name={p.name} /></span>{#if !local && p.id === session.myPlayerId && s.players.length > 1}<em><You /></em>{/if}</span>
               {#if mark}<span class="mark-room" transition:markRoom><StandingMark {mark} /></span>{/if}
               <!-- The host's chip carries a hanging banner, the party's standard, where the others have their ×. -->
               {#if p.id === s.hostId && !local}<HostMark unfurl />{/if}
@@ -767,7 +771,7 @@
               {#each list as o (o.id)}
                 <li data-id={o.id} class:armed={confirming === o.id} animate:flip={{ duration: 300 }} in:onlookerIn|global out:kickOut>
                   <OnlookerMark name={o.name} size={24} />
-                  <span class="name" title={o.name}><PlayerName name={o.name} />{#if o.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}</span>
+                  <span class="name cut-name" title={o.name}><span class="cut"><PlayerName name={o.name} /></span>{#if o.id === session.myPlayerId}<em><You /></em>{/if}</span>
                   {#if isHost}
                     <KickButton name={o.name} armed={confirming === o.id} onclick={() => (s.aside?.some((p) => p.id === o.id) ? removePlayer(o.id) : kicker.click(o.id) && (removed.add(o.id), session.kick(o.id)))} />
                   {/if}
@@ -1110,8 +1114,9 @@
   }
   .vis-hint {
     margin: 0;
-    font-size: 0.9rem;
+    font-size: 1rem;
     font-style: italic;
+    color: var(--muted);
   }
   /* The old hint fades out where the new one comes, in one cell (settles). */
   .vis-hint-box {
@@ -1136,12 +1141,12 @@
     justify-content: flex-start;
     flex-wrap: nowrap;
   }
-  /* The label takes what is left, so Private, Public and Lock stay on one line. */
+  /* The label takes what is left, so Private, Public and Lock stay on one line. It leads the hint under it, so it's in the text's colour. */
   .who {
     flex: 1;
     min-width: 0;
     font-size: 1rem;
-    color: #b8ab95;
+    color: var(--text);
   }
   .invite-row {
     position: relative;
@@ -1243,7 +1248,7 @@
   .count {
     font-family: var(--font-cinzel);
     font-size: 0.75rem;
-    color: #ab9d88;
+    color: var(--muted);
   }
 
   /* The game's own player chips (Scoreboard), so the party carries on into the game. */
@@ -1271,13 +1276,15 @@
     background: rgba(12, 10, 8, 0.75);
     border: 1px solid var(--line);
   }
+  /* (Short of room, the name gives way and never the "(you)" after it: app.css .cut-name.) */
   .chips .name {
     margin-left: 2px;
     font-size: 0.98rem;
     line-height: 1.1;
-    padding-bottom: 0.2em;
-    margin-bottom: -0.2em;
-    /* Cut short, its end fades (fadeCut) instead of an ellipsis, which would jump as a mark takes its room. */
+    overflow: visible;
+  }
+  /* Cut short, its end fades (fadeCut) instead of an ellipsis, which would jump as a mark takes its room. */
+  .chips .name .cut {
     text-overflow: clip;
     -webkit-mask-image: linear-gradient(to right, #000 calc(100% - var(--cut, 0px)), transparent);
     mask-image: linear-gradient(to right, #000 calc(100% - var(--cut, 0px)), transparent);
@@ -1288,7 +1295,6 @@
   }
   .chips .name em {
     color: var(--muted);
-    font-size: 0.85em;
   }
   .count {
     display: inline-flex;
@@ -1356,7 +1362,7 @@
     font-weight: 400;
     letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: #ab9d88;
+    color: var(--muted);
   }
   .gallery h3 :global(.eye) {
     --eye-size: 16px;
@@ -1394,16 +1400,19 @@
   .onlookers li:not(:has(:global(.kick))) {
     padding-right: 0.8rem;
   }
+  /* (Cut as a seat's chip is: the name, never the "(you)": app.css .cut-name.) */
   .onlookers .name {
     flex: 0 1 auto;
     font-size: 0.92rem;
     line-height: 1.1;
+    overflow: visible;
+  }
+  .onlookers .name .cut {
     padding-bottom: 0.15em;
     margin-bottom: -0.15em;
   }
   .onlookers .name em {
     color: var(--muted);
-    font-size: 0.85em;
   }
   .onlookers li.armed {
     border-color: #8e4434;
@@ -1456,8 +1465,9 @@
   }
   .hint {
     margin: 0.8rem 0 0;
-    font-size: 0.95rem;
+    font-size: 1rem;
     font-style: italic;
+    color: var(--muted);
   }
   .watch-choice {
     margin: 0.6rem 0 0;
@@ -1467,6 +1477,7 @@
     display: flex;
     align-items: center;
     gap: 0.6rem;
+    font-style: italic;
   }
   .pulse {
     width: 8px;
@@ -1503,7 +1514,7 @@
     font-size: 1rem;
     letter-spacing: 0;
     text-transform: none;
-    color: #c4b69c;
+    color: var(--muted);
   }
   .setting.row .blurbs {
     grid-column: 1 / -1;
@@ -1692,8 +1703,9 @@
   }
   .together-when {
     margin: 0 0 0.45rem;
-    font-size: 0.93rem;
+    font-size: 0.9375rem;
     font-style: italic;
+    color: var(--muted);
     line-height: 1.25;
   }
   .together {
@@ -1721,6 +1733,7 @@
     margin: 0;
     font-size: 0.95rem;
     font-style: italic;
+    color: var(--muted);
     opacity: 0;
     visibility: hidden;
     translate: 0 -4px;

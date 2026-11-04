@@ -1013,7 +1013,8 @@
     margin: 0;
     font-size: max(0.8rem, calc(var(--R) * 0.05));
     font-style: italic;
-    color: #e6b8aa;
+    /* (A lighter tint than the kicker's: on a phone it's at its floor, small.) */
+    color: #f0c8bb;
   }
   .skip {
     display: flex;
@@ -1021,6 +1022,9 @@
     align-items: center;
     justify-content: center;
     margin-top: 1.5rem;
+  }
+  .skip .muted {
+    font-style: italic;
   }
 
   /* Phones: every pixel of height spent here is scrolling between the art and
@@ -1121,7 +1125,7 @@
     }
     .delve-line {
       margin-top: 0.5rem;
-      font-size: 0.9rem;
+      font-size: 0.9375rem;
       line-height: 1.3;
     }
     .skip {

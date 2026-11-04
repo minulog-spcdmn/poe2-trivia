@@ -4,7 +4,9 @@
 // that device (its pixel ratio, touch, a phone's user agent), shot and
 // checked the way the desk's frames check themselves (src/qa/frame/checks.ts:
 // off the screen, text cut off, console errors, pictures, em dashes), and
-// with --banding, scripts/find-banding.py on top. It prints what it found:
+// with --banding, scripts/find-banding.py on top, and with --faint, how
+// faint its text is on what's actually behind it in the shot
+// (src/qa/legible.ts). It prints what it found:
 // it's for the machine, so nobody has to look through its shots.
 //
 // By default it builds the beta (the only build with the desk) into
@@ -31,7 +33,7 @@
 // --moments. --canary has it watch a box drawn again every frame, which
 // has to fail.
 //
-//   npm run sweep -- [--sizes walk|full|phone,uhd,...] [--only <regex>] [--change] [--webgl] [--banding]
+//   npm run sweep -- [--sizes walk|full|phone,uhd,...] [--only <regex>] [--change] [--webgl] [--banding] [--faint]
 //                 [--url URL] [--no-build] [--concurrency N]
 //   npm run sweep -- --map
 //   npm run sweep -- --redraws --only <regex> [--webgl] [--shard i/n] [--canary]
@@ -62,6 +64,7 @@ const OPTIONS = {
   build: { type: 'boolean', default: true },
   webgl: { type: 'boolean', default: false },
   banding: { type: 'boolean', default: false },
+  faint: { type: 'boolean', default: false },
   change: { type: 'boolean', default: false },
   map: { type: 'boolean', default: false },
   redraws: { type: 'boolean', default: false },
@@ -73,10 +76,10 @@ const OPTIONS = {
   help: { type: 'boolean', short: 'h', default: false },
 };
 const { values, positionals } = parseArgs({ options: OPTIONS, allowPositionals: true, allowNegative: true });
-// Bare words, for PowerShell (see capture-screens.mjs): full, webgl, banding, change, map, no-build, name=value.
+// Bare words, for PowerShell (see capture-screens.mjs): full, webgl, banding, faint, change, map, no-build, name=value.
 for (const word of positionals) {
   if (word === 'full' || word === 'walk') values.sizes = word;
-  else if (['webgl', 'banding', 'change', 'map', 'redraws', 'moments', 'baseline', 'canary', 'help'].includes(word)) values[word] = true;
+  else if (['webgl', 'banding', 'faint', 'change', 'map', 'redraws', 'moments', 'baseline', 'canary', 'help'].includes(word)) values[word] = true;
   else if (word === 'no-build') values.build = false;
   else if (word.includes('=')) values[word.split('=')[0]] = word.slice(word.indexOf('=') + 1);
   else {
@@ -92,6 +95,8 @@ if (values.help) {
   --only REGEX           only scenes whose key matches (lobby, game/delve, over/n-)
   --webgl                keep WebGL (the effects, on the GPU) and full motion
   --banding              run scripts/find-banding.py on each shot (implies --webgl; needs numpy and Pillow)
+  --faint                measure each run of text against what's behind it in the shot (src/qa/legible.ts),
+                         not only the page's own dark; the faint ones' numbers go in the manifest
   --change               only the scenes this branch's changes touch (as the desk's This change)
   --url URL              shoot a running server (the dev server, the beta) instead of building one
   --no-build             serve screens/qa-build/ as the last sweep built it
@@ -278,6 +283,8 @@ async function shootAll(base, jobs, outDir, { coverage = false, concurrency: at 
       try {
         if (coverage) await page.coverage.startJSCoverage({ resetOnNavigation: false });
         const q = new URLSearchParams({ frame: `j${n}`, s: j.scene, seat: String(j.seat), size: j.size });
+        // (No outlines round what's wrong when the shot is measured: they'd be measured too.)
+        if (values.faint) q.set('o', '0');
         for (const [k, v] of j.values ?? []) q.set(`k.${k}`, v);
         await page.goto(`${base}qa.html?${q}`, { waitUntil: 'load', timeout: 60000 });
         const loaded = Date.now();
@@ -295,8 +302,15 @@ async function shootAll(base, jobs, outDir, { coverage = false, concurrency: at 
         // (A 4K page under a full sweep's load can take a while to give up its pixels: once more, with longer, before calling it failed.)
         const shoot = (timeout) => page.screenshot({ path: path.join(outDir, file), animations: values.webgl ? 'allow' : 'disabled', caret: 'hide', scale: values.banding ? 'device' : 'css', timeout });
         await shoot(45000).catch(() => shoot(90000));
+        // Its text against what's behind it in the shot, in place of the frame's own look against the page's dark: the runs too faint there, measured.
+        let texts;
+        if (values.faint) {
+          const found = await page.evaluate((png) => window.__qaFaint(png), readFileSync(path.join(outDir, file)).toString('base64'));
+          texts = found.texts;
+          r.problems = [...r.problems.filter((p) => p.kind !== 'faint'), ...found.problems];
+        }
         const times = { load: loaded - started, check: checked - loaded, shot: Date.now() - checked };
-        shots.push({ ...j, file, settled: r.settled, problems: r.problems, ms: Date.now() - started, times });
+        shots.push({ ...j, file, settled: r.settled, problems: r.problems, texts, ms: Date.now() - started, times });
       } catch (e) {
         shots.push({ ...j, file: null, failed: e.message.split('\n')[0], problems: [], ms: Date.now() - started, errors });
       } finally {

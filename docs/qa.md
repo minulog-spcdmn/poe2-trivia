@@ -20,7 +20,7 @@
 
 A frame starts with nothing of its own (its storage keys start apart, `src/lib/storage.ts`, and are cleared as it opens and closes), so nothing it shows reaches the game's saves, and no two frames share a player. At a device's size it pretends to be that device: the pixel ratio, and a touch screen's lack of hover and coarse pointer. That is close, not exact: it is still drawn at your screen's pixel ratio, and the mouse is still a mouse.
 
-Each frame checks itself once it comes to rest, and again after a click in it: something off the side of the screen, text cut off without an ellipsis, console errors, pictures that didn't load, em dashes. What it finds is outlined and listed under the top line.
+Each frame checks itself once it comes to rest, and again after a click in it: something off the side of the screen, text cut off without an ellipsis, console errors, pictures that didn't load, em dashes, and text too faint to read (**Hard to read**: each run's contrast, as APCA's Lc, against what its size and face need, `src/qa/legible.ts`; the frame can only hold light text up to the page's own dark, the best it could have, so the sweep's `--faint` measures it again against what's actually behind it). What it finds is outlined and listed under the top line.
 
 ## Adding a bench
 
@@ -57,6 +57,7 @@ Run it only when really necessary. Several sessions often share the machine, and
 
 - `npm run sweep -- --change` checks only the scenes this branch touches; `--only lobby` the scenes whose key matches; `--sizes full` every size, or `--sizes phone,uhd`.
 - `--webgl` keeps the effects and the backdrop on; `--banding` also runs `scripts/find-banding.py` on each shot (it needs a Python with numpy and Pillow; `QA_PYTHON` names one).
+- `--faint` measures every run of text against what's behind it in its shot (outlines off, so they aren't measured too), in place of the frame's look against the page's dark; the runs too faint there go into what it prints, and with their numbers (Lc, what's behind, the colour seen, size and face) into the manifest (`texts`).
 - `--url http://localhost:5173/` sweeps a running server instead of a build; `--no-build` reuses the last build.
 - `--map` runs every scene once with the browser's coverage on and writes `src/data/sceneFiles.json`, which files each scene runs: what This change goes by. Run it when scenes or screens have changed much; with `--only <scenes>` it maps just those (new scenes, say) and merges them into the map as it was.
 - `--redraws` checks what Chrome draws again instead (below).

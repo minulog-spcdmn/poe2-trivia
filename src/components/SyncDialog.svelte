@@ -583,7 +583,8 @@
     border: 0;
     background: none;
     font-family: var(--font-body);
-    font-style: italic;
+    /* (Upright, a control, as every small link is.) */
+    font-style: normal;
     font-size: 0.95rem;
     color: var(--muted);
     text-decoration: underline;
@@ -597,7 +598,7 @@
   /* At the links' size (set down to their small letters: app.css .bullet). */
   .sep {
     font-size: 0.95rem;
-    color: var(--gold-lo);
+    color: var(--faint);
   }
   .actions {
     grid-area: actions;

@@ -678,7 +678,8 @@
     /* The last run's star: old blood, as the game's life globes. */
     --red: #b4432f;
     --red-hi: #cf5e45;
-    --red-num: #dc8a73;
+    /* (Its depth, light enough to read at 13px: APCA Lc 52.) */
+    --red-num: #e0907a;
     /* The ouroboros' draw-in, from its tail round to its head. */
     --s: 1.2s;
     pointer-events: none;
@@ -1104,7 +1105,7 @@
     opacity: 0.9;
   }
   .brace {
-    stroke: var(--muted);
+    stroke: var(--faint);
     stroke-width: 0.5;
     stroke-linecap: round;
     stroke-linejoin: round;
@@ -1112,7 +1113,7 @@
   }
   .ball {
     stroke: none;
-    fill: var(--muted);
+    fill: var(--faint);
     animation: carve 0.3s calc(var(--d) + 0.35s) var(--ease-out) both;
   }
   .word {
@@ -1120,7 +1121,7 @@
     font-size: 12.5px;
     letter-spacing: 0.02em;
     text-anchor: end;
-    fill: var(--muted);
+    fill: var(--faint);
     animation: carve 0.5s calc(var(--d) + 0.1s) var(--ease-out) both;
   }
 
@@ -1131,7 +1132,7 @@
   .legend text {
     font-family: var(--font-body);
     font-size: 12px;
-    fill: var(--muted);
+    fill: var(--text);
   }
   .key-star {
     stroke-width: 0.6;

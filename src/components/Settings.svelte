@@ -512,12 +512,12 @@
     font-size: 1rem;
     letter-spacing: 0;
     text-transform: none;
-    color: #c4b69c;
+    color: var(--muted);
   }
   .blurb {
     grid-column: 1 / -1;
     margin: 0;
-    font-size: 0.92rem;
+    font-size: 0.9375rem;
     font-style: italic;
     color: var(--muted);
   }
@@ -726,7 +726,7 @@
   }
   .sync-row .sep {
     margin-left: 0.4rem;
-    color: var(--gold-lo);
+    color: var(--faint);
     font-style: normal;
   }
   /* The colours as the avatars wear them, a ring of gold round the one picked. */
@@ -809,7 +809,8 @@
     border: 0;
     cursor: pointer;
     font-family: var(--font-body);
-    font-style: italic;
+    /* (Upright, a control, in the italic status line it sits in.) */
+    font-style: normal;
     font-size: 0.95rem;
     color: var(--muted);
     text-decoration: underline;
@@ -878,7 +879,7 @@
   .key-name {
     justify-self: start;
     font-size: 1rem;
-    color: #c4b69c;
+    color: var(--text);
   }
   /* A key on the seal the answers wear in a game (QuestionView's .key), drawn
      out for a key whose name is a word; a waiting one is lit and breathes. */

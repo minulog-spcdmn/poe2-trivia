@@ -575,7 +575,7 @@
     font-style: italic;
     font-size: var(--daily-line-size, 16px);
     line-height: var(--daily-line-lh, 22px);
-    color: #ab9d88;
+    color: var(--muted);
     text-wrap: balance;
     text-shadow: 0 0 8px rgba(0, 0, 0, 0.95);
   }
@@ -834,7 +834,7 @@
     font-family: var(--font-body);
     font-weight: 400;
     font-style: italic;
-    font-size: 13px;
+    font-size: 15px;
     line-height: 1.1;
     letter-spacing: 0;
     color: var(--unique-hi);
@@ -914,7 +914,7 @@
     text-wrap: balance;
     font-style: italic;
     font-size: 17px;
-    color: #a99c86;
+    color: var(--muted);
   }
   .tally {
     display: flex;
@@ -923,7 +923,10 @@
     margin: 0;
     font-style: italic;
     font-size: 15px;
-    color: #a99c86;
+    color: var(--muted);
+  }
+  .tally .sep {
+    color: var(--faint);
   }
   /* A phone's shorter wording (below). */
   .tally .short {
@@ -963,7 +966,7 @@
       height: 58px;
     }
     /* Room for two lines from the start (a caption may take two), so nothing below moves when the answer comes.
-       The result and Practice more keep to one line, at 375 wide too (the longest, Ended at 365 days · next in 23 hours, by 4px),
+       The result and Practice more keep to one line, at 375 wide too (the longest, Ended at 365 days · next in 23 hours, by 6px),
        the result at the left and the button at the right, as on wider screens. */
     .after {
       align-content: center;

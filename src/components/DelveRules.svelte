@@ -129,7 +129,7 @@
   }
   .finds dd {
     margin: 0.1rem 0 0;
-    font-size: 0.93rem;
+    font-size: 0.9375rem;
     line-height: 1.1;
     color: var(--muted);
   }
@@ -139,7 +139,7 @@
   /* Under the finds: why flares and dynamite never work on one. */
   .finds-unsafe {
     margin: 0.55rem 0 0;
-    font-size: 0.93rem;
+    font-size: 0.9375rem;
     font-style: italic;
     line-height: 1.1;
     color: var(--muted);

@@ -1327,8 +1327,9 @@
     display: flex;
     justify-content: center;
     gap: 0.6rem;
-    padding: 0.6rem 1rem 1rem;
-    font-size: 0.8rem;
+    /* At 15px, the foot's 0.2rem less padding keeping the row's height. */
+    padding: 0.6rem 1rem 0.8rem;
+    font-size: 0.9375rem;
     color: var(--muted);
     transition:
       opacity 0.3s,
@@ -1337,6 +1338,9 @@
   .legal a {
     color: var(--muted);
     text-decoration: none;
+  }
+  .legal span {
+    color: var(--faint);
   }
   .legal a:hover {
     color: var(--gold-hi);

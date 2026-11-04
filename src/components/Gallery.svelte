@@ -19,6 +19,7 @@
   import KickButton from './KickButton.svelte';
   import OnlookerMark from './OnlookerMark.svelte';
   import PlayerName from './PlayerName.svelte';
+  import You from './You.svelte';
   import WatchEye from './WatchEye.svelte';
   import WatchToggle from './WatchToggle.svelte';
 
@@ -99,7 +100,7 @@
         {#each spectators as o (o.id)}
           <li class:armed={confirming === o.id} animate:flip={{ duration: 300 }} in:fly={calm({ y: 6, duration: 250 })} out:rowOut={calm({ duration: 150 })}>
             <OnlookerMark name={o.name} size={24} />
-            <span class="name"><PlayerName name={o.name} />{#if o.id === session.myPlayerId}<em>&nbsp;(you)</em>{/if}</span>
+            <span class="name"><PlayerName name={o.name} />{#if o.id === session.myPlayerId}<em><You /></em>{/if}</span>
             <span class="when" class:next={!o.stay}>{o.stay ? 'Watching' : 'Next game'}</span>
             {#if canKick}
               <KickButton name={o.name} armed={confirming === o.id} onclick={() => kicker.click(o.id) && session.kick(o.id)} />
@@ -245,7 +246,6 @@
   }
   .name em {
     color: var(--muted);
-    font-size: 0.85em;
   }
   .when {
     flex: none;

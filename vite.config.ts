@@ -108,8 +108,8 @@ function betaPages(env: Record<string, string>): Plugin {
 const FIRST_SCREEN_FONTS = [
   'maragsa-display-',
   'cinzel-latin-700-normal-',
-  'eb-garamond-latin-400-normal-',
-  'eb-garamond-latin-400-italic-',
+  'manuale-latin-wght-normal-',
+  'andada-pro-latin-wght-italic-',
 ];
 
 function preloadFonts(): Plugin {

@@ -213,7 +213,7 @@
     color: var(--gold-hi);
   }
   .bar .muted {
-    font-size: 0.92rem;
+    font-size: 1rem;
     font-style: italic;
   }
 
@@ -299,7 +299,7 @@
     line-height: 1.2;
   }
   .run small {
-    font-size: 0.85rem;
+    font-size: 0.9375rem;
     font-style: italic;
     color: var(--muted);
   }
@@ -373,7 +373,7 @@
   }
   .group small {
     font-family: var(--font-body);
-    font-size: 0.85rem;
+    font-size: 0.9375rem;
     font-style: italic;
     letter-spacing: 0;
     color: var(--muted);
@@ -404,7 +404,7 @@
   .foot {
     margin: -0.4rem 0 0;
     text-align: center;
-    font-size: 0.9rem;
+    font-size: 1rem;
     font-style: italic;
     color: var(--muted);
   }

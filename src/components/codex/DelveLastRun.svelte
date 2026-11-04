@@ -134,7 +134,7 @@
     font-style: italic;
   }
   .note {
-    font-size: 0.88rem;
+    font-size: 0.9375rem;
     font-style: italic;
     line-height: 1.3;
     color: var(--muted);
@@ -158,7 +158,9 @@
     align-items: center;
     gap: 0.1rem;
   }
+  /* (Cinzel as .n has it, said again so the rule reads whole to tests/legible.test.ts: small capitals, not lower case.) */
   .at {
+    font-family: var(--font-cinzel);
     font-size: 0.7rem;
     line-height: 1;
     color: var(--muted);
@@ -195,7 +197,7 @@
   }
   .thumb.none {
     font-family: var(--font-cinzel);
-    color: var(--muted);
+    color: var(--faint);
   }
 
   @media (max-width: 560px) {
