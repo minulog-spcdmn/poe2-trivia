@@ -329,7 +329,8 @@
       opacity: 1;
     }
   }
-  :global(html[data-saver]) .amber :is(.lamp, .spangle, .hand, .spot) {
+  /* The battery saver lets the deal's kindle play, and holds the spangles' catching while it's hovered. */
+  :global(html[data-saver]) :global(.card.mine:hover) .spangle {
     animation: none;
   }
 </style>
