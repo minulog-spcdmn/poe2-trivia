@@ -9,6 +9,7 @@ import { registerHooks } from 'node:module';
 import { test, mock, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { memoryStorage } from './helpers.ts';
+import { EventEmitter } from 'node:events';
 
 fakeModule('peerjs', new URL('./fakePeerjs.ts', import.meta.url));
 // The session imports the item data as Vite does, without saying it's JSON.
@@ -22,10 +23,23 @@ Object.defineProperty(globalThis, 'document', { value: Object.assign(new EventTa
 mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
 const { session } = await import('../src/lib/session.svelte.ts');
 const { default: Peer, net } = await import('./fakePeerjs.ts');
-const { PEER_PREFIX, alsoOn, chooseServer, keepFresh, pageServer, peerJsNow, peerOptions, useServers } = await import('../src/lib/peer.ts');
+const { PEER_PREFIX, alsoOn, chooseServer, keepFresh, newPeer, pageServer, peerJsNow, peerOptions, serverOf, useServers } = await import('../src/lib/peer.ts');
 const { ProbeDesk, answerProbes, probeRoom, slotId } = await import('../src/lib/rooms.ts');
 const { OWN_SIGNAL_HOST } = await import('../src/lib/signalHost.ts');
 type RoomInfo = import('../src/lib/roomInfo.ts').RoomInfo;
+
+/** What each server says to a page's look (lib/peer.ts), never the network: yes, no, never a word, or as a function says each time. */
+type Says = boolean | 'never' | (() => boolean);
+let answering: { cloud: Says; own: Says } = { cloud: true, own: true };
+/** The servers asked, in order. */
+const asked: string[] = [];
+globalThis.fetch = ((url: string, init?: RequestInit) => {
+  const server = new URL(url).host === OWN_SIGNAL_HOST ? 'own' : 'cloud';
+  asked.push(server);
+  const says = answering[server];
+  if (says === 'never') return new Promise((_, fail) => init?.signal?.addEventListener('abort', () => fail(new DOMException('aborted', 'AbortError'))));
+  return (typeof says === 'function' ? says() : says) ? Promise.resolve(new Response('id')) : Promise.reject(new TypeError('Failed to fetch'));
+}) as typeof fetch;
 
 const settle = () => new Promise((r) => setImmediate(r));
 async function run(ms: number) {
@@ -65,6 +79,8 @@ beforeEach(() => {
   session.leave();
   net.reset();
   useServers(true, 'cloud');
+  answering = { cloud: true, own: true };
+  asked.length = 0;
   // Well past the page's start: a page just shown takes what the server says as about attempts from before (count.ts hiddenSince).
   // And past what the last test's joins heard of where a room is (rooms.ts onlyOn).
   mock.timers.setTime(Date.now() + 200_000);
@@ -127,6 +143,7 @@ test("a room's id lost on our server is tried for again, later each time, the ro
 
 test('a page the cloud turns away hosts on ours alone', async () => {
   useServers(true, 'own');
+  answering.cloud = false;
   session.host('Ash');
   await run(2000);
   assert.equal(session.status, 'ready');
@@ -216,6 +233,7 @@ test('a room the cloud has is joined there alone, ours never asked', async () =>
 
 test("a guest the cloud turns away joins on ours, and doesn't look on the cloud", async () => {
   useServers(true, 'own');
+  answering.cloud = false;
   session.join('ABCDEF', 'Bram');
   await run(100);
   const [guest] = guests();
@@ -240,7 +258,7 @@ test("an invite finds a room on either server; it's gone only when neither has i
 
 test('without our server (tests, the QA desk, a self-hosted one) everything meets on the cloud, as before', async () => {
   useServers(false);
-  assert.equal(alsoOn(), null);
+  assert.equal(alsoOn('cloud'), null);
   session.host('Ash');
   await run(2000);
   assert.equal(session.status, 'ready');
@@ -249,81 +267,233 @@ test('without our server (tests, the QA desk, a self-hosted one) everything meet
 });
 
 test("a page meets on the cloud if it answers, on ours if only ours does, and looks again if neither did", async () => {
-  const realFetch = globalThis.fetch;
-  let answering = { cloud: true, own: true };
-  const asked: string[] = [];
-  globalThis.fetch = (async (url: string) => {
-    const own = new URL(url).host === OWN_SIGNAL_HOST;
-    asked.push(own ? 'own' : 'cloud');
-    if (!answering[own ? 'own' : 'cloud']) throw new TypeError('Failed to fetch');
-    return new Response('id');
-  }) as typeof fetch;
-  try {
-    useServers(true, null);
-    assert.equal(await chooseServer(), 'cloud');
-    assert.deepEqual([pageServer(), alsoOn(), asked], ['cloud', 'own', ['cloud']]);
+  useServers(true, null);
+  assert.equal(await until(chooseServer()), 'cloud');
+  assert.deepEqual([pageServer(), alsoOn(pageServer()), asked], ['cloud', 'own', ['cloud']]);
 
-    useServers(true, null);
-    asked.length = 0;
-    answering = { cloud: false, own: true };
-    assert.equal(await chooseServer(), 'own');
-    assert.deepEqual([pageServer(), alsoOn(), asked], ['own', null, ['cloud', 'own']]);
-    assert.equal(peerOptions().host, OWN_SIGNAL_HOST);
+  useServers(true, null);
+  asked.length = 0;
+  answering = { cloud: false, own: true };
+  assert.equal(await until(chooseServer()), 'own');
+  assert.deepEqual([pageServer(), alsoOn(pageServer()), asked], ['own', null, ['cloud', 'own', 'cloud']], 'the cloud asked twice');
+  assert.equal(peerOptions().host, OWN_SIGNAL_HOST);
 
-    // A cloud slow to answer is no refusal: the page stays on it, and looks again later.
-    useServers(true, null);
-    asked.length = 0;
-    const answer = globalThis.fetch;
-    globalThis.fetch = ((url: string, init?: RequestInit) =>
-      new URL(url).host === OWN_SIGNAL_HOST
-        ? answer(url)
-        : new Promise((_, fail) => init?.signal?.addEventListener('abort', () => fail(new DOMException('aborted', 'AbortError'))))) as typeof fetch;
-    assert.equal(await until(chooseServer()), 'cloud');
-    assert.deepEqual([pageServer(), alsoOn(), asked], ['cloud', null, []], 'ours not asked');
-    globalThis.fetch = answer;
-
-    useServers(true, null);
-    answering = { cloud: false, own: false };
-    assert.equal(await chooseServer(), 'cloud', 'offline: the cloud, as before');
-    assert.equal(pageServer(), 'cloud');
-    assert.notEqual(peerJsNow(false), null, 'peers made on it for a while');
-    // Then looked at again before the next peer is made (a look from page load, the network back since).
-    mock.timers.tick(11_000);
-    assert.equal(peerJsNow(false), null);
-    asked.length = 0;
-    answering = { cloud: false, own: true };
-    assert.equal(await chooseServer(), 'own');
-    assert.deepEqual(asked, ['cloud', 'own']);
-    assert.equal(pageServer(), 'own');
-  } finally {
-    globalThis.fetch = realFetch;
-    useServers(true, 'cloud');
-  }
+  useServers(true, null);
+  answering = { cloud: false, own: false };
+  assert.equal(await until(chooseServer()), 'cloud', 'offline: the cloud, as before');
+  assert.equal(pageServer(), 'cloud');
+  assert.notEqual(peerJsNow(false), null, 'peers made on it for a while');
+  // Then looked at again before the next peer is made (a look from page load, the network back since).
+  mock.timers.tick(11_000);
+  assert.equal(peerJsNow(false), null);
+  asked.length = 0;
+  answering = { cloud: false, own: true };
+  assert.equal(await until(chooseServer()), 'own');
+  assert.deepEqual(asked, ['cloud', 'own', 'cloud']);
+  assert.equal(pageServer(), 'own');
 });
 
-test('a peer on ours from a page there takes a fresh socket under its id and token once it has carried 8 KB and gone quiet', async () => {
-  const done: string[] = [];
-  const handlers: ((data: unknown) => void)[] = [];
-  const socket = {
-    send: (_: object) => done.push('sent'),
-    on: (_: string, f: (data: unknown) => void) => handlers.push(f),
-    close: () => done.push('closed'),
-    start: (id: string, token: string) => done.push(`started ${id} ${token}`),
-  };
-  const peer = { socket, id: 'room', open: true, destroyed: false, options: { token: 'tok' } };
+test('one no from the cloud (an error, the network changing) is asked again, and the page stays on it if it answers then', async () => {
+  useServers(true, null);
+  let refusals = 1;
+  answering = { cloud: () => refusals-- <= 0, own: true };
+  assert.equal(await until(chooseServer()), 'cloud');
+  assert.deepEqual(asked, ['cloud', 'own', 'cloud']);
+  assert.equal(pageServer(), 'cloud');
+});
+
+test('a cloud slow to answer is waited for 4 s once, peers made on it meanwhile; no word in 15 s, and the page meets on ours', async () => {
+  useServers(true, null);
+  answering = { cloud: 'never', own: true };
+  const at = Date.now();
+  assert.equal(await until(chooseServer()), 'cloud');
+  assert.ok(Date.now() - at <= 4100, 'waited 4 s at most');
+  assert.equal(pageServer(), 'cloud');
+  assert.notEqual(peerJsNow(false), null, "the next peer doesn't wait for it again");
+  assert.equal(await until(chooseServer()), 'cloud');
+  assert.ok(Date.now() - at <= 4400);
+  await run(12_000);
+  assert.equal(pageServer(), 'own', 'the cloud taken as a no once it had said nothing for 15 s');
+  assert.deepEqual(asked, ['cloud', 'own']);
+});
+
+test('a page whose server fails it looks again: the cloud gone down, its peers meet on ours; back on the cloud once it answers', async () => {
+  const first = newPeer(Peer as never, undefined) as unknown as InstanceType<typeof Peer>;
+  answering = { cloud: false, own: true };
+  first.emit('error', { type: 'network', message: 'Lost connection to server.' });
+  await run(2000);
+  assert.equal(pageServer(), 'own');
+  // Its server lost again within 10 s: not looked at again so soon.
+  asked.length = 0;
+  (newPeer(Peer as never, undefined) as unknown as InstanceType<typeof Peer>).emit('error', { type: 'network', message: 'Lost connection to server.' });
+  await run(2000);
+  assert.deepEqual(asked, []);
+  // On ours, a peer made 5 minutes on looks again, and the cloud answers by then.
+  answering = { cloud: true, own: true };
+  await run(5 * 60_000);
+  assert.equal(serverOf(newPeer(Peer as never, undefined)), 'own', 'that peer is still on ours');
+  await run(1000);
+  assert.equal(pageServer(), 'cloud');
+  assert.equal(serverOf(newPeer(Peer as never, undefined)), 'cloud');
+});
+
+test("a look that finds neither leaves the page where it meets, and what isn't the page's server failing doesn't look", async () => {
+  useServers(true, 'own');
+  answering = { cloud: false, own: false };
+  const peer = newPeer(Peer as never, undefined) as unknown as InstanceType<typeof Peer>;
+  peer.emit('error', { type: 'peer-unavailable', message: 'Could not connect to peer x' });
+  await run(100);
+  assert.deepEqual(asked, [], 'a room not there is no server failing');
+  peer.emit('error', { type: 'server-error', message: 'Could not get an ID from the server.' });
+  await run(100);
+  assert.deepEqual(asked, [], 'not within 10 s of the look that found ours');
+  mock.timers.tick(10_000);
+  peer.emit('error', { type: 'server-error', message: 'Could not get an ID from the server.' });
+  await run(3000);
+  assert.deepEqual(asked, ['cloud', 'own', 'cloud']);
+  assert.equal(pageServer(), 'own');
+});
+
+/** PeerJS's socket (its Socket class, as keepFresh leans on it) over a WebSocket the test opens. */
+class PeerJsSocket extends EventEmitter {
+  _disconnected = true;
+  _messagesQueue: object[] = [];
+  _id: string | undefined;
+  _socket: { readyState: number } | undefined;
+  _wsPingTimer: ReturnType<typeof setTimeout> | undefined;
+  /** What went over the socket, and what was done to it. */
+  wire: string[] = [];
+  log: string[] = [];
+  start(id: string, token: string) {
+    this._id = id;
+    if (this._socket || !this._disconnected) return;
+    this._socket = { readyState: 0 };
+    this._disconnected = false;
+    this.log.push(`started ${id} ${token}`);
+  }
+  /** Its WebSocket opens. */
+  opened() {
+    this._socket!.readyState = 1;
+    this._sendQueuedMessages();
+    this._scheduleHeartbeat();
+  }
+  _scheduleHeartbeat() {
+    this._wsPingTimer = setTimeout(() => this._sendHeartbeat(), 25_000);
+  }
+  _sendHeartbeat() {
+    if (!this._wsOpen()) return;
+    this.wire.push('HEARTBEAT');
+    this._scheduleHeartbeat();
+  }
+  _wsOpen() {
+    return !!this._socket && this._socket.readyState === 1;
+  }
+  _sendQueuedMessages() {
+    const queue = [...this._messagesQueue];
+    this._messagesQueue = [];
+    for (const m of queue) this.send(m);
+  }
+  send(data: object) {
+    if (this._disconnected) return;
+    if (!this._id) return void this._messagesQueue.push(data);
+    if (!this._wsOpen()) return;
+    this.wire.push((data as { type: string }).type);
+  }
+  close() {
+    if (this._disconnected) return;
+    clearTimeout(this._wsPingTimer);
+    this._socket = undefined;
+    this._disconnected = true;
+    this.log.push('closed');
+  }
+}
+
+/** A peer open on a PeerJS socket, with the server's messages it's handed (an OPEN begins over what's under way). */
+function freshPeer() {
+  const socket = new PeerJsSocket();
+  const peer = { socket, id: 'room', open: true, destroyed: false, options: { token: 'tok' }, connections: {} as Record<string, { open: boolean }[]>, handed: [] as string[] };
+  socket.on('message', (m: { type: string }) => peer.handed.push(m.type));
+  socket.start('room', 'tok');
+  socket.opened();
+  socket.emit('message', { type: 'OPEN' });
+  socket.log.length = 0;
   keepFresh(peer as never);
-  socket.send({ type: 'CANDIDATE', payload: 'x'.repeat(4000) });
-  handlers.forEach((f) => f({ type: 'OFFER', payload: 'y'.repeat(3000) }));
+  return { socket, peer };
+}
+
+test('a peer on ours from a page there takes a fresh socket under its id and token once it has carried 6 KB and gone quiet', () => {
+  const { socket, peer } = freshPeer();
+  socket.send({ type: 'CANDIDATE', payload: 'x'.repeat(3000) });
+  socket.emit('message', { type: 'OFFER', payload: 'y'.repeat(2500) });
   mock.timers.tick(5000);
-  assert.deepEqual(done, ['sent'], 'not yet');
-  handlers.forEach((f) => f({ type: 'OFFER', payload: 'z'.repeat(2000) }));
+  assert.deepEqual(socket.log, [], 'not yet');
+  socket.emit('message', { type: 'OFFER', payload: 'z'.repeat(1000) });
   mock.timers.tick(500);
   socket.send({ type: 'ANSWER', payload: 'a' });
   mock.timers.tick(900);
-  assert.deepEqual(done, ['sent', 'sent'], 'only once quiet');
+  assert.deepEqual(socket.log, [], 'only once quiet');
   mock.timers.tick(200);
-  assert.deepEqual(done, ['sent', 'sent', 'closed', 'started room tok']);
-  socket.send({ type: 'CANDIDATE', payload: 'b' });
+  assert.deepEqual(socket.log, ['closed', 'started room tok']);
+  // Sent while the fresh socket opens: kept, and sent once it has.
+  socket.send({ type: 'CANDIDATE', payload: 'late' });
+  assert.equal(socket.wire.at(-1), 'ANSWER');
+  socket.opened();
+  assert.equal(socket.wire.at(-1), 'CANDIDATE');
+  // The server's OPEN on it isn't handed to the peer, which is open all along; what comes after is.
+  socket.emit('message', { type: 'OPEN' });
+  socket.emit('message', { type: 'OFFER', payload: 'b' });
+  assert.deepEqual(peer.handed, ['OPEN', 'OFFER', 'OFFER', 'OFFER']);
+  // Counted afresh.
   mock.timers.tick(5000);
-  assert.equal(done.length, 5, 'counted afresh');
+  assert.equal(socket.log.length, 2);
+});
+
+test('a socket on ours whose heartbeat goes unechoed is taken as stalled and swapped at once; an echo is for keepFresh alone', () => {
+  const { socket, peer } = freshPeer();
+  mock.timers.tick(25_000);
+  assert.equal(socket.wire.at(-1), 'HEARTBEAT');
+  socket.emit('message', { type: 'HEARTBEAT' });
+  mock.timers.tick(10_000);
+  assert.deepEqual(socket.log, [], 'echoed: alive');
+  assert.deepEqual(peer.handed, ['OPEN'], "PeerJS isn't handed the echo");
+  mock.timers.tick(15_000);
+  assert.equal(socket.wire.filter((w) => w === 'HEARTBEAT').length, 2);
+  mock.timers.tick(9_900);
+  assert.deepEqual(socket.log, []);
+  mock.timers.tick(200);
+  assert.deepEqual(socket.log, ['closed', 'started room tok'], 'stalled: swapped, though it carried little');
+  // The fresh socket says nothing within 10 s either: lost, as PeerJS takes one that closes (it disconnects, and reconnects later).
+  socket.on('disconnected', () => peer.handed.push('lost'));
+  mock.timers.tick(9_900);
+  assert.deepEqual(peer.handed, ['OPEN']);
+  mock.timers.tick(200);
+  assert.deepEqual(peer.handed, ['OPEN', 'lost']);
+});
+
+test('a swap waits while a connection is being set up, to 8 KB', () => {
+  const { socket, peer } = freshPeer();
+  peer.connections = { guest: [{ open: false }] };
+  socket.emit('message', { type: 'OFFER', payload: 'x'.repeat(6500) });
+  mock.timers.tick(3000);
+  assert.deepEqual(socket.log, [], 'waits for it');
+  peer.connections.guest[0].open = true;
+  mock.timers.tick(1100);
+  assert.deepEqual(socket.log, ['closed', 'started room tok']);
+  const again = freshPeer();
+  again.peer.connections = { guest: [{ open: false }] };
+  again.socket.emit('message', { type: 'OFFER', payload: 'x'.repeat(8500) });
+  mock.timers.tick(1100);
+  assert.deepEqual(again.socket.log, ['closed', 'started room tok'], 'not past 8 KB');
+});
+
+test("peers made on ours have ids from getRandomValues (randomUUID isn't on plain http or older Safari)", () => {
+  useServers(true, 'own');
+  const uuid = crypto.randomUUID;
+  Object.defineProperty(crypto, 'randomUUID', { value: undefined, configurable: true });
+  try {
+    const peer = newPeer(Peer as never, undefined);
+    assert.match(peer.id, /^[A-Za-z0-9]{24}$/);
+  } finally {
+    Object.defineProperty(crypto, 'randomUUID', { value: uuid, configurable: true });
+  }
 });

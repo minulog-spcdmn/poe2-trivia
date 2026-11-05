@@ -168,25 +168,39 @@ until it does.
 ### Matchmaking server
 
 Players meet on the free PeerJS cloud (`0.peerjs.com`), which turns away every
-player in Russia (it answers them 403, from the same address that answers
-Kazakhstan), so none of them could host or join. They meet on the game's own
-server instead: a Worker (`signal/worker.js`) that speaks the
-[PeerJS server](https://github.com/peers/peerjs-server)'s protocol, one
-Durable Object holding every peer's socket in memory.
+player in Russia (it answers them 403), so none of them could host or join.
+They meet on the game's own server instead: a Worker (`signal/worker.js`)
+that speaks the [PeerJS server](https://github.com/peers/peerjs-server)'s
+protocol, one Durable Object holding every peer's socket in memory.
 
-- A page looks once it goes online (hosts, joins, syncs, the open rooms list):
-  the cloud if it answers, else, if the cloud said no (not if it was only
-  slow), ours if that answers (`lib/peer.ts`). Everyone the cloud answers
-  meets there as before: nothing that worked before leans on ours.
-- A host's room and its listing are on both, so a guest finds it on either.
-  A guest on the cloud that hears the room isn't there looks for it on ours
-  too, by ping alone, and goes on there where the cloud would say there's no
-  such room (a cloud host only reconnecting is waited for on the cloud, as
-  before), or at once if the invite link's screen, which pings both, heard
-  it's on ours alone. A code no room has is told as soon as before.
+- A page looks once it goes online (hosts, joins, syncs, the open rooms list;
+  a page that never does asks neither): the cloud if it answers, else ours if
+  that does (`lib/peer.ts`). A no from the cloud is asked again a second
+  later; a cloud slow to answer is waited for, and taken as a no only after
+  15 s without a word. A peer waits 4 s at most for the look, made on the
+  cloud meanwhile. Everyone the cloud answers meets there as before: nothing
+  that worked before leans on ours.
+- Either stands in for the other. A page whose server fails it (a peer loses
+  it) looks again, so pages meet on ours while the cloud is down; a page on
+  ours looks again as it makes a peer once five minutes have passed, and is
+  back on the cloud once that answers it.
+- A room on the cloud and its listing are on ours too, so a guest finds it on
+  either. A guest on the cloud that hears the room isn't there looks for it
+  on ours too, by ping alone, and goes on there where the cloud would say
+  there's no such room (a cloud host only reconnecting is waited for on the
+  cloud, as before), or at once if the invite link's screen, which pings
+  both, heard it's on ours alone. A code no room has is told as soon as
+  before.
 - Russian networks are reported to stall a connection to Cloudflare once
-  about 16 KB have gone over it, so a page on ours swaps its socket for a
-  fresh one under the same id after 8 KB (`keepFresh`).
+  about 16 KB have gone over it (TLS's handshake takes about 5 of them), so
+  a page on ours swaps its socket for a fresh one under the same id after
+  6 KB (`keepFresh`), counting what each message adds on the way and the
+  heartbeats. Cloudflare echoes every heartbeat without waking the Object,
+  and a socket whose echo doesn't come within 10 s (stalled sooner) is
+  swapped at once. What the page sends meanwhile waits for the fresh socket.
+- The relay (below) is on Cloudflare too, so a link between two players
+  there that needs it (one on a carrier's network, say) may stall the same
+  way; unmeasured, and only a relay elsewhere would get round it.
 - The open rooms list scans its page's server only: a page on the cloud
   doesn't list a room whose host the cloud turned away (an invite or the code
   still finds it).
@@ -197,7 +211,7 @@ Durable Object holding every peer's socket in memory.
   carries); 5,000 peers at once at most. An id whose socket was lost (not
   closed by its page) is kept for it 15 s, so a host's blip doesn't hand its
   room to whoever asks next. What waits for an id nobody holds is capped at
-  4 MB. Nothing is stored or logged.
+  4 MB, and 256 KB from one address. Nothing is stored or logged.
 - Cloudflare's free plan gives a Durable Object 100,000 requests a day, a
   socket's messages counting 20 to one (a peer on ours sends a heartbeat
   every 25 s, not PeerJS's 5), and the account 100,000 Worker requests a
@@ -205,11 +219,14 @@ Durable Object holding every peer's socket in memory.
   ask for none). A page on the cloud costs ours nothing unless it hosts (its
   room's id, and a public room's listing), opens an invite or joins a room
   the cloud hasn't got; a page on ours, a socket per peer, the open rooms
-  list a socket per refresh while it's shown. Past either, ours stops until
-  midnight UTC: hosts carry on on the cloud, and only the pages the cloud
-  turns away can't play. The Worker requests are the account's, the relay's
-  too, so the relay would stop with it: on an account of its own, ours
-  can't touch the relay.
+  list a socket per refresh while it's shown. A room costs ours about six
+  requests, so at the busiest day yet (569 visits, 5 November 2026) it stays
+  far under both. Past either, ours stops until midnight UTC: pages the cloud
+  answers never needed it (their rooms' copies on ours try again, later each
+  time), and only the pages the cloud turns away can't play, as before ours.
+  The Worker requests are the account's, the relay's too, so the relay would
+  stop with it (connections then meet without it, as below): on a free
+  account of its own, ours can't touch the relay.
 
 To set it up (once): in `signal/` (not the project's root, see "Relay"),
 `npx wrangler login` and `npx wrangler deploy`. It's the Worker

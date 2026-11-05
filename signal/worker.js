@@ -19,7 +19,9 @@
 //   list leans on that (lib/rooms.ts), as on the ping it sends as a CANDIDATE.
 //   One that can't wait (too much waits already) is answered EXPIRE at once.
 // - A socket silent for ALIVE_MS (the game's peers send a heartbeat every
-//   25 s on this server, lib/peer.ts) is dropped.
+//   25 s on this server, lib/peer.ts) is dropped. Heartbeats are echoed by
+//   Cloudflare without waking the Object, so a page learns its socket has
+//   stalled (lib/peer.ts keepFresh).
 // - `/peerjs/id` hands a peer made without an id a fresh one.
 //
 // Only the game's own pages are answered, an address may connect only so
@@ -62,6 +64,10 @@ const BURST_MS = 10_000;
 export const MAX_WAITING = 100;
 export const MAX_WAITING_ALL = 10_000;
 export const MAX_WAITING_CHARS = 4_000_000;
+/** The characters one address key (its sockets together) has waiting at once: a room's guests are each an address of their own, and one can't fill what all share. */
+export const MAX_WAITING_FROM = 256 * 1024;
+/** PeerJS's heartbeat, as its socket sends it: echoed as it is. */
+export const HEARTBEAT = '{"type":"HEARTBEAT"}';
 /** What PeerJS takes as an id (its util.validateId), and as long as a socket's tag could be. */
 const ID = /^[A-Za-z0-9]+(?:[ _-][A-Za-z0-9]+)*$/;
 const MAX_ID = 256;
@@ -88,7 +94,7 @@ const LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[\w-]+\.localhost|10\
  * A socket on Cloudflare, which keeps what it's given across hibernation.
  * @typedef {Socket & { serializeAttachment(value: unknown): void, deserializeAttachment(): unknown, readyState: number }} CfSocket
  * The Durable Object's state, as far as it's used.
- * @typedef {{ acceptWebSocket(ws: CfSocket): void, getWebSockets(): CfSocket[] }} State
+ * @typedef {{ acceptWebSocket(ws: CfSocket): void, getWebSockets(): CfSocket[], setWebSocketAutoResponse?(pair: unknown): void, getWebSocketAutoResponseTimestamp?(ws: CfSocket): Date | null }} State
  * The Worker's bindings (wrangler.toml).
  * @typedef {{
  *   SIGNAL: { idFromName(name: string): unknown, get(id: unknown, o?: { locationHint?: string }): { fetch(r: Request): Promise<Response> } },
@@ -147,10 +153,19 @@ export class Board {
   perAddress = new Map();
   /** Ids of lost sockets, kept for their token a while. @type {Map<string, { token: string, until: number }>} */
   reserved = new Map();
-  /** Messages for an id nobody holds, as the text to send, and when the first came (the PeerJS server's queues, expired whole). @type {Map<string, { at: number, messages: { src: string, text: string }[] }>} */
+  /** Messages for an id nobody holds, as the text to send (and whose share it's of), and when the first came (the PeerJS server's queues, expired whole). @type {Map<string, { at: number, messages: { src: string, text: string, from: string }[] }>} */
   waiting = new Map();
   waitingAll = 0;
   waitingChars = 0;
+  /** The characters waiting by each address key (a socket's id where it has none). @type {Map<string, number>} */
+  waitingFrom = new Map();
+  /** When a socket's heartbeat was last echoed, without reaching the board (Signal: Cloudflare's), or 0. @type {(ws: Socket) => number} */
+  echoed = () => 0;
+
+  /** When a peer was last heard from: a message, or a heartbeat echoed. @param {Peer} peer */
+  lastHeard(peer) {
+    return Math.max(peer.heard, this.echoed(peer.ws));
+  }
 
   /**
    * A socket for `id` with `token`, from `address` (its key; none counts no
@@ -160,8 +175,8 @@ export class Board {
    */
   join(ws, id, token, now, address = '') {
     const stale = this.peers.get(id);
-    // Lost when its time was up, as the sweep would have found it.
-    if (stale && now - stale.heard >= ALIVE_MS) this.lose(stale, stale.heard + ALIVE_MS);
+    // Lost, as the sweep would find it, kept for its page from now (the page may not know yet).
+    if (stale && now - this.lastHeard(stale) >= ALIVE_MS) this.lose(stale, now);
     const held = this.peers.get(id);
     const kept = this.reserved.get(id);
     if (kept && kept.until <= now) this.reserved.delete(id);
@@ -267,23 +282,31 @@ export class Board {
     // Waits for the id to be taken: a host reconnecting. A goodbye to nobody goes nowhere.
     if (!KEPT.has(m.type)) return;
     const w = this.waiting.get(m.dst);
-    if (this.waitingAll >= MAX_WAITING_ALL || this.waitingChars + text.length > MAX_WAITING_CHARS || (w && w.messages.length >= MAX_WAITING)) {
+    const sender = this.peers.get(m.src);
+    const from = sender?.address || m.src;
+    const its = this.waitingFrom.get(from) ?? 0;
+    if (this.waitingAll >= MAX_WAITING_ALL || this.waitingChars + text.length > MAX_WAITING_CHARS || its + text.length > MAX_WAITING_FROM || (w && w.messages.length >= MAX_WAITING)) {
       // No room to wait: its sender hears at once what it would after EXPIRE_MS, not nothing.
-      const from = this.peers.get(m.src);
-      if (from) tell(from.ws, { type: 'EXPIRE', src: m.dst, dst: m.src });
+      if (sender) tell(sender.ws, { type: 'EXPIRE', src: m.dst, dst: m.src });
       return;
     }
-    if (w) w.messages.push({ src: m.src, text });
-    else this.waiting.set(m.dst, { at: now, messages: [{ src: m.src, text }] });
+    if (w) w.messages.push({ src: m.src, text, from });
+    else this.waiting.set(m.dst, { at: now, messages: [{ src: m.src, text, from }] });
     this.waitingAll++;
     this.waitingChars += text.length;
+    this.waitingFrom.set(from, its + text.length);
   }
 
-  /** @param {string} dst @param {{ messages: { text: string }[] }} w */
+  /** @param {string} dst @param {{ messages: { text: string, from: string }[] }} w */
   unqueue(dst, w) {
     this.waiting.delete(dst);
     this.waitingAll -= w.messages.length;
-    for (const m of w.messages) this.waitingChars -= m.text.length;
+    for (const m of w.messages) {
+      this.waitingChars -= m.text.length;
+      const n = (this.waitingFrom.get(m.from) ?? 0) - m.text.length;
+      if (n > 0) this.waitingFrom.set(m.from, n);
+      else this.waitingFrom.delete(m.from);
+    }
   }
 
   /**
@@ -337,9 +360,9 @@ export class Board {
     }
   }
 
-  /** Drops the sockets silent for ALIVE_MS (lost, so their ids are kept a while), and the kept ids whose while is up. @param {number} now */
+  /** Drops the sockets silent for ALIVE_MS (lost, so their ids are kept a while from now), and the kept ids whose while is up. @param {number} now */
   sweep(now) {
-    for (const peer of [...this.peers.values()]) if (now - peer.heard >= ALIVE_MS) this.lose(peer, peer.heard + ALIVE_MS);
+    for (const peer of [...this.peers.values()]) if (now - this.lastHeard(peer) >= ALIVE_MS) this.lose(peer, now);
     for (const [id, kept] of this.reserved) if (kept.until <= now) this.reserved.delete(id);
   }
 }
@@ -356,6 +379,10 @@ export class Signal {
   constructor(ctx) {
     this.ctx = ctx;
     this.board = new Board();
+    // Heartbeats echoed by Cloudflare, the Object left asleep, and heard as when they last were.
+    const Pair = /** @type {{ WebSocketRequestResponsePair?: new (request: string, response: string) => unknown }} */ (/** @type {unknown} */ (globalThis)).WebSocketRequestResponsePair;
+    if (Pair && ctx.setWebSocketAutoResponse) ctx.setWebSocketAutoResponse(new Pair(HEARTBEAT, HEARTBEAT));
+    this.board.echoed = (ws) => ctx.getWebSocketAutoResponseTimestamp?.(/** @type {CfSocket} */ (ws))?.getTime() ?? 0;
     /** @type {ReturnType<typeof setTimeout> | null} */
     this.expiring = null;
     /** @type {ReturnType<typeof setTimeout> | null} */

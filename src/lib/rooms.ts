@@ -370,7 +370,7 @@ export async function probeRoom(code: string): Promise<RoomInfo | 'gone' | null>
   // (The page's server chosen first: that look has a while of its own, and ends.)
   await Promise.race([Promise.all([loadPeerJsCode(), chooseServer()]).catch(() => {}), sleep(PROBE_OPEN_TIMEOUT_MS)]);
   const here = probeOn(code, pageServer());
-  const also = alsoOn();
+  const also = alsoOn(pageServer());
   if (!also) return here;
   // Pinged alone there, never connected to: the room's id on ours may be held by someone other than its host for a while (its Mirror lost it), who'd learn this browser's address.
   const there = probeOn(code, also, false);
@@ -553,13 +553,14 @@ export class Beacon {
   private compactTimer: ReturnType<typeof setInterval> | null = null;
   private compacting = false;
   private prober: Prober | null = null;
-  /** Network troubles in a row, on the other server (`server` named): each try after the last waits longer. */
+  /** Network troubles in a row, on the other server (`other`): each try after the last waits longer. */
   private troubles = 0;
 
-  /** `server`: where it lists the room (lib/peer.ts), the page's unless named. */
+  /** `server`: where it lists the room (lib/peer.ts), the page's unless named; `other`, beside the room's own server, which carries on without it. */
   constructor(
     private info: ListingInfo,
     private server?: Server,
+    private other = false,
   ) {}
 
   start() {
@@ -597,7 +598,7 @@ export class Beacon {
       if (results.some((r) => r === null)) {
         // Network trouble: try again later from the start. On the other server, later each time (to 5 minutes), so a
         // server down or out of its allowance isn't asked again and again by every room listed on the page's.
-        const wait = this.server ? Math.min(300_000, 10_000 * 2 ** this.troubles++) : 10_000;
+        const wait = this.other ? Math.min(300_000, 10_000 * 2 ** this.troubles++) : 10_000;
         setTimeout(() => !this.stopped && !this.peer && void this.claimFrom(1), wait);
         return;
       }
@@ -629,7 +630,7 @@ export class Beacon {
     peer.on('open', () => (this.troubles = 0));
     peer.on('disconnected', () => {
       // On the other server, later each time while it's down (claimFrom).
-      const wait = this.server ? Math.min(300_000, 2000 * 2 ** this.troubles++) : 2000;
+      const wait = this.other ? Math.min(300_000, 2000 * 2 ** this.troubles++) : 2000;
       if (!peer.destroyed && this.peer === peer) setTimeout(() => !peer.destroyed && peer.reconnect(), wait);
     });
     peer.on('error', (err) => {

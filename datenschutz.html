@@ -68,7 +68,7 @@
           Daneben betreibt das Spiel einen eigenen Vermittlungsserver, einen Cloudflare Worker (workers.dev; Cloudflare,
           Inc., USA), der dasselbe verarbeitet: Wer einen Raum eröffnet, ist auf beiden Servern erreichbar, ein
           Einladungslink fragt bei beiden nach dem Raum, und wer beitritt, fragt auch dort nach ihm und tritt dort bei, wenn
-          PeerJS ihn nicht hat. Ist PeerJS von Ihrem Netz aus nicht erreichbar, nutzt die Seite nur ihn. Er zählt, um massenhafte
+          PeerJS ihn nicht hat. Ist PeerJS von Ihrem Netz aus nicht erreichbar oder ausgefallen, nutzt die Seite nur ihn, bis PeerJS wieder antwortet. Er zählt, um massenhafte
           Verbindungen zu bremsen, je Adresse die Verbindungen der letzten Minute und speichert nichts davon.
         </li>
         <li>
@@ -302,7 +302,7 @@
           <li>
             <strong>Online play and the open rooms list:</strong> the PeerJS matchmaking server (0.peerjs.com), the game’s own
             matchmaking server (a Worker of the game’s on Cloudflare, which every room’s host is on too, an invite link and a
-            guest ask too, the guest joining there when PeerJS doesn’t have the room, and that a page uses alone when PeerJS doesn’t answer it,
+            guest ask too, the guest joining there when PeerJS doesn’t have the room, and that a page uses alone while PeerJS doesn’t answer it,
             counting each address’s connections over the last minute to slow bulk use and storing nothing) and Cloudflare
             (Cloudflare, Inc., USA: a small Worker of the game’s that hands the page a relay login lasting twelve hours, asked once you open or join a room or sync your devices and renewed while the page stays open, counting each address’s asks over the last minute to slow bulk use, its STUN server and, if needed, its
             relay servers (TURN), through which the game’s data then runs) and Google’s STUN server (stun.l.google.com) process your IP address to connect players.

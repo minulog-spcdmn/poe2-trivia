@@ -9,6 +9,7 @@ import {
   ALIVE_MS,
   Board,
   EXPIRE_MS,
+  HEARTBEAT,
   MAX_BURST,
   MAX_FLOOD,
   MAX_PEERS,
@@ -17,6 +18,7 @@ import {
   MAX_WAITING,
   MAX_WAITING_ALL,
   MAX_WAITING_CHARS,
+  MAX_WAITING_FROM,
   RESERVE_MS,
   Signal,
   addressKey,
@@ -191,13 +193,16 @@ test('what waits is kept as the text to send, handed over as is, and its size co
   const payload = [{}, {}, { x: 'é' }];
   b.heard(a, offer('room', payload), T);
   const kept = b.waiting.get('room')!.messages[0];
-  assert.deepEqual(kept, { src: 'a', text: JSON.stringify({ type: 'OFFER', src: 'a', dst: 'room', payload }) });
+  // (Its sender's share by its id, as it came from no address.)
+  assert.deepEqual(kept, { src: 'a', text: JSON.stringify({ type: 'OFFER', src: 'a', dst: 'room', payload }), from: 'a' });
   assert.equal(b.waitingChars, kept.text.length);
+  assert.equal(b.waitingFrom.get('a'), kept.text.length);
   const host = new Sock();
   b.join(host, 'room', 'h', T + 100);
   assert.deepEqual(host.said.at(-1), { type: 'OFFER', src: 'a', dst: 'room', payload });
   assert.equal(b.waitingChars, 0);
   assert.equal(b.waitingAll, 0);
+  assert.equal(b.waitingFrom.size, 0);
 });
 
 test('one that waited EXPIRE_MS tells each sender EXPIRE once, as the room not being there', () => {
@@ -246,16 +251,69 @@ test('heartbeats keep a socket; one silent for ALIVE_MS is dropped', () => {
   assert.equal(b.peers.has('silent'), false);
 });
 
-test('an id held by a socket silent for ALIVE_MS is lost even before a sweep: kept for its token, then free', () => {
+test('an id held by a socket silent for ALIVE_MS is lost even before a sweep: kept for its token from then, then free', () => {
   const b = new Board();
   const dead = new Sock();
   b.join(dead, 'room', 't1', T);
   assert.equal(b.join(new Sock(), 'room', 't2', T + ALIVE_MS), false);
   assert.equal(dead.closed, true);
   assert.equal(b.join(new Sock(), 'room', 't1', T + ALIVE_MS + 10), true);
+  // Found long after its time was up: its page may not know yet, so kept from when it's found.
   const later = new Board();
   later.join(new Sock(), 'room', 't1', T);
-  assert.equal(later.join(new Sock(), 'room', 't2', T + ALIVE_MS + RESERVE_MS), true);
+  const found = T + ALIVE_MS + RESERVE_MS;
+  assert.equal(later.join(new Sock(), 'room', 't2', found), false);
+  assert.equal(later.join(new Sock(), 'room', 't2', found + RESERVE_MS), true);
+});
+
+test("a socket swept late (the sweep runs every 15 s) keeps its id RESERVE_MS from the sweep, not from when it fell silent", () => {
+  const b = new Board();
+  b.join(new Sock(), 'room', 't1', T);
+  const swept = T + ALIVE_MS + 14_000;
+  b.sweep(swept);
+  assert.equal(b.join(new Sock(), 'room', 'stranger', swept + RESERVE_MS - 1000), false);
+  assert.equal(b.join(new Sock(), 'room', 't1', swept + RESERVE_MS - 500), true);
+});
+
+test("a heartbeat Cloudflare echoed (which never reaches the board) keeps a socket as one heard", () => {
+  const b = new Board();
+  const beating = new Sock();
+  const silent = new Sock();
+  b.join(beating, 'beating', 'b', T);
+  b.join(silent, 'silent', 's', T);
+  b.echoed = (ws) => (ws === beating ? T + ALIVE_MS - 1000 : 0);
+  b.sweep(T + ALIVE_MS);
+  assert.equal(beating.closed, false);
+  assert.equal(silent.closed, true);
+  assert.equal(b.join(new Sock(), 'beating', 'stranger', T + ALIVE_MS), false, 'not taken as stale on a join either');
+});
+
+test("the Object has Cloudflare echo PeerJS's heartbeat, and reads when it last did", () => {
+  const g = globalThis as { WebSocketRequestResponsePair?: unknown };
+  g.WebSocketRequestResponsePair = class {
+    request: string;
+    response: string;
+    constructor(request: string, response: string) {
+      this.request = request;
+      this.response = response;
+    }
+  };
+  try {
+    const got: { pair?: { request: string; response: string } } = {};
+    const sock = new Sock();
+    const o = new Signal({
+      acceptWebSocket() {},
+      getWebSockets: () => [],
+      setWebSocketAutoResponse: (p: never) => void (got.pair = p),
+      getWebSocketAutoResponseTimestamp: (ws: unknown) => (ws === sock ? new Date(T + 5) : null),
+    });
+    assert.deepEqual(got.pair && [got.pair.request, got.pair.response], [HEARTBEAT, HEARTBEAT]);
+    assert.equal(HEARTBEAT, JSON.stringify({ type: 'HEARTBEAT' }), "as PeerJS's socket sends it");
+    assert.equal(o.board.echoed(sock), T + 5);
+    assert.equal(o.board.echoed(new Sock()), 0);
+  } finally {
+    delete g.WebSocketRequestResponsePair;
+  }
 });
 
 test('unknown types are ignored; past MAX_BURST messages are let go; junk and floods cut the sender off, its connections kept', () => {
@@ -337,6 +395,34 @@ test('past MAX_WAITING_CHARS waiting, a message is answered EXPIRE at once inste
   assert.ok(b.waitingChars <= MAX_WAITING_CHARS);
   assert.ok(answered.length >= 5);
   assert.equal(b.waiting.size, n - answered.length);
+});
+
+test("one address can't fill what waits for everyone: past MAX_WAITING_FROM its own are answered EXPIRE, another's still wait", () => {
+  const b = new Board();
+  const big = 'x'.repeat(MAX_TEXT - 200);
+  const flood = Array.from({ length: 8 }, (_, i) => {
+    const s = new Sock();
+    b.join(s, `f${i}`, 't', T, '203.0.113.9');
+    return s;
+  });
+  let expired = 0;
+  for (let i = 0; i < 40; i++) {
+    const s = flood[i % flood.length];
+    const before = s.said.length;
+    b.heard(s, offer(`gone${i}`, big), T + i);
+    if (s.said.length > before) expired++;
+  }
+  assert.ok(b.waitingChars <= MAX_WAITING_FROM, 'the address kept to its share');
+  assert.ok(expired >= 35);
+  const guest = new Sock();
+  b.join(guest, 'guest', 'g', T, '198.51.100.7');
+  b.heard(guest, offer('host'), T + 50);
+  assert.deepEqual(guest.types(), ['OPEN'], "another address's offer waits");
+  assert.equal(b.waiting.get('host')?.messages.length, 1);
+  // Its share is back once what it had waiting is gone.
+  b.expire(T + EXPIRE_MS + 100);
+  assert.equal(b.waitingChars, 0);
+  assert.equal(b.waitingFrom.size, 0);
 });
 
 test('past MAX_WAITING_ALL waiting, a message is answered EXPIRE at once instead of kept', () => {
