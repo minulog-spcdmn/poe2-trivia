@@ -60,16 +60,21 @@ const LOOK_AGAIN_MS = 10_000;
 /** Where peers can be made: the page's server found, or a look that found neither just ended. */
 const ready = () => chosen !== null || Date.now() - failedAt < LOOK_AGAIN_MS;
 
-/** Whether a server answers this page: the address PeerJS gets a fresh id from, which the cloud refuses in Russia. */
-async function answers(o: PeerOptions): Promise<boolean> {
+/**
+ * Whether a server answers this page, at the address PeerJS gets a fresh id
+ * from, which the cloud refuses in Russia: 'yes', 'no' (refused, or no
+ * network), or 'slow' (no word in LOOK_MS: a slow link, or the server).
+ */
+async function answers(o: PeerOptions): Promise<'yes' | 'no' | 'slow'> {
   const url = `https://${o.host ?? '0.peerjs.com'}${o.path ?? '/'}peerjs/id?ts=${Date.now()}${Math.random()}`;
   const stop = new AbortController();
   const timer = setTimeout(() => stop.abort(), LOOK_MS);
   try {
-    return (await fetch(url, { signal: stop.signal, cache: 'no-store' })).ok;
+    // (No `cache` option: WebKit sends it as headers, which need a preflight neither server answers. The address is new each time.)
+    return (await fetch(url, { signal: stop.signal })).ok ? 'yes' : 'no';
   } catch {
     // (Refused, the cloud's 403 has nothing that lets the page read it, so it fails as a lost network would.)
-    return false;
+    return stop.signal.aborted ? 'slow' : 'no';
   } finally {
     clearTimeout(timer);
   }
@@ -77,13 +82,16 @@ async function answers(o: PeerOptions): Promise<boolean> {
 
 /**
  * Looks, once a page goes online, where it meets: the cloud if it answers,
- * else ours if that does. Neither (offline): the cloud, looked at again
+ * else, if it said no, ours if that answers. A cloud only slow to answer is
+ * no reason to leave it (PeerJS would wait for it, as it did before ours):
+ * as with neither (offline), the page meets on the cloud and looks again
  * before a peer is made once LOOK_AGAIN_MS has passed (peerJsNow).
  */
 export function chooseServer(): Promise<Server> {
   if (chosen) return Promise.resolve(chosen);
   return (choosing ??= (async () => {
-    const found: Server | null = (await answers(SIGNALLING)) ? 'cloud' : (await answers(OWN)) ? 'own' : null;
+    const cloud = await answers(SIGNALLING);
+    const found: Server | null = cloud === 'yes' ? 'cloud' : cloud === 'no' && (await answers(OWN)) === 'yes' ? 'own' : null;
     if (own) chosen = found;
     failedAt = found ? 0 : Date.now();
     choosing = null;
@@ -170,6 +178,64 @@ export function peerOptions(server: Server = pageServer()): PeerOptions {
 export type PeerJs = typeof PeerJsModule;
 let peerJs: PeerJs | null = null;
 let loading: Promise<PeerJs> | null = null;
+
+/**
+ * A new peer on `server` (the page's unless named), under `id` or a fresh
+ * one: on ours made here, which saves the request PeerJS makes for one (the
+ * free allowance counts it); on the cloud the cloud's, as before. On a page
+ * that meets on ours, kept on a fresh socket (keepFresh).
+ */
+export function newPeer(Peer: PeerJs['default'], id?: string, server: Server = pageServer()): PeerJsModule.Peer {
+  const options = peerOptions(server);
+  const name = id ?? (server === 'own' && !QA_LOCAL ? crypto.randomUUID() : undefined);
+  const peer = name ? new Peer(name, options) : new Peer(options);
+  if (server === 'own' && chosen === 'own') keepFresh(peer);
+  return peer;
+}
+
+/** What a socket to ours carries before it's swapped for a fresh one (keepFresh), and how long it's to be quiet first, so nothing is on its way. */
+const FRESH_CHARS = 8 * 1024;
+const QUIET_MS = 1000;
+
+/**
+ * Russian networks are reported to stall a connection to Cloudflare once
+ * about 16 KB have gone over it (Cloudflare, June 2025), as a room's host's
+ * would after a few guests. A peer on ours from a page there takes a fresh
+ * socket under the same id and token once it has carried FRESH_CHARS and
+ * gone quiet: the server hands the id over (what reaches it meanwhile waits
+ * there), and PeerJS keeps the peer and its connections as they are.
+ */
+export function keepFresh(peer: PeerJsModule.Peer) {
+  const socket = peer.socket as unknown as {
+    send(data: object): void;
+    on(event: 'message', f: (data: unknown) => void): unknown;
+    close?(): void;
+    start?(id: string, token: string): void;
+  };
+  if (!socket?.start || !socket.close) return;
+  let carried = 0;
+  let quiet: ReturnType<typeof setTimeout> | null = null;
+  const swap = () => {
+    quiet = null;
+    const token = peer.options.token;
+    if (peer.destroyed || !peer.open || !token || carried < FRESH_CHARS) return;
+    carried = 0;
+    socket.close!();
+    socket.start!(peer.id, token);
+  };
+  const add = (data: unknown) => {
+    carried += JSON.stringify(data)?.length ?? 0;
+    if (carried < FRESH_CHARS) return;
+    if (quiet) clearTimeout(quiet);
+    quiet = setTimeout(swap, QUIET_MS);
+  };
+  const send = socket.send.bind(socket);
+  socket.send = (data) => {
+    add(data);
+    send(data);
+  };
+  socket.on('message', add);
+}
 
 /**
  * Destroys a peer. One made without an id that's still getting it from its

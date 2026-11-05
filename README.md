@@ -175,28 +175,41 @@ server instead: a Worker (`signal/worker.js`) that speaks the
 Durable Object holding every peer's socket in memory.
 
 - A page looks once it goes online (hosts, joins, syncs, the open rooms list):
-  the cloud if it answers, else ours if that does (`lib/peer.ts`). Everyone
-  the cloud answers meets there as before: nothing that worked before leans
-  on ours.
+  the cloud if it answers, else, if the cloud said no (not if it was only
+  slow), ours if that answers (`lib/peer.ts`). Everyone the cloud answers
+  meets there as before: nothing that worked before leans on ours.
 - A host's room and its listing are on both, so a guest finds it on either.
-  A guest on the cloud looks for the room on ours too, by ping alone, and
-  goes on there where the cloud would say there's no such room (a cloud host
-  only reconnecting is waited for on the cloud, as before), or at once if
-  the invite link's screen, which asks both, heard it's on ours alone. A code
-  no room has is told as soon as before.
+  A guest on the cloud that hears the room isn't there looks for it on ours
+  too, by ping alone, and goes on there where the cloud would say there's no
+  such room (a cloud host only reconnecting is waited for on the cloud, as
+  before), or at once if the invite link's screen, which pings both, heard
+  it's on ours alone. A code no room has is told as soon as before.
+- Russian networks are reported to stall a connection to Cloudflare once
+  about 16 KB have gone over it, so a page on ours swaps its socket for a
+  fresh one under the same id after 8 KB (`keepFresh`).
 - The open rooms list scans its page's server only: a page on the cloud
   doesn't list a room whose host the cloud turned away (an invite or the code
   still finds it).
-- Only the game's own pages are answered; an address (an IPv6 one's /64) may
-  connect 120 times a minute; a socket's messages past 300 in 10 s are let
-  go, and past 1,500 it's hung up on (never with a server error, for which
-  PeerJS would end every game the peer carries); 5,000 peers at once at
-  most. Nothing is stored or logged.
+- Only the game's own pages are answered; an address (an IPv4 one, or an
+  IPv6 /56) may connect 120 times a minute and hold 64 sockets; a socket's
+  messages past 300 in 10 s are let go, and past 600 it's hung up on (never
+  with a server error, for which PeerJS would end every game the peer
+  carries); 5,000 peers at once at most. An id whose socket was lost (not
+  closed by its page) is kept for it 15 s, so a host's blip doesn't hand its
+  room to whoever asks next. What waits for an id nobody holds is capped at
+  4 MB. Nothing is stored or logged.
 - Cloudflare's free plan gives a Durable Object 100,000 requests a day, a
   socket's messages counting 20 to one (a peer on ours sends a heartbeat
-  every 25 s, not PeerJS's 5).
-  Past that, ours stops until midnight UTC: hosts carry on on the cloud, and
-  only the pages the cloud turns away can't play.
+  every 25 s, not PeerJS's 5), and the account 100,000 Worker requests a
+  day, each socket one (peers on ours make their ids in the page, so they
+  ask for none). A page on the cloud costs ours nothing unless it hosts (its
+  room's id, and a public room's listing), opens an invite or joins a room
+  the cloud hasn't got; a page on ours, a socket per peer, the open rooms
+  list a socket per refresh while it's shown. Past either, ours stops until
+  midnight UTC: hosts carry on on the cloud, and only the pages the cloud
+  turns away can't play. The Worker requests are the account's, the relay's
+  too, so the relay would stop with it: on an account of its own, ours
+  can't touch the relay.
 
 To set it up (once): in `signal/` (not the project's root, see "Relay"),
 `npx wrangler login` and `npx wrangler deploy`. It's the Worker

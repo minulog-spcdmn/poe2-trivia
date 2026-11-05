@@ -17,7 +17,7 @@
 
 import type Peer from 'peerjs';
 import type { DataConnection } from 'peerjs';
-import { PEER_PREFIX, alsoOn, chooseServer, loadPeerJsCode, pageServer, peerOptions, type Server } from './peer';
+import { PEER_PREFIX, alsoOn, chooseServer, loadPeerJsCode, newPeer, pageServer, type Server } from './peer';
 import { randomToken } from './roomCode';
 import { frameFits, hookFrames, MAX_PROBE_BYTES } from './guard';
 import { isHeldName } from './names';
@@ -53,6 +53,8 @@ const INVITE_CONNECT_MS = 2000;
 const CONNECT_TIMEOUT_MS = 6000;
 /** How long an invite's probe waits for the signalling server before it gives up (probeRoom). */
 const PROBE_OPEN_TIMEOUT_MS = 8000;
+/** How long an invite's probe still waits on the other server for the room once the page's own says no room has the code (probeRoom). */
+const GONE_GRACE_MS = 2500;
 /**
  * Once connected, how long a room has to answer a probe: one that knows
  * probes (ProbeDesk) answers at once. An older one never does, and would
@@ -70,8 +72,9 @@ const MIRROR_FIRST_MS = 2000;
 const MIRROR_LATEST_MS = 60_000;
 /** How long what an invite's probe heard of a room on each server is taken as still so (onlyOn). */
 const HEARD_FOR_MS = 120_000;
-/** A room looked for on a join's other server (watchForRoom) is pinged again no sooner than this after the last ping. */
+/** A room looked for on a join's other server (watchForRoom) is pinged again no sooner than this after the last ping, and the server tried again this long after it failed, twice as long each time up to the latest. */
 const WATCH_AGAIN_MS = 2000;
+const WATCH_LATEST_MS = 16_000;
 
 export const slotId = (n: number) => `${PEER_PREFIX}pub-${n}`;
 
@@ -278,9 +281,8 @@ export function answerProbes(
 /** A peer on `server` (the page's, chosen first), once it's on it. */
 async function openPeer(id?: string, server?: Server): Promise<Peer> {
   const [{ default: Peer }] = await Promise.all([loadPeerJsCode(), chooseServer()]);
-  const options = peerOptions(server ?? pageServer());
   return new Promise((resolve, reject) => {
-    const peer = id ? new Peer(id, options) : new Peer(options);
+    const peer = newPeer(Peer, id, server);
     // Listening from the start, so a ping that comes before anyone answers it isn't kept by PeerJS for good.
     signals(peer);
     const fail = (err: unknown) => {
@@ -370,14 +372,17 @@ export async function probeRoom(code: string): Promise<RoomInfo | 'gone' | null>
   const here = probeOn(code, pageServer());
   const also = alsoOn();
   if (!also) return here;
-  const there = probeOn(code, also);
+  // Pinged alone there, never connected to: the room's id on ours may be held by someone other than its host for a while (its Mirror lost it), who'd learn this browser's address.
+  const there = probeOn(code, also, false);
   return new Promise((resolve) => {
     let left = 2;
     let ours: RoomInfo | 'gone' | null = null;
-    const heard = (r: RoomInfo | 'gone' | null, own: boolean) => {
+    const heard = (r: RoomInfo | 'gone' | null, page: boolean) => {
       if (r && r !== 'gone') return resolve(r);
-      if (own) ours = r;
+      if (page) ours = r;
       if (--left === 0) resolve(ours);
+      // The page's server says no room has the code: the other has a moment more (where it's slow to answer, not its whole while).
+      else if (page && r === 'gone') setTimeout(() => resolve('gone'), GONE_GRACE_MS);
     };
     void here.then((r) => heard(r, true));
     void there.then((r) => heard(r, false));
@@ -387,6 +392,11 @@ export async function probeRoom(code: string): Promise<RoomInfo | 'gone' | null>
 /** What probeRoom last heard of each room on each server: whether it was there ('gone': the server said it isn't), and when. */
 const lately = new Map<string, { at: number } & Partial<Record<Server, boolean>>>();
 
+/** A join found the room on `server`, and not on the other: a join again (another name, a reload) goes there at once (onlyOn). */
+export function heardOnlyOn(code: string, server: Server) {
+  lately.set(code, { at: Date.now(), [server]: true, [server === 'own' ? 'cloud' : 'own']: false });
+}
+
 /** The server an invite's probe found the room on, the other having said it isn't there, lately (HEARD_FOR_MS): where its join goes at once. */
 export function onlyOn(code: string): Server | null {
   const h = lately.get(code);
@@ -394,9 +404,9 @@ export function onlyOn(code: string): Server | null {
   return h.own && h.cloud === false ? 'own' : h.cloud && h.own === false ? 'cloud' : null;
 }
 
-/** probeRoom on one server. */
-async function probeOn(code: string, server: Server): Promise<RoomInfo | 'gone' | null> {
-  const r = await probeOnce(code, server);
+/** probeRoom on one server; connecting to a room that answers no ping only if `connect`. */
+async function probeOn(code: string, server: Server, connect = true): Promise<RoomInfo | 'gone' | null> {
+  const r = await probeOnce(code, server, connect);
   if (r !== null) {
     const h = lately.get(code);
     lately.set(code, { ...(h && Date.now() - h.at < HEARD_FOR_MS ? h : {}), at: Date.now(), [server]: r !== 'gone' });
@@ -404,7 +414,7 @@ async function probeOn(code: string, server: Server): Promise<RoomInfo | 'gone' 
   return r;
 }
 
-async function probeOnce(code: string, server: Server): Promise<RoomInfo | 'gone' | null> {
+async function probeOnce(code: string, server: Server, connect: boolean): Promise<RoomInfo | 'gone' | null> {
   const opening = openPeer(undefined, server);
   const peer = await Promise.race([opening.catch(() => null), sleep(PROBE_OPEN_TIMEOUT_MS).then(() => null)]);
   if (!peer) {
@@ -412,7 +422,7 @@ async function probeOnce(code: string, server: Server): Promise<RoomInfo | 'gone
     return null;
   }
   try {
-    const r = await new Prober(peer).probe(PEER_PREFIX + code, INVITE_CONNECT_MS);
+    const r = await new Prober(peer).probe(PEER_PREFIX + code, connect ? INVITE_CONNECT_MS : null);
     // Only this room's own listing: another room's, signed for the held name, passed on by this one, would show it as theirs.
     return r === 'free' ? 'gone' : r === 'held' || (r && r.code !== code) ? null : r;
   } finally {
@@ -435,7 +445,8 @@ export function watchForRoom(code: string, server: Server, found: () => void): (
     peer = null;
   };
   void (async () => {
-    while (!stopped) {
+    // Troubles with the server in a row: the next try waits longer, to WATCH_LATEST_MS.
+    for (let troubles = 0; !stopped; troubles++) {
       const p = await openPeer(undefined, server).catch(() => null);
       if (stopped) return p?.destroy();
       peer = p;
@@ -450,9 +461,10 @@ export function watchForRoom(code: string, server: Server, found: () => void): (
         }
         // The server takes a few seconds to say it's free; no word, or a quicker one, isn't asked after again sooner than this.
         await sleep(at + WATCH_AGAIN_MS - Date.now());
+        troubles = 0;
       }
       p?.destroy();
-      if (!stopped) await sleep(WATCH_AGAIN_MS);
+      if (!stopped) await sleep(Math.min(WATCH_LATEST_MS, WATCH_AGAIN_MS * 2 ** troubles));
     }
   })();
   return stop;
@@ -614,8 +626,11 @@ export class Beacon {
     old?.destroy();
     // A slot is only asked after, never joined: anything else is turned away.
     answerProbes(peer, new ProbeDesk(this.info));
+    peer.on('open', () => (this.troubles = 0));
     peer.on('disconnected', () => {
-      if (!peer.destroyed && this.peer === peer) setTimeout(() => !peer.destroyed && peer.reconnect(), 2000);
+      // On the other server, later each time while it's down (claimFrom).
+      const wait = this.server ? Math.min(300_000, 2000 * 2 ** this.troubles++) : 2000;
+      if (!peer.destroyed && this.peer === peer) setTimeout(() => !peer.destroyed && peer.reconnect(), wait);
     });
     peer.on('error', (err) => {
       // Lost our id (e.g. after a long disconnect): claim a slot again.

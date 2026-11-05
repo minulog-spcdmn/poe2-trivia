@@ -17,7 +17,7 @@ class_name = "Signal"
 tag = "v1"
 new_sqlite_classes = ["Signal"]
 
-# Connections (and new ids) a single address (an IPv6 one's /64) may ask for
+# Connections (and new ids) a single address (an IPv6 one's /56) may ask for
 # a minute: a page makes a few as it hosts, joins or lists the open rooms, and
 # again as it reconnects; this slows a script spending the free allowance,
 # with room for a school's or a carrier's shared address.

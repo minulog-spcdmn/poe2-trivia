@@ -113,7 +113,7 @@ export default class Peer extends Emitter {
   constructor(id?: string | { host?: string }, options?: { host?: string }) {
     super();
     this.id = typeof id === 'string' ? id : `anon-${++anon}`;
-    this.server = (typeof id === 'string' ? options : id)?.host === OWN_SIGNAL_HOST ? 'own' : 'cloud';
+    this.server = (typeof id === 'string' ? options : (id ?? options))?.host === OWN_SIGNAL_HOST ? 'own' : 'cloud';
     this.held = this.server === 'own' ? net.ownHeld : net.held;
     const held = this.held;
     this.socket = new Socket(this);

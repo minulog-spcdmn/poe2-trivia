@@ -33,9 +33,9 @@ import {
   type Item,
   type Player,
 } from './game';
-import { PEER_PREFIX, alsoOn, chooseServer, letGo, loadPeerJs, pageServer, peerJsNow, peerOptions, type PeerJs, type Server } from './peer';
+import { PEER_PREFIX, alsoOn, chooseServer, letGo, loadPeerJs, newPeer, pageServer, peerJsNow, type PeerJs, type Server } from './peer';
 import { CODE_LENGTH, CODE_PATTERN, randomCode, randomToken } from './roomCode.ts';
-import { Beacon, Mirror, ProbeDesk, answerProbes, onlyOn, watchForRoom, type RoomInfo } from './rooms';
+import { Beacon, Mirror, ProbeDesk, answerProbes, heardOnlyOn, onlyOn, watchForRoom, type RoomInfo } from './rooms';
 import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, roomSecret } from './guard';
 import { LaneReceiver, LaneSender, openLane, parseFakeLink } from './artLane';
@@ -905,7 +905,7 @@ class Session {
       false,
     );
     if (!Peer) return;
-    const peer = new Peer(PEER_PREFIX + code, peerOptions());
+    const peer = newPeer(Peer, PEER_PREFIX + code);
     this.peer = peer;
     // A reopened room gives each try its while (a new room's runs through them all, host).
     if (resumeState) this.armOpenGiveUp(code);
@@ -963,10 +963,14 @@ class Session {
       this.startPings();
       this.watchOwnPresence();
       // On the other server too, so a guest there finds the room: one the cloud turns away looks on ours.
-      const also = alsoOn();
-      this.mirror?.stop();
-      this.mirror = also ? new Mirror(PEER_PREFIX + code, also, (p) => this.takeConnections(p)) : null;
-      this.mirror?.start();
+      // (Once the page knows where it meets: a look that found neither server just now looks again.)
+      const epoch = this.peerEpoch;
+      void chooseServer().then(() => {
+        if (epoch !== this.peerEpoch || this.peer !== peer || this.mirror) return;
+        const also = alsoOn();
+        this.mirror = also ? new Mirror(PEER_PREFIX + code, also, (p) => this.takeConnections(p)) : null;
+        this.mirror?.start();
+      });
     });
     // An open room off the signalling server, and back (count.ts RoomOff).
     const off = new RoomOff();
@@ -2124,7 +2128,6 @@ class Session {
     // The invite's screen has just heard the room is on one server and not the other: the join looks there alone.
     this.joinServer = onlyOn(this.code);
     this.startClientPeer();
-    this.watchElsewhere();
     // Asked from the tap that joined, which some browsers want for it.
     this.stayAwake();
   }
@@ -2169,7 +2172,7 @@ class Session {
     if (this.peer) letGo(this.peer);
     this.cancelAttempts();
     // (The page's server as it is now: a look that found neither may have found one since.)
-    const peer = new Peer(peerOptions(this.joinServer ?? pageServer()));
+    const peer = newPeer(Peer, undefined, this.joinServer ?? pageServer());
     this.peer = peer;
     // 'open' fires again when the signalling server is reconnected: a live
     // link to the host doesn't need it, a lost one tries again right away.
@@ -2203,13 +2206,15 @@ class Session {
   }
 
   /**
-   * Joining from a page that meets on the cloud: the room is looked for on
-   * ours too (lib/peer.ts alsoOn), by ping, as a host the cloud turns away
-   * has it there alone. Where the cloud would tell there's no such room and
-   * ours has it, the join goes on there (roomUnavailable): a cloud host only
-   * reconnecting is waited for on the cloud as before (its room is on ours
-   * too, but the game would lean on ours from then on), and a room on
-   * neither is told as before, as soon as before.
+   * Joining from a page that meets on the cloud, which has said once it
+   * doesn't have the room: the room is looked for on ours too (lib/peer.ts
+   * alsoOn), by ping, as a host the cloud turns away has it there alone (a
+   * join the cloud has the room for never asks ours). Where the cloud would
+   * tell there's no such room and ours has it, the join goes on there
+   * (roomUnavailable): a cloud host only reconnecting is waited for on the
+   * cloud as before (its room is on ours too, but the game would lean on
+   * ours from then on), and a room on neither is told as before, as soon as
+   * before.
    */
   private watchElsewhere() {
     const epoch = this.peerEpoch;
@@ -2235,6 +2240,9 @@ class Session {
     this.joinServer = server;
     this.unavailableUntil = 0;
     this.firstAttemptAt = 0;
+    // Joining again (another name, a reload) goes there at once; and this goes on for a while of its own.
+    heardOnlyOn(this.code, server);
+    this.armConnectTimeout();
     this.startClientPeer();
   }
 
@@ -2296,6 +2304,7 @@ class Session {
     }
     // (Every attempt is made by now: EXPIRE_MS after the answer, as the look above takes it.)
     if (!this.unavailableUntil) this.unavailableUntil = Date.now() + EXPIRE_MS;
+    if (!this.stopWatch && !this.foundOn) this.watchElsewhere();
     // The server holds an offer a few seconds before giving up on it, so the
     // answer is about an attempt that old. A newer one may still get through.
     const now = Date.now();
@@ -3048,9 +3057,17 @@ class Session {
     const want = this.mode === 'host' && !this.roomless && !!s.settings.public;
     if (want && !this.beacons.length) {
       const info = (challenge: string | null) => (this.unlisted() ? null : this.listing(challenge));
-      const also = alsoOn();
-      this.beacons = [new Beacon(info), ...(also ? [new Beacon(info, also)] : [])];
-      for (const b of this.beacons) b.start();
+      const first = new Beacon(info);
+      this.beacons = [first];
+      first.start();
+      // On the other server too, once the page knows where it meets (a look that found neither looks again).
+      void chooseServer().then(() => {
+        const also = alsoOn();
+        if (!also || this.beacons[0] !== first || this.beacons.length > 1) return;
+        const there = new Beacon(info, also);
+        this.beacons.push(there);
+        there.start();
+      });
     } else if (!want && this.beacons.length) {
       for (const b of this.beacons.splice(0)) b.stop();
     }

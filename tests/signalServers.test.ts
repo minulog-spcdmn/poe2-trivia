@@ -22,7 +22,7 @@ Object.defineProperty(globalThis, 'document', { value: Object.assign(new EventTa
 mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
 const { session } = await import('../src/lib/session.svelte.ts');
 const { default: Peer, net } = await import('./fakePeerjs.ts');
-const { PEER_PREFIX, alsoOn, chooseServer, pageServer, peerJsNow, peerOptions, useServers } = await import('../src/lib/peer.ts');
+const { PEER_PREFIX, alsoOn, chooseServer, keepFresh, pageServer, peerJsNow, peerOptions, useServers } = await import('../src/lib/peer.ts');
 const { ProbeDesk, answerProbes, probeRoom, slotId } = await import('../src/lib/rooms.ts');
 const { OWN_SIGNAL_HOST } = await import('../src/lib/signalHost.ts');
 type RoomInfo = import('../src/lib/roomInfo.ts').RoomInfo;
@@ -47,7 +47,8 @@ async function until<T>(p: Promise<T>, limit = 60_000): Promise<T> {
   assert.ok(done, `settled within ${limit} ms`);
   return out!;
 }
-const guests = () => net.made.filter((p) => p.id.startsWith('anon-'));
+/** Peers under no room's or listing's id: guests, and on ours the look for a room (watchForRoom), whose ids ours has made in the page. */
+const guests = () => net.made.filter((p) => !p.id.startsWith(PEER_PREFIX));
 /** The peers a join reached the room from, by server (beside them, a peer on ours that only pings, watchForRoom). */
 const joiners = (server: 'cloud' | 'own') => [...new Set(net.connected.filter((id) => id.startsWith('own:') === (server === 'own')))];
 const unavailable = (p: InstanceType<typeof Peer>) => p.emit('error', { type: 'peer-unavailable', message: `Could not connect to peer ${PEER_PREFIX}ABCDEF` });
@@ -65,7 +66,8 @@ beforeEach(() => {
   net.reset();
   useServers(true, 'cloud');
   // Well past the page's start: a page just shown takes what the server says as about attempts from before (count.ts hiddenSince).
-  mock.timers.setTime(Date.now() + 60_000);
+  // And past what the last test's joins heard of where a room is (rooms.ts onlyOn).
+  mock.timers.setTime(Date.now() + 200_000);
 });
 
 test("a host's room and its listing are on both servers once it opens, and let go of on both as it closes", async () => {
@@ -202,13 +204,14 @@ test('a code no room has is told as soon as before, the join never moved to ours
   assert.ok(net.made.filter((p) => p.server === 'own').every((p) => p.destroyed), 'and stopped looking');
 });
 
-test("a room on both servers is joined on the cloud alone, ours only looked at", async () => {
+test('a room the cloud has is joined there alone, ours never asked', async () => {
   hosted('ABCDEF', 'cloud');
   hosted('ABCDEF', 'own');
   session.join('ABCDEF', 'Bram');
   await run(3000);
   assert.deepEqual(joiners('cloud'), [PEER_PREFIX + 'ABCDEF']);
   assert.deepEqual(joiners('own'), []);
+  assert.deepEqual(guests().filter((p) => p.server === 'own'), [], 'not even looked on');
 });
 
 test("a guest the cloud turns away joins on ours, and doesn't look on the cloud", async () => {
@@ -267,6 +270,18 @@ test("a page meets on the cloud if it answers, on ours if only ours does, and lo
     assert.deepEqual([pageServer(), alsoOn(), asked], ['own', null, ['cloud', 'own']]);
     assert.equal(peerOptions().host, OWN_SIGNAL_HOST);
 
+    // A cloud slow to answer is no refusal: the page stays on it, and looks again later.
+    useServers(true, null);
+    asked.length = 0;
+    const answer = globalThis.fetch;
+    globalThis.fetch = ((url: string, init?: RequestInit) =>
+      new URL(url).host === OWN_SIGNAL_HOST
+        ? answer(url)
+        : new Promise((_, fail) => init?.signal?.addEventListener('abort', () => fail(new DOMException('aborted', 'AbortError'))))) as typeof fetch;
+    assert.equal(await until(chooseServer()), 'cloud');
+    assert.deepEqual([pageServer(), alsoOn(), asked], ['cloud', null, []], 'ours not asked');
+    globalThis.fetch = answer;
+
     useServers(true, null);
     answering = { cloud: false, own: false };
     assert.equal(await chooseServer(), 'cloud', 'offline: the cloud, as before');
@@ -284,4 +299,31 @@ test("a page meets on the cloud if it answers, on ours if only ours does, and lo
     globalThis.fetch = realFetch;
     useServers(true, 'cloud');
   }
+});
+
+test('a peer on ours from a page there takes a fresh socket under its id and token once it has carried 8 KB and gone quiet', async () => {
+  const done: string[] = [];
+  const handlers: ((data: unknown) => void)[] = [];
+  const socket = {
+    send: (_: object) => done.push('sent'),
+    on: (_: string, f: (data: unknown) => void) => handlers.push(f),
+    close: () => done.push('closed'),
+    start: (id: string, token: string) => done.push(`started ${id} ${token}`),
+  };
+  const peer = { socket, id: 'room', open: true, destroyed: false, options: { token: 'tok' } };
+  keepFresh(peer as never);
+  socket.send({ type: 'CANDIDATE', payload: 'x'.repeat(4000) });
+  handlers.forEach((f) => f({ type: 'OFFER', payload: 'y'.repeat(3000) }));
+  mock.timers.tick(5000);
+  assert.deepEqual(done, ['sent'], 'not yet');
+  handlers.forEach((f) => f({ type: 'OFFER', payload: 'z'.repeat(2000) }));
+  mock.timers.tick(500);
+  socket.send({ type: 'ANSWER', payload: 'a' });
+  mock.timers.tick(900);
+  assert.deepEqual(done, ['sent', 'sent'], 'only once quiet');
+  mock.timers.tick(200);
+  assert.deepEqual(done, ['sent', 'sent', 'closed', 'started room tok']);
+  socket.send({ type: 'CANDIDATE', payload: 'b' });
+  mock.timers.tick(5000);
+  assert.equal(done.length, 5, 'counted afresh');
 });
