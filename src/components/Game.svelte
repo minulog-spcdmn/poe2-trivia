@@ -449,7 +449,7 @@
   });
   /** Svelte transition: the blasted question goes at once (its shards fly in an overlay of their own, see above), or cross-fades. */
   function swingOut(_node: Element) {
-    // Reduced motion, or the effects held still: a blast only cross-fades.
+    // Reduced motion: a blast only cross-fades.
     if (!swingSide || !motion.still) return { duration: 0 };
     return { duration: 200, css: (t: number) => `opacity: ${t}` };
   }
@@ -1028,8 +1028,7 @@
     margin: 0;
     font-size: max(0.8rem, calc(var(--R) * 0.05));
     font-style: italic;
-    /* (A lighter tint than the kicker's: on a phone it's at its floor, small.) */
-    color: #f0c8bb;
+    color: #e6b8aa;
   }
   .skip {
     display: flex;

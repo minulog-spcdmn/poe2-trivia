@@ -271,6 +271,7 @@ const FX_WRITES: Record<string, string> = {
   "if (canvas) canvas.style.visibility = 'hidden';": 'their canvas',
   "canvas.style.position = setInPage ? 'absolute' : '';": 'their canvas',
   'canvas.style.translate = at;': 'their canvas',
+  "const markSaver = () => typeof document !== 'undefined' && document.documentElement?.toggleAttribute?.('data-saver', saver);": 'the battery saver, as the page loads and as it’s switched (never a frame)',
 };
 
 test('the effects write to the page only through the shake and their own canvas', () => {

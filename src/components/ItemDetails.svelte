@@ -233,7 +233,7 @@
   }
   .wait {
     margin: 0;
-    color: var(--muted);
+    color: var(--note);
   }
   /* The game's rule between sections: a plain line fading out at both ends, in the unique's colour. */
   .rule {

@@ -79,6 +79,15 @@
       arcane-breathe 6s 2.2s ease-in-out infinite alternate,
       blink 9s 5s infinite;
   }
+  /* With the battery saver it opens and then rests, never blinking or
+     looking aside (reduced motion: app.css cuts all short). */
+  :global(html[data-saver]) .eye :global(.gaze),
+  :global(html[data-saver]) .eye svg {
+    animation: none;
+  }
+  :global(html[data-saver]) .eye .glow {
+    animation: arcane-glow-in 1.4s 0.8s ease-out both;
+  }
 
   @keyframes open {
     from {

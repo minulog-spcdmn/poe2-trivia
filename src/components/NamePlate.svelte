@@ -520,6 +520,10 @@
       fade 1.4s 0.5s ease-out both,
       breathe-glow 6s 1.9s ease-in-out infinite alternate;
   }
+  /* The battery saver lets it fade in, and holds it there. */
+  :global(html[data-saver]) .glow {
+    animation: fade 1.4s 0.5s ease-out both;
+  }
   .glow .metal {
     stroke: #d98a4e;
     stroke-width: 3.6;
@@ -638,6 +642,13 @@
     .lit.glint .bloom {
       animation: none;
     }
+  }
+  /* The battery saver holds it as it rests too, after the glint's flare. */
+  :global(html[data-saver]) .lit .bloom {
+    animation: none;
+  }
+  :global(html[data-saver]) .lit.glint .bloom {
+    animation: flare 1.3s ease-out both;
   }
   /* A fossil's lamp, behind its panes and round them, whatever `lit` says.
      Low while the question is up, as the plate's own signs are dark till
@@ -769,6 +780,19 @@
     .plate.taken .flash {
       animation: none;
     }
+  }
+  /* The battery saver lets a fossil's lamp come up, and holds it there. */
+  :global(html[data-saver]) .plate.fossil.up .bloom,
+  :global(html[data-saver]) .plate .heart {
+    animation: none;
+  }
+  :global(html[data-saver]) .plate.fossil.taken .bloom {
+    animation:
+      kindle var(--launch) ease-in both,
+      settle 0.9s var(--launch) ease-out forwards;
+  }
+  :global(html[data-saver]) .plate.fossil.rare.taken .bloom {
+    animation-name: kindle-rare, settle;
   }
   .seal {
     transform-box: fill-box;

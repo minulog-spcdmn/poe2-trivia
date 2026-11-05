@@ -11,9 +11,9 @@
   import { onMount } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { fly } from 'svelte/transition';
-  import { calm } from '../lib/motion.svelte';
+  import { calm, motion } from '../lib/motion.svelte';
   import { getAmbience, getVolume, isMuted, onSoundChange, setAmbience, setMuted, setVolume, sfx } from '../lib/sound';
-  import { fxAvailable, fxUserOn, onFxChange, setFxOn } from '../lib/fx/core';
+  import { setBatterySaver } from '../lib/fx/core';
   import { NAME_KEY, session, savedName, saveName } from '../lib/session.svelte';
   import { MAX_NAME, nameRefusal } from '../lib/names';
   import { pressed, refuseName } from '../lib/nameField';
@@ -45,7 +45,6 @@
       ambience = getAmbience();
     }),
   );
-  const shownVolume = $derived(muted ? 0 : volume);
 
   function slideVolume(e: Event) {
     setVolume((e.currentTarget as HTMLInputElement).valueAsNumber);
@@ -57,15 +56,10 @@
 
   // ---- the screen ----
 
-  // (The effects layer may only say it can run a moment after the page opens.)
-  let fxCan = $state(fxAvailable());
-  let fxOn = $state(fxUserOn());
-  onMount(() =>
-    onFxChange((on) => {
-      fxOn = on;
-      fxCan = fxAvailable();
-    }),
-  );
+  const saver = $derived(motion.saving);
+  /** The levels as heard: none while muted or the battery saver silences the game, the settings kept for when the sound is back. */
+  const shownVolume = $derived(muted || saver ? 0 : volume);
+  const shownAmbience = $derived(muted || saver ? 0 : ambience);
 
   // ---- the name ----
 
@@ -234,27 +228,28 @@
         <div class="row">
           <label class="label" for="set-volume">Volume</label>
           <div class="slide">
-            <input id="set-volume" use:fingerSlide type="range" min="0" max="1" step="0.05" value={shownVolume} oninput={slideVolume} onkeydown={() => (slidByKey = true)} onpointerdown={() => (slidByKey = false)} onchange={() => sfx(slidByKey ? 'key' : 'click')} style:--level={shownVolume} />
+            <input id="set-volume" use:fingerSlide type="range" min="0" max="1" step="0.05" value={shownVolume} oninput={slideVolume} disabled={saver} onkeydown={() => (slidByKey = true)} onpointerdown={() => (slidByKey = false)} onchange={() => sfx(slidByKey ? 'key' : 'click')} style:--level={shownVolume} />
             <span class="num">{Math.round(shownVolume * 100)}</span>
           </div>
         </div>
         <div class="row">
           <label class="label" for="set-ambience">Ambience</label>
           <div class="slide">
-            <input id="set-ambience" use:fingerSlide type="range" min="0" max="1" step="0.05" value={ambience} oninput={(e) => setAmbience(e.currentTarget.valueAsNumber)} disabled={muted} style:--level={ambience} />
-            <span class="num">{Math.round(ambience * 100)}</span>
+            <input id="set-ambience" use:fingerSlide type="range" min="0" max="1" step="0.05" value={shownAmbience} oninput={(e) => setAmbience(e.currentTarget.valueAsNumber)} disabled={muted || saver} style:--level={shownAmbience} />
+            <span class="num">{Math.round(shownAmbience * 100)}</span>
           </div>
         </div>
       </section>
 
       <section class="block" in:fly={enter(-30, 110)}>
         <header><h2>Screen</h2></header>
-        {#if fxCan}
+        <!-- (With reduced motion everything it would stop is still already; but on, it silences the game too, so it stays to be switched off.) -->
+        {#if !motion.reduced || saver}
           <div class="row">
-            <span class="label">Visual effects</span>
+            <span class="label">Battery saver</span>
             <div class="seg">
-              <button class:on={fxOn} onclick={() => setFxOn(true)}>On</button>
-              <button class:on={!fxOn} onclick={() => setFxOn(false)}>Off</button>
+              <button class:on={saver} onclick={() => setBatterySaver(true)}>On</button>
+              <button class:on={!saver} onclick={() => setBatterySaver(false)}>Off</button>
             </div>
           </div>
         {/if}
@@ -511,14 +506,14 @@
     font-size: 1rem;
     letter-spacing: 0;
     text-transform: none;
-    color: var(--muted);
+    color: var(--text-lo);
   }
   .blurb {
     grid-column: 1 / -1;
     margin: 0;
     font-size: 0.9375rem;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
 
   /* The lobby's setting buttons. */
@@ -592,8 +587,17 @@
       --grip: 36px;
     }
   }
-  .slide input:disabled {
+  /* Off (the ambience while muted, both under the battery saver): grey, its level too, the gold gone with the sound. */
+  .slide {
+    transition:
+      filter 0.15s,
+      opacity 0.15s;
+  }
+  .slide:has(input:disabled) {
+    filter: grayscale(1);
     opacity: 0.4;
+  }
+  .slide input:disabled {
     cursor: not-allowed;
   }
   .slide input::-webkit-slider-runnable-track {
@@ -725,7 +729,7 @@
   }
   .sync-row .sep {
     margin-left: 0.4rem;
-    color: var(--faint);
+    color: var(--gold-lo);
     font-style: normal;
   }
   /* The colours as the avatars wear them, a ring of gold round the one picked. */
@@ -878,7 +882,7 @@
   .key-name {
     justify-self: start;
     font-size: 1rem;
-    color: var(--text);
+    color: var(--text-lo);
   }
   /* A key on the seal the answers wear in a game (QuestionView's .key), drawn
      out for a key whose name is a word; a waiting one is lit and breathes. */
@@ -942,8 +946,8 @@
       box-shadow: 0 0 20px rgba(241, 217, 155, 0.65);
     }
   }
-  /* Held still with the effects off or reduced motion asked for: lit, not breathing. */
-  :global(html[data-still]) .seal.on {
+  /* Held still with the battery saver on or reduced motion asked for: lit, not breathing. */
+  :global(html[data-saver]) .seal.on {
     animation: none;
   }
   @media (prefers-reduced-motion: reduce) {
@@ -964,7 +968,7 @@
     margin: 0.2rem 0 0;
     font-size: 0.95rem;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
 
   @media (max-width: 760px) {

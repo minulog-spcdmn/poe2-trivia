@@ -22,7 +22,7 @@
   import AchievementSeal from './AchievementSeal.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { backdropDropShadow } from '../lib/backdropDropShadow';
-  import { fxActive, fxUserOn, onFxChange, overPage } from '../lib/fx/core';
+  import { fxActive, onFxChange, overPage } from '../lib/fx/core';
   import { victory, winnerIgnites } from '../lib/fx/moments';
   import { fallen } from '../lib/fx/delveEnd';
   import { shareText } from '../lib/delveShare';
@@ -705,12 +705,14 @@
     return () => h.stop();
   });
 
-  // Without the effects layer (no WebGL2), simpler gold sparks on a 2D canvas;
-  // also once it turns out not to come, should it still be on its way now.
+  // Without the effects layer (no WebGL2), simpler gold sparks on a 2D
+  // canvas; also once it turns out not to come, should it still be on its
+  // way now. Not with the battery saver, which leaves the effects out, not
+  // for a full-screen canvas to stand in for them.
   onMount(() => {
     let stop: (() => void) | null = null;
     const start = () => {
-      if (stop || matchMedia('(prefers-reduced-motion: reduce)').matches || fxActive() || !fxUserOn() || iLost || run) return;
+      if (stop || matchMedia('(prefers-reduced-motion: reduce)').matches || motion.saving || fxActive() || iLost || run) return;
       stop = sparks();
     };
     start();
@@ -1571,6 +1573,15 @@
         0 0;
     }
   }
+  /* (Nor with the battery saver or reduced motion.) */
+  :global(:root[data-saver]) .gold.gleams {
+    animation: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .gold.gleams {
+      animation: none;
+    }
+  }
   /* Delve: no victory. The depth is cold silver and holds still, gold only for a new best or a first run. */
   .delve .gold {
     background: linear-gradient(180deg, #ece4d4 8%, #a89f90 55%, #5f574b);
@@ -1588,7 +1599,7 @@
     font-size: var(--sub);
     font-style: italic;
     line-height: 1.35;
-    color: var(--muted);
+    color: var(--note);
   }
 
   /* ---- words ---- */
@@ -1782,7 +1793,7 @@
   .ach span {
     font-size: 0.95rem;
     line-height: 1.3;
-    color: #cbbfa8;
+    color: var(--text-lo);
   }
 
   /* ---- where your lives went ---- */
@@ -1847,12 +1858,10 @@
     font-size: 1.05em;
     color: #f3c37e;
   }
-  /* (Under 13.5px on a phone, so in the text's own colour, as is a plate's depth: --muted reads only from 13.5px.) */
   .what .where {
-    /* (Of the line's 16px on a phone, 17px wider.) */
     font-size: 0.82em;
     font-style: italic;
-    color: var(--text);
+    color: var(--muted);
   }
   .vial {
     --phial-w: 50px;
@@ -1976,8 +1985,7 @@
       animation: none;
     }
   }
-  :global(:root[data-still]) .ranking li.first,
-  :global(:root[data-still]) .ranking li.first::after {
+  :global(:root[data-saver]) .ranking li.first::after {
     animation: none;
   }
   .ranking li.you:not(.first),
@@ -2054,7 +2062,7 @@
   .dep {
     font-size: 0.8rem;
     font-style: italic;
-    color: var(--text);
+    color: var(--muted);
   }
   .revived {
     flex: none;
@@ -2070,7 +2078,7 @@
     margin: 0.2rem 0 0.7rem;
     font-style: italic;
     font-size: 1rem;
-    color: var(--muted);
+    color: var(--text-lo);
   }
   /* The run's facts hang from the chart's ground line: the first one's mark centred on it (--ground: lib/runsPlate's GROUND_Y). */
   .chart-row {
@@ -2338,11 +2346,10 @@
   }
   .found .count {
     font-family: var(--font-body);
-    /* (Of the heading's 20px.) */
     font-size: 0.8em;
     font-style: italic;
     letter-spacing: 0;
-    color: var(--muted);
+    color: var(--text-lo);
   }
 
   /* Share run: the lobby's small Lock button. */
@@ -2431,7 +2438,7 @@
     margin: 0;
     font-style: italic;
     font-size: 0.95rem;
-    color: var(--muted);
+    color: var(--note);
   }
   .note.warn {
     color: #eab3a3;
@@ -2478,7 +2485,7 @@
     gap: 0.7rem;
     margin: 0;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
   .pulse {
     display: block;
@@ -2492,6 +2499,15 @@
     50% {
       opacity: 0.25;
       transform: scale(0.7);
+    }
+  }
+  /* With the battery saver or reduced motion it just stays lit: the line beside it says what it waits for. */
+  :global(:root[data-saver]) .pulse {
+    animation: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pulse {
+      animation: none;
     }
   }
 

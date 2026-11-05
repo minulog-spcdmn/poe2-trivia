@@ -197,7 +197,7 @@ export class Embers {
   /** How large they are (the look's), eased; and how restless (the look's agit: the deeper their flicker, the dimmer on average), eased. */
   private scale = 1;
   private agit = 0;
-  /** How restless their flicker, shimmer and puffs are: 1, or less with effects off. */
+  /** How restless their flicker, shimmer and puffs are: 1, or less with no effects drawn. */
   private restless = 1;
   /** The glints' twinkle and the eddies' wandering, on a clock of its own. */
   private glintT = r() * 100;
@@ -219,7 +219,7 @@ export class Embers {
   private crowd = 0;
   private crowdTarget = 0;
   private flareLevel = 0;
-  /** When the flare dies down (ms, performance.now()): by the clock, so one set while they sit still (effects off) is long gone when they move again. */
+  /** When the flare dies down (ms, performance.now()): by the clock, so one set while they sit still (reduced motion, the battery saver) is long gone when they move again. */
   private flareUntil = 0;
   /** The most slots any tile used in the last step (the backdrop uploads no more columns than that and the end marker). */
   usedMax = SLOTS;
@@ -550,7 +550,7 @@ export class Embers {
 
   /**
    * Advances by `dt` seconds and writes (x, y, size, brightness) per ember.
-   * With `calm` (effects off) they settle down: no heat, swarm or flare,
+   * With `calm` (no effects drawn) they settle down: no heat, swarm or flare,
    * and less restless; each still moves its stratum's way, in its colours
    * and sizes, as part of the scene.
    */

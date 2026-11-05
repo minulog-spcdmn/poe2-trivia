@@ -66,7 +66,7 @@
       }
     };
     set(days, true);
-    // Effects switched off and on, or the GL context lost and restored, wipe every shape: light it again.
+    // The effects going and coming back (the battery saver, the GL context lost and restored) wipe every shape: light it again.
     const relight = onFxChange(() => {
       fire?.stop(0);
       fire = null;
@@ -161,6 +161,15 @@
   @keyframes smoulder-badge {
     50% {
       opacity: 1;
+    }
+  }
+  /* (Not with the battery saver or reduced motion: the pill's own glow is enough.) */
+  :global(html[data-saver]) .smoulder {
+    animation: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .smoulder {
+      animation: none;
     }
   }
   .num {

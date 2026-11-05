@@ -46,8 +46,8 @@
   // the red one appears and the depths with them. After
   // that the glows breathe, Sol's rays turn slowly, the stars' glories and
   // the ouroboros turn and the gold star twinkles, each on its own layer;
-  // with reduced motion everything simply stands in its place, and still
-  // (data-still) nothing loops.
+  // with reduced motion everything simply stands in its place, and with the
+  // battery saver it all comes in and then nothing loops.
   // The plate fills its box: the whole column, its caption (`caption`) at
   // the top beside Sol. Stacked, the column takes the height the plate asks
   // for (`natural`).
@@ -678,8 +678,7 @@
     /* The last run's star: old blood, as the game's life globes. */
     --red: #b4432f;
     --red-hi: #cf5e45;
-    /* (Its depth, light enough to read at 13px: APCA Lc 52.) */
-    --red-num: #e0907a;
+    --red-num: #dc8a73;
     /* The ouroboros' draw-in, from its tail round to its head. */
     --s: 1.2s;
     pointer-events: none;
@@ -1105,7 +1104,7 @@
     opacity: 0.9;
   }
   .brace {
-    stroke: var(--faint);
+    stroke: var(--muted);
     stroke-width: 0.5;
     stroke-linecap: round;
     stroke-linejoin: round;
@@ -1113,7 +1112,7 @@
   }
   .ball {
     stroke: none;
-    fill: var(--faint);
+    fill: var(--muted);
     animation: carve 0.3s calc(var(--d) + 0.35s) var(--ease-out) both;
   }
   .word {
@@ -1121,7 +1120,7 @@
     font-size: 12.5px;
     letter-spacing: 0.02em;
     text-anchor: end;
-    fill: var(--faint);
+    fill: var(--muted);
     animation: carve 0.5s calc(var(--d) + 0.1s) var(--ease-out) both;
   }
 
@@ -1132,7 +1131,7 @@
   .legend text {
     font-family: var(--font-body);
     font-size: 12px;
-    fill: var(--text);
+    fill: var(--muted);
   }
   .key-star {
     stroke-width: 0.6;
@@ -1581,22 +1580,36 @@
     filter: saturate(0.3);
   }
 
-  /* Still: nothing loops, and the star is simply where it stands. */
-  :global(html[data-still]) .descent .travel {
+  /* The battery saver: it all comes in as ever, and then nothing loops. */
+  :global(html[data-saver]) .descent .glow {
+    animation:
+      glow-in 1.1s 0.8s ease-out both,
+      var(--holes, none);
+  }
+  :global(html[data-saver]) .descent .sun-halo {
+    animation: bloom 0.9s 0s var(--ease-out) both;
+  }
+  :global(html[data-saver]) .descent .sun-rays {
+    animation: rays-in 0.6s 0.15s var(--ease-out) both;
+  }
+  :global(html[data-saver]) .descent .sun-sign {
+    animation: carve 0.4s 0.3s var(--ease-out) both;
+  }
+  :global(html[data-saver]) .descent :is(.coil.turning, .turn) {
     animation: none;
   }
-  :global(html[data-still]) .descent .twinkle {
+  :global(html[data-saver]) .descent .halo {
+    animation: carve 0.6s var(--d) var(--ease-out) both;
+  }
+  :global(html[data-saver]) .descent .twinkle {
     animation: none;
     opacity: 0;
   }
-  :global(html[data-still]) .descent :is(.turn, .halo, .glow, .coil, .sun-rays, .sun-sign, .sun-halo) {
+  :global(html[data-saver]) .descent .both-star :is(.star-line, .star-ridge, .star-hatch, .star-ground) {
     animation: none;
   }
-  :global(html[data-still]) .descent .both-star :is(.star-line, .star-ridge, .star-hatch, .star-ground) {
-    animation: none;
-  }
-  :global(html[data-still]) .descent .both-star :is(.glory, .halo) {
-    animation: none;
+  :global(html[data-saver]) .descent .both-star .glory {
+    animation: draw var(--t) var(--d) linear backwards;
   }
   /* Reduced motion: no entrance (everything stands in its place at once) and nothing loops. */
   @media (prefers-reduced-motion: reduce) {

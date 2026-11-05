@@ -221,7 +221,8 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   avatar's orbit), and in the lobby she arrives out of gathering motes
   rather than a portal. The aura shows on all her avatars at once with a
   short breath between showings, when the effects loop can sleep; a gilded
-  ring (CSS) marks her then and with effects off. Her name is struck in gold
+  ring (CSS) marks her then and wherever no effects are drawn (the battery
+  saver, no WebGL2). Her name is struck in gold
   foil, and a glint of light crosses it every nine seconds
   (`src/lib/glint.ts`: one timer, transforms only, nothing under
   *prefers-reduced-motion*). Online, everyone else gets a notice when she
@@ -324,13 +325,27 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   own effects, so the backdrop darkens itself in its shader and the UI takes a
   CSS filter. The effects layer stays above dialogs: the page's light hides
   behind the dialog and dims outside it, while the dialog's own light shows.
-- Effects can be switched off with the ✦ button in the header, and are off
-  under *prefers-reduced-motion*. Switched off, they also still the
-  backdrop where it stands (no breathing, drifting or rising embers), which
-  is then only redrawn when something changes: a low-power mode for phones
-  that run hot. Quality drops by itself (resolution) on
-  devices that can't keep up. Without WebGL2 the site falls back
-  to its CSS look.
+- **The battery saver** (the settings' Screen, `setBatterySaver` in
+  `src/lib/fx/core.ts`, `html[data-saver]`) turns off only what costs
+  battery for as long as a screen is up: the effects (as on a device
+  without WebGL2, the CSS stand-ins playing instead), the backdrop's own
+  drift (it stops where it stands, no breathing, smoke or rising embers,
+  and is only drawn when something changes), and every loop that only
+  decorates (a seal's breath, a light passing now and then), so a screen
+  where nothing happens draws nothing; and it silences the game as muting
+  does (`saverSilences` in `src/lib/sound.ts`), the sound's own settings
+  kept for when it's off. It stays on the device it was switched on: sync
+  never carries it (`tests/sync.test.ts`). What each piece costs an iPhone
+  is in `docs/iphone.md`, the November findings. What runs its course
+  still plays, transitions, entrances and a moment's animation: a few
+  frames cost next to nothing, and *prefers-reduced-motion* is there for
+  whoever wants the motion gone (it rests everything, effects off too). In
+  code, `motion.still` (`src/lib/motion.svelte.ts`) is reduced motion, for
+  what runs its course; `motion.resting` is either, for what never ends. A new
+  endless loop that decorates checks `motion.resting`, or in CSS stops
+  under `html[data-saver]` and `prefers-reduced-motion`. Quality drops by
+  itself (resolution) on devices that can't keep up. Without WebGL2 the
+  site falls back to its CSS look.
 
 ## Finding a stutter
 

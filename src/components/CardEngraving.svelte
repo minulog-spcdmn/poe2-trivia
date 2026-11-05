@@ -757,17 +757,17 @@
   [data-fossil] .glow {
     animation: breathe 5.6s ease-in-out infinite;
   }
-  :global(html[data-still]) .engraving .glint {
+  :global(html[data-saver]) .engraving .glint {
     display: none;
   }
-  :global(html[data-still]) .engraving :is(.glow, .lamp) {
+  :global(html[data-saver]) .engraving :is(.glow, .lamp) {
     animation: none;
   }
   @media (prefers-reduced-motion: reduce) {
     .glint {
       display: none;
     }
-    .lamp {
+    .engraving :is(.glow, .lamp) {
       animation: none;
     }
   }

@@ -69,7 +69,7 @@ export function setVeinQuake(v: number) {
 
 /**
  * How far the vein has come in at `now` (ms), 0 to 1, eased; `still`
- * (reduced motion, the effects off): at once.
+ * (reduced motion): at once.
  */
 export function veinLevel(now = performance.now(), still = false): number {
   if (at < 0) at = now;

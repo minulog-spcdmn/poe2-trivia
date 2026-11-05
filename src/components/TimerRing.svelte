@@ -414,6 +414,11 @@
     stroke: #5d8fe0;
     animation: gutter 0.5s steps(2, jump-none) infinite;
   }
+  /* With the battery saver the lamp burns steady (it shows between strikes
+     too, the clock standing); it still gutters once it runs urgent. */
+  :global(html[data-saver]) .lamp:not(.urgent) .fill {
+    animation: none;
+  }
   @keyframes lamp {
     50% {
       filter: drop-shadow(0 0 3px rgba(70, 140, 255, 0.6));

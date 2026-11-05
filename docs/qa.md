@@ -20,7 +20,7 @@
 
 A frame starts with nothing of its own (its storage keys start apart, `src/lib/storage.ts`, and are cleared as it opens and closes), so nothing it shows reaches the game's saves, and no two frames share a player. At a device's size it pretends to be that device: the pixel ratio, and a touch screen's lack of hover and coarse pointer. That is close, not exact: it is still drawn at your screen's pixel ratio, and the mouse is still a mouse.
 
-Each frame checks itself once it comes to rest, and again after a click in it: something off the side of the screen, text cut off without an ellipsis, console errors, pictures that didn't load, em dashes, and text too faint to read (**Hard to read**: each run's contrast, as APCA's Lc, against what its size and face need, `src/qa/legible.ts`; the frame can only hold light text up to the page's own dark, the best it could have, so the sweep's `--faint` measures it again against what's actually behind it). What it finds is outlined and listed under the top line.
+Each frame checks itself once it comes to rest, and again after a click in it: something off the side of the screen, text cut off without an ellipsis, console errors, pictures that didn't load, em dashes, and text too faint to read (**Hard to read**: each run's contrast, as APCA's Lc, under that of `--muted`, the game's dimmest grey, on the page, `src/qa/legible.ts`; the frame can only hold light text up to the page's own dark, the best it could have, so the sweep's `--faint` measures it again against what's actually behind it). What it finds is outlined and listed under the top line.
 
 ## Adding a bench
 
@@ -81,10 +81,10 @@ Every stutter of October 2026 was one bug: something animated on the page's thre
 
 **WebGL.** The backdrop and the effects draw on canvases of their own, not on what Chrome draws again, and in software a frame of them takes long. So the scenes run with WebGL refused, as a player without it has them: the backdrop's shadows paint in CSS, over the CSS backdrop a page without WebGL falls back to (`.bg.css`, Background.svelte's), its billows and arms watched with the rest. Except one scene for each screen whose effects change what the page itself does (`WEBGL_SCENES` in `src/qa/redraws.ts`, with why), watched with WebGL as well, 120 frames (2 s) from the same point at rest. Its 5 s with WebGL refused have the lights that pass now and then; with WebGL it's watched for what the effects do to the page, which they do on nearly every frame while they do it (a shake's translate). A frame with WebGL drawn in software takes a CI runner up to 3 s, so 5 s of a vein would take 14 minutes.
 
-- `game/delve-dig`: a vein shakes the page (`tremor.ts` through `fx/core.ts`'s shake, a translate on `.shell` every frame), only with the effects on. The October shake was this.
-- `home/returning`: the daily streak lights in WebGL with the effects on and in CSS without.
-- `over/n-lost`: GameOver plays its lights in WebGL with the effects on and in CSS without, and the winner's row ignites in the effects.
-- `settings/key`: Settings turns the effects on and off, and its seals light with them.
+- `game/delve-dig`: a vein shakes the page (`tremor.ts` through `fx/core.ts`'s shake, a translate on `.shell` every frame), only while the effects draw (never with the battery saver on). The October shake was this.
+- `home/returning`: the daily streak lights in WebGL with the effects drawing and in CSS without (no WebGL2, or the battery saver on).
+- `over/n-lost`: GameOver plays its lights in WebGL with the effects drawing and in CSS without, and the winner's row ignites in the effects.
+- `settings/key`: Settings turns the battery saver on and off (`html[data-saver]` rests what loops, the effects and the sound with it; the sound's sliders grey out at 0, as the ambience's does while muted; `settings/page` has it as a state), and its seals light with the effects.
 - `lobby/room`: the lobby lights its seats in the effects as players arrive.
 - `codex/item`: an item's art lights in the effects as it's revealed.
 

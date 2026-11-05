@@ -22,6 +22,7 @@ const SOUND: Control = {
 const KEYS: Control = { kind: 'toggle', key: 'keys', label: 'Keys changed', default: false };
 const COLOUR: Control = { kind: 'toggle', key: 'colour', label: 'A colour picked', default: false };
 const KEPT: Control = { kind: 'toggle', key: 'kept', label: 'Named zoe_arcana (ruby kept)', default: false };
+const SAVER: Control = { kind: 'toggle', key: 'saver', label: 'Battery saver on', default: false };
 const SYNC: Control = {
   kind: 'choice',
   key: 'sync',
@@ -82,19 +83,20 @@ export function settingsScenes(): Scene[] {
       group: 'Settings',
       label: 'The settings page',
       seats: [{ mode: 'none', me: null }],
-      controls: [SOUND, KEYS, COLOUR, KEPT],
+      controls: [SOUND, KEYS, COLOUR, KEPT, SAVER],
       states: [
         { label: 'As it comes', values: {} },
         { label: 'Sound down, keys changed', values: { sound: 'quiet', keys: true } },
         { label: 'Sound off', values: { sound: 'off' } },
         { label: 'Sapphire picked', values: { colour: true } },
         { label: "zoe_arcana's ruby, kept", values: { kept: true } },
+        { label: 'Battery saver on', values: { saver: true } },
       ],
       build: (v = {}): Built => ({
         state: null,
         hash: '#settings',
         sound: v.sound === 'off' ? { muted: true } : v.sound === 'quiet' ? { volume: 0.35, ambience: 0 } : undefined,
-        stored: { ...(v.keys ? { keys: JSON.stringify(CHANGED) } : {}), ...(v.colour ? { colour: '1' } : {}), ...(v.kept ? { name: 'zoe_arcana' } : {}) },
+        stored: { ...(v.keys ? { keys: JSON.stringify(CHANGED) } : {}), ...(v.colour ? { colour: '1' } : {}), ...(v.kept ? { name: 'zoe_arcana' } : {}), ...(v.saver ? { saver: '1' } : {}) },
       }),
     },
     {

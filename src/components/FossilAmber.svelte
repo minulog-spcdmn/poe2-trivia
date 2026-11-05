@@ -329,7 +329,7 @@
       opacity: 1;
     }
   }
-  :global(html[data-still]) .amber :is(.lamp, .spangle, .hand, .spot) {
+  :global(html[data-saver]) .amber :is(.lamp, .spangle, .hand, .spot) {
     animation: none;
   }
 </style>

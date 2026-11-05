@@ -150,6 +150,8 @@ export async function boot(asked: URLSearchParams) {
   // A game saved before a reload, where the page looks for it as it loads ('session.v4', lib/session.svelte.ts' SAVE).
   if (built.saved) storage.writeStored('session.v4', JSON.stringify(built.saved), 'session');
   if (built.stored?.keys) (await import('../../lib/keybinds.svelte.ts')).reloadKeys();
+  // (fx/core read the battery saver as it loaded, before it was written.)
+  if (built.stored?.saver) (await import('../../lib/fx/core.ts')).setBatterySaver(built.stored.saver === '1');
   // How its sync stands (only where the scene says: sync's link is loaded for those scenes alone).
   if (built.sync) {
     const { sync } = await import('../../lib/sync/link.svelte.ts');

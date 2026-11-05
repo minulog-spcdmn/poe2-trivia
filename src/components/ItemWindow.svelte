@@ -287,6 +287,7 @@
     font-family: var(--font-display);
     font-size: 0.84rem;
     color: #d8a26a;
+    opacity: 0.85;
   }
   /* The buttons in the plate's empty sockets: fold on the left, close on the right. */
   .socket {

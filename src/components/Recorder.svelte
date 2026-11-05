@@ -270,6 +270,7 @@
 
 <style>
   .recorder {
+    /* (Dim on purpose: a tool's, out of the way until hovered.) */
     position: fixed;
     left: 12px;
     bottom: 12px;
@@ -283,6 +284,10 @@
     border-radius: var(--radius);
     color: var(--muted);
     font: 13px var(--font-cinzel);
+    opacity: 0.75;
+  }
+  .recorder:hover {
+    opacity: 1;
   }
   .dot {
     width: 8px;

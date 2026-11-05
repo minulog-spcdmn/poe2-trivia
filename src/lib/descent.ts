@@ -1373,7 +1373,7 @@ export const shownDepth = () => shown;
  * the zone slower meanwhile (ARRIVAL_PACE), and the depth's cards are dealt
  * as it lands (ZONE_DESCENT_MS, DelveState.dealAt in lib/game.ts).
  * App.svelte calls plunge() (see dealtDeeper); the backdrop steps it, and
- * skips it while it holds still (reduced motion, effects off).
+ * skips it while it holds still (reduced motion).
  */
 export const PLUNGE_MS = 1900;
 export const PLUNGE_SINK = 1.1;
@@ -1536,8 +1536,8 @@ export function stepPlunge(now: number, allowed: boolean): boolean {
  * the walls, the smoke and the dust drift past the other way (the nearer,
  * the faster) as far as SWING_SHIFT of a screen's height, with the plunge's
  * ease, and the dark draws in and lets go again. Game.svelte calls swing();
- * the backdrop steps it, and skips it while it holds still (reduced motion,
- * effects off).
+ * the backdrop steps it, and skips it while it holds still (reduced
+ * motion).
  */
 export const SWING_MS = 1300;
 export const SWING_SHIFT = 0.55;

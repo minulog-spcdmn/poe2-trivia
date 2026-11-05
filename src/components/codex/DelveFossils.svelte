@@ -250,7 +250,7 @@
       <span class="light"><img class="halo" alt="" draggable="false" use:glowOf={f} /></span>
     {/if}
     <img src={fossilArt(f.id, 128)} alt="" loading="lazy" draggable="false" />
-    {#if got && !motion.still}
+    {#if got && !motion.resting}
       <!-- The lamplight: a band of light passing over a brighter copy of it. -->
       <span class="lamp"><span class="slit" use:sweep={f.rare}><img src={fossilArt(f.id, 128)} alt="" loading="lazy" draggable="false" /></span></span>
     {/if}
@@ -424,7 +424,7 @@
     font-size: 0.95rem;
     font-style: italic;
     line-height: 1.4;
-    color: var(--muted);
+    color: var(--note);
     text-wrap: pretty;
   }
 

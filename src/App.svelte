@@ -17,7 +17,7 @@
   import { backSound, depthAmbience, getVolume, isMuted, setMuted, setVolume, sfx, veinAmbience } from './lib/sound';
   import { actionOf, keybinds, readLayout, typing } from './lib/keybinds.svelte';
   import { keyName } from './lib/keys';
-  import { fxUserOn, onFxChange, shakeTarget } from './lib/fx/core';
+  import { shakeTarget } from './lib/fx/core';
   import { IMPRINT_URL, PRIVACY_URL } from './lib/site';
   import { openPrivacy } from './lib/legalSheet.svelte';
   import { backGuard } from './lib/backGuard';
@@ -69,15 +69,10 @@
   /** The room code in the header, copied as every code a player passes on is (one shows at a time). */
   const codePress = new CopyPress(() => session.code ?? '', 'Room code copied');
   let confirmLeave = $state(false);
-  let fxOn = $state(fxUserOn());
   // With a seat in an online room, lobby included, this device's own pointer takes its
   // player's colour, as the others see it (lib/ownCursor.ts); otherwise it's old gold.
   const seat = $derived(session.mode === 'host' || session.mode === 'client' ? session.state?.players.find((p) => p.id === session.myPlayerId) : undefined);
   $effect(() => setCursorColor(seat ? playerColor(seat.hue) : undefined));
-  // CSS animations that only decorate (the Delve phial's fire) hold still with the effects off.
-  $effect(() => {
-    document.documentElement.toggleAttribute('data-still', !fxOn);
-  });
   let headerHeight = $state(0);
   let shell: HTMLElement;
 
@@ -109,13 +104,11 @@
     // overlays sit after it, and the screens' go to <body> with use:portal.
     const undo = shakeTarget(shell, 1);
     const unwatch = import.meta.env.DEV ? warnFixedInShell(shell) : () => {};
-    const off = onFxChange((on) => (fxOn = on));
     // The keyboard's own names for its keys, for the answers' seals (lib/keys.ts keyName).
     readLayout();
     return () => {
       undo();
       unwatch();
-      off();
     };
   });
 
@@ -1133,6 +1126,10 @@
       opacity: 1;
     }
   }
+  /* (Not with the battery saver: the header shows through a whole game.) */
+  :global(html[data-saver]) .brand-mark .hot {
+    animation: none;
+  }
 
   /* The line in it, and while it changes the one going, in the same place. */
   .meta {
@@ -1216,6 +1213,10 @@
     white-space: nowrap;
     text-shadow: 0 0 12px rgba(224, 85, 63, 0.6);
     animation: pulse 1.6s ease-in-out infinite;
+  }
+  /* (Not with the battery saver: it would pulse for the whole deathmatch.) */
+  :global(html[data-saver]) .deathmatch {
+    animation: none;
   }
 
   .tools {
@@ -1338,9 +1339,6 @@
   .legal a {
     color: var(--muted);
     text-decoration: none;
-  }
-  .legal span {
-    color: var(--faint);
   }
   .legal a:hover {
     color: var(--gold-hi);

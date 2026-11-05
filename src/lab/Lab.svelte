@@ -6,7 +6,7 @@
   import { DELVE_LIVES, FLARE_MS, inventoryOf, isGroupRun, livesOf, questionTimer, type ItemKind } from '../lib/delve';
   import { accentAt } from '../lib/descent';
   import { zoneAt } from '../lib/zoneSigils';
-  import { fxAvailable, fxUserOn, onFxChange, setFxOn } from '../lib/fx/core';
+  import { batterySaver, onFxChange, setBatterySaver } from '../lib/fx/core';
   import { isMuted, setMuted } from '../lib/sound';
   import { readStored, writeStored } from '../lib/storage';
   import { reduceMotion, setReduceMotion } from './motion';
@@ -106,7 +106,7 @@
   onMount(() => {
     // The run is booted once, by main.ts, before the app mounts.
     const id = setInterval(() => (now = Date.now()), 100);
-    const off = onFxChange((on) => (fxOn = on));
+    const off = onFxChange(() => (saver = batterySaver()));
     return () => {
       clearInterval(id);
       off();
@@ -122,12 +122,8 @@
   const secs = (ms: number | null) => (ms === null ? '•' : (Math.max(0, ms) / 1000).toFixed(1));
 
   // ---- toggles ----
-  let fxOn = $state(fxUserOn());
-  // The effects layer may only be ready a moment after the panel.
-  const fxCan = $derived.by(() => {
-    void now;
-    return fxAvailable();
-  });
+  // (Without WebGL2 too: the saver also rests what loops in CSS, and silences the game.)
+  let saver = $state(batterySaver());
   let muted = $state(isMuted());
   function toggleSound() {
     setMuted(!isMuted());
@@ -438,7 +434,7 @@
       <details open>
         <summary>Settings</summary>
         <div class="toggles">
-          <label class:off={!fxCan}><input type="checkbox" checked={fxOn} disabled={!fxCan} onchange={() => setFxOn(!fxUserOn())} /> Effects</label>
+          <label><input type="checkbox" checked={saver} onchange={() => setBatterySaver(!batterySaver())} /> Battery saver</label>
           <label><input type="checkbox" checked={reduceMotion} onchange={() => setReduceMotion(!reduceMotion)} /> Reduced motion</label>
           <label><input type="checkbox" checked={!muted} onchange={toggleSound} /> Sound</label>
         </div>
@@ -868,9 +864,6 @@
     align-items: center;
     gap: 0.35rem;
     cursor: pointer;
-  }
-  .toggles label.off {
-    opacity: 0.5;
   }
   input[type='checkbox'] {
     accent-color: var(--gold);

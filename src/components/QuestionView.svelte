@@ -832,8 +832,8 @@
 
   /**
    * Svelte action: the streak chip catches fire as it lands (the chip comes
-   * in over 0.55 s) and burns while the reveal lasts. With the effects off
-   * the count's own glow says the tier.
+   * in over 0.55 s) and burns while the reveal lasts. Without the effects
+   * (the battery saver, or no WebGL2) the count's own glow says the tier.
    */
   /** The question whose chip has caught fire: moved (the phone's dock coming or going), it burns on without catching again. */
   let caughtAt = 0;
@@ -1909,6 +1909,7 @@
     font-family: var(--font-display);
     font-size: 0.95rem;
     color: #d8a26a;
+    opacity: 0.85;
   }
   /* An extra tooltip line, cool against the warm name and base. In Cinzel's
      small capitals (its lower case), not faked on the body font: the capital
@@ -2433,6 +2434,10 @@
     animation: verdict-breathe 2.6s ease-in-out 1.2s infinite;
     pointer-events: none;
   }
+  /* (The battery saver holds it at rest, as reduced motion does.) */
+  :global(html[data-saver]) .verdict.good .glyph::before {
+    animation: none;
+  }
   .word {
     animation: verdict-word 0.5s var(--ease-out) 0.2s backwards;
   }
@@ -2774,6 +2779,12 @@
   }
   .option.pending {
     animation: glow 1s ease-in-out infinite;
+  }
+  /* With the battery saver it stays lit, not breathing: on the WebGL
+     backdrop its breath draws the whole scene again every frame until the
+     verdict. */
+  :global(html[data-saver]) .option.pending {
+    animation: none;
   }
   .option.right {
     border-color: #5d8a50;
@@ -3200,7 +3211,7 @@
   }
   .still {
     display: block;
-    color: var(--muted);
+    color: var(--note);
   }
   /* Struck by a teammate's wrong pick: out of play for everyone, its striker
      beside the ✕. Unlike an answer dynamite blew away (scorched, its words

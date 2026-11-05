@@ -1079,7 +1079,7 @@
     margin: 2px 0 0;
     font-style: italic;
     font-size: 17px;
-    color: var(--muted);
+    color: var(--note);
   }
 
   /* ---- the greeting ---- */
@@ -1097,9 +1097,6 @@
   }
   .greeting-cell > * {
     grid-area: 1 / 1;
-  }
-  :global(html[data-still]) .greeting {
-    transition: none;
   }
   .hello {
     display: flex;
@@ -1325,7 +1322,7 @@
     margin: 6px 0 0;
     font-style: italic;
     font-size: 16px;
-    color: var(--muted);
+    color: var(--note);
   }
   .under {
     display: grid;
@@ -1425,7 +1422,7 @@
     line-height: 20px;
     letter-spacing: 0.2em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: var(--note);
   }
   /* The Codex and Settings (or an invite's way to everything else) as the
      list's entries are set, a size down, each with a chevron that says it goes somewhere. */
@@ -1516,7 +1513,7 @@
     border-color: var(--gold-lo);
   }
   .act .code::placeholder {
-    color: var(--muted);
+    color: #8a7d68;
   }
   .slot.row.join .code,
   .slot.row.join .name {
@@ -1567,7 +1564,7 @@
     font-style: italic;
     font-size: 15px;
     line-height: 1.3;
-    color: var(--muted);
+    color: var(--note);
   }
 
   /* Under 980 tall (900, say): a tighter rhythm. 16 + 574 + 8 + 144 + 32 +

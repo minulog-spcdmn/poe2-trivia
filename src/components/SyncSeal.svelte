@@ -81,6 +81,10 @@
     opacity: 0.28;
     animation: arcane-breathe 6s ease-in-out infinite alternate;
   }
+  /* (The battery saver holds it at rest, as reduced motion does.) */
+  :global(html[data-saver]) .glow {
+    animation: none;
+  }
   .inked .fine {
     stroke-width: 2.8;
   }

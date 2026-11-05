@@ -233,7 +233,7 @@ the same thing for everyone.
     the old question into shards and flings them to the far side as the
     screen shakes and the scene behind swings, and the new question comes
     in from the side the blast came from, through the clearing smoke (a
-    cross-fade with reduced motion or the effects off). The question blasted away
+    cross-fade with reduced motion). The question blasted away
     counts as seen in the Codex; blasting it misses nothing, but together a
     wrong answer someone gave it before a teammate blasted it stays logged
     as their miss, at the life or ward it cost. The run's record keeps
@@ -476,8 +476,8 @@ the same thing for everyone.
   cards come in as the plunge lands, at one moment for the whole team.
   Nothing is picked before then, and a vote cast sooner neither opens its
   window nor closes the vote; the room bots look the cards over, vote and
-  pick only once they are dealt. It is skipped with reduced motion or
-  effects off (the wait for the cards is not).
+  pick only once they are dealt. It is skipped with reduced motion (the
+  wait for the cards is not).
 - As a question's clock runs out the dark draws the light in and dims the
   scene (never the panels or text), lifting at the reveal or when a flare
   burns. The ambience, a hearth fire, sinks with the depth, over a slow
@@ -524,7 +524,7 @@ the same thing for everyone.
     which crumbles) lift the letters out of a fog of the zone's colour and
     carry them off.
 
-  With reduced motion or effects off it fades in whole, holds and fades
+  With reduced motion it fades in whole, holds and fades
   out; a screen that saw the run move on late gets the same, sooner, and a
   reload mid-plunge none (a screen reader is told where the run has come
   either way, and the scene's embers still take the zone's colour). The
@@ -537,7 +537,7 @@ the same thing for everyone.
   with a short sting and a few glints, and a screen reader is told "Deeper
   than ever: depth N, past your best of M." On a zone's first depth the
   card says it instead, and the line still shows once the cards are dealt,
-  quietly (with reduced motion or effects off it comes in with the
+  quietly (with reduced motion it comes in with the
   stage). The header
   names the zone beside the depth, both in its colour (on a second line on
   phones).

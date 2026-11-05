@@ -1133,7 +1133,7 @@
     margin: 0;
     font-size: 1rem;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
   /* The old hint fades out where the new one comes, in one cell (settles). */
   .vis-hint-box {
@@ -1158,12 +1158,12 @@
     justify-content: flex-start;
     flex-wrap: nowrap;
   }
-  /* The label takes what is left, so Private, Public and Lock stay on one line. It leads the hint under it, so it's in the text's colour. */
+  /* The label takes what is left, so Private, Public and Lock stay on one line. */
   .who {
     flex: 1;
     min-width: 0;
     font-size: 1rem;
-    color: var(--text);
+    color: var(--note-hi);
   }
   .invite-row {
     position: relative;
@@ -1265,7 +1265,7 @@
   .count {
     font-family: var(--font-cinzel);
     font-size: 0.75rem;
-    color: var(--muted);
+    color: var(--note);
   }
 
   /* The game's own player chips (Scoreboard), so the party carries on into the game. */
@@ -1379,7 +1379,7 @@
     font-weight: 400;
     letter-spacing: 0.16em;
     text-transform: uppercase;
-    color: var(--muted);
+    color: var(--note);
   }
   .gallery h3 :global(.eye) {
     --eye-size: 16px;
@@ -1485,7 +1485,6 @@
     margin: 0.8rem 0 0;
     font-size: 1rem;
     font-style: italic;
-    color: var(--muted);
   }
   .watch-choice {
     margin: 0.6rem 0 0;
@@ -1510,6 +1509,10 @@
       transform: scale(0.7);
     }
   }
+  /* With the battery saver it just stays lit, as GameOver's does: the line beside it says what it waits for, however long. */
+  :global(:root[data-saver]) .pulse {
+    animation: none;
+  }
 
   .setting {
     margin-bottom: 1.2rem;
@@ -1532,7 +1535,7 @@
     font-size: 1rem;
     letter-spacing: 0;
     text-transform: none;
-    color: var(--muted);
+    color: var(--text-lo);
   }
   .setting.row .blurbs {
     grid-column: 1 / -1;
@@ -1723,7 +1726,6 @@
     margin: 0 0 0.45rem;
     font-size: 0.9375rem;
     font-style: italic;
-    color: var(--muted);
     line-height: 1.25;
   }
   .together {
@@ -1751,7 +1753,6 @@
     margin: 0;
     font-size: 0.95rem;
     font-style: italic;
-    color: var(--muted);
     opacity: 0;
     visibility: hidden;
     translate: 0 -4px;
@@ -1916,7 +1917,7 @@
   .go-note {
     margin: 0;
     font-style: italic;
-    color: var(--muted);
+    color: var(--note);
   }
   .go-note .num {
     font-style: normal;

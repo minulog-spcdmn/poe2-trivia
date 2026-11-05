@@ -71,7 +71,8 @@
   /**
    * A heartbeat's pace: quicker on the last life. A change waits for the beat
    * under way to end (where every beat starts from the same rest), then the
-   * new pace starts on the next; held still, it just takes.
+   * new pace starts on the next; resting (reduced motion, or the battery
+   * saver holding it), it just takes.
    */
   function pace(node: HTMLElement, quick: boolean) {
     let want = quick;
@@ -81,7 +82,7 @@
     return {
       update(q: boolean) {
         want = q;
-        if (motion.still || !node.getAnimations?.().length) next();
+        if (motion.resting || !node.getAnimations?.().length) next();
       },
       destroy: () => node.removeEventListener('animationiteration', next),
     };
@@ -1076,31 +1077,24 @@
       transform: none;
     }
   }
-  /* Effects off (the low-power mode): the light glows but holds still. */
-  :global(html[data-still]) .wisp,
-  :global(html[data-still]) .wisp::before,
-  :global(html[data-still]) .c0 .wisp,
-  :global(html[data-still]) .c1 .wisp::before,
-  :global(html[data-still]) .beat,
-  :global(html[data-still]) .grow .glaze {
+  /* The battery saver: the light glows but holds still. (What a moment
+     plays, a ward forming or breaking, a life lost, still does.) */
+  :global(html[data-saver]) .wisp,
+  :global(html[data-saver]) .wisp::before,
+  :global(html[data-saver]) .c0 .wisp,
+  :global(html[data-saver]) .c1 .wisp::before,
+  :global(html[data-saver]) .beat,
+  :global(html[data-saver]) .grow .glaze {
     animation-play-state: paused;
   }
-  :global(html[data-still]) .deep {
-    transition: none;
-  }
-  :global(html[data-still]) .c2 .wisp::before,
-  :global(html[data-still]) .c2 .wisp::after {
+  :global(html[data-saver]) .c2 .wisp::before,
+  :global(html[data-saver]) .c2 .wisp::after {
     animation: none;
     opacity: 0.6;
     transform: none;
   }
-  :global(html[data-still]) .glint,
-  :global(html[data-still]) .twinkle {
-    display: none;
-  }
-  :global(html[data-still]) .flash,
-  :global(html[data-still]) .aegis .veil,
-  :global(html[data-still]) .aegis .impact {
+  :global(html[data-saver]) .glint,
+  :global(html[data-saver]) .twinkle {
     display: none;
   }
 </style>

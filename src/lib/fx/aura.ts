@@ -29,8 +29,8 @@
 // awake. A showing leaves out avatars that are off-screen, invisible or
 // dimmed (offline) and stops on one that scrolls away; it waits, on timers
 // alone, while the tab is hidden, a dialog is open or a big moment is
-// playing (and would hide it). Effects switched off clear it, and it comes
-// back when they're on again.
+// playing (and would hide it). The effects gone (the battery saver, reduced
+// motion, the GL context lost) clear it, and it comes back with them.
 
 import { boxOf, budget, fxActive, fxHidden, fxStats, lightOf, onFxChange, onFxHidden, particle, shape, task, type Box, type ShapeFrame, type Vec3 } from './core';
 import { C, glints, rand } from './effects';
@@ -124,7 +124,7 @@ function join(el: HTMLElement, e: Entry) {
   if (!e.dim && !e.glow && left > SHOW.fadeIn + SHOW.fadeOut && onScreen(el)) e.glow = ignite(el, left);
 }
 
-/** Effects switched off (or lost) take every shape and task with them; when they're back, so is the aura. */
+/** The effects gone (the battery saver, reduced motion, or lost) take every shape and task with them; when they're back, so is the aura. */
 function fxChanged() {
   if (fxActive()) {
     if (!current) plan(FIRST);

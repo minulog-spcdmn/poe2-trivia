@@ -11,6 +11,7 @@ import type { ShownPatch } from './media.svelte';
 import { valueNoise } from './patches';
 import { FINALE_MS, fxWidth } from './materialize';
 import { fxDensity, veilSpark } from './fx/moments';
+import { motion } from './motion.svelte';
 
 /**
  * As fractions of a patch's burn: a seam catches when the fire gets there
@@ -36,8 +37,6 @@ const SPARKS_PER_PIXEL = 0.45;
 /** Grains twinkling on the seams at once, at most, and seam pixels per grain. */
 const MAX_TWINKLES = 60;
 const PIXELS_PER_TWINKLE = 5;
-
-const reduce = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 
 /** A soft round light, `size` px across, fading out through the given colour stops. */
 function sprite(size: number, stops: [number, string][]): HTMLCanvasElement {
@@ -255,7 +254,9 @@ export function frontier(canvas: HTMLCanvasElement, params: FrontierParams) {
       raf = requestAnimationFrame(frame);
       return;
     }
-    const still = !!reduce?.matches;
+    // Resting (reduced motion, or the battery saver), the seams glow
+    // steadily: drawn as they change, and no more.
+    const still = motion.resting;
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
 
