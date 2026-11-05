@@ -3,6 +3,7 @@
   import { flip } from 'svelte/animate';
   import { fly, fade } from 'svelte/transition';
   import { scanRooms, type RoomInfo } from '../lib/rooms';
+  import { pageServer } from '../lib/peer';
   import { joinable, roomMeta, watchable } from '../lib/roomInfo';
   import { PROTOCOL_VERSION } from '../lib/protocol';
   import { pinnedOut } from '../lib/stage';
@@ -165,10 +166,16 @@
 
   /** A refresh that came due (or a scan that ended) while a room was being joined, run once the join ends. */
   let held = $state(false);
-  /** The timed refresh, held off while a room is being joined: the list stays as it was tapped. */
+  /**
+   * The timed refresh, held off while a room is being joined: the list stays
+   * as it was tapped. On the game's own server (lib/peer.ts), whose free
+   * allowance counts every scan, not while the page is out of sight: once
+   * it's shown again.
+   */
   function refresh() {
     timer = null;
     if (disabled) held = true;
+    else if (document.visibilityState === 'hidden' && pageServer() === 'own') document.addEventListener('visibilitychange', refresh, { once: true });
     else void scan();
   }
   $effect(() => {
