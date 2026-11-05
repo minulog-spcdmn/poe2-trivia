@@ -23,7 +23,11 @@ run-name: "Redraws: ${{ github.event.pull_request.title || github.ref_name }}"
 # watching: no file of the game's, the root's (but markdown), the sweep's
 # or this workflow, and its beta built byte for byte as main's
 # (scripts/redraws-unchanged.mjs, in the first job). Docs, tests and the
-# other scripts, mostly.
+# other scripts, mostly. Or the owner says so: the label "skip redraws",
+# for a change that can't move a pixel though it changes the game's files
+# (the matchmaking, say: session.svelte.ts runs in every scene, so no file
+# list tells), passes it in seconds, Tests still required. Adding or taking
+# it off runs the check again.
 #
 # A title or description edit runs it again too (edited, for a pull request
 # moved onto main): skipped, it would leave a skipped Redraws, which GitHub
@@ -38,7 +42,7 @@ run-name: "Redraws: ${{ github.event.pull_request.title || github.ref_name }}"
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
   merge_group:
   push:
     branches: [main]
@@ -74,22 +78,28 @@ jobs:
           key: playwright-shell-${{ steps.playwright.outputs.version }}
       - run: npx playwright-core install --only-shell chromium
 
-  # Whether the pull request changes nothing the check sees: then it passes without the jobs below.
+  # Whether the pull request changes nothing the check sees, or has the label "skip redraws" (the
+  # owner's word that it can't move a pixel): then it passes without the jobs below.
   # (Only on a pull request: in the merge queue or run by hand, every job runs.)
   unchanged:
     name: What changed
     if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      SKIP: ${{ contains(github.event.pull_request.labels.*.name, 'skip redraws') }}
     outputs:
       same: ${{ steps.same.outputs.same }}
     steps:
-      - uses: actions/checkout@v4
+      # (With the label, nothing to check out or build: it passes in seconds.)
+      - if: ${{ env.SKIP != 'true' }}
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
           # The merge commit and its parents: main, and the pull request.
           fetch-depth: 2
-      - uses: actions/setup-node@v4
+      - if: ${{ env.SKIP != 'true' }}
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
@@ -97,7 +107,12 @@ jobs:
       # change (main's sees the script changed, and every job runs). With none on main, every job runs.
       - id: same
         run: |
-          if git show HEAD^1:scripts/redraws-unchanged.mjs > scripts/redraws-unchanged.main.mjs; then
+          if [ "$SKIP" = true ]; then
+            text='The pull request has the label "skip redraws": passed without watching the scenes.'
+            echo "$text"
+            { echo '## Redraws'; echo; echo "$text"; } >> "$GITHUB_STEP_SUMMARY"
+            echo "same=true" >> "$GITHUB_OUTPUT"
+          elif git show HEAD^1:scripts/redraws-unchanged.mjs > scripts/redraws-unchanged.main.mjs; then
             node scripts/redraws-unchanged.main.mjs
           else
             echo "main has no scripts/redraws-unchanged.mjs yet: every job runs."
@@ -178,7 +193,7 @@ jobs:
           WATCHED: ${{ needs.redraws.result }}
         run: |
           if [ "$SAME" = true ] && [ "$WATCHED" = skipped ]; then
-            echo "Nothing the check sees changed (scripts/redraws-unchanged.mjs): passed without watching."
+            echo "Nothing the check sees changed (scripts/redraws-unchanged.mjs), or the label \"skip redraws\" says so: passed without watching."
             exit 0
           fi
           test "$WATCHED" = success

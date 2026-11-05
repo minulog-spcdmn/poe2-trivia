@@ -156,6 +156,14 @@ test('Redraws passes on every job passing, or on the pull request changing nothi
   assert.match(workflow, /git show HEAD\^1:scripts\/redraws-unchanged\.mjs > (\S+); then\n\s+node \1\n/);
 });
 
+test('the label “skip redraws” passes it without watching, and adding or taking it off runs it again', () => {
+  assert.match(workflow, /types: \[[^\]]*\blabeled, unlabeled\]/, 'run again on the label');
+  assert.ok(workflow.includes("SKIP: ${{ contains(github.event.pull_request.labels.*.name, 'skip redraws') }}"), 'the label read from the pull request as it is now');
+  assert.match(workflow, /if \[ "\$SKIP" = true \]; then\n(?:.*\n){1,3}?\s+echo "same=true" >> "\$GITHUB_OUTPUT"\n\s+elif git show HEAD\^1/, 'the label says same, else main’s script does');
+  // (Only the first job: what the label skips is the watching, never the verdict.)
+  assert.equal([...workflow.matchAll(/skip redraws'\)/g)].length, 1, 'read in one place');
+});
+
 test('a pull request passes without watching only on files the check doesn’t run, then on its build', () => {
   const own = sweepFiles();
   // (find-banding.py by its path, not imported.)
