@@ -4,7 +4,7 @@
 // nobody holds, a ping carried as a CANDIDATE), its limits, and whom it answers.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ALIVE_MS, Board, EXPIRE_MS, MAX_BURST, MAX_PEERS, MAX_TEXT, MAX_WAITING, answer } from '../signal/worker.js';
+import { ALIVE_MS, Board, EXPIRE_MS, MAX_BURST, MAX_FLOOD, MAX_PEERS, MAX_TEXT, MAX_WAITING, answer } from '../signal/worker.js';
 
 /** A socket that keeps what it's told, and whether it was closed. */
 class Sock {
@@ -153,7 +153,7 @@ test('an id held by a socket silent for ALIVE_MS goes to whoever asks next, even
   assert.equal(dead.closed, true);
 });
 
-test('unknown types are ignored; junk and floods cut the sender off, told why', () => {
+test('unknown types are ignored; past MAX_BURST messages are let go; junk and floods cut the sender off, its connections kept', () => {
   const b = new Board();
   const host = new Sock();
   const a = new Sock();
@@ -164,22 +164,33 @@ test('unknown types are ignored; junk and floods cut the sender off, told why', 
   assert.equal(a.closed, false);
   b.heard(a, 'not json', T);
   assert.equal(a.closed, true);
-  assert.equal(a.said.at(-1)!.type, 'ERROR');
+  // Hung up on without a server-error, which PeerJS would destroy the peer for, games and all.
+  assert.ok(!a.said.some((m) => m.type === 'ERROR'));
 
   const long = new Sock();
   b.join(long, 'long', 'l', T);
   b.heard(long, offer('room', 'x'.repeat(MAX_TEXT)), T);
   assert.equal(long.closed, true);
 
+  const busy = new Sock();
+  b.join(busy, 'busy', 'b', T);
+  const before = host.said.length;
+  for (let i = 0; i < MAX_BURST + 10; i++) b.heard(busy, offer('room', `o${i}`), T + i);
+  assert.equal(host.said.length - before, MAX_BURST, 'the rest let go');
+  assert.equal(busy.closed, false);
+  // A new while, and it's passed on again.
+  b.heard(busy, offer('room', 'later'), T + 10_000);
+  assert.equal(host.said.length - before, MAX_BURST + 1);
+
   const flood = new Sock();
   b.join(flood, 'flood', 'f', T);
-  for (let i = 0; i < MAX_BURST; i++) b.heard(flood, JSON.stringify({ type: 'HEARTBEAT' }), T + i);
+  for (let i = 0; i < MAX_FLOOD; i++) b.heard(flood, JSON.stringify({ type: 'HEARTBEAT' }), T + i);
   assert.equal(flood.closed, false);
-  b.heard(flood, JSON.stringify({ type: 'HEARTBEAT' }), T + MAX_BURST);
+  b.heard(flood, JSON.stringify({ type: 'HEARTBEAT' }), T + MAX_FLOOD);
   assert.equal(flood.closed, true);
-  assert.deepEqual(flood.said.at(-1), { type: 'ERROR', payload: { msg: 'Too many messages' } });
+  assert.ok(!flood.said.some((m) => m.type === 'ERROR'));
   // Its id is free again.
-  assert.equal(b.join(new Sock(), 'flood', 'other', T + MAX_BURST + 1), true);
+  assert.equal(b.join(new Sock(), 'flood', 'other', T + MAX_FLOOD + 1), true);
 });
 
 test('what waits for an id is kept to MAX_WAITING', () => {

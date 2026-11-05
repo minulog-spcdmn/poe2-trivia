@@ -45,15 +45,20 @@ const SIGNALLING: PeerOptions = QA_LOCAL
  * asks for it (useServers).
  */
 export type Server = 'cloud' | 'own';
-const OWN: PeerOptions = { host: OWN_SIGNAL_HOST, port: 443, path: '/', secure: true };
+/** Its heartbeat every 25 s, not PeerJS's 5: each wakes the server, whose free allowance counts them, and it waits 90 s for one (signal/worker.js ALIVE_MS). */
+const OWN: PeerOptions = { host: OWN_SIGNAL_HOST, port: 443, path: '/', secure: true, pingInterval: 25_000 };
 let own = !!OWN_SIGNAL_HOST && !QA && env.MODE !== 'test' && !env.VITE_PEER_HOST;
 /** The page's server, once a look found one that answers (null: not looked yet, or neither answered). */
 let chosen: Server | null = own ? null : 'cloud';
 let choosing: Promise<Server> | null = null;
-/** A look has ended, whatever it found: peers are made on, the cloud's if it found neither. */
-let looked = !own;
+/** When the last look ended that found neither server (0: none since one did). */
+let failedAt = 0;
 /** How long a server's answer is waited for, as the page decides where to meet (ms). */
 const LOOK_MS = 4000;
+/** How long after a look that found neither peers are made on the cloud regardless, before the next one looks again (ms): not a look for every peer while offline, nor one from long ago. */
+const LOOK_AGAIN_MS = 10_000;
+/** Where peers can be made: the page's server found, or a look that found neither just ended. */
+const ready = () => chosen !== null || Date.now() - failedAt < LOOK_AGAIN_MS;
 
 /** Whether a server answers this page: the address PeerJS gets a fresh id from, which the cloud refuses in Russia. */
 async function answers(o: PeerOptions): Promise<boolean> {
@@ -72,15 +77,15 @@ async function answers(o: PeerOptions): Promise<boolean> {
 
 /**
  * Looks, once a page goes online, where it meets: the cloud if it answers,
- * else ours if that does. Neither (offline): the cloud, looked at again the
- * next time a peer is made.
+ * else ours if that does. Neither (offline): the cloud, looked at again
+ * before a peer is made once LOOK_AGAIN_MS has passed (peerJsNow).
  */
 export function chooseServer(): Promise<Server> {
   if (chosen) return Promise.resolve(chosen);
   return (choosing ??= (async () => {
     const found: Server | null = (await answers(SIGNALLING)) ? 'cloud' : (await answers(OWN)) ? 'own' : null;
     if (own) chosen = found;
-    looked = true;
+    failedAt = found ? 0 : Date.now();
     choosing = null;
     return found ?? 'cloud';
   })());
@@ -97,7 +102,7 @@ export function useServers(withOwn: boolean, page: Server | null = 'cloud') {
   own = withOwn;
   chosen = withOwn ? page : 'cloud';
   choosing = null;
-  looked = chosen !== null;
+  failedAt = 0;
 }
 /** Google's STUN server, as before the relay: beside Cloudflare's (the relay's login), so a direct link gets through wherever it did. */
 const STUN: RTCIceServer = { urls: 'stun:stun.l.google.com:19302' };
@@ -166,6 +171,18 @@ export type PeerJs = typeof PeerJsModule;
 let peerJs: PeerJs | null = null;
 let loading: Promise<PeerJs> | null = null;
 
+/**
+ * Destroys a peer. One made without an id that's still getting it from its
+ * server opens its socket anyway once the id comes (PeerJS), with nobody
+ * listening, and keeps it up with heartbeats as long as the page is open:
+ * not any more.
+ */
+export function letGo(peer: PeerJsModule.Peer) {
+  peer.destroy();
+  // (A stand-in peer in tests may have no socket.)
+  if (peer.socket) peer.socket.start = () => {};
+}
+
 /** PeerJS's code, loaded once (a load that fails, offline, is tried again on the next call). */
 export function loadPeerJsCode(): Promise<PeerJs> {
   return (loading ??= import('peerjs').then(
@@ -189,15 +206,16 @@ export function loadPeerJs(wait = true): Promise<PeerJs> {
   return Promise.all([loadPeerJsCode(), chooseServer(), wait && relay.load()]).then(([m]) => m);
 }
 
-/** PeerJS for a page going online, when it is loaded already, its server chosen, and (unless `wait` is false) the relay's login isn't worth waiting for, so a peer can be made right away (else loadPeerJs first). */
+/** PeerJS for a page going online, when it is loaded already, its server chosen (or a look that found neither just ended), and (unless `wait` is false) the relay's login isn't worth waiting for, so a peer can be made right away (else loadPeerJs first, which looks again). */
 export function peerJsNow(wait = true): PeerJs | null {
   goOnline();
-  // A look that found neither server (offline) is had again, for the peers after this one.
-  if (!chosen && looked && !choosing) void chooseServer();
-  return (wait && relay.wanted()) || !looked ? null : peerJs;
+  return (wait && relay.wanted()) || !ready() ? null : peerJs;
 }
 
-/** Loads PeerJS once the page has settled (lib/settled.ts: not over the start page's entrance), so hosting or joining doesn't wait for it; returns what takes that back if it hasn't run. */
+/** Loads PeerJS, and looks where the page meets (chooseServer), once the page has settled (lib/settled.ts: not over the start page's entrance), so hosting or joining doesn't wait for either; returns what takes that back if it hasn't run. */
 export function preloadPeerJs(): () => void {
-  return whenSettled(() => loadPeerJsCode().catch(() => {}));
+  return whenSettled(() => {
+    loadPeerJsCode().catch(() => {});
+    void chooseServer();
+  });
 }

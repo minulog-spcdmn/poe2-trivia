@@ -2,8 +2,8 @@
 // it answers meets as before, and the game's own (signal/worker.js) for the
 // pages it turns away (every player in Russia). A page meets where it's
 // answered; a host's room and its listing are on both; a guest whose room
-// isn't on its page's server looks on the other; an invite asks both. Against
-// two signalling servers in memory (tests/fakePeerjs.ts).
+// isn't on its page's server, but on the other, goes on there; an invite asks
+// both. Against two signalling servers in memory (tests/fakePeerjs.ts).
 import { fakeModule } from './asVite.ts';
 import { registerHooks } from 'node:module';
 import { test, mock, beforeEach } from 'node:test';
@@ -48,6 +48,8 @@ async function until<T>(p: Promise<T>, limit = 60_000): Promise<T> {
   return out!;
 }
 const guests = () => net.made.filter((p) => p.id.startsWith('anon-'));
+/** The peers a join reached the room from, by server (beside them, a peer on ours that only pings, watchForRoom). */
+const joiners = (server: 'cloud' | 'own') => [...new Set(net.connected.filter((id) => id.startsWith('own:') === (server === 'own')))];
 const unavailable = (p: InstanceType<typeof Peer>) => p.emit('error', { type: 'peer-unavailable', message: `Could not connect to peer ${PEER_PREFIX}ABCDEF` });
 const room = (code: string): RoomInfo => ({ code, host: 'Ash', players: 1, maxPlayers: 12, spectators: 0, maxSpectators: 8, mode: 'turns', difficulty: 'merciless', target: 10, phase: 'lobby' });
 /** A room answering pings under its code, on one server. */
@@ -105,8 +107,10 @@ test("a room's id lost on our server is tried for again, later each time, the ro
   const squatter = new Peer(id, { host: OWN_SIGNAL_HOST });
   net.ownHeld.set(id, squatter);
   first.emit('error', { type: 'unavailable-id', message: `ID "${id}" is taken` });
+  // Cut off by the server: reconnected, never let go of.
+  first.emit('error', { type: 'server-error', message: 'Too many messages' });
   await run(3000);
-  assert.equal(first.destroyed, true);
+  assert.equal(first.destroyed, false, 'kept for the guests it carries');
   assert.equal(net.ownHeld.get(id), squatter);
   assert.equal(session.status, 'ready', 'the room goes on');
   assert.equal(net.held.get(id)?.destroyed, false, 'on the cloud as it was');
@@ -114,6 +118,9 @@ test("a room's id lost on our server is tried for again, later each time, the ro
   await run(10_000);
   const mirror = net.ownHeld.get(id);
   assert.ok(mirror && mirror !== first && mirror !== squatter && !mirror.destroyed, 'held again once it was free');
+  session.leave();
+  await run(1000);
+  assert.equal(first.destroyed, true, 'let go of as the room closes');
 });
 
 test('a page the cloud turns away hosts on ours alone', async () => {
@@ -127,25 +134,81 @@ test('a page the cloud turns away hosts on ours alone', async () => {
   assert.equal(net.held.size, 0, 'nothing on the cloud');
 });
 
-test("a guest whose room isn't on the cloud looks on ours, and only then is told there's no such room", async () => {
+test("a guest whose room is on ours alone goes on there where the cloud would say there's no such room", async () => {
+  hosted('ABCDEF', 'own');
   session.join('ABCDEF', 'Bram');
-  await run(100);
-  const [first] = guests();
-  assert.equal(first.server, 'cloud');
+  await run(300);
+  assert.deepEqual(joiners('cloud'), [PEER_PREFIX + 'ABCDEF'], 'on the cloud first, as before');
+  assert.deepEqual(joiners('own'), [], 'ours only pinged');
+  const [first] = guests().filter((p) => p.server === 'cloud');
   unavailable(first);
   await run(7500);
+  assert.deepEqual(joiners('own'), [], 'not on the cloud’s first word: a host may only be reconnecting');
   unavailable(first);
-  await run(100);
-  assert.equal(session.status, 'connecting', 'not given up');
-  const second = guests().at(-1)!;
-  assert.equal(second.server, 'own', 'looked for on ours');
+  await run(300);
   assert.equal(first.destroyed, true);
-  unavailable(second);
+  assert.deepEqual(joiners('own'), ['own:' + PEER_PREFIX + 'ABCDEF'], 'on ours');
+  assert.equal(session.status, 'connecting');
+});
+
+test("a cloud host's room the cloud loses for a moment is waited for on the cloud, as before, though it's on ours too", async () => {
+  hosted('ABCDEF', 'cloud');
+  hosted('ABCDEF', 'own');
+  session.join('ABCDEF', 'Bram');
+  await run(300);
+  const [first] = guests().filter((p) => p.server === 'cloud');
+  unavailable(first);
+  await run(3000);
+  assert.deepEqual(joiners('own'), []);
+  assert.equal(first.destroyed, false);
+  assert.ok(joiners('cloud').length > 0 && session.status === 'connecting', 'still trying the cloud');
+});
+
+test('a join from an invite that found the room on ours, and the cloud saying it has none, goes there at once', async () => {
+  hosted('QWNHST', 'own');
+  await until(probeRoom('QWNHST'));
+  await run(300);
+  session.join('QWNHST', 'Bram');
+  await run(300);
+  assert.deepEqual(joiners('own'), ['own:' + PEER_PREFIX + 'QWNHST'], 'without waiting for the cloud to say so again');
+});
+
+test('a room that shows up on ours after the cloud first said it has no such room is gone on to', async () => {
+  session.join('ABCDEF', 'Bram');
+  await run(300);
+  const [first] = guests().filter((p) => p.server === 'cloud');
+  unavailable(first);
+  await run(1000);
+  hosted('ABCDEF', 'own');
+  await run(6500);
+  unavailable(first);
+  await run(300);
+  assert.deepEqual(joiners('own'), ['own:' + PEER_PREFIX + 'ABCDEF']);
+});
+
+test('a code no room has is told as soon as before, the join never moved to ours, and ours let go of', async () => {
+  session.join('ABCDEF', 'Bram');
+  await run(300);
+  const [first] = guests().filter((p) => p.server === 'cloud');
+  unavailable(first);
   await run(7500);
-  unavailable(second);
+  assert.equal(session.status, 'connecting');
+  unavailable(first);
   await run(100);
-  assert.equal(session.status, 'idle', 'nowhere: given up');
-  assert.equal(guests().length, 2, 'and looked nowhere else');
+  assert.equal(session.status, 'idle', 'No such room, on the cloud’s second word, as before');
+  assert.equal(guests().filter((p) => p.server === 'cloud').length, 1);
+  assert.deepEqual(joiners('own'), [], 'never joined on ours');
+  assert.ok(net.pinged.includes(PEER_PREFIX + 'ABCDEF'), 'only looked for there');
+  assert.ok(net.made.filter((p) => p.server === 'own').every((p) => p.destroyed), 'and stopped looking');
+});
+
+test("a room on both servers is joined on the cloud alone, ours only looked at", async () => {
+  hosted('ABCDEF', 'cloud');
+  hosted('ABCDEF', 'own');
+  session.join('ABCDEF', 'Bram');
+  await run(3000);
+  assert.deepEqual(joiners('cloud'), [PEER_PREFIX + 'ABCDEF']);
+  assert.deepEqual(joiners('own'), []);
 });
 
 test("a guest the cloud turns away joins on ours, and doesn't look on the cloud", async () => {
@@ -159,7 +222,7 @@ test("a guest the cloud turns away joins on ours, and doesn't look on the cloud"
   unavailable(guest);
   await run(100);
   assert.equal(session.status, 'idle');
-  assert.equal(guests().length, 1);
+  assert.equal(guests().length, 1, 'nothing on the cloud, not even a look');
 });
 
 test("an invite finds a room on either server; it's gone only when neither has it", async () => {
@@ -208,12 +271,13 @@ test("a page meets on the cloud if it answers, on ours if only ours does, and lo
     answering = { cloud: false, own: false };
     assert.equal(await chooseServer(), 'cloud', 'offline: the cloud, as before');
     assert.equal(pageServer(), 'cloud');
-    // The next peer looks again, and is made meanwhile.
+    assert.notEqual(peerJsNow(false), null, 'peers made on it for a while');
+    // Then looked at again before the next peer is made (a look from page load, the network back since).
+    mock.timers.tick(11_000);
+    assert.equal(peerJsNow(false), null);
     asked.length = 0;
     answering = { cloud: false, own: true };
-    peerJsNow(false);
-    await settle();
-    await settle();
+    assert.equal(await chooseServer(), 'own');
     assert.deepEqual(asked, ['cloud', 'own']);
     assert.equal(pageServer(), 'own');
   } finally {

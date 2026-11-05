@@ -38,7 +38,7 @@ export const net = {
   made: [] as Peer[],
   /** The ids pinged (a candidate carrying a probe), in order. */
   pinged: [] as string[],
-  /** The ids connected to, in order. */
+  /** The ids connected to, in order (on the game's own server, as `own:<id>`). */
   connected: [] as string[],
   /** Off: nobody's peer can open (network trouble). */
   down: false,
@@ -139,7 +139,7 @@ export default class Peer extends Emitter {
 
   connect(id: string) {
     if (this.destroyed || this.disconnected) return undefined;
-    net.connected.push(id);
+    net.connected.push(this.server === 'own' ? `own:${id}` : id);
     return new Conn(id);
   }
 

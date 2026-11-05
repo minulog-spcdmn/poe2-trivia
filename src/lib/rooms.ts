@@ -68,6 +68,10 @@ const COMPACT_EVERY_MS = 30000;
 /** A room's id on the other server (Mirror): tried again this long after a try fails, twice as long each time up to the latest. */
 const MIRROR_FIRST_MS = 2000;
 const MIRROR_LATEST_MS = 60_000;
+/** How long what an invite's probe heard of a room on each server is taken as still so (onlyOn). */
+const HEARD_FOR_MS = 120_000;
+/** A room looked for on a join's other server (watchForRoom) is pinged again no sooner than this after the last ping. */
+const WATCH_AGAIN_MS = 2000;
 
 export const slotId = (n: number) => `${PEER_PREFIX}pub-${n}`;
 
@@ -380,8 +384,27 @@ export async function probeRoom(code: string): Promise<RoomInfo | 'gone' | null>
   });
 }
 
+/** What probeRoom last heard of each room on each server: whether it was there ('gone': the server said it isn't), and when. */
+const lately = new Map<string, { at: number } & Partial<Record<Server, boolean>>>();
+
+/** The server an invite's probe found the room on, the other having said it isn't there, lately (HEARD_FOR_MS): where its join goes at once. */
+export function onlyOn(code: string): Server | null {
+  const h = lately.get(code);
+  if (!h || Date.now() - h.at > HEARD_FOR_MS) return null;
+  return h.own && h.cloud === false ? 'own' : h.cloud && h.own === false ? 'cloud' : null;
+}
+
 /** probeRoom on one server. */
 async function probeOn(code: string, server: Server): Promise<RoomInfo | 'gone' | null> {
+  const r = await probeOnce(code, server);
+  if (r !== null) {
+    const h = lately.get(code);
+    lately.set(code, { ...(h && Date.now() - h.at < HEARD_FOR_MS ? h : {}), at: Date.now(), [server]: r !== 'gone' });
+  }
+  return r;
+}
+
+async function probeOnce(code: string, server: Server): Promise<RoomInfo | 'gone' | null> {
   const opening = openPeer(undefined, server);
   const peer = await Promise.race([opening.catch(() => null), sleep(PROBE_OPEN_TIMEOUT_MS).then(() => null)]);
   if (!peer) {
@@ -398,6 +421,44 @@ async function probeOn(code: string, server: Server): Promise<RoomInfo | 'gone' 
 }
 
 /**
+ * Looks for a room by its code on one server (a join's other one, lib/peer.ts
+ * alsoOn), by ping alone, again and again until it's there (`found`, once) or
+ * the stop it returns is called. Never connects to it: whether the join goes
+ * on there is the session's to say.
+ */
+export function watchForRoom(code: string, server: Server, found: () => void): () => void {
+  let stopped = false;
+  let peer: Peer | null = null;
+  const stop = () => {
+    stopped = true;
+    peer?.destroy();
+    peer = null;
+  };
+  void (async () => {
+    while (!stopped) {
+      const p = await openPeer(undefined, server).catch(() => null);
+      if (stopped) return p?.destroy();
+      peer = p;
+      const prober = p && new Prober(p);
+      while (prober && !stopped && !p.disconnected && !p.destroyed) {
+        const at = Date.now();
+        const r = await prober.probe(PEER_PREFIX + code, null);
+        if (stopped) return;
+        if (r && r !== 'free' && r !== 'held' && r.code === code) {
+          stop();
+          return found();
+        }
+        // The server takes a few seconds to say it's free; no word, or a quicker one, isn't asked after again sooner than this.
+        await sleep(at + WATCH_AGAIN_MS - Date.now());
+      }
+      p?.destroy();
+      if (!stopped) await sleep(WATCH_AGAIN_MS);
+    }
+  })();
+  return stop;
+}
+
+/**
  * Holds a room's id on the other server too (lib/peer.ts alsoOn), so a guest
  * on either finds it: what reaches it goes to `take`, as what reaches the
  * room's own peer does. Its troubles are its own: the room goes on without
@@ -405,6 +466,8 @@ async function probeOn(code: string, server: Server): Promise<RoomInfo | 'gone' 
  */
 export class Mirror {
   private peer: Peer | null = null;
+  /** Peers whose id was lost, kept for the guests they carry until the room closes. */
+  private retired: Peer[] = [];
   private stopped = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private tries = 0;
@@ -424,10 +487,11 @@ export class Mirror {
     this.stopped = true;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
-    const peer = this.peer;
+    const peers = [this.peer, ...this.retired.splice(0)];
     this.peer = null;
-    if (later) setTimeout(() => peer?.destroy(), later);
-    else peer?.destroy();
+    const destroy = () => peers.forEach((p) => p?.destroy());
+    if (later) setTimeout(destroy, later);
+    else destroy();
   }
 
   private async open() {
@@ -447,10 +511,11 @@ export class Mirror {
     peer.on('disconnected', () => {
       if (this.peer === peer && !peer.destroyed) this.timer = setTimeout(() => !peer.destroyed && peer.disconnected && peer.reconnect(), this.wait());
     });
+    // Cut off by the server (a server-error), PeerJS lets go of the server alone, and it's reconnected as above.
     peer.on('error', (err) => {
-      // Its id lost (held by another while it was off), or cut off by the server: a fresh try.
-      if (this.peer !== peer || (err.type !== 'unavailable-id' && err.type !== 'server-error')) return;
-      peer.destroy();
+      // Its id lost (held by another while it was off): a fresh try, the guests it carries kept.
+      if (this.peer !== peer || err.type !== 'unavailable-id') return;
+      this.retired.push(peer);
       this.peer = null;
       this.again();
     });
@@ -476,6 +541,8 @@ export class Beacon {
   private compactTimer: ReturnType<typeof setInterval> | null = null;
   private compacting = false;
   private prober: Prober | null = null;
+  /** Network troubles in a row, on the other server (`server` named): each try after the last waits longer. */
+  private troubles = 0;
 
   /** `server`: where it lists the room (lib/peer.ts), the page's unless named. */
   constructor(
@@ -516,8 +583,10 @@ export class Beacon {
         return;
       }
       if (results.some((r) => r === null)) {
-        // Network trouble: try again later from the start.
-        setTimeout(() => !this.stopped && !this.peer && void this.claimFrom(1), 10000);
+        // Network trouble: try again later from the start. On the other server, later each time (to 5 minutes), so a
+        // server down or out of its allowance isn't asked again and again by every room listed on the page's.
+        const wait = this.server ? Math.min(300_000, 10_000 * 2 ** this.troubles++) : 10_000;
+        setTimeout(() => !this.stopped && !this.peer && void this.claimFrom(1), wait);
         return;
       }
     }
@@ -537,6 +606,7 @@ export class Beacon {
   }
 
   private adopt(peer: Peer, slot: number) {
+    this.troubles = 0;
     const old = this.peer;
     this.peer = peer;
     this.prober = new Prober(peer);

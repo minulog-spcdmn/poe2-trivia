@@ -35,8 +35,13 @@ const ALIVE_EVERY_MS = 15_000;
 export const MAX_PEERS = 5000;
 /** The longest message passed on: an offer's description is a few kilobytes. */
 export const MAX_TEXT = 64 * 1024;
-/** Messages a socket may send in BURST_MS before it's cut off: a room list's scan sends a few dozen. */
-export const MAX_BURST = 200;
+/**
+ * Messages a socket's passed on in BURST_MS (a room list's scan sends a few
+ * dozen, a host many guests are joining at once a few hundred); past it, the
+ * rest are let go, and past MAX_FLOOD it's cut off.
+ */
+export const MAX_BURST = 300;
+export const MAX_FLOOD = 1500;
 const BURST_MS = 10_000;
 /** Messages kept for an id nobody holds, and for all of them together. */
 export const MAX_WAITING = 100;
@@ -57,7 +62,7 @@ const LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[\w-]+\.localhost|10\
  * A socket as the board uses it.
  * @typedef {{ send(text: string): void, close(code?: number, reason?: string): void }} Socket
  * A peer on the board: its socket, id and token, when it was last heard, and its recent messages.
- * @typedef {{ ws: Socket, id: string, token: string, heard: number, burst: number[] }} Peer
+ * @typedef {{ ws: Socket, id: string, token: string, heard: number, since: number, sent: number }} Peer
  * A message as passed on.
  * @typedef {{ type: string, src: string, dst: string, payload?: unknown }} Message
  * A socket on Cloudflare, which keeps what it's given across hibernation.
@@ -89,7 +94,11 @@ function hangUp(ws, code = 1000, reason = '') {
   }
 }
 
-/** Tells a socket what's wrong (PeerJS's server-error) and closes it. @param {Socket} ws @param {string} msg */
+/**
+ * Tells a socket what's wrong (PeerJS's server-error) and closes it: only one
+ * not open yet, as PeerJS destroys a peer told so, and with it the games its
+ * connections carry. @param {Socket} ws @param {string} msg
+ */
 function refuse(ws, msg) {
   tell(ws, { type: 'ERROR', payload: { msg } });
   hangUp(ws, 1008, msg);
@@ -129,7 +138,7 @@ export class Board {
       return false;
     }
     /** @type {Peer} */
-    const peer = { ws, id, token, heard: now, burst: [] };
+    const peer = { ws, id, token, heard: now, since: now, sent: 0 };
     this.peers.set(id, peer);
     this.bySocket.set(ws, peer);
     tell(ws, { type: 'OPEN' });
@@ -148,7 +157,7 @@ export class Board {
    * @param {Socket} ws @param {string} id @param {string} token @param {number} now
    */
   adopt(ws, id, token, now) {
-    const peer = { ws, id, token, heard: now, burst: [] };
+    const peer = { ws, id, token, heard: now, since: now, sent: 0 };
     this.peers.set(id, peer);
     this.bySocket.set(ws, peer);
   }
@@ -162,9 +171,12 @@ export class Board {
     const peer = this.bySocket.get(ws);
     if (!peer) return;
     peer.heard = now;
-    peer.burst = peer.burst.filter((t) => now - t < BURST_MS);
-    peer.burst.push(now);
-    if (peer.burst.length > MAX_BURST) return this.cutOff(peer, 'Too many messages');
+    if (now - peer.since >= BURST_MS) {
+      peer.since = now;
+      peer.sent = 0;
+    }
+    if (++peer.sent > MAX_FLOOD) return this.cutOff(peer, 'Too many messages');
+    if (peer.sent > MAX_BURST) return;
     if (typeof text !== 'string' || text.length > MAX_TEXT) return this.cutOff(peer, 'Message too long');
     /** @type {{ type?: unknown, dst?: unknown, payload?: unknown } | null} */
     let m;
@@ -206,11 +218,15 @@ export class Board {
     hangUp(peer.ws);
   }
 
-  /** @param {Peer} peer @param {string} msg */
+  /**
+   * Hangs up on a peer that sent what no page does, saying why in the close
+   * alone: told it as a server-error, PeerJS would destroy the peer and the
+   * games its connections carry. @param {Peer} peer @param {string} msg
+   */
   cutOff(peer, msg) {
     this.bySocket.delete(peer.ws);
     if (this.peers.get(peer.id) === peer) this.peers.delete(peer.id);
-    refuse(peer.ws, msg);
+    hangUp(peer.ws, 1008, msg);
   }
 
   /** What waited EXPIRE_MS for an id nobody took: each sender told once, the rest let go. @param {number} now */

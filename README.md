@@ -179,16 +179,22 @@ Durable Object holding every peer's socket in memory.
   the cloud answers meets there as before: nothing that worked before leans
   on ours.
 - A host's room and its listing are on both, so a guest finds it on either.
-  A guest whose room isn't on its page's server looks on the other before
-  it's told there's no such room, and an invite link's screen asks both.
+  A guest on the cloud looks for the room on ours too, by ping alone, and
+  goes on there where the cloud would say there's no such room (a cloud host
+  only reconnecting is waited for on the cloud, as before), or at once if
+  the invite link's screen, which asks both, heard it's on ours alone. A code
+  no room has is told as soon as before.
 - The open rooms list scans its page's server only: a page on the cloud
   doesn't list a room whose host the cloud turned away (an invite or the code
   still finds it).
 - Only the game's own pages are answered; an address (an IPv6 one's /64) may
-  connect 120 times a minute; a socket that sends more than 200 messages in
-  10 s is cut off; 5,000 peers at once at most. Nothing is stored or logged.
+  connect 120 times a minute; a socket's messages past 300 in 10 s are let
+  go, and past 1,500 it's hung up on (never with a server error, for which
+  PeerJS would end every game the peer carries); 5,000 peers at once at
+  most. Nothing is stored or logged.
 - Cloudflare's free plan gives a Durable Object 100,000 requests a day, a
-  socket's messages counting 20 to one (PeerJS sends a heartbeat every 5 s).
+  socket's messages counting 20 to one (a peer on ours sends a heartbeat
+  every 25 s, not PeerJS's 5).
   Past that, ours stops until midnight UTC: hosts carry on on the cloud, and
   only the pages the cloud turns away can't play.
 
