@@ -47,7 +47,8 @@ The full rules are in [docs/gameplay.md](docs/gameplay.md).
 - **Online:** the host creates a room and shares its 6-character code or
   invite link. Browsers connect directly over WebRTC
   ([PeerJS](https://peerjs.com/)); the host's browser runs the game, and the
-  free PeerJS cloud only introduces the players to each other. Rooms can be
+  free PeerJS cloud only introduces the players to each other (players it
+  turns away meet on the game's own server instead). Rooms can be
   listed publicly under "Open rooms". Very strict networks can block WebRTC;
   a room that can't go online opens on the host's device only.
 - **At one screen:** in a Turns lobby the host adds players by name, who
@@ -164,10 +165,41 @@ to 4K (`docs/qa.md`). A new test tool is a bench there, not a page.
 on the beta. A new tool page gets a card there; `tests/devHub.test.ts` fails
 until it does.
 
-### Self-hosted signalling (optional)
+### Matchmaking server
 
-To use your own [PeerJS server](https://github.com/peers/peerjs-server)
-instead of the public cloud, build with `VITE_PEER_HOST`, `VITE_PEER_PORT`,
+Players meet on the free PeerJS cloud (`0.peerjs.com`), which turns away every
+player in Russia (it answers them 403, from the same address that answers
+Kazakhstan), so none of them could host or join. They meet on the game's own
+server instead: a Worker (`signal/worker.js`) that speaks the
+[PeerJS server](https://github.com/peers/peerjs-server)'s protocol, one
+Durable Object holding every peer's socket in memory.
+
+- A page looks once it goes online (hosts, joins, syncs, the open rooms list):
+  the cloud if it answers, else ours if that does (`lib/peer.ts`). Everyone
+  the cloud answers meets there as before: nothing that worked before leans
+  on ours.
+- A host's room and its listing are on both, so a guest finds it on either.
+  A guest whose room isn't on its page's server looks on the other before
+  it's told there's no such room, and an invite link's screen asks both.
+- The open rooms list scans its page's server only: a page on the cloud
+  doesn't list a room whose host the cloud turned away (an invite or the code
+  still finds it).
+- Only the game's own pages are answered; an address (an IPv6 one's /64) may
+  connect 120 times a minute; a socket that sends more than 200 messages in
+  10 s is cut off; 5,000 peers at once at most. Nothing is stored or logged.
+- Cloudflare's free plan gives a Durable Object 100,000 requests a day, a
+  socket's messages counting 20 to one (PeerJS sends a heartbeat every 5 s).
+  Past that, ours stops until midnight UTC: hosts carry on on the cloud, and
+  only the pages the cloud turns away can't play.
+
+To set it up (once): in `signal/` (not the project's root, see "Relay"),
+`npx wrangler login` and `npx wrangler deploy`. It's the Worker
+`poe2-signal`, at `poe2-signal.poe2quest.workers.dev`, named in
+`src/lib/signalHost.ts`. To turn it off, empty `OWN_SIGNAL_HOST` there (pages
+loaded since meet on the cloud alone) and delete the Worker.
+
+To use a [PeerJS server](https://github.com/peers/peerjs-server) of your own
+instead of both, build with `VITE_PEER_HOST`, `VITE_PEER_PORT`,
 `VITE_PEER_PATH` and `VITE_PEER_SECURE`.
 
 ### Relay

@@ -33,7 +33,7 @@ function csp(env: Record<string, string>): Plugin {
   const secure = (env.VITE_PEER_SECURE ?? 'true') === 'true';
   const port = env.VITE_PEER_HOST && env.VITE_PEER_PORT ? `:${env.VITE_PEER_PORT}` : '';
   // And the game's own (lib/peer.ts), for a page the cloud turns away, unless the signalling is self-hosted.
-  const own = env.VITE_PEER_HOST ? '' : ` https://${OWN_SIGNAL_HOST} wss://${OWN_SIGNAL_HOST}`;
+  const own = env.VITE_PEER_HOST || !OWN_SIGNAL_HOST ? '' : ` https://${OWN_SIGNAL_HOST} wss://${OWN_SIGNAL_HOST}`;
   const signalling = `${secure ? 'https' : 'http'}://${peerHost}${port} ${secure ? 'wss' : 'ws'}://${peerHost}${port}${own}`;
   const policy = (inline: string) => [
     "default-src 'self'",

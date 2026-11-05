@@ -46,7 +46,7 @@ const SIGNALLING: PeerOptions = QA_LOCAL
  */
 export type Server = 'cloud' | 'own';
 const OWN: PeerOptions = { host: OWN_SIGNAL_HOST, port: 443, path: '/', secure: true };
-let own = !QA && env.MODE !== 'test' && !env.VITE_PEER_HOST;
+let own = !!OWN_SIGNAL_HOST && !QA && env.MODE !== 'test' && !env.VITE_PEER_HOST;
 /** The page's server, once a look found one that answers (null: not looked yet, or neither answered). */
 let chosen: Server | null = own ? null : 'cloud';
 let choosing: Promise<Server> | null = null;
