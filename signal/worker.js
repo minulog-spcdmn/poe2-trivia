@@ -78,7 +78,7 @@ const PASSED = new Set(['OFFER', 'ANSWER', 'CANDIDATE', 'LEAVE', 'EXPIRE']);
 const KEPT = new Set(['OFFER', 'ANSWER', 'CANDIDATE']);
 /** The header the Worker hands the Object a socket's address key in. */
 export const ADDRESS_HEADER = 'X-Signal-Address';
-/** Close codes of a page letting its socket go: done (PeerJS's own close, which sends no code, arrives as 1005) or leaving the page. */
+/** Close codes of a page letting its socket go: done (PeerJS's own close, which sends no code, arrives as 1005) or leaving the page. A page swapping its socket for a fresh one (lib/peer.ts keepFresh) closes it with 4000: lost, its id kept for it. */
 const LET_GO = new Set([1000, 1001, 1005]);
 const LIVE = 'https://poe2.quest';
 /** The dev server, on this machine or another on the network (a phone trying a build): the relay's. */

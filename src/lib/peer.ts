@@ -69,8 +69,19 @@ const ASK_AGAIN_MS = 1000;
 const LOOK_AGAIN_MS = 10_000;
 /** A page on ours looks again, without waiting for it, as a peer is made once this has passed: the cloud may answer it by now (an outage over, a VPN on) (ms). */
 const RELOOK_MS = 5 * 60_000;
-/** Whether a peer can be made now: the page's server found, a look past its wait (made on the cloud meanwhile), or one that found neither just ended. */
-const ready = () => chosen !== null || (looking ? Date.now() - lookedAt >= LOOK_MS : Date.now() - failedAt < LOOK_AGAIN_MS);
+/** The look on its way has heard no from the cloud: it ends soon (OWN_MS), and is waited for, not made on the cloud that said no. */
+let refused = false;
+/** Whether a peer can be made now: the page's server found, a look past its wait (made on the cloud meanwhile, unless it said no), or one that found neither just ended. */
+const ready = () => chosen !== null || (looking ? !refused && Date.now() - lookedAt >= LOOK_MS : Date.now() - failedAt < LOOK_AGAIN_MS);
+/**
+ * Peers on the cloud that failed before they opened, in a row, and when the
+ * last did. Two lately, and a look takes the cloud as saying no, whatever its
+ * address for ids says: a cloud that refuses sockets alone (its limit of
+ * peers, a network that blocks them) still hands out ids.
+ */
+let cloudFails = 0;
+let cloudFailedAt = 0;
+const askCloud = (ms: number) => (cloudFails >= 2 && Date.now() - cloudFailedAt < RELOOK_MS ? Promise.resolve('no' as const) : answers(SIGNALLING, ms));
 const after = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
 
 /**
@@ -96,22 +107,27 @@ async function answers(o: PeerOptions, ms: number): Promise<'yes' | 'no' | 'slow
 /**
  * Looks where the page meets: the cloud if it answers, else ours if that
  * does. A no from the cloud is asked again ASK_AGAIN_MS later, ours asked
- * meanwhile; a cloud slow to answer is waited for (PeerJS would wait for it,
- * as before ours) to CLOUD_MS. What it finds is where peers are made from
- * then on; finding neither, the page stays where it was.
+ * meanwhile, and the page moves only on a second no (one slow to come is no
+ * reason to leave); a cloud slow to answer is waited for (PeerJS would wait
+ * for it, as before ours) to CLOUD_MS. What it finds is where peers are made
+ * from then on; finding neither, the page stays where it was.
  */
 function look(): Promise<Server | null> {
   return (looking ??= (async () => {
     lookedAt = Date.now();
-    const cloud = await answers(SIGNALLING, CLOUD_MS);
+    refused = false;
+    const cloud = await askCloud(CLOUD_MS);
     let found: Server | null = cloud === 'yes' ? 'cloud' : null;
     if (!found) {
-      const [again, ours] = await Promise.all([cloud === 'no' ? after(ASK_AGAIN_MS).then(() => answers(SIGNALLING, LOOK_MS)) : cloud, answers(OWN, OWN_MS)]);
-      found = again === 'yes' ? 'cloud' : ours === 'yes' ? 'own' : null;
+      refused = cloud === 'no';
+      const ours = answers(OWN, OWN_MS);
+      const again = cloud === 'no' ? await after(ASK_AGAIN_MS).then(() => askCloud(OWN_MS)) : 'slow';
+      found = again === 'yes' ? 'cloud' : (cloud === 'slow' || again === 'no') && (await ours) === 'yes' ? 'own' : null;
     }
     if (found) chosen = found;
     failedAt = chosen ? 0 : Date.now();
     looking = null;
+    refused = false;
     return found;
   })());
 }
@@ -125,7 +141,8 @@ export function chooseServer(): Promise<Server> {
   if (ready()) return Promise.resolve(pageServer());
   const looked = look();
   return new Promise((done) => {
-    const t = setTimeout(() => done(pageServer()), lookedAt + LOOK_MS - Date.now());
+    // (Not once the cloud has said no: the look ends soon, and the peer isn't made where it would be refused.)
+    const t = setTimeout(() => !refused && done(pageServer()), lookedAt + LOOK_MS - Date.now());
     void looked.then(() => {
       clearTimeout(t);
       done(pageServer());
@@ -153,6 +170,9 @@ export function useServers(withOwn: boolean, page: Server | null = 'cloud') {
   own = withOwn;
   chosen = withOwn ? page : 'cloud';
   looking = null;
+  refused = false;
+  cloudFails = 0;
+  cloudFailedAt = 0;
   // (As if just looked: a page given its server isn't due to look again.)
   lookedAt = page ? Date.now() : 0;
   failedAt = 0;
@@ -242,6 +262,18 @@ export function newPeer(Peer: PeerJs['default'], id?: string, server: Server = p
   const name = id ?? (server === 'own' && !QA_LOCAL ? randomToken(24) : undefined);
   const peer = name ? new Peer(name, options) : new Peer(options);
   peerServers.set(peer, server);
+  if (own && server === 'cloud') {
+    let opened = false;
+    peer.on('open', () => {
+      opened = true;
+      cloudFails = 0;
+    });
+    peer.on('error', (err) => {
+      if (opened || !LOST.has(err.type)) return;
+      cloudFails++;
+      cloudFailedAt = Date.now();
+    });
+  }
   if (server === 'own' && chosen === 'own') keepFresh(peer);
   if (own && server === chosen) peer.on('error', (err) => LOST.has(err.type) && relook());
   if (chosen === 'own' && Date.now() - lookedAt >= RELOOK_MS) relook();
@@ -272,7 +304,7 @@ type FreshSocket = {
   close(): void;
   start(id: string, token: string): void;
   _sendHeartbeat(): void;
-  _socket?: { readyState: number };
+  _socket?: { readyState: number; close(code?: number, reason?: string): void };
   _disconnected: boolean;
   _messagesQueue: object[];
 };
@@ -307,6 +339,8 @@ export function keepFresh(peer: PeerJsModule.Peer) {
     carried = 0;
     swapping = true;
     heard();
+    // Closed as lost, not let go (PeerJS's close sends no code, which the server takes as letting go): ours keeps the id for its token until the fresh socket has it.
+    socket._socket?.close(4000, 'Fresh socket');
     socket.close();
     socket.start(peer.id, token);
     // No word on the fresh socket within ECHO_MS (its handshake stalled too): lost, as PeerJS takes a socket that closes, and reconnected as after any.
@@ -319,6 +353,8 @@ export function keepFresh(peer: PeerJsModule.Peer) {
   const add = (chars: number) => {
     carried += chars + WIRE_CHARS;
     if (carried < FRESH_CHARS) return;
+    // Past FRESH_MOST, not put off again: swapped a second on, quiet or not, before the network's limit.
+    if (quiet && carried >= FRESH_MOST) return;
     if (quiet) clearTimeout(quiet);
     quiet = setTimeout(swap, QUIET_MS);
   };
