@@ -52,10 +52,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Every job on Ubuntu 24.04, not ubuntu-latest: Playwright has no headless shell for 26.04 (ubuntu-latest since November 2026).
   # On main: the npm packages and the headless shell put in the caches, which pull requests read from.
   caches:
     if: ${{ github.event_name == 'push' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -78,7 +79,7 @@ jobs:
   unchanged:
     name: What changed
     if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       same: ${{ steps.same.outputs.same }}
@@ -108,7 +109,7 @@ jobs:
     # (Unless that job passed and found nothing changed: one that failed or didn't run leaves every job here to run.)
     if: ${{ !cancelled() && github.event_name != 'push' && !(needs.unchanged.result == 'success' && needs.unchanged.outputs.same == 'true') }}
     name: ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -170,7 +171,7 @@ jobs:
     name: Redraws
     needs: [unchanged, redraws]
     if: ${{ always() && github.event_name != 'push' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - env:
           SAME: ${{ needs.unchanged.result == 'success' && needs.unchanged.outputs.same == 'true' }}
