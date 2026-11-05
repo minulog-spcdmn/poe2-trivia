@@ -35,9 +35,10 @@ const git = (/** @type {string[]} */ ...args) => {
 
 /**
  * The sweep and every file it imports, and theirs, with any file under
- * scripts/ one of them names (a helper it reads or runs by its path, as
- * find-banding.py): the check's own code, which no build has. Paths from
- * the root, with forward slashes.
+ * scripts/ one of them or the workflow names (a helper it reads or runs by
+ * its path, as find-banding.py, or a step's, as shell-packages.sh): the
+ * check's own code, which no build has. Paths from the root, with forward
+ * slashes.
  */
 export function sweepFiles(root = ROOT) {
   const files = new Set();
@@ -55,6 +56,7 @@ export function sweepFiles(root = ROOT) {
     for (const m of code.matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)['"](\.{1,2}\/[^'"]+)['"]/g)) walk(path.join(path.dirname(found), m[1] ?? ''));
   };
   walk(path.join(root, 'scripts', 'sweep.mjs'));
+  text += readFileSync(path.join(root, WORKFLOW), 'utf8');
   for (const e of readdirSync(path.join(root, 'scripts'), { recursive: true, withFileTypes: true })) {
     if (e.isFile() && new RegExp(`(?<![\\w.-])${e.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(text)) files.add(path.relative(root, path.join(e.parentPath, e.name)).replaceAll('\\', '/'));
   }

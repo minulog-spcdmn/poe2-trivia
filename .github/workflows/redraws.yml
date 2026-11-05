@@ -27,13 +27,15 @@ run-name: "Redraws: ${{ github.event.pull_request.title || github.ref_name }}"
 # for a change that can't move a pixel though it changes the game's files
 # (the matchmaking, say: session.svelte.ts runs in every scene, so no file
 # list tells), passes it in seconds, Tests still required. Adding or taking
-# it off runs the check again.
+# it off runs the check again. It stays on through later pushes, so a push
+# the owner's word didn't cover takes it off first (docs/qa.md).
 #
 # A title or description edit runs it again too (edited, for a pull request
 # moved onto main): skipped, it would leave a skipped Redraws, which GitHub
 # counts as passed. So the verdict below passes only on every job passing,
 # or on the first job finding nothing changed. On a push to main only the
-# caches are made, so a pull request finds the packages and the shell there.
+# caches are made, so a pull request finds npm's packages, the shell and the
+# fonts it needs there.
 #
 # Run it by hand (Run workflow) on any branch, and the job's summary lists
 # what it found and the moments as measured, to commit as the baseline when
@@ -57,7 +59,7 @@ concurrency:
 
 jobs:
   # Every job on Ubuntu 24.04, not ubuntu-latest: Playwright has no headless shell for 26.04 (ubuntu-latest since November 2026).
-  # On main: the npm packages and the headless shell put in the caches, which pull requests read from.
+  # On main: the npm packages, the headless shell and its system packages put in the caches, which pull requests read from.
   caches:
     if: ${{ github.event_name == 'push' }}
     runs-on: ubuntu-24.04
@@ -71,12 +73,21 @@ jobs:
           cache: npm
       - run: npm ci
       - id: playwright
-        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+          echo "os=$ImageOS" >> "$GITHUB_OUTPUT"
+          echo "image=$ImageVersion" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-shell-${{ steps.playwright.outputs.version }}
       - run: npx playwright-core install --only-shell chromium
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/shell-packages
+          key: shell-packages-${{ steps.playwright.outputs.version }}-${{ steps.playwright.outputs.os }}-${{ steps.playwright.outputs.image }}
+          restore-keys: shell-packages-${{ steps.playwright.outputs.version }}-${{ steps.playwright.outputs.os }}-
+      - run: bash scripts/shell-packages.sh
 
   # Whether the pull request changes nothing the check sees, or has the label "skip redraws" (the
   # owner's word that it can't move a pixel): then it passes without the jobs below.
@@ -159,14 +170,26 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Chrome's headless shell as playwright-core's version has it, kept between runs.
+      # Chrome's headless shell as playwright-core's version has it, kept between runs, and the
+      # system packages it needs that the runner hasn't (the fonts), kept too: Ubuntu's mirror
+      # crawls now and then, and two jobs ran out of time on it (scripts/shell-packages.sh). Those
+      # are kept for each image of the runner's, and a new one starts from the last one's.
       - id: playwright
-        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+          echo "os=$ImageOS" >> "$GITHUB_OUTPUT"
+          echo "image=$ImageVersion" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-shell-${{ steps.playwright.outputs.version }}
-      - run: npx playwright-core install --with-deps --only-shell chromium
+      - run: npx playwright-core install --only-shell chromium
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/shell-packages
+          key: shell-packages-${{ steps.playwright.outputs.version }}-${{ steps.playwright.outputs.os }}-${{ steps.playwright.outputs.image }}
+          restore-keys: shell-packages-${{ steps.playwright.outputs.version }}-${{ steps.playwright.outputs.os }}-
+      - run: bash scripts/shell-packages.sh
       - run: npm run sweep -- --redraws ${{ matrix.args }}
       # A box drawn again every frame, which has to fail: the trace still read right (a playwright-core bump can change it).
       - if: ${{ matrix.canary }}
