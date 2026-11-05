@@ -7,6 +7,7 @@ import { hostname, userInfo } from 'node:os';
 import { channelOf } from './src/lib/channel.ts';
 import { COUNTER_ORIGIN } from './src/lib/counter.ts';
 import { RELAY_URL } from './src/lib/relayUrl.ts';
+import { OWN_SIGNAL_HOST } from './src/lib/signalHost.ts';
 import type { AtRule, Node, Rule } from 'postcss';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { backdropsErrors, formatBackdrops, type Backdrops } from './src/lib/backdropData.ts';
@@ -23,7 +24,7 @@ import { whereMaps } from './whereMaps.ts';
 
 /**
  * Content Security Policy for the production build: the page may only run its
- * own scripts and talk to itself and the PeerJS signalling server. (WebRTC
+ * own scripts and talk to itself and the signalling servers. (WebRTC
  * connections between players aren't covered by CSP.) Not applied in dev,
  * where Vite needs inline scripts and its own websocket.
  */
@@ -31,7 +32,9 @@ function csp(env: Record<string, string>): Plugin {
   const peerHost = env.VITE_PEER_HOST || '0.peerjs.com';
   const secure = (env.VITE_PEER_SECURE ?? 'true') === 'true';
   const port = env.VITE_PEER_HOST && env.VITE_PEER_PORT ? `:${env.VITE_PEER_PORT}` : '';
-  const signalling = `${secure ? 'https' : 'http'}://${peerHost}${port} ${secure ? 'wss' : 'ws'}://${peerHost}${port}`;
+  // And the game's own (lib/peer.ts), for a page the cloud turns away, unless the signalling is self-hosted.
+  const own = env.VITE_PEER_HOST ? '' : ` https://${OWN_SIGNAL_HOST} wss://${OWN_SIGNAL_HOST}`;
+  const signalling = `${secure ? 'https' : 'http'}://${peerHost}${port} ${secure ? 'wss' : 'ws'}://${peerHost}${port}${own}`;
   const policy = (inline: string) => [
     "default-src 'self'",
     // And the one inline script, the built-ins an older browser lacks (polyfillsFirst), by its hash.

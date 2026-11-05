@@ -2,7 +2,9 @@
 // signalling server in memory: peers open under an id nobody else holds, and
 // a candidate sent to an id goes to whoever holds it, or comes back as
 // "peer-unavailable" when nobody does, as the free server says. Connections
-// are made and never open (nothing here speaks WebRTC).
+// are made and never open (nothing here speaks WebRTC). The game's own server
+// (lib/peer.ts) is a second one beside it, for a peer made with its host.
+import { OWN_SIGNAL_HOST } from '../src/lib/signalHost.ts';
 
 type Handler = (...args: never[]) => void;
 
@@ -28,8 +30,10 @@ class Emitter {
 
 /** The server, and what went over it. */
 export const net = {
-  /** Who holds each id now. */
+  /** Who holds each id now (on the PeerJS cloud). */
   held: new Map<string, Peer>(),
+  /** And on the game's own server. */
+  ownHeld: new Map<string, Peer>(),
   /** Every peer made, in order. */
   made: [] as Peer[],
   /** The ids pinged (a candidate carrying a probe), in order. */
@@ -45,6 +49,7 @@ export const net = {
   reset() {
     for (const p of net.made) p.destroy();
     net.held.clear();
+    net.ownHeld.clear();
     net.made = [];
     net.pinged = [];
     net.connected = [];
@@ -68,7 +73,7 @@ class Socket extends Emitter {
     const dst = msg.dst;
     if (msg.payload && 'probe' in msg.payload) net.pinged.push(dst);
     queueMicrotask(() => {
-      const to = net.held.get(dst);
+      const to = from.held.get(dst);
       if (to) to.socket.emit('message', { type: 'CANDIDATE', src: from.id, payload: msg.payload });
       else if (!from.destroyed) from.emit('error', { type: 'peer-unavailable', message: `Could not connect to peer ${dst}` });
     });
@@ -96,15 +101,21 @@ class Conn extends Emitter {
 
 export default class Peer extends Emitter {
   readonly id: string;
+  /** The server it's on, and who holds each id there. */
+  readonly server: 'cloud' | 'own';
+  readonly held: Map<string, Peer>;
   destroyed = false;
   disconnected = false;
   /** Reached the signalling server (and not cut off since). */
   open = false;
   readonly socket: Socket;
 
-  constructor(id?: string | object) {
+  constructor(id?: string | { host?: string }, options?: { host?: string }) {
     super();
     this.id = typeof id === 'string' ? id : `anon-${++anon}`;
+    this.server = (typeof id === 'string' ? options : id)?.host === OWN_SIGNAL_HOST ? 'own' : 'cloud';
+    this.held = this.server === 'own' ? net.ownHeld : net.held;
+    const held = this.held;
     this.socket = new Socket(this);
     net.made.push(this);
     const own = this.id;
@@ -112,8 +123,8 @@ export default class Peer extends Emitter {
     answer(() => {
       if (this.destroyed || net.silent) return;
       if (net.down) return this.emit('error', { type: 'network', message: 'Lost connection to server.' });
-      if (net.held.has(own) && net.held.get(own) !== this) return this.emit('error', { type: 'unavailable-id', message: `ID "${own}" is taken` });
-      net.held.set(own, this);
+      if (held.has(own) && held.get(own) !== this) return this.emit('error', { type: 'unavailable-id', message: `ID "${own}" is taken` });
+      held.set(own, this);
       this.open = true;
       this.emit('open', own);
     });
@@ -142,7 +153,7 @@ export default class Peer extends Emitter {
     if (this.destroyed) return;
     this.destroyed = true;
     this.open = false;
-    if (net.held.get(this.id) === this) net.held.delete(this.id);
+    if (this.held.get(this.id) === this) this.held.delete(this.id);
   }
 }
 
