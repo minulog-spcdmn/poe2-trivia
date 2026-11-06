@@ -8,9 +8,12 @@ import { SCREENS, type Scene } from '../scene.ts';
 import { catalog } from '../scenes/index.ts';
 import { PIECES } from './pieces.ts';
 
-/** A scene's states: its named ones, or (none named) the scene itself as it comes. */
+/** A scene's states: its named ones, listed or not, or (none named) the scene itself as it comes. */
 export const statesOf = (scene: Scene): SceneState[] =>
-  (scene.states ?? [{ label: scene.label, values: {} }]).map((s) => ({ scene, label: s.label, group: s.group ?? scene.group, values: s.values }));
+  (scene.states ?? [{ label: scene.label, values: {} }]).map((s) => ({ scene, label: s.label, group: s.group ?? scene.group, values: s.values, ...(s.key ? { key: s.key } : {}) }));
+
+/** Those of a scene's states its panel lists: all but those `listed: false` (never its first, the scene's own row). */
+export const listedOf = (scene: Scene): SceneState[] => statesOf(scene).filter((_, i) => i === 0 || scene.states?.[i]?.listed !== false);
 
 let built: Bench[] | null = null;
 
@@ -22,7 +25,7 @@ export function benches(): Bench[] {
     const scenes = catalog().filter((s) => s.screen === key);
     if (!scenes.length) continue;
     // A heading's states together, the headings in the order they first come.
-    const states = scenes.flatMap(statesOf);
+    const states = scenes.flatMap(listedOf);
     const order = [...new Set(states.map((s) => s.group))];
     states.sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group));
     screens.push({ kind: 'scenes', key, label, scenes, states });

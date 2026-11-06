@@ -6,8 +6,8 @@
   // (docs/qa.md lists them). The bench, its state, its controls and the size
   // are in the address, so a reload, the back button and a link sent to
   // someone all show the same.
-  import { benchByKey, benchOfScene, benches, shelfOf } from '../benches/index.ts';
-  import { sceneByKey } from '../scenes/index.ts';
+  import { benchByKey, benchOfScene, benches, shelfOf, statesOf } from '../benches/index.ts';
+  import { placeByKey } from '../scenes/index.ts';
   import sceneFiles from '../../data/sceneFiles.json';
   import { benchesTouched, touched } from '../change.ts';
   import { seatLabel, seatsIn, type Scene } from '../scene.ts';
@@ -15,7 +15,7 @@
   import { SIZES, isSizeKey, sizeOf, type SizeKey } from '../sizes.ts';
   import type { DeskMessage, FrameMessage } from '../messages.ts';
   import { KIND_LABEL, type Problem } from '../frame/checks.ts';
-  import { sceneStateAt, stateAt, stateValues, valuesOf, valuesQuery, type Bench, type PieceBench, type SceneBench, type Value, type Values } from '../bench.ts';
+  import { sceneStateAt, stateAt, stateOf, stateValues, valuesOf, valuesQuery, type Bench, type PieceBench, type SceneBench, type Value, type Values } from '../bench.ts';
   import Shelf from './Shelf.svelte';
   import Panel from './Panel.svelte';
   import Stage from './Stage.svelte';
@@ -49,11 +49,13 @@
   /** What the address switches off (?off=webgl, lib/switchedOff.ts), in every frame shown, before and now: kept as the desk moves. */
   const OFF = new URLSearchParams(location.search).get('off');
   /** The view the address asks for. */
-  type Asked = { bench: Bench; scene: Scene | null; given: Record<string, string>; size: Pick | null; seat: number | 'all' | null; all: boolean; zoomed: boolean; outlines: boolean; compare: boolean };
+  type Asked = { bench: Bench; scene: Scene | null; given: Record<string, Value | string>; size: Pick | null; seat: number | 'all' | null; all: boolean; zoomed: boolean; outlines: boolean; compare: boolean };
   function fromAddress(): Asked | null {
     const p = new URLSearchParams(location.search);
-    const scene = sceneByKey(p.get('s')) ?? null;
-    // (A scene's key gone since, folded into another's states: its screen.)
+    // (A place's key: its scene, with the controls it sets.)
+    const place = placeByKey(p.get('s'));
+    const scene = place?.scene ?? null;
+    // (A scene's key gone since: its screen.)
     const bench = scene ? benchOfScene(scene) : benchByKey(p.get('b') ?? p.get('s'));
     if (!bench) return null;
     const size = p.get('size');
@@ -61,7 +63,7 @@
     return {
       bench,
       scene: scene ?? (bench.kind === 'scenes' ? bench.scenes[0] : null),
-      given: Object.fromEntries([...p].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v])),
+      given: { ...place?.values, ...Object.fromEntries([...p].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v])) },
       size: isSizeKey(size) || size === 'fit' ? size : null,
       seat: seat === 'all' ? 'all' : seat !== null && Number.isInteger(Number(seat)) ? Number(seat) : null,
       all: p.get('all') === '1',
@@ -119,6 +121,8 @@
   );
   const seatNames = $derived(built ? seats.map((s) => seatLabel(s, built.state)) : []);
   const stateIndex = $derived(piece ? stateAt(piece, v) : screen && scene && set ? sceneStateAt(screen, scene, set.controls, set.values) : -1);
+  /** The named state the scene stands at, listed or not: its name on the top line, a place's key in the address. */
+  const named = $derived(screen && scene && set ? stateOf(statesOf(scene), set.controls, set.values) : undefined);
   const states = $derived(piece ? piece.states.map((s) => ({ label: s.label, group: '' })) : (screen?.states.map((s) => ({ label: s.label, group: s.group })) ?? []));
   /** The design's board, where the scene has one at this size and stands as it was drawn (its controls at their defaults). */
   const board = $derived(size !== 'fit' && scene?.boards?.[size] && !sceneQuery.length ? BOARDS[scene.boards[size]!] : undefined);
@@ -474,8 +478,9 @@
       p.set('b', piece.key);
       for (const [k, x] of valuesQuery(piece.controls, v)) p.set(`k.${k}`, x);
     } else if (scene) {
-      p.set('s', scene.key);
-      for (const [k, x] of sceneQuery) p.set(`k.${k}`, x);
+      // (A place by its own key, which says its controls.)
+      p.set('s', named?.key ?? scene.key);
+      if (!named?.key) for (const [k, x] of sceneQuery) p.set(`k.${k}`, x);
       if (seatPicked !== null) p.set('seat', String(seatPicked));
     }
     p.set('size', size);
@@ -529,6 +534,7 @@
         <span class="scene">{bench.label}</span>
         {#if all}<span class="sep">•</span><span class="state">every state</span>
         {:else if stateIndex >= 0}<span class="sep">•</span><span class="state">{states[stateIndex].label}</span>
+        {:else if named}<span class="sep">•</span><span class="state">{named.label}</span>
         {:else if scene}<span class="sep">•</span><span class="state">{scene.label}</span><span class="adjusted">as set</span>
         {:else}<span class="sep">•</span><span class="adjusted">as set</span>{/if}
         {#if scene && seatShown !== 'all' && seats.length > 1}<span class="sep">•</span><span>{seatNames[seatShown]}</span>{/if}

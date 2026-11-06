@@ -3,7 +3,7 @@
 // Call useItems (../build/engine.ts), and useCaptured (./captured.ts) for the
 // scenes saved from live rooms, before catalog().
 
-import { SCREENS, type Scene } from '../scene.ts';
+import { SCREENS, placeIn, type Scene } from '../scene.ts';
 import { overScenes } from './over.ts';
 import { homeScenes } from './home.ts';
 import { lobbyScenes } from './lobby.ts';
@@ -24,4 +24,5 @@ export function catalog(): Scene[] {
   return built;
 }
 
-export const sceneByKey = (key: string | null) => (key ? catalog().find((s) => s.key === key) : undefined);
+/** A scene by its key, or a place (a state with a key of its own) by its: the scene, with the controls the place sets. */
+export const placeByKey = (key: string | null) => placeIn(catalog(), key);

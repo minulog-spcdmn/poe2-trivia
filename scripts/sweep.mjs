@@ -776,8 +776,8 @@ async function warmUp(page, drive) {
 const seedOf = (text) => [...text].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0, 2166136261);
 
 /**
- * The scenes to watch at rest: each scene's first state (with --webgl, of
- * WEBGL_SCENES' only), slowest first, so a slow one is watched beside the
+ * The scenes to watch at rest: each place, a scene's first state or a state
+ * with a key of its own (with --webgl, of WEBGL_SCENES' only), slowest first, so a slow one is watched beside the
  * rest, not after them. With --shard i/n, the i-th of n parts as even in
  * time as COST makes them: each scene, slowest first, into the part with
  * the least time so far. (The same parts in every job: they're dealt from
@@ -786,7 +786,8 @@ const seedOf = (text) => [...text].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0
 function scenesToWatch(scenes) {
   const seen = new Set();
   const webgl = new Set(WEBGL_SCENES.map((w) => w.scene));
-  const all = scenes.filter((s) => !seen.has(s.key) && seen.add(s.key)).filter((s) => !values.webgl || webgl.has(s.key));
+  // (The places: each scene's first state, and every state with a key of its own, a scene's that was folded into another's controls.)
+  const all = scenes.filter((s) => s.place !== false && !seen.has(s.key) && seen.add(s.key)).filter((s) => !values.webgl || webgl.has(s.key));
   const slowestFirst = [...all].sort((a, b) => costOf(b.key) - costOf(a.key));
   if (!shard) return slowestFirst;
   const parts = Array.from({ length: shard[1] }, () => ({ cost: 0, scenes: [] }));

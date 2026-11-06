@@ -235,11 +235,38 @@ test("a frame answers media queries as its device would, and leaves width to the
 
 // A frame loads only its own screen's scenes (scenes/one.ts), so the code
 // before a change that adds what one screen uses still shows the others.
-test('a frame finds every scene from its own screen file alone', async () => {
+// A place (a state with a key of its own) too, with its controls.
+test('a frame finds every scene and place from its own screen file alone', async () => {
   const { sceneOf } = await import('../src/qa/scenes/one.ts');
   for (const s of catalog()) {
     const found = await sceneOf(s.key);
-    assert.equal(found?.key, s.key, `${s.key} isn't found from its screen's file (scenes/one.ts)`);
-    assert.equal(found.label, s.label);
+    assert.equal(found?.scene.key, s.key, `${s.key} isn't found from its screen's file (scenes/one.ts)`);
+    assert.equal(found.scene.label, s.label);
+    for (const st of s.states ?? []) {
+      if (!st.key) continue;
+      const place = await sceneOf(st.key);
+      assert.equal(place?.scene.key, s.key, `the place ${st.key} isn't found in ${s.key} from its screen's file`);
+      assert.deepEqual(place.values, st.values);
+    }
+  }
+});
+
+// A place's key is an address of its own: no other scene or place has it,
+// it names its screen first (a frame loads that screen's file alone by it),
+// and a scene's first state, its own row, is always listed.
+test('every place has a key of its own, under its screen, and every scene a listed first state', () => {
+  const seen = new Set<string>();
+  for (const s of catalog()) {
+    assert.ok(!seen.has(s.key), `${s.key} is a scene's key and another's too`);
+    seen.add(s.key);
+  }
+  for (const s of catalog()) {
+    assert.notEqual(s.states?.[0]?.listed, false, `${s.key}: its first state is its row in the panel, so it can't be listed: false`);
+    for (const st of s.states ?? []) {
+      if (!st.key) continue;
+      assert.ok(!seen.has(st.key), `${st.key} (a state of ${s.key}) is another scene's or place's key too`);
+      seen.add(st.key);
+      assert.equal(st.key.split('/')[0], s.key.split('/')[0], `${st.key} is a state of ${s.key}: its key starts with its screen`);
+    }
   }
 });

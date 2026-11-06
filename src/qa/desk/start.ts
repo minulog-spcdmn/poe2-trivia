@@ -23,17 +23,23 @@ useCaptured(import.meta.glob('../captured/*.json', { eager: true, import: 'defau
 mount(Desk, { target: document.getElementById('app')! });
 
 // For the sweep (scripts/sweep.mjs), which opens each state's frames by itself:
-// every scene's every state (`n`, its controls as `values` sets them), with
-// its seats and the sizes it is walked at.
+// every scene's every state, listed or not (`n`), with its seats and the
+// sizes it is walked at. A frame opens it by `key` with `values` (k.*): a
+// place (a state with a key of its own) by its own key, which says its
+// controls; any other state by its scene's, with the controls it sets.
+// `place`: what the redraw check and the scene map take, each scene's first
+// state and every state with a key.
 Object.assign(window, {
   __qaDesk: {
     scenes: () =>
       catalog().flatMap((s) =>
         statesOf(s).map((st, n) => ({
-          key: s.key,
+          key: st.key ?? s.key,
+          scene: s.key,
+          place: !!st.key || n === 0,
           n,
           label: st.label,
-          values: asQuery(st.values),
+          values: st.key ? [] : asQuery(st.values),
           seats: seatsIn(s, buildScene(s, st.values).built).length,
           sizes: sizesFor(s),
         })),
