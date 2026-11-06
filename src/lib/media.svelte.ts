@@ -8,7 +8,7 @@
 
 import { itemImage } from './ui-paths';
 import { patchCount, patchWork } from './patches';
-import { prepare, type PrepJob, type Prepped } from './prepArt';
+import { prepare, type Place, type PrepJob, type Prepped } from './prepArt';
 import type { OwnVeil, PatchImage } from './veilCut';
 import { forgetCuts, startCut, type CutHandle } from './veilCutter';
 import type { MediaMsg } from './protocol';
@@ -26,7 +26,8 @@ export interface Patch {
  * A veiled picture's size (its patches are placed on it), how long each patch
  * takes to burn in (ms), how many there are, and where the item is in it (x,
  * y, w, h of its visible pixels), so the full art can take over in the same
- * place.
+ * place; and where the item's own art lies in it (prepArt.ts Place; not from
+ * hosts before it), which a "find the art" picture's full art takes.
  */
 export interface VeilArt {
   w: number;
@@ -34,6 +35,7 @@ export interface VeilArt {
   burn: number;
   count: number;
   box: [number, number, number, number];
+  place?: Place;
 }
 
 /** A veiled picture as it goes out: what is told of it (VeilArt), the picture itself, and which patch each of its art pixels falls in (packLabels). */
@@ -45,7 +47,7 @@ export interface VeilPicture extends VeilArt {
 /** Everything a question can show, prepared once by the host. */
 export interface PreparedMedia {
   qid: number;
-  art: { w: number; h: number; data: ArrayBuffer } | null;
+  art: { w: number; h: number; place: Place; data: ArrayBuffer } | null;
   /** Veiled questions: the art, and its patches in the order they uncover. */
   veil: VeilPicture | null;
   patches: Patch[];
@@ -53,8 +55,8 @@ export interface PreparedMedia {
   delays: number[];
   gap: number;
   areas: number[];
-  /** Art questions: one picture per option, and its size in art pixels. */
-  options: { w: number; h: number; data: ArrayBuffer }[];
+  /** Art questions: one picture per option, its size in art pixels and where its item lies in it. */
+  options: { w: number; h: number; place: Place; data: ArrayBuffer }[];
   /** Veiled art questions (Delve): each option's picture cut into patches instead, with its own delays. */
   tiles: CutVeil[];
 }
@@ -249,13 +251,13 @@ export async function prepareMedia(
       ),
     );
     if (q.veil) out.tiles = pictures.map(cutVeil);
-    else out.options = pictures.map(({ w, h, data }) => ({ w, h, data }));
+    else out.options = pictures.map(({ w, h, place, data }) => ({ w, h, place, data }));
     return out;
   }
   const veil = q.veil ? { size: q.veil.size, seed: q.veil.seed, plan: veilPlan(clock.secs, clock.share, false) } : undefined;
   const picture = await prepPicture(art(q.itemId, 0), { most: q.veil ? LIGHT : SHARP, grayscale: grayscale === 'all', mirror: !!q.mirrored?.[0], veil }, signal);
   if (!picture.cut) {
-    out.art = { w: picture.w, h: picture.h, data: picture.data };
+    out.art = { w: picture.w, h: picture.h, place: picture.place, data: picture.data };
     return out;
   }
   const cut = cutVeil(picture);
@@ -291,9 +293,9 @@ export interface CutVeil {
  * its outline smoothed through it: patchCoverage). The host's own device
  * takes them from what was cut (ownCuts), not the encoded picture.
  */
-function cutVeil({ data, cut }: Prepped): CutVeil {
+function cutVeil({ data, place, cut }: Prepped): CutVeil {
   if (!cut) throw new Error('a veiled picture prepared uncut');
-  const veil = { w: cut.w, h: cut.h, burn: cut.burn, count: cut.count, box: cut.box, data, labels: cut.labels };
+  const veil = { w: cut.w, h: cut.h, burn: cut.burn, count: cut.count, box: cut.box, place, data, labels: cut.labels };
   ownCuts.set(veil.data, { shapes: cut.shapes, lit: cut.lit, pixels: cut.pixels });
   return { veil, patches: cut.order.map((i) => ({ i })), delays: cut.delays, gap: cut.gap, areas: cut.areas };
 }
@@ -349,11 +351,12 @@ const MAX_EARLY = 1024;
 
 class Shown {
   qid = $state(0);
-  art = $state<{ url: string; w: number; h: number } | null>(null);
+  /** A name question's picture: its URL, its size in art pixels and where its item lies in it (none from hosts before it). */
+  art = $state<{ url: string; w: number; h: number; place?: Place } | null>(null);
   veil = $state<VeilArt | null>(null);
   patches = $state<Record<number, ShownPatch>>({});
-  /** Art questions' pictures, by option: their URL and size in art pixels. */
-  options = $state<Record<number, { url: string; w: number; h: number }>>({});
+  /** Art questions' pictures, by option: their URL, size in art pixels and where the item lies in each (as art). */
+  options = $state<Record<number, { url: string; w: number; h: number; place?: Place }>>({});
   /** Veiled "find the art" pictures (Delve), by option: their size and burn, and the patches in so far. */
   tileVeils = $state<Record<number, VeilArt>>({});
   tilePatches = $state<Record<number, Record<number, ShownPatch>>>({});
@@ -411,7 +414,7 @@ class Shown {
     this.ensure(m.qid);
     switch (m.t) {
       case 'art':
-        this.art = { url: this.url(m.data), w: m.w, h: m.h };
+        this.art = { url: this.url(m.data), w: m.w, h: m.h, place: m.place };
         break;
       case 'veil': {
         // Labels that don't make the patches the veil counts would leave it never whole.
@@ -432,7 +435,7 @@ class Shown {
           if (had && m.tile === undefined) this.patches = {};
           else if (had) this.tilePatches = { ...this.tilePatches, [m.tile!]: {} };
         }
-        const v = { w: m.w, h: m.h, burn: m.burn, count: m.count, box: m.box };
+        const v = { w: m.w, h: m.h, burn: m.burn, count: m.count, box: m.box, place: m.place };
         if (m.tile === undefined) this.veil = v;
         else this.tileVeils = { ...this.tileVeils, [m.tile]: v };
         // The patches that came ahead of it burn in now.
@@ -471,7 +474,7 @@ class Shown {
         break;
       }
       case 'option':
-        this.options = { ...this.options, [m.index]: { url: this.url(m.data), w: m.w, h: m.h } };
+        this.options = { ...this.options, [m.index]: { url: this.url(m.data), w: m.w, h: m.h, place: m.place } };
         break;
     }
   }

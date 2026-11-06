@@ -42,10 +42,18 @@ export interface ArtCut {
   areas: number[];
 }
 
-/** A picture prepared: its size in art pixels, encoded; a veiled one with its cut and its pixels as encoded (for the host's own device). */
+/**
+ * Where the item's own art lies in a prepared picture: x, y, w, h in the
+ * picture's art pixels (not whole ones). The original art takes over there
+ * at the reveal, so the item doesn't move or grow (ArtImage's `within`).
+ */
+export type Place = [number, number, number, number];
+
+/** A picture prepared: its size in art pixels, encoded, and where its item is (place); a veiled one with its cut and its pixels as encoded (for the host's own device). */
 export interface Prepped {
   w: number;
   h: number;
+  place: Place;
   data: ArrayBuffer;
   cut?: ArtCut & { pixels: ImageData };
 }
@@ -143,7 +151,11 @@ export async function prepare<S extends Surface>(
   const canvas = surface((w + pad * 2) * S, (h + pad * 2) * S);
   const ctx = context(canvas);
   ctx.imageSmoothingQuality = 'high';
-  ctx.translate(Math.round(canvas.width / 2 + rand(-1.5, 1.5) * S), Math.round(canvas.height / 2 + rand(-1.5, 1.5) * S));
+  const cx = Math.round(canvas.width / 2 + rand(-1.5, 1.5) * S);
+  const cy = Math.round(canvas.height / 2 + rand(-1.5, 1.5) * S);
+  // (Flipped about its centre, it lies where it would unflipped.)
+  const place: Place = [cx / S - w / 2, cy / S - h / 2, w, h];
+  ctx.translate(cx, cy);
   if (job.mirror) ctx.scale(-1, 1);
   ctx.filter = `brightness(${rand(0.97, 1.03)}) saturate(${rand(0.96, 1.04)})`;
   ctx.drawImage(img, (-w / 2) * S, (-h / 2) * S, w * S, h * S);
@@ -157,7 +169,7 @@ export async function prepare<S extends Surface>(
   const H = canvas.height / S;
   // A quality that keeps the upscaled art's detail.
   const data = await encode(canvas, 'image/webp', rand(0.92, 0.95));
-  if (!job.veil) return { w: W, h: H, data };
+  if (!job.veil) return { w: W, h: H, place, data };
 
   const small = surface(W, H);
   const sg = context(small);
@@ -165,7 +177,7 @@ export async function prepare<S extends Surface>(
   sg.drawImage(canvas, 0, 0, W, H);
   const cut = cutArt(sg.getImageData(0, 0, W, H).data, W, H, job.veil);
   // The picture as encoded, for the host's own device to cut its patches' pictures from (veilCut.ts OwnVeil).
-  return { w: W, h: H, data, cut: { ...cut, pixels: ctx.getImageData(0, 0, canvas.width, canvas.height) } };
+  return { w: W, h: H, place, data, cut: { ...cut, pixels: ctx.getImageData(0, 0, canvas.width, canvas.height) } };
 }
 
 /** Everything a prepared picture holds that can be handed to another thread rather than copied. */
