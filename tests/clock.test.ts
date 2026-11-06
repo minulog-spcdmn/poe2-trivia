@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CLOSE_ENOUGH_MS, GIVE_UP_MS, RETRY_MS, errorOf, makeClock, serverTimeOf } from '../src/lib/clock.ts';
+import { CLOSE_ENOUGH_MS, GIVE_UP_MS, RETRY_MS, WITHIN_A_SECOND_MS, errorOf, makeClock, serverTimeOf } from '../src/lib/clock.ts';
 
 const HOUR = 3_600_000;
 const T = Date.parse('2026-10-11T12:00:00Z');
@@ -67,15 +67,16 @@ test('a device clock within a second of the server is left as it is, to the seco
   assert.equal(clock.exact(), T + 300);
 });
 
-test('a device clock set by a second or more since the server answered (the system mending it) is asked about again', async () => {
+test('a device clock set by a second or more since the server answered (the system mending it) is asked about again for a count to the second, not for the day', async () => {
   const { dev, clock } = rig(async () => at(dev.server));
   dev.wall = T + 45_000;
   await clock.sync();
-  assert.equal(clock.refresh(), undefined);
+  assert.equal(clock.refresh(WITHIN_A_SECOND_MS), undefined);
   // Set right by the system: 45 s back, under the minute that `now` minds.
   dev.wall -= 45_000;
   assert.ok(clock.sure());
-  await clock.refresh();
+  assert.equal(clock.refresh(), undefined);
+  await clock.refresh(WITHIN_A_SECOND_MS);
   assert.equal(dev.asked, 2);
   assert.ok(Math.abs(clock.exact() - dev.server) <= 1000);
 });
@@ -86,7 +87,7 @@ test('once the server has answered, an ask again with no reply waits a minute to
   await clock.sync();
   down = true;
   dev.wall += 5000;
-  await clock.refresh();
+  await clock.refresh(WITHIN_A_SECOND_MS);
   assert.equal(dev.asked, 2);
   assert.equal(clock.refresh(), undefined);
   pass(RETRY_MS);
