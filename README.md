@@ -47,7 +47,8 @@ The full rules are in [docs/gameplay.md](docs/gameplay.md).
 - **Online:** the host creates a room and shares its 6-character code or
   invite link. Browsers connect directly over WebRTC
   ([PeerJS](https://peerjs.com/)); the host's browser runs the game, and the
-  free PeerJS cloud only introduces the players to each other. Rooms can be
+  free PeerJS cloud only introduces the players to each other (players it
+  turns away meet on the game's own server instead). Rooms can be
   listed publicly under "Open rooms". Very strict networks can block WebRTC;
   a room that can't go online opens on the host's device only.
 - **At one screen:** in a Turns lobby the host adds players by name, who
@@ -164,10 +165,77 @@ to 4K (`docs/qa.md`). A new test tool is a bench there, not a page.
 on the beta. A new tool page gets a card there; `tests/devHub.test.ts` fails
 until it does.
 
-### Self-hosted signalling (optional)
+### Matchmaking server
 
-To use your own [PeerJS server](https://github.com/peers/peerjs-server)
-instead of the public cloud, build with `VITE_PEER_HOST`, `VITE_PEER_PORT`,
+Players meet on the free PeerJS cloud (`0.peerjs.com`), which turns away every
+player in Russia (it answers them 403), so none of them could host or join.
+They meet on the game's own server instead: a Worker (`signal/worker.js`)
+that speaks the [PeerJS server](https://github.com/peers/peerjs-server)'s
+protocol, one Durable Object holding every peer's socket in memory.
+
+- A page looks once it goes online (hosts, joins, syncs, the open rooms list;
+  a page that never does asks neither): the cloud if it answers, else ours if
+  that does (`lib/peer.ts`). A no from the cloud is asked again a second
+  later; a cloud slow to answer is waited for, and taken as a no only after
+  15 s without a word. A peer waits 4 s at most for the look, made on the
+  cloud meanwhile. Everyone the cloud answers meets there as before: nothing
+  that worked before leans on ours.
+- Either stands in for the other. A page whose server fails it (a peer loses
+  it) looks again, so pages meet on ours while the cloud is down; a page on
+  ours looks again as it makes a peer once five minutes have passed, and is
+  back on the cloud once that answers it.
+- A room on the cloud and its listing are on ours too, so a guest finds it on
+  either. A guest on the cloud that hears the room isn't there looks for it
+  on ours too, by ping alone, and goes on there where the cloud would say
+  there's no such room (a cloud host only reconnecting is waited for on the
+  cloud, as before), or at once if the invite link's screen, which pings
+  both, heard it's on ours alone. A code no room has is told as soon as
+  before.
+- Russian networks are reported to stall a connection to Cloudflare once
+  about 16 KB have gone over it (TLS's handshake takes about 5 of them), so
+  a page on ours swaps its socket for a fresh one under the same id after
+  6 KB (`keepFresh`), counting what each message adds on the way and the
+  heartbeats. Cloudflare echoes every heartbeat without waking the Object,
+  and a socket whose echo doesn't come within 10 s (stalled sooner) is
+  swapped at once. What the page sends meanwhile waits for the fresh socket.
+- The relay (below) is on Cloudflare too, so a link between two players
+  there that needs it (one on a carrier's network, say) may stall the same
+  way; unmeasured, and only a relay elsewhere would get round it.
+- The open rooms list scans its page's server only: a page on the cloud
+  doesn't list a room whose host the cloud turned away (an invite or the code
+  still finds it).
+- Only the game's own pages are answered; an address (an IPv4 one, or an
+  IPv6 /56) may connect 120 times a minute and hold 64 sockets; a socket's
+  messages past 300 in 10 s are let go, and past 600 it's hung up on (never
+  with a server error, for which PeerJS would end every game the peer
+  carries); 5,000 peers at once at most. An id whose socket was lost (not
+  closed by its page) is kept for it 15 s, so a host's blip doesn't hand its
+  room to whoever asks next. What waits for an id nobody holds is capped at
+  4 MB, and 256 KB from one address. Nothing is stored or logged.
+- Cloudflare's free plan gives a Durable Object 100,000 requests a day, a
+  socket's messages counting 20 to one (a peer on ours sends a heartbeat
+  every 25 s, not PeerJS's 5), and the account 100,000 Worker requests a
+  day, each socket one (peers on ours make their ids in the page, so they
+  ask for none). A page on the cloud costs ours nothing unless it hosts (its
+  room's id, and a public room's listing), opens an invite or joins a room
+  the cloud hasn't got; a page on ours, a socket per peer, the open rooms
+  list a socket per refresh while it's shown. A room costs ours about six
+  requests, so at the busiest day yet (569 visits, 5 November 2026) it stays
+  far under both. Past either, ours stops until midnight UTC: pages the cloud
+  answers never needed it (their rooms' copies on ours try again, later each
+  time), and only the pages the cloud turns away can't play, as before ours.
+  The Worker requests are the account's, the relay's too, so the relay would
+  stop with it (connections then meet without it, as below): on a free
+  account of its own, ours can't touch the relay.
+
+To set it up (once): in `signal/` (not the project's root, see "Relay"),
+`npx wrangler login` and `npx wrangler deploy`. It's the Worker
+`poe2-signal`, at `poe2-signal.poe2quest.workers.dev`, named in
+`src/lib/signalHost.ts`. To turn it off, empty `OWN_SIGNAL_HOST` there (pages
+loaded since meet on the cloud alone) and delete the Worker.
+
+To use a [PeerJS server](https://github.com/peers/peerjs-server) of your own
+instead of both, build with `VITE_PEER_HOST`, `VITE_PEER_PORT`,
 `VITE_PEER_PATH` and `VITE_PEER_SECURE`.
 
 ### Relay

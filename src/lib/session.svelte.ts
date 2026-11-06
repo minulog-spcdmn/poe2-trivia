@@ -33,9 +33,9 @@ import {
   type Item,
   type Player,
 } from './game';
-import { PEER_PREFIX, loadPeerJs, peerJsNow, peerOptions, type PeerJs } from './peer';
+import { PEER_PREFIX, alsoOn, letGo, loadPeerJs, newPeer, pageServer, peerJsNow, serverOf, type PeerJs, type Server } from './peer';
 import { CODE_LENGTH, CODE_PATTERN, randomCode, randomToken } from './roomCode.ts';
-import { Beacon, ProbeDesk, answerProbes, type RoomInfo } from './rooms';
+import { Beacon, Mirror, ProbeDesk, answerProbes, heardOnlyOn, onlyOn, watchForRoom, type RoomInfo } from './rooms';
 import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
 import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, roomSecret } from './guard';
 import { LaneReceiver, LaneSender, openLane, parseFakeLink } from './artLane';
@@ -600,7 +600,16 @@ class Session {
   /** Client, joining: links the host closed before letting us in, without a word. */
   private silentCloses = 0;
   private hostWatch: ReturnType<typeof setInterval> | null = null;
-  private beacon: Beacon | null = null;
+  /** Lists the room while it's public: on its server, and on the other one too (lib/peer.ts alsoOn). */
+  private beacons: Beacon[] = [];
+  /** Host: the room's id held on the other server too, so guests there find it (lib/rooms.ts). */
+  private mirror: Mirror | null = null;
+  /** Client: the server this join looks for the room on (lib/peer.ts), when not the page's (null): the other, once the room's found there and not on the page's (watchElsewhere). */
+  private joinServer: Server | null = null;
+  /** Client, joining: the other server, once the room's been found on it (watchElsewhere). */
+  private foundOn: Server | null = null;
+  /** Client, joining: stops looking for the room on the other server. */
+  private stopWatch: (() => void) | null = null;
   /** Answers invite links' probes on the room's own id (lib/rooms.ts). */
   private probeDesk = new ProbeDesk((challenge) => this.listing(challenge));
   private skipTimer: ReturnType<typeof setTimeout> | null = null;
@@ -896,7 +905,7 @@ class Session {
       false,
     );
     if (!Peer) return;
-    const peer = new Peer(PEER_PREFIX + code, peerOptions());
+    const peer = newPeer(Peer, PEER_PREFIX + code);
     this.peer = peer;
     // A reopened room gives each try its while (a new room's runs through them all, host).
     if (resumeState) this.armOpenGiveUp(code);
@@ -910,12 +919,7 @@ class Session {
           peer.destroy();
           this.openAgain(code, attempt, 'network');
         };
-    // An invite link's screen asking whose room this is: told, apart from the
-    // players' slots (nobody banned or blocked, though). Everyone else comes to play.
-    answerProbes(peer, this.probeDesk, {
-      allow: (id) => !this.priv.bannedPeers.includes(id) && !this.priv.blockedPeers.includes(id),
-      others: (conn) => this.acceptConnection(conn),
-    });
+    this.takeConnections(peer);
     // 'open' fires again each time the signalling server is reconnected; the
     // room (and its game) is only built the first time.
     peer.once('open', () => {
@@ -958,6 +962,12 @@ class Session {
       this.signOwnRoom(code);
       this.startPings();
       this.watchOwnPresence();
+      // On the other server too, so a guest there finds the room: one the cloud turns away looks on ours.
+      const also = !this.mirror && alsoOn(serverOf(peer));
+      if (also) {
+        this.mirror = new Mirror(PEER_PREFIX + code, also, (p) => this.takeConnections(p));
+        this.mirror.start();
+      }
     });
     // An open room off the signalling server, and back (count.ts RoomOff).
     const off = new RoomOff();
@@ -1013,6 +1023,18 @@ class Session {
           { reopening: code, failure: 'host-room-not-reopened' },
         );
       else this.roomNotOpened(code, err.type, !!resumeState);
+    });
+  }
+
+  /**
+   * Host: what reaches the room's peer (or its Mirror). An invite link's
+   * screen asking whose room this is: told, apart from the players' slots
+   * (nobody banned or blocked, though). Everyone else comes to play.
+   */
+  private takeConnections(peer: Peer) {
+    answerProbes(peer, this.probeDesk, {
+      allow: (id) => !this.priv.bannedPeers.includes(id) && !this.priv.blockedPeers.includes(id),
+      others: (conn) => this.acceptConnection(conn),
     });
   }
 
@@ -1085,6 +1107,8 @@ class Session {
     this.openGiveUp = null;
     this.peer?.destroy();
     this.peer = null;
+    this.mirror?.stop();
+    this.mirror = null;
     this.hereOnly = true;
     this.code = '';
     this.status = 'ready';
@@ -2098,6 +2122,8 @@ class Session {
     this.helloSecret = roomSecret(mySecret, room).catch(() => stored(`secret.${room}`, () => randomToken(32)));
     this.joinedAt = Date.now();
     this.armConnectTimeout();
+    // The invite's screen has just heard the room is on one server and not the other: the join looks there alone.
+    this.joinServer = onlyOn(this.code);
     this.startClientPeer();
     // Asked from the tap that joined, which some browsers want for it.
     this.stayAwake();
@@ -2140,9 +2166,10 @@ class Session {
       () => this.fail(joinNetworkHint('peerjs-load'), 'No connection', { failure: this.joinFailure('join-no-connection') }),
     );
     if (!Peer) return;
-    this.peer?.destroy();
+    if (this.peer) letGo(this.peer);
     this.cancelAttempts();
-    const peer = new Peer(peerOptions());
+    // (The page's server as it is now: a look that found neither may have found one since.)
+    const peer = newPeer(Peer, undefined, this.joinServer ?? pageServer());
     this.peer = peer;
     // 'open' fires again when the signalling server is reconnected: a live
     // link to the host doesn't need it, a lost one tries again right away.
@@ -2173,6 +2200,44 @@ class Session {
       // (Not again if the page coming back reconnected it meanwhile, nudge.)
       if (!peer.destroyed) setTimeout(() => !peer.destroyed && peer.disconnected && peer.reconnect(), 1500);
     });
+  }
+
+  /**
+   * Joining from a page that meets on the cloud, which has said once it
+   * doesn't have the room: the room is looked for on ours too (lib/peer.ts
+   * alsoOn), by ping, as a host the cloud turns away has it there alone (a
+   * join the cloud has the room for never asks ours). Where the cloud would
+   * tell there's no such room and ours has it, the join goes on there
+   * (roomUnavailable): a cloud host only reconnecting is waited for on the
+   * cloud as before (its room is on ours too, but the game would lean on
+   * ours from then on), and a room on neither is told as before, as soon as
+   * before.
+   */
+  private watchElsewhere() {
+    const also = this.peer && alsoOn(serverOf(this.peer));
+    if (!also || this.status !== 'connecting') return;
+    const epoch = this.peerEpoch;
+    this.stopWatch = watchForRoom(this.code, also, () => {
+      this.stopWatch = null;
+      if (epoch === this.peerEpoch) this.foundOn = also;
+    });
+  }
+
+  /** Joining goes on afresh on `server`, which has the room the one it looked on doesn't. */
+  private joinOn(server: Server) {
+    this.stopWatch?.();
+    this.stopWatch = null;
+    // Let go of at once, even if the next peer waits for the relay's login: what it still has out would count against this one.
+    if (this.peer) letGo(this.peer);
+    this.peer = null;
+    this.cancelAttempts();
+    this.joinServer = server;
+    this.unavailableUntil = 0;
+    this.firstAttemptAt = 0;
+    // Joining again (another name, a reload) goes there at once; and this goes on for a while of its own.
+    heardOnlyOn(this.code, server);
+    this.armConnectTimeout();
+    this.startClientPeer();
   }
 
   /** Joining gives up if the room hasn't let us in by then. */
@@ -2225,12 +2290,15 @@ class Session {
     const away = hiddenSince(Date.now());
     if (away !== null && this.unavailableUntil - EXPIRE_MS < away) this.unavailableUntil = 0;
     if (this.unavailableUntil && Date.now() >= this.unavailableUntil) {
+      // Not on the page's server, but found on the other (watchElsewhere): on there.
+      if (this.foundOn && this.joinServer !== this.foundOn) return this.joinOn(this.foundOn);
       this.codeDoubted = true;
       this.fail(`No room has the code ${this.code}. Check it with your host.`, 'No such room', { failure: this.joinFailure('join-no-such-room') });
       return;
     }
     // (Every attempt is made by now: EXPIRE_MS after the answer, as the look above takes it.)
     if (!this.unavailableUntil) this.unavailableUntil = Date.now() + EXPIRE_MS;
+    if (!this.stopWatch && !this.foundOn) this.watchElsewhere();
     // The server holds an offer a few seconds before giving up on it, so the
     // answer is about an attempt that old. A newer one may still get through.
     const now = Date.now();
@@ -2367,6 +2435,8 @@ class Session {
     this.attempts = this.attempts.filter((a) => a.conn !== conn);
     this.cancelAttempts();
     this.unavailableUntil = 0;
+    this.stopWatch?.();
+    this.stopWatch = null;
     const stale = this.hostConn;
     this.hostConn = conn;
     stale?.close();
@@ -2791,6 +2861,8 @@ class Session {
     const peer = this.peer;
     this.guests = new Map();
     this.peer = null;
+    this.mirror?.stop(400);
+    this.mirror = null;
     // Give the goodbye a moment to go out before the connections drop; set first, so a throw in reset can't skip it.
     setTimeout(() => {
       for (const c of conns) c.close();
@@ -2977,12 +3049,15 @@ class Session {
   /** Lists the room publicly while the host has it set to public. */
   private syncBeacon(s: GameState) {
     const want = this.mode === 'host' && !this.roomless && !!s.settings.public;
-    if (want && !this.beacon) {
-      this.beacon = new Beacon((challenge) => (this.unlisted() ? null : this.listing(challenge)));
-      this.beacon.start();
-    } else if (!want && this.beacon) {
-      this.beacon.stop();
-      this.beacon = null;
+    if (want && !this.beacons.length) {
+      const info = (challenge: string | null) => (this.unlisted() ? null : this.listing(challenge));
+      // Where the room is, and on the other server too.
+      const here = this.peer ? serverOf(this.peer) : pageServer();
+      const also = alsoOn(here);
+      this.beacons = [new Beacon(info, here), ...(also ? [new Beacon(info, also, true)] : [])];
+      for (const b of this.beacons) b.start();
+    } else if (!want && this.beacons.length) {
+      for (const b of this.beacons.splice(0)) b.stop();
     }
   }
 
@@ -3711,8 +3786,13 @@ class Session {
     this.nameToKeep.dropped();
     // A new attempt (or leaving) makes the last one's errors moot.
     toasts.clearErrors();
-    this.beacon?.stop();
-    this.beacon = null;
+    for (const b of this.beacons.splice(0)) b.stop();
+    this.mirror?.stop();
+    this.mirror = null;
+    this.joinServer = null;
+    this.foundOn = null;
+    this.stopWatch?.();
+    this.stopWatch = null;
     this.stopMedia();
     shown.clear();
     if (this.timer) clearTimeout(this.timer);
@@ -3767,7 +3847,7 @@ class Session {
     this.welcomedOn = null;
     link?.close();
     this.cancelAttempts();
-    this.peer?.destroy();
+    if (this.peer) letGo(this.peer);
     this.peer = null;
     this.mode = null;
     this.state = null;
