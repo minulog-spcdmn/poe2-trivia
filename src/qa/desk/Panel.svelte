@@ -3,7 +3,7 @@
   // under their headings; its controls (a piece's, or the scene's own and
   // those of any game), what can happen to it, its seats, and Replay and
   // Freeze (and, while S has them, CSS's shadows). Only what the bench has shows.
-  import { byHeading, type Bench, type Control, type Value, type Values } from '../bench.ts';
+  import { byHeading, showsWith, type Bench, type Control, type Value, type Values } from '../bench.ts';
 
   let {
     bench,
@@ -14,6 +14,7 @@
     tweaks,
     v,
     changed,
+    marked,
     seats,
     seat,
     frozen,
@@ -47,6 +48,8 @@
     v: Values;
     /** Whether this change touches a state. */
     changed?: (i: number) => boolean;
+    /** The values of its controls that places this change touches set them to, by control: a dot on each. */
+    marked?: Map<string, Set<Value>>;
     seats: string[];
     seat: number | 'all';
     frozen: boolean;
@@ -79,6 +82,9 @@
   /** Whether a control is away from where the state on show (or its scene) has it. */
   const moved = $derived(stateIndex < 0 && !all);
 
+  /** A choice with this many options or fewer shows them all, a button each; one with more, a menu. */
+  const CHIPS = 16;
+
   /** A long list's headings fold: only the one with the state on show is open, until another is opened. */
   const FOLD_OVER = 24;
   let opened = $state<Set<string>>(new Set());
@@ -103,7 +109,7 @@
 {#snippet control(c: Control)}
   {#if c.kind === 'range'}
     <label class="control">
-      <span class="label">{c.label}</span>
+      <span class="label" class:changed={marked?.has(c.key)}>{c.label}</span>
       <span class="range">
         <input type="range" min={c.min} max={c.max} step={c.step ?? 1} value={v[c.key]} oninput={(e) => onvalue(c.key, Number(e.currentTarget.value))} />
         <input
@@ -128,9 +134,20 @@
         {#if c.unit}<span class="unit">{c.unit}</span>{/if}
       </span>
     </label>
+  {:else if c.kind === 'choice' && c.options.length <= CHIPS}
+    <!-- (Each option a button: going through a scene's moments is a click each, every one in sight.) -->
+    <div class="control" role="radiogroup" aria-label={c.label}>
+      <span class="label">{c.label}</span>
+      <span class="chips">
+        {#each c.options as o (o.value)}
+          {@const touched = marked?.get(c.key)?.has(o.value)}
+          <button role="radio" aria-checked={v[c.key] === o.value} class:on={v[c.key] === o.value} class:changed={touched} title={touched ? 'This change touches it' : undefined} onclick={() => onvalue(c.key, o.value)}>{o.label}</button>
+        {/each}
+      </span>
+    </div>
   {:else if c.kind === 'choice'}
     <label class="control">
-      <span class="label">{c.label}</span>
+      <span class="label" class:changed={marked?.has(c.key)}>{c.label}</span>
       <select value={v[c.key]} onchange={(e) => (onvalue(c.key, e.currentTarget.value), e.currentTarget.blur())}>
         {#each c.options as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
       </select>
@@ -138,7 +155,7 @@
   {:else}
     <label class="control toggle">
       <input type="checkbox" checked={!!v[c.key]} onchange={(e) => onvalue(c.key, e.currentTarget.checked)} />
-      <span class="label">{c.label}</span>
+      <span class="label" class:changed={marked?.has(c.key)}>{c.label}</span>
     </label>
   {/if}
 {/snippet}
@@ -171,10 +188,10 @@
   {#if controls.length || tweaks.length}
     <section class="controls">
       <h2>Controls {#if moved}<button class="all" onclick={onreset} title="Every control back where the state has it">As it was</button>{/if}</h2>
-      {#each controls as c (c.key)}{@render control(c)}{/each}
+      {#each controls.filter((c) => showsWith(c, v)) as c (c.key)}{@render control(c)}{/each}
       {#if tweaks.length}
         <h3 class="heading">In any game</h3>
-        {#each tweaks as c (c.key)}{@render control(c)}{/each}
+        {#each tweaks.filter((c) => showsWith(c, v)) as c (c.key)}{@render control(c)}{/each}
       {/if}
     </section>
   {/if}

@@ -6,7 +6,7 @@ import { useItems } from '../src/qa/build/engine.ts';
 import { Table } from '../src/qa/build/play.ts';
 import { useCaptured } from '../src/qa/scenes/captured.ts';
 import { SIZES, WALK_SIZES, isSizeKey, sizeOf, PRESETS } from '../src/qa/sizes.ts';
-import { SCREENS, seatLabel, seatsIn, type Scene } from '../src/qa/scene.ts';
+import { SCREENS, placeIn, seatLabel, seatsIn, type Scene } from '../src/qa/scene.ts';
 import { sceneStateAt, valuesOf, type Values } from '../src/qa/bench.ts';
 import { TWEAK_KEYS, applyTweaks, buildScene } from '../src/qa/tweaks.ts';
 import { matches, sizesFor } from '../src/qa/desk/walk.ts';
@@ -89,7 +89,8 @@ test('a named state sets only controls its scene has, to values they can be, and
 });
 
 test('the controls every game has change only what they say, and leave who is seen from be', () => {
-  const won = catalog().find((s) => s.key === 'over/n-won')!;
+  // (The boards' first, its scene's row: the scene as it comes.)
+  const won = placeIn(catalog(), 'over/n-won')!.scene;
   const as = buildScene(won).built.state!;
   const gone = buildScene(won, { offline: '*' }).built.state!;
   assert.deepEqual(
@@ -108,8 +109,9 @@ test('the controls every game has change only what they say, and leave who is se
   );
   assert.ok(long.players.every((p, i) => p.name !== as.players[i].name));
   // A spectator seen from stays, however few watch.
-  const spec = catalog().find((s) => s.key === 'over/n-spec')!;
-  assert.ok(buildScene(spec, { joining: 0 }).built.state!.spectators!.some((o) => o.id === spec.seats[0].me));
+  const spec = placeIn(catalog(), 'over/n-spec')!;
+  const seen = buildScene(spec.scene, { ...spec.values, joining: 0 }).built;
+  assert.ok(seen.state!.spectators!.some((o) => o.id === seen.seat!.me));
 });
 
 test('a game set by its controls seen by a watcher holds nothing of this device: no result, codex log, runs or achievements', () => {
@@ -124,8 +126,8 @@ test('a game set by its controls seen by a watcher holds nothing of this device:
 });
 
 test("Offline on a game played through the engine goes the engine's way: a race's state is the one the room reaches", () => {
-  const race = catalog().find((s) => s.key === 'game/race-answered')!;
-  const shown = buildScene(race, { offline: '*' }).built.state!;
+  const { scene: race, values: waiting } = placeIn(catalog(), 'game/race-answered')!;
+  const shown = buildScene(race, { ...waiting, offline: '*' }).built.state!;
   // The same race played again, everyone but those seen from dropping as the room reports it
   // (the players among them: the seat watching has no one at the table).
   const t = new Table(['Kalguur', 'Doryani', 'Una of the Vaal', 'Rog', 'Alva'], { mode: 'race' }).start().answer('Doryani', false, 1800);
@@ -138,7 +140,7 @@ test("Offline on a game played through the engine goes the engine's way: a race'
   );
   // Seen from Doryani alone, who has answered: with everyone else gone no one is left to wait on, and the answer shows.
   const doryani = t.s.players.find((p) => p.name === 'Doryani')!.id;
-  const alone = applyTweaks(race.build({}), { offline: '*' }, [doryani]).state!;
+  const alone = applyTweaks(race.build(waiting), { offline: '*' }, [doryani]).state!;
   const u = new Table(['Kalguur', 'Doryani', 'Una of the Vaal', 'Rog', 'Alva'], { mode: 'race' }).start().answer('Doryani', false, 1800);
   for (const p of u.s.players) if (p.id !== doryani) u.act({ type: 'connection', playerId: p.id, connected: false }, null);
   assert.equal(alone.phase, 'reveal');
@@ -146,8 +148,8 @@ test("Offline on a game played through the engine goes the engine's way: a race'
 });
 
 test('the long base type scene still asks for what it shows: a mirrored picture of an item with a long base type, named', () => {
-  const s = catalog().find((x) => x.key === 'game/delve-long-base')!;
-  const state = buildScene(s).built.state!;
+  const place = placeIn(catalog(), 'game/delve-long-base')!;
+  const state = buildScene(place.scene, place.values).built.state!;
   const q = state.question!;
   const item = items.find((i) => i.id === q.itemId)!;
   assert.equal(state.phase, 'reveal');
@@ -235,11 +237,68 @@ test("a frame answers media queries as its device would, and leaves width to the
 
 // A frame loads only its own screen's scenes (scenes/one.ts), so the code
 // before a change that adds what one screen uses still shows the others.
-test('a frame finds every scene from its own screen file alone', async () => {
+// A place (a state with a key of its own) too, with its controls.
+test('a frame finds every scene and place from its own screen file alone', async () => {
   const { sceneOf } = await import('../src/qa/scenes/one.ts');
   for (const s of catalog()) {
     const found = await sceneOf(s.key);
-    assert.equal(found?.key, s.key, `${s.key} isn't found from its screen's file (scenes/one.ts)`);
-    assert.equal(found.label, s.label);
+    assert.equal(found?.scene.key, s.key, `${s.key} isn't found from its screen's file (scenes/one.ts)`);
+    assert.equal(found.scene.label, s.label);
+    for (const st of s.states ?? []) {
+      if (!st.key) continue;
+      const place = await sceneOf(st.key);
+      assert.equal(place?.scene.key, s.key, `the place ${st.key} isn't found in ${s.key} from its screen's file`);
+      assert.deepEqual(place.values, st.values);
+    }
   }
+});
+
+// A place's key is an address of its own: no other scene or place has it,
+// it names its screen first (a frame loads that screen's file alone by it),
+// and a scene's first state, its own row, is always listed.
+test('every place has a key of its own, under its screen, and every scene a listed first state', () => {
+  const seen = new Set<string>();
+  for (const s of catalog()) {
+    assert.ok(!seen.has(s.key), `${s.key} is a scene's key and another's too`);
+    seen.add(s.key);
+  }
+  for (const s of catalog()) {
+    assert.notEqual(s.states?.[0]?.listed, false, `${s.key}: its first state is its row in the panel, so it can't be listed: false`);
+    for (const st of s.states ?? []) {
+      if (!st.key) continue;
+      assert.ok(!seen.has(st.key), `${st.key} (a state of ${s.key}) is another scene's or place's key too`);
+      seen.add(st.key);
+      assert.equal(st.key.split('/')[0], s.key.split('/')[0], `${st.key} is a state of ${s.key}: its key starts with its screen`);
+    }
+  }
+});
+
+// A control shown only with others as `when` says (what one of a scene's
+// moments has) names controls of its scene and values they can take: one
+// that names nothing would never show.
+test('a control shown only at some moments names its scene’s controls and their values', () => {
+  for (const s of catalog()) {
+    const own = new Map((s.controls ?? []).map((c) => [c.key, c]));
+    for (const c of s.controls ?? []) {
+      for (const [k, xs] of Object.entries(c.when ?? {})) {
+        const by = own.get(k);
+        assert.ok(by && by !== c, `${s.key}'s ${c.key} shows only by ${k}, which isn't another of its controls`);
+        for (const x of xs) assert.equal(valuesOf([by], { [k]: x })[k], x, `${s.key}'s ${c.key} shows only when ${k} is ${x}, which ${k} can't be`);
+      }
+    }
+  }
+});
+
+// This change tells a scene built anew from one only moved about by what
+// each place builds (src/qa/builds.ts), so every place must build, and the
+// same each time: the clock and chance held still, and let go after.
+test('every place builds the same each time, and the clock is the real one after', async () => {
+  const { placeBuilds, placesOf } = await import('../src/qa/builds.ts');
+  const now = Date.now;
+  const once = placeBuilds(catalog());
+  assert.equal(Date.now, now);
+  assert.deepEqual(placeBuilds(catalog()), once);
+  assert.deepEqual(Object.keys(once), placesOf(catalog()).map((p) => p.key));
+  assert.deepEqual(Object.keys(once).filter((k) => once[k] === 'failed'), [], 'these places fail to build');
+  assert.ok(new Date() instanceof Date && new Date().getTime() !== Date.UTC(2026, 10, 1, 12));
 });

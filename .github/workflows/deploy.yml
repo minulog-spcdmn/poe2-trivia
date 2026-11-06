@@ -158,12 +158,20 @@ jobs:
           if [ -f scripts/qa-before.mjs ] && [ -f dist/qa.html ]; then
             VITE_CHANNEL=beta node scripts/qa-before.mjs dist/before
           fi
-      - name: List the files the beta changes, for the QA desk's "This change"
+      # Where the change shows (scripts/qa-change.mjs: the places that run its
+      # lines, by the scene map, which takes the history back to the map's
+      # commit: the checkout has all of it). A branch from before the script
+      # lists its files.
+      - name: Find where the beta's change shows, for the QA desk's "This change"
         run: |
           base=$(git merge-base origin/main HEAD 2>/dev/null || true)
           if [ -n "$base" ] && [ -f dist/qa.html ]; then
             before=$([ -f dist/before/qa.html ] && echo before/ || true)
-            git diff --name-only "$base" HEAD | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => process.stdout.write(JSON.stringify({ base: process.argv[1], files: s.split(/\r?\n/).filter(Boolean), ...(process.argv[2] ? { before: process.argv[2] } : {}) })))' "$base" "$before" > dist/qa-change.json
+            if [ -f scripts/qa-change.mjs ]; then
+              node scripts/qa-change.mjs $before > dist/qa-change.json
+            else
+              git diff --name-only "$base" HEAD | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => process.stdout.write(JSON.stringify({ base: process.argv[1], files: s.split(/\r?\n/).filter(Boolean), ...(process.argv[2] ? { before: process.argv[2] } : {}) })))' "$base" "$before" > dist/qa-change.json
+            fi
           fi
       - uses: actions/upload-artifact@v4
         with:
