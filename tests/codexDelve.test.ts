@@ -307,8 +307,8 @@ test('finds and wards from the log: veins and caches taken and how they ended, w
     find(5, false, { depth: 20, run: 1, find: 'flare', warded: true }),
   );
   const f = findStats(x.log);
-  assert.deepEqual(f.finds.azurite, { taken: 3, ok: 2, gained: { wards: 2 }, lives: 0, wards: 2 });
-  assert.deepEqual(f.finds.flare, { taken: 2, ok: 1, gained: { flares: 1 }, lives: 0, wards: 1 });
+  assert.deepEqual(f.finds.azurite, { taken: 3, ok: 2, missed: 1, gained: { wards: 2 }, lives: 0, wards: 2 });
+  assert.deepEqual(f.finds.flare, { taken: 2, ok: 1, missed: 1, gained: { flares: 1 }, lives: 0, wards: 1 });
   assert.equal(f.wardsBroke, 3);
   assert.equal(f.flaresBurnt, 1);
   assert.equal(f.blasted, 0);

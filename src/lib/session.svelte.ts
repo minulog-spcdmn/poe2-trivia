@@ -40,6 +40,7 @@ import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSI
 import { capped, ChunkGuard, frameFits, FrameGuard, hookFrames, JoinGate, MAX_HOST_MSG_BYTES, roomSecret } from './guard';
 import { LaneReceiver, LaneSender, openLane, parseFakeLink } from './artLane';
 import { honestRtt, measuredRtt, PING_SAMPLES } from './linkRtt';
+import { baseOf, sampleHostClock, type HostClock } from './hostClock';
 import { NAME_STORED, cleanName, isHeldName, isNameProblem, nameSkeleton, nameUsable } from './names';
 import { remakeName } from './madeName';
 import { JoinName } from './joinName';
@@ -425,7 +426,7 @@ class Session {
   code = $state<string>('');
   /** host clock minus local clock, for timer display on clients */
   clockOffset = $state(0);
-  private clockSynced = false;
+  private hostClock: HostClock | null = null;
   /** This device's player in an online game. */
   myPlayerId = $state<string | null>(null);
   /** Streamer mode: don't show the room code on screen. */
@@ -714,15 +715,10 @@ class Session {
     return Date.now() + this.clockOffset;
   }
 
-  /**
-   * Client: each state message gives the host's clock minus that message's
-   * travel time, so the largest sample is the closest. Keeping it also stops
-   * one late message (queued behind pictures, say) from making countdowns jump.
-   */
-  private syncClock(hostSentAt: number) {
-    const sample = hostSentAt - Date.now();
-    this.clockOffset = this.clockSynced ? Math.max(this.clockOffset, sample) : sample;
-    this.clockSynced = true;
+  /** Client: each state message a sample of the host's clock, the closest kept until either clock is set (hostClock.ts). */
+  private syncClock(hostSentAt: number, hostBase: number | undefined) {
+    this.hostClock = sampleHostClock(this.hostClock, hostSentAt, hostBase, Date.now(), performance.now());
+    this.clockOffset = this.hostClock.offset;
   }
 
   flash(message: string, kind: ToastKind = 'info', opts?: ToastOptions) {
@@ -2496,7 +2492,7 @@ class Session {
           break;
         }
         case 'state':
-          this.syncClock(msg.now);
+          this.syncClock(msg.now, msg.base);
           if (takesState(this.state, msg.state)) {
             try {
               this.noteChange(this.state, msg.state);
@@ -3012,7 +3008,8 @@ class Session {
     if (this.mode === 'host') {
       // The next room this browser opens starts with these settings.
       savePrefs(prefsFrom(next.settings));
-      const msg: HostMsg = { t: 'state', state: publicView(next), now: Date.now() };
+      const now = Date.now();
+      const msg: HostMsg = { t: 'state', state: publicView(next), now, base: Math.round(baseOf(now, performance.now())) };
       for (const [conn, g] of this.guests) if (g.playerId) this.send(conn, msg);
     }
     // Race: the next question is known as the reveal starts, so it's drawn now (once the reveal has gone
@@ -3858,7 +3855,7 @@ class Session {
     this.joinVia = null;
     // A guest's offset to its host's clock means nothing for the next room.
     this.clockOffset = 0;
-    this.clockSynced = false;
+    this.hostClock = null;
     this.gaveUp = false;
     // Another tab may have turned streamer mode on since this page loaded.
     this.hideCode = roomPrefs().hideCode;

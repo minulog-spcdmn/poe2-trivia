@@ -81,6 +81,9 @@ jobs:
     outputs:
       sha: ${{ steps.find.outputs.sha }}
       cached: ${{ steps.cache.outputs.cache-hit }}
+      # Set by its last step, as beta's `built`: a job that fails under
+      # continue-on-error can still read as a success in `needs`.
+      found: ${{ steps.found.outputs.found }}
     steps:
       - name: Find the beta's commit
         id: find
@@ -107,6 +110,8 @@ jobs:
           path: beta-dist
           key: beta-dist-v3-${{ steps.find.outputs.sha }}
           lookup-only: true
+      - id: found
+        run: echo "found=true" >> "$GITHUB_OUTPUT"
 
   beta:
     needs: find-beta
@@ -219,9 +224,9 @@ jobs:
           SHA: ${{ needs.find-beta.outputs.sha }}
           CACHED: ${{ needs.find-beta.outputs.cached }}
           BUILT: ${{ needs.beta.outputs.built }}
-          FOUND: ${{ needs.find-beta.result }}
+          FOUND: ${{ needs.find-beta.outputs.found }}
         run: |
-          if [ "$FOUND" != success ]; then
+          if [ "$FOUND" != true ]; then
             echo "::warning::Couldn't look up the beta, so poe2.quest/beta/ is left out of this deploy. Run this workflow again to bring it back."
           fi
           if [ -n "$SHA" ] && [ "$CACHED" = true ]; then from=cache

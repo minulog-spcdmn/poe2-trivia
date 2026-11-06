@@ -231,6 +231,9 @@ test("a host's state with a clock that isn't a time is dropped", () => {
   assert.ok(parseHostMsg({ t: 'state', state, now: 1790642896195 }));
   for (const now of [NaN, Infinity, -Infinity, '1'])
     assert.equal(parseHostMsg({ t: 'state', state, now }), null);
+  // Its base (lib/hostClock.ts), where it says one, is a number too.
+  assert.ok(parseHostMsg({ t: 'state', state, now: 1790642896195, base: 1790642000000 }));
+  for (const base of [NaN, Infinity, '1', null]) assert.equal(parseHostMsg({ t: 'state', state, now: 1790642896195, base }), null);
 });
 
 test("the host's challenge, and a hello's signature over it, pass only in shape", () => {

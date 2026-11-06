@@ -117,7 +117,8 @@ export type HostMsg =
   /** As a link opens: a challenge for a hello under the held name to be signed over (ownerKey.ts joinProof). */
   | { t: 'hi'; c: string }
   | { t: 'welcome'; playerId: string }
-  | { t: 'state'; state: GameState; now: number }
+  /** `now`: when the host sent it, by its clock; `base`, its clock less its steady one then, which moves only when its clock is set (hostClock.ts). */
+  | { t: 'state'; state: GameState; now: number; base?: number }
   /**
    * `askedAt`: an answer to that question was turned down, so it may be
    * given again. A guest that doesn't know the field just shows the message.
@@ -276,7 +277,7 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
       return isStr(raw.playerId, 64) ? (raw as HostMsg) : null;
     case 'state': {
       const s = raw.state;
-      return isObj(s) && Array.isArray(s.players) && isObj(s.settings) && Number.isFinite(raw.now)
+      return isObj(s) && Array.isArray(s.players) && isObj(s.settings) && Number.isFinite(raw.now) && (raw.base === undefined || Number.isFinite(raw.base))
         ? (raw as HostMsg)
         : null;
     }
