@@ -249,10 +249,12 @@
     {#if enterable}{#key seatFree}<p class="note" in:fade|global={calm({ duration: 200 })}>{seatFree ? 'Anyone can join.' : 'No seat free: watch, and play once you can.'}</p>{/key}{/if}
   </header>
 
-  <!-- The list's own frame: the start page gives it a fixed height on a wide window, and a long list scrolls inside it. -->
+  <!-- The list's own frame: the start page gives it a fixed height on a wide window, and a long list scrolls inside it.
+       The empty tile and the list share its one cell, one fading out as the other fades in. -->
   <div class="frame">
     {#if shown.length}
-      <ul in:fade={calm({ duration: 200 })}>
+      <!-- A row not yet full keeps the empty tile's top right corner, under the note (its ::before). -->
+      <ul style:--rooms={shown.length} in:fade={calm({ duration: 200 })} out:fade={calm({ duration: 200 })}>
         {#each shown as { room: r, door: d } (r.code)}
           <li class:dimmed={!!joining && r.code !== joining} animate:flip={{ duration: 300 }} in:fly={{ y: 8, duration: 300 }} out:fadeOut={{ duration: 150 }}>
             {#if r.code === joining}
@@ -281,7 +283,7 @@
     {:else}
       <!-- The tile stays; only what it says changes, the old words fading out and the new in where they stood:
            quickly after a tap on refresh, slowly when a scan ends by itself. -->
-      <div class="empty" in:fade={calm({ duration: 200 })}>
+      <div class="empty" in:fade={calm({ duration: 200 })} out:fade={calm({ duration: 200 })}>
         {#key emptySays}
           <p in:fade={saysIn()} out:fade={saysOut()}>
             {#if emptySays === 'none-here'}
@@ -308,9 +310,14 @@
     flex-direction: column;
     min-height: 0;
   }
-  /* Positioned, so a room leaving the list (pinned absolute while it fades) stays inside it, clipped and scrolled with it. */
+  /* One cell for the empty tile and the list, so one fades out where the other fades in; each as tall as it is, not the frame's height. */
   .frame {
-    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+  }
+  .frame > * {
+    grid-area: 1 / 1;
   }
   header {
     flex: none;
@@ -394,13 +401,44 @@
     fill: currentColor;
     stroke-width: 1.5;
   }
+  /* Positioned, so a room leaving the list (pinned absolute while it fades) stays inside it, clipped and scrolled with the frame. */
   ul {
+    --cols: 3;
+    --gap: 12px;
+    position: relative;
+    isolation: isolate;
     list-style: none;
     margin: 0;
     padding: 0;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+    gap: var(--gap);
+  }
+  /* The empty tile's top right corner, kept under the note while the first
+     row has room for more: the dashed line marks the row's empty part,
+     fading out leftward across it and down its side, drawing back as rooms
+     come in, and fading away under one that fills the row. As wide as the
+     row, so its dashes fall where the empty tile's did; the mask is the
+     empty part's size (Chrome takes no calc() in a gradient's size), drawn
+     in its corner and nothing past it. Under the rooms, in the list's own
+     stacking (isolation). The empty part is its columns and the gaps
+     between them ((100% + gap) / cols is a column with its gap), and never
+     less than none: from far below nothing, a long list dropping to a room
+     or two would hold the corner back for most of its transition, then
+     snap it in. */
+  ul::before {
+    --empty: max(0, var(--cols) - var(--rooms));
+    content: '';
+    position: absolute;
+    grid-area: 1 / 1 / 2 / -1;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    mask: radial-gradient(100% 100% at 100% 0, #000 20%, transparent 90%) right top / calc(var(--empty) * (100% + var(--gap)) / var(--cols) - var(--gap)) 100% no-repeat;
+    opacity: clamp(0, var(--empty), 1);
+    transition:
+      opacity 0.3s,
+      mask-size 0.3s;
   }
   /* The answer buttons' panel (QuestionView), the room's own button inside it. */
   li {
@@ -461,6 +499,9 @@
     font-style: italic;
     font-size: 17px;
     color: var(--note);
+  }
+  .empty,
+  ul::before {
     border: 1px dashed rgba(125, 99, 51, 0.55);
     border-radius: 4px;
   }
@@ -498,7 +539,7 @@
 
   @media (max-width: 1100px) {
     ul {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      --cols: 2;
     }
   }
   @media (max-width: 640px) {
@@ -518,7 +559,7 @@
       margin: 0;
     }
     ul {
-      grid-template-columns: 1fr;
+      --cols: 1;
     }
     .empty {
       font-size: 15px;
