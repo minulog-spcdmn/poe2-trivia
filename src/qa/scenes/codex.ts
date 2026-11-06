@@ -4,14 +4,33 @@
 // Delve (with runs and without) and Achievements pages.
 // And the codex that never came (the Wi-Fi gone as it was fetched).
 
+import type { Answer } from '../../lib/codex.ts';
 import { DELVE_RULESET } from '../../lib/delve.ts';
 import type { DelveRun } from '../../lib/delveRecord.ts';
 import type { Control, Values } from '../bench.ts';
+import { id } from '../build/people.ts';
 import type { Built, Scene, Step } from '../scene.ts';
 
 function filled(steps: Step[] = [], depths = [8, 14, 27, 19, 33, 23, 41]): Built {
   const runs: DelveRun[] = depths.map((depth, i) => ({ id: 2000 + i, at: 2000 + i, depth, players: i % 3 ? 1 : 3, ruleset: DELVE_RULESET, mixed: false, ...(i % 3 ? {} : { perished: [depth] }) }));
   return { state: null, hash: '#codex', met: 140, runs, steps };
+}
+
+/**
+ * Finds taken alone, in one of filled's runs: a vein dug out, one caved in on
+ * strike 1 and one on strike 2 (both counted caved in), a Flare Cache won and one missed.
+ */
+function findsLog(): Answer[] {
+  const at = (t: number, name: string, ok: boolean, more: Partial<Answer>): Answer => ({ t, id: id(name), mode: 'name', ok, difficulty: 'cruel', race: false, depth: 20, run: 2001, ...more });
+  return [
+    at(1, 'Headhunter', true, { find: 'azurite', gained: 'wards' }),
+    at(2, 'Mageblood', true, { find: 'azurite', gained: 'wards', strike: 2 }),
+    at(3, "Kaom's Heart", false, { find: 'azurite', lives: 2, wards: 0 }),
+    at(4, 'Death Rush', true, { find: 'azurite', gained: 'wards' }),
+    at(5, 'Briarpatch', false, { find: 'azurite', strike: 2, buried: 1, lives: 2, wards: 0 }),
+    at(6, 'Prism Guardian', true, { find: 'flare', gained: 'flares' }),
+    at(7, 'Heart of the Well', false, { find: 'flare', lives: 1, wards: 0 }),
+  ];
 }
 
 /** Uniques whose tooltips have "ffi" in a line. */
@@ -92,6 +111,7 @@ const RUNS: Control = {
   options: [
     { value: 'seven', label: 'Seven' },
     { value: 'many', label: 'Sixteen: all shown, then the latest' },
+    { value: 'finds', label: 'Seven, finds taken' },
     { value: 'none', label: 'None' },
     { value: 'new', label: 'None, and little met' },
   ],
@@ -102,6 +122,8 @@ function pages(v: Values = {}): Built {
   const tab: Step = { click: v.page === 'feats' ? '#codex-tab-feats' : '#codex-tab-delve' };
   if (v.runs === 'new') return { state: null, hash: '#codex', met: 40, steps: [tab] };
   if (v.runs === 'none') return filled([tab], []);
+  // Finds taken alone, the page brought down to them.
+  if (v.runs === 'finds') return { ...filled(v.page === 'feats' ? [tab] : [tab, { wait: 1200 }, { scroll: '[aria-labelledby="find-h-Alone"]' }]), log: findsLog() };
   if (v.runs !== 'many') return filled([tab]);
   // More runs than its short list: all of them shown (the new rows fading in), then the short list again from the button, which stays where it was.
   return filled(
@@ -148,6 +170,7 @@ export function codexScenes(): Scene[] {
         { label: 'The Delve page', values: {} },
         { label: 'The Delve page, never delved', values: { runs: 'none' }, key: 'codex/delve-none', listed: false },
         { label: 'The Delve page: every run shown, then the latest again', values: { runs: 'many' }, key: 'codex/runs', listed: false },
+        { label: 'The Delve page: finds taken, a vein caved in on strike 1 and one on strike 2', values: { runs: 'finds' }, key: 'codex/delve-finds', listed: false },
         { label: 'The Achievements page', values: { page: 'feats' }, key: 'codex/feats', listed: false },
         { label: 'The Delve page, no run yet', values: { runs: 'new' }, key: 'codex/delve-empty', listed: false },
       ],

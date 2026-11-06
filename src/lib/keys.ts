@@ -84,6 +84,19 @@ export function rebind(b: Bindings, action: Action, slot: number, code: string):
   return out;
 }
 
+/**
+ * The other action that loses its key when `code` is bound to `action`
+ * (rebind), and the key it loses as it holds it: the keypad's Enter takes
+ * Enter. Null when no other action has it.
+ */
+export function takenFrom(b: Bindings, action: Action, code: string): { from: Action; key: string } | null {
+  for (const a of ACTIONS) {
+    const key = a === action ? undefined : b[a].find((c) => same(c) === same(code));
+    if (key) return { from: a, key };
+  }
+  return null;
+}
+
 /** The key in `slot` taken off `action`. */
 export function unbind(b: Bindings, action: Action, slot: number): Bindings {
   return { ...b, [action]: b[action].filter((_, i) => i !== slot) };
@@ -150,6 +163,7 @@ const NAMES: Record<string, string> = {
   NumpadMultiply: 'Num *',
   NumpadDivide: 'Num /',
   NumpadDecimal: 'Num .',
+  NumpadEnter: 'Num Enter',
   Minus: '-',
   Equal: '=',
   BracketLeft: '[',

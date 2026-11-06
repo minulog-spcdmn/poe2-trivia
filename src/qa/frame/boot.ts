@@ -316,6 +316,7 @@ export async function boot(asked: URLSearchParams) {
     // (In a tree before the back guard there's no Back of the game's to show: the tab's own history is the desk's.)
     else if ('back' in step) steps?.back();
     else if ('scroll' in step) document.querySelector(step.scroll)?.scrollIntoView({ block: 'center', behavior: 'instant' });
+    else if ('press' in step) (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { code: step.press, bubbles: true, cancelable: true }));
     else if ('rooms' in step) {
       // Found from now on; then a look at once, once the list's last look is over (Refresh waits out its 1.5 s).
       rooms.useMadeUpRooms(step.rooms, built.invite);

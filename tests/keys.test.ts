@@ -2,7 +2,7 @@
 // key to one action, and stored bindings checked as they're read back.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ACTIONS, DEFAULT_BINDINGS, actionFor, bindable, capFor, keyName, optionIndex, optionKeysText, parseBindings, rebind, unbind } from '../src/lib/keys.ts';
+import { ACTIONS, DEFAULT_BINDINGS, actionFor, bindable, capFor, keyName, optionIndex, optionKeysText, parseBindings, rebind, takenFrom, unbind } from '../src/lib/keys.ts';
 
 const press = (code: string, key = '') => ({ code, key });
 
@@ -34,6 +34,17 @@ test('a key does one thing: binding it takes it off whatever had it', () => {
   b = rebind(b, 'detonate', 0, 'NumpadEnter');
   assert.deepEqual(b.next, ['KeyQ']);
   assert.equal(actionFor(b, press('Enter')), 'detonate');
+});
+
+test("the settings page tells which action lost its key, by the key it held: the keypad's Enter takes Enter", () => {
+  assert.deepEqual(takenFrom(DEFAULT_BINDINGS, 'option1', 'NumpadEnter'), { from: 'next', key: 'Enter' });
+  assert.deepEqual(takenFrom(DEFAULT_BINDINGS, 'option1', 'Space'), { from: 'next', key: 'Space' });
+  const b = rebind(DEFAULT_BINDINGS, 'detonate', 0, 'NumpadEnter');
+  assert.deepEqual(takenFrom(b, 'next', 'Enter'), { from: 'detonate', key: 'NumpadEnter' });
+  // Its own key, or one nobody has: nothing taken.
+  assert.equal(takenFrom(DEFAULT_BINDINGS, 'next', 'NumpadEnter'), null);
+  assert.equal(takenFrom(DEFAULT_BINDINGS, 'option1', 'KeyQ'), null);
+  assert.equal(keyName('NumpadEnter'), 'Num Enter');
 });
 
 test("an action's own other key changes places with the slot it's put in", () => {

@@ -75,6 +75,8 @@ export type Step =
   | { clock: number }
   /** Scrolls the first element `selector` finds into the middle of the view, at once (nothing if none). */
   | { scroll: string }
+  /** A key pressed, by where it sits (KeyboardEvent.code), on what has the focus (a key set on the settings page). */
+  | { press: string }
   /** The start page's list finds these rooms from now on, and looks again at once, as its Refresh would (a room opening or closing). */
   | { rooms: RoomInfo[] }
   /** How this device's sync stands changes (the link coming up, going), over what it was (Built's sync). */

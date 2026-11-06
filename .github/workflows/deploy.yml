@@ -81,6 +81,9 @@ jobs:
     outputs:
       sha: ${{ steps.find.outputs.sha }}
       cached: ${{ steps.cache.outputs.cache-hit }}
+      # Set once the lookup has answered, beta or none (a job that fails
+      # under continue-on-error can still read as a success in `needs`).
+      found: ${{ steps.find.outputs.found }}
     steps:
       - name: Find the beta's commit
         id: find
@@ -93,6 +96,7 @@ jobs:
           else
             sha=$(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=beta&per_page=1" --jq '.[0].sha // empty')
           fi
+          echo "found=true" >> "$GITHUB_OUTPUT"
           if [ -z "$sha" ]; then
             echo "No beta yet; deploying the live site only."
             exit 0
@@ -227,9 +231,9 @@ jobs:
           SHA: ${{ needs.find-beta.outputs.sha }}
           CACHED: ${{ needs.find-beta.outputs.cached }}
           BUILT: ${{ needs.beta.outputs.built }}
-          FOUND: ${{ needs.find-beta.result }}
+          FOUND: ${{ needs.find-beta.outputs.found }}
         run: |
-          if [ "$FOUND" != success ]; then
+          if [ "$FOUND" != true ]; then
             echo "::warning::Couldn't look up the beta, so poe2.quest/beta/ is left out of this deploy. Run this workflow again to bring it back."
           fi
           if [ -n "$SHA" ] && [ "$CACHED" = true ]; then from=cache

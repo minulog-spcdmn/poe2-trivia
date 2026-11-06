@@ -17,6 +17,13 @@ export interface Span {
 }
 export const range = (s: Span) => ({ start: s.start.toISOString(), end: s.end.toISOString() });
 
+/**
+ * An answer worth asking again after a pause: a 5xx, or a 404, as which
+ * GoatCounter answers some failures of its own now and then, gone a moment
+ * later (goatcounter#925).
+ */
+export const passing = (status: number) => status === 404 || status >= 500;
+
 /** The account's time zone, GoatCounter's days are cut in (any key may ask). */
 export async function accountZone(get: Get): Promise<string> {
   const me = await get<{ user?: { settings?: { timezone?: string } } }>('/me', {});
