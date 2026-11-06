@@ -1,6 +1,7 @@
 // Who in the room is really there: each device says whether its game is on
-// screen and in use (here), on screen but untouched for a while (idle), or
-// behind another tab or app, or a screen gone dark (away). The host adds
+// screen and in use (here), behind another tab or app, or a screen gone dark
+// (away), or without a sign of its player for a while, on screen or not
+// (idle: a tab left behind another is no quick look). The host adds
 // what it sees of each guest's link (slow), and tells everyone how each
 // player stands, so the lobby can show who is ready before the game begins,
 // and the end screen who is still there for the next.
@@ -11,7 +12,7 @@ export type Presence = 'here' | 'idle' | 'away';
 /** How a player stands, as the room is told (slow: lagging): missing when all is well. */
 export type Standing = 'away' | 'idle' | 'slow';
 
-/** Untouched this long (no pointer, key or touch), a player on screen is idle. */
+/** Without a sign of them this long (no pointer, key or touch, nor a look back at the game), a player is idle, on screen or not. */
 export const IDLE_AFTER_MS = 120_000;
 /** Gone from the screen this long, a player shows as away (a quick look at another tab doesn't count). */
 export const AWAY_AFTER_MS = 2500;
@@ -50,6 +51,20 @@ export const UNLISTED_AWAY_MS = 60_000;
 
 /** Whether a host on the end screen has gone from it, as far as the room list goes (UNLISTED_AWAY_MS). */
 export const goneFromEnd = (seen: Seen, now: number) => seen.presence === 'idle' || (seen.presence === 'away' && now - seen.since >= UNLISTED_AWAY_MS);
+
+/**
+ * Idle this long in the lobby (ten minutes without a sign of them in all,
+ * the idle mark's two included), a host has their room left off the room
+ * list until they're back: only they can begin, so whoever joined would wait
+ * on nobody, and a game behind another tab plays no sound to tell them.
+ * Far longer than on the end screen, since a host waiting for company may
+ * well look elsewhere a while, and back in now and then (the room bot's
+ * hosts do, bot/afk.ts).
+ */
+export const UNLISTED_LOBBY_IDLE_MS = 8 * 60_000;
+
+/** Whether a host in the lobby has gone from it, as far as the room list goes (UNLISTED_LOBBY_IDLE_MS). */
+export const goneFromLobby = (seen: Seen, now: number) => seen.presence === 'idle' && now - seen.since >= UNLISTED_LOBBY_IDLE_MS;
 
 /** Whether a guest's link is slow now, given whether it was (hysteresis, so it doesn't flicker), its round trip and how long since its last pong. */
 export function slowLink(was: boolean, rtt: number, sincePong: number): boolean {
@@ -114,12 +129,17 @@ function now() {
 }
 
 /** The room bot's say over its page's presence (it has no screen to look away from): null leaves it to the page. */
-let forced: Presence | null = null;
+let forced: 'away' | null = null;
+
+/**
+ * A device's presence, from whether its game is out of sight and how long
+ * since a sign of its player: away while out of sight, and idle once no sign
+ * of them has come for IDLE_AFTER_MS, out of sight or not.
+ */
+export const presenceOf = (hidden: boolean, quietFor: number): Presence => (quietFor >= IDLE_AFTER_MS ? 'idle' : hidden ? 'away' : 'here');
 
 function current(): Presence {
-  if (forced) return forced;
-  if (document.visibilityState === 'hidden') return 'away';
-  return now() - lastInput >= IDLE_AFTER_MS ? 'idle' : 'here';
+  return presenceOf(forced === 'away' || document.visibilityState === 'hidden', now() - lastInput);
 }
 
 function update() {
@@ -143,8 +163,8 @@ function start() {
   setInterval(update, CHECK_MS);
 }
 
-/** The room bot: its player has the game behind another tab (away), or is back (null: as the page is). */
-export function forcePresence(p: Presence | null) {
+/** The room bot: its player has the game behind another tab (away, idle in time as a hidden page's is), or is back (null: as the page is). */
+export function forcePresence(p: 'away' | null) {
   if (p === forced) return;
   forced = p;
   // Back: as good as a sign of life.
