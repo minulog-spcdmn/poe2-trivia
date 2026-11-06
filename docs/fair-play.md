@@ -108,7 +108,12 @@ used, so this is the game's version of its toggle.
 Game events count each time (`ns`, no session): `play/<mode>`,
 `size/<mode>-<n>p`, `screen/<mode>` (some at the host's screen) and
 `end/<mode>` from the device running the game (`-online`/`-hotseat` until
-October 2026), Delve's depth range, `share/delve` (Share run tapped), the
+October 2026), Delve's depth range, Delve's fossils from the device running
+the game (`fossil/seen`, a fossil card dealt, once an offer; `fossil/common`
+and `fossil/rare`, one taken, once a right answer however many took one;
+`fossil/missed`, a fossil card's question missed; `fossil/passed`, a fossil
+card passed up for a find on the same offer) and `fossil/complete` from the
+device whose player just found the last of the 25, `share/delve` (Share run tapped), the
 Daily's answers, links opened, joins, failures (`error/script`, with where
 it came from when the build's tables can tell, `error/script/<module>:<function>`
 (`src/lib/errorWhere.ts`, `whereMaps.ts`), and

@@ -5,6 +5,8 @@
 
 import { DELVE_RULESET } from '../../lib/delve.ts';
 import type { DelveRun } from '../../lib/delveRecord.ts';
+import { FOSSILS } from '../../lib/fossils.ts';
+import { serializeFossils, type FossilStore } from '../../lib/fossilStore.ts';
 import type { Built, Scene, Step } from '../scene.ts';
 
 function filled(steps: Step[] = [], depths = [8, 14, 27, 19, 33, 23, 41]): Built {
@@ -12,6 +14,19 @@ function filled(steps: Step[] = [], depths = [8, 14, 27, 19, 33, 23, 41]): Built
   return { state: null, hash: '#codex', met: 140, runs, steps };
 }
 
+/**
+ * The first `n` fossils found, a few days apart, the rare ones mixed in from
+ * the fourth on (so 17 holds three of them), one of them in a run together;
+ * `commons`: the 17 common ones alone, every square of the packing filled.
+ */
+function fossils(n: number, { commons = false } = {}): Record<string, string> {
+  const common = FOSSILS.filter((f) => !f.rare);
+  const rares = FOSSILS.filter((f) => f.rare);
+  const order = commons ? common : n >= FOSSILS.length ? FOSSILS : [...common.slice(0, 3), ...rares.slice(0, 3), ...common.slice(3), ...rares.slice(3)];
+  const found: FossilStore['found'] = {};
+  for (const [i, f] of order.slice(0, n).entries()) found[f.id] = { at: Date.UTC(2026, 8, 1) + i * 3 * 86_400_000, depth: f.rare ? 28 + i : 7 + i, ...(i === 1 ? { together: true } : {}) };
+  return { fossils: serializeFossils({ found }) };
+}
 /** Uniques whose tooltips have "ffi" in a line. */
 const FFI = ['Prism Guardian', 'Heart of the Well', 'The Infinite Pursuit', "Zerphi's Genesis"];
 /** The codex with only `name` met, found by its search (a tile far down is drawn in later) and its card open. */
@@ -49,6 +64,14 @@ export function codexScenes(): Scene[] {
     },
     codex('delve', 'The Delve page', () => filled([{ click: '#codex-tab-delve' }])),
     codex('delve-none', 'The Delve page, never delved', () => filled([{ click: '#codex-tab-delve' }], [])),
+    // Its fossils (components/codex/DelveFossils.svelte), beside the zones reached: the 17 common ones in
+    // Bidwell's packing, the 8 rare ones together beside it (under it on a phone upright), one not kept yet
+    // only its shape, a kept one's tooltip beside it: none is the Delve page above; one; some (a kept rare
+    // one's tooltip up); every common one (the packing full, a tilted one's tooltip up); all 25.
+    codex('fossils-1', 'The Delve page, the first fossil', () => ({ ...filled([{ click: '#codex-tab-delve' }]), stored: fossils(1) })),
+    codex('fossils-some', 'The Delve page, 17 fossils, one chosen', () => ({ ...filled([{ click: '#codex-tab-delve' }, { click: '.fossils .cell.got.rare' }]), stored: fossils(17) })),
+    codex('fossils-commons', 'The Delve page, every common fossil', () => ({ ...filled([{ click: '#codex-tab-delve' }, { click: '.fossils .grid.common li:nth-child(5) .cell' }]), stored: fossils(17, { commons: true }) })),
+    codex('fossils-all', 'The Delve page, all 25 fossils', () => ({ ...filled([{ click: '#codex-tab-delve' }]), stored: fossils(25) })),
     // More runs than its short list: all of them shown (the new rows fading in), then the short list again from the button, which stays where it was.
     codex('runs', 'The Delve page: every run shown, then the latest again', () =>
       filled(

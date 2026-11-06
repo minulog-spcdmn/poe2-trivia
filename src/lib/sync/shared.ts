@@ -4,7 +4,7 @@
 //   apart and read with their own (the codex, the Delve records, practice);
 // - the rest, which is the same wherever it was made and is taken into this
 //   device's own: the achievements, the best run of wins, the class sigils
-//   and the one worn, today's unique, whether a game has been started
+//   and the one worn, Delve's fossils, today's unique, whether a game has been started
 //   (lib/started.ts), and the name and colour the player chose last
 //   (lib/sync/chosen.ts).
 
@@ -13,6 +13,7 @@ import { ownCodexRaw, ownPracticeRaw } from '../codex.ts';
 import { absorbDaily, absorbDays, ownDaysRaw, utcDay } from '../daily.ts';
 import { clock } from '../clock.ts';
 import { ownRecordsRaw } from '../delveRecord.ts';
+import { absorbFossils, ownFossilsRaw } from '../fossilStore.ts';
 import { absorbSigils, ownSigilsRaw } from '../sigils.ts';
 import { STARTED, absorbStarted, ownStartedRaw } from '../started.ts';
 import { readStored, writeStored } from '../storage.ts';
@@ -43,6 +44,8 @@ const TAKEN: Record<string, { own: () => string | null; take: (raw: string) => b
   achievements: { own: ownAchievementsRaw, take: absorbAchievements, name: 'achievements' },
   wins: { own: ownWinsRaw, take: absorbWins, name: 'achievements.wins' },
   sigils: { own: ownSigilsRaw, take: absorbSigils, name: 'sigils' },
+  // Delve's fossils: every one either device found, at the earlier find (lib/fossilStore.ts). A build without them leaves this out.
+  fossils: { own: ownFossilsRaw, take: absorbFossils, name: 'fossils' },
   // Today's unique: the days answered, which make the run (lib/daily.ts); and an older build's record, taken in as its days, never sent.
   // (Days to come judged by the server's clock where it has said, as the daily is: farthest on by it or the device's
   // own, whose clock may have been set since the server said, so no real day is taken for one to come.)

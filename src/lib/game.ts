@@ -53,6 +53,8 @@ import {
   waitingIds,
   SECOND_FIND,
   findOn,
+  fossilOn,
+  runFossils,
   livesOf,
   standingIds,
   WAY_OUT,
@@ -67,6 +69,7 @@ import {
   type ItemKind,
 } from './delve.ts';
 import { pickLine, START_LINES } from './delveStart.ts';
+import { dealFossil, drawFossil, fossilMask, lackedBy, type CardFossil, type FossilId, type FossilTaker, type FossilTier } from './fossils.ts';
 
 export interface Item {
   id: string;
@@ -520,6 +523,17 @@ export interface Delve {
   /** Older saves only (now `finds`): the one find among the cards on offer, or null. */
   find?: { category: string; kind: FindKind } | null;
   /**
+   * The fossil on one of the cards on offer (fossils.ts dealFossil; delve.ts
+   * fossilOffer): its card and its tier only, never which fossil (that is
+   * drawn on the right answer). Never on a find's card, at most one an
+   * offer. Missing for none, and in older saves.
+   */
+  fossil?: CardFossil;
+  /** The fossils this run gave, oldest first (missing for none, and in older saves). */
+  fossils?: RunFossil[];
+  /** The fossil cards this run picked and missed (answered wrong or out of time), oldest first (missing for none). */
+  fossilsMissed?: MissedFossil[];
+  /**
    * Co-op: this depth's votes, by player: the card each voted for (public).
    * Kept through the question it chose, cleared when the next vote opens.
    */
@@ -568,6 +582,21 @@ export interface Delve {
    * the host's 'expire' takes the team back to the light. Missing otherwise.
    */
   leaving?: number;
+}
+
+/** A fossil a Delve run gave (fossils.ts): which, at which depth and when (host clock), and to whom (one player each: together, every taker draws their own). */
+export interface RunFossil {
+  id: FossilId;
+  depth: number;
+  at: number;
+  to: string[];
+}
+
+/** A fossil card a Delve run picked and missed: at which depth, its tier, and who could have taken one (alone the answerer; together everyone in it who could). */
+export interface MissedFossil {
+  depth: number;
+  tier: FossilTier;
+  to: string[];
 }
 
 /** An Azurite Vein being dug (delve.ts, the dig). */
@@ -776,6 +805,12 @@ export interface Question {
    */
   find?: FindKind;
   /**
+   * Delve: asked from a fossil's card (fossils.ts), an ordinary question of
+   * the depth, and the tier of its fossil; a right answer gives one of it.
+   * Kept through a reask; never on a question a blast asked.
+   */
+  fossil?: FossilTier;
+  /**
    * Delve, an Azurite Vein's: which strike of the dig it is (delve.ts, the
    * dig), asked from veinDeeper(strike) further down. Missing: strike 1.
    */
@@ -832,12 +867,14 @@ export interface Blast {
   side: -1 | 1;
   /**
    * The question blasted away: when it was asked, its answer and its kind,
-   * and (co-op) the wrong answers given to it first, with what each cost,
+   * its fossil's tier if it was a fossil's card's (gone with it: the new
+   * question is never one's), and (co-op) the wrong answers given to it
+   * first, with what each cost,
    * as they stand paid. Public, as it can't be answered any more: every
    * screen counts its item as seen in the codex, and a player who struck an
    * option on it as having missed it, at that cost.
    */
-  was: { at: number; itemId: string; mode: QuestionMode; struck?: Pick<Struck, 'by' | 'index' | 'lives' | 'wards'>[] };
+  was: { at: number; itemId: string; mode: QuestionMode; struck?: Pick<Struck, 'by' | 'index' | 'lives' | 'wards'>[]; fossil?: FossilTier };
 }
 
 /** A wrong answer in co-op Delve (see Question.struck). */
@@ -874,6 +911,13 @@ export interface Reveal {
   at?: number;
   /** Delve: the item this right answer to a find earned. */
   gained?: ItemKind;
+  /**
+   * Delve: the fossils this right answer to a fossil's card gave, one per
+   * taker, each drawn from those of the card's tier they lacked
+   * (Engine.giveFossil): alone the answerer's, together everyone standing
+   * who could take one. Missing when it gave none.
+   */
+  fossil?: { tier: FossilTier; given: { id: FossilId; to: string }[] };
   /**
    * Delve co-op, with `gained`: who took the item. The winner, if they had
    * room for it; otherwise the first standing teammate in seat order who had.
@@ -1405,6 +1449,8 @@ export class Engine {
   private readonly mayAsk: (id: string) => boolean;
   /** What each player's device has shown of Delve's start lines (see setStartLines). */
   private seenLines: ((ids: string[]) => number[][]) | null = null;
+  /** The fossils each player's device holds, as masks (see setFossilsHeld). */
+  private heldFossils: ((ids: string[]) => number[]) | null = null;
 
   /**
    * `fakes`: made-up names for items, by item name (src/data/fakes.json).
@@ -1457,6 +1503,71 @@ export class Engine {
    */
   setStartLines(seen: ((ids: string[]) => number[][]) | null) {
     this.seenLines = seen;
+  }
+
+  /**
+   * Hands over where to ask which fossils each player's device holds (a
+   * mask each, fossils.ts fossilMask): the
+   * host's own codex for anyone playing at it, a guest's as its hello said.
+   * Without it (tests, tools, the bot) nobody holds any. Those a run gave
+   * are counted from the run.
+   */
+  setFossilsHeld(held: ((ids: string[]) => number[]) | null) {
+    this.heldFossils = held;
+  }
+
+  /** What the fossil deal knows of each of `ids`: what they hold (the run's gifts with it), and how many the run gave them. */
+  private fossilTakers(s: GameState, ids: string[]): FossilTaker[] {
+    const held = this.heldFossils?.(ids) ?? [];
+    return ids.map((id, i) => {
+      const run = runFossils(s).filter((f) => f.to.includes(id));
+      return { held: (held[i] ?? 0) | fossilMask(run.map((f) => f.id)), run: run.length };
+    });
+  }
+
+  /**
+   * A right answer to a fossil's card (`q`): each of `takers` (alone the
+   * answerer, together everyone standing) who can take one of its tier
+   * (none given this run, one of the tier lacked) is
+   * given one, drawn from their own missing ones (fossils.ts drawFossil).
+   * Says what it gave, for the reveal.
+   */
+  private giveFossil(s: GameState, q: Question, takers: string[]): Reveal['fossil'] {
+    const tier = q.fossil;
+    if (!s.delve || !tier) return undefined;
+    const at = this.now();
+    const given: { id: FossilId; to: string }[] = [];
+    this.fossilTakers(s, takers).forEach((t, i) => {
+      const id = drawFossil(t, tier, this.rng);
+      if (id) given.push({ id, to: takers[i] });
+    });
+    if (!given.length) return undefined;
+    (s.delve.fossils ??= []).push(...given.map((g) => ({ id: g.id, depth: s.round, at, to: [g.to] })));
+    return { tier, given };
+  }
+
+  /** A fossil's card (`q`) missed: noted for the end screen, with those of `ids` who could have taken one of its tier. */
+  private missFossil(s: GameState, q: Question, ids: string[]) {
+    const tier = q.fossil;
+    if (!s.delve || !tier) return;
+    const takers = this.fossilTakers(s, ids);
+    const to = ids.filter((_, i) => lackedBy(takers[i], tier === 'rare').length > 0);
+    (s.delve.fossilsMissed ??= []).push({ depth: s.round, tier, to });
+  }
+
+  /**
+   * Which card on offer holds a fossil, if any (fossils.ts dealFossil): a
+   * card no find is on, drawn. `takers`: alone the player on turn, together
+   * everyone standing. Never in a dig or a deathmatch.
+   */
+  private rollFossil(s: GameState, takers: string[], fresh: boolean): CardFossil | undefined {
+    const dm = s.delve;
+    if (!dm || !takers.length || digOf(s)) return undefined;
+    const finds = (dm.finds ?? []).map((f) => f.category);
+    const free = s.offered.filter((c) => !finds.includes(c) && !isWayOut(c));
+    if (!free.length) return undefined;
+    const tier = dealFossil(s.round, this.fossilTakers(s, takers), { fresh, withFind: finds.length > 0 }, this.rng);
+    return tier ? { category: sample(free, 1, this.rng)[0], tier } : undefined;
   }
 
   /**
@@ -1838,6 +1949,7 @@ export class Engine {
           delete q.flaredAt;
         }
         let gained: ItemKind | undefined;
+        let fossil: Reveal['fossil'];
         let warded = false;
         let caveIn: Pick<Reveal, 'caveIn' | 'lost'> = {};
         let blown: ItemKind | null = null;
@@ -1858,7 +1970,9 @@ export class Engine {
             const reward = s.delve && q.find ? findReward(q.find, inventoryOf(s, active.id)) : null;
             if (reward) gained = this.gain(s, active.id, reward);
           }
+          fossil = this.giveFossil(s, q, [active.id]);
         } else if (s.delve) {
+          this.missFossil(s, q, [active.id]);
           const buried = this.caveInDig(s);
           if (buried) vein.buried = buried;
           // An Azurite Vein caves in for two losses, each taken by a ward if
@@ -1890,6 +2004,7 @@ export class Engine {
           timedOut,
           winnerId: correct ? active.id : null,
           ...(gained ? { gained } : {}),
+          ...(fossil ? { fossil } : {}),
           ...(warded ? { warded } : {}),
           ...caveIn,
           ...(blown ? { blown } : {}),
@@ -1947,8 +2062,9 @@ export class Engine {
         // Delve: no clock yet, or one paused by the host's reload whose art
         // won't load again (what its wrong answers cost stands).
         s.question = this.makeQuestion(s, voided.category, voided);
-        // One a blast asked stays one (never a find's, see blast).
+        // One a blast asked stays one (never a find's, see blast); a fossil's stays its fossil's.
         if (voided.blast) s.question.blast = voided.blast;
+        if (voided.fossil) s.question.fossil = voided.fossil;
         s.used.push(s.question.itemId);
         break;
       }
@@ -2253,6 +2369,7 @@ export class Engine {
    */
   private takePick(s: GameState, active: Player | null, category: string) {
     let kind: Pick<Question, 'find' | 'strike' | 'light'> = {};
+    let fossil: FossilTier | null = null;
     if (s.delve) {
       delete s.delve.banked;
       // Whatever was picked, a way out's draw (closeVote) is over: left set, it would hold every later vote.
@@ -2273,10 +2390,13 @@ export class Engine {
       }
       const find = findOn(s, category);
       if (find) kind = dig && find === 'azurite' ? { find, strike: dig.strikes + 1, light: dig.light } : { find };
+      // A fossil's card asks the depth's own question (fossils.ts); a right answer gives one of its tier.
+      fossil = fossilOn(s, category);
     } else if (active && !s.deathmatch) {
       active.recent = lastPicks([...active.recent, category], rulesFor(s.settings).lockout);
     }
     s.question = this.makeQuestion(s, category, kind);
+    if (fossil) s.question.fossil = fossil;
     s.used.push(s.question.itemId);
     s.phase = 'question';
   }
@@ -2366,7 +2486,7 @@ export class Engine {
       ...(by ? { by } : {}),
       stick,
       side,
-      was: { at: was.askedAt, itemId: was.itemId, mode: was.mode, ...(struck.length ? { struck } : {}) },
+      was: { at: was.askedAt, itemId: was.itemId, mode: was.mode, ...(struck.length ? { struck } : {}), ...(was.fossil ? { fossil: was.fossil } : {}) },
     };
     s.used.push(s.question.itemId);
   }
@@ -2584,6 +2704,7 @@ export class Engine {
     s.offered = [next, WAY_OUT];
     dm.finds = [{ category: next, kind: 'azurite' }];
     delete dm.find;
+    delete dm.fossil;
     delete dm.asked;
     delete dm.missedHere;
     delete dm.dealAt;
@@ -2795,6 +2916,7 @@ export class Engine {
     const struck = q.struck ?? [];
     let gained: ItemKind | undefined;
     let gainedBy: string | undefined;
+    let fossil: Reveal['fossil'];
     let banked = 0;
     if (winner) {
       const p = s.players.find((p) => p.id === winner.id);
@@ -2813,6 +2935,8 @@ export class Engine {
       // first standing teammate in seat order who has: it was offered as
       // anyone standing had room, so it never pays nothing. A vein's goes
       // into the dig's haul, in hand, the same way.
+      // A fossil's card gives everyone standing who can take one their own.
+      fossil = this.giveFossil(s, q, standingIds(s));
       if (q.find === 'azurite') {
         const by = this.strikeRight(s, q, [winner.id, ...standingIds(s).filter((id) => id !== winner.id)]);
         if (by) {
@@ -2837,7 +2961,8 @@ export class Engine {
       ...struck.map((x) => ({ playerId: x.by, lives: x.lives, wards: x.wards, timedOut: false, ...(x.blown ? { blown: x.blown } : {}) })),
       ...hits,
     ];
-    // Nobody got it: the vein caves in on the whole haul.
+    // Nobody got it: the vein caves in on the whole haul, and a fossil's card is missed by all who could have taken one.
+    if (!winner) this.missFossil(s, q, [...new Set([...standingIds(s), ...all.map((h) => h.playerId)])]);
     const buried = winner ? 0 : this.caveInDig(s);
     const vein: Pick<Reveal, 'strike' | 'dug' | 'buried' | 'banked'> =
       q.find === 'azurite' ? { strike: q.strike ?? 1, ...(gained ? { dug: true as const } : {}), ...(buried ? { buried } : {}), ...(banked ? { banked } : {}) } : {};
@@ -2850,6 +2975,7 @@ export class Engine {
       timedOut,
       winnerId: winner?.id ?? null,
       ...(gained ? { gained, gainedBy } : {}),
+      ...(fossil ? { fossil } : {}),
       ...(q.find && cavesIn(q.find) && all.length ? { caveIn: true } : {}),
       ...vein,
       hits: all,
@@ -2893,7 +3019,11 @@ export class Engine {
     s.offered = s.deathmatch ? [this.randomCategory(s)] : this.offerCategories(s, s.players[s.turn]);
     if (s.delve) {
       // The depth's first offer (a new depth's, or the run's), not one after a miss at it.
-      s.delve.finds = this.rollFinds(s, coop ? standingIds(s) : s.players[s.turn] ? [s.players[s.turn].id] : [], first || deeper);
+      const takers = coop ? standingIds(s) : s.players[s.turn] ? [s.players[s.turn].id] : [];
+      s.delve.finds = this.rollFinds(s, takers, first || deeper);
+      const fossil = this.rollFossil(s, takers, first || deeper);
+      if (fossil) s.delve.fossil = fossil;
+      else delete s.delve.fossil;
       delete s.delve.find;
       delete s.delve.asked;
       delete s.delve.missedHere;
@@ -2908,6 +3038,7 @@ export class Engine {
       delete s.delve.leaving;
       s.delve.finds = [];
       delete s.delve.find;
+      delete s.delve.fossil;
       if (s.delve.voteFrom !== undefined) s.delve.voteFrom = null;
       delete s.delve.asked;
       delete s.delve.dealAt;

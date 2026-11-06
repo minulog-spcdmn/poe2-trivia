@@ -146,6 +146,11 @@ export const PAINTED: Painted[] = [
     animate: { in: ['play'], props: ['?'] },
     why: 'A Svelte transition played on a dialog Svelte doesn’t make (the privacy sheet, LegalSheet.svelte): its keyframes sampled from the transition’s css, which the test can’t read; dialogIn’s and dialogOut’s are opacity and transform alone.',
   },
+  {
+    file: 'src/lib/fossilFlight.ts',
+    animate: { in: ['revealFossil'], props: ['filter', '-webkit-mask-position', 'mask-position', 'color'] },
+    why: 'Once a question at most, about 1 s, as a fossil kept is shown: its picture (120 px at most) comes out of the name plate’s seal overbright and cools to its own light as it lands, a band of light slides across a copy of it once (twice for a rare), and its name’s letters, written in one by one, cool from a pale light to their colour.',
+  },
   { file: 'src/spatialPage/Menu.svelte', animate: { in: ['flash'], props: ['box-shadow'] }, why: 'A dev page’s (spatial.html), never the game’s: 0.7 s, the shadow round an option or a score row as a sound plays from it.' },
   { file: 'src/components/zonecard/family.ts', animate: { in: ['enterDefault', 'exitDefault'], props: ['filter'] }, why: LETTERS },
   { file: 'src/components/zonecard/ember.ts', animate: { in: ['enter', 'exit'], props: ['filter'] }, why: LETTERS },

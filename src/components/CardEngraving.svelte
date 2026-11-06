@@ -92,15 +92,17 @@
   // quicker than the circle's, and now and then light runs over its motif
   // or flares up in it: transform and opacity only. A gilded motif (the way
   // out's lantern, Plate.gilt) is filled as an item's emblem is instead, and
-  // its light breathes round it in place of the glint.
+  // its light breathes round it in place of the glint. A fossil's (`lit`)
+  // is engraved as a fossil's, its lines laid again dark where its amber's
+  // lamp shines through (FossilAmber, under the engraving).
   //
   // Printed (`print`, lib/platePrint): its glow and its lines are shown as
   // images of themselves, pulled from their svgs once for each size, which
   // Chrome draws for a fraction of what their strokes cost it.
   import { engrave } from '../lib/cardEngraving';
   import { knockoutShapes } from '../lib/knockout';
-  import { findVariant } from '../lib/findEngraving';
-  import { leftKey, printing, pull, pulled, type At, type Layer } from '../lib/platePrint.svelte';
+  import { findVariant, fossilSlab, fossilVariant } from '../lib/findEngraving';
+  import { leftKey, printing, pull, pulled, type At, type Layer, type Shown } from '../lib/platePrint.svelte';
   import { layoutZoomOf } from '../lib/stage';
   import type { FindKind } from '../lib/delve';
   import type { Variant } from '../lib/cardEngraving';
@@ -108,7 +110,17 @@
   // `front`: only what stands in front of the emblem (Plate.front), solid, laid over the category's item.
   // `print`: its still layers shown as prints of themselves (lib/platePrint), where Chrome rasters it at its laid-out size.
   // `hold`: how long it lies unseen once it's mounted (ms; a dealt card fades in late): a printed layer's svg isn't drawn so long while its print is pulled.
-  let { side, find = null, custom, front = false, print = false, hold = 0 }: { side: 'face' | 'back'; find?: FindKind | null; custom?: Variant; front?: boolean; print?: boolean; hold?: number } = $props();
+  // `lit`: a fossil's card (ChooseCategory), a common's or a rare's: its plate engraved as a fossil's (lib/findEngraving,
+  // fossilVariant), its lines seen dark against its amber's lamp (FossilAmber lays the amber under them).
+  let {
+    side,
+    find = null,
+    custom,
+    front = false,
+    print = false,
+    hold = 0,
+    lit = null,
+  }: { side: 'face' | 'back'; find?: FindKind | null; custom?: Variant; front?: boolean; print?: boolean; hold?: number; lit?: 'common' | 'rare' | null } = $props();
   let w = $state(0);
   let h = $state(0);
   /** Its exact size: the glint's copy of the motif is drawn at it, as the lines stretch to it (w and h are whole pixels). */
@@ -157,7 +169,7 @@
     };
   }
   // (custom: a card of its own, the way out of a vein: lib/wayOut.)
-  const variant = $derived(custom ?? (find ? findVariant(find) : undefined));
+  const variant = $derived(custom ?? (find ? findVariant(find) : lit ? fossilVariant(lit) : undefined));
   const plate = $derived(w && h ? engrave(side, w, h, variant) : null);
   /** The shapes the plate's lines stop short of, one path each (overlapping shapes of one path would cancel out). */
   const knockout = $derived(plate?.knockout ? knockoutShapes(plate.knockout) : []);
@@ -167,8 +179,11 @@
   /** Whether the glint's light travels across the card (the flare's and the dynamite's flare up in place). */
   const travels = $derived(find !== 'flare' && find !== 'dynamite');
   const uid = $props.id();
+  /** A fossil's slab (lib/amber.ts): where its lamp's light is, which its lines are seen dark against. */
+  const slab = $derived(lit && w && h ? fossilSlab(side, w, h, lit) : null);
 
-  const LAYERS: Layer[] = ['glow', 'lines'];
+  /** Its still layers, printed: a fossil's resin under the rest. */
+  const LAYERS = $derived<Layer[]>(slab ? ['resin', 'glow', 'lines'] : ['glow', 'lines']);
   /** The still layers' svgs, which their prints are pulled from. */
   const svgs: Partial<Record<Layer, SVGSVGElement>> = $state({});
   /** How it's drawn, if it's printed. */
@@ -179,7 +194,7 @@
   const prints = $derived.by(() => {
     void pulls;
     const p = plate;
-    return at && p ? { glow: pulled(p, 'glow', at, ink), lines: pulled(p, 'lines', at, ink) } : null;
+    return at && p ? (Object.fromEntries(LAYERS.map((layer) => [layer, pulled(p, layer, at, ink)])) as Partial<Record<Layer, Shown | null>>) : null;
   });
   /** Whether its hold is over (or a print couldn't be pulled): its svgs are drawn from then on while their prints are pulled. */
   let waited = $state(false);
@@ -220,14 +235,15 @@
 <!-- A glint: the motif again in pale light, seen through a band that runs
      across the card while the drawing inside it runs back, so the light
      moves and the lines stay put (the flare's and the dynamite's flare up
-     in place instead). A travelling one is built anew when the card's width
-     changes (a phone turned): Safari keeps a running animation's distances
-     from when it started, and the band's and the drawing's fell out of
-     step, the light's copy of the lines off the lines. -->
+     in place instead; a fossil's runs down it). A travelling one is built
+     anew when the card's size changes (a phone turned): Safari keeps a
+     running animation's distances from when it started, and the band's and
+     the drawing's fell out of step, the light's copy of the lines off the
+     lines. -->
 {#snippet glint()}
-  {#key travels ? Math.round(box?.width ?? w) : 0}
-    <span class="glint" class:flicker={find === 'flare'} class:flash={find === 'dynamite'}>
-      <span class="through" style:--w="{box?.width ?? w}px">
+  {#key travels ? `${Math.round(box?.width ?? w)} ${Math.round(box?.height ?? h)}` : 0}
+    <span class="glint" class:flicker={find === 'flare'} class:flash={find === 'dynamite'} class:runs={!!lit}>
+      <span class="through" style:--w="{box?.width ?? w}px" style:--h="{box?.height ?? h}px">
         <span class="drawing" style:width="{box?.width ?? w}px" style:height="{box?.height ?? h}px">
           <svg viewBox="0 0 {w} {h}">
             {#each motif as { cls, d } (cls)}<path {d} class={cls} />{/each}
@@ -238,7 +254,18 @@
   {/key}
 {/snippet}
 
-<span class="engraving" class:front data-find={find ?? undefined} use:sized aria-hidden="true">
+<span
+  class="engraving"
+  class:front
+  data-find={find ?? undefined}
+  data-fossil={lit ?? undefined}
+  style:--cx={slab ? `${slab.lamp[0]}px` : undefined}
+  style:--cy={slab ? `${slab.lamp[1]}px` : undefined}
+  style:--rx={slab ? `${slab.rx}px` : undefined}
+  style:--ry={slab ? `${slab.ry}px` : undefined}
+  use:sized
+  aria-hidden="true"
+>
   {#if plate && front}
     {#if plate.solid}
       <!-- Solid: whatever lies behind (the item, the plate) is hidden, the crystal's body faintly its colour. -->
@@ -256,8 +283,8 @@
       {@render glint()}
     {/if}
   {:else if plate}
-    {#if plate.window && plate.fade}
-      <!-- The card's warm glow, behind the emblem and only inside the window. -->
+    {#if plate.window && plate.fade && !lit}
+      <!-- The card's warm glow, behind the emblem and only inside the window (a fossil's is its amber's light). -->
       <svg class="window" viewBox="0 0 {w} {h}">
         <defs>
           <radialGradient id="{uid}-warm" cx={plate.fade.c[0]} cy={plate.fade.c[1]} r="96" gradientUnits="userSpaceOnUse" gradientTransform="translate({plate.fade.c[0]} {plate.fade.c[1]}) scale(1 1.15) translate({-plate.fade.c[0]} {-plate.fade.c[1]})">
@@ -269,6 +296,8 @@
         <path d={plate.window} style:fill="url(#{uid}-warm)" />
       </svg>
     {/if}
+    <!-- (A fossil's card, first: its resin, under its gilt lines where its lamp shines through, a hair of shadow
+         along each on the side away from the light, so they read over the lit amber as over the dark resin.) -->
     {#each LAYERS as layer (layer)}
       {@const shown = prints?.[layer]}
       <!-- The layer, one element from the first: what moves on it (a find's breath, the way out's swell) and its
@@ -300,12 +329,13 @@
                 </mask>
               </defs>
             {/if}
-            <g mask={knockout.length ? `url(#${uid}-${layer}-ko)` : undefined}>
-              {#each strokes.filter((s) => !s.motif && (!shown || shown.left.has(leftKey(s.cls, false)))) as { cls, d } (cls)}
+            <!-- (The resin's, every line, the motif's too, a hair off them toward the foot and the right.) -->
+            <g transform={layer === 'resin' ? 'translate(0.5 0.5)' : undefined} mask={knockout.length ? `url(#${uid}-${layer}-ko)` : undefined}>
+              {#each strokes.filter((s) => (layer === 'resin' || !s.motif) && (!shown || shown.left.has(leftKey(s.cls, false)))) as { cls, d, motif } (leftKey(cls, !!motif))}
                 <path {d} class={cls} mask={cls === 'ray' && plate.fade ? `url(#${uid}-${layer}-fade)` : undefined} />
               {/each}
             </g>
-            {#if !(plate.gilt && layer === 'lines')}
+            {#if !(plate.gilt && layer === 'lines') && layer !== 'resin'}
               {#each motif.filter((s) => !shown || shown.left.has(leftKey(s.cls, true))) as { cls, d } (cls)}
                 <path {d} class={cls} />
               {/each}
@@ -658,6 +688,74 @@
     78% {
       opacity: 0.6;
     }
+  }
+  /* A fossil's lines where its lamp shines through (see `slab`): each
+     line's shadow, a hair of the resin's dark beside it on the side away
+     from the light, under the gilt line itself, as a line cut in amber held
+     to a lamp is shadowed in its groove; fading out as the light does (on
+     the light's own reach), where the dark resin needs none. Still, and
+     printed as the glow and the lines are (its svg was 44 paths with their
+     masks, which Chrome drew again on the CPU every time the face was:
+     the first hover's frame 29 to 38 ms against 17 for a find's). */
+  .resin {
+    color: var(--resin, #3a1103);
+    opacity: 0.75;
+    -webkit-mask-image: radial-gradient(var(--rx) var(--ry) at var(--cx) var(--cy), #000 55%, rgba(0, 0, 0, 0.6) 78%, transparent 100%);
+    mask-image: radial-gradient(var(--rx) var(--ry) at var(--cx) var(--cy), #000 55%, rgba(0, 0, 0, 0.6) 78%, transparent 100%);
+  }
+  .resin path {
+    stroke-width: 0.7px;
+  }
+  .resin :is(.main, .sign) {
+    stroke-width: 0.9px;
+  }
+  .resin :is(.hair, .hatch, .shade) {
+    stroke-width: 0.45px;
+  }
+  .resin .ray {
+    stroke-width: 0.5px;
+    opacity: 0.85;
+  }
+  /* A fossil's glint is the lamp's warm light, not a crystal's cold one,
+     and it runs down its lines as sap runs, not across them: a band a
+     quarter of the card high, gathering a while at the top (over the arch,
+     its sap), then falling faster and faster to the foot, every 8.4 s. */
+  [data-fossil] .glint {
+    color: #fff1d0;
+  }
+  .glint.runs .through {
+    right: 0;
+    bottom: auto;
+    width: auto;
+    height: calc(var(--h) / 4);
+    -webkit-mask-image: linear-gradient(180deg, transparent, #000 40%, #000 60%, transparent);
+    mask-image: linear-gradient(180deg, transparent, #000 40%, #000 60%, transparent);
+    animation: run-down 8.4s cubic-bezier(0.7, 0, 0.9, 0.55) infinite;
+  }
+  .glint.runs .drawing {
+    animation: run-up 8.4s cubic-bezier(0.7, 0, 0.9, 0.55) infinite;
+  }
+  /* The band from its own height over the card to past its foot; the drawing the same distance back. */
+  @keyframes run-down {
+    0% {
+      transform: translateY(-100%);
+    }
+    40%,
+    100% {
+      transform: translateY(500%);
+    }
+  }
+  @keyframes run-up {
+    0% {
+      transform: translateY(calc(var(--h) / 4));
+    }
+    40%,
+    100% {
+      transform: translateY(calc(var(--h) / -0.8));
+    }
+  }
+  [data-fossil] .glow {
+    animation: breathe 5.6s ease-in-out infinite;
   }
   :global(html[data-saver]) .engraving .glint {
     display: none;

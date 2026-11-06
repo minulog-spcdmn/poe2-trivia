@@ -2,7 +2,8 @@
   // The name plate bench's view (./plate.ts): the plate at the size the
   // controls pick, its ends fit to its height as a question's are, a
   // unique's name over it. Right and Wrong darken it, then light it, as a
-  // question's reveal does: with the glint, or quietly.
+  // question's reveal does: with the glint, or quietly; a fossil's seals
+  // go low again first, then are taken, or go out.
   import { onDestroy } from 'svelte';
   import NamePlate from '../../components/NamePlate.svelte';
   import type { PieceProps } from '../bench.ts';
@@ -15,15 +16,24 @@
   onDestroy(() => clearTimeout(lighting));
   const reveal = (glint: boolean) => {
     clearTimeout(lighting);
-    set({ lit: false, glint: false });
-    lighting = setTimeout(() => set({ lit: true, glint }), 600);
+    set({ lit: false, glint: false, light: 'low' });
+    lighting = setTimeout(() => set({ lit: true, glint, light: glint ? 'taken' : 'out' }), 600);
   };
   onAction('right', () => reveal(true));
   onAction('wrong', () => reveal(false));
 </script>
 
 <div class="head" class:small style:width={small ? '100%' : `${v.width}px`} style:height="{v.height}px" style:--plate-scale={scale}>
-  <NamePlate fit bind:scale lit={!!v.lit} glint={!!v.glint} start={v.seals === 'none' ? 'empty' : 'sol'} end={v.seals === 'both' ? 'luna' : 'empty'} />
+  <NamePlate
+    fit
+    bind:scale
+    lit={!!v.lit}
+    glint={!!v.glint}
+    start={v.seals === 'none' ? 'empty' : 'sol'}
+    end={v.seals === 'both' ? 'luna' : 'empty'}
+    fossil={v.fossil === 'common' || v.fossil === 'rare' ? v.fossil : null}
+    fossilLight={v.light === 'up' || v.light === 'taken' || v.light === 'out' ? v.light : 'low'}
+  />
   <span class="iname" class:unknown={!v.lit}>{v.lit ? 'Headhunter' : 'Unidentified'}</span>
 </div>
 
