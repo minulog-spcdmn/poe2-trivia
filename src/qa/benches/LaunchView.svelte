@@ -19,7 +19,8 @@
   };
 </script>
 
-<div class="corner">
+<!-- (As on a phone: the start page's smaller drawing, Home.svelte's .beside.) -->
+<div class="corner" style:--launch-h={v.phone && !v.header ? '100px' : null}>
   {#key `${before} ${at}`}
     <LaunchCountdown quiet={!!v.header} {at} time={runFrom(NOON - before)} />
   {/key}
