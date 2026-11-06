@@ -139,6 +139,17 @@ test('a 5xx is asked again, later each time', async () => {
   assert.deepEqual(r.asked.map((a) => a.path).slice(0, 3), ['/api/v0/me', '/api/v0/me', '/api/v0/me']);
 });
 
+test("a 404 is asked again too (GoatCounter answers some of its own failures so, gone a moment later), and one that stays is a day it couldn't read", async () => {
+  const once = await run([], { status: [404] });
+  assert.equal(once.code, 0);
+  assert.match(once.lines[0], /^Daily health check: .* as usual/);
+  assert.deepEqual(once.asked.map((a) => a.path).slice(0, 2), ['/api/v0/me', '/api/v0/me']);
+  const stays = await run([], { status: [404, 404, 404, 404] });
+  assert.equal(stays.code, 0);
+  assert.equal(stays.asked.length, 4);
+  assert.match(stays.lines[0], /^::warning::Daily health check couldn't run today: GoatCounter answered 404/);
+});
+
 const unsaid = (lines: string[]) => !lines.join('\n').includes(KEY) && !lines.join('\n').includes('goatcounter.com');
 
 test('only a key turned down fails the run, as an error that says so, the key unsaid', async () => {
