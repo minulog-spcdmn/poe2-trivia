@@ -98,6 +98,8 @@ function betaPages(env: Record<string, string>): Plugin {
           .replace(/\n\s*<link rel="canonical"[^>]*>/, '')
           .replace(/(property="og:url" content=")https:\/\/poe2\.quest\//, '$1https://poe2.quest/beta/')
           .replace(/((?:property="og:title"|name="twitter:title") content=")/g, '$1Beta • ')
+          // The home screen's name on iOS, as the manifest's short_name is Android's.
+          .replace(/(name="apple-mobile-web-app-title" content=")[^"]*/, '$1PoE2 Beta')
       );
     },
   };
