@@ -3,13 +3,32 @@
 // without) and Achievements pages.
 // And the codex that never came (the Wi-Fi gone as it was fetched).
 
+import type { Answer } from '../../lib/codex.ts';
 import { DELVE_RULESET } from '../../lib/delve.ts';
 import type { DelveRun } from '../../lib/delveRecord.ts';
+import { id } from '../build/people.ts';
 import type { Built, Scene, Step } from '../scene.ts';
 
 function filled(steps: Step[] = [], depths = [8, 14, 27, 19, 33, 23, 41]): Built {
   const runs: DelveRun[] = depths.map((depth, i) => ({ id: 2000 + i, at: 2000 + i, depth, players: i % 3 ? 1 : 3, ruleset: DELVE_RULESET, mixed: false, ...(i % 3 ? {} : { perished: [depth] }) }));
   return { state: null, hash: '#codex', met: 140, runs, steps };
+}
+
+/**
+ * Finds taken alone, in one of filled's runs: a vein dug out, one caved in on
+ * strike 1 and one on strike 2 (both counted caved in), a Flare Cache won and one missed.
+ */
+function findsLog(): Answer[] {
+  const at = (t: number, name: string, ok: boolean, more: Partial<Answer>): Answer => ({ t, id: id(name), mode: 'name', ok, difficulty: 'cruel', race: false, depth: 20, run: 2001, ...more });
+  return [
+    at(1, 'Headhunter', true, { find: 'azurite', gained: 'wards' }),
+    at(2, 'Mageblood', true, { find: 'azurite', gained: 'wards', strike: 2 }),
+    at(3, "Kaom's Heart", false, { find: 'azurite', lives: 2, wards: 0 }),
+    at(4, 'Death Rush', true, { find: 'azurite', gained: 'wards' }),
+    at(5, 'Briarpatch', false, { find: 'azurite', strike: 2, buried: 1, lives: 2, wards: 0 }),
+    at(6, 'Prism Guardian', true, { find: 'flare', gained: 'flares' }),
+    at(7, 'Heart of the Well', false, { find: 'flare', lives: 1, wards: 0 }),
+  ];
 }
 
 /** Uniques whose tooltips have "ffi" in a line. */
@@ -49,6 +68,10 @@ export function codexScenes(): Scene[] {
     },
     codex('delve', 'The Delve page', () => filled([{ click: '#codex-tab-delve' }])),
     codex('delve-none', 'The Delve page, never delved', () => filled([{ click: '#codex-tab-delve' }], [])),
+    codex('delve-finds', 'The Delve page: finds taken, a vein caved in on strike 1 and one on strike 2', () => ({
+      ...filled([{ click: '#codex-tab-delve' }, { wait: 1200 }, { scroll: '[aria-labelledby="find-h-Alone"]' }]),
+      log: findsLog(),
+    })),
     // More runs than its short list: all of them shown (the new rows fading in), then the short list again from the button, which stays where it was.
     codex('runs', 'The Delve page: every run shown, then the latest again', () =>
       filled(

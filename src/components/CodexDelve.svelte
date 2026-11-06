@@ -133,7 +133,7 @@
   function findRowsOf(f: FindStats, blasts: number): Row[] {
     const out: Row[] = [];
     const { azurite: vein, flare: cache, dynamite } = f.finds;
-    const missed = (t: typeof vein, how: string): [number, string][] => (t.taken - t.ok ? [[t.taken - t.ok, how]] : []);
+    const missed = (t: typeof vein, how: string): [number, string][] => (t.missed ? [[t.missed, how]] : []);
     const got = (n: number | undefined, one: string): [number, string][] => (n ? [[n, word(n, one)]] : []);
     if (dynamite.taken) out.push({ name: 'Dynamite Caches', value: fmt(dynamite.taken), note: [...got(dynamite.gained.dynamite, 'stick'), ...missed(dynamite, 'missed')] });
     if (cache.taken) out.push({ name: 'Flare Caches', value: fmt(cache.taken), note: [...got(cache.gained.flares, 'flare'), ...missed(cache, 'missed')] });

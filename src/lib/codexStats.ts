@@ -470,6 +470,8 @@ export interface FindTally {
   taken: number;
   /** Answered right. */
   ok: number;
+  /** Missed: a vein caved in on whichever strike, a cache missed. */
+  missed: number;
   /** What the right answers earned. */
   gained: Partial<Record<ItemKind, number>>;
   /** Lives and wards the wrong answers took. */
@@ -486,7 +488,7 @@ export interface FindStats {
   blasted: number;
 }
 
-const noFind = (): FindTally => ({ taken: 0, ok: 0, gained: {}, lives: 0, wards: 0 });
+const noFind = (): FindTally => ({ taken: 0, ok: 0, missed: 0, gained: {}, lives: 0, wards: 0 });
 
 /** Finds taken and how they ended, wards that saved a life and flares burnt, over these answers. */
 export function findStats(answers: Iterable<Answer>): FindStats {
@@ -498,6 +500,8 @@ export function findStats(answers: Iterable<Answer>): FindStats {
    * counted, and other veins' aren't taken in their place.)
    */
   const digging = new Map<number | undefined, number>();
+  /** By run, whether the vein being dug was logged from its strike 1, where it was counted taken. */
+  const opened = new Set<number | undefined>();
   for (const a of answers) {
     if (a.depth === undefined) continue;
     out.wardsBroke += answerWards(a);
@@ -508,12 +512,19 @@ export function findStats(answers: Iterable<Answer>): FindStats {
     // A vein's later strikes are the same vein, dug deeper: taken (and cleared) once, at strike 1.
     const later = (a.strike ?? 1) > 1;
     if (!later) f.taken++;
-    if (a.find === 'azurite' && !later) digging.set(a.run, 0);
+    if (a.find === 'azurite' && !later) {
+      digging.set(a.run, 0);
+      opened.add(a.run);
+    }
     if (a.ok) {
       if (!later) f.ok++;
       if (a.gained) f.gained[a.gained] = (f.gained[a.gained] ?? 0) + 1;
       if (a.find === 'azurite' && a.gained === 'wards') digging.set(a.run, (digging.get(a.run) ?? 0) + 1);
     } else {
+      // A vein that caved in on a later strike was missed all the same, if
+      // its strike 1 was logged: never a miss for a vein not counted taken.
+      if (!later || opened.has(a.run)) f.missed++;
+      if (a.find === 'azurite') opened.delete(a.run);
       f.lives += answerLives(a);
       f.wards += answerWards(a);
       // What a cave-in buried was never carried out. (Alone only: together

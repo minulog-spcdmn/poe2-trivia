@@ -222,6 +222,14 @@ export function settingsScenes(): Scene[] {
       build: (): Built => ({ state: null, hash: '#settings', steps: [{ click: '.seal', ifThere: true }] }),
     },
     {
+      key: 'settings/key-moved',
+      screen: 'settings',
+      group: 'Settings',
+      label: "The keypad's Enter set for the first option: Next question loses Enter, and says so",
+      seats: [{ mode: 'none', me: null }],
+      build: (): Built => ({ state: null, hash: '#settings', steps: [{ click: '.seal', ifThere: true }, { press: 'NumpadEnter' }] }),
+    },
+    {
       key: 'settings/over',
       screen: 'settings',
       group: 'Settings',
