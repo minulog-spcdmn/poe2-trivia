@@ -17,10 +17,12 @@
 //
 // Writes the shots and a manifest.json into screens/qa-<timestamp>/.
 //
-// --map instead runs every scene once on a dev server of its own with the
-// browser's coverage on, and writes src/data/sceneFiles.json: which of the
-// game's files each scene runs, for the desk's "This change"
-// (src/qa/change.ts). Run it when scenes or screens have changed much.
+// --map instead runs every place (a scene's first state, a state with a key
+// of its own) and every piece once on a dev server of its own with the
+// browser's coverage on, and writes src/data/sceneFiles.json: which lines
+// of the game's files each runs, and the class names its page has, for the
+// desk's "This change" (src/qa/change.ts). Run it when scenes or screens
+// have changed much.
 //
 // --redraws instead checks what Chrome draws again (src/qa/redraws.ts,
 // docs/qa.md, "Redraws"), on fixed frames at full motion: each scene's first
@@ -35,7 +37,7 @@
 //
 //   npm run sweep -- [--sizes walk|full|phone,uhd,...] [--only <regex>] [--change] [--webgl] [--banding] [--faint]
 //                 [--url URL] [--no-build] [--concurrency N]
-//   npm run sweep -- --map
+//   npm run sweep -- --map [--only <regex>]
 //   npm run sweep -- --redraws --only <regex> [--webgl] [--shard i/n] [--canary]
 //   npm run sweep -- --redraws --moments [--only <moment>] [--baseline]
 //   (from PowerShell, where npm eats the flags: npm run sweep full webgl only=lobby)
@@ -48,11 +50,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
+import { TraceMap, decodedMappings } from '@jridgewell/trace-mapping';
 import { buildBeta as viteBeta } from './beta-build.mjs';
 import { SIZES } from '../src/qa/sizes.ts';
-import { touched } from '../src/qa/change.ts';
+import { carry, decodeMap, encodeMap } from '../src/qa/change.ts';
 import { FLOOR, MARK, MOMENTS, PAGE_FLOOR, WEBGL_SCENES, atRest, kpx, overBaseline, pageAtRest, readTrace, redraws, unread, withoutMark } from '../src/qa/redraws.ts';
-import { changedFiles } from '../qaServer.ts';
+import { changeHere, linesSinceMap } from '../qaServer.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCREENS = path.join(ROOT, 'screens');
@@ -98,11 +101,11 @@ if (values.help) {
   --banding              run scripts/find-banding.py on each shot (implies --webgl; needs numpy and Pillow)
   --faint                measure each run of text against what's behind it in the shot (src/qa/legible.ts),
                          not only the page's own dark; the faint ones' numbers go in the manifest
-  --change               only the scenes this branch's changes touch (as the desk's This change)
+  --change               only the places this branch's changes touch (as the desk's This change)
   --url URL              shoot a running server (the dev server, the beta) instead of building one
   --no-build             serve screens/qa-build/ as the last sweep built it
   --concurrency N        pages at once (default: all threads but two, ${OPTIONS.concurrency.default})
-  --map                  write src/data/sceneFiles.json instead: the game's files each scene runs
+  --map                  write src/data/sceneFiles.json instead: the lines and classes each place runs
   --redraws              check what Chrome draws again instead (docs/qa.md, Redraws): every scene's first
                          state at rest, WebGL refused; here only with --only (CI runs them all)
   --webgl                with --redraws: the scenes whose effects change the page (WEBGL_SCENES), with WebGL
@@ -217,32 +220,110 @@ async function listScenes(base, browser = browsers[0]) {
 
 const fileOf = (j) => `${j.scene.replace(/\//g, '--')}${j.n ? `-${j.n}` : ''}__${j.seat}__${j.size}.png`;
 
+/** Each module's code points (where its sourcemap maps code to its file), by its address: read once, the dev server's never change. */
+const modules = new Map();
 /**
- * The game's files of `entries` (the dev server's, one module a file) that
- * ran some function beyond their module's top level (whose range is the
- * whole file): a component that mounted, a function called.
+ * A module of `entry` (the dev server's coverage of a page, one module a
+ * file, each with its sourcemap inline): its file, and each point of its
+ * code that its sourcemap maps to a line of that file (offsets and lines).
  */
-function ranFiles(entries) {
-  const files = new Set();
-  for (const e of entries) {
-    const at = e.url.indexOf('/src/');
-    if (at < 0) continue;
-    const file = decodeURIComponent(e.url.slice(at + 1).split('?')[0]);
-    if (file.startsWith('src/qa/')) continue;
-    const top = (f) => f.ranges[0].startOffset === 0 && f.ranges[0].endOffset >= e.source.length - 1;
-    if (e.functions.some((f) => !top(f) && f.ranges[0].count > 0)) files.add(file);
+function moduleOf(entry) {
+  if (modules.has(entry.url)) return modules.get(entry.url);
+  let found = null;
+  const url = new URL(entry.url);
+  const at = url.pathname.indexOf('/src/');
+  const inline = /\/\/# sourceMappingURL=data:application\/json;(?:charset=utf-8;)?base64,([A-Za-z0-9+/=]+)\s*$/.exec(entry.source);
+  if (at >= 0 && /\.(svelte|ts|js|mjs)$/.test(url.pathname) && !url.search.includes('type=style') && inline) {
+    const file = decodeURIComponent(url.pathname.slice(at + 1));
+    const map = new TraceMap(JSON.parse(Buffer.from(inline[1], 'base64').toString('utf8')));
+    const name = file.slice(file.lastIndexOf('/') + 1);
+    const own = map.sources.map((s) => map.sources.length === 1 || (!!s && s.split(/[\/]/).pop().split('?')[0] === name));
+    const starts = [0];
+    for (let i = 0; i < entry.source.length; i++) if (entry.source.charCodeAt(i) === 10) starts.push(i + 1);
+    const offsets = [];
+    const lines = [];
+    decodedMappings(map).forEach((segments, line) => {
+      for (const s of segments) if (s.length >= 4 && own[s[1]]) offsets.push(starts[line] + s[0]), lines.push(s[2] + 1);
+    });
+    found = { file, offsets, lines };
   }
-  return files;
+  modules.set(entry.url, found);
+  return found;
+}
+
+/**
+ * The lines of the game's files (src/, src/qa/'s scenes and benches too)
+ * `entries` ran, from V8's block coverage: by file, the lines that ran in
+ * a function (`ran`), the lines in a function at all (`fn`), and those of
+ * code that runs as its module loads (`top`), which being imported runs,
+ * so they say nothing of what a page showed.
+ */
+function ranLines(entries) {
+  const out = new Map();
+  for (const e of entries) {
+    const m = moduleOf(e);
+    if (!m) continue;
+    // Each offset painted with what ran there, the innermost range last: 1 ran, 2 in a function that didn't, 0 the module's top level.
+    const paint = new Uint8Array(e.source.length + 1);
+    const ranges = [];
+    for (const f of e.functions) {
+      const r0 = f.ranges[0];
+      if (r0.startOffset === 0 && r0.endOffset >= e.source.length - 1) continue;
+      for (const r of f.ranges) ranges.push(r);
+    }
+    ranges.sort((a, b) => a.startOffset - b.startOffset || b.endOffset - a.endOffset);
+    for (const r of ranges) paint.fill(r.count > 0 ? 1 : 2, r.startOffset, r.endOffset);
+    const got = out.get(m.file) ?? { ran: new Set(), fn: new Set(), top: new Set() };
+    out.set(m.file, got);
+    for (let i = 0; i < m.offsets.length; i++) {
+      const v = paint[m.offsets[i]];
+      const line = m.lines[i];
+      if (v === 1) got.ran.add(line);
+      if (v) got.fn.add(line);
+      else got.top.add(line);
+    }
+  }
+  return out;
+}
+
+/**
+ * Records every class name the page's elements ever have, from before
+ * anything of it runs (window.__qaClasses): what a changed CSS rule's
+ * places are found by.
+ */
+function noteClasses() {
+  const seen = new Set();
+  const note = (el) => {
+    const c = el.getAttribute?.('class');
+    if (c) for (const x of c.split(/\s+/)) if (x && !x.startsWith('svelte-')) seen.add(x);
+  };
+  const deep = (node) => {
+    if (node.nodeType !== 1) return;
+    note(node);
+    for (const el of node.querySelectorAll('[class]')) note(el);
+  };
+  new MutationObserver((records) => {
+    for (const r of records) {
+      if (r.type === 'attributes') {
+        note(r.target);
+        if (r.oldValue) for (const x of r.oldValue.split(/\s+/)) if (x && !x.startsWith('svelte-')) seen.add(x);
+      } else for (const n of r.addedNodes) deep(n);
+    }
+  }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'], attributeOldValue: true });
+  window.__qaClasses = () => {
+    deep(document.documentElement);
+    return [...seen];
+  };
 }
 
 /**
  * Opens each job's frame at `base`, waits for its check, and shoots it into
- * `outDir` (with `coverage`: notes the files it ran instead). A context per
+ * `outDir`. A context per
  * worker and size, its jobs one after another: pages of one site in one
  * context share a renderer, so the workers' own contexts are what lets them
  * run side by side. Each frame keeps its own storage keys (its slot) besides.
  */
-async function shootAll(base, jobs, outDir, { coverage = false, concurrency: at = concurrency } = {}) {
+async function shootAll(base, jobs, outDir, { concurrency: at = concurrency } = {}) {
   mkdirSync(outDir, { recursive: true });
   const contexts = new Map();
   const contextFor = (worker, key) => {
@@ -272,7 +353,6 @@ async function shootAll(base, jobs, outDir, { coverage = false, concurrency: at 
     return contexts.get(id);
   };
   const shots = [];
-  const ran = new Map();
   let next = 0;
   let done = 0;
   const worker = async (w) => {
@@ -284,7 +364,6 @@ async function shootAll(base, jobs, outDir, { coverage = false, concurrency: at 
       const errors = [];
       page.on('pageerror', (e) => errors.push(e.message));
       try {
-        if (coverage) await page.coverage.startJSCoverage({ resetOnNavigation: false });
         const q = new URLSearchParams({ frame: `j${n}`, s: j.scene, seat: String(j.seat), size: j.size });
         // (No outlines round what's wrong when the shot is measured: they'd be measured too.)
         if (values.faint) q.set('o', '0');
@@ -293,10 +372,6 @@ async function shootAll(base, jobs, outDir, { coverage = false, concurrency: at 
         const loaded = Date.now();
         await page.waitForFunction(() => window.__qa, null, { timeout: 60000 });
         const checked = Date.now();
-        if (coverage) {
-          ran.set(j, ranFiles(await page.coverage.stopJSCoverage()));
-          continue;
-        }
         const r = await page.evaluate(() => window.__qa);
         // (A frame that couldn't start says why, src/qa/main.ts.)
         if (r.failed) throw new Error(r.failed);
@@ -326,7 +401,7 @@ async function shootAll(base, jobs, outDir, { coverage = false, concurrency: at 
   await Promise.all(Array.from({ length: Math.min(at, jobs.length) }, (_, w) => worker(w)));
   if (process.stdout.isTTY) process.stdout.write('\n');
   await Promise.all([...contexts.values()].map(async (c) => (await c).close()));
-  return { shots, ran };
+  return { shots };
 }
 
 /** The jobs for `scenes`: every seat at every size picked. */
@@ -343,45 +418,144 @@ function jobsFor(scenes) {
 
 // ---- --map --------------------------------------------------------------------
 
+/**
+ * Opens each of `jobs` (a place from one of its seats, or a piece) at
+ * `base` with the browser's coverage on, `at` at once, each at a desktop's
+ * size, and gives what each ran: its lines (ranLines) and the class names
+ * its page had.
+ */
+async function mapAll(base, jobs, at) {
+  const size = SIZES.find((s) => s.key === 'desktop');
+  const got = new Map();
+  let next = 0;
+  let done = 0;
+  const worker = async (w) => {
+    const context = await browsers[w % browsers.length].newContext({ viewport: { width: size.w, height: size.h }, deviceScaleFactor: size.dpr, reducedMotion: values.webgl ? 'no-preference' : 'reduce' });
+    await context.addInitScript(noteClasses);
+    if (!values.webgl)
+      await context.addInitScript(() => {
+        delete window.WebGL2RenderingContext;
+        delete window.WebGLRenderingContext;
+      });
+    while (next < jobs.length) {
+      const n = next++;
+      const j = jobs[n];
+      const page = await context.newPage();
+      try {
+        await page.coverage.startJSCoverage({ resetOnNavigation: false });
+        const q = new URLSearchParams(j.piece ? { frame: `m${n}`, b: j.piece, size: 'desktop' } : { frame: `j${n}`, s: j.place, seat: String(j.seat), size: 'desktop' });
+        for (const [k, v] of j.values ?? []) q.set(`k.${k}`, v);
+        await page.goto(`${base}qa.html?${q}`, { waitUntil: 'load', timeout: 120000 });
+        await page.waitForFunction(() => window.__qa, null, { timeout: 120000 });
+        const classes = await page.evaluate(() => window.__qaClasses());
+        got.set(j, { lines: ranLines(await page.coverage.stopJSCoverage()), classes });
+      } catch (e) {
+        console.error(`\n${j.place}${j.piece ? '' : `, seat ${j.seat}`} failed: ${e.message.split('\n')[0]}`);
+      } finally {
+        await page.close();
+        done++;
+        if (process.stdout.isTTY) process.stdout.write(`\r${done}/${jobs.length}`);
+      }
+    }
+    await context.close();
+  };
+  await Promise.all(Array.from({ length: Math.min(at, jobs.length) }, (_, w) => worker(w)));
+  if (process.stdout.isTTY) process.stdout.write('\n');
+  return got;
+}
+
 if (values.map) {
+  const MAP = path.join(ROOT, 'src', 'data', 'sceneFiles.json');
+  const commit = git(ROOT, 'rev-parse', 'HEAD');
+  // Files of the game's this checkout has changed since its commit: the map has their lines as they are now, so it keeps each one's content (a blob in git's store) to carry them from.
+  const changedNow = new Set([...(git(ROOT, 'diff', '--name-only', 'HEAD', '--', 'src') ?? '').split('\n'), ...(git(ROOT, 'ls-files', '--others', '--exclude-standard', '--', 'src') ?? '').split('\n')].filter(Boolean));
+  if (changedNow.size) console.warn(`The checkout has ${changedNow.size} files in src/ changed since ${commit.slice(0, 7)}: the map is made of them as they are, and keeps their content to carry its lines from. Mapping a clean checkout keeps it simplest.`);
   const served = await serveDev();
-  values.sizes = 'desktop';
-  const every = await listScenes(served.base);
-  const scenes = every.filter((s) => !only || only.test(s.key));
-  const jobs = jobsFor(scenes);
+  const desk = await browsers[0].newPage();
+  await desk.goto(`${served.base}qa.html`, { timeout: 120000 });
+  await desk.waitForFunction(() => window.__qaDesk, null, { timeout: 60000 });
+  const listed = await desk.evaluate(() => ({ scenes: window.__qaDesk.scenes().filter((s) => s.place), pieces: window.__qaDesk.pieces?.() ?? [] }));
+  await desk.close();
+  // Every place (a scene's first state, a state with a key of its own) from each of its seats, and each piece in its first state.
+  const all = [...listed.scenes.map((s) => s.key), ...listed.pieces.map((p) => p.key)];
+  const jobs = [
+    ...listed.scenes.filter((s) => !only || only.test(s.key)).flatMap((s) => Array.from({ length: s.seats }, (_, seat) => ({ place: s.key, values: s.values, seat }))),
+    ...listed.pieces.filter((p) => !only || only.test(p.key)).map((p) => ({ place: p.key, piece: p.key, values: p.values })),
+  ];
   // The dev server builds each module as a page first asks for it: more than a few pages at once and they time out waiting.
   const at = Math.min(concurrency, 4);
   console.log(`Running ${jobs.length} frames with coverage on, ${at} at once…`);
-  const { ran } = await shootAll(served.base, jobs, path.join(SCREENS, 'qa-map'), { coverage: true, concurrency: at });
+  const got = await mapAll(served.base, jobs, at);
   await Promise.all(browsers.map((b) => b.close()));
   served.close();
-  // Every file's scenes; and the files at least 60% of the scenes run, which say nothing about any one.
-  const byScene = new Map();
-  for (const [j, files] of ran) byScene.set(j.scene, new Set([...(byScene.get(j.scene) ?? []), ...files]));
-  const counts = new Map();
-  for (const files of byScene.values()) for (const f of files) counts.set(f, (counts.get(f) ?? 0) + 1);
-  let global = [...counts].filter(([, n]) => n >= byScene.size * 0.6).map(([f]) => f).sort();
-  let files = {};
-  for (const f of [...counts.keys()].filter((f) => !global.includes(f)).sort()) files[f] = [...byScene].filter(([, fs]) => fs.has(f)).map(([k]) => k);
-  // With --only, a few scenes mapped again (new ones, say): merged into the
-  // map as it was, every other scene's files kept, its global files too
-  // (those of scenes no longer there go).
-  if (only) {
-    const was = JSON.parse(readFileSync(path.join(ROOT, 'src', 'data', 'sceneFiles.json'), 'utf8'));
-    global = was.global;
-    const merged = {};
-    const there = new Set(every.map((s) => s.key));
-    for (const [f, ks] of Object.entries(was.files)) merged[f] = ks.filter((k) => !byScene.has(k) && there.has(k));
-    for (const [k, fs] of byScene) for (const f of fs) if (!global.includes(f)) (merged[f] ??= []).push(k);
-    files = Object.fromEntries(Object.entries(merged).filter(([, ks]) => ks.length).sort(([a], [b]) => (a < b ? -1 : 1)));
+
+  // Each place's lines and classes, its seats' together.
+  const byPlace = new Map();
+  for (const [j, g] of got) {
+    const p = byPlace.get(j.place) ?? { lines: new Map(), classes: new Set() };
+    byPlace.set(j.place, p);
+    for (const c of g.classes) p.classes.add(c);
+    for (const [file, l] of g.lines) {
+      const had = p.lines.get(file) ?? { ran: new Set(), fn: new Set(), top: new Set() };
+      p.lines.set(file, had);
+      for (const k of ['ran', 'fn', 'top']) for (const n of l[k]) had[k].add(n);
+    }
   }
-  // One entry a line, so a merge conflict is easy to see (and to settle by running --map again).
-  const lines = Object.entries(files).map(([f, ks]) => `    ${JSON.stringify(f)}: ${JSON.stringify(ks)}`);
-  const out = `{\n  "global": ${JSON.stringify(global)},\n  "files": {\n${lines.join(',\n')}\n  }\n}\n`;
-  writeFileSync(path.join(ROOT, 'src', 'data', 'sceneFiles.json'), out);
-  const failed = jobs.filter((j) => !ran.has(j)).length;
-  console.log(`src/data/sceneFiles.json: ${Object.keys(files).length} files over ${byScene.size} scenes, ${global.length} global${failed ? `; ${failed} frames failed` : ''}.`);
-  process.exit(0);
+  // Each file's lines: those in a function, with the places that ran each; then those only of its module's top level.
+  const files = new Map();
+  for (const [key, p] of byPlace)
+    for (const [file, l] of p.lines) {
+      const lines = files.get(file) ?? new Map();
+      files.set(file, lines);
+      for (const n of l.fn) if (!(lines.get(n) instanceof Set)) lines.set(n, new Set());
+      for (const n of l.ran) lines.get(n).add(key);
+    }
+  for (const p of byPlace.values()) for (const [file, l] of p.lines) for (const n of l.top) if (!files.get(file).has(n)) files.get(file).set(n, 'module');
+  const classes = new Map();
+  for (const [key, p] of byPlace) for (const c of p.classes) (classes.get(c) ?? classes.set(c, new Set()).get(c)).add(key);
+  let places = all.filter((k) => byPlace.has(k));
+
+  // With --only, a few places mapped again (new ones, say): merged into the
+  // map as it was, its lines carried to now's, every other place kept
+  // (those no longer there go).
+  if (only) {
+    const was = existsSync(MAP) ? JSON.parse(readFileSync(MAP, 'utf8')) : null;
+    if (!was?.places) console.warn('The map as it was holds no lines (it was made before it went line by line): it has only these places now. npm run sweep -- --map maps them all.');
+    else {
+      const old = decodeMap(was);
+      const there = new Set(all);
+      const keep = (k) => there.has(k) && !byPlace.has(k);
+      const moved = linesSinceMap(ROOT, was, [...old.files.keys()], 'tree');
+      let lost = 0;
+      for (const [file, lines] of old.files) {
+        const drift = moved.get(file);
+        if (drift === 'unknown') {
+          lost++;
+          continue;
+        }
+        const fresh = files.get(file);
+        const into = fresh ?? new Map();
+        for (const [l, v] of lines) {
+          const n = drift ? carry(l, drift, 'old') : l;
+          if (n === null) continue;
+          // (A file mapped just now has its code as it is: only the other places' runs come from the map as it was.)
+          if (fresh) {
+            const now = fresh.get(n);
+            if (now instanceof Set && v instanceof Set) for (const k of v) if (keep(k)) now.add(k);
+          } else into.set(n, v === 'module' ? 'module' : new Set([...v].filter(keep)));
+        }
+        if (!fresh) files.set(file, into);
+      }
+      if (lost) console.warn(`${lost} files' lines couldn't be carried from the map's commit (${was.commit.slice(0, 7)}, not in this checkout's git): left out.`);
+      for (const [c, ks] of old.classes) for (const k of ks) if (keep(k)) (classes.get(c) ?? classes.set(c, new Set()).get(c)).add(k);
+      places = all.filter((k) => byPlace.has(k) || old.places.includes(k));
+    }
+  }
+  const dirty = Object.fromEntries([...changedNow].filter((f) => files.has(f) && existsSync(path.join(ROOT, f))).map((f) => [f, git(ROOT, 'hash-object', '-w', '--', f)]));
+  writeFileSync(MAP, encodeMap({ commit, dirty, places, files, classes }));
+  const failed = jobs.length - got.size;
+  console.log(`src/data/sceneFiles.json: ${files.size} files over ${places.length} places (${byPlace.size} mapped now), ${classes.size} class names${failed ? `; ${failed} frames failed` : ''}.`);
+  process.exit(failed ? 1 : 0);
 }
 
 // ---- --redraws ----------------------------------------------------------------
@@ -1127,13 +1301,16 @@ if (values.redraws) {
 }
 let scenes = (await listScenes(served.base)).filter((s) => !only || only.test(s.key));
 if (values.change) {
-  // As the desk's This change has it (src/qa/change.ts): the files changed since main, and the scenes that run them.
-  const changed = changedFiles(ROOT);
-  const map = JSON.parse(readFileSync(path.join(ROOT, 'src', 'data', 'sceneFiles.json'), 'utf8'));
-  const t = touched(changed?.files ?? [], map, scenes.map((s) => ({ key: s.key, screen: s.key.split('/')[0] })));
-  const keys = new Set(t.scenes.map((s) => s.key));
-  scenes = scenes.filter((s) => keys.has(s.key));
-  console.log(`This change: ${changed?.files.length ?? 0} files changed, ${scenes.length} scenes touch them.${t.uncovered.length ? ` No scene runs ${t.uncovered.join(', ')}.` : ''}`);
+  // As the desk's This change has it (src/qa/change.ts): the places that run what this branch changes, and with what changes every screen, the first place of each.
+  const change = changeHere(ROOT);
+  const keys = new Set(change?.places.map((p) => p.key));
+  const everywhere = (change?.everywhere ?? []).filter((e) => e.of === 'screens');
+  const firsts = new Set();
+  if (everywhere.length) for (const s of scenes) if (s.place && ![...firsts].some((k) => k.split('/')[0] === s.key.split('/')[0])) firsts.add(s.key);
+  scenes = scenes.filter((s) => s.place && (keys.has(s.key) || firsts.has(s.key)));
+  const also = everywhere.length ? ` It changes what every screen runs (${everywhere.map((e) => e.file.split('/').pop()).join(', ')}): the first place of each too.` : '';
+  const none = [...(change?.uncovered ?? []), ...(change?.unrun ?? []).map((u) => `${u.file} (${u.what})`)];
+  console.log(`This change: ${change?.files.length ?? 0} files changed, ${scenes.length} places run them.${also}${none.length ? ` No place runs ${none.join(', ')}.` : ''}`);
 }
 const jobs = jobsFor(scenes);
 if (!jobs.length) {

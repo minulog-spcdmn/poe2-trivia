@@ -3,7 +3,7 @@
   // under their headings; its controls (a piece's, or the scene's own and
   // those of any game), what can happen to it, its seats, and Replay and
   // Freeze (and, while S has them, CSS's shadows). Only what the bench has shows.
-  import { byHeading, type Bench, type Control, type Value, type Values } from '../bench.ts';
+  import { byHeading, showsWith, type Bench, type Control, type Value, type Values } from '../bench.ts';
 
   let {
     bench,
@@ -79,6 +79,9 @@
   /** Whether a control is away from where the state on show (or its scene) has it. */
   const moved = $derived(stateIndex < 0 && !all);
 
+  /** A choice with this many options or fewer shows them all, a button each; one with more, a menu. */
+  const CHIPS = 16;
+
   /** A long list's headings fold: only the one with the state on show is open, until another is opened. */
   const FOLD_OVER = 24;
   let opened = $state<Set<string>>(new Set());
@@ -128,6 +131,16 @@
         {#if c.unit}<span class="unit">{c.unit}</span>{/if}
       </span>
     </label>
+  {:else if c.kind === 'choice' && c.options.length <= CHIPS}
+    <!-- (Each option a button: going through a scene's moments is a click each, every one in sight.) -->
+    <div class="control" role="radiogroup" aria-label={c.label}>
+      <span class="label">{c.label}</span>
+      <span class="chips">
+        {#each c.options as o (o.value)}
+          <button role="radio" aria-checked={v[c.key] === o.value} class:on={v[c.key] === o.value} onclick={() => onvalue(c.key, o.value)}>{o.label}</button>
+        {/each}
+      </span>
+    </div>
   {:else if c.kind === 'choice'}
     <label class="control">
       <span class="label">{c.label}</span>
@@ -171,10 +184,10 @@
   {#if controls.length || tweaks.length}
     <section class="controls">
       <h2>Controls {#if moved}<button class="all" onclick={onreset} title="Every control back where the state has it">As it was</button>{/if}</h2>
-      {#each controls as c (c.key)}{@render control(c)}{/each}
+      {#each controls.filter((c) => showsWith(c, v)) as c (c.key)}{@render control(c)}{/each}
       {#if tweaks.length}
         <h3 class="heading">In any game</h3>
-        {#each tweaks as c (c.key)}{@render control(c)}{/each}
+        {#each tweaks.filter((c) => showsWith(c, v)) as c (c.key)}{@render control(c)}{/each}
       {/if}
     </section>
   {/if}

@@ -13,7 +13,8 @@ import { catalog } from '../scenes/index.ts';
 import { useCaptured } from '../scenes/captured.ts';
 import { sizesFor } from './walk.ts';
 import { statesOf } from '../benches/index.ts';
-import { asQuery } from '../bench.ts';
+import { asQuery, stateValues, valuesQuery } from '../bench.ts';
+import { PIECES } from '../benches/pieces.ts';
 import { seatsIn } from '../scene.ts';
 import { buildScene } from '../tweaks.ts';
 import Desk from './Desk.svelte';
@@ -28,9 +29,11 @@ mount(Desk, { target: document.getElementById('app')! });
 // place (a state with a key of its own) by its own key, which says its
 // controls; any other state by its scene's, with the controls it sets.
 // `place`: what the redraw check and the scene map take, each scene's first
-// state and every state with a key.
+// state and every state with a key. And for the scene map, each piece in
+// its first state (a frame opens it by `key` as `b`, with `values`).
 Object.assign(window, {
   __qaDesk: {
+    pieces: () => PIECES.map((p) => ({ key: p.key, label: p.label, values: valuesQuery(p.controls, stateValues(p, p.states[0])) })),
     scenes: () =>
       catalog().flatMap((s) =>
         statesOf(s).map((st, n) => ({
