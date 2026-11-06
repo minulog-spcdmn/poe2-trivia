@@ -305,7 +305,15 @@ jobs:
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.again.outputs.page_url || steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+      # Now and then GitHub's side never finishes taking an upload in
+      # (syncing_files until the step's 10 minutes run out, and it cancels
+      # it), however healthy the build: put up the same one once more, as
+      # running the job again by hand did.
+      - id: again
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v4
