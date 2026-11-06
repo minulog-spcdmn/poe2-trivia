@@ -30,6 +30,9 @@ test('a player gone from the screen shows as away only once a quick look elsewhe
   assert.equal(standingOf({ presence: 'idle', since }, true, since), 'idle');
   assert.equal(standingOf({ presence: 'here', since }, true, since), 'slow');
   assert.equal(standingOf({ presence: 'here', since }, false, since), null);
+  // Away as long as idle takes is idle, told by a page from before hidden ones went idle by themselves.
+  assert.equal(standingOf({ presence: 'away', since }, false, since + IDLE_AFTER_MS - 1), 'away');
+  assert.equal(standingOf({ presence: 'away', since }, false, since + IDLE_AFTER_MS), 'idle');
 });
 
 test('a host idle on the end screen, or away from it a minute, takes the room off the list; a look at another tab does not', () => {

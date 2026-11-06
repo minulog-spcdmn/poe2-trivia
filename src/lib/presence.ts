@@ -33,10 +33,15 @@ export interface Seen {
   since: number;
 }
 
-/** How a player stands, from their presence and their link (`slow`: the host's own judgement, never for itself). */
+/**
+ * How a player stands, from their presence and their link (`slow`: the host's
+ * own judgement, never for itself). Away for IDLE_AFTER_MS is idle here too,
+ * for a page from before a hidden one went idle by itself (pages keep
+ * working for two weeks).
+ */
 export function standingOf(seen: Seen, slow: boolean, now: number): Standing | null {
+  if (seen.presence === 'idle' || (seen.presence === 'away' && now - seen.since >= IDLE_AFTER_MS)) return 'idle';
   if (seen.presence === 'away' && now - seen.since >= AWAY_AFTER_MS) return 'away';
-  if (seen.presence === 'idle') return 'idle';
   return slow ? 'slow' : null;
 }
 
