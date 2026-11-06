@@ -20,8 +20,9 @@ if [ -z "$list" ]; then
   exit 1
 fi
 
-# Whether the runner has every one, installed (dpkg-query skips a package it has never heard of).
-all_there() { [ "$(dpkg-query -W -f='${db:Status-Abbrev}\n' $list 2> /dev/null | grep -c '^ii')" -eq "$(wc -w <<< "$list")" ]; }
+# Whether the runner has every one, installed (dpkg-query skips a package it has never heard of; one
+# installed for two architectures counts once, and one held, "hi", is as installed as "ii").
+all_there() { [ "$(dpkg-query -W -f='${db:Status-Abbrev}${Package}\n' $list 2> /dev/null | sed -n 's/^.i.//p' | sort -u | wc -l)" -eq "$(wc -w <<< "$list")" ]; }
 
 # A command as root, three tries of three minutes each.
 tries() {
@@ -37,22 +38,31 @@ if all_there; then
   exit 0
 fi
 
-# (A package from the cache whose own needs this image hasn't, or one the image has stopped having: the mirror's turn.)
+# (A package from the cache whose own needs this image hasn't, or one the image has stopped having: the mirror's turn.
+# One this image has newer than the cache, kept from an older image's, stays as the image has it: -G.)
 if compgen -G "$dir/*.deb" > /dev/null; then
-  if sudo dpkg -i "$dir"/*.deb > /dev/null && all_there; then
+  if sudo dpkg -G -i "$dir"/*.deb > /dev/null && all_there; then
     echo "The headless shell's packages from the cache ($(compgen -G "$dir/*.deb" | wc -l)), without Ubuntu's mirror."
     exit 0
   fi
   echo "The cached packages weren't enough: from Ubuntu's mirror."
 fi
 
-rm -rf "$dir"
 mkdir -p "$dir"
 sudo apt-get clean
 tries apt-get update
 tries apt-get install -f -y --no-install-recommends --download-only $list
-# (None for a package dpkg unpacked from the cache but couldn't set up: apt finishes it below, and the next run fetches it.)
 cp /var/cache/apt/archives/*.deb "$dir"/ 2> /dev/null || true
 sudo apt-get install -f -y --no-install-recommends $list
-all_there
+if ! all_there; then
+  echo "Not every package the headless shell needs is installed, even from Ubuntu's mirror:"
+  dpkg-query -W -f='${db:Status-Abbrev}${Package}\n' $list 2>&1 | grep -v '^.i.' || true
+  exit 1
+fi
+# Kept for the next runs: each package at the version installed now, the mirror's or the cache's. apt
+# fetches none that dpkg set up or only unpacked from the cache, so a cache emptied first would keep
+# only the rest, and the next run, finding its key, saves nothing better; a version since replaced goes.
+for deb in "$dir"/*.deb; do
+  name=$(dpkg-deb -f "$deb" Package) && version=$(dpkg-deb -f "$deb" Version) && [ "$(dpkg-query -W -f='${Version}' "$name" 2> /dev/null)" = "$version" ] || rm -f "$deb"
+done
 echo "The headless shell's packages from Ubuntu's mirror ($(compgen -G "$dir/*.deb" | wc -l)), kept for the next runs."
