@@ -34,7 +34,7 @@
 
 import { fileURLToPath } from 'node:url';
 import { COUNTER_ORIGIN } from '../src/lib/counter.ts';
-import { accountZone, pathCounts } from '../src/statsPage/hits.ts';
+import { accountZone, passing, pathCounts } from '../src/statsPage/hits.ts';
 import { healthOf, troubleOf } from '../src/statsPage/insights.ts';
 import { DEVICE_NAMES, countedSpan, countsOf, daysBetween, firstCounted } from '../src/statsPage/model.ts';
 import { addDays, dayIn, midnight } from '../src/statsPage/zone.ts';
@@ -68,9 +68,10 @@ function retryAfter(value, now) {
 
 /**
  * A GET of GoatCounter's API with `key`: one call at a time, APART_MS
- * between their starts; a 429 tried again after its Retry-After, no answer,
- * a 404 or a 5xx later each time (TRIES in all, about ten seconds). `deps`: fetch,
- * sleep and the clock, so the tests can feed it. `calls`: how many went out.
+ * between their starts; a 429 tried again after its Retry-After, no answer
+ * or one passing (hits.ts passing: a 404 or a 5xx) later each time (TRIES
+ * in all, about ten seconds). `deps`: fetch, sleep and the clock, so the
+ * tests can feed it. `calls`: how many went out.
  */
 export function apiOf(key, { fetch = globalThis.fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = () => Date.now() } = {}) {
   let lastStart = -Infinity;
@@ -99,8 +100,7 @@ export function apiOf(key, { fetch = globalThis.fetch, sleep = (ms) => new Promi
         if (r) return r;
         throw new CheckError(`GoatCounter asked to slow down (${path}): the hour's 500 requests may be spent.`);
       }
-      // (GoatCounter answers some failures of its own as 404 now and then, gone a moment later: goatcounter#925.)
-      if (res.status === 404 || res.status >= 500) {
+      if (passing(res.status)) {
         const r = await again(1500 * 2 ** tried);
         if (r) return r;
         throw new CheckError(`GoatCounter answered ${res.status} (${path}).`);

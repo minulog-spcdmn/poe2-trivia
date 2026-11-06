@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BEFORE, CheckError, apiOf, checkDay, firedOf, main, windowsOf } from '../scripts/daily-health.mjs';
-import { pathCounts } from '../src/statsPage/hits.ts';
+import { passing, pathCounts } from '../src/statsPage/hits.ts';
 import { addDays, dayIn } from '../src/statsPage/zone.ts';
 
 // The daily health check (scripts/daily-health.mjs) on a made-up GoatCounter
@@ -148,6 +148,11 @@ test("a 404 is asked again too (GoatCounter answers some of its own failures so,
   assert.equal(stays.code, 0);
   assert.equal(stays.asked.length, 4);
   assert.match(stays.lines[0], /^::warning::Daily health check couldn't run today: GoatCounter answered 404/);
+});
+
+test('what the stats page and the daily check both ask again: a 404 or a 5xx, nothing else', () => {
+  for (const status of [404, 500, 502, 503]) assert.equal(passing(status), true, String(status));
+  for (const status of [200, 400, 401, 403, 429]) assert.equal(passing(status), false, String(status));
 });
 
 const unsaid = (lines: string[]) => !lines.join('\n').includes(KEY) && !lines.join('\n').includes('goatcounter.com');

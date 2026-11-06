@@ -14,7 +14,7 @@
 
 import { COUNTER_ORIGIN } from '../lib/counter';
 import { readStored, readStoredStarting, removeStored, removeStoredStarting, writeStored } from '../lib/storage';
-import { accountZone as readZone, pathCounts as readPaths, range, type Get, type Span } from './hits';
+import { accountZone as readZone, passing, pathCounts as readPaths, range, type Get, type Span } from './hits';
 import type { PathCount } from './model';
 
 export type { Span } from './hits';
@@ -125,8 +125,7 @@ async function get<T>(key: string, path: string, query: Record<string, string>, 
     if (tried + 1 < TRIES) return again();
     throw new ApiError('GoatCounter asked to slow down (500 requests an hour). Try again in a few minutes.', 'busy');
   }
-  // GoatCounter answers some failures of its own as 404 now and then, gone a moment later (goatcounter#925); a 5xx may pass as well.
-  if ((res.status === 404 || res.status >= 500) && tried + 1 < TRIES) return again();
+  if (passing(res.status) && tried + 1 < TRIES) return again();
   if (res.status === 401 || res.status === 403) throw new ApiError('GoatCounter turned the key down. It may have been deleted, or lack "Read statistics".', 'key');
   if (!res.ok) throw new ApiError(`GoatCounter answered ${res.status}. Try again in a moment.`, 'other');
   return (await res.json()) as T;
