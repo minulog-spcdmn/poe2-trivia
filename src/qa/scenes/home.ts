@@ -66,8 +66,9 @@ const option = (n: number) => `.daily .options .option:nth-child(${n})`;
 /** What happens on a returning player's start page a moment after it shows, played as a player would. */
 const THEN: Record<string, Step[]> = {
   // Rooms open and close: the open rooms' tag (a phone's Join a room) fades in, its count steps up and down, it fades out.
+  // Wider, the empty tile's corner (OpenRooms' ul::before) draws back a column at a time as the row fills, fades as it's full, comes back as it empties.
   get rooms() {
-    return [{ wait: 1000 }, { rooms: rooms(1) }, { wait: 1900 }, { rooms: rooms(3) }, { wait: 1900 }, { rooms: rooms(2) }, { wait: 1900 }, { rooms: [] }];
+    return [{ wait: 1000 }, { rooms: rooms(1) }, { wait: 1900 }, { rooms: rooms(2) }, { wait: 1900 }, { rooms: rooms(3) }, { wait: 1900 }, { rooms: rooms(2) }, { wait: 1900 }, { rooms: [] }];
   },
   // The quill pressed, then Cancel: the rename form swaps in for the greeting and out again, the menu gliding with its height.
   rename: [{ wait: 1000 }, { click: '.hello .quill' }, { wait: 1800 }, { click: '.greeting form button.link' }],
@@ -90,7 +91,7 @@ const BACK: Control[] = [
     default: '',
     options: [
       { value: '', label: 'Nothing' },
-      { value: 'rooms', label: 'Rooms open and close (a phone’s tag)' },
+      { value: 'rooms', label: 'Rooms open and close (a phone’s tag, the row’s empty corner)' },
       { value: 'rename', label: 'The quill pressed, then Cancel' },
       { value: 'answer', label: 'Today’s unique answered right' },
       { value: 'practise', label: 'Practice more pressed, then answered' },
@@ -347,7 +348,7 @@ export function homeScenes(): Scene[] {
         { label: 'Back again: a codex, runs, a streak, open rooms', values: {} },
         { label: 'Back again, no rooms open', values: { rooms: 0 }, listed: false },
         { label: 'The most rooms the list shows (60)', values: { rooms: 60 }, listed: false },
-        { label: 'Rooms opening and closing: the tag fades in, its count steps, it fades out (a phone)', values: { rooms: 0, then: 'rooms' } },
+        { label: 'Rooms opening and closing: the tag fades in, its count steps, it fades out (a phone); wider, the empty tile’s corner draws back as the row fills', values: { rooms: 0, then: 'rooms' } },
         { label: 'The quill pressed, then Cancel: the rename form swaps in and out', values: { then: 'rename' }, listed: false },
         { label: "Today's unique, not answered yet, a streak of 7 waiting", values: { today: 'waiting' }, listed: false },
         { label: "Today's unique answered right: the badge steps up from 7 once its fire lands", values: { today: 'waiting', then: 'answer' } },
