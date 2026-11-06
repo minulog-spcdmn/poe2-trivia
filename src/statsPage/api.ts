@@ -14,8 +14,10 @@
 
 import { COUNTER_ORIGIN } from '../lib/counter';
 import { readStored, readStoredStarting, removeStored, removeStoredStarting, writeStored } from '../lib/storage';
+import { accountZone as readZone, pathCounts as readPaths, range, type Get, type Span } from './hits';
 import type { PathCount } from './model';
-import { onClock, zoneOf } from './zone';
+
+export type { Span } from './hits';
 
 const KEY = 'analytics.key';
 /** What the page kept while it was called the ledger (on the beta only): the key and the requests' logs are taken over, the rest cleared away. */
@@ -128,63 +130,18 @@ async function get<T>(key: string, path: string, query: Record<string, string>, 
   return (await res.json()) as T;
 }
 
-/** The account's time zone, GoatCounter's days are cut in (any key may ask). */
-export async function accountZone(key: string, signal: AbortSignal): Promise<string> {
-  const me = await get<{ user?: { settings?: { timezone?: string } } }>(key, '/me', {}, signal);
-  return zoneOf(me.user?.settings?.timezone);
-}
+/** The API with `key`, as hits.ts asks it. */
+const asking =
+  (key: string, signal: AbortSignal): Get =>
+  <T>(path: string, query: Record<string, string>) =>
+    get<T>(key, path, query, signal);
 
-/** A stretch of time, as the API takes it. */
-export interface Span {
-  start: Date;
-  end: Date;
-}
-const range = (s: Span) => ({ start: s.start.toISOString(), end: s.end.toISOString() });
+/** The account's time zone, GoatCounter's days are cut in (any key may ask): hits.ts accountZone. */
+export const accountZone = (key: string, signal: AbortSignal): Promise<string> => readZone(asking(key, signal));
 
-interface HitsResponse {
-  hits: { path_id: number; path: string; event: boolean; count: number; stats: { day: string; daily: number; hourly?: number[] }[] }[];
-  more: boolean;
-}
-
-/** Pages read at most: 1,000 paths, far more than the game counts, and an address that stays short enough to send. */
-const MAX_PAGES = 10;
-
-/**
- * Every path counted in the span, with its days: pages of up to 100, each
- * next one leaving out the paths already had. Its days and hours put onto
- * the clock of `zone`, the account's (zone.ts onClock): GoatCounter labels
- * them all with the offset the zone has when asked. `complete`: false when
- * there were more than MAX_PAGES of them.
- */
-export async function pathCounts(key: string, span: Span, zone: string, signal: AbortSignal): Promise<{ paths: PathCount[]; complete: boolean }> {
-  const out: PathCount[] = [];
-  const had: string[] = [];
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const r = await get<HitsResponse>(
-      key,
-      '/stats/hits',
-      { ...range(span), group: 'day', limit: '100', ...(had.length ? { exclude_paths: had.join(',') } : {}) },
-      signal,
-    );
-    // (Its offset, as near the moment GoatCounter took it as the page can tell.)
-    const at = new Date();
-    for (const h of r.hits) {
-      had.push(String(h.path_id));
-      out.push({
-        path: h.path,
-        event: h.event,
-        count: h.count,
-        ...(h.stats.every((s) => s.hourly?.length === 24)
-          ? onClock(Object.fromEntries(h.stats.map((s) => [s.day, s.hourly!])), zone, at)
-          : { days: Object.fromEntries(h.stats.map((s) => [s.day, s.daily])) }),
-      });
-    }
-    if (!r.more) return { paths: out, complete: true };
-    // A page that brought nothing new would ask the same again for ever.
-    if (!r.hits.length) throw new ApiError("GoatCounter's list of paths didn't add up. Try again in a moment.", 'other');
-  }
-  return { paths: out, complete: false };
-}
+/** Every path counted in the span, with its days on the clock of `zone`: hits.ts pathCounts. */
+export const pathCounts = (key: string, span: Span, zone: string, signal: AbortSignal): Promise<{ paths: PathCount[]; complete: boolean }> =>
+  readPaths(asking(key, signal), span, zone, () => new ApiError("GoatCounter's list of paths didn't add up. Try again in a moment.", 'other'));
 
 export interface Named {
   name: string;

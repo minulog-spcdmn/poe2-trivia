@@ -191,6 +191,23 @@ const FAILURES: Record<string, { label: string; host?: true; script?: true }> = 
   chunk: { label: "A part of the game that didn't load", script: true },
 };
 
+/**
+ * What the relay was doing when a room didn't answer though its host was
+ * there and the host's answer had come (lib/relay.ts relayEvent, "relay/<key>"):
+ * the breakdown of "join-no-answer", not failures of their own.
+ */
+const RELAY_CAUSES: Record<string, string> = {
+  'no-login-capped': 'No relay login: relay capped for the month',
+  'no-login-stopped': "No relay login: the relay's traffic check had stopped",
+  'no-login-failing': "No relay login: Cloudflare didn't hand one out",
+  'no-login-limited': 'No relay login: too many asks from one address',
+  'no-login-refused': "No relay login: an answer the page couldn't read",
+  'no-login-unreached': "No relay login: the relay's Worker couldn't be reached",
+  'no-login-late': "No relay login yet: it came after the join's tries",
+  'no-route': "Had a relay login, but the relay couldn't be reached",
+  route: 'Went through the relay, still no link',
+};
+
 /** A failure's key, by its path: "error/<key>", an error in the game's own scripts "script" wherever it came from ("error/script/<where>"). */
 export const failureKey = (path: string) => (scriptErrorWhere(path) !== null ? 'script' : path.slice('error/'.length));
 
@@ -290,6 +307,8 @@ export interface Counts {
   failures: { key: string; label: string; host: boolean; script: boolean; count: number }[];
   /** The game's own scripts' errors (the failure "script") by where they came from, most first: a module and function ("lib/codex.ts:loadCodex"), or "" for those counted without one (before November 2026, or where it couldn't tell). */
   scriptErrors: { where: string; count: number }[];
+  /** Rooms that didn't answer (the failure "join-no-answer") by what the relay was doing then, most first; only those whose host's answer had come. */
+  relay: { key: string; label: string; count: number }[];
   /** Open rooms that lost the matchmaking server (count.ts RoomOff), the page in sight or not then, and those back on it by how long they were off. */
   roomsOff: { seen: number; hidden: number; back: Record<RoomBack, number> };
   /** The failures joining a room or opening one a day, every cause together (not the scripts' errors). */
@@ -565,6 +584,14 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
     const where = scriptErrorWhere(p.path);
     if (where !== null) scriptPlaces.set(where, (scriptPlaces.get(where) ?? 0) + p.count);
   }
+  // (Under "relay/", not "error/": no failure rate takes them in.)
+  const relayed = new Map<string, number>();
+  for (const p of paths) {
+    if (!p.path.startsWith('relay/') || p.count <= 0) continue;
+    const key = p.path.slice('relay/'.length);
+    relayed.set(key, (relayed.get(key) ?? 0) + p.count);
+  }
+  const relay = [...relayed].map(([key, count]) => ({ key, label: RELAY_CAUSES[key] ?? key, count })).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
   const failures = [...failed]
     .map(([key, n]) => {
       const known = FAILURES[key];
@@ -598,6 +625,7 @@ export function countsOf(counted: PathCount[], days: string[], zone?: string, un
     },
     failures,
     scriptErrors: [...scriptPlaces].map(([where, count]) => ({ where, count })).sort((a, b) => b.count - a.count || a.where.localeCompare(b.where)),
+    relay,
     roomsOff: {
       seen: count('room/off-seen'),
       hidden: count('room/off-hidden'),

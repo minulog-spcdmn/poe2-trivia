@@ -228,10 +228,30 @@ protocol, one Durable Object holding every peer's socket in memory.
   stop with it (connections then meet without it, as below): on a free
   account of its own, ours can't touch the relay.
 
-To set it up (once): in `signal/` (not the project's root, see "Relay"),
-`npx wrangler login` and `npx wrangler deploy`. It's the Worker
-`poe2-signal`, at `poe2-signal.poe2quest.workers.dev`, named in
-`src/lib/signalHost.ts`. To turn it off, empty `OWN_SIGNAL_HOST` there (pages
+Cloudflare Workers Builds deploys `poe2-signal` on every push to `main` that
+changes `signal/`. To set it up (once), in Cloudflare’s dashboard: Workers &
+Pages, `poe2-signal`, Settings, Builds, Connect. Install the “Cloudflare
+Workers and Pages” GitHub app on this repo only. Production branch `main`;
+root directory `signal`; build watch paths `signal/*`; builds for
+non-production branches off; build variable `SKIP_DEPENDENCY_INSTALL=1`; build command empty; deploy
+command `npx --yes wrangler@4.158.0 deploy`. Connecting runs no build; the
+next change under `signal/` is the first. It’s the Worker `poe2-signal`, at
+`poe2-signal.poe2quest.workers.dev`, named in `src/lib/signalHost.ts`.
+
+A server deploy is forced within 300 s and disconnects everyone on our server;
+pages reconnect in about 2 s with the same id, and games under way don’t use
+the server. A push of 20 or more commits ignores the watch paths and redeploys
+it unchanged. Every build shows as Cloudflare’s check on its commit: seeing a
+change to `signal/` through to live includes that check on the merge commit
+going green (`gh api repos/{owner}/{repo}/commits/<sha>/check-runs`, the run
+whose `app.slug` is Cloudflare’s). A cancelled one means a newer push’s build
+took over (look at the newest commit on `main` that has one); only red on the
+commit that built means the server didn’t update. For an emergency hand
+deploy, run from `main` itself, fetched first: `git fetch origin main`, `git
+worktree add --detach <dir> origin/main` (`git -C <dir> log -1` shows the
+merge), then `npx --yes wrangler@4.158.0 deploy` in `<dir>/signal`.
+
+To turn it off, empty `OWN_SIGNAL_HOST` in `src/lib/signalHost.ts` (pages
 loaded since meet on the cloud alone) and delete the Worker.
 
 To use a [PeerJS server](https://github.com/peers/peerjs-server) of your own
@@ -299,6 +319,14 @@ a full rollback is reverting and deleting the key. A new key brings it back
 for tabs opened since; one open all along picks it up when its login is next
 renewed, within six hours.
 
+Unlike the matchmaking server, the relay stays deployed by hand. The session
+that changes it opens an issue with its PR (“Deploy the relay after #N”),
+deploys it once the PR merges, from `main` itself, fetched first (`git fetch
+origin main`, `git worktree add --detach <dir> origin/main`, and `git -C <dir>
+log -1` shows the merge; then `npx --yes wrangler@4.158.0 deploy` in
+`<dir>/relay`), checks it live as before, and closes the issue. A session
+that ends first leaves the issue for the next.
+
 ## Deploying
 
 `.github/workflows/deploy.yml` builds and deploys to GitHub Pages on every push
@@ -326,6 +354,42 @@ live. It has its own rooms, saves and invite links (`VITE_CHANNEL=beta`).
   (`docs/qa.md`).
 - **Stack changes:** the beta shows one commit at a time. To test a change with
   the one already there, start its branch from the newest `beta` deployment.
+
+### Undo a bad deploy
+
+- The site: revert the change on `main`. The owner’s admin merge skips Tests
+  and Redraws; it’s live in about 4 to 25 minutes (recent deploys took 2 to
+  24). A revert that touches `dailies.json` may fail the deploy’s dailies
+  check.
+- The matchmaking server: revert on `main`, with the page change it came with,
+  if any; Builds deploys the old server. In an emergency, roll back first in
+  the dashboard (Workers & Pages, `poe2-signal`, Deployments), which a Durable
+  Object migration between the two versions refuses, then revert at once, or
+  the next build of `main` brings the bad code back. Never revert a migration:
+  write a forward one.
+- The relay: redeploy the old version by hand (“Relay”); in an emergency
+  delete the TURN key.
+- What no revert undoes: saved progress. Sync only ever moves progress up and
+  passes it to every paired device (`src/lib/sync/store.ts`), so a change to
+  what’s saved has to keep reading what older builds saved.
+
+### Daily health check
+
+`.github/workflows/daily-health.yml` runs `scripts/daily-health.mjs` once a
+day: stats.html’s own checks (`healthOf`, `troubleOf`) on yesterday against
+the 7 days before. A check that fires fails the run, and GitHub emails the
+owner.
+
+It needs the read-only GoatCounter key as the Actions secret
+`GOATCOUNTER_KEY`. Switch it on with `gh secret set GOATCOUNTER_KEY` (it asks
+for the value) and off by deleting it (`gh secret delete GOATCOUNTER_KEY`);
+without it the run passes and says it’s off. A failed run means a check fired
+(each reason is on the run’s page), the key was refused or the check itself
+broke; a day GoatCounter can’t be read passes with a warning. Its checks are the page’s own, so it
+mails when stats.html would warn: in a dry run over the 13 days that could be
+checked (6 Nov 2026), once, on 5 Nov, when joining failures rose with the
+matchmaking server’s first day. A dry run over past days: `GOATCOUNTER_KEY=...
+node --experimental-strip-types scripts/daily-health.mjs --backtest 60`.
 
 ---
 
