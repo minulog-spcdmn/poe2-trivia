@@ -3922,7 +3922,7 @@ export function picturesOf(media: PreparedMedia): MediaMsg[] {
   const qid = media.qid;
   const out: MediaMsg[] = [];
   if (media.art) out.push({ t: 'art', qid, ...media.art });
-  media.options.forEach(({ w, h, data }, index) => out.push({ t: 'option', qid, index, w, h, data }));
+  media.options.forEach(({ w, h, place, data }, index) => out.push({ t: 'option', qid, index, w, h, place, data }));
   // Delve: veiled "find the art" pictures; their patches burn in once the clock starts.
   media.tiles.forEach((t, tile) => out.push({ t: 'veil', qid, tile, ...t.veil }));
   if (media.veil) out.push({ t: 'veil', qid, ...media.veil });
