@@ -101,7 +101,7 @@ import { helloRefusal, noPrivate, parseSaved, privateFrom, rememberSecret, soloH
 import { sawLine, START_LINES } from './delveStart';
 import { seenLines } from './delveStartSeen';
 import { keepAwake } from './wakeLock';
-import { AWAY_AFTER_MS, goneFromEnd, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
+import { AWAY_AFTER_MS, goneFromEnd, goneFromLobby, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
 import { markStarted } from './started';
 
 /** The room is told how its players stand at most this often (Session.updateStandingPaced). */
@@ -3070,12 +3070,14 @@ class Session {
 
   /**
    * The room is left off the list for now: its host has gone from the end
-   * screen (presence.ts goneFromEnd), and only they can start the next game.
-   * It keeps its listing slot, and is listed again once they're back. An
-   * invite's screen is still told what the room is (probeDesk).
+   * screen or the lobby (presence.ts goneFromEnd, goneFromLobby), and only
+   * they can start the next game. It keeps its listing slot, and is listed
+   * again once they're back. An invite's screen is still told what the room
+   * is (probeDesk).
    */
   private unlisted() {
-    return this.state?.phase === 'over' && goneFromEnd(ownPresence(), Date.now());
+    const phase = this.state?.phase;
+    return phase === 'over' ? goneFromEnd(ownPresence(), Date.now()) : phase === 'lobby' && goneFromLobby(ownPresence(), Date.now());
   }
 
   private roomInfo(): RoomInfo | null {

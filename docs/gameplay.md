@@ -735,8 +735,8 @@ they're worth more sigils than are unlocked already. Kept in this browser (`src/
     (`src/components/StandingMark.svelte`): a closed eye when their game
     isn't on their screen (another tab, a minimised window, or the screen
     off, for more than a couple of seconds; another app's window over the
-    browser doesn't count, as the page can't tell), a crescent moon when they haven't touched it
-    for two minutes, signal bars with two lit when their game answers the host's
+    browser doesn't count, as the page can't tell), a crescent moon when there's been no sign of
+    them for two minutes (untouched, on screen or behind another tab), signal bars with two lit when their game answers the host's
     pings slowly (a smoothed round trip over 800 ms, or none for 7 s), and
     unlit bars when they're offline, all in the same muted grey. Away, idle
     and offline names dim, and idle and offline avatars grey as an offline
@@ -804,10 +804,11 @@ they're worth more sigils than are unlocked already. Kept in this browser (`src/
   under "Open rooms" on the start page. A first-time host's room starts
   public (and in Delve); after that the room starts the way the host left
   the last one. A room whose host has gone from the end screen (idle there,
-  or away from it for a minute) is left off the list until they're back,
-  since only they can start the next game; it keeps its listing number
-  meanwhile, and its invite link still says whose room it is
-  (`src/lib/presence.ts` goneFromEnd).
+  or away from it for a minute) or from the lobby (no sign of them for ten
+  minutes) is left off the list until they're back, since only they can
+  start the next game; it keeps its listing number meanwhile, and its
+  invite link still says whose room it is (`src/lib/presence.ts`
+  goneFromEnd, goneFromLobby).
   Without a server there's no central list, so a public room claims the
   lowest free numbered listing ID on the matchmaking service
   (`…-pub-1`, `…-pub-2`, …), and the start page checks those numbers in
