@@ -15,18 +15,25 @@
 
 import type { Component } from 'svelte';
 import type { Scene } from './scene.ts';
+import type { SizeKey } from './sizes.ts';
 
 /**
  * A control in a piece's panel. `view`: only how it's shown (the width it's
  * drawn at, a name beside it), not a state of its own: going to a state
  * leaves it as set, it's no part of telling the states apart, and in All
- * states every state shows it as the panel has it.
+ * states every state shows it as the panel has it. `when`: shown only while
+ * each control it names holds one of the values listed (what one of a
+ * scene's moments has: the finds among the cards, a notice's streak);
+ * out of sight it keeps its value.
  */
 export type Control = (
   | { kind: 'range'; key: string; label: string; min: number; max: number; step?: number; default: number; unit?: string }
   | { kind: 'choice'; key: string; label: string; options: { value: string; label: string }[]; default: string }
   | { kind: 'toggle'; key: string; label: string; default: boolean }
-) & { view?: boolean };
+) & { view?: boolean; when?: Record<string, Value[]> };
+
+/** Whether `c` shows with the controls as `v` has them (its `when`). */
+export const showsWith = (c: Control, v: Values) => !c.when || Object.entries(c.when).every(([k, xs]) => xs.includes(v[k]));
 
 export type Value = string | number | boolean;
 export type Values = Record<string, Value>;
@@ -37,6 +44,17 @@ export interface State {
   values: Values;
   /** A scene's: the heading it's listed under, if not its scene's. */
   group?: string;
+  /**
+   * A scene's: a place of its own, `screen/slug` like a scene's key (often a
+   * scene's that was folded into another's controls). Its address
+   * (`qa.html?s=<key>`) opens it, and the sweep, the redraw check and the
+   * scene map take it as they take a scene's first state.
+   */
+  key?: string;
+  /** A scene's: left out of the panel's list (one control away, which says it), though its key still reaches it. */
+  listed?: false;
+  /** A scene's: the design's boards for it, as a scene's `boards` (src/qa/scene.ts). */
+  boards?: Partial<Record<SizeKey, string>>;
 }
 
 /** Something that happens to the piece, a button in its panel. */
@@ -87,6 +105,8 @@ export interface SceneState {
   /** The heading it's listed under. */
   group: string;
   values: Values;
+  /** Its place's key, if it has one of its own (State's `key`). */
+  key?: string;
 }
 
 export interface SceneBench {
@@ -107,7 +127,8 @@ export function valuesOf(controls: Control[], given: Record<string, Value | stri
   return Object.fromEntries(controls.map((c) => [c.key, valueOf(c, given[c.key])]));
 }
 
-function valueOf(c: Control, raw: Value | string | null | undefined): Value {
+/** What `raw` (a state's value, or the address's) sets control `c` to: the default where it can't be one of its values. */
+export function valueOf(c: Control, raw: Value | string | null | undefined): Value {
   if (raw === undefined || raw === null) return c.default;
   if (c.kind === 'toggle') return raw === true || raw === '1' || raw === 'true';
   if (c.kind === 'range') {
@@ -135,6 +156,11 @@ export function stateAt(bench: PieceBench, v: Values): number {
  */
 export function sceneStateAt(bench: SceneBench, scene: Scene, controls: Control[], v: Values): number {
   return bench.states.findIndex((st) => st.scene === scene && controls.every((c) => (c.key in st.values ? valueOf(c, st.values[c.key]) : c.default) === v[c.key]));
+}
+
+/** The one of a scene's named `states`, listed or not, that its controls (all of `controls`) stand at as `v` has them, if any. */
+export function stateOf<T extends { values: Values }>(states: T[], controls: Control[], v: Values): T | undefined {
+  return states.find((st) => controls.every((c) => (c.key in st.values ? valueOf(c, st.values[c.key]) : c.default) === v[c.key]));
 }
 
 /** `list` under its headings, in order: each run of one `group` together, every item with its index in `list`. */

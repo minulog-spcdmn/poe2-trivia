@@ -69,11 +69,13 @@ export async function boot(asked: URLSearchParams) {
   useItems(engine.items, fakeNames);
   useCaptured(import.meta.glob('../captured/*.json', { eager: true, import: 'default' }));
   const key = asked.get('s');
-  const scene = await sceneOf(key);
-  const given = Object.fromEntries([...asked].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v]));
+  const place = await sceneOf(key);
+  const scene = place?.scene;
+  // (A place's controls, under any the address sets.)
+  const given = { ...place?.values, ...Object.fromEntries([...asked].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v])) };
   const built = scene && buildScene(scene, given).built;
   // Class sigils on everyone (tweaks.ts), before anything draws an avatar.
-  if (given.sigils === '1' || given.sigils === 'true') (await import('../../lib/sigilTrial.svelte.ts')).sigilTrial.on = true;
+  if (given.sigils === true || given.sigils === '1' || given.sigils === 'true') (await import('../../lib/sigilTrial.svelte.ts')).sigilTrial.on = true;
   // (A seat past those its room has as built is its last: the grid asks every state for the seat picked on one.)
   const seats = scene && built ? seatsIn(scene, built) : [];
   // Or (&as=<player id>&role=host|client) any player in the room, as the pointers bench sees one scene from two of them.

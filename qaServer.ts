@@ -1,18 +1,20 @@
-// The dev server's side of the QA desk (qa.html, docs/qa.md): the files this
-// branch changes, for its "This change"; the signalling server its live
+// The dev server's side of the QA desk (qa.html, docs/qa.md): where this
+// branch's change shows, for its "This change" (src/qa/change.ts, from git
+// and the scene map); the signalling server its live
 // rooms meet on; saving a live room's moment as a scene; and its "before and
 // after", the game before this branch served beside it and shots of frames
 // for the pixel diff (qaBefore.ts). Dev server only
-// (the beta's change list is written as it is built, see
-// .github/workflows/deploy.yml; its live rooms meet on the PeerJS cloud).
+// (the beta's This change is written as it is built, scripts/qa-change.mjs
+// from .github/workflows/deploy.yml; its live rooms meet on the PeerJS cloud).
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer as createNetServer } from 'node:net';
 import { join } from 'node:path';
 import type { Plugin } from 'vite';
 import { json, qaBefore, qaShots } from './qaBefore.ts';
 import { QA_PEER_PATH, QA_PEER_PORT } from './src/qa/live/signal.ts';
+import { SCENE_CODE, hunksOf, placesTouched, type Change, type FileChange, type Hunk, type PlaceMap } from './src/qa/change.ts';
 
 const gitIn = (root: string) => (...args: string[]) => {
   const r = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
@@ -25,18 +27,126 @@ export function mergeBase(root: string): string | null {
   return git('merge-base', 'origin/main', 'HEAD') ?? git('merge-base', 'main', 'HEAD');
 }
 
+/** Git's output as it is (a file's content, a diff), or null where git fails. */
+const gitRaw = (root: string, ...args: string[]) => {
+  const r = spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 });
+  return r.status === 0 ? r.stdout : null;
+};
+const known = (root: string, ref: string) => spawnSync('git', ['cat-file', '-e', ref], { cwd: root }).status === 0;
+
+/** Each of `files` at `rev` (null: not there), from one call of git's. */
+function showAll(root: string, rev: string, files: string[]): Map<string, string | null> {
+  const out = new Map<string, string | null>();
+  if (!files.length) return out;
+  const r = spawnSync('git', ['cat-file', '--batch'], { cwd: root, input: `${files.map((f) => `${rev}:${f}`).join('\n')}\n`, maxBuffer: 1 << 28 });
+  const buf = r.stdout;
+  let at = 0;
+  for (const f of files) {
+    const nl = buf.indexOf(10, at);
+    if (nl < 0) break;
+    const head = /^\S+ (\w+) (\d+)$/.exec(buf.subarray(at, nl).toString());
+    at = nl + 1;
+    if (!head) {
+      out.set(f, null);
+      continue;
+    }
+    const size = Number(head[2]);
+    out.set(f, head[1] === 'blob' ? buf.subarray(at, at + size).toString('utf8') : null);
+    at += size + 1;
+  }
+  return out;
+}
+
 /**
- * The files this checkout changes since it left main (the merge base with
- * origin/main, or main), committed or not, untracked ones included; paths
- * from the root, forward slashes.
+ * How the lines of `files` moved from the scene map's to `to`'s (a commit,
+ * or the working tree): from the map's commit, or for a file it was made
+ * of as changed since, that content then (`dirty`, a blob). By file: git's
+ * hunks, null where the same, 'unknown' where git can't tell.
  */
-export function changedFiles(root: string): { base: string; files: string[] } | null {
+export function linesSinceMap(root: string, map: Pick<PlaceMap, 'commit' | 'dirty'>, files: string[], to: string | 'tree'): Map<string, Hunk[] | null | 'unknown'> {
+  const out = new Map<string, Hunk[] | null | 'unknown'>();
+  const ok = !!map.commit && known(root, `${map.commit}^{commit}`);
+  const plain = files.filter((f) => !map.dirty?.[f]);
+  if (plain.length) {
+    const diff = ok && to !== map.commit ? gitRaw(root, 'diff', '-U0', '--no-color', '--no-ext-diff', '--no-renames', map.commit, ...(to === 'tree' ? [] : [to]), '--', 'src') : '';
+    const hunks = hunksOf(diff ?? '');
+    for (const f of plain) out.set(f, !ok || diff === null ? 'unknown' : (hunks.get(f) ?? null));
+  }
+  const git = gitIn(root);
+  for (const f of files.filter((f) => map.dirty?.[f])) {
+    const blob = map.dirty![f];
+    const now = to === 'tree' ? (existsSync(join(root, f)) ? git('hash-object', '-w', '--', f) : null) : git('rev-parse', '--verify', '-q', `${to}:${f}`);
+    if (!now || !known(root, blob)) out.set(f, 'unknown');
+    else if (now === blob) out.set(f, null);
+    else {
+      const diff = gitRaw(root, 'diff', '-U0', '--no-color', '--no-ext-diff', blob, now);
+      out.set(f, diff === null ? 'unknown' : ([...hunksOf(diff).values()][0] ?? []));
+    }
+  }
+  return out;
+}
+
+/** The scene map (npm run sweep -- --map), or null where there's none of lines yet. */
+export function readSceneMap(root: string): PlaceMap | null {
+  const file = join(root, 'src', 'data', 'sceneFiles.json');
+  if (!existsSync(file)) return null;
+  const map = JSON.parse(readFileSync(file, 'utf8'));
+  return Array.isArray(map.places) ? map : null;
+}
+
+/** What each place of `root`'s scenes builds now (scripts/place-builds.ts, src/qa/builds.ts), or null where they can't be built. */
+export function placeBuildsIn(root: string): Record<string, string> | null {
+  const r = spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', join(root, 'scripts', 'place-builds.ts')], { cwd: root, encoding: 'utf8', maxBuffer: 1 << 26 });
+  try {
+    return r.status === 0 ? JSON.parse(r.stdout) : null;
+  } catch {
+    return null;
+  }
+}
+
+const EMPTY_MAP: PlaceMap = { commit: '', places: [], sets: [], files: {}, classes: {} };
+
+/** Where this branch's change shows (src/qa/change.ts): what the desk's This change lists. */
+export type ChangeHere = Change & {
+  /** Where it left main, and the files it changes. */
+  base: string;
+  files: string[];
+  /** The scene map's commit, and its places. */
+  map: string | null;
+  mapped: string[];
+};
+
+/**
+ * Where this checkout's change since it left main shows: the places that
+ * run its lines, by the scene map (of the scenes' own code, those it builds
+ * differently). `to`: the working tree (committed or
+ * not, untracked files too), or HEAD (the beta's, whose tree its build has
+ * added to).
+ */
+export function changeHere(root: string, to: 'tree' | 'HEAD' = 'tree'): ChangeHere | null {
   const git = gitIn(root);
   const base = mergeBase(root);
   if (!base) return null;
+  const head = to === 'HEAD' ? ['HEAD'] : [];
   const lines = (out: string | null) => (out ?? '').split('\n').filter(Boolean);
-  const files = new Set([...lines(git('diff', '--name-only', base)), ...lines(git('ls-files', '--others', '--exclude-standard'))]);
-  return { base, files: [...files].sort() };
+  const untracked = to === 'tree' ? lines(git('ls-files', '--others', '--exclude-standard')) : [];
+  const files = [...new Set([...lines(git('diff', '--name-only', '--no-renames', base, ...head)), ...untracked])].sort();
+  const map = readSceneMap(root);
+  const hunks = hunksOf(gitRaw(root, 'diff', '-U0', '--no-color', '--no-ext-diff', '--no-renames', base, ...head, '--') ?? '');
+  const code = files.filter((f) => /^src\/.*\.(svelte|css|ts|js|mjs)$/.test(f));
+  const before = showAll(root, base, code);
+  const after = to === 'HEAD' ? showAll(root, 'HEAD', code) : new Map(code.map((f) => [f, existsSync(join(root, f)) ? readFileSync(join(root, f), 'utf8') : null]));
+  const mapped = map ? code.filter((f) => f in map.files) : [];
+  const toBase = map ? linesSinceMap(root, map, mapped, base) : new Map<string, null>();
+  const toNow = map ? linesSinceMap(root, map, mapped, to === 'tree' ? 'tree' : 'HEAD') : new Map<string, null>();
+  const changes: FileChange[] = files.map((file) => {
+    const now = after.get(file) ?? null;
+    const added: Hunk[] | null = untracked.includes(file) && now !== null ? [{ old: [0, 0], new: [1, now.split('\n').length] }] : null;
+    return { file, hunks: added ?? hunks.get(file) ?? [], before: before.get(file) ?? null, after: now, toBase: toBase.get(file) ?? null, toNow: toNow.get(file) ?? null };
+  });
+  // (What the places build now, where the scenes' code changed: only those built differently count.)
+  const builds = map?.builds && files.some((f) => SCENE_CODE.test(f)) ? (placeBuildsIn(root) ?? undefined) : undefined;
+  return { base, files, map: map?.commit ?? null, mapped: map?.places ?? [], ...placesTouched(changes, map ?? EMPTY_MAP, 1 / 3, builds) };
 }
 
 /**
@@ -68,7 +178,7 @@ export function qaServer(root: string): Plugin {
     name: 'qa-server',
     apply: 'serve',
     configureServer(server) {
-      server.middlewares.use('/__qa/change', (_req, res) => json(res, 200, changedFiles(root)));
+      server.middlewares.use('/__qa/change', (_req, res) => json(res, 200, changeHere(root)));
       server.middlewares.use('/__qa/before', qaBefore(root, server, () => mergeBase(root)));
       server.middlewares.use('/__qa/shot', qaShots(server));
       server.middlewares.use('/__qa/peer', (_req, res) => {

@@ -165,10 +165,30 @@ export interface Scene {
   boards?: Partial<Record<SizeKey, string>>;
   /** What can be set in it, a slider, a menu or a switch each, as a piece's (../bench.ts). Every game has more besides (./tweaks.ts). */
   controls?: Control[];
-  /** Its states worth seeing, by name: controls they set (its own, or those every game has). Missing: one, the scene as it comes. */
+  /**
+   * Its states worth seeing, by name: controls they set (its own, or those
+   * every game has). Missing: one, the scene as it comes. One with a `key` is
+   * a place of its own (an address, swept and watched like a scene); one
+   * `listed: false` stays out of the panel's list, its controls saying it.
+   */
   states?: State[];
   /** Built afresh for each seat that asks, with its controls as set (all of them: valuesOf). */
   build(v?: Values): Built;
+}
+
+/**
+ * What `key` names among `scenes`: a scene, as it comes, or a state of one
+ * with a key of its own (a place: a scene's before it was folded into
+ * another's controls), the scene with that state's controls.
+ */
+export function placeIn(scenes: Scene[], key: string | null): { scene: Scene; values: Values } | undefined {
+  if (!key) return undefined;
+  for (const scene of scenes) {
+    if (scene.key === key) return { scene, values: {} };
+    const st = scene.states?.find((s) => s.key === key);
+    if (st) return { scene, values: st.values };
+  }
+  return undefined;
 }
 
 /** The seats of `scene` whose player is in the room as built (all of them out of a room, or in hot-seat); the one it was built for, if one. */

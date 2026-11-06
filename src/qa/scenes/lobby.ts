@@ -1,8 +1,8 @@
 // The lobby: a room of any size, game and settings, from the host's seat, a
-// guest's and a spectator's; players at the host's screen, and a room that
-// couldn't go online; hot-seat; the room as it changes (settings, a second
-// player, the gallery); and the descent a Delve lobby draws from this
-// device's records.
+// guest's and a spectator's, as it is or as it changes (settings, a player
+// arriving, the gallery, the host's own clicks); players at the host's
+// screen, a room that couldn't go online, and hot-seat; and the descent a
+// Delve lobby draws from this device's records.
 
 import { MAX_PLAYERS, TIMER_STEPS, type Settings } from '../../lib/game.ts';
 import { DELVE_RULESET, FINDS_IN_ORDER } from '../../lib/delve.ts';
@@ -54,6 +54,20 @@ const ROOM: Control[] = [
 /** Players at the host's screen, and the game the host has picked (Race and Delve set them aside). */
 const HERE: Control = { kind: 'range', key: 'here', label: "At the host's screen", min: 0, max: MAX_PLAYERS - 1, default: 2 };
 const MODE: Control = ROOM[1];
+/** Where the room is: online, one that couldn't go online (on this device only), or none at all, hot-seat. */
+const WHERE: Control = {
+  kind: 'choice',
+  key: 'where',
+  label: 'The room',
+  default: 'online',
+  options: [
+    { value: 'online', label: 'Online' },
+    { value: 'here', label: 'Couldn’t go online: this device only' },
+    { value: 'hot-seat', label: 'None: hot-seat' },
+  ],
+};
+/** A name turned down at the host's screen, its notice up. */
+const NAME_REFUSED: Control = { kind: 'toggle', key: 'refused', label: 'A name turned down', default: false };
 
 function atScreen(names: string[], v: Values): Built {
   const t = new Table(names);
@@ -63,7 +77,26 @@ function atScreen(names: string[], v: Values): Built {
   return { state: t.s, act: t.room };
 }
 
-function room(v: Values = {}): Built {
+/** Players at one screen: the host's in an online room, in one that couldn't go online, or hot-seat's, everyone on one device (as many as the host and those at its screen). */
+function oneScreen(v: Values = {}): Built {
+  const where = String(v.where ?? 'online');
+  let built: Built;
+  if (where === 'hot-seat') {
+    const t = new Table(TWELVE.slice(0, 1 + Number(v.here ?? 2)), v.mode && v.mode !== 'turns' ? { mode: v.mode as Settings['mode'] } : {}, { host: null });
+    built = { state: t.s, act: t.room, seat: { mode: 'local', me: null } };
+  } else if (where === 'here') {
+    // (A room that never went online has no guest: the host's seat alone.)
+    built = { ...atScreen(['Kalguur'], v), hereOnly: true, seat: host('Kalguur') };
+  } else built = atScreen(['Kalguur', 'Doryani'], v);
+  if (!v.refused) return built;
+  // A name turned down at the host's screen: the notice stays up, so on a phone a tap in the name field brings the keyboard up under it (it keeps under what shows of the header, or to the top of what shows).
+  // The host's seat alone: only the host's screen has the field, so a guest never sees the refusal.
+  // (One already playing here: a name too short can't be added at all, its Add greyed out.)
+  return { ...built, ...(built.seat ? {} : { seat: host('Kalguur') }), steps: [{ toast: nameProblem('Doryani', ['Kalguur', 'Doryani'])!, kind: 'error' }] };
+}
+
+/** The room as the host has set it, played through the engine. */
+function table(v: Values): Table {
   const names = TWELVE.slice(0, Number(v.players ?? 3));
   const settings: Partial<Settings> = {
     mode: (v.mode ?? 'turns') as Settings['mode'],
@@ -74,7 +107,15 @@ function room(v: Values = {}): Built {
     public: !!v.public,
     locked: !!v.locked,
   };
-  const t = new Table(names, settings);
+  return new Table(names, settings);
+}
+
+/** A room, as it is or as something happens in it (HAPPENS). */
+function room(v: Values = {}): Built {
+  const happens = String(v.happens ?? '');
+  if (happens in CLICKS) return moves(v, happens);
+  if (happens) return live(v, happens);
+  const t = table(v);
   return { state: t.s, act: t.room };
 }
 
@@ -122,32 +163,42 @@ function descent(v: Values = {}): Built {
   return { state: shown, act: t.room, runs: [...runs, ...TOGETHER_RUNS], log, steps: [{ wait: 3200 }, { then: t.s }] };
 }
 
-/** What happens in a room as it shows (the live scene's control). */
+/** What happens in a room as it shows: the room's own moves, as the host's word of each reaches the seat, or this device's host's own clicks. */
 const HAPPENS: Control = {
   kind: 'choice',
   key: 'happens',
   label: 'What happens',
-  default: 'settings',
+  default: '',
   options: [
+    { value: '', label: 'Nothing' },
     { value: 'settings', label: 'The host sets the game: points, difficulty, timer, lock' },
-    { value: 'arrives', label: 'A second player arrives' },
-    { value: 'gallery', label: 'Una of the Vaal goes to watch, and comes back' },
-    { value: 'offline', label: 'Una of the Vaal goes offline, and comes back' },
-    { value: 'host-leaves', label: 'The host leaves: Doryani hosts' },
+    { value: 'arrives', label: 'A player arrives' },
+    { value: 'gallery', label: 'A player goes to watch, and comes back' },
+    { value: 'offline', label: 'A player goes offline, and comes back' },
+    { value: 'host-leaves', label: 'The host leaves: the next one hosts' },
     { value: 'onlookers', label: 'Two arrive to watch' },
     { value: 'sigils', label: 'Sigils put on, changed and taken off' },
+    { value: 'mode', label: 'The host clicks Delve, then Take turns' },
+    { value: 'lock', label: 'The host locks it, then unlocks it' },
+    { value: 'invite', label: 'The host copies the invite link' },
+    { value: 'hide', label: 'The host hides the code, then shows it' },
+    { value: 'custom', label: 'The host steps through Custom’s editor' },
   ],
 };
+/** Who comes to watch, in order: those of them already playing are passed over. */
+const ONLOOKERS = ['Finn', 'Renly', 'Tujen', 'Gwennen'];
 
 /**
  * A room as it changes, a move at a time, as the host's word of each would
  * reach the seat: the guest reading the host's settings as they change (each
- * value dropping in), a host alone joined by a second player (the waiting
+ * value dropping in), a host joined by another player (alone: the waiting
  * line going, a seat lit), a player stepping over to the gallery and back.
+ * The one who moves is the last to sit down (Una of the Vaal, of three).
  */
-function live(v: Values = {}): Built {
-  const happens = String(v.happens ?? 'settings');
-  const t = new Table(happens === 'arrives' ? ['Kalguur'] : TWELVE.slice(0, 3));
+function live(v: Values, happens: string): Built {
+  const t = table(v);
+  const names = t.s.players.map((p) => p.name);
+  const last = names.length > 1 ? names.at(-1)! : null;
   const shown = t.s;
   const steps: Step[] = [];
   const then = (wait: number, by: () => void) => {
@@ -159,47 +210,37 @@ function live(v: Values = {}): Built {
     then(1200, () => t.act({ type: 'settings', settings: { difficulty: 'eternal' } }));
     then(1200, () => t.act({ type: 'settings', settings: { timer: 32 } }));
     then(1200, () => t.act({ type: 'settings', settings: { locked: true } }));
-  } else if (happens === 'arrives') then(1600, () => t.act({ type: 'join', playerId: pid('Doryani'), name: 'Doryani' }, 'Doryani'));
-  else if (happens === 'offline') {
-    then(1400, () => t.act({ type: 'connection', playerId: pid('Una of the Vaal'), connected: false }, null));
-    then(2200, () => t.act({ type: 'connection', playerId: pid('Una of the Vaal'), connected: true }, null));
+  } else if (happens === 'arrives') {
+    const next = TWELVE[names.length];
+    if (next) then(1600, () => t.act({ type: 'join', playerId: pid(next), name: next }, next));
+  } else if (happens === 'offline') {
+    if (last) {
+      then(1400, () => t.act({ type: 'connection', playerId: pid(last), connected: false }, null));
+      then(2200, () => t.act({ type: 'connection', playerId: pid(last), connected: true }, null));
+    }
   } else if (happens === 'host-leaves') {
     // (No move of the game's hands a room over: the room as a new host would carry it on, set by hand.)
-    then(1600, () => (t.s = { ...t.s, hostId: pid('Doryani'), players: t.s.players.filter((p) => p.name !== 'Kalguur') }));
+    if (last) then(1600, () => (t.s = { ...t.s, hostId: pid(names[1]), players: t.s.players.filter((p) => p.name !== 'Kalguur') }));
   } else if (happens === 'onlookers') {
-    then(1400, () => t.act({ type: 'join', playerId: pid('Finn'), name: 'Finn', watch: true }, 'Finn'));
-    then(1200, () => t.act({ type: 'join', playerId: pid('Renly'), name: 'Renly', watch: true }, 'Renly'));
+    for (const [i, name] of ONLOOKERS.filter((n) => !names.includes(n)).slice(0, 2).entries()) then(i ? 1200 : 1400, () => t.act({ type: 'join', playerId: pid(name), name, watch: true }, name));
   } else if (happens === 'sigils') {
-    then(1400, () => t.act({ type: 'sigil', sigil: 'witch' }, 'Doryani'));
-    then(1200, () => t.act({ type: 'sigil', sigil: 'ranger' }, 'Una of the Vaal'));
-    then(1400, () => t.act({ type: 'sigil', sigil: 'monk' }, 'Doryani'));
-    then(1400, () => t.act({ type: 'sigil' }, 'Una of the Vaal'));
-  } else {
-    then(1600, () => t.act({ type: 'watch', watch: true }, 'Una of the Vaal'));
-    then(2200, () => t.act({ type: 'watch', watch: false }, 'Una of the Vaal'));
+    const [, second, third] = names;
+    if (second) then(1400, () => t.act({ type: 'sigil', sigil: 'witch' }, second));
+    if (third) then(1200, () => t.act({ type: 'sigil', sigil: 'ranger' }, third));
+    if (second) then(1400, () => t.act({ type: 'sigil', sigil: 'monk' }, second));
+    if (third) then(1400, () => t.act({ type: 'sigil' }, third));
+  } else if (last) {
+    then(1600, () => t.act({ type: 'watch', watch: true }, last));
+    then(2200, () => t.act({ type: 'watch', watch: false }, last));
   }
   // The host's seat, and (but for the arrival, where there's none to see it from before) a guest's.
   // The host's leaving from a third seat, whose host it was and who sees the banner come to Doryani.
-  const seat = happens === 'settings' ? guest('Doryani') : happens === 'arrives' ? host('Kalguur') : happens === 'host-leaves' ? guest('Una of the Vaal') : undefined;
+  const seat =
+    happens === 'settings' ? (names[1] ? guest(names[1]) : undefined) : happens === 'arrives' ? host('Kalguur') : happens === 'host-leaves' && names.length > 2 ? guest(names.at(-1)!) : undefined;
   return { state: shown, act: t.room, steps, ...(seat ? { seat } : {}) };
 }
 
-/** What this device's host does by hand as the room shows (the moves scene's control): each a click, a moment in, and where it's a toggle, back. */
-const DOES: Control = {
-  kind: 'choice',
-  key: 'does',
-  label: 'The host clicks',
-  default: 'mode',
-  options: [
-    { value: 'mode', label: 'Delve, then Take turns again' },
-    { value: 'lock', label: 'Lock, then unlock' },
-    { value: 'invite', label: 'Copy invite link' },
-    { value: 'hide', label: 'Hide the code, then show it' },
-    { value: 'custom', label: 'Custom’s editor, stepped through' },
-  ],
-};
-
-/** The steps for each of DOES: a wait, then a click. */
+/** The steps for each of the host's own clicks (HAPPENS): a wait, then a click, a moment in, and where it's a toggle, back. */
 const CLICKS: Record<string, [number, string][]> = {
   mode: [
     [1200, '.modes button[data-mode="delve"]'],
@@ -224,14 +265,14 @@ const CLICKS: Record<string, [number, string][]> = {
   ],
 };
 
-/** The room as its host's own clicks change it: what each click does on this device. */
-function moves(v: Values = {}): Built {
-  const does = String(v.does ?? 'mode');
-  const built = room(does === 'custom' ? { difficulty: 'custom' } : {});
-  const clicks = (CLICKS[does] ?? CLICKS.mode).flatMap(([wait, click]): Step[] => [{ wait }, { click }]);
+/** The room as its host's own clicks change it: what each click does on this device, from the host's seat. */
+function moves(v: Values, does: string): Built {
+  // (Custom's editor needs Custom picked.)
+  const t = table(does === 'custom' ? { ...v, difficulty: 'custom' } : v);
+  const clicks = CLICKS[does].flatMap(([wait, click]): Step[] => [{ wait }, { click }]);
   // (Copied whether or not the frame may write to the clipboard.)
   // The host's clicks change the room, as they would (Built.own), rather than only saying what they'd send.
-  return { ...built, own: true, steps: does === 'invite' ? [{ clipboard: true }, ...clicks] : clicks };
+  return { state: t.s, act: t.room, own: true, seat: host('Kalguur'), steps: does === 'invite' ? [{ clipboard: true }, ...clicks] : clicks };
 }
 
 export function lobbyScenes(): Scene[] {
@@ -243,106 +284,54 @@ export function lobbyScenes(): Scene[] {
       label: 'A room',
       // A spectator's seat once someone watches (Finn, the first to come).
       seats: [host('Kalguur'), guest('Doryani'), guest('Finn')],
-      controls: ROOM,
+      controls: [...ROOM, HAPPENS],
       states: [
         { label: 'Three players', values: {} },
-        { label: 'The host, waiting alone', values: { players: 1 } },
-        { label: 'Three players and someone watching', values: { watching: 1 } },
-        { label: 'A full room: twelve', values: { players: 12 } },
-        { label: 'Una of the Vaal went offline', values: { offline: 'Una of the Vaal' } },
-        { label: 'Long names', values: { players: 5, names: 'long' } },
-        { label: 'Race, public', values: { mode: 'race', public: true } },
+        { label: 'The host, waiting alone', values: { players: 1 }, listed: false },
+        { label: 'Three players and someone watching', values: { watching: 1 }, listed: false },
+        { label: 'A full room: twelve', values: { players: 12 }, listed: false },
+        { label: 'Una of the Vaal went offline', values: { offline: 'Una of the Vaal' }, listed: false },
+        { label: 'Long names', values: { players: 5, names: 'long' }, listed: false },
+        { label: 'Race, public', values: { mode: 'race', public: true }, listed: false },
         { label: 'Locked, public, Eternal, to 20', values: { locked: true, public: true, difficulty: 'eternal', target: 20 } },
-        { label: 'Cruel, no timer', values: { difficulty: 'cruel', timer: '0' } },
-        { label: 'Custom difficulty', values: { difficulty: 'custom' } },
-        { label: 'Delve together', values: { mode: 'delve' }, group: 'Delve' },
+        { label: 'Cruel, no timer', values: { difficulty: 'cruel', timer: '0' }, listed: false },
+        { label: 'Custom difficulty', values: { difficulty: 'custom' }, listed: false },
+        { label: 'Delve together', values: { mode: 'delve' }, listed: false },
         { label: 'Delve together, twelve', values: { mode: 'delve', players: 12 }, group: 'Delve' },
+        { label: 'The host, alone, joined by a second player', values: { happens: 'arrives', players: 1 } },
+        { key: 'lobby/live', label: 'A guest reads the host’s settings as they change', values: { happens: 'settings' }, listed: false },
+        { label: 'A player goes to the gallery, and comes back', values: { happens: 'gallery' }, listed: false },
+        { label: 'A player goes offline, and comes back', values: { happens: 'offline' }, listed: false },
+        { label: 'The host leaves: the banner comes to Doryani', values: { happens: 'host-leaves' }, listed: false },
+        { label: 'Two arrive to watch', values: { happens: 'onlookers' }, listed: false },
+        { label: 'Sigils put on, changed and taken off', values: { happens: 'sigils' }, listed: false },
+        { key: 'lobby/moves', label: 'Delve picked, then Take turns: Begin glides both ways', values: { happens: 'mode' }, listed: false },
+        { label: 'Locked, then unlocked', values: { happens: 'lock' }, listed: false },
+        { label: 'The invite link copied', values: { happens: 'invite' }, listed: false },
+        { label: 'The code hidden, then shown', values: { happens: 'hide' }, listed: false },
+        { label: 'Custom’s editor, stepped through', values: { happens: 'custom', difficulty: 'custom' }, listed: false },
       ],
       build: room,
-    },
-    {
-      key: 'lobby/live',
-      screen: 'lobby',
-      group: 'Lobby',
-      label: 'As the room changes',
-      seats: [host('Kalguur'), guest('Doryani')],
-      controls: [HAPPENS],
-      states: [
-        { label: 'A guest reads the host’s settings as they change', values: {} },
-        { label: 'A second player arrives', values: { happens: 'arrives' } },
-        { label: 'A player goes to the gallery, and comes back', values: { happens: 'gallery' } },
-        { label: 'A player goes offline, and comes back', values: { happens: 'offline' } },
-        { label: 'The host leaves: the banner comes to Doryani', values: { happens: 'host-leaves' } },
-        { label: 'Two arrive to watch', values: { happens: 'onlookers' } },
-        { label: 'Sigils put on, changed and taken off', values: { happens: 'sigils' } },
-      ],
-      build: live,
-    },
-    {
-      key: 'lobby/moves',
-      screen: 'lobby',
-      group: 'Lobby',
-      label: 'The host’s own clicks',
-      seats: [host('Kalguur')],
-      controls: [DOES],
-      states: [
-        { label: 'Delve picked, then Take turns: Begin glides both ways', values: {} },
-        { label: 'Locked, then unlocked', values: { does: 'lock' } },
-        { label: 'The invite link copied', values: { does: 'invite' } },
-        { label: 'The code hidden, then shown', values: { does: 'hide' } },
-        { label: 'Custom’s editor, stepped through', values: { does: 'custom' } },
-      ],
-      build: moves,
     },
     {
       key: 'lobby/at-screen',
       screen: 'lobby',
       group: 'Lobby',
       label: "Players at the host's screen",
+      // (A room that couldn't go online, hot-seat and a name turned down pick their own, Built.seat.)
       seats: [host('Kalguur'), guest('Doryani')],
-      controls: [HERE, MODE],
+      controls: [WHERE, HERE, MODE, NAME_REFUSED],
       states: [
         { label: 'Two at the host’s screen, in Turns', values: {} },
-        { label: 'Race: they are set aside', values: { mode: 'race' } },
-        { label: 'A full room', values: { here: 10 } },
+        { label: 'Race: they are set aside', values: { mode: 'race' }, listed: false },
+        { label: 'A full room', values: { here: 10 }, listed: false },
+        { key: 'lobby/name-refused', label: 'A name turned down at the host’s screen: the notice', values: { refused: true }, listed: false },
+        { key: 'lobby/here-only', label: 'A room that couldn’t go online: on this device, alone', values: { where: 'here', here: 0 } },
+        { label: 'A room that couldn’t go online: two at the screen', values: { where: 'here' }, listed: false },
+        { label: 'A room that couldn’t go online: Delve', values: { where: 'here', mode: 'delve' }, listed: false },
+        { key: 'lobby/hot-seat', label: 'Hot-seat: three on one device', values: { where: 'hot-seat' }, listed: false },
       ],
-      build: (v = {}) => atScreen(['Kalguur', 'Doryani'], v),
-    },
-    // A name turned down at the host's screen: the notice stays up, so on a phone a tap in the name field brings the keyboard up under it (it keeps under what shows of the header, or to the top of what shows).
-    // The host's seat alone: only the host's screen has the field, so a guest never sees the refusal.
-    {
-      key: 'lobby/name-refused',
-      screen: 'lobby',
-      group: 'Lobby',
-      label: 'A name turned down at the host’s screen: the notice',
-      seats: [host('Kalguur')],
-      // (One already playing here: a name too short can't be added at all, its Add greyed out.)
-      build: () => ({ ...atScreen(['Kalguur', 'Doryani'], {}), steps: [{ toast: nameProblem('Doryani', ['Kalguur', 'Doryani'])!, kind: 'error' }] }),
-    },
-    {
-      key: 'lobby/here-only',
-      screen: 'lobby',
-      group: 'Lobby',
-      label: "A room that couldn't go online: on this device",
-      seats: [host('Kalguur')],
-      controls: [HERE, MODE],
-      states: [
-        { label: 'Alone', values: { here: 0 } },
-        { label: 'Two at the screen', values: {} },
-        { label: 'Delve', values: { mode: 'delve' } },
-      ],
-      build: (v = {}) => ({ ...atScreen(['Kalguur'], v), hereOnly: true }),
-    },
-    {
-      key: 'lobby/hot-seat',
-      screen: 'lobby',
-      group: 'Lobby',
-      label: 'Hot-seat: three on one device',
-      seats: [{ mode: 'local', me: null }],
-      build: () => {
-        const t = new Table(TWELVE.slice(0, 3), {}, { host: null });
-        return { state: t.s, act: t.room };
-      },
+      build: oneScreen,
     },
     {
       key: 'lobby/delve-descent',
@@ -353,7 +342,7 @@ export function lobbyScenes(): Scene[] {
       controls: [RECORDS, TOGETHER, FOUND, JOINS],
       states: [
         { label: 'Delve: the descent, by your records', values: {} },
-        { label: 'A second player joins: the records turn to the co-op ones', values: { joins: true } },
+        { label: 'A second player joins: the records turn to the co-op ones', values: { joins: true }, listed: false },
       ],
       build: descent,
     },

@@ -6,16 +6,15 @@
   // (docs/qa.md lists them). The bench, its state, its controls and the size
   // are in the address, so a reload, the back button and a link sent to
   // someone all show the same.
-  import { benchByKey, benchOfScene, benches, shelfOf } from '../benches/index.ts';
-  import { sceneByKey } from '../scenes/index.ts';
-  import sceneFiles from '../../data/sceneFiles.json';
-  import { benchesTouched, touched } from '../change.ts';
+  import { benchByKey, benchOfScene, benches, shelfOf, statesOf } from '../benches/index.ts';
+  import { placeByKey } from '../scenes/index.ts';
+  import { benchesTouched, placeOfState, type BenchTouched, type Change } from '../change.ts';
   import { seatLabel, seatsIn, type Scene } from '../scene.ts';
   import { buildScene } from '../tweaks.ts';
   import { SIZES, isSizeKey, sizeOf, type SizeKey } from '../sizes.ts';
   import type { DeskMessage, FrameMessage } from '../messages.ts';
   import { KIND_LABEL, type Problem } from '../frame/checks.ts';
-  import { sceneStateAt, stateAt, stateValues, valuesOf, valuesQuery, type Bench, type PieceBench, type SceneBench, type Value, type Values } from '../bench.ts';
+  import { sceneStateAt, stateAt, stateOf, stateValues, valueOf, valuesOf, valuesQuery, type Bench, type PieceBench, type SceneBench, type SceneState, type Value, type Values } from '../bench.ts';
   import Shelf from './Shelf.svelte';
   import Panel from './Panel.svelte';
   import Stage from './Stage.svelte';
@@ -42,18 +41,19 @@
   );
 
   const ALL = benches();
-  const SCENES = ALL.flatMap((b) => (b.kind === 'scenes' ? b.scenes : []));
 
   /** A size to show at: a device's, or (fit) the desk's own window, the frame as large as the room there, at 1:1. */
   type Pick = SizeKey | 'fit';
   /** What the address switches off (?off=webgl, lib/switchedOff.ts), in every frame shown, before and now: kept as the desk moves. */
   const OFF = new URLSearchParams(location.search).get('off');
   /** The view the address asks for. */
-  type Asked = { bench: Bench; scene: Scene | null; given: Record<string, string>; size: Pick | null; seat: number | 'all' | null; all: boolean; zoomed: boolean; outlines: boolean; compare: boolean };
+  type Asked = { bench: Bench; scene: Scene | null; given: Record<string, Value | string>; size: Pick | null; seat: number | 'all' | null; all: boolean; zoomed: boolean; outlines: boolean; compare: boolean };
   function fromAddress(): Asked | null {
     const p = new URLSearchParams(location.search);
-    const scene = sceneByKey(p.get('s')) ?? null;
-    // (A scene's key gone since, folded into another's states: its screen.)
+    // (A place's key: its scene, with the controls it sets.)
+    const place = placeByKey(p.get('s'));
+    const scene = place?.scene ?? null;
+    // (A scene's key gone since: its screen.)
     const bench = scene ? benchOfScene(scene) : benchByKey(p.get('b') ?? p.get('s'));
     if (!bench) return null;
     const size = p.get('size');
@@ -61,7 +61,7 @@
     return {
       bench,
       scene: scene ?? (bench.kind === 'scenes' ? bench.scenes[0] : null),
-      given: Object.fromEntries([...p].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v])),
+      given: { ...place?.values, ...Object.fromEntries([...p].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v])) },
       size: isSizeKey(size) || size === 'fit' ? size : null,
       seat: seat === 'all' ? 'all' : seat !== null && Number.isInteger(Number(seat)) ? Number(seat) : null,
       all: p.get('all') === '1',
@@ -119,6 +119,8 @@
   );
   const seatNames = $derived(built ? seats.map((s) => seatLabel(s, built.state)) : []);
   const stateIndex = $derived(piece ? stateAt(piece, v) : screen && scene && set ? sceneStateAt(screen, scene, set.controls, set.values) : -1);
+  /** The named state the scene stands at, listed or not: its name on the top line, a place's key in the address. */
+  const named = $derived(screen && scene && set ? stateOf(statesOf(scene), set.controls, set.values) : undefined);
   const states = $derived(piece ? piece.states.map((s) => ({ label: s.label, group: '' })) : (screen?.states.map((s) => ({ label: s.label, group: s.group })) ?? []));
   /** The design's board, where the scene has one at this size and stands as it was drawn (its controls at their defaults). */
   const board = $derived(size !== 'fit' && scene?.boards?.[size] && !sceneQuery.length ? BOARDS[scene.boards[size]!] : undefined);
@@ -130,11 +132,77 @@
   let moves = $state(0);
 
   /**
-   * This change: the benches the branch's files touch (src/qa/change.ts),
-   * from the dev server (its git) or, on the beta, the list written as it
-   * was built. The desk opens on the first when the address names none.
+   * This change: where the branch's change shows (src/qa/change.ts), from
+   * the dev server (its git and the scene map) or, on the beta, as worked
+   * out when it was built: the places that run what it changes, those it's
+   * most their own first, each with its name and its bench's; the benches
+   * they're on; what changes every screen; what no place runs. The desk
+   * opens on the first place when the address names none.
    */
-  let change = $state<{ benches: { key: string; why: string }[]; uncovered: string[]; scenes: Set<string> } | null>(null);
+  let change = $state.raw<{
+    places: { key: string; why: string; label: string; where: string }[];
+    /** Each place's why, by its key. */
+    why: Map<string, string>;
+    benches: BenchTouched[];
+    everywhere: Change['everywhere'];
+    uncovered: string[];
+  } | null>(null);
+  /** Where a screen's state is, in words: its heading, then its screen ("Take turns • In a game"). */
+  const whereOf = (st: SceneState, b: Bench) => (st.group && st.group !== b.label ? `${st.group} • ${b.label}` : b.label);
+  /** Opens `b` at its scene `s`, its controls as `values` set them. */
+  function openAt(b: Bench, s: Scene, values: Values, step: boolean) {
+    open(b, undefined, step);
+    scene = s;
+    sceneSet[s.key] = { ...values };
+  }
+  /** A place by its key: a scene's (its scene, with the controls it sets) or a piece's, and its names. */
+  function placeOf(key: string): { label: string; where: string; open: (step: boolean) => void } | null {
+    const p = placeByKey(key);
+    const b = p ? benchOfScene(p.scene) : benchByKey(key);
+    if (p && b) {
+      const st = statesOf(p.scene).find((s) => s.key === key) ?? statesOf(p.scene)[0];
+      return { label: st.label, where: whereOf(st, b), open: (step) => openAt(b, p.scene, p.values, step) };
+    }
+    return b?.kind === 'piece' && b.key === key ? { label: b.label, where: 'Piece', open: (step) => open(b, 0, step) } : null;
+  }
+  /**
+   * Every state of every screen, listed in its panel or not (one behind a
+   * control: a moment, say), for the search: its names, words to find it
+   * by, and how to open it.
+   */
+  const FINDABLE = ALL.flatMap((b) =>
+    b.kind === 'scenes'
+      ? b.scenes.flatMap((s) =>
+          statesOf(s).map((st, n) => ({
+            id: st.key ?? (n === 0 ? s.key : `${s.key}#${n}`),
+            label: st.label,
+            where: whereOf(st, b),
+            words: `${st.label} ${st.group} ${s.label} ${s.key} ${st.key ?? ''} ${b.label}`.toLowerCase(),
+            open: () => openAt(b, s, st.values, true),
+          })),
+        )
+      : [],
+  );
+  /**
+   * The values the scene's places this change touches set its controls to
+   * (but their defaults), by control: those options get the change's dot,
+   * so a place behind a control (a moment) shows in the panel too.
+   */
+  const marked = $derived.by(() => {
+    const out = new Map<string, Set<Value>>();
+    if (!change || !scene || !set) return out;
+    for (const st of statesOf(scene)) {
+      if (!change.why.has(placeOfState(st) ?? '')) continue;
+      for (const c of set.controls) {
+        if (!(c.key in st.values)) continue;
+        const x = valueOf(c, st.values[c.key]);
+        if (x !== c.default) out.set(c.key, new Set([...(out.get(c.key) ?? []), x]));
+      }
+    }
+    return out;
+  });
+  /** The place the view stands at, if one: This change's row for it is lit, its why in the panel. */
+  const placeHere = $derived(piece ? (stateIndex === 0 ? piece.key : null) : named ? (placeOfState(named) ?? null) : null);
   /**
    * Where the code before this change is, for before and after: the dev
    * server's to get ready (it answered for This change), built beside the
@@ -147,11 +215,27 @@
       const got = await fetch(url).then((r) => (r.ok ? r.json() : null), () => null);
       if (!got?.files) continue;
       beforeAt = url === './__qa/change' ? 'server' : typeof got.before === 'string' && typeof got.base === 'string' ? { base: got.base, root: new URL(got.before, location.href).href } : 'none';
-      const hit = touched(got.files, sceneFiles, SCENES);
-      change = { ...benchesTouched(got.files, hit, ALL), scenes: new Set(hit.scenes.map((s) => s.key)) };
-      const opening = change.benches.map((t) => ALL.find((b) => b.key === t.key)).find(Boolean);
+      const on = benchesTouched({ places: got.places ?? [], mapped: got.mapped, files: got.files }, ALL);
+      const unrun: { file: string; what: string }[] = got.unrun ?? [];
+      change = {
+        places: on.places.flatMap((p) => {
+          const found = placeOf(p.key);
+          return found ? [{ ...p, label: found.label, where: found.where }] : [];
+        }),
+        why: new Map(on.places.map((p) => [p.key, p.why])),
+        benches: on.benches,
+        everywhere: got.everywhere ?? [],
+        // (What no place ran in a file places run: the file, and the first few of its parts.)
+        uncovered: [
+          ...(got.uncovered ?? []),
+          ...[...new Set(unrun.map((u) => u.file))].map((file) => {
+            const parts = unrun.filter((u) => u.file === file).map((u) => u.what);
+            return `${file} (${parts.slice(0, 3).join(', ')}${parts.length > 3 ? ` and ${parts.length - 3} more` : ''})`;
+          }),
+        ],
+      };
       // Not if the address named a bench, or one was picked meanwhile; and in place of the first, not a step after it.
-      if (!first && opening && moves === 0) open(opening, opening.kind === 'scenes' ? opening.states.findIndex((s) => change!.scenes.has(s.scene.key)) : undefined, false);
+      if (!first && moves === 0 && change.places[0]) placeOf(change.places[0].key)?.open(false);
       return;
     }
     beforeAt = 'none';
@@ -474,8 +558,9 @@
       p.set('b', piece.key);
       for (const [k, x] of valuesQuery(piece.controls, v)) p.set(`k.${k}`, x);
     } else if (scene) {
-      p.set('s', scene.key);
-      for (const [k, x] of sceneQuery) p.set(`k.${k}`, x);
+      // (A place by its own key, which says its controls.)
+      p.set('s', named?.key ?? scene.key);
+      if (!named?.key) for (const [k, x] of sceneQuery) p.set(`k.${k}`, x);
       if (seatPicked !== null) p.set('seat', String(seatPicked));
     }
     p.set('size', size);
@@ -521,7 +606,7 @@
 <svelte:window {onkeydown} {onkeyup} onblur={() => ((holding = false), (panning = false))} />
 
 <div class="desk">
-  <Shelf benches={ALL} current={bench} touched={change} bind:query bind:listed bind:this={shelf} onopen={open} {shelfOf} />
+  <Shelf benches={ALL} current={bench} {change} findable={FINDABLE} here={placeHere} bind:query bind:listed bind:this={shelf} onopen={open} onplace={(key) => placeOf(key)?.open(true)} {shelfOf} />
 
   <div class="middle">
     <header class="top">
@@ -529,6 +614,7 @@
         <span class="scene">{bench.label}</span>
         {#if all}<span class="sep">•</span><span class="state">every state</span>
         {:else if stateIndex >= 0}<span class="sep">•</span><span class="state">{states[stateIndex].label}</span>
+        {:else if named}<span class="sep">•</span><span class="state">{named.label}</span>
         {:else if scene}<span class="sep">•</span><span class="state">{scene.label}</span><span class="adjusted">as set</span>
         {:else}<span class="sep">•</span><span class="adjusted">as set</span>{/if}
         {#if scene && seatShown !== 'all' && seats.length > 1}<span class="sep">•</span><span>{seatNames[seatShown]}</span>{/if}
@@ -609,17 +695,18 @@
     controls={piece ? piece.controls : ownControls}
     tweaks={set ? set.controls.slice(ownControls.length) : []}
     v={piece ? v : (set?.values ?? {})}
-    changed={piece ? undefined : (i) => !!change?.scenes.has(screen!.states[i].scene.key)}
+    changed={piece ? undefined : (i) => change?.why.has(placeOfState(screen!.states[i]) ?? '') ?? false}
+    {marked}
     seats={seatNames}
     seat={seatShown}
     {frozen}
     {css}
     hasBoard={!!board}
     canPlay={!!built?.state && LIVE_ROOMS && !live}
-    reason={change?.benches.find((t) => t.key === bench.key)?.why}
+    reason={change?.why.get(placeHere ?? '') ?? change?.benches.find((t) => t.key === bench.key)?.why}
     onstate={goState}
     onall={() => showAll(!all)}
-    canCompare={hasBefore && !live && (comparing || !!change?.benches.some((t) => t.key === bench.key))}
+    canCompare={hasBefore && !live && (comparing || !!change?.benches.some((t) => t.key === bench.key) || !!change?.everywhere.length)}
     {comparing}
     oncompare={() => compareOn(!comparing)}
     onvalue={setValue}
