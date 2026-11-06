@@ -51,6 +51,51 @@ function rig(answer: (signal: AbortSignal) => Promise<Response>) {
   return { dev, clock, pass };
 }
 
+test('a device clock under a minute out stands for the day, but not for a count to the second', async () => {
+  const { dev, clock } = rig(async () => at(T));
+  // 45 s fast.
+  dev.wall = T + 45_000;
+  await clock.sync();
+  assert.equal(clock.now(), T + 45_000);
+  assert.ok(Math.abs(clock.exact() - T) <= 1000);
+});
+
+test('a device clock within a second of the server is left as it is, to the second too: the reply can say no better', async () => {
+  const { dev, clock } = rig(async () => at(T));
+  dev.wall = T + 300;
+  await clock.sync();
+  assert.equal(clock.exact(), T + 300);
+});
+
+test('a device clock set by a second or more since the server answered (the system mending it) is asked about again', async () => {
+  const { dev, clock } = rig(async () => at(dev.server));
+  dev.wall = T + 45_000;
+  await clock.sync();
+  assert.equal(clock.refresh(), undefined);
+  // Set right by the system: 45 s back, under the minute that `now` minds.
+  dev.wall -= 45_000;
+  assert.ok(clock.sure());
+  await clock.refresh();
+  assert.equal(dev.asked, 2);
+  assert.ok(Math.abs(clock.exact() - dev.server) <= 1000);
+});
+
+test('once the server has answered, an ask again with no reply waits a minute too', async () => {
+  let down = false;
+  const { dev, clock, pass } = rig(async () => (down ? reply(null, { status: 503 }) : at(dev.server)));
+  await clock.sync();
+  down = true;
+  dev.wall += 5000;
+  await clock.refresh();
+  assert.equal(dev.asked, 2);
+  assert.equal(clock.refresh(), undefined);
+  pass(RETRY_MS);
+  const again = clock.refresh();
+  assert.notEqual(again, undefined);
+  await again;
+  assert.equal(dev.asked, 3);
+});
+
 test("the time is the device's own until the server says, then the server's, and stays so as time passes", async () => {
   const { dev, clock, pass } = rig(async () => at(T));
   assert.equal(clock.now(), T - 10 * HOUR);
