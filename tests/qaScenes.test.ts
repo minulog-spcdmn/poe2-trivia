@@ -272,3 +272,19 @@ test('every place has a key of its own, under its screen, and every scene a list
     }
   }
 });
+
+// A control shown only with others as `when` says (what one of a scene's
+// moments has) names controls of its scene and values they can take: one
+// that names nothing would never show.
+test('a control shown only at some moments names its scene’s controls and their values', () => {
+  for (const s of catalog()) {
+    const own = new Map((s.controls ?? []).map((c) => [c.key, c]));
+    for (const c of s.controls ?? []) {
+      for (const [k, xs] of Object.entries(c.when ?? {})) {
+        const by = own.get(k);
+        assert.ok(by && by !== c, `${s.key}'s ${c.key} shows only by ${k}, which isn't another of its controls`);
+        for (const x of xs) assert.equal(valuesOf([by], { [k]: x })[k], x, `${s.key}'s ${c.key} shows only when ${k} is ${x}, which ${k} can't be`);
+      }
+    }
+  }
+});

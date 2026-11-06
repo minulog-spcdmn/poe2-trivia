@@ -678,7 +678,7 @@ export function overScenes(): Scene[] {
       'Runs as the design drew them',
       ['run', 'Run'],
       delves,
-      [SHARED],
+      [{ ...SHARED, when: { run: ['d-solo', 'd-first', 'd-best'] } }],
       [{ label: 'Share run pressed: Copied fades in in its place, and back', values: { shared: true }, listed: false }],
       // (Copied whether or not the frame may write to the clipboard. Share run is a run alone's.)
       (e, v) => (v.shared && e.mode === 'local' ? { steps: [{ clipboard: true }, { wait: 1000 }, { click: '.share' }] } : {}),

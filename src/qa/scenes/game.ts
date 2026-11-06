@@ -469,8 +469,9 @@ export function gameScenes(): Scene[] {
         {
           kind: 'choice',
           key: 'finds',
-          label: 'Finds (the cards)',
+          label: 'Finds',
           default: 'none',
+          when: { at: ['cards'] },
           options: [
             { value: 'none', label: 'None' },
             { value: 'both', label: 'A vein and a flare' },
@@ -479,11 +480,11 @@ export function gameScenes(): Scene[] {
             { value: 'dig', label: 'A vein struck once' },
           ],
         },
-        { kind: 'toggle', key: 'held', label: 'Dynamite in a pack (the cards)', default: false },
-        { kind: 'toggle', key: 'voted', label: 'Doryani has voted (the cards)', default: true },
-        { kind: 'toggle', key: 'idle', label: 'Una idle (the cards)', default: false },
-        { kind: 'toggle', key: 'closing', label: 'The vote’s clock running out (the cards)', default: false },
-        { kind: 'toggle', key: 'gives', label: 'Kalguur brings her back (Una perishes)', default: false },
+        { kind: 'toggle', key: 'held', label: 'Dynamite in a pack', default: false, when: { at: ['cards'] } },
+        { kind: 'toggle', key: 'voted', label: 'Doryani has voted', default: true, when: { at: ['cards'] } },
+        { kind: 'toggle', key: 'idle', label: 'Una idle', default: false, when: { at: ['cards'] } },
+        { kind: 'toggle', key: 'closing', label: 'The vote’s clock running out', default: false, when: { at: ['cards'] } },
+        { kind: 'toggle', key: 'gives', label: 'Kalguur brings her back', default: false, when: { at: ['fallen', 'perish'] } },
       ],
       states: [
         { label: 'The cards dealt, Doryani has voted', values: {}, key: 'game/delve-together-cards' },
@@ -652,6 +653,8 @@ export function gameScenes(): Scene[] {
    * there.
    */
   function delveAloneScene(): Scene {
+    // (Where the run stands: every moment but the run's end, which plays a run of its own.)
+    const played = { at: ['cards', 'pick', 'question', 'wrong', 'right', 'blow', 'notice', 'zone'] };
     return scene('delve', 'Delve alone', 'Delve alone', [ALONE], delveAlone, {
       controls: [
         moment([
@@ -665,14 +668,15 @@ export function gameScenes(): Scene[] {
           ['zone', 'Into a new zone'],
           ['end', 'The run’s end'],
         ]),
-        { kind: 'range', key: 'depth', label: 'Depth', min: 0, max: 120, default: 0 },
+        { kind: 'range', key: 'depth', label: 'Depth', min: 0, max: 120, default: 0, when: played },
         // (Two lives: a life lost on the first depth, so a blow's miss leaves the last, its deeper red coming in after the drain.)
-        { kind: 'range', key: 'lives', label: 'Lives', min: 2, max: 3, default: 3 },
+        { kind: 'range', key: 'lives', label: 'Lives', min: 2, max: 3, default: 3, when: played },
         {
           kind: 'choice',
           key: 'finds',
-          label: 'Finds (the cards)',
+          label: 'Finds',
           default: 'as',
+          when: { at: ['cards'] },
           options: [
             { value: 'as', label: 'As dealt' },
             { value: 'both', label: 'A vein and a flare' },
@@ -681,11 +685,11 @@ export function gameScenes(): Scene[] {
             { value: 'dig', label: 'A vein struck once' },
           ],
         },
-        { kind: 'toggle', key: 'held', label: 'Dynamite in the pack (the cards)', default: false },
-        { ...BLOWS, label: 'What happens (a blow)' },
-        { kind: 'range', key: 'streak', label: 'In a row (a notice)', min: 3, max: 120, default: 80 },
-        { kind: 'range', key: 'notices', label: 'Achievements (a notice)', min: 1, max: 2, default: 1 },
-        { kind: 'choice', key: 'zone', label: 'Zone', default: '31', options: [11, 21, 31, 41, 51, 61, 71].map((d) => ({ value: String(d), label: `Depth ${d}` })) },
+        { kind: 'toggle', key: 'held', label: 'Dynamite in the pack', default: false, when: { at: ['cards'] } },
+        { ...BLOWS, when: { at: ['blow'] } },
+        { kind: 'range', key: 'streak', label: 'In a row', min: 3, max: 120, default: 80, when: { at: ['notice'] } },
+        { kind: 'range', key: 'notices', label: 'Achievements', min: 1, max: 2, default: 1, when: { at: ['notice'] } },
+        { kind: 'choice', key: 'zone', label: 'Zone', default: '31', options: [11, 21, 31, 41, 51, 61, 71].map((d) => ({ value: String(d), label: `Depth ${d}` })), when: { at: ['zone'] } },
         {
           kind: 'choice',
           key: 'dice',
@@ -695,6 +699,7 @@ export function gameScenes(): Scene[] {
             { value: 'as', label: 'As they fall' },
             { value: '79', label: 'Seed 79: a long base type at Depth 15' },
           ],
+          when: played,
         },
       ],
       states: [

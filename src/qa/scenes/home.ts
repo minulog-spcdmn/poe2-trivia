@@ -120,8 +120,8 @@ const BACK: Control[] = [
  */
 const RELEASED: Control[] = [
   { kind: 'toggle', key: 'release', label: 'After a release', default: false },
-  { kind: 'range', key: 'count', label: 'New with the release', min: 0, max: 120, default: 39, unit: 'items' },
-  { kind: 'range', key: 'met', label: 'Of them met', min: 0, max: 120, default: 3, unit: 'items' },
+  { kind: 'range', key: 'count', label: 'New with the release', min: 0, max: 120, default: 39, unit: 'items', when: { release: [true] } },
+  { kind: 'range', key: 'met', label: 'Of them met', min: 0, max: 120, default: 3, unit: 'items', when: { release: [true] } },
   { kind: 'toggle', key: 'delved', label: 'A Delve run played', default: true },
 ];
 

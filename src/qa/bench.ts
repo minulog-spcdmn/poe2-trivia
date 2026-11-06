@@ -21,13 +21,19 @@ import type { SizeKey } from './sizes.ts';
  * A control in a piece's panel. `view`: only how it's shown (the width it's
  * drawn at, a name beside it), not a state of its own: going to a state
  * leaves it as set, it's no part of telling the states apart, and in All
- * states every state shows it as the panel has it.
+ * states every state shows it as the panel has it. `when`: shown only while
+ * each control it names holds one of the values listed (what one of a
+ * scene's moments has: the finds among the cards, a notice's streak);
+ * out of sight it keeps its value.
  */
 export type Control = (
   | { kind: 'range'; key: string; label: string; min: number; max: number; step?: number; default: number; unit?: string }
   | { kind: 'choice'; key: string; label: string; options: { value: string; label: string }[]; default: string }
   | { kind: 'toggle'; key: string; label: string; default: boolean }
-) & { view?: boolean };
+) & { view?: boolean; when?: Record<string, Value[]> };
+
+/** Whether `c` shows with the controls as `v` has them (its `when`). */
+export const showsWith = (c: Control, v: Values) => !c.when || Object.entries(c.when).every(([k, xs]) => xs.includes(v[k]));
 
 export type Value = string | number | boolean;
 export type Values = Record<string, Value>;
