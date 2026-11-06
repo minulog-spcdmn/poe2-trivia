@@ -192,6 +192,36 @@ test("a find's depth stands in the middle of its slant, the line broken round it
     }
 });
 
+test("only the finds' lines run past the plate's box: the layers cut round the stars are clipped to it", () => {
+  // DelveLadder draws the finds' lines on a layer of their own, as the stars' mask clips the rest to the box in Chrome.
+  // The plate's lines are points joined (M and L alone), so their numbers pair up as x, y.
+  const nums = (d: string) => {
+    assert.match(d, /^[ML\d.\se-]*$/, 'points joined');
+    return (d.match(/-?\d*\.?\d+(?:e-?\d+)?/g) ?? []).map(Number);
+  };
+  for (const [best, last] of [
+    [null, null],
+    [12, 5],
+    [99, 101],
+    [216, 30],
+  ] as const)
+    for (const p of plates(best, last)) {
+      const masked = [
+        ...p.parts.filter((x) => x.tone !== 'lead').flatMap((x) => [...x.strokes, ...x.glow]),
+        ...p.shades,
+        ...(p.uncharted ? [{ d: p.uncharted.upper }, { d: p.uncharted.lower }] : []),
+      ];
+      for (const s of masked) {
+        const n = nums(s.d);
+        for (let i = 0; i + 1 < n.length; i += 2) assert.ok(n[i] >= 0 && n[i] <= p.w && n[i + 1] >= 0 && n[i + 1] <= p.h, `${best}/${last} at ${p.w}: ${n[i]}, ${n[i + 1]} on the plate`);
+      }
+    }
+  // Beside the finds list they do run past it, to the headings.
+  const b = plates(45, 20)[2];
+  const leads = b.parts.filter((x) => x.tone === 'lead');
+  assert.ok(leads.some((l) => l.strokes.some((s) => nums(s.d).some((v, i) => i % 2 === 0 && v > b.w))));
+});
+
 test('the zones not reached are held in a brace beside the left wall, its word left of it', () => {
   for (const p of plates(12, 5)) {
     const u = p.uncharted!;

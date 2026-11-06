@@ -19,6 +19,7 @@ import { polyfillsFirst, polyfillsScript, readableRegexes } from './polyfillsFir
 import { peerjsProbe } from './peerjsProbe.ts';
 import { qaServer } from './qaServer.ts';
 import { themedCursors } from './themedCursors.ts';
+import { unwatched } from './unwatched.ts';
 import { weaveTile } from './weaveTile.ts';
 import { whereMaps } from './whereMaps.ts';
 
@@ -363,6 +364,9 @@ export default defineConfig(({ command, mode }) => {
     base: './',
     plugins: [svelte(), glslMinify(), peerjsProbe(), polyfillsFirst(), csp(env), errorsFirst(), readableRegexes(), betaPages(env), preloadFonts(), fontinNotice(), keyframesFirst(), backdropSave(), devHub(env), weaveTile(), whereMaps(), qaServer(process.cwd())],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
+    // Not the scripts' builds, runs and profiles, nor other worktrees: walking them held up a cold start (unwatched.ts).
+    // From this checkout down, where the config is (the QA desk's "before" server loads its own from elsewhere).
+    server: { watch: { ignored: unwatched(fileURLToPath(new URL('.', import.meta.url))) } },
     // Module workers, so one (the plates', lib/plateWorker.ts) can load only what it's asked for. Their scripts
     // get the tables that say where an error came from too (whereMaps.ts: one of theirs reaches the page's count), and
     // are held to the regular expressions an older Safari can read (polyfillsFirst.ts readableRegexes) as the page's are.

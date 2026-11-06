@@ -32,6 +32,7 @@ import {
   pt,
   rad,
   star8,
+  transform,
   type Cut,
   type Hole,
   type LineOpts,
@@ -276,45 +277,6 @@ export class Plate {
     }
   }
 }
-
-/** Path data `d` (absolute commands only) turned by `turn` degrees, scaled by `k` and moved to `c`. */
-export const transform = (d: string, c: Pt, k = 1, turn = 0) => {
-  const [cos, sin] = [Math.cos(rad(turn)), Math.sin(rad(turn))];
-  const map = (x: number, y: number) => `${f(c[0] + k * (x * cos - y * sin))} ${f(c[1] + k * (x * sin + y * cos))}`;
-  const tokens = d.match(/[A-Za-z]|-?\d*\.?\d+(?:e-?\d+)?/g) ?? [];
-  let out = '';
-  let cmd = '';
-  let [cx, cy] = [0, 0];
-  const num = () => Number(tokens.shift());
-  while (tokens.length) {
-    if (/[A-Za-z]/.test(tokens[0]!)) cmd = tokens.shift()!;
-    if (cmd === 'Z') {
-      out += 'Z';
-      continue;
-    }
-    if (cmd === 'H' || cmd === 'V') {
-      if (cmd === 'H') cx = num();
-      else cy = num();
-      out += `L${map(cx, cy)}`;
-      continue;
-    }
-    if (cmd === 'A') {
-      const [rx, ry, rot, large, sweep] = [num(), num(), num(), num(), num()];
-      [cx, cy] = [num(), num()];
-      out += `A${f(rx * k)} ${f(ry * k)} ${f(rot + turn)} ${large} ${sweep} ${map(cx, cy)}`;
-      continue;
-    }
-    const pairs = { M: 1, L: 1, T: 1, S: 2, Q: 2, C: 3 }[cmd] ?? 1;
-    out += cmd;
-    for (let i = 0; i < pairs; i++) {
-      const [x, y] = [num(), num()];
-      out += (i ? ' ' : '') + map(x, y);
-      [cx, cy] = [x, y];
-    }
-    if (cmd === 'M') cmd = 'L';
-  }
-  return out;
-};
 
 /** The largest circle in the corner of the box at `corner` (inside lines `inset` in), clear of a disc about `a` of radius `r`. */
 const cornerCircle = (corner: Pt, inset: number, a: Pt, r: number): Hole => {

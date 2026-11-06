@@ -48,6 +48,7 @@
   import { watchGpuNotice } from './lib/gpuNotice';
   import { setCursorColor } from './lib/ownCursor';
   import DuelMark from './components/DuelMark.svelte';
+  import { MediaQuery } from 'svelte/reactivity';
   import { wantsRecording } from './lib/recorder';
   import { playerColor } from './lib/ui';
   import { flat, fullRoom } from './lib/layout';
@@ -381,6 +382,10 @@
     if (screen !== 'home') headerFor = screen;
   });
   const headerPage = $derived(headerFor === 'codex' || headerFor === 'settings');
+  /** A desktop's window, where the header may have room for PoE2's 1.0 (.launch): only there is it on the page at all (hidden still where the buttons' side is too narrow). */
+  const launchRoom = new MediaQuery('(min-width: 1081px) and (min-height: 501px)');
+  /** Its own chunk, with its engraving: a phone never loads it (the start page's too, Home.svelte). */
+  const loadLaunch = () => import('./components/LaunchCountdown.svelte');
   /**
    * The screen the header's line (the round, the room) is for: the one
    * showing, held while the last one goes and changed as the next arrives
@@ -803,6 +808,8 @@
         <CopyNote press={codePress} />
       </div>
       <div class="tools">
+        <!-- PoE2's 1.0 countdown, drawn, where the header has room for it beside the buttons (as on the start page, Home.svelte). -->
+        {#if launchRoom.current}<div class="launch">{#await loadLaunch() then { default: LaunchCountdown }}<LaunchCountdown quiet />{/await}</div>{/if}
         {#if headerPage}
           <button class="icon-btn" onclick={closePage} title={headerFor === 'codex' ? 'Close the codex' : 'Close the settings'} aria-label={headerFor === 'codex' ? 'Close the codex' : 'Close the settings'}>
             <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
@@ -1222,7 +1229,32 @@
   .tools {
     justify-self: end;
     display: flex;
+    align-items: center;
     gap: 0.4rem;
+  }
+  /* PoE2's 1.0 countdown, on a desktop's window (as the start page has it)
+     and only where the buttons' side of the header has room for it: that
+     side as wide as the brand's (its own width no part of the header's), with
+     the drawing and its words beside the buttons, as high as they are, and
+     well clear of the line in the middle. */
+  .launch {
+    display: none;
+    margin-right: 1rem;
+  }
+  @media (min-width: 1081px) and (min-height: 501px) {
+    .tools {
+      justify-self: stretch;
+      justify-content: flex-end;
+      container: tools / inline-size;
+      /* (A container's contents give it no width of its own: the two buttons' at least, however wide the middle.) */
+      min-width: calc(2 * 38px + 0.4rem);
+    }
+  }
+  /* (Its widest, the last two hours in minutes: 143 px, its margin, the gaps and the buttons 248, and some to spare for another system's fonts.) */
+  @container tools (min-width: 262px) {
+    .launch {
+      display: block;
+    }
   }
   .icon-btn {
     width: 38px;

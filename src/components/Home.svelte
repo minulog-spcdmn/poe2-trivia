@@ -168,6 +168,8 @@
    * and its arrow keys wherever there's room for them.
    */
   const compact = new MediaQuery('(max-width: 640px), (pointer: coarse) and (max-width: 1080px)');
+  /** Room for PoE2's 1.0 between the columns (see .launch): only then is it on the page at all, and drawn. */
+  const launchRoom = new MediaQuery('(min-width: 1280px)');
 
   // ---- names ----
 
@@ -733,7 +735,7 @@
   </div>
 {/snippet}
 
-<div class="home" class:invited={!!invite} class:compact={compact.current}>
+<div class="home" class:invited={!!invite} class:compact={compact.current} class:marked={BETA || LOCAL}>
   <div class="intro">
     <div class="title">
       <GameTitle />
@@ -930,6 +932,14 @@
     </nav>
   </div>
 
+  <!-- PoE2's 1.0, drawn, at the top between the columns, on a wide enough window (and in the header in a room, App.svelte); here, between the two, so the keys reach it where it is. -->
+  {#if launchRoom.current}
+    <div class="launch" in:fade|global={calm({ duration: 900, delay: 450 })}>
+      <!-- (Its own chunk, with its engraving: a phone never loads it.) -->
+      {#await import('./LaunchCountdown.svelte') then { default: LaunchCountdown }}<LaunchCountdown />{/await}
+    </div>
+  {/if}
+
   <div class="today" in:fade|global={calm({ duration: 900, delay: 150 })}>
     {#if invite}
       <InviteRoom code={invite} info={inviteInfo} name={inviteName} />
@@ -1010,6 +1020,26 @@
   .foot {
     grid-area: foot;
     margin-top: 32px;
+  }
+  /* PoE2's 1.0, drawn: on the page's middle line at the top of the columns,
+     between the title and Today's unique's circle, over the gap they keep
+     (taking none of the page's height). Only where the gap is wide enough to
+     keep it clear of both: 1280 wide and up (launchRoom). */
+  @media (min-width: 1280px) {
+    .launch {
+      grid-area: 2 / 1 / 3 / 3;
+      justify-self: center;
+      align-self: start;
+      position: relative;
+      z-index: 1;
+      margin-top: 6px;
+    }
+  }
+  /* (A tall window's title is larger, and the beta's or the dev server's mark beside it reaches into the gap: a step right, where the circle leaves room.) */
+  @media (min-width: 1280px) and (min-height: 980px) {
+    .marked .launch {
+      translate: 30px 0;
+    }
   }
   /* Wide windows, 980 tall and up: 26 + 650 (the columns) + 44 + 153 (the
      rooms) + 32 + 49 (the footer) + 22 = 976. */
