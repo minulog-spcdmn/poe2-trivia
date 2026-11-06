@@ -83,8 +83,8 @@ function betaPages(env: Record<string, string>): Plugin {
       const file = join(outDir, 'manifest.webmanifest');
       if (!existsSync(file)) return;
       const manifest = JSON.parse(readFileSync(join(publicDir, 'manifest.webmanifest'), 'utf8'));
-      manifest.name = `Beta • ${manifest.name}`;
-      manifest.short_name = 'PoE2 Beta';
+      // The installed app's name, plain like the live one's: no bullet to be cut off.
+      manifest.name = manifest.short_name = 'PoE2 Beta';
       writeFileSync(file, JSON.stringify(manifest, null, 2) + '\n');
     },
     transformIndexHtml(html) {
