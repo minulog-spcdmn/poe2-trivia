@@ -15,10 +15,11 @@
   // long is left. The last grains fall to the last second, and over the last
   // day the Shadow comes out of the hourglass's shadow, into the light at the
   // launch, when the sand has run.
-  // At the top of the start page between its columns, and in the header beside
-  // its buttons wherever the window has room for it (Home.svelte, App.svelte);
-  // in the header (`quiet`) the hourglass alone, as high as the buttons, its
-  // words beside it.
+  // At the top of the start page wherever it has room, a phone's too
+  // (Home.svelte, which sets how high it's drawn, `--launch-h`, where it has
+  // less), and in the header beside its buttons wherever the window has room
+  // for it (App.svelte); in the header (`quiet`) the hourglass alone, as high
+  // as the buttons, its words beside it.
   // Drawn in as the rune circles are, by their pen (lib/drawIn): the plinth,
   // the hourglass from its foot up, the two classes, then the shading, the
   // arch, Sol and Luna stamped in, the script written and the sand poured;
@@ -40,11 +41,17 @@
 
   let {
     quiet = false,
+    edge = false,
+    onend,
     at: launchAt = LAUNCH_AT,
     time = () => clock.exact(),
   }: {
     /** In the header: the hourglass alone, smaller, its words beside it. */
     quiet?: boolean;
+    /** At the window's right edge (the start page's in one column): its note's right edge on its own, as in the header, so it never reaches past the window. */
+    edge?: boolean;
+    /** Told when it has nothing more to say (a week after the launch), so the page can give its room back. */
+    onend?: () => void;
     /** The QA desk's bench only (src/qa/benches/launch.ts): another launch, and a clock set where it wants. */
     at?: number | null;
     time?: () => number;
@@ -54,6 +61,9 @@
   let now = $state(untrack(() => time()));
   const shown = $derived(countdown(now, launchAt));
   const fig = $derived(shown && figure(shown));
+  $effect(() => {
+    if (!shown) untrack(() => onend?.());
+  });
   /**
    * In the header, its words held to their widest while the figure counts in the same unit (a 0, Cinzel's widest
    * digit, in each place it can have, and the plural), so the drawing beside them never shifts as it ticks down:
@@ -67,10 +77,10 @@
   const light = $derived(shown ? dawn(shown) : 0);
   const stream = $derived(grains.stream ? `M0 ${grains.stream.from}V${grains.stream.to}` : '');
   const box = $derived(quiet ? CLOSE : BOX);
-  /** The drawing's height, in px. */
-  const height = $derived(quiet ? 38 : 125);
-  /** The stream's fall, in px. */
-  const fall = $derived(grains.stream ? (grains.stream.to - grains.stream.from) * (height / box.h) : 0);
+  /** The drawing's height: in the header as high as its buttons; else as the page sets it (`--launch-h`), 125 px where it sets none. */
+  const height = $derived(quiet ? '38px' : 'var(--launch-h, 125px)');
+  /** The stream's fall, as a share of the drawing's height. */
+  const fall = $derived(grains.stream ? (grains.stream.to - grains.stream.from) / box.h : 0);
   /** Its words as they show, then the game's whole name. */
   const label = $derived(fig && `${fig.n === null ? `PoE2 1.0 ${fig.until}` : `${fig.n} ${fig.until} PoE2 1.0`} (Path of Exile 2)`);
   const note = $derived(
@@ -151,13 +161,13 @@
 {/snippet}
 
 {#if shown && fig}
-  <a class="launch" class:quiet href={LAUNCH_SOURCE} target="_blank" rel="noopener noreferrer" aria-label={label} aria-describedby="{uid}-note">
+  <a class="launch" class:quiet class:edge href={LAUNCH_SOURCE} target="_blank" rel="noopener noreferrer" aria-label={label} aria-describedby="{uid}-note">
     {#key quiet}
-      <span class="art" style:height="{height}px" style:aspect-ratio="{box.w} / {box.h}" aria-hidden="true">
+      <span class="art" style:height={height} style:aspect-ratio="{box.w} / {box.h}" aria-hidden="true">
         <svg class="glow" viewBox={viewBox(box)} use:drawn>{@render engraving()}</svg>
         <svg class="lines" viewBox={viewBox(box)} use:drawn>{@render engraving()}</svg>
         {#if grains.stream && !quiet && !motion.resting}
-          <span class="grain" style:top={waistAt(box)} style:--fall="{fall}px"></span>
+          <span class="grain" style:top={waistAt(box)} style:--fall="calc({height} * {fall.toFixed(4)})"></span>
         {/if}
       </span>
     {/key}
@@ -395,7 +405,7 @@
   }
 
   /* Its note under it, as the footer's tip is over its pill (SiteFooter.svelte): in the middle, or in the
-     header its right edge on the piece's. */
+     header and at the window's edge its right edge on the piece's. */
   .note {
     position: absolute;
     z-index: 2;
@@ -423,7 +433,8 @@
       translate 0.2s var(--ease-out),
       visibility 0s 0.2s;
   }
-  .quiet .note {
+  .quiet .note,
+  .edge .note {
     left: auto;
     right: 0;
     margin-left: 0;

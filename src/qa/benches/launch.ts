@@ -26,6 +26,7 @@ export const launch: PieceBench = {
     { kind: 'range', key: 'hours', label: 'And hours', min: 0, max: 23, default: 0 },
     { kind: 'range', key: 'minutes', label: 'And minutes', min: 0, max: 59, default: 0 },
     { kind: 'toggle', key: 'header', label: 'As in the header', default: false, view: true },
+    { kind: 'toggle', key: 'phone', label: 'As on a phone', default: false, view: true, when: { header: [false] } },
   ],
   states: [
     { label: 'Weeks to go, no hour named yet', values: { days: 36 } },

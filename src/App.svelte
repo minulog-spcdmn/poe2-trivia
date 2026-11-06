@@ -382,9 +382,9 @@
     if (screen !== 'home') headerFor = screen;
   });
   const headerPage = $derived(headerFor === 'codex' || headerFor === 'settings');
-  /** A desktop's window, where the header may have room for PoE2's 1.0 (.launch): only there is it on the page at all (hidden still where the buttons' side is too narrow). */
-  const launchRoom = new MediaQuery('(min-width: 1081px) and (min-height: 501px)');
-  /** Its own chunk, with its engraving: a phone never loads it (the start page's too, Home.svelte). */
+  /** A window past a phone's, where the header may have room for PoE2's 1.0 (.launch): only there is it on the page at all (hidden still where the buttons' side is too narrow). */
+  const launchRoom = new MediaQuery('(min-width: 641px) and (min-height: 501px)');
+  /** Its own chunk, with its engraving (the start page's too, Home.svelte). */
   const loadLaunch = () => import('./components/LaunchCountdown.svelte');
   /**
    * The screen the header's line (the round, the room) is for: the one
@@ -398,6 +398,20 @@
   });
   /** How long the header's line takes to change. */
   const META_MS = 250;
+  /** What the header's line says: Delve's depth, the round, that it's played on this device, the room's code, or nothing (a room's lobby online: its code is big below it). */
+  const metaSays = $derived(
+    gs?.delve && (metaFor === 'game' || metaFor === 'over')
+      ? 'delve'
+      : gs && metaFor === 'game'
+        ? 'round'
+        : session.mode === 'local' || session.hereOnly
+          ? 'here'
+          : session.code && metaFor !== 'lobby'
+            ? 'room'
+            : null,
+  );
+  /** The header's line empty, so PoE2's 1.0 has room beside the buttons on any screen, a phone's too. */
+  const launchBare = $derived(metaSays === null);
   /** A line going, fading where it stood (centred, as the next one is). */
   const metaOut = (node: Element) => plainFade(node, calm({ duration: META_MS }));
   /**
@@ -750,7 +764,7 @@
         <!-- Changed with the screen it is for (metaFor), the old line fading as the new one comes. -->
         {#key metaFor}
           <div class="meta-line" in:metaIn out:metaOut>
-            {#if gs?.delve && (metaFor === 'game' || metaFor === 'over')}
+            {#if metaSays === 'delve' && gs}
               <!-- Delve: no target, just how deep. -->
               {#if folded}
                 <!-- (Folded: no room code, the depth and zone alone.) -->
@@ -779,7 +793,7 @@
                   <span class="zone" style:--accent={accentAt(round)} in:zoneIn out:zoneOut>{zoneAt(round)}</span>
                 {/key}
               </span>
-            {:else if gs && metaFor === 'game'}
+            {:else if metaSays === 'round' && gs}
               {#if session.code && !session.hideCode && !folded}
                 <span data-keep>Room <b class="code" data-copy {@attach codePress.attach}>{session.code}</b></span>
                 <span class="dot">•</span>
@@ -797,9 +811,9 @@
                 <span class="dot target">•</span>
                 <span class="target">First to <b>{gs.settings.targetScore}</b></span>
               {/if}
-            {:else if session.mode === 'local' || session.hereOnly}
+            {:else if metaSays === 'here'}
               <span data-keep>On this device</span>
-            {:else if session.code && metaFor !== 'lobby'}
+            {:else if metaSays === 'room'}
               <!-- The lobby shows the code in big letters. (Hidden for streaming, a copy still gives it.) -->
               <span data-keep>Room <b class="code" data-copy {@attach codePress.attach}>{session.hideCode ? '••••••' : session.code}</b></span>
             {/if}
@@ -808,8 +822,12 @@
         <CopyNote press={codePress} />
       </div>
       <div class="tools">
-        <!-- PoE2's 1.0 countdown, drawn, where the header has room for it beside the buttons (as on the start page, Home.svelte). -->
-        {#if launchRoom.current}<div class="launch">{#await loadLaunch() then { default: LaunchCountdown }}<LaunchCountdown quiet />{/await}</div>{/if}
+        <!-- PoE2's 1.0 countdown, drawn, where the header has room for it beside the buttons (as on the start page, Home.svelte); with the line, it comes and goes. -->
+        {#if launchRoom.current || launchBare}
+          <div class="launch" class:bare={launchBare} transition:fade={calm({ duration: META_MS })}>
+            {#await loadLaunch() then { default: LaunchCountdown }}<LaunchCountdown quiet />{/await}
+          </div>
+        {/if}
         {#if headerPage}
           <button class="icon-btn" onclick={closePage} title={headerFor === 'codex' ? 'Close the codex' : 'Close the settings'} aria-label={headerFor === 'codex' ? 'Close the codex' : 'Close the settings'}>
             <svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
@@ -1232,7 +1250,7 @@
     align-items: center;
     gap: 0.4rem;
   }
-  /* PoE2's 1.0 countdown, on a desktop's window (as the start page has it)
+  /* PoE2's 1.0 countdown, on a window past a phone's (as the start page has it)
      and only where the buttons' side of the header has room for it: that
      side as wide as the brand's (its own width no part of the header's), with
      the drawing and its words beside the buttons, as high as they are, and
@@ -1241,7 +1259,7 @@
     display: none;
     margin-right: 1rem;
   }
-  @media (min-width: 1081px) and (min-height: 501px) {
+  @media (min-width: 641px) and (min-height: 501px) {
     .tools {
       justify-self: stretch;
       justify-content: flex-end;
@@ -1254,6 +1272,26 @@
   @container tools (min-width: 262px) {
     .launch {
       display: block;
+    }
+  }
+  /* Where the line is empty, there on any screen: a phone's header has room for it then too. */
+  .launch.bare {
+    display: block;
+  }
+  /* (On a phone, held beside the buttons out of the header's flow: the
+     middle takes what the buttons leave, so as it comes or goes with the
+     line, the line fading out or in keeps its width and never wraps, nor
+     the header grows and shrinks again under it. The gap is its margin.) */
+  @media (max-width: 640px) {
+    .tools {
+      position: relative;
+    }
+    .launch.bare {
+      position: absolute;
+      right: 100%;
+      top: 50%;
+      translate: 0 -50%;
+      margin-right: 0.6rem;
     }
   }
   .icon-btn {
