@@ -3,8 +3,8 @@
 // leaving one (the owner's with Close room too; the header's
 // leave, or the browser's back, which closes what's open first, the codex's
 // item card too), news arriving mid-question (where the stack stands on a
-// phone, either way up), a guest's link to the host lost, an item's window
-// as another item opens in it, and coming back
+// phone, either way up; achievements; a guest's link to the host lost), an
+// item's window as another item opens in it, and coming back
 // from a crash (Root.svelte: a guest
 // leaves the room, a second crash soon after leaves any game, and one with
 // no game left stops the page).
@@ -17,6 +17,7 @@ import { ACHIEVEMENTS } from '../../lib/achievements.ts';
 import { METALS, TIERS, type Tier } from '../../lib/metals.ts';
 // (A namespace: the code before this change has no ACHIEVEMENT_SOUNDS, and a name it lacks fails the whole screen there.)
 import * as soundDesign from '../../lib/soundDesign.ts';
+import type { Control, Values } from '../bench.ts';
 import type { Built, Scene, Seat, Step } from '../scene.ts';
 
 const THREE = ['Kalguur', 'Doryani', 'Una of the Vaal'];
@@ -60,62 +61,173 @@ const achievementNotices = (tier: Tier): Built => {
 const overlay = (key: string, label: string, seats: Seat[], build: () => Built): Scene => ({ key: `overlay/${key}`, screen: 'overlay', group: 'Over the game', label, seats, build });
 const doryani: Seat = { mode: 'client', me: pid('Doryani') };
 const kalguur: Seat = { mode: 'host', me: pid('Kalguur') };
+const nobody: Seat = { mode: 'none', me: null };
 /** The player a notice is about, in their colour in the room. */
 const una = { name: 'Una of the Vaal', hue: player('Una of the Vaal').hue };
 
+/** Why the room turned this device out. */
+const WHY: Control = {
+  kind: 'choice',
+  key: 'why',
+  label: 'Why',
+  options: [
+    { value: 'removed', label: 'Removed by the host' },
+    { value: 'closed', label: 'The host closed it' },
+    { value: 'owner', label: 'The owner closed it' },
+    { value: 'mine', label: 'The owner’s own page' },
+    { value: 'moved', label: 'Moved to another tab' },
+  ],
+  default: 'removed',
+};
+function turnedOut(v: Values = {}): Built {
+  // The owner closed it (session.svelte.ts closeAsOwner): every guest and the host are told so alike.
+  if (v.why === 'owner') return inGame([{ fail: 'shut' }]);
+  const built = v.why === 'mine' ? inGame([{ fail: 'mine' }], false, 'Doryani') : inGame([{ fail: v.why === 'closed' ? 'closed' : v.why === 'moved' ? 'replaced' : 'kicked' }]);
+  return { ...built, seat: doryani };
+}
+
+/** The notices that come during a question. */
+const NOTICES: Control = {
+  kind: 'choice',
+  key: 'notices',
+  label: 'Notices',
+  options: [
+    { value: 'news', label: 'A burst of news' },
+    { value: 'link', label: 'The link to the host lost' },
+    ...TIERS.map((t) => ({ value: String(t), label: `Achievements in ${METALS[t].name}` })),
+  ],
+  default: 'news',
+};
+function notices(v: Values = {}): Built {
+  // A guest's link to the host lost under a notice already up: its row pinned at the head of the stack (the notice
+  // moving over for it), its words and seal cross-fading as reconnecting is given up, then gone as the link comes back.
+  if (v.notices === 'link')
+    return inGame([
+      { toast: 'Brea', opts: { title: 'Spectator joined', who: { name: 'Brea' } } },
+      { wait: 1200 },
+      { link: 'lost' },
+      { wait: 2600 },
+      { link: 'gaveUp' },
+      { wait: 2600 },
+      { link: 'back' },
+    ]);
+  // Achievements earned mid-question, worded as lib/achievementToasts.ts words them: one alone, and three as one notice under the first's seal, all of the metal picked.
+  if (v.notices !== undefined && v.notices !== 'news') return achievementNotices(Number(v.notices) as Tier);
+  // A burst of news during a question: wide screens (and a phone on its side) stack it bottom right, upright phones at the top, as many as they keep.
+  // Last the longest a guest gets mid-question (session.svelte.ts TOO_QUICK), two lines: the one a phone on its side shows.
+  return inGame([
+    { toast: 'Una of the Vaal', kind: 'warn', opts: { title: 'Player disconnected', who: una } },
+    { toast: 'Una of the Vaal', kind: 'warn', opts: { title: 'Turn skipped', who: una } },
+    { toast: 'Brea', opts: { title: 'Spectator joined', who: { name: 'Brea' } } },
+    { toast: 'Too quick to count: the question had only just reached you. Answer again.', kind: 'error' },
+  ]);
+}
+
+/** What's open as the browser's back is pressed. */
+const OPEN: Control = {
+  kind: 'choice',
+  key: 'open',
+  label: 'Open',
+  options: [
+    { value: 'nothing', label: 'Nothing, in a game' },
+    { value: 'custom', label: 'The lobby’s custom difficulty' },
+    { value: 'item', label: 'An item’s window, in a game' },
+    { value: 'codex', label: 'An item, in the codex' },
+    { value: 'end', label: 'An item, on the end screen' },
+  ],
+  default: 'nothing',
+};
+// The browser's back (lib/backGuard.ts): with nothing open it asks, as the header's leave does; with the item's window open, it closes that alone.
+function back(v: Values = {}): Built {
+  const step: Step = { back: true };
+  if (v.open === 'custom') return { ...editingCustom([step]), seat: kalguur };
+  if (v.open === 'item') return { ...inGame([{ click: 'button.details' }, { wait: 800 }, step], true), seat: kalguur };
+  if (v.open === 'codex') return { ...codexItem([step]), seat: nobody };
+  if (v.open === 'end') return { ...endItem([step]), seat: { mode: 'local', me: null } };
+  return inGame([step]);
+}
+
+/** Who crashed, and how often. */
+const WHO: Control = {
+  kind: 'choice',
+  key: 'who',
+  label: 'Who crashed',
+  options: [
+    { value: 'host', label: 'The host' },
+    { value: 'guest', label: 'A guest' },
+    { value: 'out', label: 'Out of a game' },
+  ],
+  default: 'host',
+};
+const TWICE: Control = { kind: 'toggle', key: 'twice', label: 'Twice in a row', default: false };
+function crash(v: Values = {}): Built {
+  const step: Step = { crash: v.twice ? 2 : 1 };
+  if (v.who === 'out') return { state: null, steps: [step], seat: nobody };
+  return v.who === 'guest' ? { ...inGame([step]), seat: doryani } : inGame([step]);
+}
+
+/** Leaving: as the owner, in someone else's room. */
+const OWNER: Control = { kind: 'toggle', key: 'owner', label: 'As the owner', default: false };
+
 export function overlayScenes(): Scene[] {
   return [
-    overlay('removed', 'Removed from the game by the host', [doryani], () => inGame([{ fail: 'kicked' }])),
-    overlay('closed', 'The host closed the room', [doryani], () => inGame([{ fail: 'closed' }])),
-    // The owner closed it (session.svelte.ts closeAsOwner): every guest and the host are told so alike.
-    overlay('closed-owner', 'The owner closed the room', [doryani, kalguur], () => inGame([{ fail: 'shut' }])),
-    overlay('closed-mine', 'The owner’s own page: the room it closed', [doryani], () => inGame([{ fail: 'mine' }], false, 'Doryani')),
-    overlay('moved', 'The game moved to another tab', [doryani], () => inGame([{ fail: 'replaced' }])),
-    // A burst of news during a question: wide screens (and a phone on its side) stack it bottom right, upright phones at the top, as many as they keep.
-    // Last the longest a guest gets mid-question (session.svelte.ts TOO_QUICK), two lines: the one a phone on its side shows.
-    overlay('news', 'News during a question: a burst of notices', [doryani], () =>
-      inGame([
-        { toast: 'Una of the Vaal', kind: 'warn', opts: { title: 'Player disconnected', who: una } },
-        { toast: 'Una of the Vaal', kind: 'warn', opts: { title: 'Turn skipped', who: una } },
-        { toast: 'Brea', opts: { title: 'Spectator joined', who: { name: 'Brea' } } },
-        { toast: 'Too quick to count: the question had only just reached you. Answer again.', kind: 'error' },
-      ]),
-    ),
-    // A guest's link to the host lost under a notice already up: its row pinned at the head of the stack (the notice
-    // moving over for it), its words and seal cross-fading as reconnecting is given up, then gone as the link comes back.
-    overlay('lost', 'A guest’s link to the host lost: reconnecting, given up, back', [doryani], () =>
-      inGame([
-        { toast: 'Brea', opts: { title: 'Spectator joined', who: { name: 'Brea' } } },
-        { wait: 1200 },
-        { link: 'lost' },
-        { wait: 2600 },
-        { link: 'gaveUp' },
-        { wait: 2600 },
-        { link: 'back' },
-      ]),
-    ),
-    // Achievements earned mid-question, worded as lib/achievementToasts.ts words them: one alone, and three as one notice under the first's seal, all of the metal picked.
     {
-      ...overlay('achievement', 'Achievements earned during a question', [doryani], () => achievementNotices(3)),
-      controls: [{ kind: 'choice', key: 'tier', label: 'Metal', default: '3', options: TIERS.map((t) => ({ value: String(t), label: METALS[t].name })) }],
-      states: TIERS.map((t) => ({ label: METALS[t].name, values: { tier: String(t) } })),
-      build: (v) => achievementNotices(Number(v?.tier ?? 3) as Tier),
+      ...overlay('turned-out', 'Turned out of the room', [doryani, kalguur], () => turnedOut()),
+      controls: [WHY],
+      states: [
+        { label: 'Removed from the game by the host', values: {}, key: 'overlay/removed' },
+        { label: 'The host closed the room', values: { why: 'closed' }, key: 'overlay/closed', listed: false },
+        { label: 'The owner closed the room', values: { why: 'owner' }, key: 'overlay/closed-owner', listed: false },
+        { label: 'The owner’s own page: the room it closed', values: { why: 'mine' }, key: 'overlay/closed-mine', listed: false },
+        { label: 'The game moved to another tab', values: { why: 'moved' }, key: 'overlay/moved', listed: false },
+      ],
+      build: turnedOut,
     },
-    overlay('leave', 'Leaving a game: the dialog', [kalguur, doryani], () => inGame([{ click: 'button[aria-label="Leave game"]' }])),
-    // The owner in someone else's room: the dialog offers to close it for everyone too.
-    overlay('leave-owner', 'Leaving as the owner: Close room too', [doryani], () => inGame([{ click: 'button[aria-label="Leave game"]' }], false, 'Doryani')),
-    // The browser's back (lib/backGuard.ts): with nothing open it asks, as the header's leave does; with the item's window open, it closes that alone.
-    overlay('back', 'Back in a game: asked before leaving', [kalguur, doryani], () => inGame([{ back: true }])),
-    overlay('back-custom', 'Back in the lobby with the custom difficulty open: it closes, the room stays', [kalguur], () => editingCustom([{ back: true }])),
-    overlay('back-item', "Back with an item's window open: it closes, the game stays", [kalguur], () => inGame([{ click: 'button.details' }, { wait: 800 }, { back: true }], true)),
-    overlay('back-codex-item', "Back in the codex with an item open: it closes, the codex stays as it was", [{ mode: 'none', me: null }], () => codexItem([{ back: true }])),
-    overlay('back-end-item', "Back on the end screen with an item open: it closes, the room stays", [{ mode: 'local', me: null }], () => endItem([{ back: true }])),
+    {
+      ...overlay('news', 'News during a question', [doryani], () => notices()),
+      controls: [NOTICES],
+      states: [
+        { label: 'News during a question: a burst of notices', values: {} },
+        { label: 'A guest’s link to the host lost: reconnecting, given up, back', values: { notices: 'link' }, key: 'overlay/lost', listed: false },
+        ...TIERS.map((t, i) => ({ label: `Achievements in ${METALS[t].name}`, values: { notices: String(t) }, listed: false as const, ...(i ? {} : { key: 'overlay/achievement' }) })),
+      ],
+      build: notices,
+    },
+    {
+      ...overlay('leave', 'Leaving a game: the dialog', [kalguur, doryani], () => inGame([{ click: 'button[aria-label="Leave game"]' }])),
+      controls: [OWNER],
+      // The owner in someone else's room: the dialog offers to close it for everyone too.
+      states: [
+        { label: 'Leaving a game: the dialog', values: {} },
+        { label: 'Leaving as the owner: Close room too', values: { owner: true }, key: 'overlay/leave-owner', listed: false },
+      ],
+      build: (v = {}) => (v.owner ? { ...inGame([{ click: 'button[aria-label="Leave game"]' }], false, 'Doryani'), seat: doryani } : inGame([{ click: 'button[aria-label="Leave game"]' }])),
+    },
+    {
+      ...overlay('back', 'Back pressed: what’s open closes first', [kalguur, doryani], () => back()),
+      controls: [OPEN],
+      states: [
+        { label: 'Back in a game: asked before leaving', values: {} },
+        { label: 'Back in the lobby with the custom difficulty open: it closes, the room stays', values: { open: 'custom' }, key: 'overlay/back-custom', listed: false },
+        { label: "Back with an item's window open: it closes, the game stays", values: { open: 'item' }, key: 'overlay/back-item', listed: false },
+        { label: 'Back in the codex with an item open: it closes, the codex stays as it was', values: { open: 'codex' }, key: 'overlay/back-codex-item', listed: false },
+        { label: 'Back on the end screen with an item open: it closes, the room stays', values: { open: 'end' }, key: 'overlay/back-end-item', listed: false },
+      ],
+      build: back,
+    },
     // The item's window open, another item opened in it: its name and tooltip cross-fade, and its top glides with the roll as the height changes.
     // (Seed 39: the pick's tooltip some eight lines shorter than the answer's, so the roll and the plate's glide show.)
     overlay('item-switch', "An item's window: another item opened in it", [kalguur], () => pictured([{ click: '.tile.inspect' }, { wait: 1800 }, { click: '.tile.inspect ~ .tile.inspect' }], 39)),
-    overlay('crash-host', 'The host crashed once: back on its feet', [kalguur], () => inGame([{ crash: 1 }])),
-    overlay('crash-guest', 'A guest crashed once: out of the room', [doryani], () => inGame([{ crash: 1 }])),
-    overlay('crash-twice', 'The host crashed twice: out of the game', [kalguur], () => inGame([{ crash: 2 }])),
-    overlay('crash-stuck', 'Crashed twice out of a game: the page stops', [{ mode: 'none', me: null }], () => ({ state: null, steps: [{ crash: 2 }] })),
+    {
+      ...overlay('crash', 'Coming back from a crash', [kalguur], () => crash()),
+      controls: [WHO, TWICE],
+      states: [
+        { label: 'The host crashed once: back on its feet', values: {}, key: 'overlay/crash-host' },
+        { label: 'A guest crashed once: out of the room', values: { who: 'guest' }, key: 'overlay/crash-guest', listed: false },
+        { label: 'The host crashed twice: out of the game', values: { twice: true }, key: 'overlay/crash-twice', listed: false },
+        { label: 'Crashed twice out of a game: the page stops', values: { who: 'out', twice: true }, key: 'overlay/crash-stuck' },
+      ],
+      build: crash,
+    },
   ];
 }

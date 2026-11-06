@@ -11,7 +11,7 @@ import type { DelveRun } from '../../lib/delveRecord.ts';
 import { id, pid, player, spectator } from '../build/people.ts';
 import { sceneEngine } from '../build/engine.ts';
 import { valuesOf, type Control, type State, type Values } from '../bench.ts';
-import type { Scene, Seat, Step } from '../scene.ts';
+import type { Built, Scene, Seat, Step } from '../scene.ts';
 import type { PlateName } from '../../lib/plates/index.ts';
 import type { SizeKey } from '../sizes.ts';
 import type { Standing } from '../../lib/presence.ts';
@@ -21,10 +21,12 @@ export type Mode = 'host' | 'client' | 'local';
 /** The windows the end screen's page knew, by its own names for them. */
 export type EndView = 'desktop' | 'air13' | 'tablet' | 'phone' | 'phone375' | 'narrow' | 'big' | 'landscape';
 
+/** One of the boards' games (or an edge case beside them), as it was a scene of its own: its key is its place's now. */
 export interface EndScene {
   key: string;
-  group: 'Normal games' | 'Delve';
+  /** The old scene's name, its place's now; `short`, what the scene's choice calls it. */
   label: string;
+  short: string;
   /** The handoff's boards it draws (docs/handoff/end-screen/screens/<board>.webp), by the window each was drawn at. */
   boards?: Partial<Record<EndView, string>>;
   /** The window it opens at. */
@@ -41,14 +43,8 @@ export interface EndScene {
   runs?: DelveRun[];
   /** Items this device met before, besides its log (../scene.ts' met). */
   met?: string[] | number;
-  /** Who isn't simply there, as the host tells the room (../scene.ts' standing). */
-  standing?: Record<string, Standing>;
   /** What comes in once the screen is up (../scene.ts' steps): an achievement judged late, the codex read again. */
   steps?: Step[];
-  /** What can be set in it (../bench.ts' Control), its named states, and the game as they set it. */
-  controls?: Control[];
-  states?: State[];
-  vary?: (v: Values) => AsSet;
 }
 
 const K = pid('Kalguur');
@@ -119,14 +115,6 @@ function comingAndGoing(): { state: GameState; steps: Step[] } {
     state: s,
     steps: [{ wait: 1200 }, { then: alva(false) }, { wait: 2000 }, { then: alva(true) }, { wait: 2000 }, { then: { ...s, spectators: [spectator('Finn')] } }],
   };
-}
-function left() {
-  const s = game(FIVE, {
-    recap: turnsRecap('Doryani', "Atziri's Disdain", { answers: { [K]: { n: 10, ok: 10, ms: 2400 } } }),
-    extra: { spectators: [spectator('Finn'), spectator('Renly')] },
-  });
-  s.players[4].connected = false;
-  return s;
 }
 const twelve = () =>
   game(TWELVE, {
@@ -451,28 +439,22 @@ function anyTogether(v: Values): AsSet {
   };
 }
 
-/** A game set by `controls`: as they start, and as `make` builds it with them set. */
-function asSet(key: string, group: EndScene['group'], label: string, controls: Control[], states: State[], make: (v: Values) => AsSet): EndScene {
-  const { seat, ...rest } = make(valuesOf(controls));
-  return { key, group, label, view: 'desktop', mode: seat.mode as Mode, me: seat.me, ...rest, controls, states, vary: make };
-}
-
 // ---- the list --------------------------------------------------------------------
 
 const D = 'desktop';
 const P = 'phone';
 
+/** The handoff's boards, each state once (its boards at the other sizes come with it), and the edge cases beside them: normal games first, then Delve. */
 export function endScenes(): EndScene[] {
   const dannig = pid('Dannig');
   const doryani = pid('Doryani');
   const solo23 = () => ({ delveResult: measured(23, 27, false), log: soloLog(), runs: soloRuns() });
   const host6 = () => ({ delveResult: measured(27, 19, true), log: teamLog(), runs: teamRuns() });
   return [
-    // The handoff's boards, each state once: its boards at the other sizes come with it.
     {
       key: 'n-won',
-      group: 'Normal games',
       label: 'Take turns: you won (host)',
+      short: 'Take turns: you won (host)',
       boards: { desktop: 'n-won', air13: 'n-air13', phone: 'n-phone' },
       view: D,
       mode: 'host',
@@ -482,56 +464,36 @@ export function endScenes(): EndScene[] {
     },
     {
       key: 'n-lost',
-      group: 'Normal games',
       label: 'Take turns: you came third (guest)',
+      short: 'Take turns: you came third (guest)',
       boards: { desktop: 'n-lost', air13: 'n-air13-lost', phone: 'n-phone-full' },
       view: D,
       mode: 'client',
       me: una(),
       state: lost(),
     },
-    {
-      key: 'n-race',
-      group: 'Normal games',
-      label: 'Race: you joint second, two join next',
-      boards: { desktop: 'n-race' },
-      view: D,
-      mode: 'host',
-      me: K,
-      state: race(),
-    },
-    { key: 'n-dm', group: 'Normal games', label: 'Lost a deathmatch', boards: { desktop: 'n-dm' }, view: D, mode: 'client', me: doryani, state: deathmatch() },
-    { key: 'n-left', group: 'Normal games', label: 'Alva went offline; two join next', boards: { desktop: 'n-left' }, view: D, mode: 'host', me: K, state: left(), earned: ['first-victory', 'untarnished'] },
-    { key: 'n-coming-going', group: 'Normal games', label: 'Alva goes and comes back, then Finn joins next (host)', view: D, mode: 'host', me: K, ...comingAndGoing() },
-    { key: 'n-twelve', group: 'Normal games', label: '12 players (you are Dannig)', boards: { desktop: 'n-twelve', air13: 'n-air13-twelve' }, view: D, mode: 'client', me: dannig, state: twelve() },
-    { key: 'n-phone-twelve', group: 'Normal games', label: '12 on a phone: your row on the dock', boards: { phone: 'n-phone-twelve' }, view: P, mode: 'client', me: pid('Oswin'), state: twelve() },
-    { key: 'n-hot', group: 'Normal games', label: 'Hot-seat', boards: { desktop: 'n-hot' }, view: D, mode: 'local', me: null, state: hotSeat() },
-    { key: 'n-spec', group: 'Normal games', label: 'A spectator who plays next', boards: { desktop: 'n-spec' }, view: D, mode: 'client', me: pid('Watcher'), state: watched(won()) },
-    // The host gone from the screen (the room is off the list meanwhile): the line under the game says so, their row has the lobby's mark.
-    { key: 'n-host-away', group: 'Normal games', label: 'Host away: a spectator who plays next', view: D, mode: 'client', me: pid('Watcher'), state: watched(won()), standing: { [K]: 'away', [pid('Rog')]: 'idle' } },
-    { key: 'n-host-idle', group: 'Normal games', label: 'Host idle: a guest waits (phone)', view: P, mode: 'client', me: una(), state: lost(), standing: { [K]: 'idle' } },
+    { key: 'n-race', label: 'Race: you joint second, two join next', short: 'Race: you joint second', boards: { desktop: 'n-race' }, view: D, mode: 'host', me: K, state: race() },
+    { key: 'n-dm', label: 'Lost a deathmatch', short: 'Lost a deathmatch (guest)', boards: { desktop: 'n-dm' }, view: D, mode: 'client', me: doryani, state: deathmatch() },
+    { key: 'n-coming-going', label: 'Alva goes and comes back, then Finn joins next (host)', short: 'Alva goes and comes back, Finn joins', view: D, mode: 'host', me: K, ...comingAndGoing() },
+    { key: 'n-twelve', label: '12 players (you are Dannig)', short: '12 players, you Dannig', boards: { desktop: 'n-twelve', air13: 'n-air13-twelve' }, view: D, mode: 'client', me: dannig, state: twelve() },
+    { key: 'n-phone-twelve', label: '12 on a phone: your row on the dock', short: '12 players, you Oswin: your row on the dock', boards: { phone: 'n-phone-twelve' }, view: P, mode: 'client', me: pid('Oswin'), state: twelve() },
+    { key: 'n-hot', label: 'Hot-seat', short: 'Hot-seat', boards: { desktop: 'n-hot' }, view: D, mode: 'local', me: null, state: hotSeat() },
+    { key: 'n-spec', label: 'A spectator who plays next', short: 'Watched, playing next', boards: { desktop: 'n-spec' }, view: D, mode: 'client', me: pid('Watcher'), state: watched(won()) },
     {
       key: 'd-solo',
-      group: 'Delve',
       label: 'Alone: four short of the best',
+      short: 'Alone: four short of the best',
       boards: { desktop: 'd-solo', air13: 'd-air13', phone: 'd-phone-full' },
       view: D,
       mode: 'local',
       me: null,
       state: solo(),
       ...solo23(),
-      controls: [SHARED],
-      states: [
-        { label: 'Alone: four short of the best', values: {} },
-        { label: 'Share run pressed: Copied fades in in its place, and back', values: { shared: true } },
-      ],
-      // (Copied whether or not the frame may write to the clipboard.)
-      vary: (v) => ({ seat: { mode: 'local', me: null }, state: solo(), ...solo23(), ...(v.shared ? { steps: [{ clipboard: true }, { wait: 1000 }, { click: '.share' }] } : {}) }),
     },
     {
       key: 'd-first',
-      group: 'Delve',
       label: 'Alone: the very first run',
+      short: 'Alone: the very first run',
       boards: { desktop: 'd-first' },
       view: D,
       mode: 'local',
@@ -544,8 +506,8 @@ export function endScenes(): EndScene[] {
     },
     {
       key: 'd-best',
-      group: 'Delve',
       label: 'Alone: a new best, the vein caved in',
+      short: 'Alone: a new best, the vein caved in',
       boards: { desktop: 'd-best' },
       view: D,
       mode: 'local',
@@ -559,11 +521,11 @@ export function endScenes(): EndScene[] {
       log: [miss(10, 'Headhunter', 28), miss(20, 'Briarpatch', 39), miss(30, "Kaom's Heart", 45, { find: 'azurite', lives: 1, wards: 1 })],
       runs: runs([16, 24, 11, 18, 22, 13, 20, 21, 30], 45, false),
     },
-    { key: 'd-team', group: 'Delve', label: 'Together: three delvers (host)', boards: { desktop: 'd-team' }, view: D, mode: 'host', me: K, state: teamRun(TEAM3), ...host6() },
+    { key: 'd-team', label: 'Together: three delvers (host)', short: 'Together: three delvers (host)', boards: { desktop: 'd-team' }, view: D, mode: 'host', me: K, state: teamRun(TEAM3), ...host6() },
     {
       key: 'd-team6',
-      group: 'Delve',
       label: 'Together: six delvers (host)',
+      short: 'Together: six delvers (host)',
       boards: { desktop: 'd-team6', air13: 'd-team6-air13', phone: 'd-phone-team6' },
       view: D,
       mode: 'host',
@@ -571,11 +533,11 @@ export function endScenes(): EndScene[] {
       state: teamRun(TEAM6),
       ...host6(),
     },
-    { key: 'd-team12', group: 'Delve', label: 'Together: twelve delvers (host)', boards: { desktop: 'd-team12', air13: 'd-team12-air13' }, view: D, mode: 'host', me: K, state: teamRun(TEAM12), ...host6() },
+    { key: 'd-team12', label: 'Together: twelve delvers (host)', short: 'Together: twelve delvers (host)', boards: { desktop: 'd-team12', air13: 'd-team12-air13' }, view: D, mode: 'host', me: K, state: teamRun(TEAM12), ...host6() },
     {
       key: 'd-team6-guest',
-      group: 'Delve',
       label: 'Together: a guest brought back once',
+      short: 'Together: six, a guest brought back once',
       boards: { desktop: 'd-team6-guest' },
       view: D,
       mode: 'client',
@@ -585,27 +547,7 @@ export function endScenes(): EndScene[] {
       log: guestLog(),
       runs: runs([17, 32, 15], 27, true, doryani),
     },
-    { key: 'd-team6-spec', group: 'Delve', label: 'Together: watched by one who joins next', boards: { desktop: 'd-team6-spec' }, view: D, mode: 'client', me: pid('Watcher'), state: watched(teamRun(TEAM6)) },
-
-    // Any other game, as set.
-    asSet('game', 'Normal games', 'Any game, as set', GAME_CONTROLS, [
-      { label: 'Any game, as set', values: {} },
-      { label: 'The fullest game: twelve players, 24 missed, eight earned', values: { players: 12, place: 'second', missed: 24, earned: 8, joining: 3 } },
-      { label: 'An achievement judged a moment late: the column steps tighter, the circle and all glide there', values: { players: 3, place: 'second', missed: 6, earned: 1, late: 'feat' } },
-      { label: 'The fullest game, the missed list’s +N pressed: it opens, what’s below glides down', values: { players: 12, place: 'second', missed: 24, earned: 8, joining: 3, pressed: 'missed' } },
-      { label: 'The fullest hot-seat: six players, 30 missed', values: { kind: 'hot', players: 6, missed: 30 } },
-    ], anyGame),
-    asSet('alone', 'Delve', 'Any run alone, as set', ALONE_CONTROLS, [
-      { label: 'Any run alone, as set', values: {} },
-      { label: 'The fullest run alone: a new best, four finds, 20 new uniques, five earned', values: { depth: 51, before: 14, best: 'best', finds: 4, fresh: 20, earned: 5 } },
-      { label: 'A first run to depth 40, every unique new', values: { depth: 40, before: 0, fresh: 40, earned: 3 } },
-      { label: 'New in your codex, read in late', values: { fresh: 6, late: 'codex' } },
-      { label: 'The fullest run alone, its last achievement judged a moment late', values: { depth: 51, before: 14, best: 'best', finds: 4, fresh: 20, earned: 5, late: 'feat' } },
-    ], anyAlone),
-    asSet('together', 'Delve', 'Any run together, as set', TOGETHER_CONTROLS, [
-      { label: 'Any run together, as set', values: {} },
-      { label: 'The fullest run together: twelve delvers, brought back three times, gave two', values: { delvers: 12, back: 3, gave: 2, streak: 9, earned: 4, joining: 3 } },
-    ], anyTogether),
+    { key: 'd-team6-spec', label: 'Together: watched by one who joins next', short: 'Together: six, watched by one who joins next', boards: { desktop: 'd-team6-spec' }, view: D, mode: 'client', me: pid('Watcher'), state: watched(teamRun(TEAM6)) },
   ];
 }
 
@@ -620,6 +562,7 @@ const END_SIZE: Record<EndView, SizeKey> = {
   big: 'uhd150',
   landscape: 'landscape',
 };
+const boardsAt = (boards: EndScene['boards']) => boards && Object.fromEntries(Object.entries(boards).map(([v, board]) => [END_SIZE[v as EndView], board]));
 
 /** The circle behind the end screen: the one the game falls to, or any of the five. */
 const CIRCLE: Control = {
@@ -636,23 +579,120 @@ const CIRCLE: Control = {
     { value: 'blackSun', label: 'Black sun' },
   ],
 };
+const circleOf = (v: Values) => (v.circle && v.circle !== 'auto' ? (v.circle as PlateName) : null);
+
+/**
+ * The boards' games of a kind as one scene, `pick` choosing which, each seen
+ * from its own seat and walked at every window any was drawn at. Each is a
+ * place under its old key, its boards with it (the first the scene's row);
+ * `more` are the scene's other controls, what `over` adds to a game as they
+ * set it, and `places` the states they reach.
+ */
+function drawn(key: string, group: 'Normal games' | 'Delve', label: string, pick: [string, string], list: EndScene[], more: Control[], places: State[], over: (e: EndScene, v: Values) => Partial<Built>): Scene {
+  const [first] = list;
+  return {
+    key: `over/${key}`,
+    screen: 'over',
+    group,
+    label,
+    seats: [{ mode: first.mode, me: first.me }],
+    sizes: [...new Set(list.map((e) => END_SIZE[e.view]))],
+    boards: boardsAt(first.boards),
+    controls: [choice(pick[0], pick[1], list.map((e) => [e.key, e.short])), ...more, CIRCLE],
+    states: [
+      ...list.map((e, i): State => ({
+        label: i ? e.label : label,
+        key: `over/${e.key}`,
+        values: i ? { [pick[0]]: e.key } : {},
+        ...(e.boards ? { boards: boardsAt(e.boards) } : {}),
+        ...(i ? { listed: false as const } : {}),
+      })),
+      ...places,
+    ],
+    build: (v = {}) => {
+      const e = list.find((x) => x.key === v[pick[0]]) ?? first;
+      const { key: _, label: _l, short: _s, boards: _b, view: _v, mode, me, ...built } = e;
+      return { ...built, ...over(e, v), seat: { mode, me }, circle: circleOf(v) };
+    },
+  };
+}
+
+/** How the host stands to a guest or a watcher (the session's standing): gone from the screen (the room is off the list meanwhile), or idle. */
+const HOST: Control = choice('host', 'Host, to a guest', [['', 'There'], ['away', 'Away, and Rog idle'], ['idle', 'Idle']]);
+const hostStanding = (host: unknown): Record<string, Standing> | null => (host === 'away' ? { [K]: 'away', [pid('Rog')]: 'idle' } : host === 'idle' ? { [K]: 'idle' } : null);
+
+/** A game set by `controls`: as they start, and as `make` builds it with them set. */
+function asSet(key: string, group: 'Normal games' | 'Delve', label: string, controls: Control[], states: State[], make: (v: Values) => AsSet): Scene {
+  const { seat } = make(valuesOf(controls));
+  return {
+    key: `over/${key}`,
+    screen: 'over',
+    group,
+    label,
+    seats: [seat],
+    sizes: ['desktop'],
+    controls: [...controls, CIRCLE],
+    states,
+    // (A game set by controls is all its make says: nothing of the defaults' records left over where it says none.)
+    build: (v = {}) => ({ ...make(v), circle: circleOf(v) }),
+  };
+}
 
 /** The end screen's scenes, as the desk has every screen's. */
 export function overScenes(): Scene[] {
-  return endScenes().map((e) => {
-    const { key, group, label, boards, view, mode, me, controls, states, vary, ...built } = e;
-    return {
-      key: `over/${key}`,
-      screen: 'over',
-      group,
-      label,
-      seats: [{ mode, me }],
-      sizes: [END_SIZE[view]],
-      boards: boards && Object.fromEntries(Object.entries(boards).map(([v, board]) => [END_SIZE[v as EndView], board])),
-      controls: [...(controls ?? []), CIRCLE],
-      states,
-      // (A game set by controls is all its make says: nothing of the defaults' records left over where it says none.)
-      build: (v = {}) => ({ ...(vary ? vary(v) : built), circle: v.circle && v.circle !== 'auto' ? (v.circle as PlateName) : null }),
-    };
-  });
+  const all = endScenes();
+  const normal = all.filter((e) => e.key.startsWith('n-'));
+  const delves = all.filter((e) => e.key.startsWith('d-'));
+  return [
+    drawn(
+      'boards',
+      'Normal games',
+      'Games as the design drew them',
+      ['board', 'Game'],
+      normal,
+      [HOST],
+      [
+        // Alva's row dims, "All 5" gives way to "4 of 5", and two come to watch and play next: the board after you won.
+        { label: 'Alva went offline; two join next', key: 'over/n-left', values: { offline: 'Alva', joining: 2 }, boards: boardsAt({ desktop: 'n-left' }), listed: false },
+        // The host gone from the screen: the line under the game says so, their row has the lobby's mark.
+        { label: 'Host away: a spectator who plays next', key: 'over/n-host-away', values: { board: 'n-spec', host: 'away' }, listed: false },
+        { label: 'Host idle: a guest waits (phone)', key: 'over/n-host-idle', values: { board: 'n-lost', host: 'idle' }, listed: false },
+      ],
+      (e, v) => {
+        const standing = hostStanding(v.host);
+        // (Only a guest or a watcher has a host to see away: in hot-seat there's none, and the host is you.)
+        return standing && e.state.hostId !== null && e.state.hostId !== e.me ? { standing } : {};
+      },
+    ),
+    // Any other game, as set.
+    asSet('game', 'Normal games', 'Any game, as set', GAME_CONTROLS, [
+      { label: 'Any game, as set', values: {} },
+      { label: 'The fullest game: twelve players, 24 missed, eight earned', values: { players: 12, place: 'second', missed: 24, earned: 8, joining: 3 } },
+      { label: 'An achievement judged a moment late: the column steps tighter, the circle and all glide there', values: { players: 3, place: 'second', missed: 6, earned: 1, late: 'feat' }, listed: false },
+      { label: 'The fullest game, the missed list’s +N pressed: it opens, what’s below glides down', values: { players: 12, place: 'second', missed: 24, earned: 8, joining: 3, pressed: 'missed' }, listed: false },
+      { label: 'The fullest hot-seat: six players, 30 missed', values: { kind: 'hot', players: 6, missed: 30 } },
+    ], anyGame),
+    drawn(
+      'delve-boards',
+      'Delve',
+      'Runs as the design drew them',
+      ['run', 'Run'],
+      delves,
+      [SHARED],
+      [{ label: 'Share run pressed: Copied fades in in its place, and back', values: { shared: true }, listed: false }],
+      // (Copied whether or not the frame may write to the clipboard. Share run is a run alone's.)
+      (e, v) => (v.shared && e.mode === 'local' ? { steps: [{ clipboard: true }, { wait: 1000 }, { click: '.share' }] } : {}),
+    ),
+    asSet('alone', 'Delve', 'Any run alone, as set', ALONE_CONTROLS, [
+      { label: 'Any run alone, as set', values: {} },
+      { label: 'The fullest run alone: a new best, four finds, 20 new uniques, five earned', values: { depth: 51, before: 14, best: 'best', finds: 4, fresh: 20, earned: 5 } },
+      { label: 'A first run to depth 40, every unique new', values: { depth: 40, before: 0, fresh: 40, earned: 3 }, listed: false },
+      { label: 'New in your codex, read in late', values: { fresh: 6, late: 'codex' }, listed: false },
+      { label: 'The fullest run alone, its last achievement judged a moment late', values: { depth: 51, before: 14, best: 'best', finds: 4, fresh: 20, earned: 5, late: 'feat' }, listed: false },
+    ], anyAlone),
+    asSet('together', 'Delve', 'Any run together, as set', TOGETHER_CONTROLS, [
+      { label: 'Any run together, as set', values: {} },
+      { label: 'The fullest run together: twelve delvers, brought back three times, gave two', values: { delvers: 12, back: 3, gave: 2, streak: 9, earned: 4, joining: 3 } },
+    ], anyTogether),
+  ];
 }

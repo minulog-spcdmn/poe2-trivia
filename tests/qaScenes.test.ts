@@ -6,7 +6,7 @@ import { useItems } from '../src/qa/build/engine.ts';
 import { Table } from '../src/qa/build/play.ts';
 import { useCaptured } from '../src/qa/scenes/captured.ts';
 import { SIZES, WALK_SIZES, isSizeKey, sizeOf, PRESETS } from '../src/qa/sizes.ts';
-import { SCREENS, seatLabel, seatsIn, type Scene } from '../src/qa/scene.ts';
+import { SCREENS, placeIn, seatLabel, seatsIn, type Scene } from '../src/qa/scene.ts';
 import { sceneStateAt, valuesOf, type Values } from '../src/qa/bench.ts';
 import { TWEAK_KEYS, applyTweaks, buildScene } from '../src/qa/tweaks.ts';
 import { matches, sizesFor } from '../src/qa/desk/walk.ts';
@@ -89,7 +89,8 @@ test('a named state sets only controls its scene has, to values they can be, and
 });
 
 test('the controls every game has change only what they say, and leave who is seen from be', () => {
-  const won = catalog().find((s) => s.key === 'over/n-won')!;
+  // (The boards' first, its scene's row: the scene as it comes.)
+  const won = placeIn(catalog(), 'over/n-won')!.scene;
   const as = buildScene(won).built.state!;
   const gone = buildScene(won, { offline: '*' }).built.state!;
   assert.deepEqual(
@@ -108,8 +109,9 @@ test('the controls every game has change only what they say, and leave who is se
   );
   assert.ok(long.players.every((p, i) => p.name !== as.players[i].name));
   // A spectator seen from stays, however few watch.
-  const spec = catalog().find((s) => s.key === 'over/n-spec')!;
-  assert.ok(buildScene(spec, { joining: 0 }).built.state!.spectators!.some((o) => o.id === spec.seats[0].me));
+  const spec = placeIn(catalog(), 'over/n-spec')!;
+  const seen = buildScene(spec.scene, { ...spec.values, joining: 0 }).built;
+  assert.ok(seen.state!.spectators!.some((o) => o.id === seen.seat!.me));
 });
 
 test('a game set by its controls seen by a watcher holds nothing of this device: no result, codex log, runs or achievements', () => {
@@ -124,8 +126,8 @@ test('a game set by its controls seen by a watcher holds nothing of this device:
 });
 
 test("Offline on a game played through the engine goes the engine's way: a race's state is the one the room reaches", () => {
-  const race = catalog().find((s) => s.key === 'game/race-answered')!;
-  const shown = buildScene(race, { offline: '*' }).built.state!;
+  const { scene: race, values: waiting } = placeIn(catalog(), 'game/race-answered')!;
+  const shown = buildScene(race, { ...waiting, offline: '*' }).built.state!;
   // The same race played again, everyone but those seen from dropping as the room reports it
   // (the players among them: the seat watching has no one at the table).
   const t = new Table(['Kalguur', 'Doryani', 'Una of the Vaal', 'Rog', 'Alva'], { mode: 'race' }).start().answer('Doryani', false, 1800);
@@ -138,7 +140,7 @@ test("Offline on a game played through the engine goes the engine's way: a race'
   );
   // Seen from Doryani alone, who has answered: with everyone else gone no one is left to wait on, and the answer shows.
   const doryani = t.s.players.find((p) => p.name === 'Doryani')!.id;
-  const alone = applyTweaks(race.build({}), { offline: '*' }, [doryani]).state!;
+  const alone = applyTweaks(race.build(waiting), { offline: '*' }, [doryani]).state!;
   const u = new Table(['Kalguur', 'Doryani', 'Una of the Vaal', 'Rog', 'Alva'], { mode: 'race' }).start().answer('Doryani', false, 1800);
   for (const p of u.s.players) if (p.id !== doryani) u.act({ type: 'connection', playerId: p.id, connected: false }, null);
   assert.equal(alone.phase, 'reveal');
@@ -146,8 +148,8 @@ test("Offline on a game played through the engine goes the engine's way: a race'
 });
 
 test('the long base type scene still asks for what it shows: a mirrored picture of an item with a long base type, named', () => {
-  const s = catalog().find((x) => x.key === 'game/delve-long-base')!;
-  const state = buildScene(s).built.state!;
+  const place = placeIn(catalog(), 'game/delve-long-base')!;
+  const state = buildScene(place.scene, place.values).built.state!;
   const q = state.question!;
   const item = items.find((i) => i.id === q.itemId)!;
   assert.equal(state.phase, 'reveal');
