@@ -363,6 +363,13 @@ html[data-qa='desk'] #app {
   color: var(--text);
   text-align: left;
 }
+/* An option (or a control) a place this change touches sets: the states' dot. */
+.bench-panel .control .chips button.changed::after,
+.bench-panel .control .label.changed::after {
+  content: '•';
+  margin-left: 0.35em;
+  color: var(--gold);
+}
 .bench-panel .control.toggle {
   display: flex;
   align-items: center;

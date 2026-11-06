@@ -14,6 +14,7 @@
     tweaks,
     v,
     changed,
+    marked,
     seats,
     seat,
     frozen,
@@ -47,6 +48,8 @@
     v: Values;
     /** Whether this change touches a state. */
     changed?: (i: number) => boolean;
+    /** The values of its controls that places this change touches set them to, by control: a dot on each. */
+    marked?: Map<string, Set<Value>>;
     seats: string[];
     seat: number | 'all';
     frozen: boolean;
@@ -106,7 +109,7 @@
 {#snippet control(c: Control)}
   {#if c.kind === 'range'}
     <label class="control">
-      <span class="label">{c.label}</span>
+      <span class="label" class:changed={marked?.has(c.key)}>{c.label}</span>
       <span class="range">
         <input type="range" min={c.min} max={c.max} step={c.step ?? 1} value={v[c.key]} oninput={(e) => onvalue(c.key, Number(e.currentTarget.value))} />
         <input
@@ -137,13 +140,14 @@
       <span class="label">{c.label}</span>
       <span class="chips">
         {#each c.options as o (o.value)}
-          <button role="radio" aria-checked={v[c.key] === o.value} class:on={v[c.key] === o.value} onclick={() => onvalue(c.key, o.value)}>{o.label}</button>
+          {@const touched = marked?.get(c.key)?.has(o.value)}
+          <button role="radio" aria-checked={v[c.key] === o.value} class:on={v[c.key] === o.value} class:changed={touched} title={touched ? 'This change touches it' : undefined} onclick={() => onvalue(c.key, o.value)}>{o.label}</button>
         {/each}
       </span>
     </div>
   {:else if c.kind === 'choice'}
     <label class="control">
-      <span class="label">{c.label}</span>
+      <span class="label" class:changed={marked?.has(c.key)}>{c.label}</span>
       <select value={v[c.key]} onchange={(e) => (onvalue(c.key, e.currentTarget.value), e.currentTarget.blur())}>
         {#each c.options as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
       </select>
@@ -151,7 +155,7 @@
   {:else}
     <label class="control toggle">
       <input type="checkbox" checked={!!v[c.key]} onchange={(e) => onvalue(c.key, e.currentTarget.checked)} />
-      <span class="label">{c.label}</span>
+      <span class="label" class:changed={marked?.has(c.key)}>{c.label}</span>
     </label>
   {/if}
 {/snippet}

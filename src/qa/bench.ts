@@ -127,7 +127,8 @@ export function valuesOf(controls: Control[], given: Record<string, Value | stri
   return Object.fromEntries(controls.map((c) => [c.key, valueOf(c, given[c.key])]));
 }
 
-function valueOf(c: Control, raw: Value | string | null | undefined): Value {
+/** What `raw` (a state's value, or the address's) sets control `c` to: the default where it can't be one of its values. */
+export function valueOf(c: Control, raw: Value | string | null | undefined): Value {
   if (raw === undefined || raw === null) return c.default;
   if (c.kind === 'toggle') return raw === true || raw === '1' || raw === 'true';
   if (c.kind === 'range') {

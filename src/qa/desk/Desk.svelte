@@ -14,7 +14,7 @@
   import { SIZES, isSizeKey, sizeOf, type SizeKey } from '../sizes.ts';
   import type { DeskMessage, FrameMessage } from '../messages.ts';
   import { KIND_LABEL, type Problem } from '../frame/checks.ts';
-  import { sceneStateAt, stateAt, stateOf, stateValues, valuesOf, valuesQuery, type Bench, type PieceBench, type SceneBench, type Value, type Values } from '../bench.ts';
+  import { sceneStateAt, stateAt, stateOf, stateValues, valueOf, valuesOf, valuesQuery, type Bench, type PieceBench, type SceneBench, type SceneState, type Value, type Values } from '../bench.ts';
   import Shelf from './Shelf.svelte';
   import Panel from './Panel.svelte';
   import Stage from './Stage.svelte';
@@ -147,24 +147,60 @@
     everywhere: Change['everywhere'];
     uncovered: string[];
   } | null>(null);
+  /** Where a screen's state is, in words: its heading, then its screen ("Take turns • In a game"). */
+  const whereOf = (st: SceneState, b: Bench) => (st.group && st.group !== b.label ? `${st.group} • ${b.label}` : b.label);
+  /** Opens `b` at its scene `s`, its controls as `values` set them. */
+  function openAt(b: Bench, s: Scene, values: Values, step: boolean) {
+    open(b, undefined, step);
+    scene = s;
+    sceneSet[s.key] = { ...values };
+  }
   /** A place by its key: a scene's (its scene, with the controls it sets) or a piece's, and its names. */
   function placeOf(key: string): { label: string; where: string; open: (step: boolean) => void } | null {
     const p = placeByKey(key);
     const b = p ? benchOfScene(p.scene) : benchByKey(key);
     if (p && b) {
       const st = statesOf(p.scene).find((s) => s.key === key) ?? statesOf(p.scene)[0];
-      return {
-        label: st.label,
-        where: b.label,
-        open: (step) => {
-          open(b, undefined, step);
-          scene = p.scene;
-          sceneSet[p.scene.key] = { ...p.values };
-        },
-      };
+      return { label: st.label, where: whereOf(st, b), open: (step) => openAt(b, p.scene, p.values, step) };
     }
     return b?.kind === 'piece' && b.key === key ? { label: b.label, where: 'Piece', open: (step) => open(b, 0, step) } : null;
   }
+  /**
+   * Every state of every screen, listed in its panel or not (one behind a
+   * control: a moment, say), for the search: its names, words to find it
+   * by, and how to open it.
+   */
+  const FINDABLE = ALL.flatMap((b) =>
+    b.kind === 'scenes'
+      ? b.scenes.flatMap((s) =>
+          statesOf(s).map((st, n) => ({
+            id: st.key ?? (n === 0 ? s.key : `${s.key}#${n}`),
+            label: st.label,
+            where: whereOf(st, b),
+            words: `${st.label} ${st.group} ${s.label} ${s.key} ${st.key ?? ''} ${b.label}`.toLowerCase(),
+            open: () => openAt(b, s, st.values, true),
+          })),
+        )
+      : [],
+  );
+  /**
+   * The values the scene's places this change touches set its controls to
+   * (but their defaults), by control: those options get the change's dot,
+   * so a place behind a control (a moment) shows in the panel too.
+   */
+  const marked = $derived.by(() => {
+    const out = new Map<string, Set<Value>>();
+    if (!change || !scene || !set) return out;
+    for (const st of statesOf(scene)) {
+      if (!change.why.has(placeOfState(st) ?? '')) continue;
+      for (const c of set.controls) {
+        if (!(c.key in st.values)) continue;
+        const x = valueOf(c, st.values[c.key]);
+        if (x !== c.default) out.set(c.key, new Set([...(out.get(c.key) ?? []), x]));
+      }
+    }
+    return out;
+  });
   /** The place the view stands at, if one: This change's row for it is lit, its why in the panel. */
   const placeHere = $derived(piece ? (stateIndex === 0 ? piece.key : null) : named ? (placeOfState(named) ?? null) : null);
   /**
@@ -570,7 +606,7 @@
 <svelte:window {onkeydown} {onkeyup} onblur={() => ((holding = false), (panning = false))} />
 
 <div class="desk">
-  <Shelf benches={ALL} current={bench} {change} here={placeHere} bind:query bind:listed bind:this={shelf} onopen={open} onplace={(key) => placeOf(key)?.open(true)} {shelfOf} />
+  <Shelf benches={ALL} current={bench} {change} findable={FINDABLE} here={placeHere} bind:query bind:listed bind:this={shelf} onopen={open} onplace={(key) => placeOf(key)?.open(true)} {shelfOf} />
 
   <div class="middle">
     <header class="top">
@@ -660,6 +696,7 @@
     tweaks={set ? set.controls.slice(ownControls.length) : []}
     v={piece ? v : (set?.values ?? {})}
     changed={piece ? undefined : (i) => change?.why.has(placeOfState(screen!.states[i]) ?? '') ?? false}
+    {marked}
     seats={seatNames}
     seat={seatShown}
     {frozen}

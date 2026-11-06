@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import type { Plugin } from 'vite';
 import { json, qaBefore, qaShots } from './qaBefore.ts';
 import { QA_PEER_PATH, QA_PEER_PORT } from './src/qa/live/signal.ts';
-import { hunksOf, placesTouched, type Change, type FileChange, type Hunk, type PlaceMap } from './src/qa/change.ts';
+import { SCENE_CODE, hunksOf, placesTouched, type Change, type FileChange, type Hunk, type PlaceMap } from './src/qa/change.ts';
 
 const gitIn = (root: string) => (...args: string[]) => {
   const r = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
@@ -94,6 +94,16 @@ export function readSceneMap(root: string): PlaceMap | null {
   return Array.isArray(map.places) ? map : null;
 }
 
+/** What each place of `root`'s scenes builds now (scripts/place-builds.ts, src/qa/builds.ts), or null where they can't be built. */
+export function placeBuildsIn(root: string): Record<string, string> | null {
+  const r = spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings', join(root, 'scripts', 'place-builds.ts')], { cwd: root, encoding: 'utf8', maxBuffer: 1 << 26 });
+  try {
+    return r.status === 0 ? JSON.parse(r.stdout) : null;
+  } catch {
+    return null;
+  }
+}
+
 const EMPTY_MAP: PlaceMap = { commit: '', places: [], sets: [], files: {}, classes: {} };
 
 /** Where this branch's change shows (src/qa/change.ts): what the desk's This change lists. */
@@ -108,7 +118,8 @@ export type ChangeHere = Change & {
 
 /**
  * Where this checkout's change since it left main shows: the places that
- * run its lines, by the scene map. `to`: the working tree (committed or
+ * run its lines, by the scene map (of the scenes' own code, those it builds
+ * differently). `to`: the working tree (committed or
  * not, untracked files too), or HEAD (the beta's, whose tree its build has
  * added to).
  */
@@ -133,7 +144,9 @@ export function changeHere(root: string, to: 'tree' | 'HEAD' = 'tree'): ChangeHe
     const added: Hunk[] | null = untracked.includes(file) && now !== null ? [{ old: [0, 0], new: [1, now.split('\n').length] }] : null;
     return { file, hunks: added ?? hunks.get(file) ?? [], before: before.get(file) ?? null, after: now, toBase: toBase.get(file) ?? null, toNow: toNow.get(file) ?? null };
   });
-  return { base, files, map: map?.commit ?? null, mapped: map?.places ?? [], ...placesTouched(changes, map ?? EMPTY_MAP) };
+  // (What the places build now, where the scenes' code changed: only those built differently count.)
+  const builds = map?.builds && files.some((f) => SCENE_CODE.test(f)) ? (placeBuildsIn(root) ?? undefined) : undefined;
+  return { base, files, map: map?.commit ?? null, mapped: map?.places ?? [], ...placesTouched(changes, map ?? EMPTY_MAP, 1 / 3, builds) };
 }
 
 /**

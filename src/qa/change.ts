@@ -28,6 +28,8 @@ export interface PlaceMap {
   files: Record<string, number[]>;
   /** Each class name the places' pages ever had: the set of the places that had it. */
   classes: Record<string, number>;
+  /** Each scene's place's print, what it builds (builds.ts), as the commit had it. */
+  builds?: Record<string, string>;
 }
 
 /** A line of no code (a comment, a type, a blank). */
@@ -42,6 +44,7 @@ export interface RawMap {
   places: string[];
   files: Map<string, Map<number, Set<string> | 'module'>>;
   classes: Map<string, Set<string>>;
+  builds?: Record<string, string>;
 }
 
 /** The map as JSON: one place, set, file or class a line, so a merge conflict is easy to see. */
@@ -71,6 +74,7 @@ export function encodeMap(raw: RawMap): string {
     files.push([file, runs]);
   }
   const classes = [...raw.classes].filter(([, ks]) => ks.size).sort(([a], [b]) => (a < b ? -1 : 1)).map(([c, ks]) => [c, idOf(ks)] as const);
+  const builds = Object.entries(raw.builds ?? {}).filter(([k]) => index.has(k));
   const list = (items: string[]) => (items.length ? `\n${items.map((x) => `    ${x}`).join(',\n')}\n  ` : '');
   return [
     '{',
@@ -79,7 +83,8 @@ export function encodeMap(raw: RawMap): string {
     `  "places": [${list(raw.places.map((k) => JSON.stringify(k)))}],`,
     `  "sets": [${list(sets.map((s) => JSON.stringify(s)))}],`,
     `  "files": {${list(files.map(([f, r]) => `${JSON.stringify(f)}: ${JSON.stringify(r)}`))}},`,
-    `  "classes": {${list(classes.map(([c, id]) => `${JSON.stringify(c)}: ${id}`))}}`,
+    `  "classes": {${list(classes.map(([c, id]) => `${JSON.stringify(c)}: ${id}`))}}${builds.length ? ',' : ''}`,
+    ...(builds.length ? [`  "builds": {${list(builds.map(([k, b]) => `${JSON.stringify(k)}: ${JSON.stringify(b)}`))}}`] : []),
     '}',
     '',
   ].join('\n');
@@ -99,7 +104,7 @@ export function decodeMap(map: PlaceMap): RawMap {
     }
     files.set(file, lines);
   }
-  return { commit: map.commit, dirty: map.dirty, places: [...map.places], files, classes: new Map(Object.entries(map.classes).map(([c, id]) => [c, keys(id)])) };
+  return { commit: map.commit, dirty: map.dirty, places: [...map.places], files, classes: new Map(Object.entries(map.classes).map(([c, id]) => [c, keys(id)])), builds: map.builds };
 }
 
 /** What line `line` of a file's runs is: a set's index, NO_CODE or MODULE. */
@@ -395,6 +400,8 @@ const EVERYWHERE = [/^package(-lock)?\.json$/, /^vite\.config\.ts$/, /^svelte\.c
 const APP_CSS = 'src/app.css';
 /** A file of the game's (src/qa/'s are the desk's own): changed, one no place runs is listed. */
 const GAME_FILE = /^src\/(?!qa\/).*\.(ts|js|svelte|css)$/;
+/** The desk's scenes (but one.ts, which finds a frame its scene): a change to them changes only what places build. */
+export const SCENE_CODE = /^src\/qa\/(scenes\/(?!one\.ts$)|tweaks\.ts$)/;
 
 const base = (file: string) => file.slice(file.lastIndexOf('/') + 1);
 const span = (start: number, count: number) => (count > 1 ? `lines ${start}-${start + count - 1}` : `line ${start}`);
@@ -402,9 +409,13 @@ const span = (start: number, count: number) => (count > 1 ? `lines ${start}-${st
 /**
  * Where `files` show, by `map`: each changed line's places, and each
  * changed CSS rule's. What more than `share` of the scenes' places (or of
- * the pieces') run is everywhere's.
+ * the pieces') run is everywhere's. With what each place builds now
+ * (`builds`, builds.ts) and the map's, a change to the scenes' code counts
+ * only for the places it builds differently, and a place the map hasn't
+ * got is new: the fold of a dozen scenes into one, building each as it
+ * did, lights none.
  */
-export function placesTouched(files: FileChange[], map: PlaceMap, share = 1 / 3): Change {
+export function placesTouched(files: FileChange[], map: PlaceMap, share = 1 / 3, builds?: Record<string, string>): Change {
   const isPiece = (i: number) => !map.places[i].includes('/');
   const totals = { scenes: map.places.filter((k) => k.includes('/')).length, pieces: map.places.filter((k) => !k.includes('/')).length };
   const lit = new Map<number, { score: number; why: string; size: number }>();
@@ -418,6 +429,9 @@ export function placesTouched(files: FileChange[], map: PlaceMap, share = 1 / 3)
     return filePlaces.get(file)!;
   };
   const classPlaces = (c: string) => (c in map.classes ? map.sets[map.classes[c]] : []);
+  const prints = builds && map.builds ? { now: builds, was: map.builds } : null;
+  /** `places` but those that build as they did. */
+  const builtAnew = (places: Set<number>) => new Set([...places].filter((i) => !prints || prints.now[map.places[i]] === undefined || prints.now[map.places[i]] !== prints.was[map.places[i]]));
 
   /** `places` light up for `why`, but those of a group they're more than `share` of, which go to everywhere. */
   function light(file: string, places: Set<number>, why: string) {
@@ -460,6 +474,8 @@ export function placesTouched(files: FileChange[], map: PlaceMap, share = 1 / 3)
     const treeBefore = css || partsBefore?.style ? cssOf(f.before, css ? null : partsBefore!.style) : [];
     const treeAfter = css || partsAfter?.style ? cssOf(f.after, css ? null : partsAfter!.style) : [];
     let lightsAny = false;
+    // (The scenes' code: what it changes is what places build, so none it builds as it did, and no line unrun.)
+    const scenes = !!prints && SCENE_CODE.test(file);
 
     for (const h of f.hunks) {
       const sideLines = ([s, c]: [number, number]) => (c > 0 ? Array.from({ length: c }, (_, i) => s + i) : [s, s + 1].filter((l) => l >= 1));
@@ -485,7 +501,7 @@ export function placesTouched(files: FileChange[], map: PlaceMap, share = 1 / 3)
         if (!found) {
           // Changed since the map too: wherever the file runs.
           if (sideLines(h.old).some((l) => !inStyle(partsBefore, l)) || sideLines(h.new).some((l) => !inStyle(partsAfter, l))) {
-            const p = placesOf(file);
+            const p = scenes ? builtAnew(placesOf(file)) : placesOf(file);
             if (p.size) light(file, p, `${named}, changed since the scene map`), (lightsAny = true);
           }
         } else if (found.length) {
@@ -498,8 +514,9 @@ export function placesTouched(files: FileChange[], map: PlaceMap, share = 1 / 3)
               for (const i of map.sets[v]) places.add(i);
             } else if (v === MODULE || (v === NO_CODE && template)) for (const i of placesOf(file)) places.add(i);
           }
-          if (places.size) light(file, places, named), (lightsAny = true);
-          else if (code) unrun.push({ file, what: fn ? `${fn} (${where})` : where });
+          const shown = scenes ? builtAnew(places) : places;
+          if (shown.size) light(file, shown, named), (lightsAny = true);
+          else if (code && !scenes) unrun.push({ file, what: fn ? `${fn} (${where})` : where });
         }
       }
       // The style: the changed rules, by the classes they name.
@@ -543,9 +560,12 @@ export function placesTouched(files: FileChange[], map: PlaceMap, share = 1 / 3)
     }
     if (css && !lightsAny && GAME_FILE.test(file) && !unrun.some((u) => u.file === file)) uncovered.push(file);
   }
-  const places = [...lit]
-    .sort(([a, x], [b, y]) => y.score - x.score || a - b)
-    .map(([i, p]) => ({ key: map.places[i], why: p.why, score: Math.round(p.score * 1000) / 1000 }));
+  // A place the map hasn't got, with the scenes' code changed: new, all of it the change's.
+  const added = prints && files.some((f) => SCENE_CODE.test(f.file)) ? Object.keys(prints.now).filter((k) => !(k in prints.was)) : [];
+  const places = [
+    ...added.map((key) => ({ key, why: 'new on the desk', score: 1 })),
+    ...[...lit].sort(([a, x], [b, y]) => y.score - x.score || a - b).map(([i, p]) => ({ key: map.places[i], why: p.why, score: Math.round(p.score * 1000) / 1000 })),
+  ];
   return { places, everywhere: [...everywhere.values()], uncovered, unrun };
 }
 

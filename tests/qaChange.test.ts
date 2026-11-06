@@ -60,6 +60,7 @@ function raw(): RawMap {
       ['src/lib/session.svelte.ts', lines([1, 2, 3, 4, 5].map((l) => [l, s(...SCENES.slice(0, 8))]))],
       ['src/components/Lobby.svelte', lines([[2, s('lobby/a')], [3, s('lobby/a')], [4, s()], [7, s('lobby/a')]])],
       ['src/qa/frame/PieceHost.svelte', lines([[2, s(...PIECES)]])],
+      ['src/qa/scenes/home.ts', lines([[3, s('home/a', 'home/b')], [4, s('home/a', 'home/b')], [6, s()]])],
     ]),
     classes: new Map([
       ['room', s('lobby/a')],
@@ -67,6 +68,7 @@ function raw(): RawMap {
       ['seat', s('lobby/a', 'game/a')],
       ['name', s('lobby/a', 'game/a', 'over/a')],
     ]),
+    builds: { 'home/a': 'a1', 'home/b': 'b1' },
   };
 }
 const map: PlaceMap = JSON.parse(encodeMap(raw()));
@@ -80,6 +82,7 @@ test('the map keeps each line’s places, one entry a line, and reads back as it
   const text = encodeMap(raw());
   assert.ok(text.includes('\n    "src/lib/rooms.ts": [1,-2,3,-1,4,'), text);
   assert.ok(text.includes('\n    "home/a",\n'));
+  assert.ok(text.includes('\n  "builds": {\n    "home/a": "a1",\n'), text);
   const back = decodeMap(map);
   assert.deepEqual([...back.files.get('src/lib/rooms.ts')!.get(8) as Set<string>], ['lobby/a']);
   assert.equal(back.files.get('src/lib/rooms.ts')!.get(1), 'module');
@@ -159,6 +162,25 @@ test('a game file no place runs is listed as not covered; docs, tests and the de
   const t = placesTouched(['src/lib/plateWorker.ts', 'docs/qa.md', 'tests/x.test.ts', 'src/qa/desk/Desk.svelte'].map((f) => change(f, [at(1)])), map);
   assert.deepEqual(t.places, []);
   assert.deepEqual(t.uncovered, ['src/lib/plateWorker.ts']);
+});
+
+test('the scenes’ code lights only the places it builds differently; a place the map hasn’t got is new', () => {
+  const home = (hunks: Hunk[]) => [change('src/qa/scenes/home.ts', hunks)];
+  const touched = (files: FileChange[], builds: Record<string, string>, m = map) => placesTouched(files, m, 1 / 3, builds);
+  // Moved about, building each as it did: none; built anew: that one.
+  assert.deepEqual(touched(home([at(3)]), { 'home/a': 'a1', 'home/b': 'b1' }).places, []);
+  assert.deepEqual(touched(home([at(3)]), { 'home/a': 'a1', 'home/b': 'b2' }).places.map((p) => p.key), ['home/b']);
+  // Its code no place ran is no one's to look at.
+  assert.deepEqual(touched(home([at(6)]), { 'home/a': 'a1', 'home/b': 'b1' }).unrun, []);
+  // A new place first, all of it the change's.
+  const added = touched(home([at(3)]), { 'home/a': 'a1', 'home/b': 'b2', 'home/c': 'c1' }).places;
+  assert.deepEqual(added.map((p) => [p.key, p.why]), [['home/c', 'new on the desk'], ['home/b', 'home.ts: line 3']]);
+  // Without what they build now, or a map without their prints: every place that ran it.
+  assert.deepEqual(keys(home([at(3)])).sort(), ['home/a', 'home/b']);
+  const { builds: _, ...unprinted } = map;
+  assert.deepEqual(touched(home([at(3)]), { 'home/a': 'a1', 'home/b': 'b1' }, unprinted).places.map((p) => p.key).sort(), ['home/a', 'home/b']);
+  // The game's own code counts wherever it ran, built alike or not.
+  assert.deepEqual(touched([change('src/lib/rooms.ts', [at(4)])], { 'home/a': 'a1', 'home/b': 'b1' }).places.map((p) => p.key).sort(), ['home/b', 'lobby/a']);
 });
 
 test('git’s diffs, and lines carried across them', () => {

@@ -55,7 +55,7 @@ import { buildBeta as viteBeta } from './beta-build.mjs';
 import { SIZES } from '../src/qa/sizes.ts';
 import { carry, decodeMap, encodeMap } from '../src/qa/change.ts';
 import { FLOOR, MARK, MOMENTS, PAGE_FLOOR, WEBGL_SCENES, atRest, kpx, overBaseline, pageAtRest, readTrace, redraws, unread, withoutMark } from '../src/qa/redraws.ts';
-import { changeHere, linesSinceMap } from '../qaServer.ts';
+import { changeHere, linesSinceMap, placeBuildsIn } from '../qaServer.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCREENS = path.join(ROOT, 'screens');
@@ -552,7 +552,10 @@ if (values.map) {
     }
   }
   const dirty = Object.fromEntries([...changedNow].filter((f) => files.has(f) && existsSync(path.join(ROOT, f))).map((f) => [f, git(ROOT, 'hash-object', '-w', '--', f)]));
-  writeFileSync(MAP, encodeMap({ commit, dirty, places, files, classes }));
+  // What each place builds as mapped, so This change can tell a scene built anew from one only moved (src/qa/builds.ts).
+  const builds = placeBuildsIn(ROOT);
+  if (!builds) console.warn("The places couldn't be built in node (node scripts/place-builds.ts): the map goes without their prints, and a change to the scenes' code lights every place that runs it.");
+  writeFileSync(MAP, encodeMap({ commit, dirty, places, files, classes, builds: builds ?? undefined }));
   const failed = jobs.length - got.size;
   console.log(`src/data/sceneFiles.json: ${files.size} files over ${places.length} places (${byPlace.size} mapped now), ${classes.size} class names${failed ? `; ${failed} frames failed` : ''}.`);
   process.exit(failed ? 1 : 0);

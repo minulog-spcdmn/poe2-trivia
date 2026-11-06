@@ -288,3 +288,17 @@ test('a control shown only at some moments names its scene’s controls and thei
     }
   }
 });
+
+// This change tells a scene built anew from one only moved about by what
+// each place builds (src/qa/builds.ts), so every place must build, and the
+// same each time: the clock and chance held still, and let go after.
+test('every place builds the same each time, and the clock is the real one after', async () => {
+  const { placeBuilds, placesOf } = await import('../src/qa/builds.ts');
+  const now = Date.now;
+  const once = placeBuilds(catalog());
+  assert.equal(Date.now, now);
+  assert.deepEqual(placeBuilds(catalog()), once);
+  assert.deepEqual(Object.keys(once), placesOf(catalog()).map((p) => p.key));
+  assert.deepEqual(Object.keys(once).filter((k) => once[k] === 'failed'), [], 'these places fail to build');
+  assert.ok(new Date() instanceof Date && new Date().getTime() !== Date.UTC(2026, 10, 1, 12));
+});
