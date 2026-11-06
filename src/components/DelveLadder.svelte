@@ -385,6 +385,9 @@
   {#if plate}
     {@const p = plate}
     {@const ou = p.endless.ouro}
+    <!-- The finds' lines go on the marks' layer, the rest on the plate's (below). -->
+    {@const leads = p.parts.filter((x) => x.tone === 'lead')}
+    {@const lines = p.parts.filter((x) => x.tone !== 'lead')}
     <!-- The ouroboros' reveal: a band round its ring that sweeps on from its snout, so it coils in head first. -->
     <svg class="defs" aria-hidden="true">
       <!-- The two snakes draw in at once, each from where its body meets the other's head round to its own head (half a turn); each
@@ -442,7 +445,7 @@
       {#each p.shades as s, i (i)}
         <path class="shade draw {s.tone}" d={s.d} style:--c={s.color} style:--d={sec(s.delay)} style:--t={sec(s.t)} style:--o={s.o} pathLength="100" />
       {/each}
-      {#each p.parts as part, i (i)}
+      {#each lines as part, i (i)}
         <g class={part.tone} style:--c={part.color}>
           {#each part.strokes as s, j (j)}
             <path d={s.d} class="draw {s.kind}" style:--d={sec(s.delay)} style:--t={sec(s.t)} style:opacity={s.o} pathLength="100" />
@@ -481,7 +484,16 @@
 
     <!-- On the plate, but never cut round the stars. -->
     <svg class="marks" viewBox="0 0 {f(p.w)} {f(p.h)}" aria-hidden="true">
-      <!-- The finds you have met: a station on the wall where each first turns up, and that depth in the middle of its line. -->
+      <!-- The finds you have met: each one's line (here, as beside the finds list it runs on past the plate's right edge, and
+           Chrome clips a masked svg to its box, mask-clip or not), a station on the wall where it first turns up, and that depth in
+           the middle of its line. -->
+      {#each leads as part, i (i)}
+        <g class="lead">
+          {#each part.strokes as s, j (j)}
+            <path d={s.d} class="draw {s.kind}" style:--d={sec(s.delay)} style:--t={sec(s.t)} pathLength="100" />
+          {/each}
+        </g>
+      {/each}
       {#each p.stations as s (s.kind)}
         <circle class="station" cx={f(s.c[0])} cy={f(s.c[1])} r="1.1" style:--d={sec(s.delay)} />
       {/each}
@@ -744,7 +756,8 @@
     animation: var(--holes, none);
   }
   /* Cut round the stars (holes, in the script, from starsCut): a gradient for each, its image reaching as far past the box as
-     the SVG mask's did, and nothing clipped to the box, as the glow's blur and the lines' ends go past it. */
+     the SVG mask's did, and asked not to clip to the box. Chrome clips it there all the same, so nothing on these two layers may
+     run past the box: the finds' lines, which do, are on the marks' (tests/descentPlate.test.ts holds the rest inside). */
   .glow,
   .plate {
     -webkit-mask-repeat: no-repeat;
