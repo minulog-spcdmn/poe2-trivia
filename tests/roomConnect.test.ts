@@ -19,13 +19,20 @@ registerHooks({
 });
 Object.assign(globalThis, { localStorage: memoryStorage(), sessionStorage: memoryStorage() });
 Object.assign(globalThis, { window: new EventTarget(), location: new URL('https://poe2.quest/') });
-// What the page does on the side as rooms open and close (count.ts's beacon, listeners on the page) goes nowhere.
-Object.assign(globalThis, { Image: class { src = ''; }, addEventListener() {}, removeEventListener() {} });
+// What the page does on the side as rooms open and close (count.ts's beacon, listeners on the page) goes nowhere; the paths counted are noted.
+const counted: string[] = [];
+class Beacon {
+  set src(url: string) {
+    counted.push(new URL(url).searchParams.get('p') ?? '');
+  }
+}
+Object.assign(globalThis, { Image: Beacon, addEventListener() {}, removeEventListener() {} });
 Object.defineProperty(globalThis, 'document', { value: Object.assign(new EventTarget(), { referrer: '', visibilityState: 'visible' }), configurable: true, writable: true });
 mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
 const { session } = await import('../src/lib/session.svelte.ts');
 const { toasts } = await import('../src/lib/toasts.svelte.ts');
-const { net } = await import('./fakePeerjs.ts');
+const { default: Peer, net } = await import('./fakePeerjs.ts');
+const { PEER_PREFIX } = await import('../src/lib/peer.ts');
 
 const settle = () => new Promise((r) => setImmediate(r));
 /**
@@ -326,4 +333,43 @@ test('a join left running gives up after its while, as before', async () => {
   assert.equal(session.status, 'connecting');
   await run(2000);
   assert.equal(session.status, 'idle');
+});
+
+test('a join the room was found for and never linked counts what the relay was doing beside its failure; one for a missing room counts none', async (t) => {
+  // Each attempt's connection as a browser makes it: no relay login (no Worker in tests), the host's answer come.
+  const connect = Peer.prototype.connect;
+  t.after(() => void (Peer.prototype.connect = connect));
+  Peer.prototype.connect = function (this: InstanceType<typeof Peer>, id: string) {
+    const conn = connect.call(this, id);
+    if (!conn) return conn;
+    const pc = Object.assign(new EventTarget(), { remoteDescription: null as object | null, getConfiguration: () => ({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }) });
+    Object.assign(conn, { peerConnection: pc });
+    queueMicrotask(() => {
+      pc.remoteDescription = { type: 'answer' };
+      pc.dispatchEvent(new Event('signalingstatechange'));
+    });
+    return conn;
+  };
+  const failed = async (code: string, missing = false) => {
+    counted.length = 0;
+    session.join(code, 'Bram', false, 'code');
+    await settle();
+    await run(25_000);
+    // The server says the room isn't there, late in the join's while.
+    if (missing) net.made.find((p) => p.id.startsWith('anon-'))!.emit('error', { type: 'peer-unavailable', message: 'Could not connect to peer' });
+    await run(6000);
+    assert.equal(session.status, 'idle');
+    // What was counted, gone out one at a time.
+    await run(5000);
+    return counted.filter((p) => p.startsWith('error/') || p.startsWith('relay/'));
+  };
+  // The room's host is there (its id held), and no link comes.
+  Peer.hold(PEER_PREFIX + 'ABCDEF');
+  assert.deepEqual((await failed('ABCDEF')).sort(), ['error/join-no-answer', 'relay/no-login-unreached']);
+  assert.equal(lastToast()?.title, 'Couldn’t connect');
+  session.leave();
+  net.reset();
+  // The server says nobody holds it: the room is missing, its failure counted alone.
+  assert.deepEqual(await failed('QQQQQQ', true), ['error/join-no-answer']);
+  assert.equal(lastToast()?.title, 'No answer');
 });

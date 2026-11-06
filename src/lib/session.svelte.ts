@@ -33,7 +33,8 @@ import {
   type Item,
   type Player,
 } from './game';
-import { PEER_PREFIX, alsoOn, letGo, loadPeerJs, newPeer, pageServer, peerJsNow, serverOf, type PeerJs, type Server } from './peer';
+import { PEER_PREFIX, alsoOn, letGo, loadPeerJs, newPeer, pageServer, peerJsNow, relayLast, serverOf, type PeerJs, type Server } from './peer';
+import { relayEvent, relaySeen, watchAttempt } from './relay';
 import { CODE_LENGTH, CODE_PATTERN, randomCode, randomToken } from './roomCode.ts';
 import { Beacon, Mirror, ProbeDesk, answerProbes, heardOnlyOn, onlyOn, watchForRoom, type RoomInfo } from './rooms';
 import { isMedia, isVersionRefusal, parseClientMsg, parseHostMsg, PROTOCOL_VERSION, RateLimit, versionRefusal, type HostMsg, type MediaMsg } from './protocol';
@@ -2087,6 +2088,8 @@ class Session {
   nameRefused = false;
   /** Whether this join is the one tried again under another made name (lib/madeName.ts), the first having found its own taken: once per join. */
   private madeAgain = false;
+  /** What this join's attempts saw of the relay (lib/relay.ts), told if the room never answers though its host was there. */
+  private relaySeen = relaySeen();
 
   join(code: string, name: string, watch = false, via?: JoinVia, keepName = !!via, madeAgain = false) {
     // The host's room has its own settings: a shared link's Delve is moot.
@@ -2117,6 +2120,7 @@ class Session {
     // Tried again under another made name, it's still the one join the player set off.
     if (via && !madeAgain) countEvent(`join/${via}`);
     this.madeAgain = madeAgain;
+    this.relaySeen = relaySeen();
     this.saveGuest();
     const room = this.code;
     this.helloSecret = roomSecret(mySecret, room).catch(() => stored(`secret.${room}`, () => randomToken(32)));
@@ -2395,6 +2399,8 @@ class Session {
     const conn = this.peer.connect(PEER_PREFIX + this.code, { reliable: true });
     if (!conn) return;
     this.guardHostFrames(conn);
+    // Now, while it's there (PeerJS drops a failed attempt's connection at once), with why the relay had no login as it's made.
+    watchAttempt(this.relaySeen, conn.peerConnection, relayLast());
     // The host would turn the oldest away anyway.
     this.pruneAttempts();
     while (this.attempts.length >= MAX_PENDING_PER_PEER) this.attempts.shift()!.conn.close();
@@ -2924,8 +2930,12 @@ class Session {
   /** A join that never got in, told as what went wrong; `failure` counted (count.ts). */
   private joinFailed(why: JoinFailed, failure?: 'join-no-answer' | 'join-no-connection') {
     if (why === 'missing') this.codeDoubted = true;
+    const counted = failure && this.joinFailure(failure);
+    // The host was there and no link came: what the relay was doing, beside the failure (lib/relay.ts relayEvent).
+    const relay = counted === 'join-no-answer' && why === 'blocked' ? relayEvent(this.relaySeen, relayLast()) : null;
+    if (relay) countEvent(relay);
     const [message, title] = JOIN_FAILED[why](this.code);
-    this.fail(message, title, { failure: failure && this.joinFailure(failure) });
+    this.fail(message, title, { failure: counted });
   }
 
   private turnedOut(why: keyof typeof TURNED_OUT) {

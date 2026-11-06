@@ -13,7 +13,7 @@ import { execFileSync } from 'node:child_process';
  * tests/unwatched.test.ts checks it does. Those already there, git is asked
  * about (`ignoredFolders`).
  */
-export const UNWATCHED = ['/.claude', '.phone', '.pc', '.bot', '.preview', '.venv-art', '__pycache__', '/screens', 'dist', 'dist-ssr', 'logs', '/relay/.wrangler'];
+export const UNWATCHED = ['/.claude', '.phone', '.pc', '.bot', '.preview', '.venv-art', '__pycache__', '/screens', 'dist', 'dist-ssr', 'logs', '/relay/.wrangler', '/signal/.wrangler'];
 
 /**
  * The folders git ignores in the checkout at `root` as it is, by any of its

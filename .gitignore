@@ -44,5 +44,6 @@ __pycache__/
 # Screenshots from scripts/capture-screens.mjs
 /screens/
 
-# Wrangler's own files, deploying the relay's Worker (relay/)
+# Wrangler's own files, deploying the Workers by hand (relay/, signal/)
 /relay/.wrangler/
+/signal/.wrangler/

@@ -1,6 +1,6 @@
 import { mock, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRelay, Relay } from '../src/lib/relay.ts';
+import { parseRelay, Relay, relayEvent, relaySeen, watchAttempt, type RelaySeen } from '../src/lib/relay.ts';
 
 const login = { urls: ['turn:turn.cloudflare.com:3478?transport=udp', 'turns:turn.cloudflare.com:443?transport=tcp'], username: 'u', credential: 'c' };
 const HOUR = 3_600_000;
@@ -180,4 +180,99 @@ test('a Worker that says when to ask again is believed, up to a day', async (t) 
   t.mock.timers.tick(1);
   assert.equal(r.due(), true);
   assert.equal(calls.length, 2);
+});
+
+test('the last fetch says why there was no login, as the Worker answered', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 0 });
+  const answer = (status: number, retry?: string) => new Response(null, { status, headers: retry ? { 'Retry-After': retry } : {} });
+  const cutOff = (err: Error) => new Response(new ReadableStream({ pull: (c) => c.error(err) }));
+  for (const [got, last] of [
+    [() => answer(503, '1234567'), 'capped'],
+    [() => answer(503, '600'), 'stopped'],
+    [() => answer(502, '60'), 'failing'],
+    [() => answer(429, '60'), 'limited'],
+    [() => new Response('{not json'), 'refused'],
+    [() => new Response(JSON.stringify({ iceServers: 'nonsense', ttl: 60 })), 'refused'],
+    [() => answer(403), 'unreached'],
+    [() => Promise.reject(new TypeError('Failed to fetch')), 'unreached'],
+    // A 200 whose body never came, given up on (GIVE_UP_MS) or cut off: no answer, not one the page couldn't read.
+    [() => cutOff(new DOMException('The operation was aborted.', 'AbortError')), 'unreached'],
+    [() => cutOff(new TypeError('terminated')), 'unreached'],
+    [() => new Response(JSON.stringify({ iceServers: [login], ttl: 3600 })), 'got'],
+  ] as const) {
+    const r = new Relay('https://relay.test/', (async () => got()) as typeof fetch);
+    assert.equal(r.last, null);
+    await r.load();
+    assert.equal(r.last, last, last);
+  }
+});
+
+/** A connection as the browser makes it, for watchAttempt: its servers, and events dispatched by hand. */
+class FakePc extends EventTarget {
+  remoteDescription: object | null = null;
+  readonly servers: RTCIceServer[];
+  constructor(servers: RTCIceServer[]) {
+    super();
+    this.servers = servers;
+  }
+  getConfiguration() {
+    return { iceServers: this.servers };
+  }
+  fire(type: string, fields: object = {}) {
+    this.dispatchEvent(Object.assign(new Event(type), fields));
+  }
+}
+const pcOf = (servers: RTCIceServer[]) => new FakePc(servers) as unknown as RTCPeerConnection & FakePc;
+
+test("a join's attempts are watched as they go: the host's answer, a login or why none, a relay candidate", () => {
+  const seen = relaySeen();
+  watchAttempt(seen, null, 'capped');
+  watchAttempt(seen, undefined, 'capped');
+  assert.deepEqual(seen, relaySeen());
+  const plain = pcOf([{ urls: 'stun:stun.l.google.com:19302' }]);
+  watchAttempt(seen, plain, 'limited');
+  plain.fire('icecandidate', { candidate: { type: 'host', candidate: 'candidate:1 1 udp 2122260223 192.168.1.2 54321 typ host' } });
+  plain.fire('icecandidate', { candidate: null });
+  plain.fire('signalingstatechange');
+  assert.deepEqual(seen, { ...relaySeen(), whyNone: 'limited' });
+  (plain as FakePc).remoteDescription = { type: 'answer' };
+  plain.fire('signalingstatechange');
+  assert.deepEqual(seen, { ...relaySeen(), answered: true, whyNone: 'limited' });
+  // The latest attempt without a login says why.
+  watchAttempt(seen, pcOf([]), 'failing');
+  assert.equal(seen.whyNone, 'failing');
+
+  const relayed = pcOf([login, { urls: 'stun:stun.l.google.com:19302' }]);
+  watchAttempt(seen, relayed, 'got');
+  assert.equal(seen.login, true);
+  assert.equal(seen.whyNone, 'failing');
+  assert.equal(seen.route, false);
+  // A browser that leaves `type` out: the candidate's own line says it.
+  relayed.fire('icecandidate', { candidate: { type: null, candidate: 'candidate:3 1 udp 41885439 104.30.0.1 3478 typ relay raddr 0.0.0.0 rport 0' } });
+  assert.equal(seen.route, true);
+  const typed = relaySeen();
+  const other = pcOf([login]);
+  watchAttempt(typed, other, 'got');
+  other.fire('icecandidate', { candidate: { type: 'relay', candidate: '' } });
+  assert.equal(typed.route, true);
+});
+
+test("a join the host answered and that never linked counts what the relay was doing; one it didn't answer counts nothing", () => {
+  const seen = (s: Partial<RelaySeen>): RelaySeen => ({ ...relaySeen(), answered: true, ...s });
+  assert.equal(relayEvent({ ...relaySeen(), login: true, route: true }, 'got'), null);
+  assert.equal(relayEvent(seen({ login: true, route: true }), 'capped'), 'relay/route');
+  assert.equal(relayEvent(seen({ login: true }), 'got'), 'relay/no-route');
+  // A login held outlives a refresh that failed: the attempt's own servers decide.
+  assert.equal(relayEvent(seen({ login: true }), 'failing'), 'relay/no-route');
+  // Why there was none, as the relay's last fetch had gone when the attempt was made: a fetch ended since doesn't change it.
+  for (const why of ['capped', 'stopped', 'failing', 'limited', 'refused', 'unreached'] as const) {
+    assert.equal(relayEvent(seen({ whyNone: why }), null), `relay/no-login-${why}`);
+    assert.equal(relayEvent(seen({ whyNone: why }), 'got'), `relay/no-login-${why}`);
+  }
+  // No fetch ended then (or one with a login the attempt didn't have): how the one since went, a login come after the attempts, why none, or never an answer.
+  for (const whyNone of [null, 'got'] as const) {
+    assert.equal(relayEvent(seen({ whyNone }), 'got'), 'relay/no-login-late');
+    assert.equal(relayEvent(seen({ whyNone }), null), 'relay/no-login-unreached');
+    assert.equal(relayEvent(seen({ whyNone }), 'capped'), 'relay/no-login-capped');
+  }
 });

@@ -254,7 +254,13 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
       add('daily/right', h, right);
       add('daily/wrong', h, answers - right);
     }
-    if (rnd() < 0.04) add('error/join-no-answer', h, 1);
+    const unanswered = rnd();
+    if (unanswered < 0.04) {
+      add('error/join-no-answer', h, 1);
+      // (What the relay was doing, for most of them, as lib/relay.ts relayEvent has it; drawn from the same throw, so the rest of the day stays as it was.)
+      const why = unanswered / 0.04;
+      if (why < 0.7) add(why < 0.35 ? 'relay/route' : why < 0.55 ? 'relay/no-route' : why < 0.62 ? 'relay/no-login-unreached' : 'relay/no-login-limited', h, 1);
+    }
     if (rnd() < 0.015) add('error/join-no-such-room', h, 1);
     if (rnd() < 0.01) add('error/host-no-connection', h, 1);
     if (rnd() < 0.006) add('error/join-version-mismatch', h, 1);

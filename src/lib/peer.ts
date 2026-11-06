@@ -185,6 +185,8 @@ const STUN: RTCIceServer = { urls: 'stun:stun.l.google.com:19302' };
  * build, as tests/asVite.ts makes them), which would reach the real Worker.
  */
 const relay = new Relay(QA || env.MODE === 'test' ? '' : RELAY_URL);
+/** How the relay's last fetch for a login went (Relay.last): why a join had none. */
+export const relayLast = () => relay.last;
 /**
  * How often a page gone online looks whether its login runs low, so it's
  * renewed even while nothing asks for one: a room's host waiting hours for a
