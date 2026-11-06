@@ -21,6 +21,47 @@ export const lerp = (p: Pt, q: Pt, t: number): Pt => [p[0] + (q[0] - p[0]) * t, 
 /** The point at `a` degrees clockwise from the top, `r` from `c`. */
 export const at = (c: Pt, a: number, r: number): Pt => [c[0] + r * Math.sin(rad(a)), c[1] - r * Math.cos(rad(a))];
 
+/** Path data `d` (absolute commands only) turned by `turn` degrees, scaled by `k` and moved to `c`. */
+export const transform = (d: string, c: Pt, k = 1, turn = 0) => {
+  const [cos, sin] = [Math.cos(rad(turn)), Math.sin(rad(turn))];
+  const map = (x: number, y: number) => `${f(c[0] + k * (x * cos - y * sin))} ${f(c[1] + k * (x * sin + y * cos))}`;
+  const tokens = d.match(/[A-Za-z]|-?\d*\.?\d+(?:e-?\d+)?/g) ?? [];
+  let out = '';
+  let cmd = '';
+  let [cx, cy] = [0, 0];
+  const num = () => Number(tokens.shift());
+  while (tokens.length) {
+    if (/[A-Za-z]/.test(tokens[0]!)) cmd = tokens.shift()!;
+    // (A relative command's numbers would be moved and scaled as if they were points: a sign drawn scrambled.)
+    if (/[a-y]/.test(cmd)) throw new Error(`transform: absolute path commands only, not ${cmd}`);
+    if (cmd === 'Z' || cmd === 'z') {
+      out += 'Z';
+      continue;
+    }
+    if (cmd === 'H' || cmd === 'V') {
+      if (cmd === 'H') cx = num();
+      else cy = num();
+      out += `L${map(cx, cy)}`;
+      continue;
+    }
+    if (cmd === 'A') {
+      const [rx, ry, rot, large, sweep] = [num(), num(), num(), num(), num()];
+      [cx, cy] = [num(), num()];
+      out += `A${f(rx * k)} ${f(ry * k)} ${f(rot + turn)} ${large} ${sweep} ${map(cx, cy)}`;
+      continue;
+    }
+    const pairs = { M: 1, L: 1, T: 1, S: 2, Q: 2, C: 3 }[cmd] ?? 1;
+    out += cmd;
+    for (let i = 0; i < pairs; i++) {
+      const [x, y] = [num(), num()];
+      out += (i ? ' ' : '') + map(x, y);
+      [cx, cy] = [x, y];
+    }
+    if (cmd === 'M') cmd = 'L';
+  }
+  return out;
+};
+
 /** Where `p` lies about `c`: degrees clockwise from the top, in (-180, 180]. */
 export const angleOf = (c: Pt, p: Pt) => (Math.atan2(p[0] - c[0], -(p[1] - c[1])) * 180) / Math.PI;
 
