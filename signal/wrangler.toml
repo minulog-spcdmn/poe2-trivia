@@ -1,4 +1,6 @@
 # The game's own matchmaking server (worker.js); README, "Matchmaking server".
+# Cloudflare Workers Builds deploys it from main whenever a merge changes
+# signal/, with this file as it is on main.
 name = "poe2-signal"
 main = "worker.js"
 compatibility_date = "2026-10-01"
