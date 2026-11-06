@@ -81,9 +81,9 @@ jobs:
     outputs:
       sha: ${{ steps.find.outputs.sha }}
       cached: ${{ steps.cache.outputs.cache-hit }}
-      # Set by its last step, as beta's `built`: a job that fails under
-      # continue-on-error can still read as a success in `needs`.
-      found: ${{ steps.found.outputs.found }}
+      # Set once the lookup has answered, beta or none (a job that fails
+      # under continue-on-error can still read as a success in `needs`).
+      found: ${{ steps.find.outputs.found }}
     steps:
       - name: Find the beta's commit
         id: find
@@ -96,6 +96,7 @@ jobs:
           else
             sha=$(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=beta&per_page=1" --jq '.[0].sha // empty')
           fi
+          echo "found=true" >> "$GITHUB_OUTPUT"
           if [ -z "$sha" ]; then
             echo "No beta yet; deploying the live site only."
             exit 0
@@ -110,8 +111,6 @@ jobs:
           path: beta-dist
           key: beta-dist-v3-${{ steps.find.outputs.sha }}
           lookup-only: true
-      - id: found
-        run: echo "found=true" >> "$GITHUB_OUTPUT"
 
   beta:
     needs: find-beta

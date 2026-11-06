@@ -31,5 +31,6 @@ export function sampleHostClock(was: HostClock | null, sentAt: number, hostBase:
   const moved = (a: number | undefined, b: number | undefined) => a !== undefined && b !== undefined && Math.abs(a - b) >= CLOCK_SET_MS;
   const held = !!was && !moved(mine, was.mine) && !moved(hostBase, was.host);
   const sample = sentAt - now;
-  return { offset: held ? Math.max(was.offset, sample) : sample, mine, host: hostBase };
+  // (A message without the host's base keeps the last it said, to tell the next against.)
+  return { offset: held ? Math.max(was.offset, sample) : sample, mine, host: hostBase ?? was?.host };
 }
