@@ -231,11 +231,13 @@ protocol, one Durable Object holding every peer's socket in memory.
 Cloudflare Workers Builds deploys `poe2-signal` on every push to `main` that
 changes `signal/`. To set it up (once), in Cloudflare’s dashboard: Workers &
 Pages, `poe2-signal`, Settings, Builds, Connect. Install the “Cloudflare
-Workers and Pages” GitHub app on this repo only. Production branch `main`;
-root directory `signal`; build watch paths `signal/*`; builds for
-non-production branches off; build variable `SKIP_DEPENDENCY_INSTALL=1`; build command empty; deploy
-command `npx --yes wrangler@4.158.0 deploy`. Connecting runs no build; the
-next change under `signal/` is the first. It’s the Worker `poe2-signal`, at
+Workers and Pages” GitHub app on this repo only. Branch `main`; root
+directory `signal`; build command empty; deploy command `npx --yes
+wrangler@4.158.0 deploy`; preview command as it comes; build variable
+`SKIP_DEPENDENCY_INSTALL=1`, not encrypted; API token: create new; build
+caching off. Then in Settings, Build: Branch control, “Enable Preview
+Builds” unticked; build watch paths `signal/*`. Connecting runs no build;
+the next change under `signal/` is the first. It’s the Worker `poe2-signal`, at
 `poe2-signal.poe2quest.workers.dev`, named in `src/lib/signalHost.ts`.
 
 A server deploy is forced within 300 s and disconnects everyone on our server;
