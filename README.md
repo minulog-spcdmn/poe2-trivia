@@ -82,9 +82,10 @@ apart from Safari's, so there, and only there, the privacy link in a room
 opens over the game (`src/lib/legalSheet.svelte.ts`).
 
 To see what a post or a stream brings in, tag the link you share:
-poe2.quest/?ref=reddit-oct (letters, digits, `-` and `_`, up to 40). The
-tag is counted as the visit's campaign and taken out of the address, and
-Analytics lists the tagged links with the sites people came from.
+poe2.quest/?ref=reddit-oct (letters, digits, `-` and `_`, up to 40; `?rf=`
+works too, as one posted link spelled it). The tag is counted as the visit's
+campaign and taken out of the address, and Analytics lists the tagged links
+with the sites people came from.
 
 ## Development
 
