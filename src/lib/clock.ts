@@ -14,7 +14,7 @@ export const CLOSE_ENOUGH_MS = 60_000;
  * For a count to the second (`exact`), a device clock this close is left as
  * it is: the reply's whole seconds can't say better. And set by this much
  * since the server answered (by hand, by the system mending it, or the device
- * slept), it's asked again.
+ * slept), it's asked again before such a count (`refresh`).
  */
 export const WITHIN_A_SECOND_MS = 1000;
 /** A request with no reply by then counts as none. */
@@ -58,11 +58,12 @@ export interface Clock {
   sync(): Promise<void>;
   /**
    * Asks again when it is worth it: never asked yet or the last ask had no
-   * reply (a minute on), or the device's clock has been set by a second or
+   * reply (a minute on), or the device's clock has been set by `within` or
    * more since the server answered (by hand, by the system, or the device
-   * slept). Undefined when not.
+   * slept): a minute for the day (`now`), WITHIN_A_SECOND_MS for a count to
+   * the second (`exact`). Undefined when not.
    */
-  refresh(): Promise<void> | undefined;
+  refresh(within?: number): Promise<void> | undefined;
   /** Whether an ask has settled, answered or not. */
   known(): boolean;
   /** Whether the server has answered: the day is its day. */
@@ -112,9 +113,9 @@ export function makeClock(
         const server = serverTimeOf(res);
         if (server === null) return;
         const gotAt = device();
-        error = errorOf(server, sentAt, gotAt);
         const off = offsetOf(server, sentAt, gotAt);
-        fine = Math.abs(off) < WITHIN_A_SECOND_MS ? 0 : off;
+        error = Math.abs(off) < CLOSE_ENOUGH_MS ? 0 : off;
+        fine =Math.abs(off) < WITHIN_A_SECOND_MS ? 0 : off;
         answered = { wall: gotAt, steady: steady() };
         replied = true;
       })
@@ -131,9 +132,9 @@ export function makeClock(
     now: () => device() + error,
     exact: () => device() + fine,
     sync,
-    refresh: () => {
+    refresh: (within = CLOSE_ENOUGH_MS) => {
       if (asking) return asking;
-      if (replied ? moved() >= WITHIN_A_SECOND_MS : steady() - triedAt >= RETRY_MS) return sync();
+      if (replied ? moved() >= within : steady() - triedAt >= RETRY_MS) return sync();
       return undefined;
     },
     known: () => known,

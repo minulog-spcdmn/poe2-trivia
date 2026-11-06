@@ -32,7 +32,7 @@
   // looked at again just past each change, and
   // at once when the tab is looked at again or the device is back online.
   import { onMount, untrack } from 'svelte';
-  import { clock } from '../lib/clock';
+  import { clock, WITHIN_A_SECOND_MS } from '../lib/clock';
   import { drawIn, type Pen } from '../lib/drawIn';
   import { sand } from '../lib/hourglass';
   import { countdown, dawn, figure, launchWhen, LAUNCH_AT, LAUNCH_DAY, LAUNCH_SOURCE, progress, untilChange } from '../lib/launch';
@@ -100,7 +100,7 @@
     };
     const refresh = () => {
       tick();
-      void clock.refresh()?.then(tick);
+      void clock.refresh(WITHIN_A_SECOND_MS)?.then(tick);
     };
     refresh();
     const seen = () => document.visibilityState === 'visible' && refresh();
