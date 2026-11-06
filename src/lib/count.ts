@@ -250,9 +250,13 @@ export function visitMarks(played: Played | null, now: number): string[] {
   return !back ? [] : cohort ? [back, cohort] : [back];
 }
 
+/** The keys a link's tag goes under: `ref`, and `rf`, as the Reddit patch notes post of 6 November 2026 spelled it (a link post's address can't be edited). */
+const TAG_KEYS = ['ref', 'rf'] as const;
+
 /** The tag of a link made to be counted apart (poe2.quest/?ref=reddit-oct), sent as its campaign; null for none or one that isn't a plain short word. */
 export function campaignOf(search: string): string | null {
-  const tag = new URLSearchParams(search).get('ref');
+  const params = new URLSearchParams(search);
+  const tag = params.get('ref') ?? params.get('rf');
   return tag && /^[\w-]{1,40}$/.test(tag) ? tag : null;
 }
 
@@ -262,10 +266,12 @@ export function campaignOf(search: string): string | null {
  * it. Read once, before the page reads its address for anything else.
  */
 export function takeCampaign(): string | null {
-  if (typeof location === 'undefined' || !new URLSearchParams(location.search).has('ref')) return null;
+  if (typeof location === 'undefined') return null;
+  const params = new URLSearchParams(location.search);
+  if (!TAG_KEYS.some((k) => params.has(k))) return null;
   const tag = campaignOf(location.search);
   const url = new URL(location.href);
-  url.searchParams.delete('ref');
+  for (const k of TAG_KEYS) url.searchParams.delete(k);
   history.replaceState(history.state, '', url.pathname + url.search + url.hash);
   return tag;
 }
