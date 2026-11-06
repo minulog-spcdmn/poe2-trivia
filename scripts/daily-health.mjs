@@ -15,8 +15,9 @@
 // (zone.ts), and the counts are model.ts countsOf's over each window's days,
 // so one read holds every window. GoatCounter takes 500 requests an hour and
 // 4 a second, shared with the owner's stats page: calls go out a second
-// apart, a 429 waits out its Retry-After, a 5xx or no answer is asked again
-// later each time, and a run makes a handful (the zone and a few pages).
+// apart, a 429 waits out its Retry-After, a 5xx, a 404 or no answer is asked
+// again later each time, and a run makes a handful (the zone and a few
+// pages).
 //
 // Usage: GOATCOUNTER_KEY=<key> node --experimental-strip-types scripts/daily-health.mjs
 //        GOATCOUNTER_KEY=<key> node --experimental-strip-types scripts/daily-health.mjs --backtest 60
@@ -26,13 +27,14 @@
 // ::error:: annotation, so the run's page says why; 2 when GoatCounter
 // refuses the key or the check breaks (a bug, or answers of a new shape),
 // with an ::error::, or --backtest takes no number; 0 otherwise.
-// GoatCounter not read (no answer, a 5xx or 429 past the retries, an answer
-// that isn't JSON or doesn't add up) is 0 with a ::warning:: that the check
-// couldn't run today; without GOATCOUNTER_KEY, 0 with a line saying so.
+// GoatCounter not read (no answer, a 5xx, 404 or 429 past the retries, an
+// answer that isn't JSON or doesn't add up) is 0 with a ::warning:: that the
+// check couldn't run today; without GOATCOUNTER_KEY, 0 with a line saying
+// so.
 
 import { fileURLToPath } from 'node:url';
 import { COUNTER_ORIGIN } from '../src/lib/counter.ts';
-import { accountZone, pathCounts } from '../src/statsPage/hits.ts';
+import { accountZone, passing, pathCounts } from '../src/statsPage/hits.ts';
 import { healthOf, troubleOf } from '../src/statsPage/insights.ts';
 import { DEVICE_NAMES, countedSpan, countsOf, daysBetween, firstCounted } from '../src/statsPage/model.ts';
 import { addDays, dayIn, midnight } from '../src/statsPage/zone.ts';
@@ -67,8 +69,9 @@ function retryAfter(value, now) {
 /**
  * A GET of GoatCounter's API with `key`: one call at a time, APART_MS
  * between their starts; a 429 tried again after its Retry-After, no answer
- * or a 5xx later each time (TRIES in all, about ten seconds). `deps`: fetch,
- * sleep and the clock, so the tests can feed it. `calls`: how many went out.
+ * or one passing (hits.ts passing: a 404 or a 5xx) later each time (TRIES
+ * in all, about ten seconds). `deps`: fetch, sleep and the clock, so the
+ * tests can feed it. `calls`: how many went out.
  */
 export function apiOf(key, { fetch = globalThis.fetch, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), now = () => Date.now() } = {}) {
   let lastStart = -Infinity;
@@ -97,7 +100,7 @@ export function apiOf(key, { fetch = globalThis.fetch, sleep = (ms) => new Promi
         if (r) return r;
         throw new CheckError(`GoatCounter asked to slow down (${path}): the hour's 500 requests may be spent.`);
       }
-      if (res.status >= 500) {
+      if (passing(res.status)) {
         const r = await again(1500 * 2 ** tried);
         if (r) return r;
         throw new CheckError(`GoatCounter answered ${res.status} (${path}).`);
