@@ -21,8 +21,8 @@ export const LAUNCH_WINDOW = { from: Date.parse('2026-12-12T00:00:00+09:00'), to
 export const LAUNCH_AT: number | null = null;
 /** The day GGG announced it (their forum post of August 25, 2026): the hourglass's sand runs from here to the launch. */
 export const ANNOUNCED_DAY = '2026-08-25';
-/** GGG's announcement, which a click on the counter opens. */
-export const LAUNCH_SOURCE = 'https://www.pathofexile.com/forum/view-thread/3999366';
+/** GGG's page for the full release, which a click on the counter opens. */
+export const LAUNCH_SOURCE = 'https://pathofexile2.com/fullrelease';
 /** After the launch, the counter says it's out for this long, then goes. */
 export const OUT_FOR_DAYS = 7;
 

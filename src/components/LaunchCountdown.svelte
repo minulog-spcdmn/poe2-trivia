@@ -26,8 +26,8 @@
   // its glow swells and then breathes, as theirs does (docs/arcane-style.md,
   // "Motion"), and a grain falls now and then, but neither with the battery
   // saver on.
-  // A click opens GGG's announcement; its note, on hover or focus, says when,
-  // as exactly as GGG has said.
+  // A click opens GGG's page for the full release; its note, on hover or
+  // focus, says when, as exactly as GGG has said.
   // The time is the site's to the second (lib/clock's `exact`: the server's,
   // so a device whose clock is out, if only by seconds, still counts right),
   // looked at again just past each change, and
