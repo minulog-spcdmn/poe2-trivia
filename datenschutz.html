@@ -34,7 +34,9 @@
         nur mit dem cookielosen Dienst GoatCounter gezählt, der keine IP-Adressen speichert und Besuche keiner Person
         zuordnet (Abschnitt 7). Schriftarten und Bilder werden von dieser Website selbst ausgeliefert, nicht von Drittanbietern.
         Spielstände werden nicht zentral gespeichert: Das Spiel läuft im Browser der Person, die einen Raum eröffnet
-        („Host“), und die Geräte der Mitspielenden verbinden sich direkt miteinander.
+        („Host“), und die Geräte der Mitspielenden verbinden sich direkt miteinander. Nur wenn Sie Ihren Fortschritt
+        mit einem Passkey sichern, liegt eine verschlüsselte Kopie davon beim Spiel, die niemand außer Ihnen lesen kann
+        (Abschnitt 6).
       </p>
       <p>Personenbezogene Daten fallen dennoch in folgenden Fällen an:</p>
 
@@ -173,6 +175,7 @@
           abgeschaltet haben, diese Einstellung (Abschnitt 7);
         </li>
         <li>bei gekoppelten Geräten den Kopplungscode, eine Kennung dieses Geräts und den Stand der übrigen Geräte;</li>
+        <li>bei einer Sicherung mit Passkey (unten) deren Schlüssel und wann zuletzt gesichert wurde;</li>
         <li>
           kleine Merker für den Spielablauf, etwa den Raumcode eines Spiels, das Sie gerade verlassen haben, oder womit
           der nächste Delve-Lauf beginnt.
@@ -189,6 +192,24 @@
         wenn Sie die App schließen, damit das Spiel beim nächsten Öffnen weitergeht), nach einem Tag (bei einem
         Online-Raum nach einer Stunde) nicht mehr verwendet und beim nächsten Spiel entfernt; alles andere bleibt, bis
         Sie es löschen, über die Einstellungen Ihres Browsers jederzeit.
+      </p>
+      <p>
+        <strong>Sicherung mit einem Passkey:</strong> Wenn Sie „Keep it safe“ wählen (in den Einstellungen, im Codex
+        oder im Hinweis nach einem Spiel), legt Ihr Browser einen Passkey für poe2.quest an. Er liegt in der
+        Passwortverwaltung Ihres Geräts (etwa im iCloud-Schlüsselbund, im Google Passwortmanager oder in Windows Hello),
+        die ihn gegebenenfalls mit Ihren anderen Geräten abgleicht, und enthält nur einen zufällig erzeugten Schlüssel:
+        keinen Namen, keine E-Mail-Adresse; ein Konto wird nicht angelegt. Mit diesem Schlüssel verschlüsselt das Spiel in
+        Ihrem Browser Ihren Spielfortschritt (Codex, Übungsantworten, Delve-Läufe, Erfolge, Klassensiegel, Antworten auf
+        die tägliche Frage, Spielname und Farbe) und legt ihn beim Vermittlungsserver des Spiels ab (ein Cloudflare
+        Worker; Cloudflare, Inc., USA, siehe Abschnitt 4), unter einer ebenfalls aus dem Schlüssel errechneten Kennung,
+        zusammen mit der Gerätekennung und dem Zeitpunkt. Weder ich noch Cloudflare können diese Daten lesen oder einer
+        Person zuordnen. Gesichert wird, wenn sich der Fortschritt ändert; mit „Bring it back“ und dem Passkey holen Sie
+        ihn in einen Browser zurück. Beim Übertragen sieht der Server Ihre IP-Adresse (wie in Abschnitt 4 nur pro Minute
+        gezählt, um Massenanfragen zu bremsen, und nicht gespeichert). Sind Ihre Geräte gekoppelt, sichern alle ihren
+        Fortschritt mit demselben Schlüssel. Mit „Forget“ in den Einstellungen löschen Sie die Sicherung; eine, in die
+        18 Monate lang nichts gesichert wurde, wird von selbst gelöscht. Den Passkey selbst löschen Sie in der
+        Passwortverwaltung Ihres Geräts. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (die von Ihnen gewählte
+        Sicherung).
       </p>
 
       <h2>7. Reichweitenmessung (GoatCounter)</h2>
@@ -304,7 +325,7 @@
             <strong>Online play and the open rooms list:</strong> the PeerJS matchmaking server (0.peerjs.com), the game’s own
             matchmaking server (a Worker of the game’s on Cloudflare, which every room’s host is on too, an invite link and a
             guest ask too, the guest joining there when PeerJS doesn’t have the room, and that a page uses alone while PeerJS doesn’t answer it,
-            counting each address’s connections over the last minute to slow bulk use and storing nothing) and Cloudflare
+            counting each address’s connections over the last minute to slow bulk use and storing nothing of it) and Cloudflare
             (Cloudflare, Inc., USA: a small Worker of the game’s that hands the page a relay login lasting twelve hours, asked once you open or join a room or sync your devices and renewed while the page stays open, counting each address’s asks over the last minute to slow bulk use, its STUN server and, if needed, its
             relay servers (TURN), through which the game’s data then runs) and Google’s STUN server (stun.l.google.com) process your IP address to connect players.
             Guests connect directly to the host, so <strong>the host can see your IP address</strong> and you can see
@@ -343,7 +364,8 @@
             pair any); your settings (sound and volume, effects with a measure of how smoothly your device runs them, key
             bindings, your last room settings including hide-code, where the item window was, the views you chose last,
             which tips were shown, and your choice not to be counted, if you made it); and, with paired devices, the
-            pairing code, this device’s id and the others’ progress; plus small markers for the game’s flow, such as the
+            pairing code, this device’s id and the others’ progress; with a passkey backup, its key and when it was last
+            saved; plus small markers for the game’s flow, such as the
             room code of a game you just left. Session storage holds the running game, with a copy in local storage so
             that a tab the browser closed in the background can pick the game up again, and the browser’s cache the
             pictures the game drew itself. These are strictly necessary for the features you use. Session storage goes
@@ -351,6 +373,19 @@
             home-screen app it stays when you close the app, so that the game picks up the next time you open it), is no
             longer used after a day (an hour for an online room) and is removed the next time you play; the rest stays
             until you clear it, which you can do at any time.
+          </li>
+          <li>
+            <strong>Keeping your progress with a passkey:</strong> if you choose Keep it safe (in the settings, the codex or
+            the notice after a game), your browser makes a passkey for poe2.quest, kept in your device’s password manager
+            (such as iCloud Keychain, Google Password Manager or Windows Hello), which may sync it to your other devices. It
+            holds only a random key: no name, no email address, no account. With it the game encrypts your progress (codex,
+            practice answers, Delve runs, achievements, class sigils, daily answers, name and colour) in your browser and
+            keeps it on the game’s matchmaking server (a Cloudflare Worker), under a name also worked out from that key,
+            with your device id and when it came; neither I nor Cloudflare can read it or tell whose it is. It is saved
+            as it changes, and Bring it back with the passkey brings it into a browser. The server sees your IP address as
+            it is sent (counted over the last minute to slow bulk use, not stored). Paired devices all keep theirs under
+            the same key. Forget in the settings deletes it; one nothing was saved to for 18 months is deleted by itself.
+            You delete the passkey itself in your device’s password manager.
           </li>
           <li>
             <strong>Visitor counts:</strong> GoatCounter (Martin Tournoij, Ireland; servers in Germany and Finland) counts

@@ -29,8 +29,12 @@
 // (MAX_PER_ADDRESS), and a socket may send only so much: no browser elsewhere
 // can use it, and a script can't do more than spend the day's free allowance,
 // after which the game meets on the PeerJS cloud again (lib/peer.ts). Nothing
-// is stored or logged: the peers' ids, addresses and sockets live only in the
-// Object's memory.
+// of matchmaking is stored or logged: the peers' ids, addresses and sockets
+// live only in the Object's memory.
+//
+// It also keeps players' progress for them (`/keep/…`, Keep below): what a
+// page encrypted, under a name made from the player's passkey, neither of
+// which it can read back to anyone.
 
 /** How long a message waits for an id nobody holds before its sender is told EXPIRE (ms), and how often that's looked at: the PeerJS server's. */
 export const EXPIRE_MS = 5000;
@@ -98,7 +102,9 @@ const LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[\w-]+\.localhost|10\
  * The Worker's bindings (wrangler.toml).
  * @typedef {{
  *   SIGNAL: { idFromName(name: string): unknown, get(id: unknown, o?: { locationHint?: string }): { fetch(r: Request): Promise<Response> } },
+ *   KEEP: { idFromName(name: string): unknown, get(id: unknown, o?: { locationHint?: string }): { fetch(r: Request): Promise<Response> } },
  *   PER_ADDRESS: { limit(o: { key: string }): Promise<{ success: boolean }> },
+ *   KEEP_WRITES: { limit(o: { key: string }): Promise<{ success: boolean }> },
  * }} Env
  */
 
@@ -466,12 +472,171 @@ export function addressKey(ip) {
   return groups.map((g) => g.toString(16)).join(':') + '::/56';
 }
 
+// ---- keeping progress ---------------------------------------------------------
+//
+// A player's progress kept with their passkey (src/lib/backup/; README,
+// "Keeping progress"). Each of their devices puts its own progress here,
+// encrypted in the page, under a bucket: a name made from the passkey's
+// secret, as the key is. Bringing it back takes every device's. Nobody can
+// read it here or find whose it is: there's no account, address or name with
+// it, only the bucket's name, the device's (random, the sync's), what it
+// can't read, and when it came. One Object per bucket, so a bucket is only
+// ever as busy as one player.
+//
+// Anyone may write to a bucket of their naming, so writes are held to fewer
+// an address than matchmaking (KEEP_WRITES, wrangler.toml, on top of
+// PER_ADDRESS): a page sends at most every few minutes, and a script filling
+// the free plan's storage with made-up buckets would take days from one.
+//
+// - GET /keep/<bucket>: every device's, as frames (`pack`).
+// - POST /keep/<bucket>/<device>: that device's, in place of what it had; an
+//   empty body takes it out. Sent as text/plain, so a page's request needs no
+//   preflight.
+// - POST /keep/<bucket>/forget: the whole bucket deleted.
+// A bucket nobody has written to for KEEP_MS is deleted (its alarm).
+
+/** A bucket's name: 32 bytes of the page's making, in base64url. */
+const BUCKET = /^[A-Za-z0-9_-]{43}$/;
+/** A device's name, as sync makes it (src/lib/sync/store.ts deviceId). */
+const DEVICE = /^[0-9a-z]{12}$/;
+/** The most one device's entry may be: a full codex is a few hundred kilobytes, and gzipped much less. */
+export const MAX_ENTRY = 512 * 1024;
+/** The most entries a bucket keeps: past it, the one written longest ago goes. A browser whose data was cleared comes back as a new device. */
+export const MAX_ENTRIES = 64;
+/** How long a bucket nobody writes to is kept (ms): about eighteen months. */
+export const KEEP_MS = 548 * 24 * 3600_000;
+
+/**
+ * A bucket's entries as one body: for each, the device's name (12 bytes), the
+ * length of what it put (4, big-endian) and that.
+ * @param {{ device: string, data: Uint8Array }[]} entries
+ */
+export function pack(entries) {
+  const out = new Uint8Array(entries.reduce((n, e) => n + 16 + e.data.length, 0));
+  const view = new DataView(out.buffer);
+  let at = 0;
+  for (const e of entries) {
+    out.set(new TextEncoder().encode(e.device), at);
+    view.setUint32(at + 12, e.data.length);
+    out.set(e.data, at + 16);
+    at += 16 + e.data.length;
+  }
+  return out;
+}
+
+/**
+ * The SQL a Durable Object's storage runs, as far as Keep uses it.
+ * @typedef {{ exec(query: string, ...bindings: unknown[]): { toArray(): Record<string, unknown>[] } }} Sql
+ * @typedef {{ storage: { sql: Sql, setAlarm(at: number): Promise<void> | void, deleteAlarm(): Promise<void> | void, deleteAll(): Promise<void> | void } }} KeepState
+ */
+
+/** One bucket's entries. */
+export class Keep {
+  /** @param {KeepState} ctx */
+  constructor(ctx) {
+    this.ctx = ctx;
+  }
+
+  /** The table, made again after the bucket was deleted (deleteAll takes it too). */
+  table() {
+    this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS entries (device TEXT PRIMARY KEY, at INTEGER NOT NULL, data BLOB NOT NULL)');
+  }
+
+  /** @param {Request} request */
+  async fetch(request) {
+    const device = new URL(request.url).pathname.split('/')[3];
+    if (request.method === 'GET') return new Response(this.read(), { headers: { 'Content-Type': 'application/octet-stream' } });
+    if (device === 'forget') {
+      await this.ctx.storage.deleteAlarm();
+      await this.ctx.storage.deleteAll();
+      return new Response(null, { status: 204 });
+    }
+    const data = await upTo(request.body, MAX_ENTRY);
+    if (!data) return new Response(null, { status: 413 });
+    await this.write(device, data, Date.now());
+    return new Response(null, { status: 204 });
+  }
+
+  read() {
+    // A bucket nobody wrote to stays without storage (it would have no alarm to delete it).
+    if (!this.ctx.storage.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'entries'").toArray().length) return pack([]);
+    const rows = this.ctx.storage.sql.exec('SELECT device, data FROM entries ORDER BY at').toArray();
+    return pack(rows.map((r) => ({ device: String(r.device), data: new Uint8Array(/** @type {ArrayBuffer} */ (r.data)) })));
+  }
+
+  /** `device`'s entry from now on (none, for an empty one). @param {string} device @param {Uint8Array} data @param {number} now */
+  async write(device, data, now) {
+    this.table();
+    const sql = this.ctx.storage.sql;
+    if (!data.length) sql.exec('DELETE FROM entries WHERE device = ?', device);
+    else {
+      sql.exec('INSERT INTO entries (device, at, data) VALUES (?, ?, ?) ON CONFLICT(device) DO UPDATE SET at = excluded.at, data = excluded.data', device, now, data);
+      sql.exec('DELETE FROM entries WHERE device NOT IN (SELECT device FROM entries ORDER BY at DESC LIMIT ?)', MAX_ENTRIES);
+    }
+    await this.ctx.storage.setAlarm(now + KEEP_MS);
+  }
+
+  /** Nobody has written for KEEP_MS: the bucket goes. */
+  async alarm() {
+    await this.ctx.storage.deleteAll();
+  }
+}
+
+/**
+ * A body read as it comes, or null once it's more than `max` bytes (one sent
+ * without a length is counted, not read whole first).
+ * @param {ReadableStream<Uint8Array> | null} body @param {number} max
+ */
+export async function upTo(body, max) {
+  /** @type {Uint8Array[]} */
+  const parts = [];
+  let n = 0;
+  if (body)
+    for (const reader = body.getReader(); ; ) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      n += value.length;
+      if (n > max) {
+        await reader.cancel();
+        return null;
+      }
+      parts.push(value);
+    }
+  const out = new Uint8Array(n);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out;
+}
+
+/**
+ * A request for a bucket, passed to its Object; null for any other path.
+ * @param {Request} request @param {URL} url @param {Env} env @param {Record<string, string>} headers
+ */
+async function keep(request, url, env, headers) {
+  const [, root, bucket, device, more] = url.pathname.split('/');
+  if (root !== 'keep' || more !== undefined || !BUCKET.test(bucket ?? '')) return null;
+  const read = request.method === 'GET' && device === undefined;
+  const write = request.method === 'POST' && (device === 'forget' || DEVICE.test(device ?? ''));
+  if (!read && !write) return new Response(null, { status: 404, headers });
+  if (write && Number(request.headers.get('Content-Length') ?? 0) > MAX_ENTRY) return new Response(null, { status: 413, headers });
+  const key = addressKey(request.headers.get('CF-Connecting-IP') ?? '');
+  for (const limit of write ? [env.PER_ADDRESS, env.KEEP_WRITES] : [env.PER_ADDRESS])
+    if (!(await limit.limit({ key })).success) return new Response(null, { status: 429, headers: { ...headers, 'Retry-After': '60' } });
+  const r = await env.KEEP.get(env.KEEP.idFromName(bucket), { locationHint: 'weur' }).fetch(request);
+  return new Response(r.body, { status: r.status, headers: { ...headers, ...(r.status === 200 ? { 'Content-Type': 'application/octet-stream' } : {}) } });
+}
+
 /** @param {Request} request @param {Env} env */
 export async function answer(request, env) {
   const origin = request.headers.get('Origin') ?? '';
   if (origin !== LIVE && !LOCAL.test(origin)) return new Response(null, { status: 403 });
   const headers = { 'Access-Control-Allow-Origin': origin, Vary: 'Origin', 'Cache-Control': 'no-store' };
   const url = new URL(request.url);
+  const kept = await keep(request, url, env, headers);
+  if (kept) return kept;
   const socket = url.pathname === '/peerjs' && request.headers.get('Upgrade')?.toLowerCase() === 'websocket';
   const newId = url.pathname === '/peerjs/id' && request.method === 'GET';
   if (!socket && !newId) return new Response(null, { status: 404, headers });

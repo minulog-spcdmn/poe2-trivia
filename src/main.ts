@@ -29,6 +29,8 @@ import { ensureName } from './lib/madeName';
 
 // First: a pairing link's code leaves the address before anything reads it (lib/sync/boot.svelte.ts).
 bootSync();
+// Progress kept with a passkey (lib/backup/): what wasn't sent yet goes once the page is idle, and the rest as it changes.
+whenIdle(() => void import('./lib/backup/backup.svelte').then((m) => m.bootBackup()), { timeout: 6000, fallback: 2500 });
 // A newcomer is never asked a name: one is made for a browser without one (lib/madeName.ts).
 ensureName();
 installUiSounds();

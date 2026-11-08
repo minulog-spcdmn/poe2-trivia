@@ -200,6 +200,11 @@
     const t = setTimeout(() => (codex = loadCodex()), 1500);
     return () => clearTimeout(t);
   });
+  // Once, after a game with enough played for it to matter, once the screen and what it earned are in: the offer to keep it safe with a passkey (lib/backup/).
+  onMount(() => {
+    const t = setTimeout(() => void import('../lib/backup/backup.svelte').then((m) => m.offerBackup()), 4000);
+    return () => clearTimeout(t);
+  });
   /** Achievements this device earned in this game (judged as it ends: they may come in a moment after the screen). */
   const earned = $derived<Achievement[]>(s.startedAt !== undefined && session.earned?.game === s.startedAt ? session.earned.ids.flatMap((id) => achievementById.get(id) ?? []) : []);
   /** This device's runs of the kind, for the chart, ending with this one; re-read once the run is recorded. */
