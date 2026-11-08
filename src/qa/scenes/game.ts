@@ -960,7 +960,7 @@ export function gameScenes(): Scene[] {
    * question as it's asked.
    */
   function delveFossilScene(): Scene {
-    const asked = { at: ['question'] };
+    const atQuestion = { at: ['question'] };
     return scene('delve-fossil', 'Delve alone', 'A fossil', [ALONE], delveAlone, {
       controls: [
         moment([
@@ -989,20 +989,20 @@ export function gameScenes(): Scene[] {
           key: 'asked',
           label: 'Asked as',
           default: 'name',
-          when: asked,
+          when: atQuestion,
           options: [
             { value: 'name', label: 'Names' },
             { value: 'art', label: 'Pictures' },
           ],
         },
         // The zone it's asked in (each its own backdrop, the hall's amber light swelling through it): a few depths into it.
-        { kind: 'choice', key: 'zone', label: 'Its zone', default: '0', when: asked, options: backdrops.zones.map((z, k) => ({ value: String(k), label: z.name })) },
-        { kind: 'range', key: 'before', label: 'Fossils held before', min: 0, max: 24, step: 1, default: 6, when: asked },
+        { kind: 'choice', key: 'zone', label: 'Its zone', default: '0', when: atQuestion, options: backdrops.zones.map((z, k) => ({ value: String(k), label: z.name })) },
+        { kind: 'range', key: 'before', label: 'Fossils held before', min: 0, max: 24, step: 1, default: 6, when: atQuestion },
         // The question held up, its fossil waiting in it, never answered.
-        { kind: 'toggle', key: 'up', label: 'Still up', default: false, when: asked },
-        { kind: 'toggle', key: 'right', label: 'Answered right', default: true, when: asked },
-        { kind: 'toggle', key: 'early', label: 'Delve Deeper mid-flight', default: false, when: asked },
-        { kind: 'toggle', key: 'blast', label: 'Dynamite instead', default: false, when: asked },
+        { kind: 'toggle', key: 'up', label: 'Still up', default: false, when: atQuestion },
+        { kind: 'toggle', key: 'right', label: 'Answered right', default: true, when: atQuestion },
+        { kind: 'toggle', key: 'early', label: 'Delve Deeper mid-flight', default: false, when: atQuestion },
+        { kind: 'toggle', key: 'blast', label: 'Dynamite instead', default: false, when: atQuestion },
       ],
       states: [
         { label: 'A fossil alone', values: {} },

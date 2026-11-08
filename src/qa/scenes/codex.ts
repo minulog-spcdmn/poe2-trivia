@@ -154,17 +154,17 @@ const FOSSILS_KEPT: Control = {
     { value: 'all', label: 'All 25' },
   ],
 };
-/** How many each holds, and the slot whose tooltip a click brings up. */
-const KEPT: Record<string, { stored: Record<string, string>; click?: string }> = {
-  one: { stored: fossils(1) },
-  some: { stored: fossils(17), click: '.fossils .cell.got.rare' },
-  commons: { stored: fossils(17, { commons: true }), click: '.fossils .grid.common li:nth-child(5) .cell' },
-  all: { stored: fossils(FOSSILS.length) },
+/** How many each holds, and the slot whose tooltip a click brings up (made as it's chosen). */
+const KEPT: Record<string, () => { stored: Record<string, string>; click?: string }> = {
+  one: () => ({ stored: fossils(1) }),
+  some: () => ({ stored: fossils(17), click: '.fossils .cell.got.rare' }),
+  commons: () => ({ stored: fossils(17, { commons: true }), click: '.fossils .grid.common li:nth-child(5) .cell' }),
+  all: () => ({ stored: fossils(FOSSILS.length) }),
 };
 
 function pages(v: Values = {}): Built {
   const built = runsShown(v);
-  const kept = v.page === 'feats' ? undefined : KEPT[String(v.fossils ?? 'none')];
+  const kept = v.page === 'feats' ? undefined : KEPT[String(v.fossils ?? 'none')]?.();
   if (!kept) return built;
   return { ...built, stored: { ...built.stored, ...kept.stored }, ...(kept.click ? { steps: [...(built.steps ?? []), { click: kept.click }] } : {}) };
 }
