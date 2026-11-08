@@ -25,10 +25,7 @@ const letGo = new Map<HTMLElement, number>();
  * card's fire, a tooltip), as inert would. Not a move, which the others
  * follow this player's pointer by (PeerCursors, at the window).
  */
-const TAKEN = [
-  ...['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'auxclick', 'contextmenu', 'keydown', 'keyup'],
-  ...['pointerover', 'pointerenter', 'mouseover', 'mouseenter'],
-];
+const TAKEN = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'auxclick', 'contextmenu', 'keydown', 'keyup', 'pointerover', 'pointerenter', 'mouseover', 'mouseenter'];
 
 /** A press or a hover on what is going, stopped before it reaches anything in it (a capture listener on the element). */
 function stop(e: Event) {
