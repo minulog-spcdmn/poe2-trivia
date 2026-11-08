@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addNoise, artScale, cutArt, transfers } from '../src/lib/prepArt.ts';
+import { addNoise, artScale, cutArt, prepare, transfers } from '../src/lib/prepArt.ts';
 import { areaTime, FIRST_PATCH_MS, litMask, patchShapes, seededRandom, unpackLabels, visibleBox } from '../src/lib/patches.ts';
 
 /** A W × H picture: an opaque ellipse with a soft edge on a transparent background, off centre. */
@@ -102,9 +102,62 @@ test('everything a prepared veil holds is handed over, nothing twice', () => {
   const cut = cutArt(px, W, H, { size: 5, seed: 9, plan });
   const pixels = { data: new Uint8ClampedArray(W * H * 16), width: W * 2, height: H * 2, colorSpace: 'srgb' } as ImageData;
   const data = new ArrayBuffer(10);
-  const list = transfers({ w: W, h: H, data, cut: { ...cut, pixels } });
+  const place: [number, number, number, number] = [3, 3, W - 6, H - 6];
+  const list = transfers({ w: W, h: H, place, data, cut: { ...cut, pixels } });
   assert.equal(new Set(list).size, list.length);
   for (const b of [data, cut.labels, cut.lit.buffer, pixels.data.buffer]) assert.ok(list.includes(b as ArrayBuffer));
   for (const s of cut.shapes) for (const a of [s.mask, s.own, s.edges]) assert.ok(list.includes(a.buffer as ArrayBuffer));
-  assert.deepEqual(transfers({ w: W, h: H, data }), [data]);
+  assert.deepEqual(transfers({ w: W, h: H, place, data }), [data]);
+});
+
+/**
+ * A canvas that keeps what is drawn on it as rectangles where they land
+ * (translate, scale and drawImage are all prepare uses to place the art),
+ * with empty pixels to read back.
+ */
+function canvasThatRecords(width: number, height: number) {
+  const drawn: [number, number, number, number][] = [];
+  let t = { x: 0, y: 0, sx: 1, sy: 1 };
+  const ctx = {
+    imageSmoothingQuality: 'low',
+    filter: 'none',
+    translate: (x: number, y: number) => (t = { ...t, x: t.x + x * t.sx, y: t.y + y * t.sy }),
+    scale: (sx: number, sy: number) => (t = { ...t, sx: t.sx * sx, sy: t.sy * sy }),
+    setTransform: () => (t = { x: 0, y: 0, sx: 1, sy: 1 }),
+    drawImage: (_: unknown, x: number, y: number, w: number, h: number) => {
+      const xs = [t.x + t.sx * x, t.x + t.sx * (x + w)];
+      const ys = [t.y + t.sy * y, t.y + t.sy * (y + h)];
+      drawn.push([Math.min(...xs), Math.min(...ys), Math.abs(t.sx * w), Math.abs(t.sy * h)]);
+    },
+    getImageData: (_x: number, _y: number, w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }),
+    putImageData: () => {},
+  };
+  return { width, height, drawn, getContext: () => ctx };
+}
+
+test('a prepared picture says where the item’s own art lies in it, so the original takes over there at the reveal', async () => {
+  for (const mirror of [false, true]) {
+    for (let run = 0; run < 20; run++) {
+      const canvases: ReturnType<typeof canvasThatRecords>[] = [];
+      const surface = (w: number, h: number) => {
+        const c = canvasThatRecords(w, h);
+        canvases.push(c);
+        return c as unknown as OffscreenCanvas;
+      };
+      const job = { w: 104, h: 208, most: 4, grayscale: false, mirror };
+      const out = await prepare({} as CanvasImageSource, 416, job, surface, async () => new ArrayBuffer(4));
+      const S = 4;
+      const [page] = canvases;
+      assert.equal(page.drawn.length, 1);
+      // Where the art was drawn, in the picture's art pixels: its place.
+      const [x, y, w, h] = page.drawn[0].map((v) => v / S);
+      assert.deepEqual(out.place, [x, y, w, h], `mirrored ${mirror}`);
+      assert.equal(out.w, page.width / S);
+      assert.equal(out.h, page.height / S);
+      // Inside the picture, a little smaller than the art and in proportion.
+      assert.ok(x > 0 && y > 0 && x + w < out.w && y + h < out.h, `${out.place} in ${out.w} x ${out.h}`);
+      assert.ok(w >= job.w * 0.9 - 0.5 && w <= job.w && h >= job.h * 0.9 - 0.5 && h <= job.h);
+      assert.ok(Math.abs(w / h - job.w / job.h) < 0.01);
+    }
+  }
 });

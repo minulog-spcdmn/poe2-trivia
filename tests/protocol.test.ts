@@ -192,6 +192,24 @@ test("an option's picture comes with its size in art pixels", () => {
   assert.equal(parseHostMsg({ t: 'option', qid: 1, index: 0, data: pic }), null, 'an option picture without its size');
 });
 
+test('a picture may say where its item lies in it, four numbers within it; one that says it wrong is dropped', () => {
+  const data = new ArrayBuffer(8);
+  const labels = new Uint16Array([1, 12000]).buffer;
+  const pictures = [
+    { t: 'art', qid: 3, w: 110, h: 214, data },
+    { t: 'option', qid: 3, index: 2, w: 110, h: 214, data },
+    { t: 'veil', qid: 3, tile: 1, w: 100, h: 120, burn: 900, count: 12, box: [4, 6, 90, 108], data, labels },
+  ];
+  for (const m of pictures) {
+    // Hosts before it say nothing of it.
+    assert.ok(parseHostMsg(m), `${m.t} without a place`);
+    assert.ok(parseHostMsg({ ...m, place: [4.375, 3.5, 99, 198] }), `${m.t} with one`);
+    for (const place of [[4, 3, 99], [4, 3, 99, 198, 1], [-1, 3, 99, 198], [4, 3, 0, 198], [4, NaN, 99, 198], [4, 3, Infinity, 198], [4, 3, 5000, 198], ['4', 3, 99, 198], {}]) {
+      assert.equal(parseHostMsg({ ...m, place }), null, `${m.t} placed at ${JSON.stringify(place)}`);
+    }
+  }
+});
+
 test("the state passes as the host sent it, a blast's struck answers and all", () => {
   const was = { at: 1, itemId: 'x', mode: 'name', struck: [{ by: 'p1', index: 2, lives: 1, wards: 0 }] };
   const state = { players: [], settings: {}, question: { blast: { stick: 'p0', side: 1, was } } };
@@ -231,6 +249,9 @@ test("a host's state with a clock that isn't a time is dropped", () => {
   assert.ok(parseHostMsg({ t: 'state', state, now: 1790642896195 }));
   for (const now of [NaN, Infinity, -Infinity, '1'])
     assert.equal(parseHostMsg({ t: 'state', state, now }), null);
+  // Its base (lib/hostClock.ts), where it says one, is a number too.
+  assert.ok(parseHostMsg({ t: 'state', state, now: 1790642896195, base: 1790642000000 }));
+  for (const base of [NaN, Infinity, '1', null]) assert.equal(parseHostMsg({ t: 'state', state, now: 1790642896195, base }), null);
 });
 
 test("the host's challenge, and a hello's signature over it, pass only in shape", () => {

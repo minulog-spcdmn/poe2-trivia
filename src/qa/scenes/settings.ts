@@ -1,12 +1,13 @@
 // The settings page, opened from the start page (#settings): as it comes,
-// with the sound turned down and keys changed, and a key waiting to be set.
-// And the same settings over a game, from the header's gear. And both as
-// they are when the settings never came (the Wi-Fi gone as they were fetched).
+// with the sound turned down and keys changed, and a key waiting to be set;
+// its sync as it stands, paired by hand, its light coming and going. And the
+// same settings over a game, from the header's gear. And both as they are
+// when the settings never came (the Wi-Fi gone as they were fetched).
 
 import { rebind, DEFAULT_BINDINGS } from '../../lib/keys.ts';
 import type { Control } from '../bench.ts';
 import { Table } from '../build/play.ts';
-import type { Built, Scene } from '../scene.ts';
+import type { Built, Scene, Step } from '../scene.ts';
 
 const SOUND: Control = {
   kind: 'choice',
@@ -48,6 +49,19 @@ const ASKED: Control = {
   ],
   default: 'none',
 };
+/** What happens to sync once the page shows (played). */
+const PLAY: Control = {
+  kind: 'choice',
+  key: 'play',
+  label: 'Then',
+  options: [
+    { value: 'none', label: 'Nothing' },
+    { value: 'pair', label: 'Paired by hand' },
+    { value: 'light', label: 'The other device comes and goes' },
+  ],
+  default: 'none',
+};
+const LOST: Control = { kind: 'toggle', key: 'lost', label: 'Didn’t come', default: false };
 
 /** Where the settings are first opened from. */
 const FROM: Control = {
@@ -65,6 +79,45 @@ const FIRST_OPEN_MS = 4000;
 
 /** A code to be paired with, the same every time (as the sync bench's). */
 const SYNC_CODE = 'K7QXM2PA9FHE3TDW';
+
+/**
+ * What's played on sync, as steps. Pairing, by hand: Pair a device, its code;
+ * Enter a code, and Back; the code typed and paired; the other device there a
+ * moment later. Each view's title, heart, what's under it and the line fade
+ * into the next's. Paired, the other device coming and going: the light and
+ * the line fade on and off.
+ */
+function played(play: unknown, now = Date.now()): Step[] {
+  if (play === 'pair')
+    return [
+      { wait: 1000 },
+      { click: '.sync-row .btn.small' },
+      { wait: 1600 },
+      { click: '.sync .routes .route:last-of-type' },
+      { wait: 1400 },
+      { click: '.sync .actions .btn.ghost' },
+      { wait: 1400 },
+      { click: '.sync .routes .route:last-of-type' },
+      { wait: 900 },
+      { fill: '.sync .code-field', text: SYNC_CODE },
+      { wait: 500 },
+      { click: '.sync .actions .btn.primary' },
+      { wait: 1600 },
+      { sync: { code: SYNC_CODE, met: true, status: 'linked', linked: 1, lastAt: now } },
+    ];
+  if (play === 'light')
+    return [
+      { wait: 1000 },
+      { sync: { status: 'linked', linked: 1 } },
+      { wait: 2200 },
+      { sync: { status: 'waiting', linked: 0, lastAt: now } },
+      { wait: 2200 },
+      { sync: { status: 'offline' } },
+      { wait: 2200 },
+      { sync: { status: 'linked', linked: 2 } },
+    ];
+  return [];
+}
 
 /** Option 1 on Q, and Q's old place freed: what a player who moved the answers to the left hand has. */
 const CHANGED = rebind(rebind(DEFAULT_BINDINGS, 'option1', 0, 'KeyQ'), 'detonate', 1, 'KeyX');
@@ -87,10 +140,10 @@ export function settingsScenes(): Scene[] {
       states: [
         { label: 'As it comes', values: {} },
         { label: 'Sound down, keys changed', values: { sound: 'quiet', keys: true } },
-        { label: 'Sound off', values: { sound: 'off' } },
-        { label: 'Sapphire picked', values: { colour: true } },
-        { label: "zoe_arcana's ruby, kept", values: { kept: true } },
-        { label: 'Battery saver on', values: { saver: true } },
+        { label: 'Sound off', values: { sound: 'off' }, listed: false },
+        { label: 'Sapphire picked', values: { colour: true }, listed: false },
+        { label: "zoe_arcana's ruby, kept", values: { kept: true }, listed: false },
+        { label: 'Battery saver on', values: { saver: true }, listed: false },
       ],
       build: (v = {}): Built => ({
         state: null,
@@ -100,26 +153,30 @@ export function settingsScenes(): Scene[] {
       }),
     },
     {
-      // Sync, under the name: what it does, or how it stands (its light, when it last synced) and Unpair (the pairing dialog is the sync bench's).
+      // Sync, under the name: what it does, or how it stands (its light, when it last synced) and Unpair (the pairing dialog is the sync bench's);
+      // then paired by hand, from view to view, or its light as the other device comes and goes.
       key: 'settings/sync',
       screen: 'settings',
       group: 'Settings',
       label: 'Sync, paired or not',
       seats: [{ mode: 'none', me: null }],
-      controls: [SYNC, ASKED],
+      controls: [SYNC, ASKED, PLAY],
       states: [
         { label: 'Not paired', values: { sync: 'off' } },
-        { label: 'A code waiting', values: { sync: 'waiting' } },
-        { label: 'Paired, the other away', values: { sync: 'paired' } },
-        { label: 'Paired, not synced since', values: { sync: 'never' } },
-        { label: 'Synced', values: { sync: 'linked' } },
-        { label: 'Synced with three', values: { sync: 'three' } },
-        { label: 'Server out of reach', values: { sync: 'offline' } },
-        { label: 'Unpair asked for', values: { sync: 'linked', asked: 'unpair' } },
+        { label: 'A code waiting', values: { sync: 'waiting' }, listed: false },
+        { label: 'Paired, the other away', values: { sync: 'paired' }, listed: false },
+        { label: 'Paired, not synced since', values: { sync: 'never' }, listed: false },
+        { label: 'Synced', values: { sync: 'linked' }, listed: false },
+        { label: 'Synced with three', values: { sync: 'three' }, listed: false },
+        { label: 'Server out of reach', values: { sync: 'offline' }, listed: false },
+        { label: 'Unpair asked for', values: { sync: 'linked', asked: 'unpair' }, listed: false },
+        { label: 'The pairing dialog, from view to view', values: { sync: 'off', play: 'pair' }, key: 'settings/sync-dialog' },
+        { label: 'Sync’s light coming on and going off', values: { play: 'light' }, key: 'settings/sync-light', listed: false },
       ],
       build: (v = {}): Built => {
         const s = String(v.sync ?? 'paired');
         const met = s !== 'off' && s !== 'waiting';
+        const steps: Step[] = [...(met && v.asked === 'unpair' ? [{ click: '.sync-row .reset' }] : []), ...played(v.play)];
         return {
           state: null,
           hash: '#settings',
@@ -135,7 +192,7 @@ export function settingsScenes(): Scene[] {
                   lastAt: s === 'paired' ? Date.now() - 25 * 60_000 : 0,
                 },
               }),
-          ...(met && v.asked === 'unpair' ? { steps: [{ click: '.sync-row .reset' }] } : {}),
+          ...(steps.length ? { steps } : {}),
         };
       },
     },
@@ -150,67 +207,12 @@ export function settingsScenes(): Scene[] {
       controls: [FROM],
       states: [
         { label: 'From the start page’s Settings', values: {} },
-        { label: 'Over a question, from the header’s gear: the sheet', values: { from: 'game' } },
+        { label: 'Over a question, from the header’s gear: the sheet', values: { from: 'game' }, listed: false },
       ],
       build: (v = {}): Built =>
         v.from === 'game'
           ? { ...overAQuestion(), hash: undefined, seat: { mode: 'local', me: null }, steps: [{ wait: FIRST_OPEN_MS }, { click: 'header [data-cursor="gear"]' }] }
           : { state: null, rooms: [], steps: [{ wait: FIRST_OPEN_MS }, { click: ':is(.entry:nth-child(4 of .entry) .pick, .pair .pair-pick:nth-child(2))' }] },
-    },
-    {
-      // Pairing, by hand: Pair a device, its code; Enter a code, and Back; the code typed and paired; the other device
-      // there a moment later. Each view's title, heart, what's under it and the line fade into the next's.
-      key: 'settings/sync-dialog',
-      screen: 'settings',
-      group: 'Settings',
-      label: 'The pairing dialog, from view to view',
-      seats: [{ mode: 'none', me: null }],
-      build: (): Built => ({
-        state: null,
-        hash: '#settings',
-        steps: [
-          { wait: 1000 },
-          { click: '.sync-row .btn.small' },
-          { wait: 1600 },
-          { click: '.sync .routes .route:last-of-type' },
-          { wait: 1400 },
-          { click: '.sync .actions .btn.ghost' },
-          { wait: 1400 },
-          { click: '.sync .routes .route:last-of-type' },
-          { wait: 900 },
-          { fill: '.sync .code-field', text: SYNC_CODE },
-          { wait: 500 },
-          { click: '.sync .actions .btn.primary' },
-          { wait: 1600 },
-          { sync: { code: SYNC_CODE, met: true, status: 'linked', linked: 1, lastAt: Date.now() } },
-        ],
-      }),
-    },
-    {
-      // Paired, the other device coming and going: the light and the line fade on and off.
-      key: 'settings/sync-light',
-      screen: 'settings',
-      group: 'Settings',
-      label: 'Sync’s light coming on and going off',
-      seats: [{ mode: 'none', me: null }],
-      build: (): Built => {
-        const now = Date.now();
-        return {
-          state: null,
-          hash: '#settings',
-          sync: { code: SYNC_CODE, met: true, status: 'waiting', linked: 0, lastAt: now - 25 * 60_000 },
-          steps: [
-            { wait: 1000 },
-            { sync: { status: 'linked', linked: 1 } },
-            { wait: 2200 },
-            { sync: { status: 'waiting', linked: 0, lastAt: now } },
-            { wait: 2200 },
-            { sync: { status: 'offline' } },
-            { wait: 2200 },
-            { sync: { status: 'linked', linked: 2 } },
-          ],
-        };
-      },
     },
     {
       key: 'settings/key',
@@ -222,12 +224,25 @@ export function settingsScenes(): Scene[] {
       build: (): Built => ({ state: null, hash: '#settings', steps: [{ click: '.seal', ifThere: true }] }),
     },
     {
+      key: 'settings/key-moved',
+      screen: 'settings',
+      group: 'Settings',
+      label: "The keypad's Enter set for the first option: Next question loses Enter, and says so",
+      seats: [{ mode: 'none', me: null }],
+      build: (): Built => ({ state: null, hash: '#settings', steps: [{ click: '.seal', ifThere: true }, { press: 'NumpadEnter' }] }),
+    },
+    {
       key: 'settings/over',
       screen: 'settings',
       group: 'Settings',
       label: "Over a question, from the header's gear",
       seats: [{ mode: 'local', me: null }],
-      build: (): Built => overAQuestion(),
+      controls: [LOST],
+      states: [
+        { label: "Over a question, from the header's gear", values: {} },
+        { label: "Over a question, didn't come", values: { lost: true }, key: 'settings/over-lost', listed: false },
+      ],
+      build: (v = {}): Built => (v.lost ? { ...overAQuestion(), lost: 'Settings' } : overAQuestion()),
     },
     // Their chunk lost: the Reload, as each try shows it while the connection is down (lib/chunkRetry.ts).
     {
@@ -237,14 +252,6 @@ export function settingsScenes(): Scene[] {
       label: "Didn't come: the connection dropped",
       seats: [{ mode: 'none', me: null }],
       build: (): Built => ({ state: null, hash: '#settings', lost: 'Settings' }),
-    },
-    {
-      key: 'settings/over-lost',
-      screen: 'settings',
-      group: 'Settings',
-      label: "Over a question, didn't come",
-      seats: [{ mode: 'local', me: null }],
-      build: (): Built => ({ ...overAQuestion(), lost: 'Settings' }),
     },
   ];
 }

@@ -19,7 +19,7 @@
   import { pressed, refuseName } from '../lib/nameField';
   import { fingerSlide } from '../lib/fingerSlide';
   import { backdropShadow } from '../lib/backdropShadow';
-  import { ACTIONS, OPTIONS, SLOTS, actionDoes, actionName, bindable, keyName, type Action } from '../lib/keys';
+  import { ACTIONS, OPTIONS, SLOTS, actionDoes, actionName, bindable, keyName, takenFrom, type Action } from '../lib/keys';
   import { clearKey, keybinds, readLayout, resetKeys, setKey } from '../lib/keybinds.svelte';
   import { ACHIEVEMENTS_KEY, loadAchievements } from '../lib/achievements';
   import { achievementsIn } from '../lib/sigils';
@@ -177,10 +177,10 @@
     }
     // (Shift and the like alone: still waiting.)
     if (!bindable(e.code)) return;
-    const from = ACTIONS.find((a) => a !== action && keybinds.map[a].includes(e.code));
+    const taken = takenFrom(keybinds.map, action, e.code);
     setKey(action, slot, e.code);
     sfx('key', seal);
-    moved = from ? { key: e.code, from } : null;
+    moved = taken;
     listening = null;
   }
 

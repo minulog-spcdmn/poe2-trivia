@@ -1,0 +1,49 @@
+name: Daily health
+run-name: "Daily health: ${{ github.event_name == 'schedule' && 'yesterday' || 'run by hand' }}"
+
+# Analytics' own checks (stats.html: joining, the game's script errors, parts
+# that didn't load, stutter), on yesterday against the 7 days before, once a
+# day (scripts/daily-health.mjs). A check that fires fails the run, and
+# GitHub emails a failed scheduled run to whoever last changed its schedule:
+# a fault the counts show is mailed within a day, its reasons on the run's
+# page as errors. The only other failures are a key GoatCounter refuses and
+# the check itself broken (a bug, or answers of a new shape): a day
+# GoatCounter can't be read (no answer, a 5xx, its hour's limit spent)
+# passes with a warning there that the check couldn't run.
+#
+# It needs the read-only GoatCounter key as the repository secret
+# GOATCOUNTER_KEY; without it the run passes, saying the check is off. Its
+# few requests count against GoatCounter's 500 an hour beside the owner's
+# stats page.
+#
+# Before turning it on: GOATCOUNTER_KEY=<key> node --experimental-strip-types scripts/daily-health.mjs
+# --backtest 60 says how often it would have mailed.
+
+on:
+  # 00:23 UTC: after midnight in Central Europe, summer and winter (the
+  # script checks the account's own yesterday, whole wherever its zone is).
+  # Off the hour, when GitHub's scheduled runs bunch up.
+  schedule:
+    - cron: '23 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    name: Daily health
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # No npm ci: the script and the page's files it runs import no packages.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check yesterday
+        env:
+          GOATCOUNTER_KEY: ${{ secrets.GOATCOUNTER_KEY }}
+        run: node --experimental-strip-types --no-warnings scripts/daily-health.mjs

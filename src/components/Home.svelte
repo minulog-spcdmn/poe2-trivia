@@ -23,6 +23,8 @@
   import { shownDepth } from '../lib/delve';
   import { ENTRIES, codexLine, codexLines, cursorKey, lastEntry, rememberEntry, type Entry, type NewItems } from '../lib/startMenu';
   import { releaseNote } from '../lib/releases';
+  import { clock } from '../lib/clock';
+  import { countdown } from '../lib/launch';
   import GameTitle from './GameTitle.svelte';
   import Connecting from './Connecting.svelte';
   import DailyUnique from './DailyUnique.svelte';
@@ -168,6 +170,32 @@
    * and its arrow keys wherever there's room for them.
    */
   const compact = new MediaQuery('(max-width: 640px), (pointer: coarse) and (max-width: 1080px)');
+  /**
+   * Two columns with room for PoE2's 1.0 between them at the top (see
+   * .launch): Today's unique's circle is larger on a taller window, and the
+   * title too from 980, so it needs a wider one. (Narrower than that, with two
+   * columns, there's none for it.)
+   */
+  const launchRoom = new MediaQuery('(min-width: 1280px), (min-width: 1190px) and (max-height: 979px), (min-width: 1081px) and (max-height: 844px)');
+  /** One column: PoE2's 1.0 at the right of the title's lines (.beside). */
+  const oneColumn = new MediaQuery('(max-width: 1080px)');
+  /** A phone on its side, its title as small as a phone's: room for PoE2's 1.0 beside the title itself. */
+  const launchByTitle = new MediaQuery('(min-width: 641px) and (max-width: 1080px) and (max-height: 520px)');
+  /**
+   * Whether it says anything (a week after the launch it goes, and tells us,
+   * onend): its room beside the title's lines is held only while it does, and
+   * while its chunk can be had (none offline, or after a deploy, its file gone).
+   */
+  let launchShown = $state(countdown(clock.exact()) !== null);
+  /** Where it is in one column (.beside): beside the title on a phone on its side, else under the title's end; none in two columns. */
+  const besideAt = $derived(!launchShown || !oneColumn.current ? null : compact.current && launchByTitle.current ? 'title' : 'lines');
+  /** Its own chunk, with its engraving, loaded only once it's on the page. */
+  const loadLaunch = () =>
+    import('./LaunchCountdown.svelte').catch((e: unknown) => {
+      launchShown = false;
+      throw e;
+    });
+  const launchEnded = () => (launchShown = false);
 
   // ---- names ----
 
@@ -733,12 +761,21 @@
   </div>
 {/snippet}
 
-<div class="home" class:invited={!!invite} class:compact={compact.current}>
-  <div class="intro">
+{#snippet besideLaunch()}
+  <div class="beside" in:fade|global={calm({ duration: 900, delay: 450 })}>
+    {#await loadLaunch() then { default: LaunchCountdown }}<LaunchCountdown edge onend={launchEnded} />{:catch}{/await}
+  </div>
+{/snippet}
+
+<div class="home" class:invited={!!invite} class:compact={compact.current} class:marked={BETA || LOCAL}>
+  <div class="intro" class:tuck={askChoose && !renaming}>
+    <!-- PoE2's 1.0 in one column (see .beside): beside the title where there's room for it there, else under its end. -->
+    {#if besideAt === 'title'}{@render besideLaunch()}{/if}
     <div class="title">
       <GameTitle />
       {#if BETA || LOCAL}<span class="beta" in:fade|global={calm({ duration: 600 })}>{BETA ? 'Beta' : 'Local'}</span>{/if}
     </div>
+    {#if besideAt === 'lines'}{@render besideLaunch()}{/if}
     <p class="kicker" in:fade|global={calm({ duration: 700, delay: 200 })}>Unique item trivia</p>
     <p class="blurb" in:fade|global={calm({ duration: 700, delay: 300 })}>
       Path of Exile 2 item trivia, alone or with <span class="wide">up to eleven</span> friends.
@@ -930,6 +967,13 @@
     </nav>
   </div>
 
+  <!-- PoE2's 1.0, drawn, at the top between the columns (and in the header in a room, App.svelte); here, between the two, so the keys reach it where it is. -->
+  {#if launchShown && launchRoom.current}
+    <div class="launch" in:fade|global={calm({ duration: 900, delay: 450 })}>
+      {#await loadLaunch() then { default: LaunchCountdown }}<LaunchCountdown onend={launchEnded} />{:catch}{/await}
+    </div>
+  {/if}
+
   <div class="today" in:fade|global={calm({ duration: 900, delay: 150 })}>
     {#if invite}
       <InviteRoom code={invite} info={inviteInfo} name={inviteName} />
@@ -1011,6 +1055,64 @@
     grid-area: foot;
     margin-top: 32px;
   }
+  /* PoE2's 1.0, drawn: on the page's middle line at the top of the columns,
+     between the title and Today's unique's circle, over the gap they keep
+     (taking none of the page's height), where that's wide enough to keep it
+     clear of both (launchRoom). */
+  @media (min-width: 1081px) {
+    .launch {
+      grid-area: 2 / 1 / 3 / 3;
+      justify-self: center;
+      align-self: start;
+      position: relative;
+      z-index: 1;
+      margin-top: 6px;
+    }
+  }
+  /* In one column, on the first screen: at the right of the title's lines,
+     which are set around it, under the title's end (or beside the title, a
+     phone's on its side); smaller on a phone, and on a short screen. Its room
+     (the drawing, and a line of words under it) is held from the first, so
+     nothing moves as it comes, and the greeting starts under it. */
+  .beside {
+    --launch-h: 100px;
+    float: right;
+    display: flex;
+    justify-content: center;
+    width: calc(var(--launch-h) * 5 / 3);
+    height: calc(var(--launch-h) + 1.45rem);
+    margin: 4px 0 10px 12px;
+  }
+  @media (min-width: 641px) and (min-height: 521px) {
+    .beside {
+      --launch-h: 125px;
+    }
+  }
+  /* On touch a made name's greeting has "Welcome," on a line of its own,
+     short, at the left: that line comes up beside the drawing's foot, clear
+     of it, the name's line under it. Gliding as the greeting's height does
+     when it goes (a name chosen, or the field to choose it). */
+  @media (hover: none) {
+    .beside {
+      transition: margin-bottom 0.2s var(--ease-out);
+    }
+    .tuck .beside {
+      margin-bottom: -24px;
+    }
+  }
+  /* (On a short window under 1160 wide, an iPad mini's on its side, the circle comes in under it: smaller, and a step left, under the title's end.) */
+  @media (min-width: 1081px) and (max-width: 1159px) and (max-height: 844px) {
+    .launch {
+      --launch-h: 80px;
+      translate: -40px 0;
+    }
+  }
+  /* (A tall window's title is larger, and the beta's or the dev server's mark beside it reaches into the gap: a step right, where the circle leaves room.) */
+  @media (min-width: 1280px) and (min-height: 980px) {
+    .marked .launch {
+      translate: 30px 0;
+    }
+  }
   /* Wide windows, 980 tall and up: 26 + 650 (the columns) + 44 + 153 (the
      rooms) + 32 + 49 (the footer) + 22 = 976. */
   @media (min-width: 1081px) {
@@ -1085,6 +1187,8 @@
   /* ---- the greeting ---- */
   .greeting {
     margin: 16px 0;
+    /* (Under PoE2's 1.0 where it's beside the title's lines, .beside.) */
+    clear: right;
     transition: height 0.2s var(--ease-out);
   }
   .greeting-cell {

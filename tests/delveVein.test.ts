@@ -344,6 +344,8 @@ test('the codex counts a vein once however deep it was dug, and what a cave-in b
   ];
   const f = findStats(log).finds.azurite;
   assert.deepEqual([f.taken, f.ok, f.gained.wards, f.lives], [2, 2, 2, 2]);
+  // The one that caved in on strike 2 was missed, though its strike 1 was answered right.
+  assert.equal(f.missed, 1);
   // The log trimmed (oldest first) between a dig's strikes and its cave-in: what it buried was never counted,
   // so the veins dug out before it keep their wards.
   const trimmed = [
@@ -353,6 +355,8 @@ test('the codex counts a vein once however deep it was dug, and what a cave-in b
     { ...base, run: 1, t: 5, id: 'g', ok: false, strike: 3, buried: 2, lives: 2, wards: 0 },
   ];
   assert.equal(findStats(trimmed).finds.azurite.gained.wards, 2);
+  // A cave-in whose strike 1 is gone was never counted taken, so it isn't counted missed.
+  assert.deepEqual([findStats(trimmed).finds.azurite.taken, findStats(trimmed).finds.azurite.missed], [1, 0]);
   // Only its strike 2 kept: that ward is buried, no more.
   const half = [
     { ...base, run: 2, t: 10, id: 'e', ok: true, gained: 'wards' as const },
@@ -360,6 +364,7 @@ test('the codex counts a vein once however deep it was dug, and what a cave-in b
     { ...base, run: 1, t: 5, id: 'g', ok: false, strike: 3, buried: 2, lives: 2, wards: 0 },
   ];
   assert.equal(findStats(half).finds.azurite.gained.wards, 1);
+  assert.deepEqual([findStats(half).finds.azurite.taken, findStats(half).finds.azurite.missed], [1, 0]);
 });
 
 test('the vein\'s scene: on from strike 1 through its cards and strikes, off with the way out; it eases in and out', async () => {

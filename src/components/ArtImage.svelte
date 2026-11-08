@@ -1,3 +1,10 @@
+<script lang="ts" module>
+  import type { Place } from '../lib/prepArt';
+
+  /** The picture another is laid in (ArtImage's `within`): its size in art pixels and where its item lies in it. */
+  export type Within = { w: number; h: number; place: Place };
+</script>
+
 <script lang="ts">
   import { untrack } from 'svelte';
   import { fade } from '../lib/transitions';
@@ -15,8 +22,13 @@
   // was shown during the question) and turns it round. `round` lets it reach past the space into a
   // circle around its centre (as big across as --round times the space's
   // width), so a wide item can be as big as the circle allows, not only as
-  // the box (app.css). Its drop shadow is a picture of its own under it, made
-  // for its size before it shows (lib/artShadow.ts), never a filter.
+  // the box (app.css). `within` lays it where the item was in the picture
+  // shown before it (a question's altered copy, w x h art px, the item's own
+  // art at `place` in it: lib/prepArt.ts): its box is that picture's and it
+  // lies at `place` in it, so as the original art takes over at the reveal the
+  // item stays where it was, at its size. Its drop shadow is a picture of its
+  // own under it, made for its size before it shows (lib/artShadow.ts), never
+  // a filter.
   let {
     src,
     alt = '',
@@ -26,9 +38,16 @@
     float = false,
     unflip = false,
     round = false,
-  }: { src: string; alt?: string; w: number; h: number; scale?: number; float?: boolean; unflip?: boolean; round?: boolean } = $props();
+    within,
+  }: { src: string; alt?: string; w: number; h: number; scale?: number; float?: boolean; unflip?: boolean; round?: boolean; within?: Within } = $props();
 
   let loaded = $state(false);
+
+  const sameWithin = (a: Within | undefined, b: Within | undefined) =>
+    a === b || (!!a && !!b && a.w === b.w && a.h === b.h && a.place.every((v, i) => v === b.place[i]));
+  /** `within`, the same object for as long as it says the same: a parent's new one each time it draws doesn't start a picture loading again. */
+  let held: Within | undefined;
+  const inside = $derived.by(() => (sameWithin(within, held) ? held : (held = within)));
 
   /** How long a picture waits for its shadow (ms): one later than that (the page busy, say) shows with CSS's until it comes. */
   const CAST_WAIT = 300;
@@ -43,12 +62,12 @@
    * the answer away). Its shadow is made meanwhile (`cast`; none: CSS draws
    * it).
    */
-  let shown = $state.raw<{ src: string; w: number; h: number; unflip: boolean; img: HTMLImageElement; cast: Cast | null } | null>(null);
+  let shown = $state.raw<{ src: string; w: number; h: number; unflip: boolean; within: Within | undefined; img: HTMLImageElement; cast: Cast | null } | null>(null);
   $effect(() => {
-    const next = { src, w, h, unflip };
+    const next = { src, w, h, unflip, within: inside };
     const cur = untrack(() => shown);
     if (next.src === cur?.src) {
-      if (next.w !== cur.w || next.h !== cur.h || next.unflip !== cur.unflip) {
+      if (next.w !== cur.w || next.h !== cur.h || next.unflip !== cur.unflip || !sameWithin(next.within, cur.within)) {
         shown = { ...cur, ...next };
         untrack(recast);
       }
@@ -60,7 +79,7 @@
     // (Decoded, it is ready: its load event may already have gone by as it goes on the page.)
     const go = async () => {
       if (!live) return;
-      const cast = castOf(img, next.w, next.h);
+      const cast = castOf(img, next);
       const ready = await Promise.race([cast, new Promise<undefined>((done) => setTimeout(done, CAST_WAIT))]);
       if (!live) return;
       shown = { ...next, img, cast: ready ?? null };
@@ -86,8 +105,19 @@
       live = false;
     };
   });
-  /** The box's size: the picture's, or the one on its way's. */
-  const box = $derived(shown ?? { w, h });
+  /** The box's size: the picture's, or the one on its way's; one laid within another's, that one's. */
+  const box = $derived.by(() => {
+    const p = shown ?? { w, h, within: inside };
+    return p.within ?? p;
+  });
+
+  /** Where a picture laid within another lies in that one's box, as CSS lengths: its place in it. */
+  const laidAt = ({ w, h, place: [x, y, pw, ph] }: Within) => ({
+    left: `${(x / w) * 100}%`,
+    top: `${(y / h) * 100}%`,
+    width: `${(pw / w) * 100}%`,
+    height: `${(ph / h) * 100}%`,
+  });
 
   /** The slot's size (CSS px) and, for a round fit, its --round: what the picture's box is fitted to. */
   type Room = { w: number; h: number; round: number };
@@ -108,18 +138,22 @@
     seen.observe(node);
     return { destroy: () => seen.disconnect() };
   }
-  /** The box a picture `w` x `h` (art px) is drawn in here, CSS px, as app.css fits .art-fit. */
-  const fitted = (r: Room, w: number, h: number) => fitOf(r.w, r.h, w, h, scale, round ? r.round : undefined);
+  /** The box a picture `w` x `h` (art px) is drawn in here, CSS px, as app.css fits .art-fit; one laid `within` another, its place in that one's. */
+  function fitted(r: Room, { w, h, within: inside }: { w: number; h: number; within?: Within }) {
+    const f = inside ?? { w, h };
+    const fit = fitOf(r.w, r.h, f.w, f.h, scale, round ? r.round : undefined);
+    return inside ? { w: (fit.w * inside.place[2]) / f.w, h: (fit.h * inside.place[3]) / f.h } : fit;
+  }
 
   type Size = { w: number; h: number };
   const same = (a: Size, b: Size) => Math.abs(a.w - b.w) < 0.5 && Math.abs(a.h - b.h) < 0.5;
   /** The box each picture's shadow was last set out to be made for, made, on its way or failed: not set out for again. */
   const aimed = new WeakMap<HTMLImageElement, Size>();
 
-  /** The shadow of `img`, w x h art px, for the box it will have here (once the slot is laid out). */
-  async function castOf(img: HTMLImageElement, w: number, h: number) {
+  /** The shadow of `img`, w x h art px (or laid within another), for the box it will have here (once the slot is laid out). */
+  async function castOf(img: HTMLImageElement, at: { w: number; h: number; within?: Within }) {
     await measured;
-    const fit = fitted(room!, w, h);
+    const fit = fitted(room!, at);
     aimed.set(img, fit);
     return castFor(img, fit.w, fit.h);
   }
@@ -135,7 +169,7 @@
   function recast() {
     const cur = shown;
     if (recasting || !cur || !room) return;
-    const fit = fitted(room, cur.w, cur.h);
+    const fit = fitted(room, cur);
     const was = aimed.get(cur.img);
     if ((cur.cast && same(cur.cast, fit)) || (was && same(was, fit))) return;
     aimed.set(cur.img, fit);
@@ -159,9 +193,20 @@
   <span class="art-fit" class:ready={loaded} class:float class:round style:--w={box.w} style:--h={box.h} style:--s={scale}>
     {#if shown}
       {#key shown.src}
+        {@const at = shown.within && laidAt(shown.within)}
         <!-- The fade and the turn move the box round the picture and its
              shadow, which go together, as a filter's would (see .shot). -->
-        <span class="shot" class:unflip={shown.unflip} in:fade={{ duration: 300 }} out:fade={{ duration: 300 }}>
+        <span
+          class="shot"
+          class:unflip={shown.unflip}
+          class:laid={!!at}
+          style:left={at?.left}
+          style:top={at?.top}
+          style:width={at?.width}
+          style:height={at?.height}
+          in:fade={{ duration: 300 }}
+          out:fade={{ duration: 300 }}
+        >
           {#if shown.cast}
             {@const c = shown.cast}
             <!-- The picture `pad` in from its corner, the shadow SHADOW.dy lower; it stretches with the box till it's made for a new size. -->
@@ -227,6 +272,10 @@
   .shot:not(:only-child) {
     position: absolute;
     inset: 0;
+  }
+  /* One laid within another's box (within), at its place in it (left, top, width, height on it). */
+  .shot.laid {
+    position: absolute;
   }
   .unflip {
     animation: unflip 0.45s var(--ease-out) 0.25s backwards;

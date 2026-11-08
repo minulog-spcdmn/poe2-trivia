@@ -1,11 +1,12 @@
-// One scene by its key, for a frame: only its screen's file is loaded. On the
+// One scene by its key (or a place in one: ../scene.ts placeIn), for a frame: only its screen's file is loaded. On the
 // code before this change (the desk's before and after, qaBefore.ts) a
 // screen whose scenes use something only this change has then fails on its
 // own, and every other screen still compares. A key starts with its screen.
 // Call useItems (../build/engine.ts) and useCaptured (./captured.ts) first,
 // as for catalog().
 
-import type { Scene } from '../scene.ts';
+import { placeIn, type Scene } from '../scene.ts';
+import type { Values } from '../bench.ts';
 import { capturedScenes } from './captured.ts';
 
 export const SCREEN_FILES: Record<string, () => Promise<Scene[]>> = {
@@ -18,9 +19,9 @@ export const SCREEN_FILES: Record<string, () => Promise<Scene[]>> = {
   overlay: () => import('./overlays.ts').then((m) => m.overlayScenes()),
 };
 
-export async function sceneOf(key: string | null): Promise<Scene | undefined> {
+export async function sceneOf(key: string | null): Promise<{ scene: Scene; values: Values } | undefined> {
   if (!key) return undefined;
   // (Scenes saved from a live room are under their screen's name too, from a file of their own.)
   const scenes = key.includes('/saved-') ? capturedScenes() : await SCREEN_FILES[key.split('/')[0]]?.();
-  return scenes?.find((s) => s.key === key);
+  return scenes && placeIn(scenes, key);
 }

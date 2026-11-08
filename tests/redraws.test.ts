@@ -156,16 +156,30 @@ test('Redraws passes on every job passing, or on the pull request changing nothi
   assert.match(workflow, /git show HEAD\^1:scripts\/redraws-unchanged\.mjs > (\S+); then\n\s+node \1\n/);
 });
 
+test('the label “skip redraws” passes it without watching, and adding or taking it off runs it again', () => {
+  assert.match(workflow, /types: \[[^\]]*\blabeled, unlabeled\]/, 'run again on the label');
+  assert.ok(workflow.includes("SKIP: ${{ contains(github.event.pull_request.labels.*.name, 'skip redraws') }}"), 'the label read from the pull request as the event saw it');
+  assert.match(workflow, /if \[ "\$SKIP" = true \]; then\n(?:.*\n){1,3}?\s+echo "same=true" >> "\$GITHUB_OUTPUT"\n\s+elif git show HEAD\^1/, 'the label says same, else main’s script does');
+  // (Only the first job: what the label skips is the watching, never the verdict.)
+  assert.equal([...workflow.matchAll(/skip redraws'\)/g)].length, 1, 'read in one place');
+});
+
 test('a pull request passes without watching only on files the check doesn’t run, then on its build', () => {
   const own = sweepFiles();
-  // (find-banding.py by its path, not imported.)
-  for (const f of ['scripts/sweep.mjs', 'scripts/beta-build.mjs', 'qaServer.ts', 'src/qa/redraws.ts', 'scripts/find-banding.py']) assert.ok(own.has(f), `the sweep runs ${f}`);
+  // (find-banding.py by its path, not imported; shell-packages.sh by the workflow's.)
+  for (const f of ['scripts/sweep.mjs', 'scripts/beta-build.mjs', 'qaServer.ts', 'src/qa/redraws.ts', 'scripts/find-banding.py', 'scripts/shell-packages.sh']) assert.ok(own.has(f), `the sweep runs ${f}`);
   for (const f of ['src/lib/game.ts', 'public/icons/lineage-gems.avif', 'index.html', 'vite.config.ts', 'package-lock.json', 'qaBefore.ts', '.github/workflows/redraws.yml', 'scripts/redraws-unchanged.mjs', 'scripts/find-banding.py']) {
     assert.ok(matters(f, own), `${f} can change what the check sees`);
   }
   for (const f of ['docs/qa.md', 'CLAUDE.md', 'tests/redraws.test.ts', 'scripts/iphone/fresh.mjs', '.claude/agents/worker.md', '.github/workflows/tests.yml']) {
     assert.ok(!matters(f, own), `${f} is left to the builds to tell`);
   }
+});
+
+test('the shell’s system packages come from the cache, not Ubuntu’s mirror every job', () => {
+  assert.ok(!workflow.includes('--with-deps'), 'no install from the mirror each run');
+  // (The caches job on main fills it, which pull requests read from, and every job that runs the shell reads it.)
+  assert.equal([...workflow.matchAll(/path: ~\/\.cache\/shell-packages\n.*\n.*\n\s+- run: bash scripts\/shell-packages\.sh\n/g)].length, 2);
 });
 
 test('only what the check finds fails a job: the report’s upload, timing out, can’t', () => {

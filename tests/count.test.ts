@@ -337,6 +337,31 @@ test("a link's tag is its campaign only when it's a plain short word, so nothing
   assert.equal(campaignOf('?ref=a%20b'), null);
   assert.equal(campaignOf('?ref=https://evil.example/'), null);
   assert.equal(campaignOf(`?ref=${'x'.repeat(41)}`), null);
+  // rf as well, as a posted link that can't be edited spelled it; ref first if both are there.
+  assert.equal(campaignOf('?rf=reddit-patchnotes-oct-nov'), 'reddit-patchnotes-oct-nov');
+  assert.equal(campaignOf('?rf=x&ref=y'), 'y');
+  assert.equal(campaignOf('?rf=a%20b'), null);
+});
+
+test('a tagged link leaves the address without its tag, under either key', () => {
+  const was = { location: globalThis.location, history: globalThis.history };
+  for (const [href, left] of [
+    ['https://poe2.quest/?rf=reddit-patchnotes-oct-nov', '/'],
+    ['https://poe2.quest/?ref=reddit-oct&room=ABC123#codex', '/?room=ABC123#codex'],
+  ]) {
+    let to = '';
+    const url = new URL(href);
+    Object.assign(globalThis, {
+      location: { href, search: url.search },
+      history: { state: null, replaceState: (_s: unknown, _t: string, u: string) => void (to = u) },
+    });
+    try {
+      assert.ok(takeCampaign());
+      assert.equal(to, left);
+    } finally {
+      Object.assign(globalThis, was);
+    }
+  }
 });
 
 test("a visit opened from the home screen counts as the app's: iOS's, Android's fullscreen, not a desktop's F11", () => {

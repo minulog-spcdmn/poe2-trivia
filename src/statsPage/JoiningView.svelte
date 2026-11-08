@@ -1,11 +1,11 @@
 <script lang="ts">
   // Joining: whether getting into a room works. Tries to join by where they
   // started, how many got in, every failure by its cause (opening a room's
-  // too), open rooms that lost the matchmaking server (a guest is told
-  // there's no such room meanwhile), the game's own scripts' errors (by
-  // where they came from) and its parts that didn't load in lines of their
-  // own (they have nothing to do with joining), and the links that bring
-  // players in.
+  // too) and why rooms didn't answer as the relay saw it, open rooms that
+  // lost the matchmaking server (a guest is told there's no such room
+  // meanwhile), the game's own scripts' errors (by where they came from)
+  // and its parts that didn't load in lines of their own (they have nothing
+  // to do with joining), and the links that bring players in.
   import Bars from './Bars.svelte';
   import { fmt } from './chart';
   import Delta from './Delta.svelte';
@@ -97,6 +97,10 @@
         </div>
       {/snippet}
       <Bars bars={failures} top={10} tone="down" empty="Nothing went wrong." />
+      {#if L.relay.length}
+        <p class="line">Rooms whose host was there but never linked up, by what the relay did:</p>
+        <Bars bars={L.relay} top={8} tone="down" />
+      {/if}
       {#if off || offBefore}
         <p class="line">
           <b class:bad={off > 0}>{fmt(off)}</b> open {off === 1 ? 'room' : 'rooms'} lost the matchmaking server, {fmt(L.roomsOff.hidden)} with the host's page out of sight: until it's back, guests are told no room has its code.

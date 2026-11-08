@@ -11,6 +11,7 @@ import { isPlayerClass, type PlayerClass } from './classSigils.ts';
 import { isChoosableHue } from './palette.ts';
 import { cleanSeen } from './delveStart.ts';
 import { isFossilMask } from './fossils.ts';
+import type { Place } from './prepArt.ts';
 
 /**
  * Bumped whenever a host and a guest on different versions would misread
@@ -125,7 +126,8 @@ export type HostMsg =
   /** As a link opens: a challenge for a hello under the held name to be signed over (ownerKey.ts joinProof). */
   | { t: 'hi'; c: string }
   | { t: 'welcome'; playerId: string }
-  | { t: 'state'; state: GameState; now: number }
+  /** `now`: when the host sent it, by its clock; `base`, its clock less its steady one then, which moves only when its clock is set (hostClock.ts). */
+  | { t: 'state'; state: GameState; now: number; base?: number }
   /**
    * `askedAt`: an answer to that question was turned down, so it may be
    * given again. A guest that doesn't know the field just shows the message.
@@ -153,18 +155,23 @@ export type HostMsg =
   | KeyMsg
   | MediaMsg;
 
+/**
+ * A picture's `place`: where the item's own art lies in it (prepArt.ts
+ * Place), for the original art to take over there at the reveal. Hosts
+ * before it send none, and their guests' pictures go on as they did.
+ */
 export type MediaMsg =
-  | { t: 'art'; qid: number; w: number; h: number; data: ArrayBuffer }
+  | { t: 'art'; qid: number; w: number; h: number; place?: Place; data: ArrayBuffer }
   /**
    * A veiled picture, whole (`data`), with which patch each of its art pixels
    * falls in (`labels`: patches.ts packLabels). `tile`: a veiled "find the
    * art" picture (Delve), by option; missing for the art of a name question.
    */
-  | { t: 'veil'; qid: number; tile?: number; w: number; h: number; burn: number; count: number; box: [number, number, number, number]; data: ArrayBuffer; labels: ArrayBuffer }
+  | { t: 'veil'; qid: number; tile?: number; w: number; h: number; burn: number; count: number; box: [number, number, number, number]; place?: Place; data: ArrayBuffer; labels: ArrayBuffer }
   /** Patch `i` of the veiled picture (its index in the cut) is uncovered. */
   | { t: 'patch'; qid: number; tile?: number; i: number }
   /** `w`, `h`: its size in art pixels (the picture is finer, by the item's artScale). */
-  | { t: 'option'; qid: number; index: number; w: number; h: number; data: ArrayBuffer };
+  | { t: 'option'; qid: number; index: number; w: number; h: number; place?: Place; data: ArrayBuffer };
 
 const MEDIA = new Set(['art', 'veil', 'patch', 'option']);
 /** A question's pictures and their patches: what the art lane carries (artLane.ts). */
@@ -180,6 +187,10 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
 const isInt = (v: unknown, min: number, max: number): v is number =>
   typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
 const isStr = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
+/** A picture's place for its item (MediaMsg), if it has one: four numbers within it, the size not nothing. */
+const placeOk = (v: unknown) =>
+  v === undefined ||
+  (Array.isArray(v) && v.length === 4 && v.every((n) => typeof n === 'number' && n >= 0 && n <= 4096) && v[2] > 0 && v[3] > 0);
 const SECRET = /^[A-Za-z0-9_-]{20,64}$/;
 const TAB = /^[A-Za-z0-9_-]{8,64}$/;
 
@@ -286,7 +297,7 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
       return isStr(raw.playerId, 64) ? (raw as HostMsg) : null;
     case 'state': {
       const s = raw.state;
-      return isObj(s) && Array.isArray(s.players) && isObj(s.settings) && Number.isFinite(raw.now)
+      return isObj(s) && Array.isArray(s.players) && isObj(s.settings) && Number.isFinite(raw.now) && (raw.base === undefined || Number.isFinite(raw.base))
         ? (raw as HostMsg)
         : null;
     }
@@ -319,18 +330,18 @@ export function parseHostMsg(raw: unknown): HostMsg | null {
       return { t: 'standing', s };
     }
     case 'art':
-      return qid && bin(raw.data) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
+      return qid && bin(raw.data) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) && placeOk(raw.place) ? (raw as HostMsg) : null;
     case 'veil':
       return qid && tile && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) && isInt(raw.burn, 0, 120000) &&
         isInt(raw.count, 0, 256) && Array.isArray(raw.box) && raw.box.length === 4 &&
-        raw.box.every((v) => isInt(v, 0, 4096)) && bin(raw.data) && bin(raw.labels) &&
+        raw.box.every((v) => isInt(v, 0, 4096)) && placeOk(raw.place) && bin(raw.data) && bin(raw.labels) &&
         byteLength(raw.labels) % 4 === 0 && byteLength(raw.labels) <= MAX_LABEL_BYTES
         ? (raw as HostMsg)
         : null;
     case 'patch':
       return qid && tile && isInt(raw.i, 0, 254) ? (raw as HostMsg) : null;
     case 'option':
-      return qid && bin(raw.data) && isInt(raw.index, 0, 16) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) ? (raw as HostMsg) : null;
+      return qid && bin(raw.data) && isInt(raw.index, 0, 16) && isInt(raw.w, 1, 4096) && isInt(raw.h, 1, 4096) && placeOk(raw.place) ? (raw as HostMsg) : null;
     // What's inside is checked as it opens (it goes through here again then).
     case 'sealed':
       return parseSealed(raw);

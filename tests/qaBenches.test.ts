@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs';
 import { useItems } from '../src/qa/build/engine.ts';
 import { PIECES } from '../src/qa/benches/pieces.ts';
 import { stateAt, stateValues, valuesOf, valuesQuery, type Control } from '../src/qa/bench.ts';
-import { benchesTouched, type Touched } from '../src/qa/change.ts';
+import { benchesTouched, placeOfState } from '../src/qa/change.ts';
 import { fakes, items } from './helpers.ts';
 
 useItems(items, fakes);
@@ -80,20 +80,19 @@ test('the desk knows which state the controls are in, whatever the view is set t
   assert.equal(stateAt(avatar, moved), 1);
 });
 
-test('a change touches the pieces showing its files and the screens running them', () => {
-  const scenes: Touched = { scenes: [{ key: 'game/turns-question', why: 'runs src/components/Avatar.svelte' }], uncovered: ['src/lib/nowhere.ts'] };
+test('a change touches the benches its places are on, and a piece not in the map yet by its files', () => {
   const all = benches();
-  const got = benchesTouched(['src/components/Avatar.svelte', 'src/lib/nowhere.ts'], scenes, all);
-  const keys = got.benches.map((b) => b.key);
-  assert.ok(keys.includes('avatar'));
-  assert.ok(keys.includes('game'));
-  assert.ok(!keys.includes('streak'));
-  assert.deepEqual(got.uncovered, ['src/lib/nowhere.ts']);
-  // A bench's own files touch it, and what every piece runs on touches them all.
-  const none: Touched = { scenes: [], uncovered: [] };
-  assert.deepEqual(benchesTouched(['src/qa/benches/StreakView.svelte'], none, all).benches.map((b) => b.key), ['streak']);
-  assert.deepEqual(benchesTouched(['src/qa/benches/streakXts'], none, all).benches, []);
-  assert.deepEqual(benchesTouched(['src/qa/frame/PieceHost.svelte'], none, all).benches.map((b) => b.key), PIECES.map((p) => p.key));
+  const game = all.find((b) => b.kind === 'scenes' && b.key === 'game');
+  assert.ok(game?.kind === 'scenes');
+  const place = placeOfState(game.states[0])!;
+  const got = benchesTouched({ places: [{ key: place, why: 'runs it' }, { key: 'avatar', why: 'shows it' }, { key: 'gone/away', why: 'no longer there' }], mapped: ['avatar', place], files: ['src/components/DailyStreak.svelte'] }, all);
+  assert.deepEqual(got.benches.map((b) => b.key), ['game', 'avatar', 'streak']);
+  assert.deepEqual(got.places.map((p) => p.key), [place, 'avatar', 'streak']);
+  assert.match(got.places[2].why, /DailyStreak\.svelte/);
+  // A piece in the map counts only by what it ran.
+  assert.deepEqual(benchesTouched({ places: [], mapped: ['streak'], files: ['src/components/DailyStreak.svelte'] }, all).benches, []);
+  // Every state with a key is its own place; a scene's first is its scene's.
+  for (const b of all) if (b.kind === 'scenes') for (const st of b.states) if (st.key) assert.equal(placeOfState(st), st.key);
 });
 
 // A piece's frame loads only its own file (benches/<key>.ts, frame/piece.ts),

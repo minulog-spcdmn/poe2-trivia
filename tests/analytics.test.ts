@@ -1008,6 +1008,33 @@ test("the scripts' errors by where they came from are one failure, broken down u
   assert.deepEqual(groupPaths(c).failed, ['error/join-no-answer']);
 });
 
+test("what the relay was doing breaks the rooms that didn't answer down, and is no failure of its own", () => {
+  const c = countsOf(
+    [
+      path('play/race', [100, 100, 100]),
+      path('error/join-no-answer', [3, 2, 1]),
+      path('relay/route', [1, 1, 0]),
+      path('relay/no-route', [0, 0, 1]),
+      path('relay/no-login-capped', [2, 1, 0]),
+      path('relay/no-login-somehow', [0, 1, 0]),
+    ],
+    DAYS,
+  );
+  assert.deepEqual(c.relay, [
+    { key: 'no-login-capped', label: 'No relay login: relay capped for the month', count: 3 },
+    { key: 'route', label: 'Went through the relay, still no link', count: 2 },
+    { key: 'no-login-somehow', label: 'no-login-somehow', count: 1 },
+    { key: 'no-route', label: "Had a relay login, but the relay couldn't be reached", count: 1 },
+  ]);
+  assert.deepEqual(
+    c.failures.map((f) => [f.key, f.count]),
+    [['join-no-answer', 6]],
+  );
+  assert.deepEqual(c.failuresPerDay, [3, 2, 1]);
+  assert.deepEqual(groupPaths(c).failed, ['error/join-no-answer']);
+  assert.equal(failureRate(c), failureRate(countsOf([path('play/race', [100, 100, 100]), path('error/join-no-answer', [3, 2, 1])], DAYS)));
+});
+
 test('visitors new, back and in the installed app are groups too, their shares of those told apart', () => {
   const c = countsOf([path('/', [10, 0, 0], false), path('visit/new', [6, 0, 0]), path('visit/back-1d', [3, 0, 0]), path('visit/back-later', [1, 0, 0]), path('visit/app', [2, 0, 0])], DAYS);
   const g = groupPaths(c);
@@ -1620,8 +1647,8 @@ test('a kept read is used only in the shape this build keeps, and for its own pe
   assert.equal(keptRead(JSON.stringify({ ...r, v: READ_V - 1 }), 30), null);
   assert.equal(keptRead(null, 30), null);
   assert.equal(keptRead('{not json', 30), null);
-  // This build's kept read has the unread counts (Counts.ready, dailyBack, delveRuns, scriptErrors): one kept without them is read again.
-  assert.equal(READ_V, 15);
+  // This build's kept read has the unread counts (Counts.ready, dailyBack, delveRuns, scriptErrors, relay): one kept without them is read again.
+  assert.equal(READ_V, 16);
 });
 
 test("a read shown before its lists are in says they're being read, never that there are none", () => {

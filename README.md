@@ -49,7 +49,8 @@ The full rules are in [docs/gameplay.md](docs/gameplay.md).
 - **Online:** the host creates a room and shares its 6-character code or
   invite link. Browsers connect directly over WebRTC
   ([PeerJS](https://peerjs.com/)); the host's browser runs the game, and the
-  free PeerJS cloud only introduces the players to each other. Rooms can be
+  free PeerJS cloud only introduces the players to each other (players it
+  turns away meet on the game's own server instead). Rooms can be
   listed publicly under "Open rooms". Very strict networks can block WebRTC;
   a room that can't go online opens on the host's device only.
 - **At one screen:** in a Turns lobby the host adds players by name, who
@@ -83,9 +84,10 @@ apart from Safari's, so there, and only there, the privacy link in a room
 opens over the game (`src/lib/legalSheet.svelte.ts`).
 
 To see what a post or a stream brings in, tag the link you share:
-poe2.quest/?ref=reddit-oct (letters, digits, `-` and `_`, up to 40). The
-tag is counted as the visit's campaign and taken out of the address, and
-Analytics lists the tagged links with the sites people came from.
+poe2.quest/?ref=reddit-oct (letters, digits, `-` and `_`, up to 40; `?rf=`
+works too, as one posted link spelled it). The tag is counted as the visit's
+campaign and taken out of the address, and Analytics lists the tagged links
+with the sites people came from.
 
 ## Development
 
@@ -166,10 +168,99 @@ to 4K (`docs/qa.md`). A new test tool is a bench there, not a page.
 on the beta. A new tool page gets a card there; `tests/devHub.test.ts` fails
 until it does.
 
-### Self-hosted signalling (optional)
+### Matchmaking server
 
-To use your own [PeerJS server](https://github.com/peers/peerjs-server)
-instead of the public cloud, build with `VITE_PEER_HOST`, `VITE_PEER_PORT`,
+Players meet on the free PeerJS cloud (`0.peerjs.com`), which turns away every
+player in Russia (it answers them 403), so none of them could host or join.
+They meet on the game's own server instead: a Worker (`signal/worker.js`)
+that speaks the [PeerJS server](https://github.com/peers/peerjs-server)'s
+protocol, one Durable Object holding every peer's socket in memory.
+
+- A page looks once it goes online (hosts, joins, syncs, the open rooms list;
+  a page that never does asks neither): the cloud if it answers, else ours if
+  that does (`lib/peer.ts`). A no from the cloud is asked again a second
+  later; a cloud slow to answer is waited for, and taken as a no only after
+  15 s without a word. A peer waits 4 s at most for the look, made on the
+  cloud meanwhile. Everyone the cloud answers meets there as before: nothing
+  that worked before leans on ours.
+- Either stands in for the other. A page whose server fails it (a peer loses
+  it) looks again, so pages meet on ours while the cloud is down; a page on
+  ours looks again as it makes a peer once five minutes have passed, and is
+  back on the cloud once that answers it.
+- A room on the cloud and its listing are on ours too, so a guest finds it on
+  either. A guest on the cloud that hears the room isn't there looks for it
+  on ours too, by ping alone, and goes on there where the cloud would say
+  there's no such room (a cloud host only reconnecting is waited for on the
+  cloud, as before), or at once if the invite link's screen, which pings
+  both, heard it's on ours alone. A code no room has is told as soon as
+  before.
+- Russian networks are reported to stall a connection to Cloudflare once
+  about 16 KB have gone over it (TLS's handshake takes about 5 of them), so
+  a page on ours swaps its socket for a fresh one under the same id after
+  6 KB (`keepFresh`), counting what each message adds on the way and the
+  heartbeats. Cloudflare echoes every heartbeat without waking the Object,
+  and a socket whose echo doesn't come within 10 s (stalled sooner) is
+  swapped at once. What the page sends meanwhile waits for the fresh socket.
+- The relay (below) is on Cloudflare too, so a link between two players
+  there that needs it (one on a carrier's network, say) may stall the same
+  way; unmeasured, and only a relay elsewhere would get round it.
+- The open rooms list scans its page's server only: a page on the cloud
+  doesn't list a room whose host the cloud turned away (an invite or the code
+  still finds it).
+- Only the game's own pages are answered; an address (an IPv4 one, or an
+  IPv6 /56) may connect 120 times a minute and hold 64 sockets; a socket's
+  messages past 300 in 10 s are let go, and past 600 it's hung up on (never
+  with a server error, for which PeerJS would end every game the peer
+  carries); 5,000 peers at once at most. An id whose socket was lost (not
+  closed by its page) is kept for it 15 s, so a host's blip doesn't hand its
+  room to whoever asks next. What waits for an id nobody holds is capped at
+  4 MB, and 256 KB from one address. Nothing is stored or logged.
+- Cloudflare's free plan gives a Durable Object 100,000 requests a day, a
+  socket's messages counting 20 to one (a peer on ours sends a heartbeat
+  every 25 s, not PeerJS's 5), and the account 100,000 Worker requests a
+  day, each socket one (peers on ours make their ids in the page, so they
+  ask for none). A page on the cloud costs ours nothing unless it hosts (its
+  room's id, and a public room's listing), opens an invite or joins a room
+  the cloud hasn't got; a page on ours, a socket per peer, the open rooms
+  list a socket per refresh while it's shown. A room costs ours about six
+  requests, so at the busiest day yet (569 visits, 5 November 2026) it stays
+  far under both. Past either, ours stops until midnight UTC: pages the cloud
+  answers never needed it (their rooms' copies on ours try again, later each
+  time), and only the pages the cloud turns away can't play, as before ours.
+  The Worker requests are the account's, the relay's too, so the relay would
+  stop with it (connections then meet without it, as below): on a free
+  account of its own, ours can't touch the relay.
+
+Cloudflare Workers Builds deploys `poe2-signal` on every push to `main` that
+changes `signal/`. To set it up (once), in Cloudflare’s dashboard: Workers &
+Pages, `poe2-signal`, Settings, Builds, Connect. Install the “Cloudflare
+Workers and Pages” GitHub app on this repo only. Branch `main`; root
+directory `signal`; build command empty; deploy command `npx --yes
+wrangler@4.158.0 deploy`; preview command as it comes; build variable
+`SKIP_DEPENDENCY_INSTALL=1`, not encrypted; API token: create new; build
+caching off. Then in Settings, Build: Branch control, “Enable Preview
+Builds” unticked; build watch paths `signal/*`. Connecting runs no build;
+the next change under `signal/` is the first. It’s the Worker `poe2-signal`, at
+`poe2-signal.poe2quest.workers.dev`, named in `src/lib/signalHost.ts`.
+
+A server deploy is forced within 300 s and disconnects everyone on our server;
+pages reconnect in about 2 s with the same id, and games under way don’t use
+the server. A push of 20 or more commits ignores the watch paths and redeploys
+it unchanged. Every build shows as Cloudflare’s check on its commit: seeing a
+change to `signal/` through to live includes that check on the merge commit
+going green (`gh api repos/{owner}/{repo}/commits/<sha>/check-runs`, the run
+whose `app.slug` is Cloudflare’s). A cancelled one means a newer push’s build
+took over (look at the newest commit on `main` that has one); only red on the
+commit that built means the server didn’t update. For an emergency hand
+deploy, run from `main` itself, fetched first: `git fetch origin main`, `git
+worktree add --detach <dir> origin/main` (`git -C <dir> log -1` shows the
+merge), then `npx --yes wrangler@4.158.0 deploy` in `<dir>/signal`.
+
+To turn it off, empty `OWN_SIGNAL_HOST` in `src/lib/signalHost.ts` (pages
+loaded since meet on the cloud alone) and delete the Worker.
+
+To use a [PeerJS server](https://github.com/peers/peerjs-server) of your own
+instead of both, build with `VITE_PEER_HOST`, `VITE_PEER_PORT`,
 `VITE_PEER_PATH` and `VITE_PEER_SECURE`.
 
 ### Relay
@@ -233,6 +324,14 @@ a full rollback is reverting and deleting the key. A new key brings it back
 for tabs opened since; one open all along picks it up when its login is next
 renewed, within six hours.
 
+Unlike the matchmaking server, the relay stays deployed by hand. The session
+that changes it opens an issue with its PR (“Deploy the relay after #N”),
+deploys it once the PR merges, from `main` itself, fetched first (`git fetch
+origin main`, `git worktree add --detach <dir> origin/main`, and `git -C <dir>
+log -1` shows the merge; then `npx --yes wrangler@4.158.0 deploy` in
+`<dir>/relay`), checks it live as before, and closes the issue. A session
+that ends first leaves the issue for the next.
+
 ## Deploying
 
 `.github/workflows/deploy.yml` builds and deploys to GitHub Pages on every push
@@ -260,6 +359,42 @@ live. It has its own rooms, saves and invite links (`VITE_CHANNEL=beta`).
   (`docs/qa.md`).
 - **Stack changes:** the beta shows one commit at a time. To test a change with
   the one already there, start its branch from the newest `beta` deployment.
+
+### Undo a bad deploy
+
+- The site: revert the change on `main`. The owner’s admin merge skips Tests
+  and Redraws; it’s live in about 4 to 25 minutes (recent deploys took 2 to
+  24). A revert that touches `dailies.json` may fail the deploy’s dailies
+  check.
+- The matchmaking server: revert on `main`, with the page change it came with,
+  if any; Builds deploys the old server. In an emergency, roll back first in
+  the dashboard (Workers & Pages, `poe2-signal`, Deployments), which a Durable
+  Object migration between the two versions refuses, then revert at once, or
+  the next build of `main` brings the bad code back. Never revert a migration:
+  write a forward one.
+- The relay: redeploy the old version by hand (“Relay”); in an emergency
+  delete the TURN key.
+- What no revert undoes: saved progress. Sync only ever moves progress up and
+  passes it to every paired device (`src/lib/sync/store.ts`), so a change to
+  what’s saved has to keep reading what older builds saved.
+
+### Daily health check
+
+`.github/workflows/daily-health.yml` runs `scripts/daily-health.mjs` once a
+day: stats.html’s own checks (`healthOf`, `troubleOf`) on yesterday against
+the 7 days before. A check that fires fails the run, and GitHub emails the
+owner.
+
+It needs the read-only GoatCounter key as the Actions secret
+`GOATCOUNTER_KEY`. Switch it on with `gh secret set GOATCOUNTER_KEY` (it asks
+for the value) and off by deleting it (`gh secret delete GOATCOUNTER_KEY`);
+without it the run passes and says it’s off. A failed run means a check fired
+(each reason is on the run’s page), the key was refused or the check itself
+broke; a day GoatCounter can’t be read passes with a warning. Its checks are the page’s own, so it
+mails when stats.html would warn: in a dry run over the 13 days that could be
+checked (6 Nov 2026), once, on 5 Nov, when joining failures rose with the
+matchmaking server’s first day. A dry run over past days: `GOATCOUNTER_KEY=...
+node --experimental-strip-types scripts/daily-health.mjs --backtest 60`.
 
 ---
 

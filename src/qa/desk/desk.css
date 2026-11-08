@@ -123,11 +123,38 @@ html[data-qa='desk'] #app {
   margin-right: 0.35em;
   color: var(--gold);
 }
+.shelf .bench .where {
+  font-size: 0.8em;
+  font-style: italic;
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* A place this change touches: its name whole, on more lines if need be, its screen under it. */
+.shelf .bench.place {
+  display: grid;
+}
+.shelf .bench.place .name {
+  white-space: normal;
+}
+.shelf .bench.place .where {
+  padding-left: 0.85em;
+}
+.shelf .more {
+  border-color: transparent;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.85em;
+  font-style: italic;
+  color: var(--muted);
+}
 .shelf .none,
-.shelf .uncovered {
+.shelf .aside {
   margin: 1rem 0.4rem 0;
   color: var(--muted);
   font-size: 0.85em;
+  font-style: italic;
+}
+.shelf .aside + .aside {
+  margin-top: 0.4rem;
 }
 
 .middle {
@@ -324,6 +351,24 @@ html[data-qa='desk'] #app {
 }
 .bench-panel .control select {
   width: 100%;
+}
+/* A choice's options, a button each, the one picked lit. */
+.bench-panel .control .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+.bench-panel .control .chips button {
+  padding: 0.1rem 0.45rem;
+  color: var(--text);
+  text-align: left;
+}
+/* An option (or a control) a place this change touches sets: the states' dot. */
+.bench-panel .control .chips button.changed::after,
+.bench-panel .control .label.changed::after {
+  content: '•';
+  margin-left: 0.35em;
+  color: var(--gold);
 }
 .bench-panel .control.toggle {
   display: flex;

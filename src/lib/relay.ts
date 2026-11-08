@@ -23,15 +23,33 @@ const RETRY_MAX_MS = 24 * 3_600_000;
  */
 const MARGIN_MS = 12 * 3_600_000;
 
+/**
+ * Why no login was had, as the Worker's answer says it (relay/worker.js
+ * answer): `capped`, the month's traffic past the cap (503, until the month
+ * ends); `stopped`, its traffic check not run lately (503, ten minutes);
+ * `failing`, Cloudflare not handing one out (502); `limited`, too many asks
+ * from one address (429); `refused`, a 200 read whole that wasn't a
+ * login (not JSON, or nothing parseRelay takes); `unreached`, no answer at
+ * all, or one whose body never came (cut off, or given up on at
+ * GIVE_UP_MS); a 403, for a page that isn't the game's, carries no CORS and
+ * reads the same.
+ */
+export type NoLogin = 'capped' | 'stopped' | 'failing' | 'limited' | 'refused' | 'unreached';
+
 /** The Worker turned the request down, saying when to ask again (Retry-After, seconds). */
 class Later extends Error {
   readonly ms: number;
-  constructor(seconds: string | null) {
+  readonly why: NoLogin;
+  constructor(status: number, seconds: string | null) {
     super('Relay login refused');
     const s = Number(seconds);
     this.ms = s > 0 ? Math.min(s * 1000, RETRY_MAX_MS) : RETRY_MS;
+    this.why = status === 503 ? (s === 600 ? 'stopped' : 'capped') : status === 502 ? 'failing' : status === 429 ? 'limited' : 'unreached';
   }
 }
+
+/** The Worker's 200, read whole, held no login the page could use. */
+class Unreadable extends Error {}
 
 /** The longest a login is taken to last, whatever the Worker says (Cloudflare's longest). */
 const TTL_MAX_S = 48 * 3600;
@@ -76,6 +94,8 @@ export class Relay {
   private fetching: Promise<void> | null = null;
   /** Until when a peer waits for the fetch on the way (WAIT_MS from its start, whoever asks). */
   private waitUntil = 0;
+  /** How the last fetch went: a login (`got`), or why none; null before any has ended. */
+  last: NoLogin | 'got' | null = null;
 
   constructor(url: string, get: typeof fetch = (...a) => fetch(...a)) {
     this.url = url;
@@ -109,18 +129,25 @@ export class Relay {
       this.waitUntil = Date.now() + WAIT_MS;
       this.fetching = this.get(this.url, { cache: 'no-store', signal: abort.signal })
         .then((r) => {
-          if (!r.ok) throw new Later(r.headers.get('Retry-After'));
-          return r.json();
+          if (!r.ok) throw new Later(r.status, r.headers.get('Retry-After'));
+          // (A body that isn't JSON is the Worker's answer all the same; one that never came is none.)
+          return r.json().catch((err) => {
+            throw err instanceof SyntaxError ? new Unreadable() : err;
+          });
         })
         .then((raw) => {
           const got = parseRelay(raw);
-          if (!got) throw new Error('No relay login');
+          if (!got) throw new Unreadable();
           const now = Date.now();
           this.servers = got.iceServers;
           this.until = now + got.ttl * 1000;
           this.refreshAt = this.until - Math.min(MARGIN_MS, (got.ttl * 1000) / 2);
+          this.last = 'got';
         })
-        .catch((err) => void (this.retryAt = Date.now() + (err instanceof Later ? err.ms : RETRY_MS)))
+        .catch((err) => {
+          this.retryAt = Date.now() + (err instanceof Later ? err.ms : RETRY_MS);
+          this.last = err instanceof Later ? err.why : err instanceof Unreadable ? 'refused' : 'unreached';
+        })
         .finally(() => {
           clearTimeout(giveUp);
           this.fetching = null;
@@ -152,4 +179,74 @@ export class Relay {
   iceServers(): RTCIceServer[] {
     return Date.now() < this.until ? this.servers : [];
   }
+}
+
+// ---- what a join saw of the relay ---------------------------------------------
+
+/**
+ * What a join's attempts to reach the host saw of the relay, all of them
+ * together (watchAttempt): told when the room never answered though its host
+ * was there (relayEvent).
+ */
+export interface RelaySeen {
+  /** Whether an attempt got the host's answer (its remote description). */
+  answered: boolean;
+  /** Whether an attempt had a relay login: a TURN server among its own. */
+  login: boolean;
+  /** Whether an attempt gathered a relay candidate of its own: the TURN server answered. */
+  route: boolean;
+  /** How the Relay's last fetch had gone (Relay.last) when the latest attempt without a login was made: why it had none. */
+  whyNone: NoLogin | 'got' | null;
+}
+
+export const relaySeen = (): RelaySeen => ({ answered: false, login: false, route: false, whyNone: null });
+
+const TURN = /^turns?:/i;
+
+/**
+ * Notes into `seen` what an attempt's connection does with the relay, as it
+ * goes: PeerJS lets go of a failed one at once, and older attempts are closed
+ * before the join gives up. `last`: how the Relay's last fetch had gone as
+ * the attempt was made (Relay.last), kept as why it had no login, so a fetch
+ * that ends later doesn't change it. Listeners beside PeerJS's own (its
+ * onicecandidate sends the candidates); no connection (a fake PeerJS) notes
+ * nothing.
+ */
+export function watchAttempt(seen: RelaySeen, pc: RTCPeerConnection | null | undefined, last: NoLogin | 'got' | null) {
+  if (!pc || typeof pc.addEventListener !== 'function') return;
+  let login = false;
+  try {
+    login = !!pc.getConfiguration().iceServers?.some((s) => [s.urls].flat().some((u) => TURN.test(u)));
+  } catch {
+    // (A connection that won't say has no login to go by.)
+  }
+  if (login) seen.login = true;
+  else seen.whyNone = last;
+  pc.addEventListener('icecandidate', (e) => {
+    const c = e.candidate;
+    // (`type` where the browser fills it in, else the candidate's own line.)
+    if (c && (c.type === 'relay' || (!c.type && / typ relay(\s|$)/.test(c.candidate)))) seen.route = true;
+  });
+  pc.addEventListener('signalingstatechange', () => {
+    if (pc.remoteDescription) seen.answered = true;
+  });
+}
+
+/**
+ * What's counted for a join whose host was there and answered, and still no
+ * link came (count.ts countEvent): a relay candidate and still no link; a
+ * login but no relay candidate (the TURN server didn't answer); or no relay
+ * login and why, as the Relay's last fetch had gone when the latest attempt
+ * was made (watchAttempt). Where that said nothing (a login then, or no
+ * fetch ended yet): how `lastNow`, the Relay's last fetch as the join gives
+ * up, went: `late` when it brought one (after the attempts), why not when
+ * it didn't, and no answer when none has ended. Null where no attempt got
+ * the host's answer.
+ */
+export function relayEvent(seen: RelaySeen, lastNow: NoLogin | 'got' | null): string | null {
+  if (!seen.answered) return null;
+  if (seen.route) return 'relay/route';
+  if (seen.login) return 'relay/no-route';
+  if (seen.whyNone && seen.whyNone !== 'got') return `relay/no-login-${seen.whyNone}`;
+  return `relay/no-login-${lastNow === 'got' ? 'late' : (lastNow ?? 'unreached')}`;
 }

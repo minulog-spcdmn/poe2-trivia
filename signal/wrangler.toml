@@ -1,0 +1,32 @@
+# The game's own matchmaking server (worker.js); README, "Matchmaking server".
+# Cloudflare Workers Builds deploys it from main whenever a merge changes
+# signal/, with this file as it is on main.
+name = "poe2-signal"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+# No request logs kept: they'd store each player's IP address (datenschutz.html).
+[observability]
+enabled = false
+
+# The one Object every peer meets in (SQLite-backed, as the free plan has them).
+[[durable_objects.bindings]]
+name = "SIGNAL"
+class_name = "Signal"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Signal"]
+
+# Connections (and new ids) a single address (an IPv6 one's /56) may ask for
+# a minute: a page makes a few as it hosts, joins or lists the open rooms, and
+# again as it reconnects; this slows a script spending the free allowance,
+# with room for a school's or a carrier's shared address.
+[[ratelimits]]
+name = "PER_ADDRESS"
+namespace_id = "1002"
+
+  [ratelimits.simple]
+  limit = 120
+  period = 60

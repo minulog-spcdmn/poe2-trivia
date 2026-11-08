@@ -1,6 +1,24 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AWAY_AFTER_MS, LATE_PONG_MS, SLOW_CLEAR_MS, SLOW_RTT_MS, UNLISTED_AWAY_MS, goneFromEnd, greyed, markOf, missingNote, namesList, notReady, slowLink, standingOf } from '../src/lib/presence.ts';
+import {
+  AWAY_AFTER_MS,
+  IDLE_AFTER_MS,
+  LATE_PONG_MS,
+  SLOW_CLEAR_MS,
+  SLOW_RTT_MS,
+  UNLISTED_AWAY_MS,
+  UNLISTED_LOBBY_IDLE_MS,
+  goneFromEnd,
+  goneFromLobby,
+  greyed,
+  markOf,
+  missingNote,
+  namesList,
+  notReady,
+  presenceOf,
+  slowLink,
+  standingOf,
+} from '../src/lib/presence.ts';
 
 test('a player gone from the screen shows as away only once a quick look elsewhere is over', () => {
   const since = 1000;
@@ -12,6 +30,9 @@ test('a player gone from the screen shows as away only once a quick look elsewhe
   assert.equal(standingOf({ presence: 'idle', since }, true, since), 'idle');
   assert.equal(standingOf({ presence: 'here', since }, true, since), 'slow');
   assert.equal(standingOf({ presence: 'here', since }, false, since), null);
+  // Away as long as idle takes is idle, told by a page from before hidden ones went idle by themselves.
+  assert.equal(standingOf({ presence: 'away', since }, false, since + IDLE_AFTER_MS - 1), 'away');
+  assert.equal(standingOf({ presence: 'away', since }, false, since + IDLE_AFTER_MS), 'idle');
 });
 
 test('a host idle on the end screen, or away from it a minute, takes the room off the list; a look at another tab does not', () => {
@@ -23,6 +44,26 @@ test('a host idle on the end screen, or away from it a minute, takes the room of
   assert.equal(goneFromEnd({ presence: 'away', since }, since + UNLISTED_AWAY_MS), true);
   // Idle is already two minutes untouched.
   assert.equal(goneFromEnd({ presence: 'idle', since }, since), true);
+});
+
+test('a game behind another tab is away, and idle once no sign of its player has come for as long as one left on screen', () => {
+  assert.equal(presenceOf(false, 0), 'here');
+  assert.equal(presenceOf(true, 0), 'away');
+  assert.equal(presenceOf(true, IDLE_AFTER_MS - 1), 'away');
+  // A tab left behind another for good is no quick look: the room sees them as idle, as it would on screen.
+  assert.equal(presenceOf(true, IDLE_AFTER_MS), 'idle');
+  assert.equal(presenceOf(false, IDLE_AFTER_MS - 1), 'here');
+  assert.equal(presenceOf(false, IDLE_AFTER_MS), 'idle');
+});
+
+test('a host idle in the lobby a good while takes the room off the list; one away, or idle a little, does not', () => {
+  const since = 1000;
+  assert.ok(UNLISTED_LOBBY_IDLE_MS > UNLISTED_AWAY_MS);
+  assert.equal(goneFromLobby({ presence: 'here', since }, since + 10 * UNLISTED_LOBBY_IDLE_MS), false);
+  // Away comes before idle, which a tab left behind another reaches in time (presenceOf).
+  assert.equal(goneFromLobby({ presence: 'away', since }, since + 10 * UNLISTED_LOBBY_IDLE_MS), false);
+  assert.equal(goneFromLobby({ presence: 'idle', since }, since + UNLISTED_LOBBY_IDLE_MS - 1), false);
+  assert.equal(goneFromLobby({ presence: 'idle', since }, since + UNLISTED_LOBBY_IDLE_MS), true);
 });
 
 test("a slow link doesn't flicker: it turns slow above one round trip and clears below a shorter one", () => {

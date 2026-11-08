@@ -23,13 +23,19 @@ run-name: "Redraws: ${{ github.event.pull_request.title || github.ref_name }}"
 # watching: no file of the game's, the root's (but markdown), the sweep's
 # or this workflow, and its beta built byte for byte as main's
 # (scripts/redraws-unchanged.mjs, in the first job). Docs, tests and the
-# other scripts, mostly.
+# other scripts, mostly. Or the owner says so: the label "skip redraws",
+# for a change that can't move a pixel though it changes the game's files
+# (the matchmaking, say: session.svelte.ts runs in every scene, so no file
+# list tells), passes it in seconds, Tests still required. Adding or taking
+# it off runs the check again. It stays on through later pushes, so a push
+# the owner's word didn't cover takes it off first (docs/qa.md).
 #
 # A title or description edit runs it again too (edited, for a pull request
 # moved onto main): skipped, it would leave a skipped Redraws, which GitHub
 # counts as passed. So the verdict below passes only on every job passing,
 # or on the first job finding nothing changed. On a push to main only the
-# caches are made, so a pull request finds the packages and the shell there.
+# caches are made, so a pull request finds npm's packages, the shell and the
+# fonts it needs there.
 #
 # Run it by hand (Run workflow) on any branch, and the job's summary lists
 # what it found and the moments as measured, to commit as the baseline when
@@ -38,7 +44,7 @@ run-name: "Redraws: ${{ github.event.pull_request.title || github.ref_name }}"
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
   merge_group:
   push:
     branches: [main]
@@ -52,10 +58,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # On main: the npm packages and the headless shell put in the caches, which pull requests read from.
+  # Every job on Ubuntu 24.04, not ubuntu-latest: Playwright has no headless shell for 26.04 (ubuntu-latest since November 2026).
+  # On main: the npm packages, the headless shell and its system packages put in the caches, which pull requests read from.
   caches:
     if: ${{ github.event_name == 'push' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -66,29 +73,44 @@ jobs:
           cache: npm
       - run: npm ci
       - id: playwright
-        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+          echo "os=$ImageOS" >> "$GITHUB_OUTPUT"
+          echo "image=$ImageVersion" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-shell-${{ steps.playwright.outputs.version }}
       - run: npx playwright-core install --only-shell chromium
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/shell-packages
+          key: shell-packages-${{ steps.playwright.outputs.version }}-${{ steps.playwright.outputs.os }}-${{ steps.playwright.outputs.image }}
+          restore-keys: shell-packages-${{ steps.playwright.outputs.version }}-${{ steps.playwright.outputs.os }}-
+      - run: bash scripts/shell-packages.sh
 
-  # Whether the pull request changes nothing the check sees: then it passes without the jobs below.
+  # Whether the pull request changes nothing the check sees, or has the label "skip redraws" (the
+  # owner's word that it can't move a pixel): then it passes without the jobs below.
   # (Only on a pull request: in the merge queue or run by hand, every job runs.)
   unchanged:
     name: What changed
     if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      SKIP: ${{ contains(github.event.pull_request.labels.*.name, 'skip redraws') }}
     outputs:
       same: ${{ steps.same.outputs.same }}
     steps:
-      - uses: actions/checkout@v4
+      # (With the label, nothing to check out or build: it passes in seconds.)
+      - if: ${{ env.SKIP != 'true' }}
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
           # The merge commit and its parents: main, and the pull request.
           fetch-depth: 2
-      - uses: actions/setup-node@v4
+      - if: ${{ env.SKIP != 'true' }}
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
@@ -96,7 +118,12 @@ jobs:
       # change (main's sees the script changed, and every job runs). With none on main, every job runs.
       - id: same
         run: |
-          if git show HEAD^1:scripts/redraws-unchanged.mjs > scripts/redraws-unchanged.main.mjs; then
+          if [ "$SKIP" = true ]; then
+            text='The pull request has the label "skip redraws": passed without watching the scenes.'
+            echo "$text"
+            { echo '## Redraws'; echo; echo "$text"; } >> "$GITHUB_STEP_SUMMARY"
+            echo "same=true" >> "$GITHUB_OUTPUT"
+          elif git show HEAD^1:scripts/redraws-unchanged.mjs > scripts/redraws-unchanged.main.mjs; then
             node scripts/redraws-unchanged.main.mjs
           else
             echo "main has no scripts/redraws-unchanged.mjs yet: every job runs."
@@ -108,7 +135,7 @@ jobs:
     # (Unless that job passed and found nothing changed: one that failed or didn't run leaves every job here to run.)
     if: ${{ !cancelled() && github.event_name != 'push' && !(needs.unchanged.result == 'success' && needs.unchanged.outputs.same == 'true') }}
     name: ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -143,14 +170,26 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # Chrome's headless shell as playwright-core's version has it, kept between runs.
+      # Chrome's headless shell as playwright-core's version has it, kept between runs, and the
+      # system packages it needs that the runner hasn't (the fonts), kept too: Ubuntu's mirror
+      # crawls now and then, and two jobs ran out of time on it (scripts/shell-packages.sh). Those
+      # are kept for each image of the runner's, and a new one starts from the last one's.
       - id: playwright
-        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+          echo "os=$ImageOS" >> "$GITHUB_OUTPUT"
+          echo "image=$ImageVersion" >> "$GITHUB_OUTPUT"
       - uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: playwright-shell-${{ steps.playwright.outputs.version }}
-      - run: npx playwright-core install --with-deps --only-shell chromium
+      - run: npx playwright-core install --only-shell chromium
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/shell-packages
+          key: shell-packages-${{ steps.playwright.outputs.version }}-${{ steps.playwright.outputs.os }}-${{ steps.playwright.outputs.image }}
+          restore-keys: shell-packages-${{ steps.playwright.outputs.version }}-${{ steps.playwright.outputs.os }}-
+      - run: bash scripts/shell-packages.sh
       - run: npm run sweep -- --redraws ${{ matrix.args }}
       # A box drawn again every frame, which has to fail: the trace still read right (a playwright-core bump can change it).
       - if: ${{ matrix.canary }}
@@ -170,14 +209,14 @@ jobs:
     name: Redraws
     needs: [unchanged, redraws]
     if: ${{ always() && github.event_name != 'push' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - env:
           SAME: ${{ needs.unchanged.result == 'success' && needs.unchanged.outputs.same == 'true' }}
           WATCHED: ${{ needs.redraws.result }}
         run: |
           if [ "$SAME" = true ] && [ "$WATCHED" = skipped ]; then
-            echo "Nothing the check sees changed (scripts/redraws-unchanged.mjs): passed without watching."
+            echo "Nothing the check sees changed (scripts/redraws-unchanged.mjs), or the label \"skip redraws\" says so: passed without watching."
             exit 0
           fi
           test "$WATCHED" = success

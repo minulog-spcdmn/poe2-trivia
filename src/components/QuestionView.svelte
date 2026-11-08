@@ -13,7 +13,7 @@
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import Avatar from './Avatar.svelte';
-  import ArtImage from './ArtImage.svelte';
+  import ArtImage, { type Within } from './ArtImage.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { questionCircle } from './gameCircles.svelte';
   import { switchedOff } from '../lib/switchedOff';
@@ -745,6 +745,15 @@
     return index === reveal.chosenIndex;
   }
 
+  /**
+   * Where the item's own art goes at the reveal: where its item was in the
+   * picture shown during the question (the host's altered copy: padded,
+   * shifted and a little smaller), so it takes over without moving or
+   * growing. None where nothing was shown, or the host didn't say.
+   */
+  const inCopy = (copy: { w: number; h: number; place?: Within['place'] } | undefined): Within | undefined =>
+    copy?.place ? { w: copy.w, h: copy.h, place: copy.place } : undefined;
+
   /** Revealed: was this picture (option index, or 0 for a name question's art) shown mirrored? */
   function mirrored(index: number) {
     return !!reveal && !!q.mirrored?.[index];
@@ -1011,6 +1020,15 @@
 
   /** Frees the options should the host's word on an answer never come. */
   let fallback: ReturnType<typeof setTimeout> | undefined;
+  /** How long a picked picture takes to come forward (.tile.lifted's transition, ms). */
+  const PICK_RISE_MS = 350;
+  /**
+   * The picture just picked, held forward till it has come all the way: a
+   * verdict quicker than that (the host's own answer, a near host's word)
+   * turns it back once it's at rest, never in the middle of coming forward.
+   */
+  let rising = $state<number | null>(null);
+  let risen: ReturnType<typeof setTimeout> | undefined;
   /** The longest the options wait shut for that word (ms): a far host's round trip and then some. */
   const PICK_WAIT_MS = 6000;
   function answer(index: number) {
@@ -1018,6 +1036,9 @@
     // Time's up: the host only waits a moment longer for answers already on their way.
     if (q.deadline && session.hostNow() > q.deadline) return;
     chosen = index;
+    rising = index;
+    clearTimeout(risen);
+    risen = setTimeout(() => (rising = null), PICK_RISE_MS);
     charge?.stop();
     if (optionEls[index]) charge = answerCharging(optionEls[index]);
     sfx('select', { from: { from: optionEls[index] } });
@@ -1477,6 +1498,8 @@
           <!-- Only a picture the reveal names opens its details: the untouched decoys stay anonymous (see named). -->
           {@const shownItem = option && named(i) ? option : undefined}
           {@const pic = option ? { url: itemImage(option.art), w: option.w, h: option.h } : waiting ? undefined : media?.options[i]}
+          <!-- (The original art at the reveal, where the item was in the picture or veil shown till then.) -->
+          {@const laid = option ? inCopy(media?.options[i] ?? media?.tileVeils[i]) : undefined}
           <!-- Delve: a veiled picture burns in patch by patch, until the reveal names it. -->
           {@const tv = !pic && !waiting ? media?.tileVeils[i] : undefined}
           <!-- Once answered, each picture the reveal names opens that item's details. -->
@@ -1487,6 +1510,7 @@
             data-fx="hover"
             bind:this={optionEls[i]}
             class:mine={mine && !reveal}
+            class:lifted={st === 'pending' || rising === i}
             class:inspect={!!shownItem}
             class:struck={struckAt.has(i)}
             aria-label={shownItem ? `${shownItem.name}${st === 'right' || st === 'wrong' ? `, ${st}` : ''}: see its details` : struckAt.has(i) ? `Option ${i + 1}, crossed out: ${struckBy(i)} picked it and it’s wrong` : undefined}
@@ -1510,7 +1534,7 @@
               <span class="pic">
                 {#if pic}
                   <!-- Named pictures switch to the original art, so a mirrored one turns round. -->
-                  <ArtImage src={pic.url} w={pic.w} h={pic.h} alt="Option {i + 1}" scale={1.6} unflip={mirrored(i) && !!q.options[i]} />
+                  <ArtImage src={pic.url} w={pic.w} h={pic.h} alt="Option {i + 1}" scale={1.6} unflip={mirrored(i) && !!q.options[i]} within={laid} />
                 {:else if tv}
                   {@const ps = tilePatches(i)}
                   <span class="art-slot">
@@ -1610,10 +1634,10 @@
               </span>
               </span>
             {:else if !media?.veil && ((showFull && drawn) || (media?.art && !waiting))}
-              <!-- One picture throughout: at the reveal the original art takes over in it, once loaded (ArtImage). -->
+              <!-- One picture throughout: at the reveal the original art takes over in it, once loaded, where its item was (ArtImage). -->
               {@const full = showFull && drawn ? drawn : null}
               {@const art = full ? { url: itemImage(full.art), w: full.w, h: full.h } : media!.art!}
-              <ArtImage src={art.url} alt={full ? full.name : 'The item to identify'} w={art.w} h={art.h} float unflip={!!full && mirrored(0)} />
+              <ArtImage src={art.url} alt={full ? full.name : 'The item to identify'} w={art.w} h={art.h} float unflip={!!full && mirrored(0)} within={full ? inCopy(media?.art ?? undefined) : undefined} />
             {:else if !showFull}
               <span class="loading big" aria-label="Loading"></span>
             {/if}
@@ -2957,6 +2981,9 @@
   .tile.inspect:not(:disabled):hover .pic,
   .tile.inspect:not(:disabled):focus-visible .pic {
     transform: scale(1.04);
+    transition:
+      transform 0.35s var(--ease-out),
+      filter 0.3s;
   }
   /* Bright enough to read on a picture dimmed at the reveal. */
   .lens-key {
@@ -2988,10 +3015,23 @@
       inset 0 0 0 1px rgba(241, 217, 155, 0.1),
       inset 0 0 30px rgba(201, 164, 92, 0.18);
   }
+  /* (Picked, it stays forward till it has come all the way: lifted, see rising.) */
   .tile.mine:not(:disabled):hover .pic,
   .tile.mine:not(:disabled):focus-visible .pic,
-  .tile.pending .pic {
+  .tile.lifted .pic {
     transform: scale(1.06);
+  }
+  /* At the verdict the picture picked settles back from rest, slower than it
+     came forward: the game does it, not the player. Coming forward stays quick. */
+  .tile:is(.right, .wrong, .dim) .pic {
+    transition:
+      transform 0.6s ease-in-out,
+      filter 0.3s;
+  }
+  .tiles .tile.lifted .pic {
+    transition:
+      transform 0.35s var(--ease-out),
+      filter 0.3s;
   }
   /* A picture is tall: a wider glow, and the embers kept to the bottom edge. */
   .tile .sheen::after {

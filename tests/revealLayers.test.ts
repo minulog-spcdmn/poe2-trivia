@@ -37,7 +37,7 @@ test("a picture's fades and turn are on its box, which holds the picture over it
   const img = art.markup.match(/<img\b[^>]*>/g);
   assert.equal(img?.length, 1, 'ArtImage draws one <img>');
   assert.doesNotMatch(img![0], /\b(in|out|transition|animate):|class:unflip/, 'the picture fades and turns with its shadow, on .shot');
-  const shot = art.markup.match(/<span class="shot"[^>]*>([\s\S]*?)<\/span>\s*\{\/key\}/);
+  const shot = art.markup.match(/<span\s+class="shot"[^>]*>([\s\S]*?)<\/span>\s*\{\/key\}/);
   assert.ok(shot, 'ArtImage has its .shot');
   assert.match(shot[0], /in:fade/);
   assert.match(shot[0], /out:fade/);

@@ -81,6 +81,9 @@ jobs:
     outputs:
       sha: ${{ steps.find.outputs.sha }}
       cached: ${{ steps.cache.outputs.cache-hit }}
+      # Set once the lookup has answered, beta or none (a job that fails
+      # under continue-on-error can still read as a success in `needs`).
+      found: ${{ steps.find.outputs.found }}
     steps:
       - name: Find the beta's commit
         id: find
@@ -93,6 +96,7 @@ jobs:
           else
             sha=$(gh api "repos/$GITHUB_REPOSITORY/deployments?environment=beta&per_page=1" --jq '.[0].sha // empty')
           fi
+          echo "found=true" >> "$GITHUB_OUTPUT"
           if [ -z "$sha" ]; then
             echo "No beta yet; deploying the live site only."
             exit 0
@@ -154,12 +158,20 @@ jobs:
           if [ -f scripts/qa-before.mjs ] && [ -f dist/qa.html ]; then
             VITE_CHANNEL=beta node scripts/qa-before.mjs dist/before
           fi
-      - name: List the files the beta changes, for the QA desk's "This change"
+      # Where the change shows (scripts/qa-change.mjs: the places that run its
+      # lines, by the scene map, which takes the history back to the map's
+      # commit: the checkout has all of it). A branch from before the script
+      # lists its files.
+      - name: Find where the beta's change shows, for the QA desk's "This change"
         run: |
           base=$(git merge-base origin/main HEAD 2>/dev/null || true)
           if [ -n "$base" ] && [ -f dist/qa.html ]; then
             before=$([ -f dist/before/qa.html ] && echo before/ || true)
-            git diff --name-only "$base" HEAD | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => process.stdout.write(JSON.stringify({ base: process.argv[1], files: s.split(/\r?\n/).filter(Boolean), ...(process.argv[2] ? { before: process.argv[2] } : {}) })))' "$base" "$before" > dist/qa-change.json
+            if [ -f scripts/qa-change.mjs ]; then
+              node scripts/qa-change.mjs $before > dist/qa-change.json
+            else
+              git diff --name-only "$base" HEAD | node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => process.stdout.write(JSON.stringify({ base: process.argv[1], files: s.split(/\r?\n/).filter(Boolean), ...(process.argv[2] ? { before: process.argv[2] } : {}) })))' "$base" "$before" > dist/qa-change.json
+            fi
           fi
       - uses: actions/upload-artifact@v4
         with:
@@ -219,9 +231,9 @@ jobs:
           SHA: ${{ needs.find-beta.outputs.sha }}
           CACHED: ${{ needs.find-beta.outputs.cached }}
           BUILT: ${{ needs.beta.outputs.built }}
-          FOUND: ${{ needs.find-beta.result }}
+          FOUND: ${{ needs.find-beta.outputs.found }}
         run: |
-          if [ "$FOUND" != success ]; then
+          if [ "$FOUND" != true ]; then
             echo "::warning::Couldn't look up the beta, so poe2.quest/beta/ is left out of this deploy. Run this workflow again to bring it back."
           fi
           if [ -n "$SHA" ] && [ "$CACHED" = true ]; then from=cache
@@ -293,7 +305,15 @@ jobs:
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.again.outputs.page_url || steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+      # Now and then GitHub's side never finishes taking an upload in
+      # (syncing_files until the step's 10 minutes run out, and it cancels
+      # it), however healthy the build: put up the same one once more, as
+      # running the job again by hand did.
+      - id: again
+        if: steps.deployment.outcome == 'failure'
         uses: actions/deploy-pages@v4

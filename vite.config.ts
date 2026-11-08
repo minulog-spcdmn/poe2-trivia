@@ -7,6 +7,7 @@ import { hostname, userInfo } from 'node:os';
 import { channelOf } from './src/lib/channel.ts';
 import { COUNTER_ORIGIN } from './src/lib/counter.ts';
 import { RELAY_URL } from './src/lib/relayUrl.ts';
+import { OWN_SIGNAL_HOST } from './src/lib/signalHost.ts';
 import type { AtRule, Node, Rule } from 'postcss';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { backdropsErrors, formatBackdrops, type Backdrops } from './src/lib/backdropData.ts';
@@ -18,12 +19,13 @@ import { polyfillsFirst, polyfillsScript, readableRegexes } from './polyfillsFir
 import { peerjsProbe } from './peerjsProbe.ts';
 import { qaServer } from './qaServer.ts';
 import { themedCursors } from './themedCursors.ts';
+import { unwatched } from './unwatched.ts';
 import { weaveTile } from './weaveTile.ts';
 import { whereMaps } from './whereMaps.ts';
 
 /**
  * Content Security Policy for the production build: the page may only run its
- * own scripts and talk to itself and the PeerJS signalling server. (WebRTC
+ * own scripts and talk to itself and the signalling servers. (WebRTC
  * connections between players aren't covered by CSP.) Not applied in dev,
  * where Vite needs inline scripts and its own websocket.
  */
@@ -31,7 +33,9 @@ function csp(env: Record<string, string>): Plugin {
   const peerHost = env.VITE_PEER_HOST || '0.peerjs.com';
   const secure = (env.VITE_PEER_SECURE ?? 'true') === 'true';
   const port = env.VITE_PEER_HOST && env.VITE_PEER_PORT ? `:${env.VITE_PEER_PORT}` : '';
-  const signalling = `${secure ? 'https' : 'http'}://${peerHost}${port} ${secure ? 'wss' : 'ws'}://${peerHost}${port}`;
+  // And the game's own (lib/peer.ts), for a page the cloud turns away, unless the signalling is self-hosted.
+  const own = env.VITE_PEER_HOST || !OWN_SIGNAL_HOST ? '' : ` https://${OWN_SIGNAL_HOST} wss://${OWN_SIGNAL_HOST}`;
+  const signalling = `${secure ? 'https' : 'http'}://${peerHost}${port} ${secure ? 'wss' : 'ws'}://${peerHost}${port}${own}`;
   const policy = (inline: string) => [
     "default-src 'self'",
     // And the one inline script, the built-ins an older browser lacks (polyfillsFirst), by its hash.
@@ -79,8 +83,8 @@ function betaPages(env: Record<string, string>): Plugin {
       const file = join(outDir, 'manifest.webmanifest');
       if (!existsSync(file)) return;
       const manifest = JSON.parse(readFileSync(join(publicDir, 'manifest.webmanifest'), 'utf8'));
-      manifest.name = `Beta • ${manifest.name}`;
-      manifest.short_name = 'PoE2 Beta';
+      // The installed app's name, plain like the live one's: no bullet to be cut off.
+      manifest.name = manifest.short_name = 'PoE2 Beta';
       writeFileSync(file, JSON.stringify(manifest, null, 2) + '\n');
     },
     transformIndexHtml(html) {
@@ -94,6 +98,8 @@ function betaPages(env: Record<string, string>): Plugin {
           .replace(/\n\s*<link rel="canonical"[^>]*>/, '')
           .replace(/(property="og:url" content=")https:\/\/poe2\.quest\//, '$1https://poe2.quest/beta/')
           .replace(/((?:property="og:title"|name="twitter:title") content=")/g, '$1Beta • ')
+          // The home screen's name on iOS, as the manifest's short_name is Android's.
+          .replace(/(name="apple-mobile-web-app-title" content=")[^"]*/, '$1PoE2 Beta')
       );
     },
   };
@@ -360,6 +366,9 @@ export default defineConfig(({ command, mode }) => {
     base: './',
     plugins: [svelte(), glslMinify(), peerjsProbe(), polyfillsFirst(), csp(env), errorsFirst(), readableRegexes(), betaPages(env), preloadFonts(), fontinNotice(), keyframesFirst(), backdropSave(), devHub(env), weaveTile(), whereMaps(), qaServer(process.cwd())],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
+    // Not the scripts' builds, runs and profiles, nor other worktrees: walking them held up a cold start (unwatched.ts).
+    // From this checkout down, where the config is (the QA desk's "before" server loads its own from elsewhere).
+    server: { watch: { ignored: unwatched(fileURLToPath(new URL('.', import.meta.url))) } },
     // Module workers, so one (the plates', lib/plateWorker.ts) can load only what it's asked for. Their scripts
     // get the tables that say where an error came from too (whereMaps.ts: one of theirs reaches the page's count), and
     // are held to the regular expressions an older Safari can read (polyfillsFirst.ts readableRegexes) as the page's are.
