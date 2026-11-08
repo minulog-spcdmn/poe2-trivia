@@ -6,9 +6,11 @@
 // question's rune circle in it (some forty layers), took 15 to 25 ms of the
 // frame after Next for that alone. An element with `use:outWithoutInert` goes
 // out the same way by other means, none of which repaints anything under it:
-// it takes no clicks (pointer-events, which repainted one layer there), gives
-// up the focus, is hidden from screen readers, and is marked as leaving for
-// the code that skips what is going (GONE).
+// it takes no presses, gives up the focus, is hidden from screen readers, and
+// is marked as leaving for the code that skips what is going (GONE). Presses
+// are stopped as they come down to it rather than by pointer-events, which is
+// inherited as inert is: Chrome restyled all under it for that (the lobby's
+// 222 elements, 5 to 7 ms of Begin's click, #331) and WebKit repainted a layer.
 
 /** What is on its way out: made inert by Svelte, or marked leaving here. */
 export const GONE = '[inert], [data-leaving]';
@@ -16,10 +18,19 @@ export const GONE = '[inert], [data-leaving]';
 /** The elements on their way out whose focus and screen readers are let go of in the next animation frame (goOut). */
 const letGo = new Map<HTMLElement, number>();
 
+/** The presses what is going takes none of: a button's, a card's, a key's on what holds the focus. */
+const PRESSES = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'auxclick', 'contextmenu', 'keydown', 'keyup'];
+
+/** A press on what is going, stopped before it reaches anything in it (a capture listener on the element). */
+function stop(e: Event) {
+  e.stopPropagation();
+  e.preventDefault();
+}
+
 /** What an element's own `inert` would do for it as it goes out, done as outWithoutInert does it. */
 function goOut(node: HTMLElement) {
   node.dataset.leaving = '';
-  node.style.pointerEvents = 'none';
+  for (const type of PRESSES) node.addEventListener(type, stop, true);
   // As inert would: the focus can't stay on what can no longer be used (the
   // card just picked). Let go first: Chrome won't hide from screen readers
   // what holds the focus, and warns of it. In the frame's animation frame,
@@ -40,13 +51,13 @@ function goOut(node: HTMLElement) {
 }
 
 /** Back, its outro turned round by an intro (a key changed back). */
-function comeBack(node: HTMLElement, style: { pointerEvents: string; hidden: string | null }) {
+function comeBack(node: HTMLElement, hidden: string | null) {
   cancelAnimationFrame(letGo.get(node) ?? 0);
   letGo.delete(node);
   delete node.dataset.leaving;
-  node.style.pointerEvents = style.pointerEvents;
-  if (style.hidden === null) node.removeAttribute('aria-hidden');
-  else node.setAttribute('aria-hidden', style.hidden);
+  for (const type of PRESSES) node.removeEventListener(type, stop, true);
+  if (hidden === null) node.removeAttribute('aria-hidden');
+  else node.setAttribute('aria-hidden', hidden);
 }
 
 /**
@@ -56,7 +67,7 @@ function comeBack(node: HTMLElement, style: { pointerEvents: string; hidden: str
  * takes those, and the attribute is never set.
  */
 export function outWithoutInert(node: HTMLElement) {
-  const style = { pointerEvents: node.style.pointerEvents, hidden: node.getAttribute('aria-hidden') };
+  const hidden = node.getAttribute('aria-hidden');
   let out = false;
   Object.defineProperty(node, 'inert', {
     configurable: true,
@@ -65,7 +76,7 @@ export function outWithoutInert(node: HTMLElement) {
       if (!!v === out) return;
       out = !!v;
       if (out) goOut(node);
-      else comeBack(node, style);
+      else comeBack(node, hidden);
     },
   });
   return {
