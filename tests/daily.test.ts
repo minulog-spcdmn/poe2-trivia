@@ -1,8 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Engine, TWINS, allArt, answerDrawn, isFake, type Question } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, GRACE_DAYS, GRACE_SINCE, TOO_THIN, dailyEngine, graceOn, aTopic, answerDaily, answerLog, askOne, daysOf, dailyGame, answeredOn, cutoffDay, dailyQuestion, dealLive, hoursLeft, minutesLeft, nextIn, parseDaily, parseLog, replay, streakOn, untilNextMinute, upTo, utcDay, type DailyRecord } from '../src/lib/daily.ts';
+import { createHash } from 'node:crypto';
+import { Engine, TWINS, allArt, answerDrawn, isFake, type Item, type Question } from '../src/lib/game.ts';
+import { DAILY_LAUNCH, DAILY_NEW_WEEK, GRACE_DAYS, askable, GRACE_SINCE, TOO_THIN, dailyEngine, graceOn, aTopic, answerDaily, answerLog, askOne, daysOf, dailyGame, answeredOn, cutoffDay, dailyQuestion, dealLive, hoursLeft, minutesLeft, nextIn, parseDaily, parseLog, replay, streakOn, untilNextMinute, newWeek, upTo, utcDay, type DailyRecord } from '../src/lib/daily.ts';
+import { NEW_FADE_DAYS, NEW_HALF_DAYS, RELEASES, dayNumber, newShare, newStrength } from '../src/lib/releases.ts';
 import { fakes, items, seeded } from './helpers.ts';
+import dailyArt from '../src/data/dailyArt.json' with { type: 'json' };
 
 const HOUR = 3_600_000;
 const at = (iso: string) => Date.parse(iso);
@@ -49,6 +52,156 @@ test("a day's question is dealt the same every time", () => {
   }
 });
 
+// A release's items, as its refresh stamps them (releases.ts), those `pick` picks, on items stamped by none yet.
+const release = RELEASES.at(-1)!;
+const unstamped: Item[] = items.map(({ added: _, ...it }) => it);
+const stamped = (pick: (it: Item, i: number) => boolean, on = release.from): Item[] => unstamped.map((it, i) => (pick(it, i) ? { ...it, added: on } : it));
+const asNew = stamped((it, i) => it.kind !== 'gem' && i % 8 === 0);
+const newIds = new Set(asNew.filter((it) => it.added).map((it) => it.id));
+
+/** The answers of the days from `from` to before `to`, each day dealt from the answers before it, as npm run deal does. */
+function dealDays(from: number, to: number, data: Item[] = asNew): Map<number, string> {
+  const asked: string[] = [];
+  const dealt = new Map<number, string>();
+  for (let day = from; day < to; day++) {
+    const q = dealLive(data, fakes, day, asked);
+    asked.push(q.itemId);
+    dealt.set(day, q.itemId);
+  }
+  return dealt;
+}
+
+test('a release’s items have Today’s unique to themselves for a week, from the day after their refresh', () => {
+  const week = newWeek(asNew)!;
+  assert.equal(week.from, dayNumber(release.from) + 1);
+  assert.equal(newWeek(unstamped), null, 'none without a release’s items');
+  const dealt = dealDays(week.from - 20, week.from + DAILY_NEW_WEEK + 20);
+  for (let day = week.from - 20; day < week.from; day++) assert.ok(!newIds.has(dealt.get(day)!), `none before they came (day ${day - week.from})`);
+  for (let day = week.from; day < week.from + DAILY_NEW_WEEK; day++) assert.ok(newIds.has(dealt.get(day)!), `day ${day - week.from + 1} of the week`);
+  assert.ok([...dealt].some(([day, id]) => day >= week.from + DAILY_NEW_WEEK && !newIds.has(id)), 'then any item again');
+});
+
+test('a release with fewer items than the week asks each of them once, then any item', () => {
+  // Three that are plain to show, one of a kind (no twin, no thin picture).
+  const plain = (it: Item) => it.kind !== 'gem' && !TWINS.some((t) => t.names.includes(it.name)) && allArt(it).every((a) => !TOO_THIN.has(a.art));
+  const three = new Set(['Rings', 'Helmets', 'Body Armours'].map((c) => unstamped.find((it) => it.category === c && plain(it))!.id));
+  const data = stamped((it) => three.has(it.id));
+  const week = newWeek(data)!;
+  const answers = [...dealDays(week.from - 20, week.from + DAILY_NEW_WEEK, data)].filter(([day]) => day >= week.from).map(([, id]) => id);
+  assert.deepEqual(new Set(answers.slice(0, 3)), three);
+  assert.ok(answers.slice(3).every((id) => !three.has(id)));
+});
+
+test('after its week, a release’s items come up twice as often as their share, fading to as often as any by the end of its first month', () => {
+  const pick = (it: Item, i: number) => it.kind !== 'gem' && i % 4 === 0;
+  /** Of 400 releases a day apart (so each day deals anew), the shares of theirs `age` days after their refresh: of the answers, and of the wrong options. */
+  const share = (age: number, leaning: boolean) => {
+    let answers = 0;
+    let options = 0;
+    let wrong = 0;
+    for (let k = 0; k < 400; k++) {
+      const on = new Date(Date.parse(`${release.from}T00:00:00Z`) + k * 86_400_000).toISOString().slice(0, 10);
+      const data = stamped(pick, on);
+      const ids = new Set(data.filter((it) => it.added).map((it) => it.id));
+      // (The week's days asked theirs, as a deal through it would have; and without the lean, the same out of the way.)
+      const asked = [...ids].slice(0, DAILY_NEW_WEEK);
+      const q = dealLive(leaning ? data : unstamped, fakes, dayNumber(on) + age, asked);
+      if (ids.has(q.itemId)) answers++;
+      for (const id of q.options) {
+        if (id === q.itemId || isFake(id)) continue;
+        wrong++;
+        if (ids.has(id)) options++;
+      }
+    }
+    return { answers: answers / 400, options: options / wrong };
+  };
+  const own = share(DAILY_NEW_WEEK + 1, false);
+  const first = share(DAILY_NEW_WEEK + 1, true);
+  const later = share(NEW_HALF_DAYS + Math.round(NEW_FADE_DAYS / 2), true);
+  assert.ok(own.answers > 0.1 && own.answers < 0.35, `their own share: ${own.answers}`);
+  assert.ok(first.answers > own.answers * 1.6 && first.answers < Math.min(0.55, own.answers * 2.4), `the day after the week: ${first.answers} against ${own.answers}`);
+  assert.ok(later.answers > own.answers * 1.2 && later.answers < first.answers * 0.9, `halfway through the fade: ${later.answers}`);
+  // Their wrong options lean to them too (the look-alikes, a few names closest to the answer's, only a little).
+  assert.ok(Math.abs(own.options - own.answers) < 0.04, `without the lean, wrong options ${own.options} against answers ${own.answers}`);
+  assert.ok(first.options > own.options + 0.05 && later.options > own.options, `wrong options: ${own.options}, ${first.options}, ${later.options}`);
+  // Past it, a day is dealt as if they were any other items.
+  const end = dayNumber(release.from) + NEW_HALF_DAYS + NEW_FADE_DAYS;
+  for (let day = end; day < end + 20; day++) assert.deepEqual(dealLive(asNew, fakes, day), dealLive(unstamped, fakes, day), `day ${day - end} past the fade`);
+});
+
+test('after the week, the days of theirs come as often as the share says, spread out', () => {
+  const week = newWeek(asNew)!;
+  const dealt = dealDays(week.from - 20, week.from + NEW_HALF_DAYS + NEW_FADE_DAYS, asNew);
+  const after = [...dealt].filter(([day]) => day >= week.from + DAILY_NEW_WEEK && day < week.first + NEW_HALF_DAYS + NEW_FADE_DAYS);
+  const days = after.filter(([, id]) => newIds.has(id)).map(([day]) => day);
+  // Their share of what the day may ask, about: twice it at first, their own by the end.
+  const own = newIds.size / askable(unstamped).length;
+  const expected = after.reduce((sum, [day]) => sum + newShare(own, newStrength(day - week.first), true), 0);
+  assert.ok(Math.abs(days.length - expected) <= 1.5, `${days.length} days of theirs, about ${expected.toFixed(1)} expected`);
+  for (let i = 1; i < days.length; i++) assert.ok(days[i] - days[i - 1] > 1, `days ${days[i - 1]} and ${days[i]} side by side`);
+});
+
+test('a release of more than half the items the daily may ask still has a week of its own', () => {
+  // (As a later league's can be, once the recent answers kept out are most of the items.)
+  const data = stamped((it, i) => it.kind !== 'gem' && i % 3 !== 0);
+  const week = newWeek(data)!;
+  const ids = week.ids;
+  const answers = [...dealDays(week.from - 20, week.from + DAILY_NEW_WEEK, data)].filter(([day]) => day >= week.from);
+  for (const [day, id] of answers) assert.ok(ids.has(id), `day ${day - week.from + 1} of the week`);
+});
+
+test('a day of none of a release’s items picks its category by the items it may ask', () => {
+  // Rings new but five: on the days that ask none of theirs, those five are as likely as any other item, not as if they were all the Rings.
+  const left = new Set(unstamped.filter((it) => it.category === 'Rings').slice(0, 5).map((it) => it.id));
+  let days = 0;
+  let rings = 0;
+  for (let k = 0; k < 300; k++) {
+    const on = new Date(Date.parse(`${release.from}T00:00:00Z`) + k * 86_400_000).toISOString().slice(0, 10);
+    const data = stamped((it) => it.category === 'Rings' && !left.has(it.id), on);
+    const ids = new Set(data.filter((it) => it.added).map((it) => it.id));
+    const q = dealLive(data, fakes, dayNumber(on) + DAILY_NEW_WEEK + 1, [...ids].slice(0, DAILY_NEW_WEEK));
+    if (ids.has(q.itemId)) continue;
+    days++;
+    if (left.has(q.itemId)) rings++;
+  }
+  // Five of the about 470 it may ask: a day in about ninety, not one in thirteen as all the Rings would make it.
+  assert.ok(days > 200 && rings / days < 0.035, `${rings} of ${days} days asked one of the five Rings`);
+});
+
+test('the week is seven days that ask theirs, however late its deal came', () => {
+  // A deal a day late kept the week's first day as it was dealt before: the week runs a day longer.
+  const week = newWeek(asNew)!;
+  const asked: string[] = [];
+  const dealt = new Map<number, string>();
+  for (let day = week.from - 5; day < week.from + DAILY_NEW_WEEK + 3; day++) {
+    // (The first day as a deal before the refresh had it: from the items without theirs.)
+    const q = dealLive(day <= week.from ? unstamped : asNew, fakes, day, asked);
+    asked.push(q.itemId);
+    dealt.set(day, q.itemId);
+  }
+  assert.ok(!newIds.has(dealt.get(week.from)!));
+  for (let day = week.from + 1; day <= week.from + DAILY_NEW_WEEK; day++) assert.ok(newIds.has(dealt.get(day)!), `day ${day - week.from} of the week`);
+});
+
+test('a release’s item that can’t be asked holds up neither the week nor the days after, and no answer comes back early', () => {
+  // A lone item in a group of its own (as 1.0's traps may be at first): too few beside it to make a question of.
+  const like = unstamped.find((it) => it.category === 'One-Handed Weapons' && !TWINS.some((t) => t.names.includes(it.name)))!;
+  const lone: Item = { ...like, id: 'feedface0001', name: 'Pretend Trap', group: 'Traps', variants: undefined, added: release.from };
+  const plain = (it: Item) => it.kind !== 'gem' && !TWINS.some((t) => t.names.includes(it.name)) && allArt(it).every((a) => !TOO_THIN.has(a.art));
+  const others = new Set(['Rings', 'Helmets'].map((c) => unstamped.find((it) => it.category === c && plain(it))!.id));
+  const withFakes = { ...fakes, [lone.name]: ['Pretend Snare', 'Pretend Tripwire'] };
+  for (const data of [[...stamped((it) => others.has(it.id)), lone], [...unstamped, lone]]) {
+    const week = newWeek(data)!;
+    const asked: string[] = [];
+    for (let day = week.from - 30; day < week.from + DAILY_NEW_WEEK + 30; day++) {
+      const q = dealLive(data, withFakes, day, asked);
+      assert.ok(!asked.includes(q.itemId), `day ${day - week.from}: ${q.itemId} again after ${asked.length - asked.lastIndexOf(q.itemId)} days`);
+      asked.push(q.itemId);
+    }
+    for (const id of others) if (data.some((it) => it.id === id && it.added)) assert.ok(asked.includes(id), `${id} asked`);
+  }
+});
+
 test('practice asks as the daily does: twins may meet', () => {
   const byName = new Map(items.map((it) => [it.name, it.id]));
   const engine = dailyEngine(items, fakes, { rng: seeded(1) });
@@ -79,6 +232,12 @@ test('each day asks a named item among four names, one of them made up, never a 
     assert.equal(new Set(q.labels).size, 4, 'four different names');
   }
   assert.ok(seen.size > 45, `the days ask many items (${seen.size} in 60 days)`);
+});
+
+test('the pictures too thin for the start page were measured on every picture there is (run `python3 scripts/daily-art.py`)', () => {
+  // A refresh's new picture, unmeasured, could be a bare stick in the day's circle (as a new dagger or two-handed sword may be).
+  const pictures = items.filter((it) => it.kind !== 'gem').flatMap((it) => allArt(it).map((a) => a.art)).sort();
+  assert.equal(dailyArt.measured, createHash('sha1').update(pictures.join('\n')).digest('hex').slice(0, 12), 'run `python3 scripts/daily-art.py`');
 });
 
 test('the pictures too thin for the start page are real items\' pictures, and never shown there', () => {

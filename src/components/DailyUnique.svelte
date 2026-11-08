@@ -19,6 +19,8 @@
   import { optionIndex } from '../lib/keys';
   import { answerDrawn, isFake, questionTopic, type Item, type Question } from '../lib/game';
   import { clock } from '../lib/clock';
+  import { newestLean } from '../lib/releases';
+  import { rowsChecked } from '../lib/staleRows';
   import { countDaily, countStep } from '../lib/count';
   import { DAILY_KEY, DAYS_KEY, answerLog, answeredOn, askOne, dailyEngine, dailyGame, dailyQuestion, aTopic, dropAhead, graceOn, loadLog, mergeLogs, nextIn, replay, saveLog, settleDays, streakOn, untilNextMinute, upTo, utcDay } from '../lib/daily';
   import { itemImage } from '../lib/ui';
@@ -148,8 +150,8 @@
   });
   const todays = $derived(answeredOn(rec, today));
 
-  // Practice: questions at random, asked as the daily is (twins may meet), kept apart from it.
-  const practiceEngine = dailyEngine(itemData as Item[], fakeNames);
+  // Practice: questions at random, asked as the daily is (twins may meet), kept apart from it, leaning to new items as a game does.
+  const practiceEngine = dailyEngine(itemData as Item[], fakeNames, { lean: newestLean(itemData as Item[]) });
   const practiceGame = dailyGame();
   let practice = $state<Question | null>(null);
   let practicePicked = $state<number | null>(null);
@@ -209,7 +211,7 @@
     log = upTo(stored(), day);
   }
 
-  /** An answer to today's held until the server has said what day it is, or said it again after the device's clock was set (or not for long): the option picked, the last one tapped. */
+  /** An answer to today's held until the server has said what day it is, or said it again after the device's clock was set (or not for long), and in a tab open since an earlier day until today's row has been looked at (lib/staleRows.ts): the option picked, the last one tapped. */
   let held = $state<number | null>(null);
   async function pick(i: number) {
     if (answered || disabled) return;
@@ -225,14 +227,18 @@
     // the device's clock set since the server said (lib/clock refresh): it is
     // asked again first.
     const asking = practice ? undefined : clock.known() ? clock.refresh() : clock.ready(CLOCK_WAIT_MS);
-    if (asking) {
+    // And in a tab open since an earlier day, today's row is looked at first: if
+    // a deal has changed it since, the tab loads again in place of this answer
+    // (lib/staleRows.ts; waited for no longer than the clock).
+    const looking = practice ? null : rowsChecked(shown, CLOCK_WAIT_MS);
+    if (asking || looking) {
       held = i;
       // Heard picked at once, as in a game, while its answer waits for the day.
       sfx('select', { from: { from: optEls[i] } });
-      await Promise.race([asking, new Promise((done) => setTimeout(done, CLOCK_WAIT_MS))]);
+      const [, fresh] = await Promise.all([asking && Promise.race([asking, new Promise((done) => setTimeout(done, CLOCK_WAIT_MS))]), looking]);
       i = held ?? i;
       held = null;
-      if (!alive || answered || disabled || practice) return;
+      if (fresh === false || !alive || answered || disabled || practice) return;
     }
     // Past midnight UTC since the clock last moved (or the server's day isn't
     // the one shown): that was another day's question. Today's comes up

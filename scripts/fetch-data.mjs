@@ -23,6 +23,8 @@
 //                           and achievements hold ids) and takes the new name
 //   -- --drop "Name"        Name is gone for good
 //   -- --shrink             accept noticeably fewer items (see below)
+//   -- --early              add items in the month before a listed release
+//                           (they came with the release before it; see below)
 // Behind a proxy on Node 22+: NODE_USE_ENV_PROXY=1 npm run fetch-data
 
 import { mkdir, writeFile, readdir, unlink, access, readFile } from 'node:fs/promises';
@@ -38,7 +40,7 @@ import {
   statsReport,
   writeStats,
 } from './fetch-stats.mjs';
-import { artPlan, changedItems, firstSeen, reconcile, refreshArgs, summaryLines, withoutTooltip } from './refresh-plan.mjs';
+import { artPlan, changedItems, firstSeen, reconcile, refreshArgs, releaseAhead, summaryLines, withoutTooltip } from './refresh-plan.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -58,6 +60,12 @@ const CATEGORY_RULES = [
   ['Weapons/OneHandWeapons/OneHandSpears', 'Spears', 'One-Handed Weapons'],
   ['Weapons/OneHandWeapons/Scepters', 'Sceptres', 'One-Handed Weapons'],
   ['Weapons/OneHandWeapons/Wands', 'Wands', 'One-Handed Weapons'],
+  // 1.0's: the Duelist's swords, the Shadow's daggers and traps (its other
+  // weapon; their art sits with the one-handed weapons).
+  ['Weapons/OneHandWeapons/OneHandSwords', 'One-Handed Swords', 'One-Handed Weapons'],
+  ['Weapons/OneHandWeapons/Daggers', 'Daggers', 'One-Handed Weapons'],
+  ['Weapons/OneHandWeapons/Traps', 'Traps', 'One-Handed Weapons'],
+  ['Weapons/TwoHandWeapons/TwoHandSwords', 'Two-Handed Swords', 'Two-Handed Weapons'],
   ['Weapons/TwoHandWeapons/TwoHandMaces', 'Two-Handed Maces', 'Two-Handed Weapons'],
   ['Weapons/TwoHandWeapons/WarStaves', 'Quarterstaves', 'Two-Handed Weapons'],
   ['Weapons/TwoHandWeapons/Staves', 'Staves', 'Two-Handed Weapons'],
@@ -110,6 +118,13 @@ const categorize = (img) => {
   return rule ? { group: rule[1], category: rule[2] } : null;
 };
 
+/**
+ * A base's plain picture, never a unique's own: poe2db shows it for a unique
+ * it has from the game's data before its art (Molten Tenet, a Plate Belt,
+ * showed Belt05 in November 2026). Such a unique has no picture yet.
+ */
+const baseArt = (src) => src.includes('/Basetypes/');
+
 const exists = (p) => access(p).then(() => true, () => false);
 
 async function main() {
@@ -141,29 +156,38 @@ async function main() {
     Array.from({ length: 3 }, async () => {
       for (let e; (e = queue.shift()); ) {
         const page = await (await fetchRetry(`https://poe2db.tw/us/${e.slug}`)).text();
-        e.boxes = pageBoxes(page).filter((b) => b.name === e.name && b.art);
+        const boxes = pageBoxes(page).filter((b) => b.name === e.name && b.art);
+        e.based = boxes.some((b) => baseArt(b.art));
+        e.boxes = boxes.filter((b) => !baseArt(b.art));
         if (++read % 100 === 0) console.log(`${read} pages`);
       }
     }),
   );
 
   const items = [];
-  const skipped = [];
-  let pictureless = 0;
-  for (const { name, base, slug, img, boxes } of entries) {
-    const src = img ?? (boxes[0] && ART + boxes[0].art);
-    if (!src) pictureless++;
-    const cat = src && categorize(src);
+  // Left out: a unique with no picture yet, and one whose art folder no rule sorts (the summary names them).
+  const noPicture = [];
+  const unsorted = [];
+  // Of those, the ones with not even a base's picture: if many, the pages weren't read right.
+  let artless = 0;
+  for (const { name, base, slug, img, boxes, based } of entries) {
+    const src = (img && !baseArt(img) ? img : null) ?? (boxes[0] && ART + boxes[0].art);
+    if (!src) {
+      noPicture.push(name);
+      if (!img && !based) artless++;
+      continue;
+    }
+    const cat = categorize(src);
     if (!cat) {
-      skipped.push(`${name} (${src ?? 'no picture'})`);
+      unsorted.push(`${name} (${path.posix.dirname(src.slice(ART.length))})`);
       continue;
     }
     items.push({ id: hashId(name), name, base, ...cat, kind: 'unique', slug, src, boxes });
   }
   // Before anything is deleted: a page that changed its layout leaves most items without a picture or a category.
   if (items.length < 100) throw new Error(`Only ${items.length} items have their art; page layout changed?`);
-  if (pictureless > entries.length / 20)
-    throw new Error(`${pictureless} of ${entries.length} uniques have no picture on the list or their page; page layout changed?`);
+  if (artless > entries.length / 20)
+    throw new Error(`${artless} of ${entries.length} uniques have no picture on the list or their page; page layout changed?`);
 
   console.log(`Fetching ${GEM_SOURCE}`);
   const gemHtml = await (await fetchRetry(GEM_SOURCE)).text();
@@ -185,7 +209,6 @@ async function main() {
     gems++;
   }
   if (gems < 20) throw new Error(`Only ${gems} lineage gems parsed; page layout changed?`);
-  if (skipped.length) console.warn(`Skipped (no category):\n  ${skipped.join('\n  ')}`);
 
   // Drop items whose art is shared with another item: they cannot be told apart.
   const artCount = new Map();
@@ -282,6 +305,12 @@ async function main() {
   }
   // Each item's first day (`added`), kept from before; today's (UTC) for one new in this run.
   const day = new Date().toISOString().slice(0, 10);
+  // Nor, before anything is written, items first seen in the month before a
+  // listed release: stamped now, they would never count as its own (no week
+  // on Today's unique, no lean). Most likely they are its own, shown early.
+  const ahead = releaseAhead(day);
+  if (ahead && added.length && !args.early)
+    throw new Error(`${added.length} items added (${added.join(', ')}), ${ahead.name} starts ${ahead.from}: if they are its own, run again on its day; if they came before it, --early adds them now.`);
   firstSeen(beforeItems, out, day);
 
   // Now the writing: the art, then the items and their tooltips.
@@ -309,7 +338,7 @@ async function main() {
   console.table(perCat);
   for (const line of statsReport(listed, found)) console.log(line);
   if (missing.length) console.warn(`${missing.length} items have no upscaled art yet: run scripts/upscale-art.py (see its header).`);
-  for (const line of summaryLines({ added, renamed: plan.renamed, dropped: plan.dropped, changed: changedItems(beforeItems, out), leftOut, newArt, day }))
+  for (const line of summaryLines({ added, renamed: plan.renamed, dropped: plan.dropped, changed: changedItems(beforeItems, out), leftOut, noPicture, unsorted, newArt, day, categories: perCat, stamps: out.flatMap((it) => (it.added ? [it.added] : [])) }))
     console.log(line);
   if (plan.renamed.length || added.length) console.log('src/data/fakes.json is by name: a new or renamed item needs its two fakes (tests/fakes.test.ts).');
 }

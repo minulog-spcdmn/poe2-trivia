@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { artPlan, changedItems, firstSeen, reconcile, refreshArgs, summaryLines, withoutTooltip } from '../scripts/refresh-plan.mjs';
+import { NEW_FADE_DAYS, NEW_HALF_DAYS, RELEASES } from '../src/lib/releases.ts';
+import { BALANCE_LIMIT, artPlan, balanceLines, changedItems, firstSeen, reconcile, refreshArgs, releaseAhead, summaryLines, withoutTooltip } from '../scripts/refresh-plan.mjs';
 
 // A refresh (npm run fetch-data) on made-up lists, before and after: what it
 // calls added, renamed, dropped and changed, and when it stops.
@@ -22,6 +23,7 @@ const before = () => [item('aaa', 'Ventor’s Gamble'), item('bbb', 'Andvarius')
 test('the options: --rename takes "Old=>New", --drop a name, either as the next word or after =', () => {
   assert.deepEqual(refreshArgs(['--rename', 'Old One=>New One', '--drop=Gone', '--shrink', '--rename=A => B', '--drop', 'Also Gone']), {
     shrink: true,
+    early: false,
     renames: [
       ['Old One', 'New One'],
       ['A', 'B'],
@@ -114,6 +116,8 @@ test('the summary names what came, went, was renamed, changed and was left out',
       dropped: ['Andvarius'],
       changed: [{ name: 'Ventor’s Gamble', fields: ['base Ring => Gold Ring'] }],
       leftOut: ['Death Rush'],
+      noPicture: ['Molten Tenet'],
+      unsorted: ['Agnar (Weapons/TwoHandWeapons/TwoHandSwords/Uniques)'],
       newArt: ['Black Heart'],
     }),
     [
@@ -124,9 +128,20 @@ test('the summary names what came, went, was renamed, changed and was left out',
       '  Changed (1): Ventor’s Gamble (base Ring => Gold Ring)',
       '  New art for an item kept (1): Black Heart',
       '  Left out, no tooltip (1): Death Rush',
+      '  Left out, no picture yet (1): Molten Tenet',
+      '  Left out, no rule for its art folder (CATEGORY_RULES in scripts/fetch-data.mjs) (1): Agnar (Weapons/TwoHandWeapons/TwoHandSwords/Uniques)',
     ],
   );
-  assert.deepEqual(summaryLines({}).slice(1), ['  Added (0)', '  Renamed (0)', '  Dropped (0)', '  Changed (0)', '  New art for an item kept (0)', '  Left out, no tooltip (0)']);
+  assert.deepEqual(summaryLines({}).slice(1), [
+    '  Added (0)',
+    '  Renamed (0)',
+    '  Dropped (0)',
+    '  Changed (0)',
+    '  New art for an item kept (0)',
+    '  Left out, no tooltip (0)',
+    '  Left out, no picture yet (0)',
+    '  Left out, no rule for its art folder (CATEGORY_RULES in scripts/fetch-data.mjs) (0)',
+  ]);
 });
 
 test('a renamed item keeps its old id on every later run too, and its art is neither fetched again nor deleted', () => {
@@ -171,8 +186,43 @@ test('each item keeps its first day through later refreshes; one new in a run ta
 });
 
 test('the summary says which day the items added are stamped with, and where that counts', () => {
-  assert.match(summaryLines({ added: ['A', 'B'], day: '2026-12-12' }).at(-1)!, /The 2 added are first seen 2026-12-12: .*src\/lib\/releases\.ts/);
-  assert.equal(summaryLines({ day: '2026-12-12' }).length, 7);
+  assert.ok(summaryLines({ added: ['A', 'B'], day: '2026-12-12' }).some((l) => /The 2 added are first seen 2026-12-12: .*src\/lib\/releases\.ts/.test(l)));
+  assert.deepEqual(summaryLines({ day: '2026-12-12' }), summaryLines({}), 'no day line without an item added');
+  // A run in the days before a listed release: its items would never count as that release's.
+  const release = RELEASES.at(-1)!;
+  const before = new Date(Date.parse(`${release.from}T00:00:00Z`) - 2 * 86_400_000).toISOString().slice(0, 10);
+  assert.ok(summaryLines({ added: ['A'], day: before }).at(-1)!.startsWith(`  ${release.name} starts ${release.from}, after this run's day`));
+  assert.ok(!summaryLines({ added: ['A'], day: release.from }).some((l) => l.includes('after this run')), 'on its day: theirs');
+  // In its first weeks a page from before can't name its items; long after, items of a league not listed yet.
+  const later = (days: number) => new Date(Date.parse(`${release.from}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+  assert.ok(summaryLines({ added: ['A'], day: release.from }).some((l) => l.includes('bump PROTOCOL_VERSION')));
+  assert.ok(summaryLines({ added: ['A'], day: later(NEW_HALF_DAYS + NEW_FADE_DAYS) }).some((l) => l.includes('bump PROTOCOL_VERSION')));
+  assert.ok(summaryLines({ added: ['A'], day: later(NEW_HALF_DAYS + NEW_FADE_DAYS + 1) }).some((l) => l.includes('add its row to RELEASES')));
+  // Its items first came with a refresh twenty days late: the lean counts from them, as the games' does.
+  const late = { added: ['A'], day: later(NEW_HALF_DAYS + NEW_FADE_DAYS + 10), stamps: [later(20), later(NEW_HALF_DAYS + NEW_FADE_DAYS + 10)] };
+  assert.ok(summaryLines(late).some((l) => l.includes('bump PROTOCOL_VERSION')), 'from its first items');
+  assert.ok(!summaryLines({ added: ['A'], day: before }).some((l) => l.includes('PROTOCOL_VERSION') || l.includes('add its row')), 'before any release: neither');
+});
+
+test('a run in the month before a listed release stops before it stamps items, but with --early', () => {
+  const release = RELEASES.at(-1)!;
+  const daysBefore = (n: number) => new Date(Date.parse(`${release.from}T00:00:00Z`) - n * 86_400_000).toISOString().slice(0, 10);
+  assert.equal(releaseAhead(daysBefore(1)), release, 'the day before');
+  assert.equal(releaseAhead(daysBefore(30)), release, 'a month before');
+  assert.equal(releaseAhead(daysBefore(31)), undefined, 'further off');
+  assert.equal(releaseAhead(release.from), undefined, 'its own day');
+  assert.equal(refreshArgs(['--early']).early, true);
+  assert.equal(refreshArgs([]).early, false);
+});
+
+test('the summary ends on how the categories’ sizes compare, with a word when they grow far apart', () => {
+  assert.deepEqual(balanceLines({ Rings: 39, 'Body Armours': 55, Helmets: 51 }), ['  Categories, largest first: Body Armours 55, Helmets 51, Rings 39 (the largest 1.41 times the smallest)']);
+  assert.deepEqual(summaryLines({ categories: { Rings: 39 } }).at(-1), '  Categories, largest first: Rings 39 (the largest 1.00 times the smallest)');
+  const apart = balanceLines({ Rings: 30, 'Body Armours': 30 * BALANCE_LIMIT + 1 });
+  assert.equal(apart.length, 2);
+  assert.match(apart[1], new RegExp(`Body Armours has grown past ${BALANCE_LIMIT} times Rings`));
+  assert.equal(balanceLines({ Rings: 30, 'Body Armours': 30 * BALANCE_LIMIT }).length, 1, 'up to the limit, no word');
+  assert.deepEqual(balanceLines({}), []);
 });
 
 test('a new item that would take a renamed one’s id stops the run', () => {

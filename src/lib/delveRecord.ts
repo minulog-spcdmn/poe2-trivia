@@ -1,8 +1,10 @@
 // This browser's Delve runs: the deepest one alone and together (per ruleset,
 // so a changed curve never compares old depths with new ones), and how each
 // best grew; every counted run as a tally of where it ended and where its
-// lives went; how deep this browser has ever been; and the last runs in full.
-// Kept in localStorage, like the codex (lib/codex.ts).
+// lives went; how deep this browser has ever been; the last runs in full; and
+// when its player first delved since each release (for Delve's lean to its
+// items, releases.ts delveLean). Kept in localStorage, like the codex
+// (lib/codex.ts).
 //
 // The stored shape only grows: fields added later are optional and, when
 // missing, filled in from what is there (records written before tallies
@@ -140,6 +142,14 @@ export interface DelveRecords {
   tallies: Record<string, DelveTally>;
   /** Each new deepest under any rules, alone or not, left or ended, oldest first: the last is the deepest this browser has been. */
   frontier: Frontier[];
+  /**
+   * By a release's name, when this player's first run since its items came
+   * was recorded (`at`): Delve leans to them in full for days of the
+   * player's own from then (releases.ts delveLean). Missing for none. A
+   * build from before it writing the records again drops it, and the next
+   * run is taken for the first: a few days more of the full lean at most.
+   */
+  since?: Record<string, number>;
 }
 
 /** How a run measured up against the best of its kind. */
@@ -358,12 +368,25 @@ export function measure(r: DelveRecords, run: DelveRun): Measure {
 /** The run already recorded under the same key, in the list or among the bests. */
 const recorded = (r: DelveRecords, id: string) => r.runs.find((o) => runKey(o) === id) ?? Object.values(r.bests).find((o) => runKey(o) === id) ?? null;
 
+/** The release names `since` keeps at most (the newest), so it never grows without end. */
+const SINCE_LIMIT = 8;
+
+/** `since` of them all: each release's earliest, the newest SINCE_LIMIT releases (undefined for none). */
+function sinceOf(...all: (Record<string, number> | undefined)[]): Record<string, number> | undefined {
+  const out: Record<string, number> = {};
+  for (const one of all) for (const [k, at] of Object.entries(one ?? {})) out[k] = Math.min(out[k] ?? at, at);
+  const kept = Object.entries(out).sort((a, b) => a[1] - b[1]).slice(-SINCE_LIMIT);
+  return kept.length ? Object.fromEntries(kept) : undefined;
+}
+
 /**
  * Adds (or updates, by runKey) a run, and says how it measured up. A run
  * ended is final: the same run again changes nothing (records returned
  * as they were). A run left gives way to its end, or to a later leave.
+ * `release`: the newest release while its items are here (releases.ts
+ * newestRelease), its `since` the first such run's.
  */
-export function addRun(r: DelveRecords, next: DelveRun): Measure & { records: DelveRecords } {
+export function addRun(r: DelveRecords, next: DelveRun, release?: string | null): Measure & { records: DelveRecords } {
   const id = runKey(next);
   const before = recorded(r, id);
   if (before && !before.left) return { records: r, ...measure(r, before) };
@@ -387,7 +410,8 @@ export function addRun(r: DelveRecords, next: DelveRun): Measure & { records: De
   if (!run.mixed) tallies[key] = counted(tallies[key] ?? emptyTally(), run, 1);
   const deepest = r.frontier.at(-1)?.depth ?? 0;
   const frontier = run.depth > deepest ? [...r.frontier, { depth: run.depth, at: run.at }] : r.frontier;
-  const records = { runs, bests, climbs, tallies, frontier };
+  const since = sinceOf(r.since, release ? { [release]: run.at } : undefined);
+  const records = { runs, bests, climbs, tallies, frontier, ...(since && { since }) };
   return { records, ...measure(records, run) };
 }
 
@@ -611,6 +635,11 @@ export function parseRecords(raw: string | null): DelveRecords | null {
     const climb = frontierOf(steps.filter((f) => f.depth <= best));
     if (climb.length) r.climbs[k] = climb;
   }
+  // Records from before it have none: their next run since a release is its first.
+  if (isObj(v.since)) {
+    const since = sinceOf(Object.fromEntries(Object.entries(v.since).filter(([k, at]) => k.length <= 20 && typeof at === 'number' && Number.isFinite(at) && at > 0)) as Record<string, number>);
+    if (since) r.since = since;
+  }
   return r;
 }
 
@@ -688,7 +717,9 @@ export function combineRecords(own: DelveRecords, others: DelveRecords[]): Delve
     }
     const tallies = { ...out.tallies };
     for (const [k, t] of Object.entries(o.tallies)) tallies[k] = combineTally(tallies[k], t);
-    out = { runs, bests, climbs, tallies, frontier: frontierOf([...out.frontier, ...o.frontier]) };
+    // The player's first run since a release, on whichever device it was.
+    const since = sinceOf(out.since, o.since);
+    out = { runs, bests, climbs, tallies, frontier: frontierOf([...out.frontier, ...o.frontier]), ...(since && { since }) };
   }
   return out;
 }
@@ -704,16 +735,16 @@ function write(r: DelveRecords): boolean {
 /**
  * Records a run; returns how it measured up (null when it couldn't be
  * stored). Records a newer build wrote are left as they are; anything else
- * unreadable is kept aside first (lib/keepAside.ts).
+ * unreadable is kept aside first (lib/keepAside.ts). `release`: addRun's.
  */
-export function recordRun(run: DelveRun): Measure | null {
+export function recordRun(run: DelveRun, release?: string | null): Measure | null {
   const raw = tryReadStored(DELVE_RECORD_NAME);
   if (raw === undefined) return null;
   // The first time, they start from the old name's (left as they are).
   const stored = parseRecords(storedRaw(raw));
   if (raw && !stored && !makeRoom(DELVE_RECORD_NAME, raw, VERSION)) return null;
   const was = stored ?? emptyRecords();
-  const { records, previousBest, best } = addRun(was, run);
+  const { records, previousBest, best } = addRun(was, run, release);
   if (records !== was && !write(records)) return null;
   // Measured against the player's other devices' runs too: a best is the deepest anywhere.
   const others = otherRecords();
@@ -727,9 +758,9 @@ export function recordRun(run: DelveRun): Measure | null {
  * leftEvent). For the session to call as it leaves a game, whatever the way
  * out: the same run's end replaces it, and it never replaces an end.
  */
-export function recordLeft(s: GameState | null, me: string | null, hotSeat = false) {
+export function recordLeft(s: GameState | null, me: string | null, hotSeat = false, release?: string | null) {
   const run = leftEvent(s, me, hotSeat);
-  if (run) recordRun(run);
+  if (run) recordRun(run, release);
 }
 
 /**

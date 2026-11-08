@@ -530,8 +530,12 @@ meet ("39 came with 1.0", `docs/gameplay.md`, "Codex"). So:
   would count as 1.0's. The 1.0 line then gives way to the league's.
 
 An item left out for want of a tooltip is stamped on the run that lists
-it. Nothing else reads `added`: the Daily's rows and Delve's rules don't
-move with it. `src/data/fakes.json` is by name: a new or
+it, and counts as new from its release's first stamp all the same
+(`newestCame`): one that comes a week late misses the Daily's week and gets
+what is left of the games' lean. Today's unique and the games lean to the
+newest release's items by `added` ("A new release's refresh" below),
+Delve from each player's own first run since they came (`delveLean`);
+Delve's rules don't move with it. `src/data/fakes.json` is by name: a new or
 renamed item needs its two fakes there (`tests/fakes.test.ts`).
 
 Each item's tooltip (properties, requirements, mods, flavour text) comes from
@@ -612,6 +616,76 @@ see `scripts/bake-icons.mjs`):
 ```sh
 npm run bake-icons
 ```
+
+### A new release's refresh
+
+1.0's was rehearsed in November 2026 with the 16 uniques shown by then:
+the real `npm run fetch-data` against poe2db as it should look on the day
+(its list with them added, their art at the game's folders, the clock at
+the release's day), then every step after it. What it taught, in order:
+
+- **When.** On the release's day or after (its row in `RELEASES`, above).
+  Before, poe2db shows a league's uniques on a page of their own
+  (`Conquerors_of_Wraeclast_uniques`, with GGG's announcement art at 47 px a
+  cell, too small to use), and the run, which reads only its unique list,
+  adds none of them. Runes of Aldur's had all reached the list.
+- **On the PC.** ffmpeg is `C:\tmp\ffbin\ffmpeg.exe`, not on the PATH:
+  `PATH="/c/tmp/ffbin:$PATH" npm run looks`. The upscaler's venv is the main
+  checkout's `.venv-art-cuda` (torch for CUDA, on the graphics card: 15
+  items in 20 seconds), its model in `model/`, named by `ART_MODEL`.
+- **The summary** names what the run left out. **No picture yet**: poe2db
+  has some uniques from the game's data before their art, and shows their
+  base's plain picture for them, which the run never takes (Molten Tenet, a
+  Plate Belt, in November); a later refresh adds them. **No rule for its art
+  folder**: a new weapon class; add its row to `CATEGORY_RULES` and run it
+  again. Swords, daggers and traps have theirs, their folders read off
+  poe2db's base items.
+- **A new group** needs its singular in `SINGULAR` (`src/lib/game.ts`;
+  `tests/gameQuestions.test.ts` says so) and, if its art is about twice as
+  tall as wide or more, a place in `TALL_ART_GROUPS` (`tests/tallArt.test.ts`
+  measures it): two-handed swords and daggers have theirs.
+- **Then**, as above: `upscale-art.py`, `npm run looks`, `daily-art.py` (the
+  daily's tests fail until it has measured every picture), two
+  fakes for each item added (`src/data/fakes.json`), and the pairs
+  `tests/twins.test.ts` names, looked at side by side: told apart at a
+  glance, they go in its `CHECKED`; told apart only by a detail, they are a
+  set in `TWINS` (`src/lib/game.ts`), which changes how Delve and the Daily
+  deal, so `PROTOCOL_VERSION` goes up. `npm run bake-icons` only when
+  `tests/iconFits.test.ts` fails. `npm run deal` last: before 22:00 UTC it
+  deals from tomorrow, after it from the day after (`dealFrom`,
+  `src/lib/daily.ts`; it keeps an hour more than the deploy's check,
+  `MARGIN_MS` in `scripts/deal.mjs`, so the merge has that to go live; a
+  merge later fails the deploy, and the site keeps the old items until
+  `npm run deal` runs again on `main`: README, "Today's unique").
+  The new items then have Today's unique to themselves for seven days
+  (`newWeek`), however late the deal came within two days of them. Tabs
+  open since before it load again on their next day
+  (`src/lib/staleRows.ts`). The games lean to the new items by their stamp
+  alone (`newBoost`, `src/lib/releases.ts`), Delve by it and each player's
+  first run since (`delveLean`): nothing to do. A refresh
+  later than about 22:00 UTC on 11 December puts 1.0's week from the 13th.
+- **`PROTOCOL_VERSION` goes up** (`src/lib/protocol.ts`; the summary says
+  so while the games lean to the release's items): a page from before has
+  none of them, and in the first week about one in three of a host's
+  questions is theirs (half on a card with many of them, a fifth on one
+  with one or two), which such a guest can't name. Behind, it is asked
+  to load again. Long after a release, the summary asks instead whether
+  the items came with a league `RELEASES` doesn't list yet.
+- **Not before the day.** A run that would add items in the month before
+  a listed release stops before it writes anything: they would count as the
+  release before's for good (`firstSeen` keeps a stamp). Run again on the
+  day; `npm run fetch-data -- --early` adds them now, for items that truly
+  came before it.
+- **The categories' sizes** close the summary, and how many times the
+  smallest the largest is: 1.92 before 1.0 (Body Armours 71, One-Handed
+  Weapons 37), 1.90 with the 15 rehearsed. Past `BALANCE_LIMIT` (1.5,
+  `scripts/refresh-plan.mjs`) it says so, as it does already: how the ten
+  split is the owner's call, not the refresh's.
+- **The QA desk's long base type scene** (`game/delve-long-base`) plays a
+  seed that new items move: `tests/qaScenes.test.ts` names the next seed
+  that fits; it goes in the scene's dice (value, label and note).
+- The page's description counts the items by itself (`%ITEM_COUNT%` in
+  `index.html`).
 
 ## Deploying
 

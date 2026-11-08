@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Engine, createGame, KNOB_STEPS, PRESETS, cleanKnobs, knobsOf, isDifficulty, isFake, rulesFor, RARE_GROUPS, RARE_MAX_OPTIONS, TWINS, allArt, drawnAs, picturesOf, maxFakes, nameSimilarity, publicView, questionTopic, singular, type Difficulty, type Preset, type GameState, type Item, type Question } from '../src/lib/game.ts';
 import { fakes, items, lobby, right, seeded, wrong } from './helpers.ts';
+import { NEW_MAX_BOOST } from '../src/lib/releases.ts';
 
 test('difficulties scale options, decoy kind and question types', () => {
   for (const difficulty of ['cruel', 'merciless', 'eternal'] as Preset[]) {
@@ -98,8 +99,8 @@ test('ten options: a small group shares the question as five beside five of anot
       assert.deepEqual(q.groups, [...counts.keys()].sort());
     }
   }
-  // Wands and sceptres (eight each) are too few to fill ten alone, and four groups too few for five pairs.
-  assert.deepEqual([...answered].sort(), ['One-Handed Maces', 'Sceptres', 'Spears', 'Wands']);
+  // Every group is asked, even those too few to fill ten alone (wands and sceptres, eight each): beside another.
+  assert.deepEqual([...answered].sort(), [...new Set(items.filter((it) => it.category === 'One-Handed Weapons').map((it) => it.group))].sort());
   assert.ok(fives > 50, `${fives} questions of two groups of five`);
 });
 
@@ -122,6 +123,65 @@ test('ten options: a tablet, too few to fill ten and never mixed, is asked with 
     }
   }
   assert.ok(tablets > 10, `${tablets} tablet questions`);
+});
+
+test('a game leans to the items it is told to, as the answer and as a wrong option, and deals as it always did without', () => {
+  const category = 'Rings';
+  // A quarter of the rings, and two helmets.
+  const leaned = new Set(
+    [...items.filter((it) => it.category === category).filter((_, i) => i % 4 === 0), ...items.filter((it) => it.category === 'Helmets').slice(0, 2)].map((it) => it.id),
+  );
+  const isNew = (it: Item) => leaned.has(it.id);
+  /** The first questions of `n` games in `cat`, each fresh (so every item of it is still to ask). */
+  const firsts = (strength?: number, n = 800, cat = category) => {
+    const engine = new Engine(items, { autoClock: true, rng: seeded(9), fakes, ...(strength !== undefined && { lean: { isNew, strength: () => strength } }) });
+    return Array.from({ length: n }, () => engine.makeQuestion(createGame(null, { targetScore: 5, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false }), cat));
+  };
+  const plain = firsts();
+  const dealt = (qs: Question[]) => qs.map(({ itemId, options, labels, mode }) => ({ itemId, options, labels, mode }));
+  assert.deepEqual(dealt(firsts(0)), dealt(plain), 'no lean deals as before');
+  const asked = (qs: Question[]) => qs.filter((q) => leaned.has(q.itemId)).length / qs.length;
+  /** Of the wrong options of questions about another item, the share that are leaned to. */
+  const offered = (qs: Question[]) => {
+    const wrong = qs.flatMap((q) => (leaned.has(q.itemId) ? [] : q.options.filter((id) => id !== q.itemId && !isFake(id))));
+    return wrong.filter((id) => leaned.has(id)).length / wrong.length;
+  };
+  // At its strongest, with a quarter of the rings: about every other answer, and more of the wrong options than before.
+  const lean = firsts(1);
+  assert.ok(asked(plain) < 0.33 && asked(lean) > 0.42 && asked(lean) < 0.58, `answers: ${asked(plain)} against ${asked(lean)}`);
+  assert.ok(offered(lean) > offered(plain) + 0.1, `wrong options: ${offered(plain)} against ${offered(lean)}`);
+  // Two of the helmets: as many times likelier as the cap lets, short of half (the rings' share took nothing from them).
+  const helmets = firsts(1, 800, 'Helmets');
+  const most = (2 * NEW_MAX_BOOST) / (2 * NEW_MAX_BOOST + items.filter((it) => it.category === 'Helmets').length - 2);
+  assert.ok(Math.abs(asked(helmets) - most) < 0.06, `helmets: ${asked(helmets)} against ${most}`);
+});
+
+test('a Delve run leans as the lean’s `delve` says, any other game as its strength, and Delve with none deals as it always did', () => {
+  const category = 'Rings';
+  // An eighth of the rings.
+  const leaned = new Set(items.filter((it) => it.category === category).filter((_, i) => i % 8 === 0).map((it) => it.id));
+  const isNew = (it: Item) => leaned.has(it.id);
+  type Way = { strength: number; twice: boolean };
+  /** The first question of `n` runs (or Turns games), each fresh, under a lean of strength 1 whose Delve is `delve`. */
+  const firsts = (mode: 'delve' | 'turns', delve?: Way, n = 600) => {
+    const engine = new Engine(items, { autoClock: true, rng: seeded(11), fakes, ...(delve && { lean: { isNew, strength: () => 1, delve: () => delve } }) });
+    return Array.from({ length: n }, () => {
+      let s = createGame('p0', { targetScore: 5, timer: 0, difficulty: 'cruel', mode, public: false, locked: false });
+      if (mode === 'delve') {
+        s = engine.apply(s, { type: 'join', playerId: 'p0', name: 'Delver A' }, 'p0');
+        s = engine.apply(s, { type: 'start' }, 'p0');
+      }
+      return engine.makeQuestion(s, category);
+    });
+  };
+  const asked = (qs: Question[]) => qs.filter((q) => leaned.has(q.itemId)).length / qs.length;
+  const dealt = (qs: Question[]) => qs.map(({ itemId, options, labels, mode }) => ({ itemId, options, labels, mode }));
+  const plain = firsts('delve');
+  assert.deepEqual(dealt(firsts('delve', { strength: 0, twice: false })), dealt(plain), 'Delve’s none deals as no lean');
+  const [full, twice, turns] = [asked(firsts('delve', { strength: 1, twice: false })), asked(firsts('delve', { strength: 1, twice: true })), asked(firsts('turns', { strength: 0, twice: false }))];
+  assert.ok(full > 0.38 && full < 0.58, `in full, about every other answer: ${full}`);
+  assert.ok(twice > asked(plain) * 1.5 && twice < full - 0.15, `twice their share: ${asked(plain)}, ${twice}`);
+  assert.ok(turns > 0.42 && turns < 0.58, `Turns leans by its strength, whatever Delve’s: ${turns}`);
 });
 
 test('the topic counts a made-up name under the item it copies', () => {
@@ -555,8 +615,10 @@ test('custom questions follow the knobs', () => {
     s = engine.apply(s, { type: 'pick', category: s.offered[0] }, 'p0');
     const q = s.question!;
     assert.equal(q.mode, 'art');
-    assert.equal(q.options.length, 10);
-    assert.equal(new Set(q.options).size, 10);
+    // A rare group's item (a tablet) is asked with fewer (RARE_MAX_OPTIONS).
+    const count = Object.hasOwn(RARE_GROUPS, engine.byId.get(q.itemId)!.group) ? RARE_MAX_OPTIONS : 10;
+    assert.equal(q.options.length, count);
+    assert.equal(new Set(q.options).size, count);
     assert.equal(q.veil, null);
     s = engine.apply(s, { type: 'answer', index: wrong(q) }, 'p0');
     s = engine.apply(s, { type: 'next' }, 'p0');

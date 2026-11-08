@@ -4,6 +4,8 @@
 // scripts/fetch-data.mjs acts on it; tests/refreshPlan.test.ts tries it on
 // made-up lists.
 
+import { NEW_FADE_DAYS, NEW_HALF_DAYS, RELEASES, dayNumber } from '../src/lib/releases.ts';
+
 /** @typedef {{ id: string, name: string, [field: string]: unknown }} Item */
 /** @typedef {{ from: string, to: string, id: string }} Rename */
 
@@ -18,10 +20,15 @@ export function refreshArgs(argv) {
   /** @type {string[]} */
   const drops = [];
   let shrink = false;
+  let early = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--shrink') {
       shrink = true;
+      continue;
+    }
+    if (a === '--early') {
+      early = true;
       continue;
     }
     const m = /^--(rename|drop)(?:=(.*))?$/s.exec(a);
@@ -36,7 +43,7 @@ export function refreshArgs(argv) {
     if (pair.length !== 2 || !pair[0].trim() || !pair[1].trim()) throw new Error(`--rename "${value}": write it as "Old=>New"`);
     renames.push([pair[0].trim(), pair[1].trim()]);
   }
-  return { shrink, renames, drops };
+  return { shrink, early, renames, drops };
 }
 
 /** @param {string} s */
@@ -233,13 +240,27 @@ export function withoutTooltip(before, items, added, missing) {
 }
 
 /**
+ * A release listed to start within the month after `day`, which items first
+ * seen on `day` would never be counted with (their stamps stand): fetch-data
+ * stops before it writes them, but with --early (they came before it).
+ */
+export const releaseAhead = (/** @type {string} */ day) => RELEASES.find((r) => r.from > day && dayNumber(r.from) - dayNumber(day) <= 30);
+
+/**
  * The run's last words: what came, went, was renamed, changed and was left out.
  * An item added is stamped with the run's `day`: the start page counts it as
  * new with the newest release in src/lib/releases.ts whose day it is on or
- * after, so a new league's refresh adds that release first.
- * @param {{ added?: string[], renamed?: Rename[], dropped?: string[], changed?: { name: string, fields: string[] }[], leftOut?: string[], newArt?: string[], day?: string }} what
+ * after, so a new league's refresh adds that release first. A unique left
+ * out for want of a picture (poe2db has it from the game's data before its
+ * art) waits for a refresh that has one; one whose art folder no rule sorts
+ * (a new weapon class) waits for its rule, `unsorted` (name and folder).
+ * `categories`: how many items each category holds, which should stay
+ * near alike (balanceLines). `stamps`: every item's `added` after the run,
+ * so a release's lean counts from the first of its items, as the games'
+ * does (releases.ts newestCame); without them, from the release's day.
+ * @param {{ added?: string[], renamed?: Rename[], dropped?: string[], changed?: { name: string, fields: string[] }[], leftOut?: string[], noPicture?: string[], unsorted?: string[], newArt?: string[], day?: string, categories?: Record<string, number>, stamps?: string[] }} what
  */
-export function summaryLines({ added = [], renamed = [], dropped = [], changed = [], leftOut = [], newArt = [], day = '' }) {
+export function summaryLines({ added = [], renamed = [], dropped = [], changed = [], leftOut = [], noPicture = [], unsorted = [], newArt = [], day = '', categories, stamps = [] }) {
   const lines = ['Summary:'];
   /** @param {string} label @param {string[]} names */
   const list = (label, names) => lines.push(`  ${label} (${names.length})${names.length ? `: ${names.join(', ')}` : ''}`);
@@ -249,7 +270,49 @@ export function summaryLines({ added = [], renamed = [], dropped = [], changed =
   list('Changed', changed.map((c) => `${c.name} (${c.fields.join('; ')})`));
   list('New art for an item kept', newArt);
   list('Left out, no tooltip', leftOut);
+  list('Left out, no picture yet', noPicture);
+  list('Left out, no rule for its art folder (CATEGORY_RULES in scripts/fetch-data.mjs)', unsorted);
   if (added.length && day)
     lines.push(`  The ${added.length} added are first seen ${day}: the start page counts them as the newest release's in src/lib/releases.ts, if it starts on or before that day (a new league's refresh adds its release there first).`);
+  // A release listed to start soon after: items first seen before its day are never its own.
+  const next = added.length && day ? releaseAhead(day) : undefined;
+  if (next)
+    lines.push(`  ${next.name} starts ${next.from}, after this run's day: the ${added.length} added count as the release before's for good (no week of their own on Today's unique, no lean in the games). If they are ${next.name}'s, put the data back and run again on its day.`);
+  // The release they count as: in its first weeks the games lean to its items, which a page from before it can't name; long after, a league not listed yet.
+  const newest = added.length && day ? RELEASES.findLast((r) => r.from <= day) : undefined;
+  const first = newest && (stamps.filter((s) => s >= newest.from).sort()[0] ?? newest.from);
+  if (newest && first && dayNumber(day) - dayNumber(first) <= NEW_HALF_DAYS + NEW_FADE_DAYS)
+    lines.push(`  The games lean to ${newest.name}'s items for now: bump PROTOCOL_VERSION (src/lib/protocol.ts), so a guest whose page came before them loads again rather than meet items it can't name.`);
+  else if (newest)
+    lines.push(`  They count as ${newest.name}'s, whose lean on new items is over: if they came with a new league, add its row to RELEASES (src/lib/releases.ts) and run again, or they get no week or lean of their own.`);
+  if (categories) lines.push(...balanceLines(categories));
+  return lines;
+}
+
+/**
+ * How far apart the categories' sizes may grow: the largest this many times
+ * the smallest. The cards come up alike, so each category is played about
+ * as often as any, and an item of a small one comes up as many times as
+ * often as one of a large one; a player who knows a small category is
+ * safer on its card. Today's unique asks a category as often as it has
+ * items. Before 1.0 it was 1.92 already (Body Armours 71, One-Handed
+ * Weapons 37), past this.
+ */
+export const BALANCE_LIMIT = 1.5;
+
+/**
+ * The categories, largest first, and how many times the smallest the
+ * largest is; past BALANCE_LIMIT, a warning (the categories are the game's
+ * ten, each with its card: splitting them anew is a call for the owner).
+ * @param {Record<string, number>} categories
+ */
+export function balanceLines(categories) {
+  const sizes = Object.entries(categories).sort(([a, x], [b, y]) => y - x || a.localeCompare(b));
+  if (!sizes.length) return [];
+  const [largest, smallest] = [sizes[0], sizes[sizes.length - 1]];
+  const spread = largest[1] / smallest[1];
+  const lines = [`  Categories, largest first: ${sizes.map(([c, n]) => `${c} ${n}`).join(', ')} (the largest ${spread.toFixed(2)} times the smallest)`];
+  if (spread > BALANCE_LIMIT)
+    lines.push(`  ${largest[0]} has grown past ${BALANCE_LIMIT} times ${smallest[0]}: worth asking the owner whether the categories should split differently (CATEGORY_RULES in scripts/fetch-data.mjs).`);
   return lines;
 }

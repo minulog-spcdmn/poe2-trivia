@@ -26,6 +26,8 @@ import { lastPlayed } from './lib/lastPlayed';
 import { toasts } from './lib/toasts.svelte';
 import { bootSync } from './lib/sync/boot.svelte';
 import { ensureName } from './lib/madeName';
+import { reloadedUnseen, watchRows } from './lib/staleRows';
+import { clock } from './lib/clock';
 
 // First: a pairing link's code leaves the address before anything reads it (lib/sync/boot.svelte.ts).
 bootSync();
@@ -41,8 +43,11 @@ installAutoscroll();
 // No browser menu on a right click or a long press, no image's ghost on a drag (lib/noMenu.ts).
 installNoMenu();
 if (fpsMeterOn()) installFpsMeter();
-countVisit(lastPlayed, takeCampaign(), (f) => whenIdle(f, { timeout: 3_000 }));
-countPage();
+// (Not a tab that loaded again out of sight by itself, nobody there: lib/staleRows.ts.)
+if (!reloadedUnseen()) {
+  countVisit(lastPlayed, takeCampaign(), (f) => whenIdle(f, { timeout: 3_000 }));
+  countPage();
+}
 countTime();
 countActed();
 onSaved(countSaved);
@@ -52,6 +57,8 @@ const TOGGLED: Record<Toggled, string> = {
   unsaved: "This browser can’t change the setting: its site storage is blocked or full.",
 };
 onCountToggle((t) => toasts.show(TOGGLED[t], t === 'unsaved' ? 'error' : 'info', { title: 'Visit counts' }));
+// A tab open since an earlier day loads again if Today's unique has changed since, while nothing is going on (lib/staleRows.ts).
+watchRows(() => !session.mode && !session.state && session.status === 'idle', () => clock.now());
 
 // Development only: handles for scripts that drive the game and step the
 // effects frame by frame to photograph them (the same module instances the

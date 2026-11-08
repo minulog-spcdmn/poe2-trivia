@@ -36,6 +36,13 @@ test('an art question is tall exactly when every picture is of a tall group', ()
   }
 });
 
+test('the tall groups are those whose art is about twice as tall as wide, or taller', () => {
+  // The squattest picture of each group, height over width (a group new in a refresh must be sorted here).
+  const ratio = new Map<string, number>();
+  for (const it of items) ratio.set(it.group, Math.min(ratio.get(it.group) ?? Infinity, it.h / it.w));
+  for (const [group, r] of ratio) assert.equal(TALL_ART_GROUPS.has(group), r >= 1.9, `${group}: ${r.toFixed(2)}`);
+});
+
 test('a name question is never tall', () => {
   const { asked } = game;
   for (const q of asked.filter((q) => q.mode === 'name')) assert.equal(q.tall, undefined);

@@ -8,6 +8,7 @@ import { channelOf } from './src/lib/channel.ts';
 import { COUNTER_ORIGIN } from './src/lib/counter.ts';
 import { RELAY_URL } from './src/lib/relayUrl.ts';
 import { OWN_SIGNAL_HOST } from './src/lib/signalHost.ts';
+import { LIVE_ROWS } from './src/lib/liveRows.ts';
 import type { AtRule, Node, Rule } from 'postcss';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import { backdropsErrors, formatBackdrops, type Backdrops } from './src/lib/backdropData.ts';
@@ -101,6 +102,35 @@ function betaPages(env: Record<string, string>): Plugin {
           // The home screen's name on iOS, as the manifest's short_name is Android's.
           .replace(/(name="apple-mobile-web-app-title" content=")[^"]*/, '$1PoE2 Beta')
       );
+    },
+  };
+}
+
+/**
+ * The page's description counts the items (`%ITEM_COUNT%` in index.html) from
+ * src/data/items.json, so a refresh that adds some never leaves it behind.
+ * Before Vite's own `%NAME%` (its env variables), which would warn of it.
+ */
+function itemCount(): Plugin {
+  return {
+    name: 'item-count',
+    transformIndexHtml: {
+      order: 'pre',
+      handler: (html) => html.replaceAll('%ITEM_COUNT%', String(JSON.parse(readFileSync(new URL('./src/data/items.json', import.meta.url), 'utf8')).length)),
+    },
+  };
+}
+
+/**
+ * Today's unique's rows beside the page too, as dailies.json, for a tab open
+ * since before a deal changed them to look at (src/lib/staleRows.ts).
+ */
+function dailyRowsFile(): Plugin {
+  return {
+    name: 'daily-rows-file',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: LIVE_ROWS, source: readFileSync(new URL('./src/data/dailies.json', import.meta.url), 'utf8') });
     },
   };
 }
@@ -364,7 +394,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), glslMinify(), peerjsProbe(), polyfillsFirst(), csp(env), errorsFirst(), readableRegexes(), betaPages(env), preloadFonts(), fontinNotice(), keyframesFirst(), backdropSave(), devHub(env), weaveTile(), whereMaps(), qaServer(process.cwd())],
+    plugins: [svelte(), itemCount(), dailyRowsFile(), glslMinify(), peerjsProbe(), polyfillsFirst(), csp(env), errorsFirst(), readableRegexes(), betaPages(env), preloadFonts(), fontinNotice(), keyframesFirst(), backdropSave(), devHub(env), weaveTile(), whereMaps(), qaServer(process.cwd())],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
     // Not the scripts' builds, runs and profiles, nor other worktrees: walking them held up a cold start (unwatched.ts).
     // From this checkout down, where the config is (the QA desk's "before" server loads its own from elsewhere).

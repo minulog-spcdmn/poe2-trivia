@@ -7,6 +7,7 @@ import {
   RUN_LIMIT,
   addRun,
   climbOf,
+  combineRecords,
   lastOf,
   leftEvent,
   recordLeft,
@@ -590,4 +591,37 @@ test('the last run of a kind: the latest that ended under its rules, alone or to
   assert.equal(lastOf(rec, true)!.depth, 12, 'a run left or under mixed rules is not a last run');
   assert.equal(lastOf(rec, false)!.depth, 40);
   assert.equal(bestOf(rec, true)!.depth, 30);
+});
+
+test('the records keep when this player first delved since a release: the earliest, on any of their devices', () => {
+  const first = addRun(emptyRecords(), r({ id: 1, at: 100, depth: 3 }), '1.0').records;
+  assert.deepEqual(first.since, { '1.0': 100 });
+  const later = addRun(first, r({ id: 2, at: 200, depth: 5 }), '1.0').records;
+  assert.deepEqual(later.since, { '1.0': 100 }, 'a later run moves nothing');
+  assert.equal(addRun(emptyRecords(), r({ id: 1, at: 100 })).records.since, undefined, 'none without a release');
+  assert.deepEqual(addRun(later, r({ id: 3, at: 300 })).records.since, { '1.0': 100 }, 'kept by a run without one');
+  // Through storage, and through recordRun and a run left.
+  assert.deepEqual(parseRecords(serializeRecords(later)), later);
+  recordRun(r({ id: 4, at: 400, depth: 2 }), '1.0');
+  assert.deepEqual(loadRecords().since, { '1.0': 400 });
+  // A paired device's first run since, if earlier.
+  const phone = addRun(emptyRecords(), r({ id: 9, at: 50, depth: 1 }), '1.0').records;
+  assert.deepEqual(combineRecords(later, [phone]).since, { '1.0': 50 });
+  assert.deepEqual(combineRecords(phone, [emptyRecords()]).since, { '1.0': 50 });
+  assert.equal(combineRecords(emptyRecords(), [emptyRecords()]).since, undefined);
+});
+
+test('records from before the first run since a release was kept read as none yet, so their next run is the first', () => {
+  // As this build's records stood before the field: no `since`.
+  const old = JSON.stringify({ v: 2, runs: [r({ id: 5, at: 50, depth: 7 })], bests: { [`${DELVE_RULESET}:solo`]: r({ id: 5, at: 50, depth: 7 }) } });
+  const rec = parseRecords(old)!;
+  assert.equal(rec.since, undefined);
+  assert.equal(bestOf(rec, true)!.depth, 7);
+  assert.deepEqual(addRun(rec, r({ id: 6, at: 60, depth: 9 }), '1.0').records.since, { '1.0': 60 });
+  // What makes no sense is dropped, the rest kept; and only the newest releases.
+  const odd = parseRecords(JSON.stringify({ ...JSON.parse(old), since: { '1.0': 'x', '1.1': -5, '1.2': 70, ['n'.repeat(30)]: 80 } }))!;
+  assert.deepEqual(odd.since, { '1.2': 70 });
+  assert.equal(parseRecords(JSON.stringify({ ...JSON.parse(old), since: [3] }))!.since, undefined);
+  const many = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`0.${i}`, 100 + i]));
+  assert.deepEqual(Object.keys(parseRecords(JSON.stringify({ ...JSON.parse(old), since: many }))!.since!), ['0.4', '0.5', '0.6', '0.7', '0.8', '0.9', '0.10', '0.11']);
 });
