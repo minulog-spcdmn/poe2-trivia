@@ -52,6 +52,7 @@
   import { wantsRecording } from './lib/recorder';
   import { playerColor } from './lib/ui';
   import { flat, fullRoom } from './lib/layout';
+  import { outWithoutInert } from './lib/leaving';
   import { landing } from './lib/sync/boot.svelte';
   import { CopyPress } from './lib/copyPress.svelte';
   import CopyNote from './components/CopyNote.svelte';
@@ -862,10 +863,12 @@
          by the {#key} itself, not by a block made with it, so its own (local) transitions play. -->
     {#key shown}
       <!-- The backdrop follows the swap (data-bs-follow, lib/backdropShadow.ts): the fills it draws stay with it,
-           rather than going to CSS and back, a jump in how they look as the screen starts to go or settles. -->
+           rather than going to CSS and back, a jump in how they look as the screen starts to go or settles.
+           Going, it's let go without being made inert, which would restyle and repaint all of it (lib/leaving.ts). -->
       <div
         class="screen"
         data-bs-follow
+        use:outWithoutInert
         in:screenIn
         out:screenOut
         onintroend={(e) => {
