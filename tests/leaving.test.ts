@@ -35,7 +35,7 @@ class FakeElement {
   removeEventListener = (type: string, f: (e: Event) => void, capture?: boolean) => {
     if (capture) this.capturing.get(type)?.delete(f);
   };
-  /** A press coming down to it: whether anything under it would still get it. */
+  /** A press, a hover or a move coming down to it: whether anything under it would still get it. */
   press(type: string) {
     let stopped = false;
     let prevented = false;
@@ -78,6 +78,10 @@ test("an outro's inert marks the element as leaving, and none of it inert", () =
   assert.equal(stage.inert, true, 'it reads as going out');
   assert.equal(stage.dataset.leaving, '');
   for (const type of ['pointerdown', 'click', 'keydown', 'keyup']) assert.equal(stage.press(type), false, `a ${type} goes nowhere`);
+  // (Nor a hover: no control's sound or embers, no card's fire, as inert would have it.)
+  for (const type of ['pointerover', 'pointerenter']) assert.equal(stage.press(type), false, `a ${type} goes nowhere`);
+  // (But a move goes on: the others follow this player's pointer by it, at the window.)
+  assert.equal(stage.press('pointermove'), true);
   // (Not by pointer-events, which is inherited: all under it would be restyled.)
   assert.equal(stage.style.pointerEvents, '');
   // (The focus and the screen readers let go of in the frame's animation frame: a blur lays the page out.)

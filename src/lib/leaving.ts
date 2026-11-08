@@ -6,11 +6,12 @@
 // question's rune circle in it (some forty layers), took 15 to 25 ms of the
 // frame after Next for that alone. An element with `use:outWithoutInert` goes
 // out the same way by other means, none of which repaints anything under it:
-// it takes no presses, gives up the focus, is hidden from screen readers, and
-// is marked as leaving for the code that skips what is going (GONE). Presses
-// are stopped as they come down to it rather than by pointer-events, which is
-// inherited as inert is: Chrome restyled all under it for that (the lobby's
-// 222 elements, 5 to 7 ms of Begin's click, #331) and WebKit repainted a layer.
+// it takes no presses or hovers, gives up the focus, is hidden from screen
+// readers, and is marked as leaving for the code that skips what is going
+// (GONE). Presses and hovers are stopped as they come down to it rather than
+// by pointer-events, which is inherited as inert is: Chrome restyled all under
+// it for that (the lobby's 222 elements, 5 to 7 ms of Begin's click, #331) and
+// WebKit repainted a layer.
 
 /** What is on its way out: made inert by Svelte, or marked leaving here. */
 export const GONE = '[inert], [data-leaving]';
@@ -18,10 +19,18 @@ export const GONE = '[inert], [data-leaving]';
 /** The elements on their way out whose focus and screen readers are let go of in the next animation frame (goOut). */
 const letGo = new Map<HTMLElement, number>();
 
-/** The presses what is going takes none of: a button's, a card's, a key's on what holds the focus. */
-const PRESSES = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'auxclick', 'contextmenu', 'keydown', 'keyup'];
+/**
+ * What what is going takes none of: a press (a button's, a card's, a key's
+ * on what holds the focus) and a hover (a control's sound and embers, a
+ * card's fire, a tooltip), as inert would. Not a move, which the others
+ * follow this player's pointer by (PeerCursors, at the window).
+ */
+const TAKEN = [
+  ...['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'click', 'dblclick', 'auxclick', 'contextmenu', 'keydown', 'keyup'],
+  ...['pointerover', 'pointerenter', 'mouseover', 'mouseenter'],
+];
 
-/** A press on what is going, stopped before it reaches anything in it (a capture listener on the element). */
+/** A press or a hover on what is going, stopped before it reaches anything in it (a capture listener on the element). */
 function stop(e: Event) {
   e.stopPropagation();
   e.preventDefault();
@@ -30,7 +39,7 @@ function stop(e: Event) {
 /** What an element's own `inert` would do for it as it goes out, done as outWithoutInert does it. */
 function goOut(node: HTMLElement) {
   node.dataset.leaving = '';
-  for (const type of PRESSES) node.addEventListener(type, stop, true);
+  for (const type of TAKEN) node.addEventListener(type, stop, true);
   // As inert would: the focus can't stay on what can no longer be used (the
   // card just picked). Let go first: Chrome won't hide from screen readers
   // what holds the focus, and warns of it. In the frame's animation frame,
@@ -55,7 +64,7 @@ function comeBack(node: HTMLElement, hidden: string | null) {
   cancelAnimationFrame(letGo.get(node) ?? 0);
   letGo.delete(node);
   delete node.dataset.leaving;
-  for (const type of PRESSES) node.removeEventListener(type, stop, true);
+  for (const type of TAKEN) node.removeEventListener(type, stop, true);
   if (hidden === null) node.removeAttribute('aria-hidden');
   else node.setAttribute('aria-hidden', hidden);
 }

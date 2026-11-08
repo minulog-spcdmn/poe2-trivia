@@ -374,8 +374,9 @@ with its numbers in the comments.
   layers: Next repainted them twice over (inert, then the fade), and the
   answer once (the circle's colour, and the line over the art 3 px shorter,
   which resized the circle). An opacity starting under 1, a colour taken a
-  ring at a time, or `pointer-events: none` repaints next to nothing:
-  `outWithoutInert` (`src/lib/leaving.ts`), the stage at rest at 0.999
+  ring at a time, or `pointer-events: none` repaints next to nothing, and
+  stopping presses with listeners nothing at all: `outWithoutInert`
+  (`src/lib/leaving.ts`, which Chrome needed too), the stage at rest at 0.999
   (`Game.svelte`), `heldInk` (`ArcaneStage.svelte`). Count the layers a
   change repaints (the timeline's paints in the frame after a tap) before
   looking at the script. A group is composited apart in every frame

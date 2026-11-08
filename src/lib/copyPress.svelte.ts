@@ -75,7 +75,7 @@ export class CopyPress {
     return () => {
       for (const [type, f] of on) node.removeEventListener(type, f);
       document.removeEventListener('copy', this.#byHand);
-      removeEventListener('pointerup', this.#released);
+      removeEventListener('pointerup', this.#released, { capture: true });
       clearTimeout(this.#holdTimer);
       clearTimeout(this.#clickTimer);
       clearTimeout(this.#litTimer);
@@ -87,7 +87,8 @@ export class CopyPress {
   #press = (e: PointerEvent) => {
     if (e.button !== 0) return;
     this.#touched = e.pointerType !== 'mouse';
-    if (!this.#touched) return addEventListener('pointerup', this.#released, { once: true });
+    // (At the window as it comes down: let go over what is on its way out, it stops there, lib/leaving.ts.)
+    if (!this.#touched) return addEventListener('pointerup', this.#released, { once: true, capture: true });
     this.#down = { x: e.clientX, y: e.clientY, holding: true, long: false, refused: false, copied: false, menu: false };
     clearTimeout(this.#holdTimer);
     clearTimeout(this.#clickTimer);
