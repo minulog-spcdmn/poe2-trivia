@@ -152,8 +152,15 @@ export function deviceId(): string {
 export const VIEW: Record<CopyKind, keyof typeof COPIES_OF> = { codex: 'codex2', delve: 'delve2', practice: 'practice' };
 const copiesName = (kind: CopyKind) => COPIES_OF[VIEW[kind]];
 export const COPY_NAMES = COPY_KINDS.map(copiesName);
-/** The most devices whose copies are kept: past that, the one heard from longest ago goes (a browser whose site data was cleared comes back as a new device, and the old name would be kept for good). */
-export const KEEP_DEVICES = 8;
+/**
+ * The most devices whose copies are kept: past that, the one heard from
+ * longest ago goes. A browser whose site data was cleared comes back as a new
+ * device, and one brought back from a backup (lib/backup/) keeps what it was
+ * before as another's copy, so every time it is cleared adds one: room for
+ * years of that (each holds only what was played while it lasted), and the
+ * browser running out of room lets the oldest go first anyway.
+ */
+export const KEEP_DEVICES = 64;
 
 /** The copies of one kind held, by device. */
 export function readCopies(kind: CopyKind): Record<string, Copy> {
@@ -185,9 +192,9 @@ export function keepCopy(kind: CopyKind, device: string, copy: Copy): boolean {
     .slice(0, KEEP_DEVICES);
   while (list.some(([d]) => d === device)) {
     if (writeStored(copiesName(kind), JSON.stringify({ v: 1, devices: Object.fromEntries(list) }))) return true;
-    // (No room: the oldest other goes, then this one if it's all that's left.)
-    const oldest = list.findLastIndex(([d]) => d !== device);
-    list.splice(oldest >= 0 ? oldest : 0, 1);
+    // (No room: the oldest goes, this one too if it is: never a newer one for it, or copies would push each other
+    // out at every meeting.)
+    list.pop();
   }
   return false;
 }

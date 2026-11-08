@@ -28,7 +28,8 @@
   import { COLOUR_KEY, loadColour, saveColour } from '../lib/colour';
   import { PALETTE, RUBY, STONES } from '../lib/palette';
   import { reservedHueOf } from '../lib/game';
-  import { lastSynced, startSync, sync, syncLine, unpair } from '../lib/sync/link.svelte';
+  import { ago, lastSynced, startSync, sync, syncLine, unpair } from '../lib/sync/link.svelte';
+  import { backup, bringBack, checkBackup, forgetBackup, keepSafe } from '../lib/backup/backup.svelte';
   import SigilPicker from './SigilPicker.svelte';
 
   let { over = false }: { over?: boolean } = $props();
@@ -123,6 +124,22 @@
   $effect(() => {
     if (!paired) unpairing = false;
   });
+
+  // ---- the backup ----
+
+  onMount(() => void checkBackup());
+  /** Forget asked for, waiting for a yes. */
+  let forgetting = $state(false);
+  $effect(() => {
+    if (!backup.on) forgetting = false;
+  });
+  /** Now, for when it was last saved: moved on every half minute. */
+  let now = $state(Date.now());
+  onMount(() => {
+    const t = setInterval(() => (now = Date.now()), 30_000);
+    return () => clearInterval(t);
+  });
+  const BUSY = { making: 'Making the passkey…', bringing: 'Bringing it back…', forgetting: 'Deleting the copy kept online…' } as const;
 
   // ---- class sigils ----
 
@@ -327,6 +344,32 @@
             {/if}
           </p>
         </div>
+        {#if backup.supported}
+          <!-- Set as Sync is: what it does stays beneath whatever it says now, unseen, so the row keeps its height. -->
+          <div class="row sync-row backup-row">
+            <span class="label">Backup</span>
+            <!-- Kept in its place once it's kept, out of sight, so the row keeps its height. -->
+            <button class="btn small" class:gone={backup.on} disabled={!!backup.busy || backup.on} onclick={keepSafe}>Keep it safe</button>
+            <p class="blurb say" class:linked={backup.on && !backup.busy && !forgetting}>
+              <span class:unseen={backup.on || !!backup.busy}
+                >A passkey keeps your codex, Delve runs and achievements if the browser clears them, and brings them to a new phone. Made one before? <button class="reset" disabled={!!backup.busy} onclick={bringBack}>Bring it back</button></span
+              >
+              {#if backup.busy}
+                <span>{BUSY[backup.busy]}</span>
+              {:else if backup.on && forgetting}
+                <span
+                  >Delete the copy kept online? Your progress here stays.
+                  <button class="reset" onclick={() => ((forgetting = false), void forgetBackup())}>Delete</button><span class="sep bullet" aria-hidden="true">•</span><button class="reset" onclick={() => (forgetting = false)}>Keep it</button></span
+                >
+              {:else if backup.on}
+                <span class="paired"
+                  ><span class="light on" aria-hidden="true"></span>Kept with your passkey{backup.savedAt ? `, saved ${ago(backup.savedAt, Math.max(now, backup.savedAt))}` : ''}.
+                  <button class="reset" onclick={() => (forgetting = true)}>Forget</button></span
+                >
+              {/if}
+            </p>
+          </div>
+        {/if}
       </section>
       {/if}
     </div>
@@ -726,6 +769,9 @@
     border-color: transparent;
     background: currentColor;
     box-shadow: 0 0 0.35em currentColor;
+  }
+  .backup-row .btn.gone {
+    visibility: hidden;
   }
   .sync-row .sep {
     margin-left: 0.4rem;

@@ -33,9 +33,12 @@ import { RUBY } from '../src/lib/palette.ts';
 import { memoryStorage } from './helpers.ts';
 
 const store = new Map<string, string>();
-(globalThis as { localStorage?: unknown }).localStorage = memoryStorage(store);
+/** The longest entry the browser has room for. */
+let room = Infinity;
+(globalThis as { localStorage?: unknown }).localStorage = memoryStorage(store, (_k, v) => v.length <= room);
 // (The copies' cache hears of them going as clearCopies lets go of them, not of the store emptied under it.)
 beforeEach(() => {
+  room = Infinity;
   clearCopies();
   store.clear();
 });
@@ -214,6 +217,18 @@ test('a device keeps one name, and one copy of each other device', () => {
   assert.deepEqual(readCopies('practice'), { [PHONE]: { at: 9, raw: 'b' }, [TABLET]: { at: 3, raw: 'c' } });
   clearCopies();
   assert.deepEqual(readCopies('practice'), {});
+});
+
+test('out of room, the copy heard of longest ago goes: never a newer one for an older one', () => {
+  const LAPTOP = 'laptop000001';
+  assert.ok(keepCopy('practice', PHONE, { at: 15, raw: 'a'.repeat(10) }));
+  assert.ok(keepCopy('practice', TABLET, { at: 19, raw: 'b'.repeat(10) }));
+  // Room for two such, no more.
+  room = JSON.stringify({ v: 1, devices: readCopies('practice') }).length;
+  assert.equal(keepCopy('practice', LAPTOP, { at: 13, raw: 'c'.repeat(10) }), false, 'older than both: it goes');
+  assert.deepEqual(Object.keys(readCopies('practice')).sort(), [PHONE, TABLET].sort());
+  assert.ok(keepCopy('practice', LAPTOP, { at: 22, raw: 'c'.repeat(10) }), 'newer: the oldest makes room');
+  assert.deepEqual(Object.keys(readCopies('practice')).sort(), [LAPTOP, TABLET].sort());
 });
 
 test("a device's own progress is stamped with when it last changed, later every time it does", () => {

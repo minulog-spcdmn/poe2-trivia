@@ -30,6 +30,8 @@ export interface ToastOptions {
   seal?: { sign: Sign; tier: Tier };
   /** Called when the player closes it (not when it closes itself or is taken down): to remember that it was read. */
   onClose?: () => void;
+  /** A button under the message, which closes it as it does what it says (an offer: lib/backup/backup.svelte.ts). */
+  action?: { label: string; run: () => void };
 }
 
 export interface Toast extends ToastOptions {

@@ -1,6 +1,7 @@
 // The settings page, opened from the start page (#settings): as it comes,
 // with the sound turned down and keys changed, and a key waiting to be set;
-// its sync as it stands, paired by hand, its light coming and going. And the
+// its sync as it stands, paired by hand, its light coming and going; its
+// backup, kept or not, and its buttons pressed. And the
 // same settings over a game, from the header's gear. And both as they are
 // when the settings never came (the Wi-Fi gone as they were fetched).
 
@@ -119,6 +120,33 @@ function played(play: unknown, now = Date.now()): Step[] {
   return [];
 }
 
+/** How the backup stands (lib/backup/): the frame never keeps, so this is all there is, and its buttons act it out. */
+const BACKUP: Control = {
+  kind: 'choice',
+  key: 'backup',
+  label: 'Backup',
+  options: [
+    { value: 'off', label: 'Not kept' },
+    { value: 'on', label: 'Kept, saved a few minutes ago' },
+    { value: 'forget', label: 'Kept, Forget asked for' },
+    { value: 'making', label: 'Making the passkey' },
+    { value: 'bringing', label: 'Bringing it back' },
+  ],
+  default: 'off',
+};
+/** What's pressed once the page shows: the buttons act it out. */
+const PRESS: Control = {
+  kind: 'choice',
+  key: 'press',
+  label: 'Then',
+  options: [
+    { value: 'none', label: 'Nothing' },
+    { value: 'keep', label: 'Keep it safe' },
+    { value: 'bring', label: 'Bring it back' },
+  ],
+  default: 'none',
+};
+
 /** Option 1 on Q, and Q's old place freed: what a player who moved the answers to the left hand has. */
 const CHANGED = rebind(rebind(DEFAULT_BINDINGS, 'option1', 0, 'KeyQ'), 'detonate', 1, 'KeyX');
 
@@ -151,6 +179,41 @@ export function settingsScenes(): Scene[] {
         sound: v.sound === 'off' ? { muted: true } : v.sound === 'quiet' ? { volume: 0.35, ambience: 0 } : undefined,
         stored: { ...(v.keys ? { keys: JSON.stringify(CHANGED) } : {}), ...(v.colour ? { colour: '1' } : {}), ...(v.kept ? { name: 'zoe_arcana' } : {}), ...(v.saver ? { saver: '1' } : {}) },
       }),
+    },
+    {
+      // The backup, under sync: what it does with Keep it safe and Bring it back, or how it stands (kept, when it was last saved) and Forget;
+      // and a press on either, acted out (the frame makes no passkey).
+      key: 'settings/backup',
+      screen: 'settings',
+      group: 'Settings',
+      label: 'Backup, kept or not',
+      seats: [{ mode: 'none', me: null }],
+      controls: [BACKUP, PRESS],
+      states: [
+        { label: 'Not kept', values: { backup: 'off' } },
+        { label: 'Kept', values: { backup: 'on' } },
+        { label: 'Forget asked for', values: { backup: 'forget' }, listed: false },
+        { label: 'Making the passkey', values: { backup: 'making' }, listed: false },
+        { label: 'Bringing it back', values: { backup: 'bringing' }, listed: false },
+        { label: 'Keep it safe pressed', values: { backup: 'off', press: 'keep' }, listed: false },
+      ],
+      build: (v = {}): Built => {
+        const b = String(v.backup ?? 'off');
+        const steps: Step[] = [
+          ...(b === 'forget' ? [{ click: '.backup-row .paired .reset' }] : []),
+          ...(v.press === 'keep' ? [{ wait: 1000 }, { click: '.backup-row .btn.small:not(.gone)' }] : v.press === 'bring' ? [{ wait: 1000 }, { click: '.backup-row .say > span:first-child .reset' }] : []),
+        ];
+        return {
+          state: null,
+          hash: '#settings',
+          backup: {
+            on: b === 'on' || b === 'forget',
+            savedAt: b === 'on' || b === 'forget' ? Date.now() - 4 * 60_000 : 0,
+            ...(b === 'making' || b === 'bringing' ? { busy: b } : {}),
+          },
+          ...(steps.length ? { steps } : {}),
+        };
+      },
     },
     {
       // Sync, under the name: what it does, or how it stands (its light, when it last synced) and Unpair (the pairing dialog is the sync bench's);

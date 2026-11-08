@@ -1,7 +1,8 @@
 // The codex, opened from the start page (#codex): its collection, empty or
 // part filled, and what's done in it (as a table, sorted; an item open; its
 // tabs turned; a category picked; an item drawn more ways; erased), and its
-// Delve (with runs and without) and Achievements pages.
+// Delve (with runs and without) and Achievements pages; kept with a passkey
+// or not.
 // And the codex that never came (the Wi-Fi gone as it was fetched).
 
 import type { Answer } from '../../lib/codex.ts';
@@ -55,7 +56,7 @@ const SHOW: Control = {
   ],
   default: 'as',
 };
-const MET: Control = {
+const MET = {
   kind: 'choice',
   key: 'met',
   label: 'Met',
@@ -64,6 +65,17 @@ const MET: Control = {
     { value: 'none', label: 'Nothing yet' },
   ],
   default: 'part',
+} satisfies Control;
+/** Kept with a passkey (lib/backup/), or not. */
+const BACKED: Control = {
+  kind: 'choice',
+  key: 'backed',
+  label: 'Backup',
+  options: [
+    { value: 'off', label: 'Not kept' },
+    { value: 'on', label: 'Kept with a passkey' },
+  ],
+  default: 'off',
 };
 const ITEM: Control = { kind: 'choice', key: 'item', label: 'The “ffi” item', default: 'Prism Guardian', options: FFI.map((n) => ({ value: n, label: n })) };
 
@@ -175,6 +187,23 @@ export function codexScenes(): Scene[] {
         { label: 'The Delve page, no run yet', values: { runs: 'new' }, key: 'codex/delve-empty', listed: false },
       ],
       build: pages,
+    },
+    {
+      // Kept with a passkey or not (lib/backup/): an empty codex's way back for a browser that lost its progress, under Begin the hunt;
+      // a full one's way to keep it safe beside Erase codex, at its foot, or the words that it is. (The frame keeps nothing: its buttons act it out.)
+      ...codex('backup', 'Kept with a passkey, or not', () => ({ state: null, hash: '#codex', met: [], backup: { on: false } })),
+      // (Empty first: the way back is what a browser that lost its progress meets.)
+      controls: [BACKED, { ...MET, default: 'none' }],
+      states: [
+        { label: 'Empty: the way back', values: { backed: 'off', met: 'none' } },
+        { label: 'Part filled, not kept: the way to keep it', values: { backed: 'off', met: 'part' } },
+        { label: 'Part filled, kept', values: { backed: 'on', met: 'part' }, listed: false },
+      ],
+      build: (v = {}): Built => {
+        const backup = { on: v.backed === 'on' };
+        // (At its foot, where the way to keep it is.)
+        return v.met === 'none' ? { state: null, hash: '#codex', met: [], backup } : { ...filled([{ wait: 1400 }, { scroll: 'footer.end' }]), backup };
+      },
     },
     // Its chunk lost: the Reload, as each try shows it while the connection is down (lib/chunkRetry.ts).
     codex('lost', "Didn't come: the connection dropped", () => ({ state: null, hash: '#codex', lost: 'Codex' })),

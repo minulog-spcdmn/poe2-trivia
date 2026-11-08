@@ -37,12 +37,10 @@ import { CHANNEL, roomPrefix } from '../channel.ts';
 import { loadPeerJs, newPeer } from '../peer.ts';
 import { announceStored, onStoredHere, readStored, removeStored, storeKey, writeStored } from '../storage.ts';
 import { countEvent } from '../count.ts';
-import { parseCodex, parsePractice } from '../codex.ts';
-import { parseRecords } from '../delveRecord.ts';
 import { keepOwnerKey, ownerKeyKept, ownerUnlocked } from '../ownerKey.ts';
 import { codeKey, newCode, peerName, prove, proves } from './code.ts';
 import { showSynced, tellsLink } from './notice.ts';
-import { OWN_NAMES, TAKEN_NAMES, ownNow, takeIn, takenNow } from './shared.ts';
+import { OWN_NAMES, TAKEN_NAMES, inParts, ownNow, takeCopies, takeIn, takenNow } from './shared.ts';
 import {
   COPY_KINDS,
   MAX_COPY,
@@ -51,12 +49,10 @@ import {
   clearCopies,
   deviceId,
   UNMET_MS,
-  VIEW,
   forgetPairing,
   homeOnMeeting,
   isDevice,
   isStamp,
-  keepCopy,
   loadPairing,
   meeting,
   lapsed,
@@ -252,10 +248,6 @@ function readGiven(v: unknown): Given | null {
   return { copies, taken: isObj(v.taken) ? (v.taken as Record<string, string>) : {} };
 }
 
-/** What reads each kind of copy: one it can't read isn't kept (the browser's room is the device's own progress first). */
-const READS: Record<CopyKind, (raw: string) => unknown> = { codex: parseCodex, delve: parseRecords, practice: parsePractice };
-/** How far ahead of this device's clock a copy may be stamped: past that it would never be replaced by a real one. */
-const AHEAD_MS = 24 * 3600_000;
 
 // ---- a run: this device, paired, on the site ----------------------------------------
 
@@ -538,19 +530,19 @@ class Run {
     if (!copies.length && h.print === link.sentTaken) return;
     for (const c of copies) link.has[`${c.device}:${c.kind}`] = c.at;
     link.sentTaken = h.print;
-    link.conn.send({ t: 'give', z: await pack({ copies, taken: h.taken }, link.gzip) });
+    // In as many gives as it takes for each to be one any build reads (a device brought back many times holds many
+    // copies), a third of what a give may unpack to in each: a copy's quotes are escaped as it is sent.
+    const parts = inParts(copies, MAX_COPIES, MAX_GIVE / 3);
+    for (const [i, part] of parts.entries()) link.conn.send({ t: 'give', z: await pack({ copies: part, taken: i ? {} : h.taken }, link.gzip) });
   }
 
   /** Keeps what came in that is newer, takes in the rest, and passes it on to the other links. */
   private async take(given: Given, from: Link) {
-    const changed = new Set<string>();
     for (const c of given.copies) {
       const key = `${c.device}:${c.kind}`;
       from.has[key] = Math.max(from.has[key] ?? 0, c.at);
-      if (c.device === this.me || c.at > Date.now() + AHEAD_MS || READS[c.kind](c.raw) == null) continue;
-      const held = readCopies(c.kind)[c.device];
-      if ((!held || c.at > held.at) && keepCopy(c.kind, c.device, { at: c.at, raw: c.raw })) changed.add(VIEW[c.kind]);
     }
+    const changed = takeCopies(given.copies, this.me);
     for (const name of takeIn(given.taken)) changed.add(name);
     if (!changed.size) return;
     announceStored([...changed]);
