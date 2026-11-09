@@ -20,6 +20,7 @@ import type { HallJob } from './hallWorker.ts';
 import { caveInLength, caveInParts } from './caveInNoise.ts';
 import type { CaveInJob } from './caveInWorker.ts';
 import { readStored, writeStored } from './storage.ts';
+import { GONE } from './leaving.ts';
 
 export type Sfx =
   | 'hover'
@@ -1459,10 +1460,14 @@ export function pointerSpeed(trail: readonly { x: number; y: number; t: number }
   return Math.hypot(x - from.x, y - from.y) / dt;
 }
 
-/** The control a click on `target` is heard from (installUiSounds), or null where the page's own click plays none. */
+/**
+ * The control a click on `target` is heard from (installUiSounds), or null where the page's own click plays none:
+ * one of a screen on its way out too (lib/leaving.ts), which takes no press. (This hears the click at the window,
+ * on its way down, before the screen stops it.)
+ */
 export function clickedControl(target: EventTarget | null): Element | null {
   const el = (target as Element | null)?.closest?.('button, a[href], [role="option"]') ?? null;
-  return !el || (el as HTMLButtonElement).disabled || el.closest('[data-sfx="none"]') ? null : el;
+  return !el || (el as HTMLButtonElement).disabled || el.closest(`[data-sfx="none"], ${GONE}`) ? null : el;
 }
 
 /** The last click, and whether a pointer made it (not a key). */
