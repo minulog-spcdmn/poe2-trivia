@@ -377,7 +377,7 @@ with its numbers in the comments.
   ring at a time, or `pointer-events: none` repaints next to nothing, and
   stopping presses with listeners nothing at all: `outWithoutInert`
   (`src/lib/leaving.ts`, which Chrome needed too), the stage at rest at 0.999
-  (`Game.svelte`), `heldInk` (`ArcaneStage.svelte`). Count the layers a
+  (`Game.svelte`), `inkAt` (`ArcaneStage.svelte`). Count the layers a
   change repaints (the timeline's paints in the frame after a tap) before
   looking at the script. A group is composited apart in every frame
   something in it moves, though, the circle turning: weigh the calm

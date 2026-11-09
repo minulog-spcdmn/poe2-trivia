@@ -32,7 +32,7 @@
   import CardEngraving from './CardEngraving.svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import Avatar from './Avatar.svelte';
-  import { actionOf, typing } from '../lib/keybinds.svelte';
+  import { actionOf, ownKey, typing } from '../lib/keybinds.svelte';
   import { optionIndex } from '../lib/keys';
   import { keyTap } from '../lib/pointerAnchor';
 
@@ -917,8 +917,8 @@
   /** An option's key (settings page) picks its card, or votes for it, as a click would. */
   function onKey(e: KeyboardEvent) {
     if (typing(e)) return;
-    // An item's window (ItemWindow) has its own keys, as on a question.
-    if (e.target instanceof Element && e.target.closest('[data-item-window]')) return;
+    // Enter or Space on a control of its own (one tabbed to, an item's window's) presses that, as on a question.
+    if (ownKey(e)) return;
     if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || document.querySelector('[aria-modal="true"]')) return;
     const n = optionIndex(actionOf(e));
     const cat = n === null ? undefined : s.offered[n];

@@ -20,7 +20,7 @@ import {
   readCopies,
   savePairing,
 } from '../src/lib/sync/store.ts';
-import { ownNow, takeIn, takenNow } from '../src/lib/sync/shared.ts';
+import { forgetOwn, ownNow, takeIn, takenNow } from '../src/lib/sync/shared.ts';
 import { combineCodex, emptyCodex, loadCodex, loadPractice, parseCodex, recordEncounter, recordPractice, serializeCodex, type Codex } from '../src/lib/codex.ts';
 import { DELVE_RECORD_KEY, addRun, bestOf, combineRecords, emptyRecords, loadRecords, recordRun, serializeRecords, tallyOf, type DelveRun } from '../src/lib/delveRecord.ts';
 import { ACHIEVEMENTS, ACHIEVEMENTS_KEY, WINS_KEY, absorbAchievements, absorbWins, loadAchievements, loadWins, serializeStore, serializeWins } from '../src/lib/achievements.ts';
@@ -225,6 +225,31 @@ test("a device's own progress is stamped with when it last changed, later every 
   const two = ownNow('practice')!;
   assert.ok(two.at > one.at);
   assert.equal(two.raw, store.get(storeKey('practice')));
+});
+
+test('a device whose progress was erased comes back a new one: what it has since never replaces the copy the others keep of what it had', () => {
+  // This device, with progress, as another device holds it: a copy under its name, kept only until a newer one of that name comes.
+  const was = deviceId();
+  recordPractice(true);
+  recordPractice(true);
+  const had = ownNow('practice')!;
+  const theirs = new Map([[was, had]]);
+  const takes = (device: string, c: { at: number; raw: string }) => {
+    const held = theirs.get(device);
+    if (!held || c.at > held.at) theirs.set(device, c);
+  };
+  // Erased (the codex's Erase: its own progress gone, forgetOwn), then played on and paired again.
+  store.delete(storeKey('practice'));
+  forgetOwn();
+  assert.equal(store.has(storeKey('sync.own')), false, 'its stamps go with its name');
+  recordPractice(false);
+  // (Under its old name this, stamped later, is what would have replaced the copy.)
+  const since = ownNow('practice')!;
+  const now = deviceId();
+  assert.notEqual(now, was, 'a new name');
+  takes(now, since);
+  assert.deepEqual(theirs.get(was), had, 'what it had is still held');
+  assert.deepEqual(theirs.get(now), since);
 });
 
 // ---- the codex -----------------------------------------------------------------------

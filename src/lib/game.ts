@@ -1844,7 +1844,8 @@ export class Engine {
         let vein: Pick<Reveal, 'strike' | 'dug' | 'buried' | 'banked'> = {};
         if (s.delve && q.find === 'azurite') vein = { strike: q.strike ?? 1 };
         if (correct) {
-          active.score += 1;
+          // (A deathmatch settles a tie and scores nothing: the points stay where the players tied, as the end screen says them, "Tied on 10".)
+          if (!s.deathmatch) active.score += 1;
           if (s.delve && q.find === 'azurite') {
             // A vein's ward goes into the dig's haul, in hand (see delve.ts, the dig).
             if (this.strikeRight(s, q, [active.id])) {

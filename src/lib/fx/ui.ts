@@ -9,8 +9,11 @@
 import { fxActive, type Point } from './core';
 import { C, embers, flare, glints, outline, puffs, rand, ring, sparks } from './effects';
 import { light } from '../lights';
+import { GONE } from '../leaving';
 
 const CONTROL = 'button, a[href], [role="button"], select, input[type="checkbox"], summary';
+/** Where a press throws no sparks: a control that opts out or keeps the hover alone, and one of a screen on its way out (lib/leaving.ts), which takes no press (these hear it at the window, on its way down, before the screen stops it). */
+const NO_PRESS = `[data-fx="none"], [data-fx="hover"], ${GONE}`;
 
 type Weight = 'heavy' | 'medium' | 'light';
 
@@ -113,7 +116,7 @@ export function installUiFx() {
     (e) => {
       if (e.button !== 0) return;
       const el = (e.target as Element | null)?.closest?.(CONTROL);
-      if (!el || (el as HTMLButtonElement).disabled || el.closest('[data-fx="none"], [data-fx="hover"]')) return;
+      if (!el || (el as HTMLButtonElement).disabled || el.closest(NO_PRESS)) return;
       pressAt({ x: e.clientX, y: e.clientY }, el);
     },
     { passive: true, capture: true },
@@ -123,7 +126,7 @@ export function installUiFx() {
     (e) => {
       if (e.detail !== 0) return; // real pointer clicks were handled on pointerdown
       const el = (e.target as Element | null)?.closest?.(CONTROL);
-      if (!el || (el as HTMLButtonElement).disabled || el.closest('[data-fx="none"], [data-fx="hover"]')) return;
+      if (!el || (el as HTMLButtonElement).disabled || el.closest(NO_PRESS)) return;
       const r = el.getBoundingClientRect();
       pressAt({ x: r.left + r.width / 2, y: r.top + r.height / 2 }, el);
     },
