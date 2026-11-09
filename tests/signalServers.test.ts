@@ -25,6 +25,7 @@ const { session } = await import('../src/lib/session.svelte.ts');
 const { default: Peer, net } = await import('./fakePeerjs.ts');
 const { PEER_PREFIX, alsoOn, chooseServer, keepFresh, newPeer, pageServer, peerJsNow, peerOptions, serverOf, useServers } = await import('../src/lib/peer.ts');
 const { ProbeDesk, answerProbes, probeRoom, slotId } = await import('../src/lib/rooms.ts');
+const { ping, pingAnswer } = await import('../src/lib/probeDesk.ts');
 const { OWN_SIGNAL_HOST } = await import('../src/lib/signalHost.ts');
 type RoomInfo = import('../src/lib/roomInfo.ts').RoomInfo;
 
@@ -523,6 +524,27 @@ test("past 8 KB a steady stream doesn't put the swap off: a second on, quiet or 
     mock.timers.tick(400);
   }
   assert.deepEqual(socket.log, ['closed', 'started room tok']);
+});
+
+test("a listing on ours whose host's page meets there takes a fresh socket every two or three seconds while it answers its share of pings: over twenty requests a minute", () => {
+  const { socket } = freshPeer();
+  // A scan's peer on ours, its ping's connection id and its challenge, as long as the page makes them.
+  const [scanner, connectionId, challenge] = ['s'.repeat(24), `dc_${'c'.repeat(11)}`, 'C'.repeat(22)];
+  let swaps = 0;
+  // Six pings a second (60 in 10 s, probeDesk.ts), each answered with the room: about 0.65 KB over the socket with what the way adds.
+  for (let t = 0; t < 60_000; t += 500) {
+    for (let i = 0; i < 3; i++) {
+      socket.emit('message', { ...ping(slotId(1), connectionId, challenge), src: scanner });
+      socket.send(pingAnswer(scanner, connectionId, room('ABCDEF')));
+    }
+    mock.timers.tick(500);
+    if (socket.log.at(-1) !== 'started room tok') continue;
+    swaps++;
+    socket.log.length = 0;
+    socket.opened();
+    socket.emit('message', { type: 'OPEN' });
+  }
+  assert.ok(swaps >= 20 && swaps <= 26, `${swaps} in a minute`);
 });
 
 test('a swap waits while a connection is being set up, to 8 KB', () => {

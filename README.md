@@ -205,6 +205,25 @@ protocol, one Durable Object holding every peer's socket in memory.
 - The open rooms list scans its page's server only: a page on the cloud
   doesn't list a room whose host the cloud turned away (an invite or the code
   still finds it).
+- The list asks each listed room by a ping through the server and never
+  connects to one. A room answers 60 pings in 10 s, which is about 140 start
+  pages scanning at the list's quickest (every 20 s). So the list eases off
+  (`lib/roomRefresh.ts`): a page out of sight doesn't scan; one with no sign
+  of its player scans later each time (13 times in its first hour, then
+  every ten minutes); and a page whose pings a room let go, or that couldn't
+  reach the server, waits twice as long each time, to every 160 s, and half
+  as long again after each scan that's answered. Every wait is up to a
+  quarter shorter or longer by chance, so pages that opened together don't
+  come back together. Past its share a room is heard on part of a page's
+  scans and stays listed as last heard between them, ten minutes at most,
+  where before it was connected to: several connections a second for a
+  host's device to set up on a busy evening. With every page in sight and
+  its player about, 97% of lists show a given room at 1,000 pages, 88% at
+  2,000 and 77% at 3,000, and a new room reaches a list after as many
+  seconds, on average, as a sixth of the pages scanning (simulated,
+  `tests/roomRefresh.test.ts`): what the share of 60 pings in 10 s
+  (`lib/probeDesk.ts`) carries, which is the number to raise for more. The
+  refresh button always scans at once.
 - Only the game's own pages are answered; an address (an IPv4 one, or an
   IPv6 /56) may connect 120 times a minute and hold 64 sockets; a socket's
   messages past 300 in 10 s are let go, and past 600 it's hung up on (never
@@ -220,9 +239,17 @@ protocol, one Durable Object holding every peer's socket in memory.
   ask for none). A page on the cloud costs ours nothing unless it hosts (its
   room's id, and a public room's listing), opens an invite or joins a room
   the cloud hasn't got; a page on ours, a socket per peer, the open rooms
-  list a socket per refresh while it's shown. A room costs ours about six
-  requests, so at the busiest day yet (569 visits, 5 November 2026) it stays
-  far under both. Past either, ours stops until midnight UTC: pages the cloud
+  list a socket per scan (as often as above: 157 an hour at its quickest, 13
+  in the first hour of a page nobody touches, none out of sight). A room
+  costs ours about six requests, so at the busiest day yet (569 visits,
+  5 November 2026) it stays far under both. Its listing costs more where its
+  host's page is on ours and many pages scan: answering its share of pings
+  carries the 6 KB of `keepFresh` every two or three seconds, a fresh socket
+  each time, over twenty requests a minute. With every page on ours (the
+  cloud down) a day's 100,000 requests are about 640 hours of start pages
+  scanning at their quickest by the Worker's count, and a half to two thirds
+  of that by the Object's, which counts a scan's pings and the rooms'
+  answers too. Past either, ours stops until midnight UTC: pages the cloud
   answers never needed it (their rooms' copies on ours try again, later each
   time), and only the pages the cloud turns away can't play, as before ours.
   The Worker requests are the account's, the relay's too, so the relay would

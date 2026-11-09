@@ -93,9 +93,11 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
 - **Room codes** are 6 characters (about a billion combinations).
 
 **Privacy:** guests connect directly to the host (WebRTC), also briefly
-while browsing the open rooms list or on opening an invite link, so the
-host and guests can see each other's IP address (unless the connection
-runs through a TURN relay). Guests never connect to each other. The
+on opening an invite link to a room that doesn't answer over the
+matchmaking server, so the host and guests can see each other's IP address
+(unless the connection runs through a TURN relay). The open rooms list
+asks rooms through the matchmaking server alone and connects to none.
+Guests never connect to each other. The
 privacy policy says so; the game itself doesn't show a notice.
 
 **Visit counts** (GoatCounter, `src/lib/count.ts`) are sent from the live
