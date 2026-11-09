@@ -249,6 +249,37 @@ let loading: Promise<PeerJs> | null = null;
 /** What a peer that loses its server does: looks where the page meets again (relook). */
 const LOST = new Set(['network', 'server-error', 'socket-error', 'socket-closed']);
 
+/** The most signals a peer keeps for connections it doesn't know (boundSignals): a connection's own are a handful. */
+export const KEPT_SIGNALS = 64;
+
+/** Lets go of the kept signals longest there (`kept`, by connection id: a Map keeps its ids in the order they came) until no more than `most` are left. */
+export function trimKept(kept: Map<string, unknown[]>, most = KEPT_SIGNALS) {
+  let n = 0;
+  for (const list of kept.values()) n += list.length;
+  for (const [id, list] of kept) {
+    if (n <= most) break;
+    kept.delete(id);
+    n -= list.length;
+  }
+}
+
+/**
+ * PeerJS keeps every signal that names a connection it doesn't know (a
+ * candidate ahead of its offer; the open rooms list's pings, which lib/rooms
+ * takes back out), each until that connection claims it: one never claimed
+ * stays for as long as the peer does, and so does a call offered, which
+ * nothing here answers. Either is claimed within moments or never, so a peer
+ * keeps only the newest few and hangs a call up as it comes: what a page
+ * holds for its peer stays small however long its room stands and whatever
+ * is sent to its id. (PeerJS's own listener, which keeps the signal, is
+ * heard first: tests/peerjsLostMessages.test.ts.)
+ */
+function boundSignals(peer: PeerJsModule.Peer) {
+  const kept = (peer as unknown as { _lostMessages?: unknown })._lostMessages;
+  if (kept instanceof Map && typeof peer.socket?.on === 'function') peer.socket.on('message', () => trimKept(kept));
+  peer.on('call', (call) => call.close());
+}
+
 /**
  * A new peer on `server` (the page's unless named), under `id` or a fresh
  * one: on ours made here (from getRandomValues, which unlike randomUUID
@@ -264,6 +295,7 @@ export function newPeer(Peer: PeerJs['default'], id?: string, server: Server = p
   const name = id ?? (server === 'own' && !QA_LOCAL ? randomToken(24) : undefined);
   const peer = name ? new Peer(name, options) : new Peer(options);
   peerServers.set(peer, server);
+  boundSignals(peer);
   if (own && server === 'cloud') {
     let opened = false;
     peer.on('open', () => {
