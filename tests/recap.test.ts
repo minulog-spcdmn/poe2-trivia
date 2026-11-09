@@ -380,6 +380,10 @@ test('a deathmatch of three ranks who lasted longer higher, and the engine keeps
     ranked(g.players, g.winners, g.deathmatch!.out).map((x) => x.p.id),
     [b, c, a],
   );
+  // The duel's right answers score nothing: every line of the end still says the score they tied on.
+  assert.deepEqual(g.players.map((p) => p.score), [1, 1, 1]);
+  assert.equal(plain(scoreLine(g, g.players.find((p) => p.id === b))), 'Tied on 1, won the deathmatch in round 2');
+  assert.equal(plain(yourGame(g, c).place!), 'You came second, tied on 1.');
 });
 
 test('a negative score has a minus sign; the hardest category is never the one picked most too; every life given is told', () => {
