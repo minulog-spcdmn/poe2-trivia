@@ -28,7 +28,7 @@
     return { f, games: sum(f.games), part: sum(f.stuttered), many: sum(f.many), worst: most ? moment : null, visits: sum(f.visits), visitsPart: sum(f.visitsStuttered) };
   };
   /** What a change is weighed by: visits once they're counted, games until then. */
-  const by = $derived(stutterBy(L, B));
+  const by = $derived(stutterBy(B));
   const devices = $derived(DEVICES.map((d) => ({ device: d, now: figures(L, d), before: figures(B, d) })));
   const games = $derived(devices.reduce((n, d) => n + d.now.games, 0));
   const top = $derived(stutterTop(DEVICES.map((d) => L.frames[d]), L.days, weekly));
@@ -83,8 +83,8 @@
               <td class="n">{fmt(d.now.games)}</td>
               <td class="n">
                 <b class="strong">{percent(d.now.part, d.now.games)}</b>
-                <!-- (Weighed as resting on as many visits, where those are counted: a visitor's games go together.) -->
-                <Delta now={share(d.now)} before={share(d.before)} rate worse="up" of={by === 'visits' ? { now: d.now.visits, before: d.before.visits } : { now: d.now.games, before: d.before.games }} period={period.before} />
+                <!-- (Said but not judged where visits are: a visitor's games go together, so the visits' column says whether it's news.) -->
+                <Delta now={share(d.now)} before={share(d.before)} rate worse={by === 'visits' ? 'neither' : 'up'} of={{ now: d.now.games, before: d.before.games }} period={period.before} />
               </td>
               <td class="n opt" class:soft={!d.now.visits}>
                 {#if d.now.visits}
@@ -110,7 +110,7 @@
       'Each device in a game counts how its frames came, while the game was on screen and the page was seen (not the lobby or the results), once the game ends or is left. So a game of four counts four times, and a device that shows the results only is no game.',
       "Counted this way from 1 November 2026. The counts from 29 October to then went by frames over 50 ms and had no start, so they aren't shown.",
       "Stuttered: over 1% of that time went to frames longer than 40 ms; a lot: 5% or more. By time, not by frames: the same hitches are a smaller share of a fast screen's frames.",
-      "Of visits: the visits whose first game stuttered, each visitor once however many games they played (once in eight hours, as visits are counted), from about 10 November 2026. A slow device that plays ten games is ten stuttered games but one visit, so a change against the period before is weighed by visits once they're counted on 3 of its days (by games until then), here, in the overview's warning and in the daily mail.",
+      "Of visits: the visits whose first game stuttered, each visitor once however many games they played (once in eight hours, as visits are counted), from about 10 November 2026. A slow device that plays ten games is ten stuttered games but one visit, so a change against the period before is judged by visits once they're counted on 3 of its days and a third of them (until then by games, taken as resting on as many fewer as each player plays), and only from more stuttered visits than one device makes (3 a day), here, in the overview's warning and in the daily mail; the games' own change is then said without a colour. A page reloaded or come back to counts no visit: its arrival did.",
       "Mostly at: the moment (the start, the deal, a question, the reveal) most of the stuttering time fell in, of the games that stuttered. The start is a game's first 3 seconds on the device, from Begin (or the page picking the game up) with its screen being built; the deal is every hand dealt after it, Delve's new zones too.",
       "In software: games on a computer whose browser draws WebGL without the GPU (hardware acceleration switched off), about 6 frames a second, so they'd all stutter a lot whatever the game did. Counted apart, in none of the other figures.",
       'A device counts its game as the page goes out of sight, too (a phone often drops a tab switched away from without a word), and not again if it comes back to it.',

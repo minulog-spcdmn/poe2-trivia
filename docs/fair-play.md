@@ -132,7 +132,8 @@ more; a computer's game switched away from is counted when it ends, as a
 whole); a game seen for
 less than 20 seconds sends nothing. The first game a page counts goes once
 more as `frames2/<device>/visit/smooth` or `…/visit/stuttered`
-(`stutter.ts` VISIT), sent as a step is, so once a visitor in eight hours:
+(`stutter.ts` VISIT), sent as a step is, so once a visitor in eight hours,
+and only from a page arrived at (not one reloaded or come back to):
 nothing tells whose a game is, and one slow device's run of games would
 otherwise read as many players stuttering. Until 1 November 2026 it was
 `frames/…`, by frames over 50 ms and with no `begin`; the stats page reads
@@ -202,7 +203,9 @@ and, where the period before was counted in full, the game breaking more
 than before (its scripts' errors, or pages missing a part that didn't
 load, for as many visits) or a kind of device stuttering more, weighed by
 its visits' first games once those are counted on 3 of the period before's
-days and by its games until then (`insights.ts` healthOf, stutterBy); each opens Joining or Stutter. "What happened"
+days and a third of them, from more than one device's visits (3 a day),
+and until then by its games, taken as resting on as many fewer as each
+player plays (`insights.ts` healthOf, stutterBy); each opens Joining or Stutter. "What happened"
 reads out the days far busier than usual (the median of the days within
 two weeks of it) and the site behind each, and the sites and countries
 that brought far more or fewer than the period before, beyond how they

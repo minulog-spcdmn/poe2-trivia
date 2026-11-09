@@ -976,7 +976,7 @@ test("two phones' seven stuttered games are two visits: no news (7 November 2026
   const visits: [number, number][] = [[0, 0], [1, 1], [0, 0], [0, 0], [0, 1], [0, 0], [0, 2]];
   const now = framesIn(['2026-11-07'], 'android', [[0, 7]], [[0, 2]]);
   const before = framesIn(WEEK, 'android', games, visits);
-  assert.equal(stutterBy(now, before), 'visits');
+  assert.equal(stutterBy(before), 'visits');
   assert.deepEqual(stutterOf(now, 'android', 'visits'), { of: 2, part: 2 });
   assert.equal(healthOf(now, before), null);
 });
@@ -998,16 +998,51 @@ test("stutter is judged by visits once they're counted on 3 of the days before, 
   const now = framesIn(['2026-11-07'], 'ios', [[10, 14]], [[7, 1]]);
   // Counted from the 5th: two days of the 7 before. Still by games, which stuttered far more.
   const two = framesIn(WEEK, 'ios', games, [[0, 0], [0, 0], [0, 0], [0, 0], [0, 0], [7, 1], [7, 1]]);
-  assert.equal(stutterBy(now, two), 'games');
+  assert.equal(stutterBy(two), 'games');
   assert.deepEqual(flagged(now, two), [['ios', 58, 24, 9, 'games']]);
   // From the 4th: three days. By visits, which didn't.
   const three = framesIn(WEEK, 'ios', games, [[0, 0], [0, 0], [0, 0], [0, 0], [7, 1], [7, 1], [7, 1]]);
-  assert.equal(stutterBy(now, three), 'visits');
+  assert.equal(stutterBy(three), 'visits');
   assert.equal(healthOf(now, three), null);
-  // A period with none of its own (pages from before they were counted): by games.
-  assert.equal(stutterBy(framesIn(['2026-11-07'], 'ios', [[10, 14]]), three), 'games');
+  // A day with no visit of its own (its players' visits began the day before) has nothing to say: never back to games, where one device's evening is news again.
+  const none = framesIn(['2026-11-07'], 'ios', [[0, 14]]);
+  assert.equal(healthOf(none, three), null);
+  assert.deepEqual(flagged(none, two), [['ios', 100, 14, 9, 'games']]);
   // Visits are no games: the games' own figures stay as they were.
   assert.deepEqual([three.frames.ios.games, three.frames.ios.stuttered, three.frames.ios.visits, three.frames.ios.visitsStuttered], [[22, 22, 22, 22, 22, 22, 22], [2, 2, 2, 2, 2, 2, 2], [0, 0, 0, 0, 8, 8, 8], [0, 0, 0, 0, 1, 1, 1]]);
+});
+
+test("one phone's three visits in a day are no news, even among phones that never stuttered: only more than one device makes", () => {
+  // A phone played on morning, afternoon and night is three of GoatCounter's visits (eight hours each).
+  const before = framesIn(WEEK, 'android', [], [[6, 0], [6, 0], [6, 0], [6, 0], [6, 0], [6, 0], [6, 0]]);
+  assert.equal(rateBeyondChance(100, 3, 0, 42, zFor(6)), true, 'which the test alone would pass');
+  assert.equal(healthOf(framesIn(['2026-11-07'], 'android', [], [[0, 3]]), before), null);
+  assert.equal(healthOf(framesIn(['2026-11-07'], 'android', [], [[2, 3]]), before), null);
+  // Five stuttered visits are at least two devices.
+  assert.deepEqual(flagged(framesIn(['2026-11-07'], 'android', [], [[1, 5]]), before), [['android', 83, 6, 0, 'visits']]);
+});
+
+test('until visits are counted, games rest on as many fewer as they come in bunches: a usual run of games is no news either', () => {
+  // The games of 8 November (#422) again, with what says how many each player plays: three games a player, so a spread of 5.
+  const played = (days: string[], games: [number, number][]) => [
+    dayPath('play/delve', days, games.map((g) => g[0] + g[1])),
+    dayPath('reach/played', days, games.map((g) => Math.ceil((g[0] + g[1]) / 3))),
+    dayPath('frames2/desktop-chrome/smooth', days, games.map((g) => g[0])),
+    dayPath('frames2/desktop-chrome/some/reveal', days, games.map((g) => g[1])),
+  ];
+  const week: [number, number][] = [[2, 0], [3, 0], [2, 1], [3, 0], [38, 6], [44, 2], [103, 22]];
+  const before = countsOf(played(WEEK, week), WEEK);
+  assert.equal(healthOf(countsOf(played(['2026-11-08'], [[44, 19]]), ['2026-11-08']), before), null);
+  // Most games stuttering still is.
+  assert.deepEqual(flagged(countsOf(played(['2026-11-08'], [[13, 50]]), ['2026-11-08']), before), [['desktop-chrome', 79, 63, 14, 'games']]);
+});
+
+test("a long period before isn't spoken for by its last few days' visits: a third of its days have them, or it goes by games", () => {
+  const month = daysBetween('2026-10-12', '2026-11-10');
+  const withVisits = (n: number) => framesIn(month, 'ios', month.map(() => [20, 2]), month.map((_, i) => (i >= month.length - n ? [7, 1] : [0, 0])));
+  assert.equal(stutterBy(withVisits(3)), 'games');
+  assert.equal(stutterBy(withVisits(9)), 'games');
+  assert.equal(stutterBy(withVisits(10)), 'visits');
 });
 
 test("bars named alike are one, so a label counted from outside can't take another's place", () => {
@@ -1708,8 +1743,8 @@ test('a kept read is used only in the shape this build keeps, and for its own pe
   assert.equal(keptRead(JSON.stringify({ ...r, v: READ_V - 1 }), 30), null);
   assert.equal(keptRead(null, 30), null);
   assert.equal(keptRead('{not json', 30), null);
-  // This build's kept read has the unread counts (Counts.ready, dailyBack, delveRuns, scriptErrors, relay): one kept without them is read again.
-  assert.equal(READ_V, 16);
+  // This build's kept read has the unread counts (Counts.ready, dailyBack, delveRuns, scriptErrors, relay) and each device's visits (Counts.frames): one kept without them is read again.
+  assert.equal(READ_V, 17);
 });
 
 test("a read shown before its lists are in says they're being read, never that there are none", () => {

@@ -170,8 +170,9 @@ export function readFramesPath(path: string): { device: Device; bucket: Bucket |
  * row on one slow phone are five stuttered games; here they are one visit,
  * and a share of visits says how many players' devices stuttered, which is
  * what a deploy moves (the stats' health check weighs these, insights.ts
- * healthOf). A visitor who reloads between games counts once under each of
- * the two paths at most. Counted from November 2026; a game drawn in
+ * healthOf). Only a page arrived at sends it, not one reloaded or come back
+ * to, and a visitor who arrives twice in those hours counts once under each
+ * of the two paths at most. Counted from November 2026; a game drawn in
  * software (SOFTWARE) is no first game.
  */
 export const VISIT = 'visit';
