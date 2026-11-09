@@ -15,11 +15,11 @@ import { clock } from '../clock.ts';
 import { ownRecordsRaw } from '../delveRecord.ts';
 import { absorbSigils, ownSigilsRaw } from '../sigils.ts';
 import { STARTED, absorbStarted, ownStartedRaw } from '../started.ts';
-import { readStored, writeStored } from '../storage.ts';
+import { readStored, removeStored, writeStored } from '../storage.ts';
 import { chosenNow, takeChosen } from './chosen.ts';
 import { COLOUR_NAME } from '../colour.ts';
 import { NAME_STORED } from '../names.ts';
-import type { CopyKind } from './store.ts';
+import { forgetDevice, type CopyKind } from './store.ts';
 
 /** This device's own progress of each copied kind, as stored (null for none). */
 export const OWN: Record<CopyKind, () => string | null> = {
@@ -117,4 +117,16 @@ export function ownNow(kind: CopyKind): { at: number; raw: string } | null {
   const at = Math.max(Date.now(), (was?.at ?? 0) + 1);
   writeStored(STAMPS, JSON.stringify({ ...stamps, [kind]: { at, print } }));
   return { at, raw };
+}
+
+/**
+ * This device's own progress erased (the codex's Erase): its name among the
+ * player's devices goes with it, and its stamps, so paired again it comes
+ * back a new device. Under its old name what it has since, stamped later,
+ * would replace the copy each of the others keeps of what it had, and they
+ * would lose that too, one after another: theirs is theirs to keep.
+ */
+export function forgetOwn() {
+  removeStored(STAMPS);
+  forgetDevice();
 }

@@ -146,6 +146,9 @@ export function deviceId(): string {
   return made;
 }
 
+/** Lets go of that name: the next one asked for is new (lib/sync/shared.ts forgetOwn). */
+export const forgetDevice = () => removeStored(DEVICE);
+
 // ---- the copies ----------------------------------------------------------------
 
 /** The entry each kind of copy is read into (the device's own): the codex, the Delve records, the practice tally. */
