@@ -6,9 +6,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { TWINS, isFake, type Item, type Question } from '../src/lib/game.ts';
-import { DAILY_LAUNCH, cutoffDay, dailyQuestion, dealLive, repeatGap, utcDay } from '../src/lib/daily.ts';
+import { DAILY_LAUNCH, DAILY_NEW_WEEK, cutoffDay, dailyQuestion, dealFrom, dealLive, newWeek, repeatGap, utcDay } from '../src/lib/daily.ts';
+import { RELEASES, dayNumber } from '../src/lib/releases.ts';
 import { ROWS_FROM, ROWS_TO, ROW_ANSWERS, dailyRow } from '../src/lib/dailyRows.ts';
-import { FILE, deal, fileOf, rowsOf } from '../scripts/deal.mjs';
+import { FILE, MARGIN_MS, deal, fileOf, rowsOf } from '../scripts/deal.mjs';
 import { liveDailies } from '../scripts/live-dailies.mjs';
 import { fakes, items } from './helpers.ts';
 
@@ -16,7 +17,9 @@ const DAY_MS = 86_400_000;
 const text = readFileSync(FILE, 'utf8');
 const { rows } = rowsOf(text);
 const today = utcDay(Date.now());
-const cutoff = cutoffDay(Date.now());
+const cutoff = dealFrom(Date.now(), items);
+// A deal keeps the live rows a little further (deal.mjs MARGIN_MS): the days between are the live site's or dealt anew.
+const dealtFrom = dealFrom(Date.now() + MARGIN_MS, items);
 const parsed = (row: string) => JSON.parse(row) as Question;
 
 test('the rows run from the first day, a day each, and a day with one asks it', () => {
@@ -33,7 +36,7 @@ test('the rows run from the first day, a day each, and a day with one asks it', 
 
 test('the days still to come are dealt from the item data and code as they are (run `npm run deal`)', () => {
   // A deal forgotten after a refresh, or a change to how the daily deals, or a merge that kept another branch's rows.
-  for (let day = cutoff; day <= ROWS_TO; day++) {
+  for (let day = dealtFrom; day <= ROWS_TO; day++) {
     const asked = ROW_ANSWERS.slice(0, day - ROWS_FROM);
     assert.equal(rows[day - ROWS_FROM], JSON.stringify(dealLive(items, fakes, day, asked)), `day ${day}: run \`npm run deal\``);
   }
@@ -79,9 +82,10 @@ test("no day before the cutoff differs from the live site's (run `npm run deal`,
 test('a deal puts the days before the cutoff back as the live site has them (a merge that slipped past it)', () => {
   // The rows as a refresh merged too late left them: two days before the cutoff dealt again.
   const moved = [...rows];
-  for (const day of [today + 1, cutoff - 1]) moved[day - ROWS_FROM] = JSON.stringify({ ...JSON.parse(moved[day - ROWS_FROM]), itemId: 'moved' });
+  const days = new Set([today, cutoff - 1]);
+  for (const day of days) moved[day - ROWS_FROM] = JSON.stringify({ ...JSON.parse(moved[day - ROWS_FROM]), itemId: 'moved' });
   const { text: fixed, restored } = deal(fileOf(ROWS_FROM, moved), items, fakes, Date.now(), { live: text });
-  assert.equal(restored, 2);
+  assert.equal(restored, days.size);
   // (Over the days the file has: a deal reaches a year past the cutoff, a day further each day it moves on, from
   // 22:00 UTC, before the file is dealt again.)
   assert.deepEqual(rowsOf(fixed).rows.slice(0, rows.length), rows);
@@ -104,7 +108,7 @@ test('a refresh that adds, removes and renames an item moves no day before the c
   const dealt = rowsOf(deal(text, after, afterFakes, now).text).rows;
   for (let day = ROWS_FROM; day < cutoff; day++) assert.equal(dealt[day - ROWS_FROM], rows[day - ROWS_FROM], `day ${day}`);
   assert.equal(parsed(dealt[today - ROWS_FROM]).labels[parsed(dealt[today - ROWS_FROM]).options.indexOf(renamed.id)], renamed.name, 'today keeps the name it was asked by');
-  assert.equal(dealt.length, cutoff + 365 - ROWS_FROM + 1, 'a year past the cutoff');
+  assert.equal(dealt.length, cutoffDay(now) + 365 - ROWS_FROM + 1, 'a year past the week ahead');
   const ahead = dealt.slice(cutoff - ROWS_FROM).map(parsed);
   assert.ok(ahead.some((q) => added.some((it) => q.options.includes(it.id))), 'a new item is asked or offered');
   assert.ok(!ahead.some((q) => q.itemId === removed.id || q.options.includes(removed.id)), 'the removed item is gone');
@@ -112,4 +116,27 @@ test('a refresh that adds, removes and renames an item moves no day before the c
     const i = q.options.indexOf(renamed.id);
     if (i >= 0) assert.equal(q.labels[i], 'Renamed Unique');
   }
+});
+
+test('the refresh that brings a release’s items deals from the next day, so their week starts then', () => {
+  // A release's items as its refresh stamps them, a few of each kind (but gems), on items stamped by none yet.
+  const release = RELEASES.at(-1)!;
+  const came = (it: Item, i: number) => it.kind !== 'gem' && i % 8 === 0;
+  const after = items.map(({ added: _, ...it }, i) => (came(it, i) ? { ...it, added: release.from } : it));
+  const day = dayNumber(release.from);
+  const at = (d: number, hour: number) => (d * 24 + hour) * 3_600_000;
+  assert.equal(dealFrom(at(day, 12), after), day + 1, 'the refresh’s day: from the next');
+  assert.equal(dealFrom(at(day, 22.5), after), day + 1, 'an hour and a half before its end: still from the next');
+  assert.equal(dealFrom(at(day, 23), after), day + 2, 'in its last hour: the next may be played already');
+  assert.equal(dealFrom(at(day + 3, 12), after), day + 4, 'a refresh again in their week: still from the next day');
+  assert.equal(dealFrom(at(day + DAILY_NEW_WEEK + 1, 12), after), day + DAILY_NEW_WEEK + 2, 'a late deal’s week runs on a little');
+  assert.equal(dealFrom(at(day + DAILY_NEW_WEEK + 2, 12), after), cutoffDay(at(day + DAILY_NEW_WEEK + 2, 12)), 'their week dealt: a week ahead again');
+  assert.equal(dealFrom(at(day - 1, 12), after), cutoffDay(at(day - 1, 12)), 'before they came: a week ahead');
+  assert.equal(dealFrom(at(day, 12), items.map(({ added: _, ...it }) => it)), cutoffDay(at(day, 12)), 'no release’s items: a week ahead');
+  // The rows as that refresh's deal leaves them (dealt from the rows there are, which end a year past today).
+  if (day + 1 + DAILY_NEW_WEEK > ROWS_TO) return;
+  const ids = newWeek(after)!.ids;
+  const dealt = rowsOf(deal(text, after, fakes, at(day, 12)).text).rows.map(parsed);
+  for (let d = day + 1; d < day + 1 + DAILY_NEW_WEEK; d++) assert.ok(ids.has(dealt[d - ROWS_FROM].itemId), `day ${d - day} after the refresh`);
+  for (let d = ROWS_FROM; d <= day; d++) assert.equal(JSON.stringify(dealt[d - ROWS_FROM]), rows[d - ROWS_FROM], `day ${d} kept`);
 });

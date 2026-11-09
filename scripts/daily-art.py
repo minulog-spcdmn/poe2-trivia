@@ -6,11 +6,13 @@
 # it measures how much of the art box the picture covers, opaque pixels at
 # the size the start page draws it, and writes those under MIN_COVER to
 # src/data/dailyArt.json, by their art's id; the daily and its practice
-# questions never show those (lib/daily.ts). Run it after
-# scripts/upscale-art.py adds new art:
+# questions never show those (lib/daily.ts), and a digest of every picture
+# it measured, so a refresh that adds one fails tests/daily.test.ts until it
+# runs again. Run it after scripts/upscale-art.py adds new art:
 #   python3 scripts/daily-art.py
 # (Pillow with AVIF and numpy, as in .venv-art from upscale-art.py.)
 
+import hashlib
 import json
 import math
 import os
@@ -52,14 +54,16 @@ def cover(path: str) -> float:
 
 
 def main():
-    items = [it for it in json.load(open(ITEMS)) if it['kind'] != 'gem']
+    items = [it for it in json.load(open(ITEMS, encoding='utf-8')) if it['kind'] != 'gem']
     # Every picture, by its art's id: each item's own, and its variants' (a
     # question may show any of them; the daily draws again on a thin one).
     names = {a['id']: it['name'] + (f" ({a['base']})" if a is not it else '') for it in items for a in [it, *it.get('variants', [])]}
     measured = {i: cover(os.path.join(ART, f'{i}.avif')) for i in names}
     thin = sorted(i for i, c in measured.items() if c < MIN_COVER)
-    with open(OUT, 'w') as f:
-        json.dump({'minCover': MIN_COVER, 'thin': thin}, f, indent=1)
+    digest = hashlib.sha1('\n'.join(sorted(measured)).encode()).hexdigest()[:12]
+    # LF on Windows too (tests/lineEndings.test.ts).
+    with open(OUT, 'w', encoding='utf-8', newline='\n') as f:
+        json.dump({'minCover': MIN_COVER, 'measured': digest, 'thin': thin}, f, indent=1)
         f.write('\n')
     print(f'{len(thin)} of {len(measured)} pictures are too thin for the daily:')
     for i in sorted(thin, key=measured.get):

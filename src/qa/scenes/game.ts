@@ -744,7 +744,8 @@ export function gameScenes(): Scene[] {
       build: (v = {}) => {
         const when = v.at ?? 'cards';
         if (when === 'end') return runEnds();
-        const t = delveSeeded(v.dice === '79' ? 79 : undefined);
+        // A seed's number (the long base type's, which tests/qaScenes.test.ts finds again when new items move it).
+        const t = delveSeeded(/^\d+$/.test(String(v.dice)) ? Number(v.dice) : undefined);
         if (Number(v.lives ?? 3) < 3) t.pick().answer(null, false).wait(1000).next();
         // (The round is a depth on: the line shows round 2 as Depth 1, shownDepth.)
         t.playTo((s) => s.round >= Number(v.depth ?? 0) + 1 && s.phase === 'choosing');

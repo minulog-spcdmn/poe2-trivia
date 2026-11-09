@@ -103,11 +103,19 @@ import { seenLines } from './delveStartSeen';
 import { keepAwake } from './wakeLock';
 import { AWAY_AFTER_MS, goneFromEnd, goneFromLobby, noteInput, ownPresence, slowLink, standingOf, watchPresence, type Presence, type Seen, type Standing } from './presence';
 import { markStarted } from './started';
+import { newestLean, newestRelease } from './releases';
 
 /** The room is told how its players stand at most this often (Session.updateStandingPaced). */
 const STANDING_GAP_MS = 250;
 
-export const engine = new Engine(itemData as Item[], { fakes: fakeNames });
+// (Leaning to a new release's items for a while: releases.ts newStrength, Delve's
+// from this player's first run since they came, in their records: delveLean.)
+export const engine = new Engine(itemData as Item[], {
+  fakes: fakeNames,
+  lean: newestLean(itemData as Item[], Date.now, (release) => loadRecords().since?.[release] ?? null),
+});
+/** The release a Delve run notes as the player's first since (delveRecord.ts `since`), while its items are here. */
+const NEWEST_RELEASE = newestRelease(itemData as Item[]);
 
 /**
  * Delve: the depth from which whoever builds the questions fetches the
@@ -3114,7 +3122,7 @@ class Session {
     }
     const run = runEvent(prev, next, this.myPlayerId, this.mode === 'local');
     if (!run) return;
-    const r = recordRun(run);
+    const r = recordRun(run, NEWEST_RELEASE);
     if (!r) return;
     this.noteAchievements(gameOf(next));
     const was = this.delveResult?.id === run.id ? this.delveResult : null;
@@ -3753,7 +3761,7 @@ class Session {
    * run up and then ends it) replaces it (delveRecord.ts addRun).
    */
   recordLeaving() {
-    if (this.state) recordLeft(this.state, this.myPlayerId, this.mode === 'local');
+    if (this.state) recordLeft(this.state, this.myPlayerId, this.mode === 'local', NEWEST_RELEASE);
   }
 
   /**

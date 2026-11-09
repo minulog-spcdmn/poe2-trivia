@@ -1,8 +1,9 @@
 // npm run deal: writes src/data/dailies.json, Today's unique's question for
 // every day from its first to a year ahead (lib/dailyRows.ts). The days
-// before the cutoff (lib/daily.ts cutoffDay, a week ahead) keep their rows as
-// the live site has them (scripts/live-dailies.mjs): they may be played
-// already, or open in a tab. Every row from the cutoff on is dealt again from
+// before the cutoff (lib/daily.ts dealFrom: a week ahead, or from tomorrow in
+// a new release's first week) keep their rows as the live site has them
+// (scripts/live-dailies.mjs): they may be played already, or open in a tab.
+// Every row from the cutoff on is dealt again from
 // the item data and the code as they are now, so new items reach the days to
 // come. Run it last in a refresh, and after any change that changes how the
 // daily deals (tests/dailies.test.ts says when).
@@ -12,12 +13,19 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { DAILY_LAUNCH, cutoffDay, dealLive, utcDay } from '../src/lib/daily.ts';
+import { DAILY_LAUNCH, cutoffDay, dealFrom, dealLive, utcDay } from '../src/lib/daily.ts';
 import { liveDailies } from './live-dailies.mjs';
 
 const DAY_MS = 86_400_000;
-/** Days dealt past the cutoff (a year, the cutoff's own day besides). */
+/** Days dealt past the week ahead (a year, cutoffDay's own day besides). */
 export const AHEAD = 365;
+/**
+ * How much later than now the deal keeps the live site's rows to: the
+ * deploy's check (tests/dailies.test.ts) holds the rows to the live site's
+ * by its own clock, so a merge that goes live within this of its deal
+ * still passes, a day's turn between them or not.
+ */
+export const MARGIN_MS = 3_600_000;
 export const FILE = fileURLToPath(new URL('../src/data/dailies.json', import.meta.url));
 
 /** The file's rows, each the text of one day's question, from its first day. */
@@ -47,7 +55,7 @@ export function fileOf(/** @type {number} */ from, /** @type {string[]} */ rows)
  */
 export function deal(text, items, fakes, now, { live = '', fill = false } = {}) {
   const first = utcDay(DAILY_LAUNCH);
-  const cutoff = cutoffDay(now);
+  const cutoff = dealFrom(now + MARGIN_MS, items);
   const old = rowsOf(text);
   const shown = live ? rowsOf(live) : { from: first, rows: [] };
   for (const f of [old, shown]) if (f.from !== first) throw new Error(`dailies.json starts on day ${f.from}, not on the first day (${first})`);
@@ -66,7 +74,7 @@ export function deal(text, items, fakes, now, { live = '', fill = false } = {}) 
   const rows = [...kept];
   // Each day dealt from the answers of the days before it, so none comes back soon (daily.ts repeatGap).
   const asked = rows.map((row) => JSON.parse(row).itemId);
-  for (let day = first + rows.length; day <= cutoff + AHEAD; day++) {
+  for (let day = first + rows.length; day <= cutoffDay(now) + AHEAD; day++) {
     const q = dealLive(items, fakes, day, asked);
     rows.push(JSON.stringify(q));
     asked.push(q.itemId);

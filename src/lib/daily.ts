@@ -15,6 +15,7 @@ import dailyArt from '../data/dailyArt.json' with { type: 'json' };
 import itemData from '../data/items.json' with { type: 'json' };
 import fakeData from '../data/fakes.json' with { type: 'json' };
 import { ROWS_FROM, ROWS_TO, ROW_ANSWERS, dailyRow } from './dailyRows.ts';
+import { dayNumber, newestCame, newShare, newStrength, type Lean } from './releases.ts';
 
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
@@ -112,39 +113,116 @@ export const repeatGap = (items: Item[]) => Math.floor((poolOf(items).length * 3
  * category comes up as often as it has items (those not too thin, nor in
  * `recent`). `rng` draws the item and is the engine's too. `recent`:
  * answers not to ask (the days' recent ones, which the engine keeps out
- * too: dailyEngine).
+ * too: dailyEngine). `only`: the answers to keep to (a day for a release's
+ * items: dealLive), which the engine keeps to as well; a category none of
+ * them can be asked in (one too few beside it to make a question of) is let
+ * go, and once none is left, `only` is emptied and any item may be asked.
  */
-export function askOne(engine: Engine, game = dailyGame(), rng: () => number = Math.random, recent: ReadonlySet<string> = new Set()): Question {
+export function askOne(
+  engine: Engine,
+  game = dailyGame(),
+  rng: () => number = Math.random,
+  recent: ReadonlySet<string> = new Set(),
+  only: Set<string> | null = null,
+): Question {
   const all = poolOf(engine.items);
   const fresh = all.filter((it) => !recent.has(it.id));
-  const pool = fresh.length ? fresh : all;
+  let kept = only ? fresh.filter((it) => only.has(it.id)) : [];
+  if (only && !kept.length) only.clear();
   let q: Question;
   let tries = 0;
-  do {
+  for (;;) {
+    const pool = kept.length ? kept : fresh.length ? fresh : all;
     const category = pool[Math.floor(rng() * pool.length)].category;
     q = engine.makeQuestion(game, category);
     // As the game does: an answer isn't asked again, nor offered as a decoy, until its category starts over.
     game.used.push(q.itemId);
+    if (kept.length && !only!.has(q.itemId)) {
+      // (The engine's own pick when none it was to keep to could be asked: never taken. At most once a category.)
+      kept = kept.filter((it) => it.category !== category);
+      if (!kept.length) only!.clear();
+      continue;
+    }
     // A thin one, or a recent one that was all the category could ask, is put by (used, so not asked again) and another drawn.
-  } while ((thin(engine, q) || recent.has(q.itemId)) && ++tries < THIN_TRIES);
-  return q;
+    if (!(thin(engine, q) || recent.has(q.itemId)) || ++tries >= THIN_TRIES) return q;
+  }
 }
 
 /**
  * An engine that asks as Today's unique does. Twins (game.ts TWINS) may meet
- * in it, as they could from its first day, and practice asks the same way.
+ * in it, as they could from its first day, and practice asks the same way
+ * (leaning to new items as the games do: `lean`).
  */
-export const dailyEngine = (items: Item[], fakes: Record<string, string[]>, opts: { rng?: () => number; now?: () => number; mayAsk?: (id: string) => boolean } = {}) =>
-  new Engine(items, { ...opts, fakes, twins: false });
+export const dailyEngine = (
+  items: Item[],
+  fakes: Record<string, string[]>,
+  opts: { rng?: () => number; now?: () => number; mayAsk?: (id: string) => boolean; lean?: Lean<Item> } = {},
+) => new Engine(items, { ...opts, fakes, twins: false });
+
+/**
+ * A release's items come to Today's unique the day after the refresh that
+ * first lists one it can ask (their `added`, releases.ts): its deal writes
+ * from then on (dealFrom), as that day's own question may be played
+ * already. From then, DAILY_NEW_WEEK days ask one of them each (while any
+ * is left to ask), within WEEK_SLACK days more for those a late deal found
+ * dealt already. After that a day is one of theirs twice as often as their
+ * share of the items would make it (releases.ts newShare), fading to as
+ * often as any other item's within the release's first month (newStrength);
+ * the other days, until then, ask none of them. Their wrong options lean to
+ * them as in the games (game.ts weightsOf). A week day of a group all new
+ * (all four names new) is a guess, and a miss ends the run all the same:
+ * the owner's call, as the grace is never for not knowing.
+ */
+export const DAILY_NEW_WEEK = 7;
+const WEEK_SLACK = 2;
+
+/**
+ * A day's place in an even spread of the days (the part past the point of
+ * its multiple of the golden ratio), so that the days below a share come as
+ * often as it says and spaced out. A roll each day lumps them: the three
+ * weeks after 1.0's week would have had one day of theirs in place of three.
+ */
+const evenly = (day: number) => (day * ((Math.sqrt(5) - 1) / 2)) % 1;
+
+/** The newest release's items the daily can ask, by id, the day the first of them came, and the first day of their week (null with none). */
+export function newWeek(items: Item[]): { ids: ReadonlySet<string>; first: number; from: number } | null {
+  const came = newestCame(poolOf(items));
+  return came && { ...came, from: came.first + 1 };
+}
+
+/** Whether `day` is one of the week's (newWeek), `asked` the answers of the days before it: until DAILY_NEW_WEEK of its days have asked one of them. */
+function inWeek(week: { ids: ReadonlySet<string>; from: number }, day: number, asked: readonly string[]): boolean {
+  if (day < week.from || day >= week.from + DAILY_NEW_WEEK + WEEK_SLACK) return false;
+  const since = asked.slice(Math.max(0, asked.length - (day - week.from)));
+  return since.filter((id) => week.ids.has(id)).length < DAILY_NEW_WEEK;
+}
+
+/**
+ * The first day a deal may write: a week ahead (cutoffDay), or while a
+ * release's items have their week still to come or under way, from
+ * tomorrow (or in the last hour of a UTC day, the day after: a deploy goes
+ * live within that of its check), so the refresh that brings them gives
+ * them the days from the next on (newWeek). Days before it may be played
+ * already. A tab open since before such a deal went live loads again on its
+ * next day (lib/staleRows.ts).
+ */
+export function dealFrom(now: number, items: Item[]): number {
+  const week = newWeek(items);
+  const cutoff = cutoffDay(now);
+  const soonest = utcDay(now + HOUR_MS) + 1;
+  return week && utcDay(now) >= week.first && soonest < week.from + DAILY_NEW_WEEK + WEEK_SLACK ? Math.min(cutoff, Math.max(week.from, soonest)) : cutoff;
+}
 
 /**
  * A day's question dealt from these items and made-up names, the same
  * everywhere for the same ones: how npm run deal writes the rows, and how a
  * day past the last row is asked. `asked`: the answers of the days before
- * it, oldest first, of which the last repeatGap aren't asked again, nor
- * their twins (game.ts TWINS: the same picture turned or recoloured, which
- * reads as the same item). Each day was dealt on its own once, and an
- * answer came back after six days.
+ * it, oldest first, one a day up to the day before, of which the last
+ * repeatGap aren't asked again, nor their twins (game.ts TWINS: the same
+ * picture turned or recoloured, which reads as the same item). Each day
+ * was dealt on its own once, and an answer came back after six days. A new
+ * release's items have a week of their own, and come up more for a few
+ * weeks after it (newWeek).
  */
 export function dealLive(items: Item[], fakes: Record<string, string[]>, day: number, asked: readonly string[] = []): Question {
   const rng = seededRandom(hash(`poe2.quest daily ${day}`));
@@ -154,8 +232,37 @@ export function dealLive(items: Item[], fakes: Record<string, string[]>, day: nu
     const ids = names.flatMap((n) => byName.get(n) ?? []);
     if (ids.some((id) => recent.has(id))) for (const id of ids) recent.add(id);
   }
-  const engine = dailyEngine(items, fakes, { rng, now: () => day * DAY_MS, mayAsk: (id) => !recent.has(id) });
-  return askOne(engine, dailyGame(), rng, recent);
+  // Nor an item before the day it came (only a deal ahead of its refresh could: a rehearsal's).
+  for (const it of items) if (it.added && dayNumber(it.added) > day) recent.add(it.id);
+  const week = newWeek(items);
+  /** The answers the day keeps to (theirs), or keeps from (`none`, theirs too), and how hard their wrong options lean. */
+  let only: Set<string> | null = null;
+  let none = false;
+  let lean: Lean<Item> | undefined;
+  if (week && day >= week.from) {
+    const pool = poolOf(items).filter((it) => !recent.has(it.id));
+    const fresh = pool.filter((it) => week.ids.has(it.id)).length;
+    const theirs = inWeek(week, day, asked);
+    const strength = theirs ? 1 : newStrength(day - week.first);
+    const own = fresh / pool.length;
+    // (Their week keeps to them however many they are; after it, past half theirs, the day is dealt as any other.)
+    if (fresh && (theirs || (strength > 0 && own < 0.5))) {
+      // Past the week, a day of theirs twice as often as their share would make it (newShare), and on the others none.
+      if (theirs || evenly(day) < newShare(own, strength, true)) only = new Set(week.ids);
+      else none = true;
+      lean = { isNew: (it) => week.ids.has(it.id), strength: () => strength, twice: !theirs };
+    }
+  }
+  // On a day of none of theirs, they are kept out as the recent answers are, so a category is picked by the items it may ask.
+  const out = none ? new Set([...recent, ...week!.ids]) : recent;
+  const engine = dailyEngine(items, fakes, {
+    rng,
+    now: () => day * DAY_MS,
+    // (On their day, an item of another release only when its category has none of theirs left to ask: askOne.)
+    mayAsk: (id) => !out.has(id) && (!only?.size || only.has(id)),
+    lean,
+  });
+  return askOne(engine, dailyGame(), rng, out, only);
 }
 
 /**

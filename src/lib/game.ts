@@ -67,6 +67,7 @@ import {
   type ItemKind,
 } from './delve.ts';
 import { pickLine, START_LINES } from './delveStart.ts';
+import { newBoost, type Lean } from './releases.ts';
 
 export interface Item {
   id: string;
@@ -334,12 +335,14 @@ const SINGULAR: Record<string, string> = {
   Bows: 'Bow',
   Charms: 'Charm',
   Crossbows: 'Crossbow',
+  Daggers: 'Dagger',
   Flasks: 'Flask',
   Foci: 'Focus',
   Gloves: 'Gloves',
   Helmets: 'Helmet',
   Jewels: 'Jewel',
   'One-Handed Maces': 'One-Handed Mace',
+  'One-Handed Swords': 'One-Handed Sword',
   Quarterstaves: 'Quarterstaff',
   Quivers: 'Quiver',
   Relics: 'Relic',
@@ -350,7 +353,9 @@ const SINGULAR: Record<string, string> = {
   Staves: 'Staff',
   Tablets: 'Tablet',
   Talismans: 'Talisman',
+  Traps: 'Trap',
   'Two-Handed Maces': 'Two-Handed Mace',
+  'Two-Handed Swords': 'Two-Handed Sword',
   Wands: 'Wand',
 };
 
@@ -721,8 +726,8 @@ export interface Question {
    * Says nothing about the answer. Missing from older hosts (two rows).
    * Kept in Delve's copy before the clock runs (publicView), unlike the
    * groups: the pictures' layout must not change as they arrive, and all it
-   * tells is that every option is a staff, spear, wand, flask, bow, crossbow
-   * or two-handed mace.
+   * tells is that every option is a staff, spear, wand, dagger, flask, bow,
+   * crossbow or two-handed mace or sword.
    */
   tall?: boolean;
   mode: QuestionMode;
@@ -1403,6 +1408,10 @@ export class Engine {
   private readonly autoClock: boolean;
   /** Which items may be an answer (see the constructor). */
   private readonly mayAsk: (id: string) => boolean;
+  /** Which items the answers lean to, and how hard (see the constructor). */
+  private readonly lean: Lean<Item> | undefined;
+  /** The lean for the question being made (makeQuestion): Delve's own in a Delve run. */
+  private leaning: { strength: number; twice: boolean } | null = null;
   /** What each player's device has shown of Delve's start lines (see setStartLines). */
   private seenLines: ((ids: string[]) => number[][]) | null = null;
 
@@ -1417,10 +1426,27 @@ export class Engine {
    * `mayAsk`: which items may be an answer (Today's unique keeps the days'
    * recent answers out); any may still be a decoy. When none of a
    * category's fit, one that doesn't is asked all the same.
+   * `lean`: the items the answers lean to, and how hard (releases.ts
+   * newBoost: at its strongest, half of a card's answers one of them, as
+   * near as its share of them lets), the wrong options too, less (the
+   * look-alikes, a few names closest to the answer's, only a little: a name
+   * nobody knows yet is likelier the answer); none by default, so a seeded
+   * game deals the same any day. The site's games lean to the newest
+   * release's items (releases.ts newestLean), Delve and Today's unique each
+   * their own way (its `delve`, daily.ts).
    */
   constructor(
     items: Item[],
-    opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]>; looks?: Looks | null; twins?: boolean; autoClock?: boolean; mayAsk?: (id: string) => boolean } = {},
+    opts: {
+      rng?: Rng;
+      now?: () => number;
+      fakes?: Record<string, string[]>;
+      looks?: Looks | null;
+      twins?: boolean;
+      autoClock?: boolean;
+      mayAsk?: (id: string) => boolean;
+      lean?: Lean<Item>;
+    } = {},
   ) {
     this.items = items;
     this.byId = new Map(items.map((it) => [it.id, it]));
@@ -1437,6 +1463,7 @@ export class Engine {
     this.looks = opts.looks ?? null;
     this.autoClock = !!opts.autoClock;
     this.mayAsk = opts.mayAsk ?? (() => true);
+    this.lean = opts.lean;
     const byName = new Map(items.map((it) => [it.name, it]));
     this.twins = opts.twins === false ? [] : TWINS.map(({ names, ...when }) => ({ items: names.flatMap((n) => byName.get(n) ?? []), ...when })).filter((t) => t.items.length > 1);
   }
@@ -3062,11 +3089,11 @@ export class Engine {
         .slice(0, Math.max(count + 2, Math.ceil(count * 1.5)))
         .map((r) => r.it);
     const others = (it: Item) => pool.filter((o) => o !== it);
-    // The cluster has count + 1 places, counting the answer's.
+    // The cluster has count + 1 places, counting the answer's. (Each pick leans as the answers do: leanSample.)
     const role = this.rng() * options;
     if (role < 1) {
       // The answer is the anchor.
-      return sample(near(answer, pool), count, this.rng);
+      return this.leanSample(near(answer, pool), count);
     }
     if (role < count + 1) {
       // The answer is a member: anchor on an item that has the answer among its look-alikes.
@@ -3077,13 +3104,13 @@ export class Engine {
       // An odd picture may be among nobody's closest, and a cluster around any
       // item at all would leave it the odd one out: then the anchor is one of
       // the items it looks most like instead.
-      const anchor = sample(anchors.length ? anchors : looks ? near(answer, pool) : pool, 1, this.rng)[0];
+      const anchor = this.leanSample(anchors.length ? anchors : looks ? near(answer, pool) : pool, 1)[0];
       const mates = near(anchor, [answer, ...others(anchor)]).filter((it) => it !== answer);
-      return [anchor, ...sample(mates, count - 1, this.rng)];
+      return [anchor, ...this.leanSample(mates, count - 1)];
     }
     // The answer is a filler: the cluster forms around some other item.
-    const anchor = sample(pool, 1, this.rng)[0];
-    return [anchor, ...sample(near(anchor, others(anchor)), count, this.rng)];
+    const anchor = this.leanSample(pool, 1)[0];
+    return [anchor, ...this.leanSample(near(anchor, others(anchor)), count)];
   }
 
   /**
@@ -3176,12 +3203,45 @@ export class Engine {
     return v;
   }
 
+  /** How hard the lean is for a question of `s`, worked out once a question (makeQuestion): Delve's own in a Delve run. */
+  private leanFor(s: GameState | null): { strength: number; twice: boolean } | null {
+    const lean = this.lean;
+    if (!lean) return null;
+    return s?.delve && lean.delve ? lean.delve() : { strength: lean.strength(), twice: !!lean.twice };
+  }
+
+  /** How many times an old item's weight a new one's is among `list` (releases.ts newBoost over its items): one without a lean. */
+  private boostIn(list: readonly Item[]): number {
+    const lean = this.leaning ?? this.leanFor(null);
+    if (!lean || lean.strength <= 0) return 1;
+    let fresh = 0;
+    for (const it of list) if (this.lean!.isNew(it)) fresh++;
+    return newBoost(fresh, list.length - fresh, lean.strength, lean.twice);
+  }
+
+  /** The weights to draw from `list` by: `weight`'s, a new item's times the lean's boost among them (the same weights without one). */
+  weightsOf(list: readonly Item[], weight: (it: Item) => number = weightOf): number[] {
+    const boost = this.boostIn(list);
+    return boost === 1 ? list.map(weight) : list.map((it) => weight(it) * (this.lean!.isNew(it) ? boost : 1));
+  }
+
+  /** `n` of `list` at random, a new item as much likelier as the lean says among them (as `sample` without one). */
+  private leanSample(list: Item[], n: number): Item[] {
+    const boost = this.boostIn(list);
+    if (boost === 1) return sample(list, n, this.rng);
+    // Each drawn by a key of its weight (Efraimidis and Spirakis): the heaviest keys win, none twice.
+    const keyed = list.map((it) => ({ it, key: this.rng() ** (1 / (this.lean!.isNew(it) ? boost : 1)) }));
+    return keyed.sort((a, b) => b.key - a.key).slice(0, n).map((k) => k.it);
+  }
+
   private weightedPick(list: Item[]): Item {
-    const total = list.reduce((sum, it) => sum + weightOf(it), 0);
+    // A rare group's share, and the lean's.
+    const weights = this.weightsOf(list);
+    const total = weights.reduce((sum, w) => sum + w, 0);
     let r = this.rng() * total;
-    for (const it of list) {
-      r -= weightOf(it);
-      if (r < 0) return it;
+    for (let i = 0; i < list.length; i++) {
+      r -= weights[i];
+      if (r < 0) return list[i];
     }
     return list[list.length - 1];
   }
@@ -3260,6 +3320,16 @@ export class Engine {
    * down (delve.ts findRules).
    */
   makeQuestion(s: GameState, category: string, kind: Pick<Question, 'find' | 'strike' | 'light'> = {}): Question {
+    // Every draw of it leans alike (boostIn).
+    this.leaning = this.leanFor(s);
+    try {
+      return this.build(s, category, kind);
+    } finally {
+      this.leaning = null;
+    }
+  }
+
+  private build(s: GameState, category: string, kind: Pick<Question, 'find' | 'strike' | 'light'>): Question {
     const special: Pick<Question, 'find' | 'strike' | 'light'> =
       s.delve && kind.find
         ? {
@@ -3387,7 +3457,7 @@ export class Engine {
     for (const source of [pool, unused, inCat, this.items]) {
       if (decoys.length >= need) break;
       const taken = new Set([answer.id, ...decoys.map((it) => it.id)]);
-      decoys.push(...sample(source.filter((it) => !taken.has(it.id) && fits(it)), need - decoys.length, this.rng));
+      decoys.push(...this.leanSample(source.filter((it) => !taken.has(it.id) && fits(it)), need - decoys.length));
     }
     if (pool !== sameGroup) this.evenOut(answer, decoys, pool, fakes);
 
@@ -3428,8 +3498,11 @@ export class Engine {
  * pictures (height over width): spears, staves and quarterstaves 3.9, wands
  * 2.9, flasks 2.0, bows, crossbows and two-handed maces 2.0. (Body armours,
  * quivers, sceptres and one-handed maces are 1.5; talismans are square.)
+ * 1.0's, measured before its art: daggers 2.9 (poe2db's base art) and
+ * two-handed swords 2.0 (GGG's announcement art); one-handed swords are 1.5
+ * and traps square. tests/tallArt.test.ts holds the list to the art.
  */
-export const TALL_ART_GROUPS = new Set(['Spears', 'Staves', 'Quarterstaves', 'Wands', 'Flasks', 'Bows', 'Crossbows', 'Two-Handed Maces']);
+export const TALL_ART_GROUPS = new Set(['Spears', 'Staves', 'Quarterstaves', 'Wands', 'Daggers', 'Flasks', 'Bows', 'Crossbows', 'Two-Handed Maces', 'Two-Handed Swords']);
 
 /** Whose art lean a question counts toward: the player answering it, or the whole room in a race or a co-op run. */
 function artKey(s: GameState): string {

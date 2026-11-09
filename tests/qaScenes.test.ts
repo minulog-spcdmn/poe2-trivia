@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import type { Item } from '../src/lib/game.ts';
+import type { GameState, Item } from '../src/lib/game.ts';
 import { useItems } from '../src/qa/build/engine.ts';
 import { Table } from '../src/qa/build/play.ts';
 import { useCaptured } from '../src/qa/scenes/captured.ts';
@@ -149,13 +149,16 @@ test("Offline on a game played through the engine goes the engine's way: a race'
 
 test('the long base type scene still asks for what it shows: a mirrored picture of an item with a long base type, named', () => {
   const place = placeIn(catalog(), 'game/delve-long-base')!;
-  const state = buildScene(place.scene, place.values).built.state!;
-  const q = state.question!;
-  const item = items.find((i) => i.id === q.itemId)!;
-  assert.equal(state.phase, 'reveal');
-  assert.notEqual(q.mode, 'art');
-  assert.ok(q.mirrored?.[0], 'its picture isn’t mirrored');
-  assert.ok(item.base.length >= 20, `${item.name}’s base type, ${item.base}, is short`);
+  const shows = ({ state }: { state?: GameState | null }) => {
+    const q = state!.question!;
+    const item = items.find((i) => i.id === q.itemId)!;
+    return state!.phase === 'reveal' && q.mode !== 'art' && !!q.mirrored?.[0] && item.base.length >= 20;
+  };
+  if (shows(buildScene(place.scene, place.values).built)) return;
+  // New items (or a new curve) moved it: the first seed that shows it again (the desk's dice offer only the scene's own).
+  const own = valuesOf(place.scene.controls ?? [], place.values);
+  const seed = Array.from({ length: 300 }, (_, i) => String(i + 1)).find((dice) => shows(place.scene.build({ ...own, dice })));
+  assert.fail(`seed ${place.values.dice} no longer shows it${seed ? `; seed ${seed} does (its value, label and note in src/qa/scenes/game.ts)` : ''}`);
 });
 
 test('scene keys are unique and well formed, and scenes come in the order of the screens', () => {

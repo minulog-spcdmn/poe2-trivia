@@ -129,12 +129,41 @@ Today's unique asks each day from its row in `src/data/dailies.json`, one
 day a line from the first day to a year past the last deal, so a refresh
 never changes a day already played. `npm run deal` keeps every row before
 the cutoff as the live site has them (a week ahead, or a week from tomorrow
-in the last two hours of a UTC day: `cutoffDay` in `src/lib/daily.ts`) and
+in the last three hours of a UTC day: `cutoffDay` in `src/lib/daily.ts`,
+and an hour more than the deploy's check, `MARGIN_MS`) and
 deals the rest again from the item data as it is, so new items reach the
 days to come. Each day is dealt from the answers of the days before it: an
 answer isn't asked again until as many days have gone by as three quarters
 of the items the daily may ask (`repeatGap`, about ten months), nor its
-twins (`TWINS`, the same picture turned or recoloured). The live
+twins (`TWINS`, the same picture turned or recoloured). A new release's
+items (`RELEASES`, `src/lib/releases.ts`) have a week of their own: seven
+days that each ask one of them, from the first day the refresh that brings
+them can deal (`dealFrom`: tomorrow, or the day after once it is past 22:00
+UTC, as the deal keeps an hour more than the deploy's check). After it, a
+day is one of theirs twice as often as their share of the items would make
+it, fading to as often as any other item's by the end of their first month,
+the other days none (`newShare`). The games lean to them harder: at first,
+in each category, as much likelier as makes half its answers theirs (as
+near as a few of them can come, at most 12 times as likely), back to as
+likely over the three weeks after their first (`newBoost`, `newStrength`).
+Delve leans its own way (`delveLean`): as hard for each player's first three
+days from their own first run since the items came, whenever that is, then
+to twice their share as the games' lean eases, and not at all once it is
+over. Most players come once, for a few runs, some only after playing the
+release's first week in the game; the few who come back learn the items in
+about three days of play, and a lean to items they know would set bests
+deeper than they'll go again. When that first run was is kept in the
+player's Delve records (`since`, `src/lib/delveRecord.ts`), synced with
+their other devices; in a run together, the host's says.
+Wrong options lean to them too, but less (the look-alikes, a few names
+closest to the answer's, only a little), so in the first weeks a name
+nobody knows is likelier than another to be the answer.
+A tab open since
+before such a deal went live loads again once its day has turned: out of
+sight, as it comes back into sight, or in place of an answer to the old
+question, never in a room or a
+game (`src/lib/staleRows.ts`, against the rows the build puts beside the
+page as `dailies.json`). The live
 site's rows are those of the newest github-pages deployment that went up
 (`scripts/live-dailies.mjs`, through the GitHub CLI; `origin/main`'s when
 that can't be reached). Run it last, after

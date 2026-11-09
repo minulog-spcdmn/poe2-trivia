@@ -23,7 +23,8 @@
 # QUALITY came out a third smaller than WebP at 90 and closer to the
 # unencoded picture (SSIM, over 48 items).
 #
-# Setup, once (CPU is enough; the whole set takes about an hour):
+# Setup, once (CPU is enough; the whole set takes about an hour; torch for CUDA,
+# from its own index, runs it on the graphics card in minutes):
 #   python3 -m venv .venv-art
 #   .venv-art/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
 #   .venv-art/bin/pip install pillow numpy
@@ -114,22 +115,26 @@ class RRDBNet(nn.Module):
         return self.conv_last(self.lrelu(self.conv_hr(feat)))
 
 
+# The graphics card where torch has one (a venv with torch for CUDA), else the CPU.
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
 def load_model():
     sd = torch.load(MODEL, map_location='cpu', weights_only=True)
     net = RRDBNet()
     net.load_state_dict(sd.get('params_ema', sd.get('params', sd)), strict=True)
-    return net.eval()
+    return net.eval().to(DEVICE)
 
 
 def run(net, rgb):
     """rgb (h, w, 3) uint8 -> (4h, 4w, 3) uint8. Mirrored padding gives the edges context."""
-    t = torch.from_numpy(rgb.copy()).permute(2, 0, 1)[None].float() / 255
+    t = torch.from_numpy(rgb.copy()).permute(2, 0, 1)[None].float().to(DEVICE) / 255
     p = 8
     t = F.pad(t, (p, p, p, p), mode='reflect')
     with torch.no_grad():
         o = net(t).clamp(0, 1)
     o = o[:, :, 4 * p : -4 * p, 4 * p : -4 * p]
-    return (o[0].permute(1, 2, 0).numpy() * 255).round().astype(np.uint8)
+    return (o[0].permute(1, 2, 0).cpu().numpy() * 255).round().astype(np.uint8)
 
 
 def upscale(net, src, out):
@@ -166,7 +171,7 @@ def group_of(iid):
     """An item's group, from src/data/items.json (a variant's art: its item's)."""
     global _groups
     if _groups is None:
-        with open(os.path.join(ROOT, 'src', 'data', 'items.json')) as f:
+        with open(os.path.join(ROOT, 'src', 'data', 'items.json'), encoding='utf-8') as f:
             _groups = {a['id']: it['group'] for it in json.load(f) for a in [it, *it.get('variants', [])]}
     return _groups.get(iid)
 
