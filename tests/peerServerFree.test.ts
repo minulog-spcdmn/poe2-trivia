@@ -32,40 +32,59 @@ async function peer(port: number, id: string) {
   const ask = (dst: string) => ws.send(JSON.stringify({ type: 'CANDIDATE', dst, payload: { type: 'data', connectionId: `dc_${id}`, candidate: { candidate: '', sdpMid: '0', sdpMLineIndex: 0 }, probe: 'x' } }));
   return { ws, heard, ask };
 }
+type Asker = Awaited<ReturnType<typeof peer>>;
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Waits for `ok()` to hold, `ms` at most: whether it came to. (Looked for, not waited out: a busy machine stretches a wait.) */
+async function until(ok: () => boolean, ms: number) {
+  for (const end = Date.now() + ms; !ok() && Date.now() < end; ) await wait(10);
+  return ok();
+}
 
 test('everyone who asks after a free id is told so, at once, when the first to ask has waited the time', async () => {
-  const serve = `require('peer').PeerServer({ port: 0, path: '/', expire_timeout: ${EXPIRE_MS}, cleanup_out_msgs: ${LOOK_MS} }, (s) => console.log(s.address().port))`;
+  // On this machine alone: left to itself the server listens on every interface.
+  const serve = `require('peer').PeerServer({ host: '127.0.0.1', port: 0, path: '/', expire_timeout: ${EXPIRE_MS}, cleanup_out_msgs: ${LOOK_MS} }, (s) => console.log(s.address().port))`;
   const server = spawn(process.execPath, ['-e', serve], { cwd: join(import.meta.dirname, '..'), stdio: ['ignore', 'pipe', 'inherit'] });
-  const gone = once(server, 'exit').then(() => {
-    throw new Error("the PeerJS server didn't start");
-  });
-  const port = Number(String((await Promise.race([once(server.stdout, 'data'), gone]))[0]));
-  const askers = await Promise.all(['a', 'b', 'c'].map((id) => peer(port, id)));
+  const askers: Asker[] = [];
   try {
+    const gone = once(server, 'exit').then(() => {
+      throw new Error("the PeerJS server didn't start");
+    });
+    const port = Number(String((await Promise.race([once(server.stdout, 'data'), gone]))[0]));
+    for (const id of ['a', 'b', 'c']) askers.push(await peer(port, id));
     const [a, b, c] = askers;
-    const began = Date.now();
-    a.ask('nobody');
-    await wait(EXPIRE_MS / 2);
-    // Asked twice by one, and by another only just before the first's time is up.
-    b.ask('nobody');
-    b.ask('nobody');
-    await wait(EXPIRE_MS / 3);
-    const last = Date.now();
-    c.ask('nobody');
-    await wait(EXPIRE_MS / 6 + 5 * LOOK_MS);
-    for (const p of askers) assert.deepEqual(p.heard.map((m) => `${m.type} ${m.src}`), ['EXPIRE nobody'], 'told once');
-    // Timed from the first to ask, for all of them: the last waited a fraction of the time.
-    for (const p of askers) assert.ok(p.heard[0].at - began >= EXPIRE_MS - 50, `${p.heard[0].at - began} ms after the first asked`);
-    assert.ok(c.heard[0].at - last < EXPIRE_MS / 2, `${c.heard[0].at - last} ms after the last asked`);
+    // The first asks; the others, one of them twice, with a third of its time gone.
+    let dst = '';
+    let began = 0;
+    let last = 0;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      dst = `nobody-${attempt}`;
+      began = Date.now();
+      a.ask(dst);
+      await wait(EXPIRE_MS / 3);
+      b.ask(dst);
+      b.ask(dst);
+      c.ask(dst);
+      last = Date.now();
+      // (A machine too busy to get there before most of the first's time was gone: once more, after another id.)
+      if (last - began < (EXPIRE_MS * 2) / 3) break;
+    }
+    const told = (p: Asker) => p.heard.filter((m) => m.src === dst);
+    assert.ok(await until(() => askers.every((p) => told(p).length > 0), 4 * EXPIRE_MS), 'all of them told');
+    await wait(3 * LOOK_MS);
+    for (const p of askers) assert.deepEqual(told(p).map((m) => m.type), ['EXPIRE'], 'told once');
+    // Timed from the first to ask, for all of them: the others waited that much less than the time.
+    const first = told(a)[0].at - began;
+    assert.ok(first >= EXPIRE_MS - 50, `${first} ms after the first asked`);
+    for (const p of [b, c]) assert.ok(told(p)[0].at - last <= first - EXPIRE_MS / 4, `${told(p)[0].at - last} ms after the others asked, ${first} after the first`);
     // The time begins anew with the next to ask.
     const again = Date.now();
-    c.ask('nobody');
-    await wait(EXPIRE_MS + 5 * LOOK_MS);
-    assert.equal(c.heard.length, 2);
-    assert.ok(c.heard[1].at - again >= EXPIRE_MS - 50);
-    assert.equal(a.heard.length, 1);
+    c.ask(dst);
+    assert.ok(await until(() => told(c).length > 1, 4 * EXPIRE_MS), 'told again');
+    assert.ok(told(c)[1].at - again >= EXPIRE_MS - 50);
+    await wait(3 * LOOK_MS);
+    assert.equal(told(c).length, 2);
+    assert.equal(told(a).length, 1);
   } finally {
     for (const p of askers) p.ws.close();
     server.kill();

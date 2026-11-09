@@ -241,8 +241,7 @@ protocol, one Durable Object holding every peer's socket in memory.
   cloud down) a day's 100,000 requests are about 640 hours of start pages
   scanning at their quickest by the Worker's count, and a half to two thirds
   of that by the Object's, which counts a scan's pings and the rooms'
-  answers too.
-  Past either, ours stops until midnight UTC: pages the cloud
+  answers too. Past either, ours stops until midnight UTC: pages the cloud
   answers never needed it (their rooms' copies on ours try again, later each
   time), and only the pages the cloud turns away can't play, as before ours.
   The Worker requests are the account's, the relay's too, so the relay would

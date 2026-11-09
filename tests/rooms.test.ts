@@ -1,9 +1,10 @@
 // The public room list with no server of its own (lib/rooms.ts), against a
 // signalling server in memory (tests/fakePeerjs.ts): a scan stops after a
 // batch of slots nobody holds and lists no more than its most, never
-// connects to a slot (one that answers no ping is held, and unheard), an
-// invite takes only its own room's word, and a hosted room holds the lowest
-// free slot and moves down when a lower one frees up.
+// connects to a slot (one that answers no ping is held, and unheard), fails
+// where the server stops answering, an invite takes only its own room's
+// word, and a hosted room holds the lowest free slot and moves down when a
+// lower one frees up.
 import { fakeModule } from './asVite.ts';
 import { test, mock, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,6 +14,7 @@ mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
 const { default: Peer, net } = await import('./fakePeerjs.ts');
 const { Beacon, MAX_LISTED, ProbeDesk, answerProbes, probeRoom, scanRooms, slotId } = await import('../src/lib/rooms.ts');
 const { PEER_PREFIX } = await import('../src/lib/peer.ts');
+const { KEEP_UNHEARD_MS, LastHeard } = await import('../src/lib/roomRefresh.ts');
 const { CODE_ALPHABET } = await import('../src/lib/roomCode.ts');
 type RoomInfo = import('../src/lib/roomInfo.ts').RoomInfo;
 
@@ -62,14 +64,28 @@ async function run(ms: number) {
   }
   await flush();
 }
-const slotOf = (id: string) => Number(id.slice(slotId(0).length - 1));
-/** A scan: the rooms it found, and how many it says it may have missed. */
-const scanned = async () => {
+const SLOTS = slotId(0).slice(0, -1);
+const slotOf = (id: string) => Number(id.slice(SLOTS.length));
+/** The slots pinged, in order (not the id nobody holds that a scan asks after beside each batch). */
+const slotsPinged = () => net.pinged.filter((id) => id.startsWith(SLOTS)).map(slotOf);
+/** A scan under way: the rooms it finds, the slot of each, and the slots that answered none of its pings. */
+async function scanning() {
   const found: RoomInfo[] = [];
-  const unheard = await settle(scanRooms((r) => found.push(r), () => false));
-  return { found, unheard };
-};
+  const slots: number[] = [];
+  const unheard = await scanRooms(
+    (r, slot) => {
+      found.push(r);
+      slots.push(slot);
+    },
+    () => false,
+  );
+  return { found, slots, unheard };
+}
+/** A scan, through. */
+const scanned = () => settle(scanning());
 const scan = async () => (await scanned()).found;
+/** What a scan failed with (null: it didn't). */
+const failure = (p: Promise<unknown>) => settle(p.then(() => null, (e: unknown) => String(e)));
 
 const beacons: InstanceType<typeof Beacon>[] = [];
 /** A hosted room's beacon, started; stopped after the test whatever happens. */
@@ -85,10 +101,12 @@ afterEach(() => beacons.splice(0).forEach((b) => b.stop()));
 
 test('a scan lists every room and stops after the first batch of slots nobody holds', async () => {
   for (const n of [1, 2, 3, 12]) listed(n);
-  const found = await scan();
-  assert.deepEqual(found.map((r) => r.code).sort(), [1, 2, 3, 12].map(codeOf));
+  const { found, slots, unheard } = await scanned();
+  assert.deepEqual(found.map((r) => r.code), [1, 2, 3, 12].map(codeOf));
+  assert.deepEqual(slots, [1, 2, 3, 12], 'each with the slot it holds');
+  assert.deepEqual(unheard, []);
   // Slot 12 kept it going past the second batch; the third, empty, ended it.
-  assert.equal(Math.max(...net.pinged.map(slotOf)), 30);
+  assert.equal(Math.max(...slotsPinged()), 30);
   assert.deepEqual(net.connected, [], 'nobody connected to');
 });
 
@@ -99,32 +117,83 @@ test('a slot held by someone who answers no ping keeps the scan going, is asked 
   assert.deepEqual(found.map((r) => r.code), [codeOf(11)]);
   assert.equal(net.pinged.filter((id) => id === slotId(1)).length, 2);
   assert.deepEqual(net.connected, [], 'nobody connected to');
-  assert.equal(unheard, 1);
+  assert.deepEqual(unheard, [1]);
 });
 
 test('a room past its share of pings is connected to by nobody: the scans it lets go count it as held, and unheard', async () => {
   listed(1);
   listed(11);
   // Seventy start pages scanning within the same ten seconds: the room answers sixty pings in ten (probeDesk.ts).
-  const scans = await settle(Promise.all(Array.from({ length: 70 }, scanned)));
+  const scans = await settle(Promise.all(Array.from({ length: 70 }, scanning)));
   const heard = scans.filter((s) => s.found.some((r) => r.code === codeOf(1)));
   assert.equal(heard.length, 60);
-  assert.ok(heard.every((s) => s.unheard === 0));
+  assert.ok(heard.every((s) => s.unheard.length === 0));
   const letGo = scans.filter((s) => !heard.includes(s));
-  assert.ok(letGo.every((s) => s.unheard === 1), 'each knows it missed one');
+  assert.ok(letGo.every((s) => String(s.unheard) === '1'), 'each knows which slot it missed');
   assert.ok(scans.every((s) => s.found.some((r) => r.code === codeOf(11))), 'and went on past it to the next batch');
   // Each asked the slot once more, 5.5 s on, and left it at that.
   assert.equal(net.pinged.filter((id) => id === slotId(1)).length, 70 + 10);
   assert.deepEqual(net.connected, [], 'the host sets up no connection for any of them');
 });
 
-test('a batch in which no slot says anything ends the scan, which then knows nothing of what it missed', async () => {
+test('a whole batch of slots that answer no ping is gone past like one of them, while the server answers: the rooms beyond are found', async () => {
   for (let n = 1; n <= 10; n++) silent(n);
   listed(11);
   const { found, unheard } = await scanned();
-  assert.deepEqual(found, []);
-  assert.equal(unheard, Infinity);
-  assert.equal(Math.max(...net.pinged.map(slotOf)), 10, 'asked no further');
+  assert.deepEqual(found.map((r) => r.code), [codeOf(11)]);
+  assert.deepEqual(unheard, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.deepEqual(net.connected, []);
+});
+
+test('a scan the server stops answering fails: the silence is read neither as rooms nor as their end', async () => {
+  listed(1);
+  // What the scan sends gets nowhere and nothing comes back, though its socket stays up.
+  net.lost = true;
+  assert.match((await failure(scanning())) ?? '', /stopped answering/);
+  assert.equal(Math.max(...slotsPinged()), 10, 'asked no further');
+});
+
+test('a scan cut off from the server on the way fails too', async () => {
+  silent(1);
+  listed(2);
+  const failed = failure(scanning());
+  await run(1000);
+  // (The scan's own peer: the last made.)
+  net.made.at(-1)!.disconnected = true;
+  assert.match((await failed) ?? '', /stopped answering/);
+  assert.deepEqual(net.connected, []);
+});
+
+test('scan after scan, a room that answers no ping stays as last heard, ten minutes at most, and one that closed goes at once', async () => {
+  const [busy, closing] = [listed(1), listed(2)];
+  listed(3);
+  // As the list keeps them (components/OpenRooms.svelte).
+  const last = new LastHeard();
+  let rooms: RoomInfo[] = [];
+  const refreshed = async () => {
+    const found = new Map<string, RoomInfo>();
+    const unheard = await settle(
+      scanRooms(
+        (r, slot) => {
+          found.set(r.code, r);
+          last.heard(r.code, slot, Date.now());
+        },
+        () => false,
+      ),
+    );
+    rooms = last.after(rooms, found, unheard, Date.now());
+    return rooms.map((r) => r.code).sort();
+  };
+  assert.deepEqual(await refreshed(), [1, 2, 3].map(codeOf));
+  // Room 1 is asked too often to answer; room 2, heard as lately, closes.
+  busy.destroy();
+  silent(1);
+  closing.destroy();
+  assert.deepEqual(await refreshed(), [1, 3].map(codeOf));
+  mock.timers.tick(KEEP_UNHEARD_MS / 2);
+  assert.deepEqual(await refreshed(), [1, 3].map(codeOf));
+  mock.timers.tick(KEEP_UNHEARD_MS / 2);
+  assert.deepEqual(await refreshed(), [3].map(codeOf));
   assert.deepEqual(net.connected, []);
 });
 
@@ -148,7 +217,7 @@ test('the list stops at its most rooms and asks no further', async () => {
   for (let n = 1; n <= MAX_LISTED + 15; n++) listed(n);
   const found = await scan();
   assert.equal(found.length, MAX_LISTED);
-  assert.equal(Math.max(...net.pinged.map(slotOf)), MAX_LISTED);
+  assert.equal(Math.max(...slotsPinged()), MAX_LISTED);
 });
 
 test('a scan that is left stops asking', async () => {
@@ -166,7 +235,7 @@ test('a scan that is left stops asking', async () => {
   );
   // Nothing listed after it was left, and nothing asked past the batch in flight then, nor asked again.
   assert.equal(found.length, 5);
-  assert.deepEqual(net.pinged.map(slotOf).sort((a, b) => a - b), Array.from({ length: 10 }, (_, i) => i + 1));
+  assert.deepEqual(slotsPinged().sort((a, b) => a - b), Array.from({ length: 10 }, (_, i) => i + 1));
 });
 
 test("an invite's probe takes the room's own word, 'gone' when nobody has the code, and nothing passed on from another room", async () => {

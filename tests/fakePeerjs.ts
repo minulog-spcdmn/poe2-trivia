@@ -44,6 +44,8 @@ export const net = {
   down: false,
   /** Silent: a peer's socket never hears back, neither opening nor failing (a server slow to answer, a handshake lost on the way). */
   silent: false,
+  /** Lost: what a peer sends goes nowhere and nothing comes back, though its socket stays up (a line gone quiet). */
+  lost: false,
   /** How long the server takes to answer a peer, ms (a slow link: congested mobile data, satellite). */
   answerIn: 0,
   reset() {
@@ -55,6 +57,7 @@ export const net = {
     net.connected = [];
     net.down = false;
     net.silent = false;
+    net.lost = false;
     net.answerIn = 0;
   },
 };
@@ -72,6 +75,7 @@ class Socket extends Emitter {
     if (msg.type !== 'CANDIDATE' || !msg.dst || from.destroyed) return;
     const dst = msg.dst;
     if (msg.payload && 'probe' in msg.payload) net.pinged.push(dst);
+    if (net.lost) return;
     queueMicrotask(() => {
       const to = from.held.get(dst);
       if (to) to.socket.emit('message', { type: 'CANDIDATE', src: from.id, payload: msg.payload });

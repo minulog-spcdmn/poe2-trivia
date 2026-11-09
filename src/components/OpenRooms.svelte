@@ -3,7 +3,8 @@
   import { flip } from 'svelte/animate';
   import { fly, fade } from 'svelte/transition';
   import { scanRooms, type RoomInfo } from '../lib/rooms';
-  import { Refresher, keptUnheard } from '../lib/roomRefresh';
+  import { LastHeard, Refresher } from '../lib/roomRefresh';
+  import { INPUTS } from '../lib/presence';
   import { joinable, roomMeta, watchable } from '../lib/roomInfo';
   import { PROTOCOL_VERSION } from '../lib/protocol';
   import { pinnedOut } from '../lib/stage';
@@ -109,8 +110,8 @@
   let failed = $state(false);
   let run = 0;
   let destroyed = false;
-  /** When each room listed was last heard from. */
-  const heardAt = new Map<string, number>();
+  /** When each room listed was last heard from, and in which slot: one whose slot goes silent stays as last heard (lib/roomRefresh.ts). */
+  const lastHeard = new LastHeard();
 
   async function scan() {
     if (scanning || destroyed) return;
@@ -123,10 +124,10 @@
     /** It didn't reach the server, or a slot answered none of its pings: the next comes later (lib/roomRefresh.ts). */
     let strained = false;
     try {
-      const unheard = await scanRooms(
-        (room) => {
+      const silent = await scanRooms(
+        (room, slot) => {
           found.set(room.code, room);
-          heardAt.set(room.code, Date.now());
+          lastHeard.heard(room.code, slot, Date.now());
           // Not while a room tapped here is joined: the list stays as it was tapped.
           if (disabled) return;
           // Show rooms as they are found; keep ones from the last scan until it ends.
@@ -136,15 +137,11 @@
         },
         () => destroyed || id !== run,
       );
-      strained = unheard > 0;
+      strained = silent.length > 0;
       // Run again once the join ends, rather than moving the list under it.
       if (id === run && disabled) held = true;
-      else if (id === run) {
-        // A room that answered none of this scan's pings (past its share of them) stays as last heard.
-        rooms = sortRooms([...found.values(), ...keptUnheard(rooms, found, unheard, heardAt, Date.now())]);
-        const listed = new Set(rooms.map((r) => r.code));
-        for (const code of heardAt.keys()) if (!listed.has(code)) heardAt.delete(code);
-      }
+      // A room whose slot answered none of this scan's pings (past its share of them) stays as last heard.
+      else if (id === run) rooms = sortRooms(lastHeard.after(rooms, found, silent, Date.now()));
     } catch {
       failed = strained = true;
     } finally {
@@ -188,8 +185,7 @@
     },
     () => document.visibilityState === 'hidden',
   );
-  /** What the page takes as a sign of the player, beside its being shown again: the next refresh comes as soon as it would with them about. */
-  const SIGNS = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'] as const;
+  /** A sign of the player (what a room takes as one, lib/presence.ts, or the page shown again): the next refresh comes as soon as it would with them about. */
   const seen = () => refresher.seen();
   $effect(() => {
     if (disabled || !held || scanning) return;
@@ -239,12 +235,12 @@
 
   onMount(() => {
     refresher.start();
-    for (const type of SIGNS) addEventListener(type, seen, { passive: true, capture: true });
+    for (const type of INPUTS) addEventListener(type, seen, { passive: true, capture: true });
     document.addEventListener('visibilitychange', seen);
     return () => {
       destroyed = true;
       refresher.stop();
-      for (const type of SIGNS) removeEventListener(type, seen, { capture: true });
+      for (const type of INPUTS) removeEventListener(type, seen, { capture: true });
       document.removeEventListener('visibilitychange', seen);
       cancelAnimationFrame(spinFrame);
     };
