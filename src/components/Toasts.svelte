@@ -129,8 +129,8 @@
           <div class="lost">
             {#key session.gaveUp}
               <div in:swap out:swap>
-                <p class="title">{session.gaveUp ? 'Host unreachable' : 'Connection lost'}</p>
-                <p class="msg">{session.gaveUp ? 'The room may have closed.' : 'Reconnecting to the host…'}</p>
+                <p class="title">{session.gaveUp ? (session.hostName ? `Can’t reach ${session.hostName}` : 'Host unreachable') : 'Connection lost'}</p>
+                <p class="msg">{session.gaveUp ? 'The room may have closed.' : `Reconnecting to ${session.hostName ?? 'the host'}…`}</p>
               </div>
             {/key}
           </div>

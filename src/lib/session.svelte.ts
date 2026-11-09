@@ -300,6 +300,9 @@ export const savedName = () => readStored(NAME_STORED) ?? '';
 /** The whole key of the saved name, as storage events name it. */
 export const NAME_KEY = storeKey(NAME_STORED);
 
+/** What is said when the game trips over something it didn't foresee: what to try, as there is no saying why. */
+const WENT_WRONG = 'Something went wrong. Reload the page and try again.';
+
 /** What a guest is told when the host turns it out of the room, by the host's word for it: the message, and its title. */
 const TURNED_OUT = {
   kicked: ['You were removed from the game.', 'Removed'],
@@ -319,9 +322,18 @@ const JOIN_FAILED: Record<JoinFailed, (code: string) => [message: string, title:
   server: () => [joinNetworkHint('timeout'), 'No connection'],
 };
 
-/** A matchmaking server failure for someone joining a room, who has no game of their own to fall back on. */
+/**
+ * The rooms' server out of reach, in the words every notice of it opens with. Why (`type`: PeerJS's word for
+ * it, or ours) goes to the console, where a bug report can still carry it; the player is told what to try.
+ */
+function noRooms(type: string) {
+  console.warn('rooms out of reach:', type);
+  return 'Couldn’t reach the rooms';
+}
+
+/** The rooms out of reach for someone joining one, who has no game of their own to fall back on. */
 function joinNetworkHint(type: string) {
-  return `Couldn’t connect to the matchmaking server (${type}). Check your connection, or try mobile data or another Wi-Fi.`;
+  return `${noRooms(type)}. Check your connection, or try mobile data or another Wi-Fi.`;
 }
 export const saveName = (name: string) => void writeStored(NAME_STORED, name);
 
@@ -659,6 +671,12 @@ class Session {
 
   get isHost() {
     return this.mode === 'local' || this.mode === 'host';
+  }
+
+  /** The room's host by name, where it is known (docs/design-rules.md: people are named, "the host" only without one). */
+  get hostName(): string | undefined {
+    const s = this.state;
+    return s?.players.find((p) => p.id === s.hostId)?.name;
   }
 
   /** Guest: watches rather than plays, as the host last had it (sent with every hello, so it holds through reconnects). */
@@ -1069,7 +1087,7 @@ class Session {
   /** Host: the room couldn't be opened (or reopened, kept saved so a refresh tries again) for want of a connection. */
   private roomNotOpened(code: string, type: string, reopening: boolean) {
     if (reopening) this.fail(`${this.networkHint(type)} Refresh to try reopening room ${code}.`, 'Room not reopened', { reopening: code, failure: 'host-room-not-reopened' });
-    else this.hostHere(`Couldn’t connect to the matchmaking server (${type}), so nobody can join.`, 'host-no-connection');
+    else this.hostHere(`${noRooms(type)}, so nobody can join.`, 'host-no-connection');
   }
 
   /**
@@ -1239,7 +1257,7 @@ class Session {
         }
       } catch (err) {
         if (err instanceof ActionError && err.silent) return;
-        const message = err instanceof ActionError ? err.message : 'Something went wrong.';
+        const message = err instanceof ActionError ? err.message : WENT_WRONG;
         if (msg.t === 'hello') this.dismiss(conn, { t: 'error', message });
         else this.send(conn, { t: 'error', message });
       }
@@ -1356,7 +1374,7 @@ class Session {
           }
           this.seat(conn, guest, secret, name, watch, true);
         } catch (err) {
-          this.dismiss(conn, { t: 'error', message: err instanceof ActionError ? err.message : 'Something went wrong.' });
+          this.dismiss(conn, { t: 'error', message: err instanceof ActionError ? err.message : WENT_WRONG });
         }
       });
       return;
@@ -1403,7 +1421,7 @@ class Session {
     // The creator's first arrival has a notice of its own (see onNewState).
     if (this.heralded === playerId) return;
     if (player) this.flash(player.name, 'info', { title: 'Player joined', who: { name: player.name, hue: player.hue, sigil: player.sigil } });
-    else if (watcher) this.flash(watcher.name, 'info', { title: 'Spectator joined', who: { name: watcher.name } });
+    else if (watcher) this.flash(watcher.name, 'info', { title: 'Now watching', who: { name: watcher.name } });
   }
 
   /** Remembers a newcomer's token, forgetting the oldest ones of people who are gone once there are too many. */
@@ -2726,7 +2744,7 @@ class Session {
         this.setState(action.type === 'next' ? this.stepNext(this.state, from) : engine.apply(this.state, action, from));
       } catch (err) {
         if (err instanceof ActionError && err.silent) return;
-        this.flash(err instanceof ActionError ? err.message : 'Something went wrong.', 'error');
+        this.flash(err instanceof ActionError ? err.message : WENT_WRONG, 'error');
       }
     };
     // Co-op Delve is a race for the right answer too (the first clears the depth and takes the find).
@@ -2767,7 +2785,7 @@ class Session {
     }
     this.dispatch({ type: 'remove', playerId });
     if (player) this.flash(player.name, 'info', { title: 'Player removed', who: { name: player.name, hue: player.hue, sigil: player.sigil } });
-    else if (name) this.flash(name, 'info', { title: 'Spectator removed', who: { name } });
+    else if (name) this.flash(name, 'info', { title: 'No longer watching', who: { name } });
   }
 
   /**
@@ -2936,7 +2954,9 @@ class Session {
 
   private turnedOut(why: keyof typeof TURNED_OUT) {
     const [message, title] = TURNED_OUT[why];
-    this.fail(message, title);
+    // (Before the room is let go of, and its host's name with it.)
+    const host = why === 'closed' ? this.hostName : undefined;
+    this.fail(host ? `${host} closed the room.` : message, title);
   }
 
   labAct(action: Action, from: string | null): string | null {
@@ -3506,7 +3526,7 @@ class Session {
   private delveNotice(n: DelveNotice, s: GameState) {
     switch (n.kind) {
       case 'paused':
-        this.flash('The host reloaded. The clock starts again with the time it had left once everyone is back.', 'info', { title: 'Clock paused' });
+        this.flash(`${this.mode === 'host' ? 'You' : (this.hostName ?? 'The host')} reloaded. The clock starts again with the time it had left once everyone is back.`, 'info', { title: 'Clock paused' });
         break;
       case 'perished': {
         // Nobody left standing: the run ends next, and the end has its own
@@ -3723,7 +3743,7 @@ class Session {
   }
 
   private networkHint(type: string) {
-    return `Couldn’t connect to the matchmaking server (${type}). Check your connection. Without one, a new game plays on this device.`;
+    return `${noRooms(type)}. Check your connection. Without one, a new game plays on this device.`;
   }
 
 

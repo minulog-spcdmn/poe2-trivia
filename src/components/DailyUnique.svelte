@@ -441,7 +441,7 @@
       {#key asking}
         {#if practice}
           <!-- Practice is apart from the day's question: say so, and when the next one comes. -->
-          <p class="caption" in:fade|global={calm({ duration: 300 })}>Practice doesn’t count<span class="more">{' '}toward your streak</span>; <span aria-live="off">{nextIn(now, 'daily')}</span>.</p>
+          <p class="caption" in:fade|global={calm({ duration: 300 })}>Practice doesn’t count<span class="more">{' '}towards your streak</span>; <span aria-live="off">{nextIn(now, 'daily')}</span>.</p>
         {:else if graceOn(rec, today)}
           <!-- Yesterday went unanswered and the run lives on by its grace (lib/daily GRACE_DAYS): say so before the answer that keeps it. -->
           <p class="caption" in:fade|global={calm({ duration: 300 })}>You skipped a day; answer right to keep your streak.</p>
@@ -464,7 +464,7 @@
           {:else}
             <span>Missed today</span>
           {/if}
-          <span class="sep" aria-hidden="true">·</span>
+          <span class="sep" aria-hidden="true">•</span>
           {@const when = nextIn(now)}
           {@const cut = when.match(/^(.* min)(utes?)$/)}
           <span aria-live="off">{#if cut}{cut[1]}<span class="full">{cut[2]}</span>{:else}{when}{/if}</span>

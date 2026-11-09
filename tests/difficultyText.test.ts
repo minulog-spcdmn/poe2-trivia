@@ -10,20 +10,20 @@ test('presets are described the same way in both modes, but their unveil only in
   );
   assert.equal(
     describe({ difficulty: 'merciless', mode: 'turns' }),
-    'Six options, half with look-alike names, one made up. Some questions show a name; you pick its art. In race, the art you name burns into view bit by bit.',
+    'Six options, half with look-alike names, one made up. Some questions show a name; you pick its art. In Race, the art you name burns into view bit by bit.',
   );
   assert.equal(
     describe({ difficulty: 'eternal', mode: 'race' }),
-    'Eight options, all with look-alike names, two made up. Half the questions show a name; you pick its art, in grayscale. The art you name burns into view slowly. Some art is mirrored.',
+    'Eight options, all with look-alike names, two made up. Half the questions show a name; you pick its art, in greyscale. The art you name burns into view slowly. Some art is mirrored.',
   );
-  assert.match(describe({ difficulty: 'eternal', mode: 'turns' }), /In race, the art you name burns into view slowly\./);
+  assert.match(describe({ difficulty: 'eternal', mode: 'turns' }), /In Race, the art you name burns into view slowly\./);
 });
 
 test('a custom unveil applies in both modes, and only what can happen is described', () => {
   const custom: Knobs = { ...PRESETS.cruel, veil: 'slowest', fakes: 1, mirror: 1, grayscale: 'all' };
   assert.equal(
     describe({ difficulty: 'custom', custom, mode: 'turns' }),
-    'Four options, of one kind where possible (all rings, all bows…), one made up. Some questions show a name; you pick its art. The art you name burns into view very slowly. All art is in grayscale. All art is mirrored.',
+    'Four options, of one kind where possible (all rings, all bows…), one made up. Some questions show a name; you pick its art. The art you name burns into view very slowly. All art is in greyscale. All art is mirrored.',
   );
   // No "name the art" questions, so nothing to unveil; no "find the art" ones, so no grayscale pictures to mention.
   assert.doesNotMatch(describe({ difficulty: 'custom', custom: { ...custom, artChance: 1 } }), /burns in/);

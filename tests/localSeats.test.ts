@@ -28,14 +28,14 @@ test('the host adds a player at its screen, who plays their own turns there', ()
 test('only the host adds players at its screen, between games, in Turns', () => {
   let { engine, s } = lobby(['Ash', 'Bram']);
   // A guest can't seat someone on the host's screen, nor under their own id.
-  loudly(() => engine.apply(s, addHere('x', 'Cora'), 'p1'), /Not allowed/);
-  loudly(() => engine.apply(s, addHere('p1', 'Cora'), 'p0'), /Not allowed/);
+  loudly(() => engine.apply(s, addHere('x', 'Cora'), 'p1'), /Only the host can add players/);
+  loudly(() => engine.apply(s, addHere('p1', 'Cora'), 'p0'), /already in the room/);
   // Nor on one device, where everyone already is.
-  loudly(() => engine.apply(createGame(null), addHere('x', 'Cora'), null), /Not allowed/);
+  loudly(() => engine.apply(createGame(null), addHere('x', 'Cora'), null), /Only the host can add players/);
   // A name already in the room is turned down as any join's is.
   loudly(() => engine.apply(s, addHere('x', 'bram'), 'p0'));
   const race = engine.apply(s, { type: 'settings', settings: { mode: 'race' } }, 'p0');
-  loudly(() => engine.apply(race, addHere('x', 'Cora'), 'p0'), /Turns/);
+  loudly(() => engine.apply(race, addHere('x', 'Cora'), 'p0'), /Take turns/);
   const running = engine.apply(s, { type: 'start' }, 'p0');
   loudly(() => engine.apply(running, addHere('x', 'Cora'), 'p0'), /between games/);
 });

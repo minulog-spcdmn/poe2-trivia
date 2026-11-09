@@ -98,7 +98,7 @@ test('a new room whose server stays out of reach opens on this device, once it h
   await run(10_000);
   assert.equal(session.hereOnly, true, 'given up by then');
   assert.equal(session.status, 'ready');
-  assert.match(lastToast()?.message ?? '', /matchmaking server \(network\)/);
+  assert.match(lastToast()?.message ?? '', /^Couldn’t reach the rooms, so nobody can join./);
 });
 
 test('a new room on a slow link waits for its server, however long the socket takes within its while', async () => {
@@ -124,7 +124,7 @@ test('a new room whose server never answers plays here once its while is up, not
   await run(2000);
   assert.equal(session.hereOnly, true);
   assert.equal(session.status, 'ready');
-  assert.match(lastToast()?.message ?? '', /matchmaking server \(timeout\)/);
+  assert.match(lastToast()?.message ?? '', /^Couldn’t reach the rooms, so nobody can join./);
 });
 
 test('a new room whose try hangs as the network goes tries afresh once it is back online, not waiting out its while', async () => {
@@ -204,7 +204,7 @@ test('a reopened room whose server never answers is given up, kept for a refresh
   await run(2000);
   assert.equal(session.status, 'idle');
   assert.equal(lastToast()?.title, 'Room not reopened');
-  assert.match(lastToast()?.message ?? '', new RegExp(`\\(timeout\\).*Refresh to try reopening room ${code}`));
+  assert.match(lastToast()?.message ?? '', new RegExp(`^Couldn’t reach the rooms\\..*Refresh to try reopening room ${code}`));
   // Still saved: the next try reopens it.
   net.silent = false;
   session.resume();

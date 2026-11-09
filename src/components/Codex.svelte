@@ -700,7 +700,7 @@
         {#if practice.n}
           <p class="muted">Practice on the start page: {pct(practice)} right of {practice.n}.</p>
         {/if}
-        <button class="btn primary" onclick={closeCodex}>Begin the hunt</button>
+        <button class="btn primary" onclick={closeCodex}>Close the Codex</button>
       </div>
     </EmptyPlate>
   {:else}

@@ -60,15 +60,15 @@ export function describe(settings: Pick<Settings, 'difficulty'> & Partial<Settin
 
   const art = often(k.artChance);
   const gray = k.grayscale === 'art' && art !== 'Never';
-  if (art !== 'Never') lines.push(`${ART_SHARE[art]} show a name; you pick its art${gray ? ', in grayscale' : ''}.`);
+  if (art !== 'Never') lines.push(`${ART_SHARE[art]} show a name; you pick its art${gray ? ', in greyscale' : ''}.`);
 
   // Only the art of name questions burns into view. A preset only does it in
   // race, so in take turns its description still says what race adds.
   const raceOnly = !custom && settings.mode !== 'race';
   const veil = raceOnly ? knobsOf({ ...settings, mode: 'race' }).veil : k.veil;
-  if (veil !== 'off' && art !== 'Always') lines.push(`${raceOnly ? 'In race, the' : 'The'} art you name burns into view ${VEIL_PACE[veil]}.`);
+  if (veil !== 'off' && art !== 'Always') lines.push(`${raceOnly ? 'In Race, the' : 'The'} art you name burns into view ${VEIL_PACE[veil]}.`);
 
-  if (k.grayscale === 'all') lines.push('All art is in grayscale.');
+  if (k.grayscale === 'all') lines.push('All art is in greyscale.');
 
   const mirror = often(k.mirror);
   if (mirror !== 'Never') lines.push(`${MIRROR_SHARE[mirror]} mirrored.`);
@@ -134,7 +134,7 @@ export const KNOB_TEXT: { [K in keyof Knobs]: KnobText<K> }[keyof Knobs][] = [
   },
   {
     key: 'grayscale',
-    name: 'Grayscale',
+    name: 'Greyscale',
     hint: 'Art shown without colour',
     label: (v) => (v === 'off' ? 'Off' : v === 'art' ? 'Find the art' : 'All art'),
     off: (v, k) => (v === 'art' && k.artChance === 0 ? 'No “find the art” questions' : undefined),

@@ -591,7 +591,7 @@
     {:else if local && !s.players.length}
       <p in:fade|global={calm({ duration: modesLive ? 200 : 0 })} class="go-note">Add the first exile to begin.</p>
     {:else if hereOnly && s.players.length < 2}
-      <p in:fade|global={calm({ duration: modesLive ? 200 : 0 })} class="go-note">{atScreen ? 'Begin alone, or add the players at your screen.' : 'You can begin alone.'}</p>
+      <p in:fade|global={calm({ duration: modesLive ? 200 : 0 })} class="go-note">{atScreen ? 'Begin alone, or add the players on this device.' : 'You can begin alone.'}</p>
     {:else if !local && s.players.length < 2}
       <p in:fade|global={calm({ duration: modesLive ? 200 : 0 })} class="go-note">You can begin alone, or wait for your party.</p>
     {:else if s.players.length > 1}
@@ -712,7 +712,7 @@
                 <span class="lock-words"><span class:shown={!!s.settings.locked}>Locked</span><span class:shown={!s.settings.locked}>Lock</span></span>
               </button>
             {:else}
-              <span class="vis-tag">{s.settings.public ? 'Public room' : 'Private room'}{s.settings.locked ? ' · locked' : ''}</span>
+              <span class="vis-tag">{s.settings.public ? 'Public room' : 'Private room'}{s.settings.locked ? ' • locked' : ''}</span>
             {/if}
           </div>
           {#if isHost}
@@ -737,7 +737,7 @@
             {#if local || atScreen}
               Pass the device around; each player answers on their own turn.
             {:else}
-              Nobody else can join this room. Players at your screen play Turns.
+              Nobody else can join this room. Players on this device play Take turns.
             {/if}
           </p>
         </section>
@@ -799,11 +799,11 @@
         {/snippet}
         {#if waiting.length}{@render gallery('Waiting for a seat', waiting)}{/if}
         <!-- Turns in a full room: those at the host's screen who didn't fit back wait here for a seat (or to be removed). -->
-        {#if atScreen && s.aside?.length}{@render gallery('At your screen, waiting for a seat', s.aside)}{/if}
+        {#if atScreen && s.aside?.length}{@render gallery('On this device, waiting for a seat', s.aside)}{/if}
         {#if watching.length}{@render gallery('Watching', watching)}{/if}
         {#if atScreen && !hereOnly && !full}
           <!-- Online, Turns: someone beside the host plays too, on the host's screen (Race and Delve set them aside). -->
-          <div class="here" transition:slide={{ duration: 250 }}>{@render adder('Add a player at your screen')}</div>
+          <div class="here" transition:slide={{ duration: 250 }}>{@render adder('Add a player on this device')}</div>
         {/if}
         {#if !local && !isHost && session.myPlayerId}
           <!-- A guest can sit the games out and watch, and take a seat again. -->

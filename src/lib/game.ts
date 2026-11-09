@@ -1465,14 +1465,14 @@ export class Engine {
    * never on a guest's word. On one device (hot-seat), every player is.
    */
   private joinLocal(s: GameState, id: string, raw: string, from: string | null) {
-    if (s.hostId === null || (from !== null && from !== s.hostId)) throw new ActionError('Not allowed.');
-    if (s.phase !== 'lobby') throw new ActionError('Players at your screen join between games.');
-    if (s.settings.mode !== 'turns') throw new ActionError('Players at your screen play Turns.');
-    if (everyoneIn(s).some((o) => o.id === id)) throw new ActionError('Not allowed.');
+    if (s.hostId === null || (from !== null && from !== s.hostId)) throw new ActionError('Only the host can add players on their device.');
+    if (s.phase !== 'lobby') throw new ActionError('Players on this device join between games.');
+    if (s.settings.mode !== 'turns') throw new ActionError('Players on this device play Take turns.');
+    if (everyoneIn(s).some((o) => o.id === id)) throw new ActionError('That player is already in the room.');
     const name = cleanName(raw);
     const problem = nameProblem(name, namesIn(s));
     if (problem) throw new ActionError(problem);
-    if (s.players.length >= MAX_PLAYERS) throw new ActionError('The lobby is full.');
+    if (s.players.length >= MAX_PLAYERS) throw new ActionError('The room is full.');
     seat(s, id, name, { local: true });
   }
 
@@ -1551,7 +1551,7 @@ export class Engine {
         }
         if (s.phase !== 'lobby') {
           // Too late for this game: watch it and take a seat in the next one.
-          if (s.spectators.length >= MAX_SPECTATORS && !owner) throw new ActionError('That game has already started and has no room for more spectators.');
+          if (s.spectators.length >= MAX_SPECTATORS && !owner) throw new ActionError('That game has already started, and there is no room for anyone else to watch.');
           s.spectators.push({ id: action.playerId, name, ...looks });
           break;
         }
@@ -1564,7 +1564,7 @@ export class Engine {
             s.spectators.push({ id: action.playerId, name, ...looks });
             break;
           }
-          throw new ActionError('The lobby is full.');
+          throw new ActionError('The room is full.');
         }
         seat(s, action.playerId, name, looks);
         break;
@@ -1993,7 +1993,7 @@ export class Engine {
         fillSeats(s);
         placeLocals(s);
         // (The owner, let in past the cap, takes nobody's place.)
-        if (s.spectators.filter((o) => o.id !== s.owner?.id).length > MAX_SPECTATORS) throw new ActionError('There is no room for more spectators.');
+        if (s.spectators.filter((o) => o.id !== s.owner?.id).length > MAX_SPECTATORS) throw new ActionError('There is no room for anyone else to watch.');
         break;
       }
       case 'sigil': {

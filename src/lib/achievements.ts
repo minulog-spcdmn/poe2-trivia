@@ -279,7 +279,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     title: 'Clean Sweep',
     text: `Win a race to ${TARGET_HIGH} points or more by taking every question, with every rival guessing at least once.`,
   },
-  { id: 'usurper', group: 'versus', tier: 2, sign: 'jupiter', secret: true, title: 'Usurper', text: 'Win a game against the creator of PoE2.Quest.' },
+  { id: 'usurper', group: 'versus', tier: 2, sign: 'jupiter', secret: true, title: 'Usurper', text: 'Win a game against the site’s owner.' },
   {
     id: 'through-the-veil',
     group: 'versus',

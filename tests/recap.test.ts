@@ -267,7 +267,7 @@ test("the run's facts: zones reached, and what its finds gave", () => {
   });
   assert.deepEqual(
     runFacts(s, 'p0').map((l) => plain(l.parts)),
-    ['Reached the Frozen Hollow.', 'Dynamite you won at depth 14 blasted a question away at depth 17.', 'An azurite vein at depth 22 gave you two wards.', 'A flare you won at depth 22 was never needed.'],
+    ['Reached the Frozen Hollow.', 'Dynamite you won at depth 14 blasted a question away at depth 17.', 'An Azurite Vein at depth 22 gave you two wards.', 'A flare you won at depth 22 was never needed.'],
   );
 });
 

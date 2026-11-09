@@ -114,7 +114,7 @@ test("a join turned down for the versions counts apart from one turned down by t
   // A host from before the curly apostrophe, and before the flag, words it straight.
   assert.ok(isVersionRefusal({ message: "The host's game is out of date. Ask them to reload the page." }));
   assert.ok(isVersionRefusal({ message: LEGACY_VERSION_TEXT }));
-  assert.ok(!isVersionRefusal({ message: 'The lobby is full.' }));
+  assert.ok(!isVersionRefusal({ message: 'The room is full.' }));
   // The flag goes through the guest's check of what a host sends.
   assert.deepEqual(parseHostMsg({ t: 'error', message: 'x', version: true }), { t: 'error', message: 'x', version: true });
   assert.equal(parseHostMsg({ t: 'error', message: 'x', version: 'yes' }), null);

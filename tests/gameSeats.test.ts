@@ -248,7 +248,7 @@ test('a full hot-seat lobby turns the thirteenth player down rather than seating
   let s: GameState = createGame(null, { targetScore: 3, timer: 0, difficulty: 'cruel', mode: 'turns', public: false, locked: false });
   const names = ['Alva', 'Zana', 'Doryani', 'Tujen', 'Rog', 'Gwennen', 'Dannig', 'Oyra', 'Kirac', 'Niko', 'Jun', 'Einhar'];
   names.forEach((name, i) => (s = engine.apply(s, { type: 'join', playerId: `p${i}`, name }, null)));
-  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'x', name: 'Stranger' }, null), /lobby is full/);
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'x', name: 'Stranger' }, null), /room is full/);
 });
 
 test('a full lobby with no room left to watch from turns a newcomer away', () => {
@@ -256,7 +256,7 @@ test('a full lobby with no room left to watch from turns a newcomer away', () =>
   let { engine, s } = lobby(names);
   for (let i = 0; i < MAX_SPECTATORS; i++) s = engine.apply(s, { type: 'join', playerId: `w${i}`, name: `Watcher ${'abcdefgh'[i]}` }, `w${i}`);
   assert.equal(s.spectators!.length, MAX_SPECTATORS);
-  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'new', name: 'Stranger' }, 'new'), /lobby is full/);
+  assert.throws(() => engine.apply(s, { type: 'join', playerId: 'new', name: 'Stranger' }, 'new'), /room is full/);
 });
 
 test('zoe_arcana always gets the last avatar colour', () => {

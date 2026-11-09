@@ -65,5 +65,5 @@ test("a host's refusal is told apart: the name's, which the start page puts the 
   }
   assert.ok(isNameProblem(NAME_TOO_SHORT));
   // The room's own refusals: the name was fine.
-  for (const said of ['The lobby is full.', 'The host has locked this room.', 'Not allowed.']) assert.equal(isNameProblem(said), false, said);
+  for (const said of ['The room is full.', 'The host has locked this room.', 'Not allowed.']) assert.equal(isNameProblem(said), false, said);
 });

@@ -292,7 +292,7 @@
             {:else if emptySays === 'searching'}
               <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span> Searching for rooms…
             {:else if emptySays === 'failed'}
-              Couldn’t reach the matchmaking server. Try the refresh button.
+              Couldn’t reach the rooms. Try the refresh button.
             {:else}
               Nobody is waiting right now. Set your room to Public in its lobby and it shows up here.
             {/if}

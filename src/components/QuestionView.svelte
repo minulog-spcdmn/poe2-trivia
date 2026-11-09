@@ -262,6 +262,8 @@
    * turn comes, and at the reveal everyone sees the verdict in full colour.
    */
   const theirs = $derived(!race && !coop && !session.myTurn && !reveal);
+  /** Who else moves the game on, by name; "the host" only while no name is known. */
+  const hostName = $derived(session.hostName ?? 'the host');
   // Everyone sees the Next button; only the host (and in turns mode, whoever answered) can press it.
   const canNext = $derived(!!reveal && (race ? session.isHost : coop ? session.isHost || session.state!.players.some((p) => p.id === session.myPlayerId) : mine || session.isHost));
   /**
@@ -1238,7 +1240,7 @@
         bind:this={nextEl}
         data-sfx="none"
         disabled={!canNext}
-        title={canNext ? undefined : race ? 'The host moves the race on' : coop ? 'The team moves the run on' : `${active.name} or the host moves on`}
+        title={canNext ? undefined : race ? `${session.hostName ?? 'The host'} moves the race on` : coop ? 'The team moves the run on' : active.name === hostName ? `${hostName} moves on` : `${active.name} or ${hostName} moves on`}
         onclick={next}
       >
         {nextLabel}

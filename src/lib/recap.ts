@@ -355,7 +355,7 @@ export function runFacts(s: GameState, me: string | null): Line[] {
       // A vein's wards come in together: one line for them.
       let n = 1;
       while (items[i + 1]?.kind === 'wards' && items[i + 1].at === x.at) (n++, i++);
-      out.push({ icon: { glyph: 'ward' }, parts: join('An azurite vein', ...at(x.at), ` gave ${together ? 'the party' : 'you'} ${n === 1 ? 'a ward' : `${word(n)} wards`}.`) });
+      out.push({ icon: { glyph: 'ward' }, parts: join('An Azurite Vein', ...at(x.at), ` gave ${together ? 'the party' : 'you'} ${n === 1 ? 'a ward' : `${word(n)} wards`}.`) });
     } else out.push({ icon: { glyph: x.kind === 'flares' ? 'flare' : 'dynamite' }, parts: itemFact(x, you, at) });
   }
   return out;

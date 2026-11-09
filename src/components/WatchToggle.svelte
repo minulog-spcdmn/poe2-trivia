@@ -14,7 +14,7 @@
   );
   const title = $derived(
     full
-      ? 'There is no room for more spectators.'
+      ? 'There is no room for anyone else to watch.'
       : watching
         ? lobby
           ? 'Take a seat in the party'

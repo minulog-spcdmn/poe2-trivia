@@ -32,7 +32,7 @@
   const tier = (t: Tier) => ACHIEVEMENTS.find((a) => a.tier === t) ?? ACHIEVEMENTS[0];
   const TOASTS: { label: string; show: () => void }[] = [
     { label: 'Player joined', show: () => toast(someone().name, 'info', { title: 'Player joined', who: someone() }) },
-    { label: 'Spectator joined', show: () => toast('Brea', 'info', { title: 'Spectator joined', who: { name: 'Brea' } }) },
+    { label: 'Now watching', show: () => toast('Brea', 'info', { title: 'Now watching', who: { name: 'Brea' } }) },
     { label: 'Player removed', show: () => toast(someone().name, 'info', { title: 'Player removed', who: someone() }) },
     { label: 'Disconnected', show: () => toast(someone().name, 'warn', { title: 'Player disconnected', who: someone() }) },
     { label: 'Turn skipped', show: () => toast(someone().name, 'warn', { title: 'Turn skipped', who: someone() }) },

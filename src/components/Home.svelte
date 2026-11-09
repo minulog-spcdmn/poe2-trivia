@@ -706,7 +706,7 @@
     settings: 'Settings',
   };
   const about = $derived<Record<Entry, string>>({
-    create: 'Host your party online or at one screen, or play alone.',
+    create: 'Host your party online or on one device, or play alone.',
     join: 'With the code a friend sent you.',
     codex: codexLine(discovered, total, deepest, fresh),
     settings: 'Your name, colour and sigil; sound and keys.',

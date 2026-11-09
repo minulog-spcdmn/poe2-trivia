@@ -159,7 +159,7 @@ test('a version mismatch says which side has to reload', () => {
   // What hosts before version 10 send, whichever side is behind.
   assert.equal(LEGACY_VERSION_TEXT, 'Your game version is out of date. Please reload the page.');
   assert.match(versionRefusal(LEGACY_VERSION_TEXT), /different versions/);
-  assert.equal(versionRefusal('The lobby is full.'), 'The lobby is full.');
+  assert.equal(versionRefusal('The room is full.'), 'The room is full.');
 });
 
 test('veiled "find the art" pictures say which option they belong to', () => {

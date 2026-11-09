@@ -103,7 +103,7 @@ function notices(v: Values = {}): Built {
   // moving over for it), its words and seal cross-fading as reconnecting is given up, then gone as the link comes back.
   if (v.notices === 'link')
     return inGame([
-      { toast: 'Brea', opts: { title: 'Spectator joined', who: { name: 'Brea' } } },
+      { toast: 'Brea', opts: { title: 'Now watching', who: { name: 'Brea' } } },
       { wait: 1200 },
       { link: 'lost' },
       { wait: 2600 },
@@ -118,7 +118,7 @@ function notices(v: Values = {}): Built {
   return inGame([
     { toast: 'Una of the Vaal', kind: 'warn', opts: { title: 'Player disconnected', who: una } },
     { toast: 'Una of the Vaal', kind: 'warn', opts: { title: 'Turn skipped', who: una } },
-    { toast: 'Brea', opts: { title: 'Spectator joined', who: { name: 'Brea' } } },
+    { toast: 'Brea', opts: { title: 'Now watching', who: { name: 'Brea' } } },
     { toast: 'Too quick to count: the question had only just reached you. Answer again.', kind: 'error' },
   ]);
 }

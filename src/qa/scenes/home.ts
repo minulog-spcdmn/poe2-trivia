@@ -374,7 +374,7 @@ export function homeScenes(): Scene[] {
         { key: 'home/connecting', label: 'Opening a room: the portal, then still opening it', values: { how: 'opening' }, listed: false },
         { key: 'home/join-failed', label: 'The server said the room may be missing: No answer, the code marked', values: { how: 'missing' }, listed: false },
         { label: 'The room was found, the connection never came up: Couldn’t connect, the code left as typed', values: { how: 'blocked' }, listed: false },
-        { label: 'The matchmaking server never answered: No connection, the code left as typed', values: { how: 'server' }, listed: false },
+        { label: 'The rooms never answered: No connection, the code left as typed', values: { how: 'server' }, listed: false },
       ],
       build: joining,
     }),
