@@ -203,6 +203,12 @@ test('the check itself broken (answers of a new shape, a bug) fails the run, not
   assert.ok(unsaid(lines));
 });
 
+test("a device stuttering more is said by visits where those were weighed, by games where they weren't yet counted", () => {
+  const check = (by: 'visits' | 'games') => ({ day: YESTERDAY, trouble: null, health: { errors: [], stutter: [{ device: 'android' as const, share: 57.1, before: 14.7, of: 21, by }] } });
+  assert.deepEqual(firedOf(check('visits')), ['Android: the first game stuttered on 57% of 21 visits, against 15% before']);
+  assert.deepEqual(firedOf(check('games')), ['Android: 57% of 21 games stuttered, against 15% before']);
+});
+
 test('a day without its 7 before counted is not checked: counting began too late', async () => {
   const r = await run([], { from: addDays(YESTERDAY, -3) });
   assert.equal(r.code, 0);

@@ -3,7 +3,7 @@
 // tests can feed it.
 
 import { DAILY_LAUNCH } from '../lib/dailyLaunch.ts';
-import { DEVICES, SOFTWARE, readFramesPath, type Device, type Moment } from '../lib/stutter.ts';
+import { DEVICES, SOFTWARE, readFramesPath, readVisitPath, type Device, type Moment } from '../lib/stutter.ts';
 import { addDays, hourStarts, midnight } from './zone.ts';
 import { isoWeekOfDay, weekMonday } from '../lib/isoWeek.ts';
 
@@ -228,13 +228,18 @@ export const MOMENT_NAMES: Record<Moment, string> = { begin: 'the start', deal: 
  * and many together, and each), and over the period the moment most of a
  * stutter fell in, and the games drawn in software, apart from the rest
  * (in none of the others). Only the paths' current generation (stutter.ts
- * FRAMES): older ones counted by other rules.
+ * FRAMES): older ones counted by other rules. And the visits a day whose
+ * first game was counted, and those where it stuttered (stutter.ts VISIT,
+ * "frames2/ios/visit/stuttered"): each visitor once, however many games
+ * they played. None before November 2026, when those began.
  */
 export interface DeviceFrames {
   games: number[];
   stuttered: number[];
   some: number[];
   many: number[];
+  visits: number[];
+  visitsStuttered: number[];
   worst: Record<Moment, number>;
   software: number;
 }
@@ -258,9 +263,18 @@ export function stutterTop(rows: DeviceFrames[], days: string[], weekly: boolean
 function framesOf(paths: PathCount[], days: string[]): Record<Device, DeviceFrames> {
   const zeros = () => days.map(() => 0);
   const out = Object.fromEntries(
-    DEVICES.map((d) => [d, { games: zeros(), stuttered: zeros(), some: zeros(), many: zeros(), worst: { begin: 0, deal: 0, question: 0, reveal: 0 }, software: 0 }]),
+    DEVICES.map((d) => [d, { games: zeros(), stuttered: zeros(), some: zeros(), many: zeros(), visits: zeros(), visitsStuttered: zeros(), worst: { begin: 0, deal: 0, question: 0, reveal: 0 }, software: 0 }]),
   ) as Record<Device, DeviceFrames>;
   for (const p of paths) {
+    const v = readVisitPath(p.path);
+    if (v) {
+      days.forEach((d, i) => {
+        const n = p.days[d] ?? 0;
+        out[v.device].visits[i] += n;
+        if (v.stuttered) out[v.device].visitsStuttered[i] += n;
+      });
+      continue;
+    }
     const f = readFramesPath(p.path);
     if (!f) continue;
     const row = out[f.device];

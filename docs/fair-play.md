@@ -130,7 +130,11 @@ name. It goes as the game is decided or left, or as the page is left, or
 on a phone as it's hidden (not again for the same game if it's seen once
 more; a computer's game switched away from is counted when it ends, as a
 whole); a game seen for
-less than 20 seconds sends nothing. Until 1 November 2026 it was
+less than 20 seconds sends nothing. The first game a page counts goes once
+more as `frames2/<device>/visit/smooth` or `…/visit/stuttered`
+(`stutter.ts` VISIT), sent as a step is, so once a visitor in eight hours:
+nothing tells whose a game is, and one slow device's run of games would
+otherwise read as many players stuttering. Until 1 November 2026 it was
 `frames/…`, by frames over 50 ms and with no `begin`; the stats page reads
 only `frames2/`, so the two never mix. Visits count
 once a person in eight hours, and so do the steps (`countReach`, each once a
@@ -196,8 +200,9 @@ above it all speaks only when something's wrong: joining failing well
 above the usual rate, today's or the period's (`insights.ts` troubleOf),
 and, where the period before was counted in full, the game breaking more
 than before (its scripts' errors, or pages missing a part that didn't
-load, for as many visits) or a kind of device stuttering more
-(`insights.ts` healthOf); each opens Joining or Stutter. "What happened"
+load, for as many visits) or a kind of device stuttering more, weighed by
+its visits' first games once those are counted on 3 of the period before's
+days and by its games until then (`insights.ts` healthOf, stutterBy); each opens Joining or Stutter. "What happened"
 reads out the days far busier than usual (the median of the days within
 two weeks of it) and the site behind each, and the sites and countries
 that brought far more or fewer than the period before, beyond how they
@@ -265,7 +270,7 @@ a day on each kind of device, small charts on one axis with the period's
 share dashed across, so a deploy that made things worse on one shows as a
 jump there (a day resting on fewer than 5 games hollow, and out of the
 axis), and each device's period against the period before, with the moment
-most stuttered and the games drawn in software, counted apart. `#groups` (Groups) opens on what stands out between groups,
+most stuttered, the share of visits whose first game stuttered, and the games drawn in software, counted apart. `#groups` (Groups) opens on what stands out between groups,
 each a sentence and only beyond what chance makes of groups so small
 (`slices.ts` apartFrom), and sets the visits from a country, or on a system or
 a kind of device, against everyone in a table, each row saying what it

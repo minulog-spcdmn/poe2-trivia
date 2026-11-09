@@ -86,11 +86,28 @@ test("a game's frames count once, as it ends, under the device's class", () => {
   countGameFrames(game('over'));
   assert.equal(pending, null, 'and no longer once it is decided');
   mock.timers.tick(3_000);
-  assert.deepEqual(paths(), ['frames2/ios/smooth']);
+  // (The queue's next, a gap after.)
+  mock.timers.tick(1_000);
+  // The first game this page counts goes once more, as its visit's.
+  assert.deepEqual(paths(), ['frames2/ios/smooth', 'frames2/ios/visit/smooth']);
+  // The game counts each time (no session); the visit as a step does, once a visitor in eight hours.
+  assert.deepEqual(sent.map((u) => new URL(u).searchParams.get('ns')), ['true', null]);
   // The results screen and the lobby after it add nothing.
   countGameFrames(game('lobby'));
   mock.timers.tick(3_000);
-  assert.equal(sent.length, 1);
+  assert.equal(sent.length, 2);
+});
+
+test("only a page's first counted game is its visit's: the games after it count as games alone", () => {
+  sent.length = 0;
+  for (let i = 0; i < 3; i++) {
+    countGameFrames(game('choosing'));
+    frames(700);
+    frames(16, 1500);
+    countGameFrames(game('over'));
+  }
+  for (let i = 0; i < 5; i++) mock.timers.tick(1_000);
+  assert.deepEqual(paths(), ['frames2/ios/some/begin', 'frames2/ios/some/begin', 'frames2/ios/some/begin']);
 });
 
 test('the time the page is hidden is no stutter, however long', () => {

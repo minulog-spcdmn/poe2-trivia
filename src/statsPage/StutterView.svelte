@@ -3,11 +3,14 @@
   // in a game counts how its frames came (lib/stutter.ts), so this is games
   // as each device saw them: the share that stuttered a day on each kind of
   // device, where a deploy that made things worse shows as a jump, and the
-  // period's figures against the period before's.
+  // period's figures against the period before's. A change is weighed by
+  // visits (each visitor's first game, once) where those are counted
+  // (insights.ts stutterBy): one slow device's run of games is no news.
   import { DEVICES, type Device } from '../lib/stutter';
   import { fmt } from './chart';
   import Delta from './Delta.svelte';
   import How from './How.svelte';
+  import { stutterBy } from './insights';
   import { DEVICE_NAMES, MOMENT_NAMES, percent, stutterTop, type Counts } from './model';
   import type { Period, Read } from './read';
   import Section from './Section.svelte';
@@ -18,16 +21,19 @@
   const L = $derived(read.now);
   const B = $derived(read.before);
   const sum = (vs: number[]) => vs.reduce((n, v) => n + v, 0);
-  /** A kind of device's games in a period, those that stuttered, a lot, and the moment most of them did. */
+  /** A kind of device's games in a period, those that stuttered, a lot, and the moment most of them did; its visits whose first game was counted, and those where it stuttered. */
   const figures = (c: Counts, d: Device) => {
     const f = c.frames[d];
     const [moment, most] = (Object.entries(f.worst) as [keyof typeof f.worst, number][]).reduce((a, b) => (b[1] > a[1] ? b : a));
-    return { f, games: sum(f.games), part: sum(f.stuttered), many: sum(f.many), worst: most ? moment : null };
+    return { f, games: sum(f.games), part: sum(f.stuttered), many: sum(f.many), worst: most ? moment : null, visits: sum(f.visits), visitsPart: sum(f.visitsStuttered) };
   };
+  /** What a change is weighed by: visits once they're counted, games until then. */
+  const by = $derived(stutterBy(L, B));
   const devices = $derived(DEVICES.map((d) => ({ device: d, now: figures(L, d), before: figures(B, d) })));
   const games = $derived(devices.reduce((n, d) => n + d.now.games, 0));
   const top = $derived(stutterTop(DEVICES.map((d) => L.frames[d]), L.days, weekly));
   const share = (x: { part: number; games: number }) => (x.games ? (100 * x.part) / x.games : null);
+  const visitShare = (x: { visitsPart: number; visits: number }) => (x.visits ? (100 * x.visitsPart) / x.visits : null);
 </script>
 
 <div class="stack">
@@ -61,6 +67,7 @@
             <th scope="col">Device</th>
             <th scope="col" class="n">Games</th>
             <th scope="col" class="n">Stuttered</th>
+            <th scope="col" class="n opt">Of visits</th>
             <th scope="col" class="n opt">A lot</th>
             <th scope="col" class="at">Mostly at</th>
             <th scope="col" class="n opt">In software</th>
@@ -71,12 +78,21 @@
             <tr class:none={!d.now.games}>
               <th scope="row">
                 {DEVICE_NAMES[d.device]}
-                {#if d.now.games}<span class="on-phone">{percent(d.now.many, d.now.games)} a lot{#if d.device.startsWith('desktop')}{' • '}{fmt(d.now.f.software)} in software{/if}</span>{/if}
+                {#if d.now.games}<span class="on-phone">{#if d.now.visits}{percent(d.now.visitsPart, d.now.visits)} of {fmt(d.now.visits)} visits{' • '}{/if}{percent(d.now.many, d.now.games)} a lot{#if d.device.startsWith('desktop')}{' • '}{fmt(d.now.f.software)} in software{/if}</span>{/if}
               </th>
               <td class="n">{fmt(d.now.games)}</td>
               <td class="n">
                 <b class="strong">{percent(d.now.part, d.now.games)}</b>
-                <Delta now={share(d.now)} before={share(d.before)} rate worse="up" of={{ now: d.now.games, before: d.before.games }} period={period.before} />
+                <!-- (Weighed as resting on as many visits, where those are counted: a visitor's games go together.) -->
+                <Delta now={share(d.now)} before={share(d.before)} rate worse="up" of={by === 'visits' ? { now: d.now.visits, before: d.before.visits } : { now: d.now.games, before: d.before.games }} period={period.before} />
+              </td>
+              <td class="n opt" class:soft={!d.now.visits}>
+                {#if d.now.visits}
+                  <b class="strong">{percent(d.now.visitsPart, d.now.visits)}</b> of {fmt(d.now.visits)}
+                  <Delta now={visitShare(d.now)} before={visitShare(d.before)} rate worse="up" of={{ now: d.now.visits, before: d.before.visits }} period={period.before} />
+                {:else}
+                  –
+                {/if}
               </td>
               <td class="n opt">{percent(d.now.many, d.now.games)}</td>
               <td class="at" class:soft={!d.now.worst}>{d.now.worst ? MOMENT_NAMES[d.now.worst] : '–'}</td>
@@ -94,6 +110,7 @@
       'Each device in a game counts how its frames came, while the game was on screen and the page was seen (not the lobby or the results), once the game ends or is left. So a game of four counts four times, and a device that shows the results only is no game.',
       "Counted this way from 1 November 2026. The counts from 29 October to then went by frames over 50 ms and had no start, so they aren't shown.",
       "Stuttered: over 1% of that time went to frames longer than 40 ms; a lot: 5% or more. By time, not by frames: the same hitches are a smaller share of a fast screen's frames.",
+      "Of visits: the visits whose first game stuttered, each visitor once however many games they played (once in eight hours, as visits are counted), from about 10 November 2026. A slow device that plays ten games is ten stuttered games but one visit, so a change against the period before is weighed by visits once they're counted on 3 of its days (by games until then), here, in the overview's warning and in the daily mail.",
       "Mostly at: the moment (the start, the deal, a question, the reveal) most of the stuttering time fell in, of the games that stuttered. The start is a game's first 3 seconds on the device, from Begin (or the page picking the game up) with its screen being built; the deal is every hand dealt after it, Delve's new zones too.",
       "In software: games on a computer whose browser draws WebGL without the GPU (hardware acceleration switched off), about 6 frames a second, so they'd all stutter a lot whatever the game did. Counted apart, in none of the other figures.",
       'A device counts its game as the page goes out of sight, too (a phone often drops a tab switched away from without a word), and not again if it comes back to it.',

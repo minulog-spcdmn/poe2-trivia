@@ -564,13 +564,43 @@ export function troubleOf(now: Counts, before: Counts): Trouble | null {
 /**
  * The game going worse than in the period before, the way a deploy breaks
  * it: its own scripts' errors, or pages missing a part that didn't load,
- * far above the period before's for as many visits; a kind of device whose
- * games stuttered far more often. Each beyond chance for one of them all
- * (zFor), as the overview speaks of any. Null where none is.
+ * far above the period before's for as many visits; a kind of device that
+ * stuttered far more often (stutterBy: for a share of its visits, or of its
+ * games until those are counted; `of`, how many the share is of). Each
+ * beyond chance for one of them all (zFor), as the overview speaks of any.
+ * Null where none is.
  */
 export interface Health {
   errors: { key: 'script' | 'chunk'; count: number; expected: number }[];
-  stutter: { device: Device; share: number; before: number; games: number }[];
+  stutter: { device: Device; share: number; before: number; of: number; by: StutterBy }[];
+}
+
+/** The days of the period before that must have visits' first games counted for stutter to be judged by them (stutterBy). */
+export const VISIT_DAYS = 3;
+
+/**
+ * What stutter is judged by. A game is no chance of its own: nothing tells
+ * whose it is, and a slow device's five games in a row are that device's
+ * speed counted five times, so a share of games moves far beyond what
+ * rateBeyondChance allows it whenever one such player has a long evening
+ * (the alerts of 7 and 8 November 2026, issues #421 and #422: two phones'
+ * 7 games; one computer's 7 in an hour). A visit's first game is one
+ * (stutter.ts VISIT: each visitor once), so the share of visits where it
+ * stuttered is weighed where it's counted: on VISIT_DAYS or more of the
+ * period before's days, and in the period itself. Until then, and for
+ * periods from before November 2026, by games as it was.
+ */
+export type StutterBy = 'visits' | 'games';
+export function stutterBy(now: Counts, before: Counts): StutterBy {
+  const daysWith = (c: Counts) => c.days.filter((_, i) => DEVICES.some((d) => c.frames[d].visits[i] > 0)).length;
+  return daysWith(before) >= VISIT_DAYS && daysWith(now) > 0 ? 'visits' : 'games';
+}
+
+/** A kind of device's stutter in a period, as stutterBy says to weigh it: how many visits (or games), and how many of them stuttered. */
+export function stutterOf(c: Counts, device: Device, by: StutterBy): { of: number; part: number } {
+  const sum = (vs: number[]) => vs.reduce((n, v) => n + v, 0);
+  const f = c.frames[device];
+  return by === 'visits' ? { of: sum(f.visits), part: sum(f.visitsStuttered) } : { of: sum(f.games), part: sum(f.stuttered) };
 }
 
 export function healthOf(now: Counts, before: Counts): Health | null {
@@ -584,14 +614,14 @@ export function healthOf(now: Counts, before: Counts): Health | null {
         .filter((e) => e.count > e.was * scale && countsApart(e.count, e.was, { scale, z }))
         .map(({ key, count, was }) => ({ key, count, expected: was * scale }))
     : [];
-  const sum = (vs: number[]) => vs.reduce((n, v) => n + v, 0);
+  const by = stutterBy(now, before);
   const stutter = DEVICES.flatMap((device) => {
-    const games = sum(now.frames[device].games);
-    const gamesBefore = sum(before.frames[device].games);
-    if (!games || !gamesBefore) return [];
-    const share = (100 * sum(now.frames[device].stuttered)) / games;
-    const was = (100 * sum(before.frames[device].stuttered)) / gamesBefore;
-    return share > was && rateBeyondChance(share, games, was, gamesBefore, z) ? [{ device, share, before: was, games }] : [];
+    const is = stutterOf(now, device, by);
+    const had = stutterOf(before, device, by);
+    if (!is.of || !had.of) return [];
+    const share = (100 * is.part) / is.of;
+    const was = (100 * had.part) / had.of;
+    return share > was && rateBeyondChance(share, is.of, was, had.of, z) ? [{ device, share, before: was, of: is.of, by }] : [];
   });
   return errors.length || stutter.length ? { errors, stutter } : null;
 }

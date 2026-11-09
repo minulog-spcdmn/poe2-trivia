@@ -151,7 +151,13 @@ export function firedOf(c) {
   const out = [];
   for (const t of [c.trouble?.period, c.trouble?.today]) if (t) out.push(`joining failed ${t.failed} times, against ${round(t.expected)} usual for as many games and tries`);
   for (const e of c.health?.errors ?? []) out.push(`${ERRORS[e.key]}: ${e.count}, against ${round(e.expected)} usual for as many visits`);
-  for (const s of c.health?.stutter ?? []) out.push(`${DEVICE_NAMES[s.device]}: ${round(s.share)}% of ${s.games} games stuttered, against ${round(s.before)}% before`);
+  // (By visits, each visitor's first game once, where those are counted: insights.ts stutterBy.)
+  for (const s of c.health?.stutter ?? [])
+    out.push(
+      s.by === 'visits'
+        ? `${DEVICE_NAMES[s.device]}: the first game stuttered on ${round(s.share)}% of ${s.of} visits, against ${round(s.before)}% before`
+        : `${DEVICE_NAMES[s.device]}: ${round(s.share)}% of ${s.of} games stuttered, against ${round(s.before)}% before`,
+    );
   return out;
 }
 
