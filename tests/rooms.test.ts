@@ -145,6 +145,30 @@ test('a whole batch of slots that answer no ping is gone past like one of them, 
   assert.deepEqual(net.connected, []);
 });
 
+test('the id nobody holds is asked after once a batch, and no more once the batch is through', async () => {
+  for (let n = 1; n <= 10; n++) listed(n);
+  // As the real server, whose word that nobody holds an id comes seconds later (tests/peerServerFree.test.ts).
+  net.freeIn = 6000;
+  const { found } = await scanned();
+  assert.equal(found.length, 10);
+  const nobody = net.pinged.filter((id) => !id.startsWith(SLOTS));
+  assert.equal(new Set(nobody).size, 2, 'an id of its own beside each batch');
+  // The first batch, all rooms, is through at once, and its id is let go of. The second, all free, waits out the server, and asks again 5.5 s in like its slots.
+  assert.equal(nobody.length, 3);
+});
+
+test("on a slow link a free slot isn't taken for a held one: the scan waits for the server's word on the id nobody holds before it calls a slot silent", async () => {
+  silent(1);
+  listed(2);
+  listed(11);
+  // The server's word that nobody holds an id, five to six seconds in the making, takes a round trip of two more.
+  net.freeIn = 8000;
+  const { found, unheard } = await scanned();
+  assert.deepEqual(found.map((r) => r.code), [codeOf(2), codeOf(11)]);
+  assert.deepEqual(unheard, [1], 'the one slot that is held and says nothing; none of the free ones');
+  assert.equal(Math.max(...slotsPinged()), 30, 'and the rooms end where the server says a whole batch is free');
+});
+
 test('a scan the server stops answering fails: the silence is read neither as rooms nor as their end', async () => {
   listed(1);
   // What the scan sends gets nowhere and nothing comes back, though its socket stays up.
@@ -172,15 +196,12 @@ test('scan after scan, a room that answers no ping stays as last heard, ten minu
   let rooms: RoomInfo[] = [];
   const refreshed = async () => {
     const found = new Map<string, RoomInfo>();
-    const unheard = await settle(
-      scanRooms(
-        (r, slot) => {
-          found.set(r.code, r);
-          last.heard(r.code, slot, Date.now());
-        },
-        () => false,
-      ),
-    );
+    const heard = (r: RoomInfo, slot: number) => {
+      found.set(r.code, r);
+      last.heard(r.code, slot, Date.now());
+    };
+    // (null: the scan failed.)
+    const unheard = await settle(scanRooms(heard, () => false).catch(() => null));
     rooms = last.after(rooms, found, unheard, Date.now());
     return rooms.map((r) => r.code).sort();
   };
@@ -194,6 +215,11 @@ test('scan after scan, a room that answers no ping stays as last heard, ten minu
   assert.deepEqual(await refreshed(), [1, 3].map(codeOf));
   mock.timers.tick(KEEP_UNHEARD_MS / 2);
   assert.deepEqual(await refreshed(), [3].map(codeOf));
+  // The server can't be reached: what the list shows stays as last heard, and no longer than that either.
+  net.down = true;
+  assert.deepEqual(await refreshed(), [3].map(codeOf));
+  mock.timers.tick(KEEP_UNHEARD_MS);
+  assert.deepEqual(await refreshed(), []);
   assert.deepEqual(net.connected, []);
 });
 

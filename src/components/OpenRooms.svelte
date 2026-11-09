@@ -108,6 +108,8 @@
   let scanning = $state(false);
   let scanned = $state(false);
   let failed = $state(false);
+  /** The last scan through found slots that answered none of its pings: rooms too busy to say what they are. */
+  let unheard = $state(false);
   let run = 0;
   let destroyed = false;
   /** When each room listed was last heard from, and in which slot: one whose slot goes silent stays as last heard (lib/roomRefresh.ts). */
@@ -138,12 +140,16 @@
         () => destroyed || id !== run,
       );
       strained = silent.length > 0;
+      if (id === run) unheard = strained;
       // Run again once the join ends, rather than moving the list under it.
       if (id === run && disabled) held = true;
       // A room whose slot answered none of this scan's pings (past its share of them) stays as last heard.
       else if (id === run) rooms = sortRooms(lastHeard.after(rooms, found, silent, Date.now()));
     } catch {
       failed = strained = true;
+      // Nothing heard of the slots it didn't reach: their rooms stay as last heard, no longer than a silent slot's would
+      // (the list is drawn, not the tile that says the server can't be reached, for as long as a room is on it).
+      if (id === run && !disabled) rooms = sortRooms(lastHeard.after(rooms, found, null, Date.now()));
     } finally {
       const left = MIN_SCAN_MS - (performance.now() - started);
       if (left > 0 && !destroyed) await new Promise((r) => setTimeout(r, left));
@@ -157,8 +163,12 @@
     }
   }
 
-  /** What the empty tile says. */
-  const emptySays = $derived(scanned && rooms.length && !failed ? 'none-here' : scanning || !scanned ? 'searching' : failed ? 'failed' : 'nobody');
+  /**
+   * What the empty tile says. Still searching, not "nobody", where slots
+   * answered no ping and no room is shown: someone holds them (rooms asked
+   * too often to answer this page yet, mostly), and the list asks again.
+   */
+  const emptySays = $derived(scanned && rooms.length && !failed ? 'none-here' : scanning || !scanned ? 'searching' : failed ? 'failed' : unheard ? 'searching' : 'nobody');
   /** The tile's words change because of a tap on refresh (quick), not by themselves (slow): set for the moment the tap's change is made. */
   let byHand = false;
   function refreshByHand() {

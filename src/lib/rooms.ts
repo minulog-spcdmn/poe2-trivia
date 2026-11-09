@@ -54,6 +54,16 @@ const REPING_MS = 5500;
 /** How long the second ping has before the slot is taken as silent: held by someone who answers no ping, as far as the room list goes. */
 const LAST_PING_MS = 2000;
 /**
+ * How long a scan waits for the server's word on an id nobody holds before it
+ * takes the server as not answering: the five to six seconds the word takes,
+ * a slow link's round trip, and as much again for a second ping's. (A scan
+ * that connected to a silent slot gave a free one's word as long: 7.5 s, then
+ * the connection's 6.)
+ */
+const NO_WORD_MS = 13_000;
+/** Once the server has said so, what it said of the batch's slots just before is given this long to be read. */
+const AFTER_FREE_MS = 300;
+/**
  * An invite's screen connects to a room that hasn't answered by then: it's
  * about to be joined anyway, so the connection costs little, and it shouldn't
  * wait out the second ping first.
@@ -181,9 +191,10 @@ class Prober {
   /**
    * Asks `id` what it is. Not answered by `connectAfter` ms, it's connected to
    * (which shares this browser's IP address with whoever holds it); with
-   * null it never is, and one that answers neither ping is 'silent'.
+   * null it never is, and one that answers neither ping is 'silent', after
+   * `silentAfter` ms if nobody calls it sooner (silence).
    */
-  probe(id: string, connectAfter: number | null): Promise<ProbeResult> {
+  probe(id: string, connectAfter: number | null, silentAfter = REPING_MS + LAST_PING_MS): Promise<ProbeResult> {
     // Cut off from the server, PeerJS can't ping or connect (connect()
     // returns nothing): no answer, as if the probe timed out.
     if (this.peer.disconnected || this.peer.destroyed) return Promise.resolve(null);
@@ -242,8 +253,7 @@ class Prober {
       let connTimer: ReturnType<typeof setTimeout> | undefined;
       const timers = [
         setTimeout(send, REPING_MS),
-        // (Cut off from the server meanwhile, the silence says nothing of the slot.)
-        setTimeout(() => (connectAfter === null ? done(this.peer.disconnected || this.peer.destroyed ? null : 'silent') : connectNow()), connectAfter ?? REPING_MS + LAST_PING_MS),
+        setTimeout(() => (connectAfter === null ? done(this.unheard()) : connectNow()), connectAfter ?? silentAfter),
       ];
       clear = () => [...timers, connTimer].forEach((t) => clearTimeout(t));
       this.waiting.set(id, done);
@@ -252,7 +262,17 @@ class Prober {
     });
   }
 
-  /** Lets go of the probe of `id` under way, if there is one: it ends with no word, and asks nothing more. */
+  /** What a probe that heard nothing ends as: 'silent', or no word where the peer was cut off from the server meanwhile (the silence then says nothing of the id). */
+  private unheard(): ProbeResult {
+    return this.peer.disconnected || this.peer.destroyed ? null : 'silent';
+  }
+
+  /** Takes the probe of `id` under way, if there is one, as having heard nothing, now: it asks no more. */
+  silence(id: string) {
+    this.waiting.get(id)?.(this.unheard());
+  }
+
+  /** Lets go of the probe of `id` under way, if there is one: it ends with no word, and asks no more. */
   drop(id: string) {
     this.waiting.get(id)?.(null);
   }
@@ -316,11 +336,14 @@ async function openPeer(id?: string, server?: Server): Promise<Peer> {
  * answered neither ping (a room past its share of them, mostly), counted as
  * held, so the scan goes on past it, and never connected to.
  *
- * Fails where the server stopped answering on the way, so that silence isn't
- * read as rooms, nor as their end: cut off from it, or a batch in which no
- * slot said anything and neither did the server of an id nobody holds, asked
- * beside each batch (it says that one's free whenever it answers at all).
- * Asking on then would only send more into a line gone quiet.
+ * Silence alone doesn't tell a held slot from a free one whose word is still
+ * on its way (a slow link), or from a line gone quiet. So beside each batch
+ * the scan asks after an id nobody holds, last: the server's word on that one
+ * comes after its word on every free slot of the batch, and a slot still
+ * silent then, its second ping given its time, is held. Where that word
+ * doesn't come either (NO_WORD_MS), or the scan is cut off on the way, it
+ * fails: nothing is read as rooms, nor as their end, and asking on would only
+ * send more into a line gone quiet.
  */
 export async function scanRooms(onRoom: (room: RoomInfo, slot: number) => void, cancelled: () => boolean): Promise<number[]> {
   if (madeUp) {
@@ -336,25 +359,28 @@ export async function scanRooms(onRoom: (room: RoomInfo, slot: number) => void, 
       if (cancelled() || listed >= MAX_LISTED) break;
       if (start > FAST_SLOTS) await sleep(SLOW_BATCH_DELAY_MS);
       const slots = Array.from({ length: BATCH }, (_, i) => start + i);
-      const nobody = `${PEER_PREFIX}nobody-${randomToken(12)}`;
-      const ofNobody = prober.probe(nobody, null);
       let held = 0;
       let cutOff = false;
       const quiet: number[] = [];
-      await Promise.all(
-        slots.map(async (slot) => {
-          const r = await prober.probe(slotId(slot), null);
-          if (r === null) cutOff = true;
-          else if (r === 'silent') quiet.push(slot);
-          else if (r !== 'free') {
-            held++;
-            // Shown as it's found, not once its batch is through.
-            if (r !== 'held' && listable(r) && !cancelled() && listed++ < MAX_LISTED) onRoom(r, slot);
-          }
-        }),
-      );
-      // The server's word on the id nobody holds is wanted only where no slot said anything.
-      const answering = quiet.length < BATCH || (await ofNobody) === 'free';
+      const asked = slots.map(async (slot) => {
+        const r = await prober.probe(slotId(slot), null, NO_WORD_MS);
+        if (r === null) cutOff = true;
+        else if (r === 'silent') quiet.push(slot);
+        else if (r !== 'free') {
+          held++;
+          // Shown as it's found, not once its batch is through.
+          if (r !== 'held' && listable(r) && !cancelled() && listed++ < MAX_LISTED) onRoom(r, slot);
+        }
+      });
+      const nobody = `${PEER_PREFIX}nobody-${randomToken(12)}`;
+      const ofNobody = prober.probe(nobody, null, NO_WORD_MS);
+      const saidFree = ofNobody.then((r) => r === 'free' && sleep(AFTER_FREE_MS).then(() => true));
+      void Promise.all([saidFree, sleep(REPING_MS + LAST_PING_MS)]).then(([free]) => {
+        if (free) for (const slot of slots) prober.silence(slotId(slot));
+      });
+      await Promise.all(asked);
+      // A slot is silent by the server's word on the id nobody holds; where that never came, there's no telling held from free.
+      const answering = !quiet.length || (await ofNobody) === 'free';
       prober.drop(nobody);
       if (cutOff || !answering) throw new Error('The signalling server stopped answering');
       silent.push(...quiet);

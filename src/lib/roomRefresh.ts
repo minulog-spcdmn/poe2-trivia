@@ -8,7 +8,9 @@
 // - out of sight, not at all;
 // - with no sign of its player, later each time;
 // - while rooms let its pings go, or the server can't be reached, later too,
-//   so the pages together come back down to what the rooms answer.
+//   so the pages together come back down to what the rooms answer;
+// - each wait a little shorter or longer by chance, so pages that came
+//   together don't come back together.
 // Apart from the component, so tests can reach it.
 
 import type { RoomInfo } from './roomInfo.ts';
@@ -21,6 +23,14 @@ export const REFRESH_LATEST_MS = 10 * 60_000;
 const IDLE_STEP = 1.5;
 /** A strained scan doubles the wait, three in a row to eight times as long at most; each scan that isn't halves it again. */
 const MOST_STRAIN = 3;
+/**
+ * Each wait is up to this much shorter or longer, by chance. Pages that
+ * opened in the same minute (a stream, a link passed round, launch hour)
+ * ease off in step, and would ask every room in the same minute of every
+ * round from then on: a room's share of pings counts by the ten seconds, and
+ * would be spent in that minute and idle for the rest.
+ */
+export const SPREAD = 0.25;
 
 /** When the list's next timed refresh comes. */
 export class RefreshPace {
@@ -73,12 +83,21 @@ export class Refresher {
   /** When the last scan ended (Date.now(), which a sleeping device doesn't hold back). */
   private endedAt = 0;
   private stopped = false;
+  /** This wait's share of the pace's gap (SPREAD). */
+  private spread = 1;
   private refresh: () => void;
   private hidden: () => boolean;
+  private random: () => number;
 
-  constructor(refresh: () => void, hidden: () => boolean) {
+  constructor(refresh: () => void, hidden: () => boolean, random: () => number = Math.random) {
     this.refresh = refresh;
     this.hidden = hidden;
+    this.random = random;
+  }
+
+  /** How long after the last scan ended the next comes. */
+  private wait() {
+    return this.pace.gap() * this.spread;
   }
 
   /** The page's first refresh. */
@@ -111,7 +130,8 @@ export class Refresher {
     if (this.stopped) return;
     this.pace.scanned(strained);
     this.endedAt = Date.now();
-    this.comeDueIn(this.pace.gap());
+    this.spread = 1 + SPREAD * (2 * this.random() - 1);
+    this.comeDueIn(this.wait());
   }
 
   /**
@@ -128,8 +148,8 @@ export class Refresher {
     else if (this.timer) {
       clearTimeout(this.timer);
       // By the clock's time, so a device that slept comes due at once; never longer than the wait itself, should the clock have been set back.
-      const gap = this.pace.gap();
-      this.comeDueIn(Math.min(gap, Math.max(0, this.endedAt + gap - Date.now())));
+      const wait = this.wait();
+      this.comeDueIn(Math.min(wait, Math.max(0, this.endedAt + wait - Date.now())));
     }
   }
 
@@ -139,7 +159,12 @@ export class Refresher {
   }
 }
 
-/** A room no scan has heard from is shown as last heard this long at most. */
+/**
+ * A scan keeps a room it didn't hear from as last heard only while it was
+ * heard less than this long ago. (It's looked at as a scan ends: the room is
+ * on screen until the first scan past that, which on a page nobody has
+ * touched for a while can be REFRESH_LATEST_MS more.)
+ */
 export const KEEP_UNHEARD_MS = 10 * 60_000;
 
 /**
@@ -149,7 +174,9 @@ export const KEEP_UNHEARD_MS = 10 * 60_000;
  * before and not found now, whose slot is one of those, stays as last heard,
  * KEEP_UNHEARD_MS at most: a busy room doesn't drop out of the lists it
  * couldn't answer. One whose slot spoke (free, or another room's now) goes,
- * as a room that closed should, whatever other slots kept silent.
+ * as a room that closed should, whatever other slots kept silent. A scan
+ * that failed heard of no slot but those of the rooms it found: the others
+ * stay likewise, and no longer, however long the server can't be reached.
  */
 export class LastHeard {
   private of = new Map<string, { at: number; slot: number }>();
@@ -162,13 +189,14 @@ export class LastHeard {
   /**
    * The rooms to show once a scan is through: those it `found`, then those
    * shown `before` that stay as last heard (above). The rest are forgotten.
-   * `silent`: the slots that answered none of the scan's pings.
+   * `silent`: the slots that answered none of the scan's pings; null for a
+   * scan that failed, which knows nothing of any slot.
    */
-  after(before: readonly RoomInfo[], found: ReadonlyMap<string, RoomInfo>, silent: readonly number[], now: number): RoomInfo[] {
-    const quiet = new Set(silent);
+  after(before: readonly RoomInfo[], found: ReadonlyMap<string, RoomInfo>, silent: readonly number[] | null, now: number): RoomInfo[] {
+    const quiet = silent && new Set(silent);
     const kept = before.filter((r) => {
       const last = this.of.get(r.code);
-      return !found.has(r.code) && !!last && quiet.has(last.slot) && now - last.at < KEEP_UNHEARD_MS;
+      return !found.has(r.code) && !!last && (!quiet || quiet.has(last.slot)) && now - last.at < KEEP_UNHEARD_MS;
     });
     const rooms = [...found.values(), ...kept];
     const shown = new Set(rooms.map((r) => r.code));

@@ -6,7 +6,7 @@
 // (each a socket on our own server) a page left open makes.
 import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { KEEP_UNHEARD_MS, LastHeard, REFRESH_LATEST_MS, REFRESH_MS, RefreshPace, Refresher } from '../src/lib/roomRefresh.ts';
+import { KEEP_UNHEARD_MS, LastHeard, REFRESH_LATEST_MS, REFRESH_MS, RefreshPace, Refresher, SPREAD } from '../src/lib/roomRefresh.ts';
 import { ProbeDesk } from '../src/lib/probeDesk.ts';
 import type { RoomInfo } from '../src/lib/roomInfo.ts';
 
@@ -62,8 +62,9 @@ test('strained with nobody about, the wait still ends at ten minutes', () => {
  * refresh asked for is a scan that ends `scanMs` later (strained if
  * `page.strained`), and `scans` says when each began, in seconds from the
  * start. `page.asked`: how often the list asked whether it's in sight.
+ * `chance`: what each wait's spread is drawn from (0 to 1; a half: none).
  */
-function list(scanMs = 1000) {
+function list(scanMs = 1000, chance = () => 0.5) {
   mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
   const page = { hidden: false, strained: false, asked: 0 };
   const scans: number[] = [];
@@ -72,7 +73,7 @@ function list(scanMs = 1000) {
     scans.push(Date.now() / 1000);
     setTimeout(() => refresher.ended(page.strained), scanMs);
   };
-  const refresher = new Refresher(scan, () => (page.asked++, page.hidden));
+  const refresher = new Refresher(scan, () => (page.asked++, page.hidden), chance);
   /** The clock on by `s` seconds, a step at a time: what a timer sets off is then on time too. */
   const run = (s: number) => {
     for (let left = s * 1000; left > 0; left -= 100) mock.timers.tick(Math.min(100, left));
@@ -90,6 +91,24 @@ test('the list scans as the page opens, then 20 s after each scan ends, later ea
   } finally {
     mock.timers.reset();
   }
+});
+
+test('each wait is a quarter shorter or longer at most, by chance: pages that opened together drift apart', () => {
+  assert.equal(SPREAD, 0.25);
+  const firstGaps = (chance: number) => {
+    const { scans, refresher, run } = list(1000, () => chance);
+    try {
+      refresher.start();
+      run(70);
+      return scans;
+    } finally {
+      mock.timers.reset();
+    }
+  };
+  // 20 s after the first scan ended at 1 s, then 30 s after the next ended: each by its spread.
+  assert.deepEqual(firstGaps(0), [0, 16, 39.5]);
+  assert.deepEqual(firstGaps(0.5), [0, 21, 52]);
+  assert.deepEqual(firstGaps(1), [0, 26, 64.5]);
 });
 
 test('out of sight, a page scans nothing: not as it opens, and not as a refresh comes due; shown again, it does at once', () => {
@@ -221,8 +240,8 @@ test('while scans come back strained the list asks later, to every 160 s with it
   }
 });
 
-/** Rooms A, B and C shown, heard in slots 1, 2 and 3 at 1, 2 and 3 s; then what the list shows after a scan that `found` these codes (a new one's slot: 9) while these slots kept `silent`. */
-function shownAfter(found: string[], silent: number[], now = 5000) {
+/** Rooms A, B and C shown, heard in slots 1, 2 and 3 at 1, 2 and 3 s; then what the list shows after a scan that `found` these codes (a new one's slot: 9) while these slots kept `silent` (null: the scan failed). */
+function shownAfter(found: string[], silent: number[] | null, now = 5000) {
   const last = new LastHeard();
   const before = ['AAAAAA', 'BBBBBB', 'CCCCCC'].map(room);
   before.forEach((r, i) => last.heard(r.code, i + 1, 1000 * (i + 1)));
@@ -255,6 +274,15 @@ test('a room is kept ten minutes at most from when it was last heard, however of
   assert.deepEqual(next(6000), [], 'gone, it is not back for its slot keeping silent');
   // And A, dropped by the first of these scans, isn't kept for a slot it was once heard in.
   assert.deepEqual(last.after([room('AAAAAA')], new Map(), [1], 6000), []);
+});
+
+test('a scan that failed keeps the rooms it did not hear as last heard, and no longer: the list is not left standing for as long as the server cannot be reached', () => {
+  // It found C, then the server stopped answering.
+  assert.deepEqual(shownAfter(['CCCCCC'], null).after(), ['CCCCCC', 'AAAAAA', 'BBBBBB']);
+  // It never reached the server.
+  assert.deepEqual(shownAfter([], null).after(), ['AAAAAA', 'BBBBBB', 'CCCCCC']);
+  assert.deepEqual(shownAfter([], null).after(1999 + KEEP_UNHEARD_MS), ['BBBBBB', 'CCCCCC']);
+  assert.deepEqual(shownAfter([], null).after(3000 + KEEP_UNHEARD_MS), []);
 });
 
 test('a room heard in another slot since is kept by that one', () => {
@@ -302,19 +330,106 @@ function answered(tabs: number, everyMs: number) {
   }
 }
 
-test("a room's share of pings (60 in 10 s) carries about 140 start pages at the list's quickest, and about 1,000 once they've eased off", () => {
+test("a room's share of pings (60 in 10 s) carries about 140 start pages at the list's quickest", () => {
   const quickest = REFRESH_MS + SCAN_MS;
   assert.equal(answered(130, quickest), 1);
   assert.ok(answered(150, quickest) < 1);
-  // Past it, the share is what gets answered: of 500 pages' pings about a quarter, of 2,000 about one in fourteen.
+  // Past it, the share is what gets answered if nobody eased off: of 500 pages' pings about a quarter, of 2,000 about one in fourteen.
   assert.ok(Math.abs(answered(500, quickest) - (6 * 23) / 500) < 0.02);
   assert.ok(Math.abs(answered(2000, quickest) - (6 * 23) / 2000) < 0.01);
-  // Strained, a page waits eight times as long, and a scan that waits out a silent slot's second ping lasts 7.5 s.
-  const pace = new RefreshPace();
-  for (let i = 0; i < 3; i++) pace.scanned(true);
-  const easedOff = pace.gap() + 7500;
-  assert.equal(answered(1000, easedOff), 1);
-  assert.ok(answered(1100, easedOff) < 1);
+});
+
+/**
+ * An evening of `tabs` start pages, every one in sight with its player about
+ * (the most they can ask), all opened within the same minute, scanning one
+ * room as the list paces them: a ping, a second 5.5 s on if the room let the
+ * first go, the scan through at 7.5 s then, strained, and the next wait by
+ * RefreshPace and its spread. The room answers by its desk's share. Counted
+ * over the second half hour of one: the share of scans that hear the room,
+ * of lists that show it (heard within KEEP_UNHEARD_MS), the pings a second
+ * that reach the host, and the mean wait between a page's scans, in seconds.
+ */
+function evening(tabs: number) {
+  mock.timers.enable({ apis: ['Date'], now: 0 });
+  try {
+    let seed = tabs;
+    const chance = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+    const desk = new ProbeDesk(() => room('AAAAAA'));
+    const END = 3_600_000;
+    const FROM = END / 2;
+    const due = new Map<number, (() => void)[]>();
+    const at = (t: number, f: () => void) => {
+      const step = Math.ceil(t);
+      const fs = due.get(step);
+      if (fs) fs.push(f);
+      else due.set(step, [f]);
+    };
+    const count = { scans: 0, heard: 0, shown: 0, pings: 0, waited: 0 };
+    const pages = Array.from({ length: tabs }, () => ({ pace: new RefreshPace(), heardAt: -Infinity, scans: 0 }));
+    const scan = (i: number) => {
+      const page = pages[i];
+      const from = `${i}-${page.scans++}`;
+      const began = Date.now();
+      const ping = () => {
+        let answered = false;
+        if (Date.now() >= FROM) count.pings++;
+        desk.answerPing(from, null, () => (answered = true));
+        return answered;
+      };
+      const end = (heard: boolean) => {
+        const now = Date.now();
+        if (heard) page.heardAt = now;
+        page.pace.scanned(!heard);
+        const wait = page.pace.gap() * (1 + SPREAD * (2 * chance() - 1));
+        if (now >= FROM) {
+          count.scans++;
+          if (heard) count.heard++;
+          if (now - page.heardAt < KEEP_UNHEARD_MS) count.shown++;
+          count.waited += wait;
+        }
+        at(now + wait, () => scan(i));
+      };
+      if (ping()) at(began + SCAN_MS, () => end(true));
+      else
+        at(began + 5500, () => {
+          const heard = ping();
+          at(began + 7500, () => end(heard));
+        });
+    };
+    for (let i = 0; i < tabs; i++) at(chance() * 60_000, () => scan(i));
+    for (let step = 0; step <= END; step++) {
+      const fs = due.get(step);
+      if (!fs) continue;
+      due.delete(step);
+      mock.timers.setTime(step);
+      for (const f of fs) f();
+    }
+    return { heard: count.heard / count.scans, shown: count.shown / count.scans, pings: count.pings / ((END - FROM) / 1000), wait: count.waited / count.scans / 1000 };
+  } finally {
+    mock.timers.reset();
+  }
+}
+
+test('past its share a room is heard on part of a page\u2019s scans and shown as last heard between: nearly every list shows it at 1,000 pages, three in four at 3,000', () => {
+  const within = (n: number, low: number, high: number, what: string) => assert.ok(n >= low && n <= high, `${what}: ${n}`);
+  const few = evening(300);
+  within(few.heard, 0.65, 0.85, 'scans hearing it at 300');
+  within(few.shown, 0.995, 1, 'lists showing it at 300');
+  within(few.wait, 25, 45, 'the wait at 300');
+  const many = evening(1000);
+  within(many.heard, 0.4, 0.6, 'scans hearing it at 1,000');
+  within(many.shown, 0.95, 1, 'lists showing it at 1,000');
+  within(many.wait, 60, 100, 'the wait at 1,000');
+  within(many.pings, 15, 27, 'pings a second at the host at 1,000');
+  const more = evening(2000);
+  within(more.heard, 0.28, 0.42, 'scans hearing it at 2,000');
+  within(more.shown, 0.82, 0.93, 'lists showing it at 2,000');
+  const most = evening(3000);
+  within(most.heard, 0.2, 0.33, 'scans hearing it at 3,000');
+  within(most.shown, 0.7, 0.85, 'lists showing it at 3,000');
+  within(most.wait, 105, 150, 'the wait at 3,000');
+  // What reaches the host: small messages, of which it answers six a second. (Before, each scan past that had a WebRTC connection set up: 81 a second at 2,000 pages.)
+  within(most.pings, 34, 50, 'pings a second at the host at 3,000');
 });
 
 /** The scans a page makes in `forMs` from its first, with nothing strained (each a socket on our own server, tests/rooms.test.ts). */

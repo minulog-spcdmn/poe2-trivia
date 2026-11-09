@@ -46,6 +46,8 @@ export const net = {
   silent: false,
   /** Lost: what a peer sends goes nowhere and nothing comes back, though its socket stays up (a line gone quiet). */
   lost: false,
+  /** How long the server takes to say nobody holds an id, ms (the real one: five to six seconds from the first to ask, tests/peerServerFree.test.ts). */
+  freeIn: 0,
   /** How long the server takes to answer a peer, ms (a slow link: congested mobile data, satellite). */
   answerIn: 0,
   reset() {
@@ -58,6 +60,7 @@ export const net = {
     net.down = false;
     net.silent = false;
     net.lost = false;
+    net.freeIn = 0;
     net.answerIn = 0;
   },
 };
@@ -78,8 +81,12 @@ class Socket extends Emitter {
     if (net.lost) return;
     queueMicrotask(() => {
       const to = from.held.get(dst);
+      const free = () => {
+        if (!from.destroyed) from.emit('error', { type: 'peer-unavailable', message: `Could not connect to peer ${dst}` });
+      };
       if (to) to.socket.emit('message', { type: 'CANDIDATE', src: from.id, payload: msg.payload });
-      else if (!from.destroyed) from.emit('error', { type: 'peer-unavailable', message: `Could not connect to peer ${dst}` });
+      else if (net.freeIn) setTimeout(free, net.freeIn);
+      else free();
     });
   }
 }
