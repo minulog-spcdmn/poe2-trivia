@@ -139,11 +139,17 @@
   const settingsOver = $derived(settingsRoute.open && !codexAllowed);
   // The room ended (left, closed, kicked) with the settings open over it: they
   // go with it, to the start page, not on as the settings page. (Dropped, not
-  // gone back from: the entry before is the room's address.)
+  // gone back from: the entry before is the room's address.) So does the
+  // question whether to leave: there is nothing left to leave, and its Leave
+  // would take down the notice saying why the room is gone.
   let wasInRoom = untrack(() => !codexAllowed);
   $effect(() => {
     const inRoom = !codexAllowed;
-    if (wasInRoom && !inRoom) untrack(() => settingsRoute.drop());
+    if (wasInRoom && !inRoom)
+      untrack(() => {
+        settingsRoute.drop();
+        confirmLeave = false;
+      });
     wasInRoom = inRoom;
   });
   const codex = $derived(screen === 'codex');
