@@ -10,7 +10,8 @@
 // A game's frames are counted on each device that shows it (countGameFrames,
 // lib/stutter.ts): measured only while a game is under way and the page is
 // seen, sent once a game as one coarse path, the device's class and how
-// much it stuttered ("frames2/ios/some/reveal"), never a timing.
+// much it stuttered ("frames2/ios/some/reveal"), never a timing; a page's
+// first one once more as its visit's ("frames2/ios/visit/stuttered").
 //
 // Not GoatCounter's count.js: it sends the address's query too, and an
 // invite link's carries the room's code. This sends only what's named here.
@@ -25,7 +26,7 @@ import { isoWeek } from './isoWeek.ts';
 import { countOptedOut, notCounted, privacySignal, setCountOptedOut } from './countOptOut.ts';
 import { SITE_URL } from './site.ts';
 import { fetchWhereTable, ownFrames, whereOf, type ErrorPlace, type WhereTable } from './errorWhere.ts';
-import { GameFrames, SOFTWARE, deviceOf, framesEvent, type BrowserSays, type StateMoment } from './stutter.ts';
+import { GameFrames, SOFTWARE, deviceOf, framesEvent, visitEvent, type BrowserSays, type StateMoment } from './stutter.ts';
 
 /** Whether a page counts: the live game's own page at its own address, no robot driving it. */
 export function countsOn(at: { hostname: string; pathname: string }, channel: Channel, robot: boolean): boolean {
@@ -740,6 +741,8 @@ export function gameMoment(s: GameState | null): StateMoment | null {
 }
 
 let frames: GameFrames | null = null;
+/** This page's first counted game went out as its visit's too (stutter.ts VISIT). */
+let visitCounted = false;
 
 /** Whether the game draws WebGL in software now, as gpuNotice.ts found (noteSoftware); not until it has. */
 let software = () => false;
@@ -769,6 +772,13 @@ export const noteSoftware = (drawsInSoftware: () => boolean) => void (software =
  * goes then; a game counted as the page was hidden counts no more). A game picked up
  * after a reload is measured from there. A computer drawing in software
  * counts only that (asksSoftware). Nothing measured where nothing counts.
+ * The first game a page counts goes once more as its visit's
+ * ("frames2/ios/visit/stuttered", stutter.ts VISIT), the way a step does
+ * (countReach: once a visitor in eight hours), so one device's run of games
+ * can be told from many devices' games. Not from a page come back to
+ * (cameBack: reloaded, or reached from this site's own pages): its arrival
+ * counted, each reload would be one more chance for the same visitor to
+ * count as stuttered, and its first game is often one picked up mid-way.
  */
 export function countGameFrames(s: GameState | null) {
   if (!frames) {
@@ -781,7 +791,14 @@ export function countGameFrames(s: GameState | null) {
         now: () => performance.now(),
         seen: () => document.visibilityState === 'visible',
       },
-      (v) => countEvent(framesEvent(device, device.startsWith('desktop') && software() ? SOFTWARE : v)),
+      (v) => {
+        const soft = device.startsWith('desktop') && software();
+        countEvent(framesEvent(device, soft ? SOFTWARE : v));
+        // The first game this page counts, once more as its visit's (stutter.ts VISIT); not a page come back to.
+        if (soft || visitCounted || cameBack()) return;
+        visitCounted = true;
+        countReach(visitEvent(device, v));
+      },
     );
     document.addEventListener('visibilitychange', () => f.shown());
     // Hidden, a phone's game counts there and then: a phone often drops a tab

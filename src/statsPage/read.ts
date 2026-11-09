@@ -7,7 +7,7 @@ import { daysBetween } from './model.ts';
 import { addDays, dayIn, hourStarts, hoursIn, midnight } from './zone.ts';
 
 /** The shape reads are kept in: a read kept by an older build (another number) is read again. */
-export const READ_V = 16;
+export const READ_V = 17;
 
 /** A period read: its days and the same many before, with what the start page's visitors came on and from. */
 export interface Read {

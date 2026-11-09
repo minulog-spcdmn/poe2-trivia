@@ -161,6 +161,32 @@ export function readFramesPath(path: string): { device: Device; bucket: Bucket |
   return { device, bucket: m[3] as Bucket, worst: (m[4] as Moment | undefined) ?? null };
 }
 
+/**
+ * A visit's first game, counted once more beside its games
+ * ("frames2/android/visit/stuttered", count.ts countGameFrames): the first
+ * game a page counts, as smooth or stuttered (some and many together), sent
+ * the way a step is (count.ts countReach), which GoatCounter counts once a
+ * visitor in eight hours. Nothing tells whose a game is, so five games in a
+ * row on one slow phone are five stuttered games; here they are one visit,
+ * and a share of visits says how many players' devices stuttered, which is
+ * what a deploy moves (the stats' health check weighs these, insights.ts
+ * healthOf). Only a page arrived at sends it, not one reloaded or come back
+ * to, and a visitor who arrives twice in those hours counts once under each
+ * of the two paths at most. Counted from November 2026; a game drawn in
+ * software (SOFTWARE) is no first game.
+ */
+export const VISIT = 'visit';
+
+/** The path a visit's first game is counted under: "frames2/ios/visit/smooth", "frames2/android/visit/stuttered". */
+export const visitEvent = (device: Device, v: Verdict) => `${FRAMES}/${device}/${VISIT}/${v.bucket === 'smooth' ? 'smooth' : 'stuttered'}`;
+
+/** What a path says (visitEvent), or null for one that isn't a visit's first game of this generation (FRAMES). */
+export function readVisitPath(path: string): { device: Device; stuttered: boolean } | null {
+  const [frames, device, visit, how, ...more] = path.split('/');
+  if (frames !== FRAMES || visit !== VISIT || more.length || !(DEVICES as readonly string[]).includes(device)) return null;
+  return how === 'smooth' || how === 'stuttered' ? { device: device as Device, stuttered: how === 'stuttered' } : null;
+}
+
 /** The browser's frames as GameFrames needs them (requestAnimationFrame), the time on their clock (performance.now), and whether the page is seen. */
 export interface FrameClock {
   frame(cb: (t: number) => void): number;

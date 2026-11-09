@@ -172,7 +172,11 @@
         <span>
           <b>Games stutter more than before.</b>
           {#each health.stutter as d (d.device)}
-            {DEVICE_NAMES[d.device]}: {pct(d.share)} of {fmt(d.games)} games stuttered, against {pct(d.before)} in {period.before}.
+            {#if d.by === 'visits'}
+              {DEVICE_NAMES[d.device]}: the first game stuttered on {pct(d.share)} of {fmt(d.of)} visits, against {pct(d.before)} in {period.before}.
+            {:else}
+              {DEVICE_NAMES[d.device]}: {pct(d.share)} of {fmt(d.of)} games stuttered, against {pct(d.before)} in {period.before}.
+            {/if}
           {/each}
         </span>
         <span class="go">See where ›</span>

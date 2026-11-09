@@ -74,7 +74,9 @@ test("a computer's game switched away from counts as a whole, as it ends", () =>
   frames(16, 4000);
   countGameFrames(game('over'));
   mock.timers.tick(3_000);
-  assert.deepEqual(paths(), ['frames2/desktop-chrome/smooth'], 'the whole game, once');
+  // (The queue's next, a gap after.)
+  mock.timers.tick(1_000);
+  assert.deepEqual(paths(), ['frames2/desktop-chrome/smooth', 'frames2/desktop-chrome/visit/smooth'], "the whole game, once, and as its visit's first");
 });
 
 test("a computer's game the page is left in counts as it's left", () => {
