@@ -10,10 +10,18 @@
 // answers with its info, so the room list doesn't connect to anyone: a
 // browser's first WebRTC connection holds up its page for half a second or
 // more, and the list mostly finds nobody. The server says when nobody holds a
-// slot, but only once per id in five seconds, whoever asks (another browser
-// scanning just before gets told), so a slot that stays silent is asked again
-// once that has passed. Silent twice, someone holds it without answering
-// pings (an older version, or a room asked too often): that one is connected to.
+// slot, to everyone who asked, once the first of them has waited five seconds
+// (and up to one more: it looks once a second), so a scan alone hears "free"
+// after five or six seconds and one in company sooner (the PeerJS server's
+// code, tests/peerServerFree.test.ts; ours does the same, signal/worker.js).
+// A slot silent till then is asked once more. Silent twice, someone holds it
+// without answering pings: a room asked too often (past its share,
+// probeDesk.ts), or a page from before pings. The list takes it as held and
+// hears nothing new of it (what it shows meanwhile: lib/roomRefresh.ts), and
+// never connects to it: on a busy evening every list would, to every room
+// past its share, several connections a second that a host's phone has to
+// set up one by one beside the game it runs. Only an invite's screen connects
+// to a room that answers no ping, the one room it's about to join.
 
 import type Peer from 'peerjs';
 import type { DataConnection } from 'peerjs';
@@ -34,15 +42,16 @@ const FAST_SLOTS = 30;
 const SLOW_BATCH_DELAY_MS = 800;
 /**
  * A slot that hasn't answered a ping by then is pinged again. The server
- * tells one asker per id that it's free in each five-second stretch (fixed
- * stretches, not five seconds from the last told), so this lands in the next
- * one, and the answer comes at once (measured against the free server, a
- * second ping 5.5s after one that went untold: told free in about 20ms).
+ * tells everyone who asked after a free id at once, five seconds after the
+ * first of them asked (a stretch that starts with the first to ask, not with
+ * each), looking once a second: a free slot's word is in by six seconds, and
+ * what's silent past this is mostly a room that let the first ping go, which
+ * may answer the second. (Against the free server, a second ping 5.5 s after
+ * one not told yet was told free in about 20 ms: the first's stretch ending.)
  */
 const REPING_MS = 5500;
-/** How long the second ping has before the room list takes the slot as held by someone who doesn't answer pings, and connects. */
+/** How long the second ping has before the slot is taken as silent: held by someone who answers no ping, as far as the room list goes. */
 const LAST_PING_MS = 2000;
-const SCAN_CONNECT_MS = REPING_MS + LAST_PING_MS;
 /**
  * An invite's screen connects to a room that hasn't answered by then: it's
  * about to be joined anyway, so the connection costs little, and it shouldn't
@@ -92,9 +101,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * What a probe found: a room; 'free'; 'held' by someone with nothing to list
- * (or nothing that made sense); or null for no word at all.
+ * (or nothing that made sense); 'silent' when neither ping was answered, by
+ * the room or by the server, and it wasn't connected to (someone holds it,
+ * most likely); or null for no word at all (cut off from the server, or a
+ * connection that came to nothing).
  */
-type ProbeResult = RoomInfo | 'free' | 'held' | null;
+type ProbeResult = RoomInfo | 'free' | 'held' | 'silent' | null;
 
 type Ping = NonNullable<ReturnType<typeof pingOf>>;
 type Answer = NonNullable<ReturnType<typeof answerOf>>;
@@ -165,18 +177,12 @@ class Prober {
     };
   }
 
-  /** Settles every probe still out with no word, so none goes on to connect (a scan that was left, or has listed all it will). */
-  stop() {
-    for (const done of [...this.waiting.values()]) done(null);
-  }
-
   /**
    * Asks `id` what it is. Not answered by `connectAfter` ms, it's connected to
-   * (which shares this browser's IP address with whoever holds it), and
-   * `connecting` is told; with null, a slot that answers neither ping is left
-   * at no word.
+   * (which shares this browser's IP address with whoever holds it); with
+   * null it never is, and one that answers neither ping is 'silent'.
    */
-  probe(id: string, connectAfter: number | null, connecting?: () => void): Promise<ProbeResult> {
+  probe(id: string, connectAfter: number | null): Promise<ProbeResult> {
     // Cut off from the server, PeerJS can't ping or connect (connect()
     // returns nothing): no answer, as if the probe timed out.
     if (this.peer.disconnected || this.peer.destroyed) return Promise.resolve(null);
@@ -213,7 +219,6 @@ class Prober {
         const c = this.peer.connect(id, { reliable: true, metadata: { probe: true, challenge } });
         if (!c) return done(null);
         conn = c;
-        connecting?.();
         connTimer = setTimeout(() => done(null), CONNECT_TIMEOUT_MS);
         // Checked before PeerJS decodes it, and a probe's answer is never split.
         hookFrames(c, (data) => frameFits(data, MAX_PROBE_BYTES) || (done('held'), false), () => (done('held'), false));
@@ -236,7 +241,8 @@ class Prober {
       let connTimer: ReturnType<typeof setTimeout> | undefined;
       const timers = [
         setTimeout(send, REPING_MS),
-        setTimeout(() => (connectAfter === null ? done(null) : connectNow()), connectAfter ?? REPING_MS + LAST_PING_MS),
+        // (Cut off from the server meanwhile, the silence says nothing of the slot.)
+        setTimeout(() => (connectAfter === null ? done(this.peer.disconnected || this.peer.destroyed ? null : 'silent') : connectNow()), connectAfter ?? REPING_MS + LAST_PING_MS),
       ];
       clear = () => [...timers, connTimer].forEach((t) => clearTimeout(t));
       this.waiting.set(id, done);
@@ -298,54 +304,49 @@ async function openPeer(id?: string, server?: Server): Promise<Peer> {
 }
 
 /**
- * Scans the listing slots, calling onRoom for every room found. Resolves when
- * the scan is done or `cancelled()` returns true.
+ * Scans the listing slots by ping alone, calling onRoom for every room found.
+ * Resolves when the scan is done or `cancelled()` returns true, with how many
+ * rooms it may have missed: the slots that stayed silent, each held by
+ * someone who answered no ping (a room past its share of them, mostly), which
+ * it never connects to. Infinity where it gave up at a batch in which every
+ * slot did: no word from a room or the server, so no telling what's there or
+ * further on (every room there asked too often, or this page's line to the
+ * server gone quiet), and asking on would only add to it.
  */
-export async function scanRooms(onRoom: (room: RoomInfo) => void, cancelled: () => boolean): Promise<void> {
+export async function scanRooms(onRoom: (room: RoomInfo) => void, cancelled: () => boolean): Promise<number> {
   if (madeUp) {
     for (const r of madeUp.rooms) onRoom(r);
-    return;
+    return 0;
   }
   const peer = await openPeer();
   const prober = new Prober(peer);
-  /** Probes still connecting to slots that answered no ping, finished before the scan is. */
-  const connecting: Promise<void>[] = [];
   let listed = 0;
+  let unheard = 0;
   try {
     for (let start = 1; start <= MAX_SLOTS; start += BATCH) {
-      if (cancelled() || listed >= MAX_LISTED) return;
+      if (cancelled() || listed >= MAX_LISTED) break;
       if (start > FAST_SLOTS) await sleep(SLOW_BATCH_DELAY_MS);
       const ids = Array.from({ length: BATCH }, (_, i) => slotId(start + i));
-      let found = 0;
+      let held = 0;
+      let silent = 0;
       await Promise.all(
-        ids.map(
-          (id) =>
-            new Promise<void>((next) => {
-              // A slot connected to is held: the next batch needn't wait for what it says.
-              let held = false;
-              const hold = () => {
-                if (!held) found++;
-                held = true;
-                next();
-              };
-              const probe = prober.probe(id, SCAN_CONNECT_MS, hold).then((r) => {
-                if (r && r !== 'free') {
-                  hold();
-                  if (r !== 'held' && listable(r) && !cancelled() && listed++ < MAX_LISTED) onRoom(r);
-                }
-                next();
-              });
-              connecting.push(probe);
-            }),
-        ),
+        ids.map(async (id) => {
+          const r = await prober.probe(id, null);
+          if (r === 'silent') silent++;
+          else if (r && r !== 'free') {
+            held++;
+            // Shown as it's found, not once its batch is through.
+            if (r !== 'held' && listable(r) && !cancelled() && listed++ < MAX_LISTED) onRoom(r);
+          }
+        }),
       );
+      if (silent === BATCH) return Infinity;
+      unheard += silent;
       // Rooms always take the lowest free slot, so a batch nobody holds means we're past the end.
-      if (found === 0) return;
+      if (held + silent === 0) break;
     }
+    return unheard;
   } finally {
-    // Left, or listed all it will: what's still out has nothing to add, and shouldn't connect to anyone.
-    if (cancelled() || listed >= MAX_LISTED) prober.stop();
-    await Promise.all(connecting);
     peer.destroy();
   }
 }
@@ -424,7 +425,7 @@ async function probeOnce(code: string, server: Server, connect: boolean): Promis
   try {
     const r = await new Prober(peer).probe(PEER_PREFIX + code, connect ? INVITE_CONNECT_MS : null);
     // Only this room's own listing: another room's, signed for the held name, passed on by this one, would show it as theirs.
-    return r === 'free' ? 'gone' : r === 'held' || (r && r.code !== code) ? null : r;
+    return r === 'free' ? 'gone' : r === 'held' || r === 'silent' || (r && r.code !== code) ? null : r;
   } finally {
     peer.destroy();
   }
@@ -455,7 +456,7 @@ export function watchForRoom(code: string, server: Server, found: () => void): (
         const at = Date.now();
         const r = await prober.probe(PEER_PREFIX + code, null);
         if (stopped) return;
-        if (r && r !== 'free' && r !== 'held' && r.code === code) {
+        if (r && r !== 'free' && r !== 'held' && r !== 'silent' && r.code === code) {
           stop();
           return found();
         }

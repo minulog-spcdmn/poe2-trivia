@@ -1,8 +1,9 @@
 // The public room list with no server of its own (lib/rooms.ts), against a
 // signalling server in memory (tests/fakePeerjs.ts): a scan stops after a
-// batch of slots nobody holds and lists no more than its most, an invite
-// takes only its own room's word, and a hosted room holds the lowest free
-// slot and moves down when a lower one frees up.
+// batch of slots nobody holds and lists no more than its most, never
+// connects to a slot (one that answers no ping is held, and unheard), an
+// invite takes only its own room's word, and a hosted room holds the lowest
+// free slot and moves down when a lower one frees up.
 import { fakeModule } from './asVite.ts';
 import { test, mock, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -62,11 +63,13 @@ async function run(ms: number) {
   await flush();
 }
 const slotOf = (id: string) => Number(id.slice(slotId(0).length - 1));
-const scan = async () => {
+/** A scan: the rooms it found, and how many it says it may have missed. */
+const scanned = async () => {
   const found: RoomInfo[] = [];
-  await settle(scanRooms((r) => found.push(r), () => false));
-  return found;
+  const unheard = await settle(scanRooms((r) => found.push(r), () => false));
+  return { found, unheard };
 };
+const scan = async () => (await scanned()).found;
 
 const beacons: InstanceType<typeof Beacon>[] = [];
 /** A hosted room's beacon, started; stopped after the test whatever happens. */
@@ -89,13 +92,49 @@ test('a scan lists every room and stops after the first batch of slots nobody ho
   assert.deepEqual(net.connected, [], 'nobody connected to');
 });
 
-test('a slot held by someone who answers no ping keeps the scan going, is connected to after the second ping, and lists nothing', async () => {
+test('a slot held by someone who answers no ping keeps the scan going, is asked twice and never connected to, and counts as a room unheard', async () => {
   silent(1);
   listed(11);
-  const found = await scan();
+  const { found, unheard } = await scanned();
   assert.deepEqual(found.map((r) => r.code), [codeOf(11)]);
   assert.equal(net.pinged.filter((id) => id === slotId(1)).length, 2);
-  assert.deepEqual(net.connected, [slotId(1)]);
+  assert.deepEqual(net.connected, [], 'nobody connected to');
+  assert.equal(unheard, 1);
+});
+
+test('a room past its share of pings is connected to by nobody: the scans it lets go count it as held, and unheard', async () => {
+  listed(1);
+  listed(11);
+  // Seventy start pages scanning within the same ten seconds: the room answers sixty pings in ten (probeDesk.ts).
+  const scans = await settle(Promise.all(Array.from({ length: 70 }, scanned)));
+  const heard = scans.filter((s) => s.found.some((r) => r.code === codeOf(1)));
+  assert.equal(heard.length, 60);
+  assert.ok(heard.every((s) => s.unheard === 0));
+  const letGo = scans.filter((s) => !heard.includes(s));
+  assert.ok(letGo.every((s) => s.unheard === 1), 'each knows it missed one');
+  assert.ok(scans.every((s) => s.found.some((r) => r.code === codeOf(11))), 'and went on past it to the next batch');
+  // Each asked the slot once more, 5.5 s on, and left it at that.
+  assert.equal(net.pinged.filter((id) => id === slotId(1)).length, 70 + 10);
+  assert.deepEqual(net.connected, [], 'the host sets up no connection for any of them');
+});
+
+test('a batch in which no slot says anything ends the scan, which then knows nothing of what it missed', async () => {
+  for (let n = 1; n <= 10; n++) silent(n);
+  listed(11);
+  const { found, unheard } = await scanned();
+  assert.deepEqual(found, []);
+  assert.equal(unheard, Infinity);
+  assert.equal(Math.max(...net.pinged.map(slotOf)), 10, 'asked no further');
+  assert.deepEqual(net.connected, []);
+});
+
+test('a scan takes one socket on the signalling server, and lets it go', async () => {
+  listed(1);
+  const before = net.made.length;
+  await scan();
+  const mine = net.made.slice(before);
+  assert.equal(mine.length, 1);
+  assert.ok(mine[0].destroyed);
 });
 
 test('a room under an offensive name holds its slot for the scan but is never listed', async () => {

@@ -3,7 +3,7 @@
   import { flip } from 'svelte/animate';
   import { fly, fade } from 'svelte/transition';
   import { scanRooms, type RoomInfo } from '../lib/rooms';
-  import { pageServer } from '../lib/peer';
+  import { Refresher, keptUnheard } from '../lib/roomRefresh';
   import { joinable, roomMeta, watchable } from '../lib/roomInfo';
   import { PROTOCOL_VERSION } from '../lib/protocol';
   import { pinnedOut } from '../lib/stage';
@@ -34,7 +34,6 @@
     owner?: boolean;
   } = $props();
 
-  const REFRESH_MS = 20000;
   /**
    * A scan can legitimately finish in well under a second: the signalling
    * server answers "free" early for slots that other visitors probed moments
@@ -110,20 +109,24 @@
   let failed = $state(false);
   let run = 0;
   let destroyed = false;
-  let timer: ReturnType<typeof setTimeout> | null = null;
+  /** When each room listed was last heard from. */
+  const heardAt = new Map<string, number>();
 
   async function scan() {
     if (scanning || destroyed) return;
-    if (timer) clearTimeout(timer);
+    refresher.began();
     const id = ++run;
     scanning = true;
     failed = false;
     const found = new Map<string, RoomInfo>();
     const started = performance.now();
+    /** It didn't reach the server, or a slot answered none of its pings: the next comes later (lib/roomRefresh.ts). */
+    let strained = false;
     try {
-      await scanRooms(
+      const unheard = await scanRooms(
         (room) => {
           found.set(room.code, room);
+          heardAt.set(room.code, Date.now());
           // Not while a room tapped here is joined: the list stays as it was tapped.
           if (disabled) return;
           // Show rooms as they are found; keep ones from the last scan until it ends.
@@ -133,11 +136,17 @@
         },
         () => destroyed || id !== run,
       );
+      strained = unheard > 0;
       // Run again once the join ends, rather than moving the list under it.
       if (id === run && disabled) held = true;
-      else if (id === run) rooms = sortRooms([...found.values()]);
+      else if (id === run) {
+        // A room that answered none of this scan's pings (past its share of them) stays as last heard.
+        rooms = sortRooms([...found.values(), ...keptUnheard(rooms, found, unheard, heardAt, Date.now())]);
+        const listed = new Set(rooms.map((r) => r.code));
+        for (const code of heardAt.keys()) if (!listed.has(code)) heardAt.delete(code);
+      }
     } catch {
-      failed = true;
+      failed = strained = true;
     } finally {
       const left = MIN_SCAN_MS - (performance.now() - started);
       if (left > 0 && !destroyed) await new Promise((r) => setTimeout(r, left));
@@ -146,7 +155,7 @@
         // A scan whose rooms were set aside for the join hasn't shown anything:
         // the list still reads as searching, not as empty, until the next one.
         if (!held) scanned = true;
-        if (!destroyed) timer = setTimeout(refresh, REFRESH_MS);
+        if (!destroyed) refresher.ended(strained);
       }
     }
   }
@@ -167,17 +176,21 @@
   /** A refresh that came due (or a scan that ended) while a room was being joined, run once the join ends. */
   let held = $state(false);
   /**
-   * The timed refresh, held off while a room is being joined: the list stays
-   * as it was tapped. On the game's own server (lib/peer.ts), whose free
-   * allowance counts every scan, not while the page is out of sight: once
-   * it's shown again.
+   * The page's first scan and the timed refresh (lib/roomRefresh.ts): none
+   * while the page is out of sight, later each time with no sign of the
+   * player, and while rooms or the server don't answer. Held off while a room
+   * is being joined: the list stays as it was tapped.
    */
-  function refresh() {
-    timer = null;
-    if (disabled) held = true;
-    else if (document.visibilityState === 'hidden' && pageServer() === 'own') document.addEventListener('visibilitychange', refresh, { once: true });
-    else void scan();
-  }
+  const refresher = new Refresher(
+    () => {
+      if (disabled) held = true;
+      else void scan();
+    },
+    () => document.visibilityState === 'hidden',
+  );
+  /** What the page takes as a sign of the player, beside its being shown again: the next refresh comes as soon as it would with them about. */
+  const SIGNS = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'] as const;
+  const seen = () => refresher.seen();
   $effect(() => {
     if (disabled || !held || scanning) return;
     held = false;
@@ -225,10 +238,14 @@
   }
 
   onMount(() => {
-    void scan();
+    refresher.start();
+    for (const type of SIGNS) addEventListener(type, seen, { passive: true, capture: true });
+    document.addEventListener('visibilitychange', seen);
     return () => {
       destroyed = true;
-      if (timer) clearTimeout(timer);
+      refresher.stop();
+      for (const type of SIGNS) removeEventListener(type, seen, { capture: true });
+      document.removeEventListener('visibilitychange', seen);
       cancelAnimationFrame(spinFrame);
     };
   });
