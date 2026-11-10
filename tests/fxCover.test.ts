@@ -206,21 +206,45 @@ function shakeable() {
   return { style: { translate: '' } };
 }
 
-test('a shake lands at its full px, and a hit on one still going adds to it', () => {
+/**
+ * A blow whose kick goes `turn` of a full turn round from straight across: the
+ * game throws the view any way (shakeView's Math.random), a test one it names.
+ */
+function blow(turn: number, amount: number, px: number) {
+  const random = Math.random;
+  Math.random = () => turn;
+  try {
+    fx.shakeView(amount, px);
+  } finally {
+    Math.random = random;
+  }
+}
+
+test('a shake lands at its full px, and a hit on one still going adds to it', (t) => {
   const el = shakeable();
   const undo = fx.shakeTarget(el as unknown as HTMLElement);
+  // (Whatever fails here, the view is left still for the tests after it.)
+  t.after(() => {
+    fx.fxStep(1);
+    undo();
+  });
   const moved = () => Math.hypot(...el.style.translate.split(' ').map(parseFloat));
-  fx.shakeView(0.2, 2);
-  fx.fxStep(1 / 60);
-  // (The kick's y is 0.8 of its x, as the noise's is; the translate is rounded to 0.01px.)
-  assert.ok(moved() >= 1.59 && moved() <= 2.01, `moved ${moved()}px, not 2`);
-  fx.shakeView(0.2, 2);
-  fx.fxStep(1 / 60);
-  assert.ok(moved() > 2, `moved ${moved()}px, no further than one hit`);
-  fx.fxStep(1);
-  assert.ok(!fx.shaking());
-  assert.equal(el.style.translate, '');
-  undo();
+  // Across, at a slant and straight down: a kick's y is 0.8 of its x, as the
+  // noise's is, so the second hit straight down moves the view no further
+  // than the first straight across, and is weighed against a first its own way.
+  for (const turn of [0, 0.125, 0.25]) {
+    blow(turn, 0.2, 2);
+    fx.fxStep(1 / 60);
+    const one = moved();
+    // (The translate is rounded to 0.01px.)
+    assert.ok(one >= 1.59 && one <= 2.01, `moved ${one}px, not 2`);
+    blow(turn, 0.2, 2);
+    fx.fxStep(1 / 60);
+    assert.ok(moved() > one * 1.2, `moved ${moved()}px after ${one}px, no further than one hit`);
+    fx.fxStep(1);
+    assert.ok(!fx.shaking());
+    assert.equal(el.style.translate, '');
+  }
 });
 
 test('a tremor shakes the view by what its source gives, as a shiver, until it lets go', () => {
