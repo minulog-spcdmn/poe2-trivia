@@ -29,6 +29,7 @@
   import { PALETTE, RUBY, STONES } from '../lib/palette';
   import { reservedHueOf } from '../lib/game';
   import { lastSynced, startSync, sync, syncLine, unpair } from '../lib/sync/link.svelte';
+  import { gpuNotice, openGpuNotice, shownFix } from '../lib/gpuNotice.svelte';
   import SigilPicker from './SigilPicker.svelte';
 
   let { over = false }: { over?: boolean } = $props();
@@ -260,6 +261,15 @@
             <button class:on={session.hideCode} onclick={() => session.setHideCode(true)}>Hidden</button>
           </div>
         </div>
+        <!-- Only where the browser draws the game without the GPU: the way back to the notice's steps (lib/gpuNotice.svelte.ts). -->
+        {#if gpuNotice.off}
+          <div class="row">
+            <!-- (Named as the browser's own settings name it, as the notice's title is.) -->
+            <span class="label">{shownFix().name}</span>
+            <button class="btn small" onclick={openGpuNotice}>How to turn it on</button>
+            <p class="blurb">Off in your browser, which makes the game slow and choppy.</p>
+          </div>
+        {/if}
       </section>
 
       {#if !over}
