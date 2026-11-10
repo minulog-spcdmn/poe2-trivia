@@ -256,6 +256,37 @@ test('together: a life given drains the phial, one brought back leaves it as it 
   assert.deepEqual(lines, ['Kalguur gave a life to bring Doryani back at depth 21.', 'Una of the Vaal gave a life to bring Kalguur back at depth 22.']);
 });
 
+test('together: whoever answered the most is named with their count, and nobody else’s is told', () => {
+  const told = (scores: number[]) => {
+    const s = run([20, 23, 27], {}, undefined, 3);
+    scores.forEach((n, i) => (s.players[i].score = n));
+    return partyHighlights(s).map((l) => plain(l.parts, text(s)));
+  };
+  assert.deepEqual(told([9, 14, 3]), ['Doryani answered the most: 14 right.']);
+  // Tied: each of them by name, in seat order.
+  assert.deepEqual(told([9, 3, 9]), ['Kalguur and Una of the Vaal answered the most: 9 right each.']);
+  assert.deepEqual(told([4, 4, 4]), ['Kalguur, Doryani and Una of the Vaal answered the most: 4 right each.']);
+  // One right answer is nothing to name, nor none (an older host's count, a run over at once).
+  assert.deepEqual(told([1, 1, 0]), []);
+  assert.deepEqual(told([0, 0, 0]), []);
+  // After the fastest answer, before the lives given.
+  const s = run([20, 23, 27], { fastest: { by: 'p2', id: 'ingenuity', ms: 1400 } }, [{ by: 'p0', to: 'p1', depth: 22, fell: 22, at: 1250 }], 3);
+  s.players[1].score = 6;
+  assert.deepEqual(
+    partyHighlights(s).map((l) => plain(l.parts, text(s))),
+    ['Una of the Vaal answered fastest: 1.4s on ingenuity.', 'Doryani answered the most: 6 right.', 'Kalguur gave a life to bring Doryani back at depth 21.'],
+  );
+  // More than three tied: a line of names praises nobody.
+  const four = run([20, 23, 27], {}, undefined, 3);
+  four.players.push({ ...four.players[2], id: 'p3', name: 'Rog' });
+  for (const p of four.players) p.score = 5;
+  assert.deepEqual(partyHighlights(four), []);
+  // A run alone, as someone watching it is told it: nobody to answer more than.
+  const alone = run([20, 23, 27]);
+  alone.players[0].score = 22;
+  assert.deepEqual(partyHighlights(alone), []);
+});
+
 test("the run's facts: zones reached, and what its finds gave", () => {
   const s = run([15, 18, 23], {
     items: [

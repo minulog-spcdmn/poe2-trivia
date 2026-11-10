@@ -316,6 +316,23 @@ export async function boot(asked: URLSearchParams) {
     // (In a tree before the back guard there's no Back of the game's to show: the tab's own history is the desk's.)
     else if ('back' in step) steps?.back();
     else if ('scroll' in step) document.querySelector(step.scroll)?.scrollIntoView({ block: 'center', behavior: 'instant' });
+    else if ('hover' in step) {
+      // (A touch screen's frame answers that it has no hover: emulate.ts.)
+      const on = matchMedia('(hover: hover)').matches ? await found(step.hover) : null;
+      if (on) {
+        // Once the fonts it shows are in (asked for as it's laid out): a tooltip takes its place from where things are as it opens.
+        void on.offsetWidth;
+        await document.fonts.ready;
+        on.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+        // Until the real mouse comes into the frame, which says where the pointer is from then on: off it, it leaves.
+        const real = (e: PointerEvent) => {
+          if (!e.isTrusted) return;
+          removeEventListener('pointerover', real, true);
+          if (!on.contains(e.target as Node)) on.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse' }));
+        };
+        addEventListener('pointerover', real, true);
+      }
+    }
     else if ('press' in step) (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { code: step.press, bubbles: true, cancelable: true }));
     else if ('rooms' in step) {
       // Found from now on; then a look at once, once the list's last look is over (Refresh waits out its 1.5 s).

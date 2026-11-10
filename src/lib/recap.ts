@@ -222,11 +222,34 @@ export function highlights(s: GameState): Line[] {
   return out;
 }
 
+/** The most delvers named for the most right answers: more tied than that, and the line names nobody. */
+const MOST_RIGHT_NAMED = 3;
+
+/**
+ * Delve together: who answered the most questions right, and how many (a
+ * question's first right answer scores its player 1: game.ts coopReveal), in
+ * seat order where they tie. Only the best is ever named, so the end screen
+ * praises without ranking the rest; null where that says nothing (nobody
+ * with two; one delver, as in a run alone told to someone watching, with
+ * nobody to answer more than) or would name too many.
+ */
+function mostRight(s: GameState): { by: string[]; n: number } | null {
+  if (s.players.length < 2) return null;
+  const n = Math.max(0, ...s.players.map((p) => p.score));
+  const by = s.players.filter((p) => p.score === n).map((p) => p.id);
+  return n >= 2 && by.length <= MOST_RIGHT_NAMED ? { by, n } : null;
+}
+
 /** Delve together: the party's moments, the same on every device. */
 export function partyHighlights(s: GameState): Line[] {
   const r = s.recap;
   const out: Line[] = [];
   if (r?.fastest) out.push({ icon: { avatar: r.fastest.by }, parts: [{ who: r.fastest.by }, ' answered fastest: ', { n: secs(r.fastest.ms) }, 's on ', { item: r.fastest.id }, '.'] });
+  const most = mostRight(s);
+  if (most) {
+    const who = most.by.flatMap((id, i): Part[] => [...(i === 0 ? [] : [i === most.by.length - 1 ? ' and ' : ', ']), { who: id }]);
+    out.push({ icon: { avatar: most.by[0] }, parts: [...who, ' answered the most: ', { n: most.n }, most.by.length > 1 ? ' right each.' : ' right.'] });
+  }
   // Every life given; past three, the first two and how many more.
   const revives = s.delve?.revives ?? [];
   const told = revives.length > 3 ? revives.slice(0, 2) : revives;
