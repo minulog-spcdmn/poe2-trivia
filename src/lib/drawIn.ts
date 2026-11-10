@@ -26,6 +26,7 @@
 // every frame that faded one (a ms of the main thread a frame).
 
 import { STAMP } from './engraver.ts';
+import { STILL } from './still.ts';
 
 /** How often the pen moves what's in flight, and the glow's (times a second; a slower screen, every frame). */
 const PEN_HZ = 120;
@@ -156,8 +157,6 @@ const run = (now: number) => {
 
 /** A pen for one circle, its summoning begun at `start` (performance.now()'s clock). */
 export const drawIn = (start: number): Pen => {
-  // Reduced motion: as app.css cuts every animation short, each thing shows whole as it's due.
-  const reduced = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   const pen = {};
   return {
     add(svg) {
@@ -165,7 +164,8 @@ export const drawIn = (start: number): Pen => {
       for (const el of svg.querySelectorAll<SVGElement>('.draw, .mark, .carve, .seal, .fade')) {
         const [delay, t, kind] = timing(el);
         const from = start + 1000 * delay;
-        strokes.push({ el, from, to: reduced ? from : from + 1000 * t, kind });
+        // (Held still, lib/still.ts: as app.css cuts every animation short, each thing shows whole as it's due.)
+        strokes.push({ el, from, to: STILL ? from : from + 1000 * t, kind });
       }
       if (!strokes.length) return;
       strokes.sort((a, b) => a.from - b.from);

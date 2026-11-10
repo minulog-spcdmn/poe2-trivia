@@ -1008,10 +1008,12 @@
     stroke-width: var(--w);
   }
   /* Gold lines on the dark read thinner than dark lines on gold: in outline, every line a little heavier, by the same amount as the
-     traced head's lines (their fill's edge stroked), so the joins stay even. */
+     traced head's lines (their fill's edge stroked), so the joins stay even. (A length, its unit written: a calc() that comes to
+     a bare number is no width to Firefox, which then drew the bodies' lines a hair wide, unseen, and only the heads showed;
+     tests/strokeCalc.test.ts.) */
   .serpent.outline .sp-ink,
   :global(html[data-ouro='outline']) .serpent .sp-ink {
-    stroke-width: calc(var(--w) + 1.8);
+    stroke-width: calc((var(--w) + 1.8) * 1px);
   }
   .serpent.outline .sp-dark,
   :global(html[data-ouro='outline']) .serpent .sp-dark {

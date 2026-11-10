@@ -84,7 +84,7 @@ Every stutter of October 2026 was one bug: something animated on the page's thre
 - `game/delve-dig`: a vein shakes the page (`tremor.ts` through `fx/core.ts`'s shake, a translate on `.shell` every frame), only while the effects draw (never with the battery saver on). The October shake was this.
 - `home/returning`: the daily streak lights in WebGL with the effects drawing and in CSS without (no WebGL2, or the battery saver on).
 - `over/n-lost`: GameOver plays its lights in WebGL with the effects drawing and in CSS without, and the winner's row ignites in the effects.
-- `settings/key`: Settings turns the battery saver on and off (`html[data-saver]` rests what loops, the effects and the sound with it; the sound's sliders grey out at 0, as the ambience's does while muted; `settings/page` has it as a state), and its seals light with the effects.
+- `settings/key`: Settings turns the battery saver on and off (`html[data-saver]` rests what loops, the effects and the sound with it; the sound's sliders grey out at 0, as the ambience's does while muted; `settings/page` has it as a state, at its touch sizes: the saver is a touch device's alone), and its seals light with the effects.
 - `lobby/room`: the lobby lights its seats in the effects as players arrive.
 - `codex/item`: an item's art lights in the effects as it's revealed.
 

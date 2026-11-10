@@ -5,6 +5,7 @@ The cards a player picks a category from (`src/components/ChooseCategory.svelte`
 ## How a face is drawn
 
 - **Sharp faces, in Chromium only** (Chrome, Edge, Chrome on Android; `.sharp`, from `'userAgentData' in navigator`). Each face is laid out at `zoom: 2`, shrunk back by `scale: 0.5`, and filtered (`SHARP_KERNEL`, a windowed sinc) before Chrome shrinks it, so its fine engraving holds still as it tilts instead of shimmering. Firefox and Safari (every browser on iOS) draw the cards as they always were. Only the tall cards are sharp; the rows on narrow screens never tilt.
+- **A face's edge in Firefox**: Firefox draws a box turned in 3D inside a `preserve-3d` (the tilt, the deal) with stepped edges once nothing of it reaches past its box, as when the backdrop draws the face's soft shadow and CSS draws none. So a face that isn't sharp carries an outline nobody sees (`.choose:not(.sharp) .frame`), a pixel of room that puts the card's edge inside its picture. Firefox's own screenshot smooths the edge either way; `scripts/pc/firefox.mjs` shoots what the screen has (`docs/development.md`, “Looking in Firefox”).
 - **Anything new on a face is sharp by itself**: a new category, find or card kind, text, an icon, engraving. Write its CSS in ordinary px; the zoom is handled.
 - **Code that measures inside a face** reads zoom through `lib/stage` (`zoomOf` for what's on screen, `layoutZoomOf` for what's laid out), never `currentCSSZoom` alone: the face's own zoom is taken back by its scale (`data-sharp`).
 - **The tilt** eases after the pointer in script (`tiltTo`), once the hover's lift is over: a CSS transition restarted on every move had Chrome redraw the whole card each time.
@@ -36,7 +37,7 @@ The cards a player picks a category from (`src/components/ChooseCategory.svelte`
 
 ## Checking a change
 
-- Look at it on the bench (`cards.html`), at rest, hovered and tilted, in Chrome, and once in Firefox or Safari.
+- Look at it on the bench (`cards.html`), at rest, hovered and tilted, in Chrome, and once in Firefox (`scripts/pc/firefox.mjs` shoots it) or Safari.
 - What a deal, a pick and the pointer over a card draw again is measured in CI on every pull request (`docs/qa.md`, “Redraws”), and fails past its baseline.
 - A change to the plates: the bench's Live strokes draws them as svg strokes, as Firefox and Safari do, to compare with their prints.
 - For the shimmer and the tilt's cost, the measures are in `docs/handoff/anti-aliasing/` (README, “The sharp faces”, and `harness/`). Tilting measured 1.0 ms of GPU time a frame at 4K 150%; much more means a rule above is broken.

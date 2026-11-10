@@ -645,7 +645,7 @@
   onMount(() => {
     let stop: (() => void) | null = null;
     const start = () => {
-      if (stop || matchMedia('(prefers-reduced-motion: reduce)').matches || motion.saving || fxActive() || iLost || run) return;
+      if (stop || motion.still || motion.saving || fxActive() || iLost || run) return;
       stop = sparks();
     };
     start();
