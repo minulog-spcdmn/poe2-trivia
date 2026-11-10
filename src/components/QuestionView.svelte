@@ -42,6 +42,9 @@
   import { DELVE_FUSE_MS, blastProblem, blastsLeft, clockLeft, digOf, digRunsOn, dynamiteOf, fellAt, fuseDue, fuseLeft, holdersOf, isGroupRun, itemsWorkOn, livesOf, standingIds, waitingIds } from '../lib/delve';
   import { bankedText, blownText, buriedText, coopMissText, coopRevealText, flareText, inHandText, namesOf, perishedText, wardText } from '../lib/difficultyText';
   import ItemGlyph from './ItemGlyph.svelte';
+  import { FOSSIL_COUNT, fossilArt, fossilById, type FossilId } from '../lib/fossils';
+  import { foundCount, loadFossils } from '../lib/fossilStore';
+  import { revealFossil } from '../lib/fossilFlight';
   import AnswerMark from './AnswerMark.svelte';
   import VerdictSign from './VerdictSign.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
@@ -310,6 +313,39 @@
     if (got === 'flares') return { glyph: 'flare', text: `${who} found a flare.` };
     return { glyph: 'dynamite', text: `${who} found a stick of dynamite.` };
   });
+
+  /**
+   * Delve: the fossils a right answer to a fossil's card gave (lib/fossils.ts).
+   * `mine`: the one this screen's player kept, which the card never named
+   * (the moment shows it: lib/fossilFlight.ts); `rest`, in words, who else
+   * kept one (together, each drew their own; a run watched, its player).
+   */
+  const fossilLine = $derived.by((): { mine: FossilId | null; rest: string } | null => {
+    const f = reveal?.correct ? reveal.fossil : undefined;
+    if (!s.delve || !f?.given.length) return null;
+    const mine = session.mode === 'local' ? f.given[0] : f.given.find((g) => g.to === me);
+    const others = f.given.filter((g) => g !== mine).map((g) => g.to);
+    const verb = mine ? 'kept one too' : others.length > 1 ? 'each kept a fossil' : 'kept a fossil';
+    return { mine: mine?.id ?? null, rest: others.length ? `${namesOf(others, nameOf, me)} ${verb}.` : '' };
+  });
+  /** How many fossils this device holds, the one kept now in it (set at the reveal: it is kept by then). */
+  let fossilCount = $state(0);
+  /** How far the moment has come: the line's words are due, then its picture has landed. */
+  let fossilPhase = $state<'none' | 'words' | 'landed'>('none');
+  /** The line's picture, where the fossil lands. */
+  let fossilSlot = $state<HTMLElement | null>(null);
+  let questionEl = $state<HTMLElement | null>(null);
+  /** A fossil's question (Delve): its tier, its card's seals in the name plate (NamePlate's `fossil`). */
+  const fossilTier = $derived(s.delve && q.fossil ? q.fossil : null);
+  /**
+   * Their light: low while the question is up; taken with a fossil this screen's player keeps (it comes
+   * out of them here), up after; up quietly with one only others kept (theirs comes out on their screens);
+   * out with it lost.
+   */
+  const fossilLight = $derived(!reveal ? 'low' : fossilLine?.mine ? 'taken' : fossilLine ? 'up' : 'out');
+  /** Ends the moment under way, all of it going to the line (Delve Deeper pressed early, or the question going). */
+  let stopFind: (() => void) | null = null;
+  $effect(() => () => stopFind?.());
 
   // The verdict leads the result line at the reveal, beside Next.
   /**
@@ -951,6 +987,34 @@
       if (iWon && pill && fill && fxActive()) setTimeout(() => sfx('fill', { from: { from: optionEls[r.correctIndex], to: pill, seconds: FILL_LEAD / 1000 } }), FILL_START * 1000 - FILL_LEAD);
       // (A vein's ward dug out makes no sound of gain here: it is only in hand. The pack hears it as the
       // haul goes in, at the way out or as the dig ends, where its sparks land: Scoreboard.svelte.)
+      // A fossil this device's player kept: the plate's seals flare, the fossil comes out of the left one
+      // into the circle's heart, says which it is, and flies to the line (lib/fossilFlight.ts), once the
+      // answer is marked. Kept already (session's noteFossil), so the count holds it; counted in here should
+      // it not be yet.
+      const mine = fossilLine?.mine;
+      if (mine) {
+        const store = loadFossils();
+        fossilCount = foundCount(store) + (store.found[mine] ? 0 : 1);
+        // (Asked by pictures, it lands on the right one, its name in place of the picture's.)
+        const right = q.mode === 'art' ? (optionEls[r.correctIndex] ?? null) : null;
+        const under = right ? right.querySelector('.pic') : artEl?.querySelector('.frame');
+        const caption = right?.querySelector('.caption');
+        stopFind = revealFossil({
+          id: mine,
+          count: fossilCount,
+          total: FOSSIL_COUNT,
+          seal: questionEl?.querySelector('.head .plate.fossil .pane-at.left .dark') ?? null,
+          art: right ?? artEl,
+          stage: questionEl,
+          dim: [...(under ? [{ el: under, to: 0 }] : []), ...(caption ? [{ el: caption, to: 0 }] : [])],
+          avoid: right ? null : (artEl?.querySelector('.details .lens') ?? null),
+          onPicture: !!right,
+          to: () => fossilSlot,
+          size: upright.current ? 'upright' : flat.current ? 'flat' : 'desk',
+          still: motion.still,
+          onLine: (phase) => (fossilPhase = phase),
+        });
+      }
     });
   });
 
@@ -995,6 +1059,8 @@
 
   /** On to the next: pressed, its button clicks; by a key (Enter or Space on it, or Next's own), a key's press from it. */
   function next(e?: MouseEvent) {
+    // Pressed while a fossil is still coming: all of it goes to the line.
+    stopFind?.();
     sfx(e?.detail ? 'click' : 'key', { from: { from: nextEl } });
     session.dispatch({ type: 'next' });
   }
@@ -1098,6 +1164,30 @@
   {#if streak >= 2 && !(chipHeat > 0)}<span class="streak-words">{' '}{streak} in a row.</span>{/if}
 {/snippet}
 
+<!-- The fossils the answer gave (lib/fossils.ts). Yours lands here once
+     shown (lib/fossilFlight.ts): its picture, its name as a PoE tooltip
+     names it, the count. Until then, alone, that you unearth one is said in
+     its place, the two crossing over in one cell so nothing moves. Then who
+     else kept one. -->
+{#snippet fossilWords(f: { mine: FossilId | null; rest: string })}
+  {#if f.mine}
+    <span class="found-fossil" class:words={fossilPhase !== 'none'} class:landed={fossilPhase === 'landed'}
+      >{#if !coop}<span class="before">You unearth a fossil.</span>{/if}<span class="after"
+        ><img src={fossilArt(f.mine, 128)} alt="" aria-hidden="true" bind:this={fossilSlot} /><span class="fossil-name">{fossilById(f.mine).name}</span><span class="fossil-count"
+          >{fossilCount}/{FOSSIL_COUNT}</span
+        ></span
+      ></span
+    >
+  {/if}
+  {#if f.rest}{f.rest}{/if}
+{/snippet}
+
+<!-- A fossil's card answered wrong: the fossil is lost. -->
+{#snippet fossilLost()}
+  {#if s.delve && q.fossil}<span class="muted fossil-lost">The fossil is lost.</span>{/if}
+{/snippet}
+
+
 <!-- What the reveal says happened: the sentence beside the verdict, or on a phone upright over the art (the task line). -->
 {#snippet outcome()}
   {#if reveal}
@@ -1146,8 +1236,10 @@
       {/if}
       <!-- Who cleared it, and what a find gave, in one sentence. -->
       {lines[0]}
+      {#if fossilLine}{@render fossilWords(fossilLine)}{/if}
       {@render streakWords()}
       {#if lines.length > 1}<span class="losses">{lines.slice(1).join(' ')}</span>{/if}
+      {#if !reveal.correct}{@render fossilLost()}{/if}
     {:else if s.delve}
       {@const you = delveYou}
       {@const who = you ? 'You' : active.name}
@@ -1157,6 +1249,8 @@
         {#if gainLine}
           <!-- What the find earned, beside its engraving. -->
           <span class="found-glyph" aria-hidden="true"><ItemGlyph kind={gainLine.glyph} /></span>{gainLine.text}
+        {:else if fossilLine}
+          {@render fossilWords(fossilLine)}
         {:else}
           {who} {you ? 'delve' : 'delves'} on.
         {/if}
@@ -1211,6 +1305,7 @@
       {/if}
       <!-- A Dynamite Cache missed: what its blast destroyed of the pack (the phial shows it go). -->
       {#if !reveal.correct && reveal.blown}{blownText(reveal.blown, you ? 'your' : `${active.name}’s`)}{/if}
+      {#if !reveal.correct}{@render fossilLost()}{/if}
     {:else if reveal.correct}
       <b class="good">+1</b> for {active.name}!
       {@render streakWords()}
@@ -1327,7 +1422,7 @@
 
 <!-- data-cursor: where other players' pointers are placed (PeerCursors): the answers, the item and its art, the line over
      them and the row under them (a dock at the foot of a phone's screen, under the same name), and what's in those. -->
-<div class="question">
+<div class="question" bind:this={questionEl}>
   <!-- The turn's second line, under its banner, where the cards screen asks
        for a category (ChooseCategory's prompt): what to do now, and at its
        right end the timer, read with the question at a glance before the
@@ -1371,7 +1466,7 @@
       {@render rims()}
       <div class="head" data-cursor="plate" style:--plate-scale={plateScale}>
         <!-- Lit from the start; a right answer's glint runs over it (a wrong one's is quiet), as when naming the art. -->
-        <NamePlate fit bind:scale={plateScale} glint={!!(reveal && iWon)} />
+        <NamePlate fit bind:scale={plateScale} glint={!!(reveal && iWon)} fossil={fossilTier} {fossilLight} />
         <div class="head-text">
           <span class="iname" class:veiled={waiting} use:oneLine>{waiting || !q.prompt ? '\u00a0' : q.prompt}</span>
           <!-- Name over base, as every tooltip: the category until the reveal names the base. -->
@@ -1493,7 +1588,7 @@
         {@render rims()}
         <div class="head" data-cursor="plate" style:--plate-scale={plateScale}>
           <!-- The gems stay dark until the item is identified; lit by a right answer, with its glint, by a wrong one quietly. -->
-          <NamePlate fit bind:scale={plateScale} lit={!!(reveal && item)} glint={!!(reveal && iWon)} />
+          <NamePlate fit bind:scale={plateScale} lit={!!(reveal && item)} glint={!!(reveal && iWon)} fossil={fossilTier} {fossilLight} />
           {#if reveal && item}
             <div class="head-text" in:fly={{ y: 10, duration: 450 }}>
               <span class="iname" use:oneLine={flat.current || upright.current}>{item.name}</span>
@@ -2068,6 +2163,60 @@
     }
   }
 
+  /* Delve: a fossil kept (lib/fossilFlight.ts). Until it lands, alone,
+     “You unearth a fossil.” holds its cell; the line's words cross over it
+     as the fossil comes, and its picture shows as it lands (the flight's
+     piece taking its place), standing on the baseline as a find's engraving
+     does. */
+  .found-fossil {
+    display: inline-grid;
+    vertical-align: bottom;
+  }
+  .found-fossil > * {
+    grid-area: 1 / 1;
+    transition: opacity 0.26s ease-out;
+  }
+  .found-fossil .after,
+  .found-fossil.words .before {
+    opacity: 0;
+  }
+  .found-fossil.words .after {
+    opacity: 1;
+  }
+  .found-fossil img {
+    display: inline-block;
+    width: 1.3em;
+    height: 1.3em;
+    /* (A word's space from the name, with the picture's own clear margin.) */
+    margin-right: 0.12em;
+    vertical-align: -0.3em;
+    object-fit: contain;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
+    opacity: 0;
+  }
+  .found-fossil.landed img {
+    opacity: 1;
+  }
+  /* Named as a PoE tooltip names a currency item, its capitals as tall as
+     the line's (Fontin's stand 3% over EB Garamond's at one size). */
+  .fossil-name {
+    /* (Of the line's 18.4px, .result p's 1.15rem.) PoE's currency name colour, a shade lighter to read on the page. */
+    font-family: var(--font-tooltip);
+    font-size: 0.97em;
+    color: #b6a98b;
+  }
+  /* Its count in Cinzel's figures, as numbers are, a little under the line's
+     capitals (as the end screen and the codex set them in text), clear of the name. */
+  .fossil-count {
+    margin-left: 0.5em;
+    font-family: var(--font-cinzel);
+    font-variant-numeric: lining-nums;
+    font-size: 0.88em;
+    letter-spacing: 0.03em;
+  }
+  .fossil-lost {
+    margin-left: 0.25em;
+  }
   /* Delve: what a find earned, its engraving standing on the line's baseline. */
   .found-glyph {
     display: inline-block;

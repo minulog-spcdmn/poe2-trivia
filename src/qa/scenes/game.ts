@@ -18,6 +18,9 @@ import { longestNamed, longestWord, sceneEngine } from '../build/engine.ts';
 import { pid } from '../build/people.ts';
 import { Table } from '../build/play.ts';
 import type { Built, Scene, Seat, Step } from '../scene.ts';
+import { FOSSILS, fossilMask, type FossilId, type FossilTier } from '../../lib/fossils.ts';
+import { serializeFossils, type FossilStore } from '../../lib/fossilStore.ts';
+import backdrops from '../../data/backdrops.json' with { type: 'json' };
 
 /** Who sits down, in order: any game's players are the first so many. */
 const SEATED = ['Kalguur', 'Doryani', 'Una of the Vaal', 'Rog', 'Alva', 'Dannig', 'Hooded One', 'Zelina', 'Oswin', 'Finn', 'Sekhema Asala', 'Renly'];
@@ -73,6 +76,85 @@ const asked = (v: Values): Partial<Settings> => {
 
 /** How far into a question its scene stands (ms). */
 const INTO = 3000;
+/**
+ * The fossils this device holds before a fossil is kept in a scene: the
+ * first `n` (commons and rares mixed in as the codex's scenes have them),
+ * always leaving one of `tier` to find (at 24, the last of the set).
+ */
+function heldBefore(n: number, tier: FossilTier): FossilId[] {
+  const commons = FOSSILS.filter((f) => !f.rare);
+  const rares = FOSSILS.filter((f) => f.rare);
+  const order = [...commons.slice(0, 3), ...rares.slice(0, 3), ...commons.slice(3), ...rares.slice(3)];
+  const held = order.slice(0, n);
+  const ofTier = held.filter((f) => f.rare === (tier === 'rare'));
+  if (ofTier.length === (tier === 'rare' ? rares : commons).length) held.splice(held.indexOf(ofTier.at(-1)!), 1);
+  return held.map((f) => f.id);
+}
+/** Those fossils as this device's store keeps them (lib/fossilStore.ts), found a few days apart. */
+const storedFossils = (ids: FossilId[]): Record<string, string> => {
+  const found: FossilStore['found'] = {};
+  ids.forEach((id, i) => (found[id] = { at: Date.UTC(2026, 8, 1) + i * 3 * 86_400_000, depth: 7 + i }));
+  return { fossils: serializeFossils({ found }) };
+};
+/** A fossil's tier, on its card and as it's kept (lib/fossilFlight.ts). */
+const FOSSIL_TIER: Control = {
+  kind: 'choice',
+  key: 'tier',
+  label: 'Its tier',
+  default: 'common',
+  options: [
+    { value: 'common', label: 'Common' },
+    { value: 'rare', label: 'Rare' },
+  ],
+};
+/** The category a fossil's card is in (any can carry one: its emblem caught in the amber), or as dealt. */
+const FOSSIL_CAT: Control = {
+  kind: 'choice',
+  key: 'cat',
+  label: 'Its category',
+  default: 'dealt',
+  options: [
+    { value: 'dealt', label: 'As dealt' },
+    ...[
+      'One-Handed Weapons',
+      'Two-Handed Weapons',
+      'Off-Hands',
+      'Body Armours',
+      'Helmets',
+      'Gloves & Boots',
+      'Rings',
+      'Amulets & Belts',
+      'Flasks, Charms, Jewels, Relics & Tablets',
+      'Lineage Gems',
+    ].map((c) => ({ value: c, label: c })),
+  ],
+};
+/**
+ * A fossil's question, from a table at its cards: the fossil's card is the
+ * first, in `cat` if a category is chosen (swapped with the card that held
+ * it), and picked. Asked by picture: until a pick comes as pictures, that
+ * depth is played on without the fossil (answered right) and the next one's
+ * cards tried (a depth's draw is the same every time it's dealt).
+ */
+function fossilPicked(t: Table, v: Values, tier: FossilTier) {
+  const cat = String(v.cat ?? 'dealt');
+  const art = v.asked === 'art';
+  for (let i = 0; i < 60; i++) {
+    const at = t.s;
+    if (cat !== 'dealt') t.s.offered = t.s.offered.map((c, k) => (k === 0 ? cat : c === cat ? at.offered[0] : c));
+    t.s.delve!.fossil = { category: t.s.offered[0], tier };
+    // (No find on its card: a find's question would be asked in its place.)
+    t.s.delve!.finds = (t.s.delve!.finds ?? []).filter((f) => f.category !== t.s.offered[0]);
+    t.pick();
+    if ((t.q.mode === 'art') === art) break;
+    t.s = at;
+    delete t.s.delve!.fossil;
+    t.pick().answer(null, true).wait(1000).next();
+  }
+  return t;
+}
+/** Delve Deeper, pressed as the fossil flies to the line (lib/fossilFlight.ts, FOSSIL_REVEAL: 3.15 to 3.81 s, a rare's 0.26 s later). */
+const pressedEarly = (v: Values): Step[] => (v.early ? [{ wait: v.tier === 'rare' ? 3700 : 3450 }, { click: '[data-cursor="next"]' }] : []);
 /** How long a scene played on from a question shows it before it moves on (ms). */
 const BLOW_AFTER = 1200;
 /** How long a scene played on through an answer shows it before Next (ms). */
@@ -447,6 +529,7 @@ export function gameScenes(): Scene[] {
       },
     ),
     delveAloneScene(),
+    delveFossilScene(),
     // Delve together's moments, a run of three by default. Finds among the
     // team's cards too, as Delve alone deals them (its notes beside the cards
     // with the vote's line, on a phone's browser on its side), and dynamite in
@@ -606,6 +689,7 @@ export function gameScenes(): Scene[] {
         return { state: before, act: t.room, at, seat: guest(una), steps } satisfies Built;
       },
     }),
+    togetherFossilScene(),
     // A game starting, from the lobby or Play again on an end screen: the
     // header's line changes with the screen it is for, the old one fading as
     // the new one comes ("Round 1 • First to 10"; Delve alone, on this device,
@@ -698,6 +782,7 @@ export function gameScenes(): Scene[] {
             { value: 'both', label: 'A vein and a flare' },
             { value: 'vein', label: 'A vein, first card' },
             { value: 'flare', label: 'A flare, last card' },
+            { value: 'all', label: 'All three: a vein, dynamite and a flare' },
             { value: 'dig', label: 'A vein struck once' },
           ],
         },
@@ -713,7 +798,7 @@ export function gameScenes(): Scene[] {
           default: 'as',
           options: [
             { value: 'as', label: 'As they fall' },
-            { value: '79', label: 'Seed 79: a long base type at Depth 15' },
+            { value: '81', label: 'Seed 81: a long base type at Depth 15' },
           ],
           when: played,
         },
@@ -724,6 +809,7 @@ export function gameScenes(): Scene[] {
         { label: 'The cards dealt, a long name', values: { names: 'long' }, listed: false },
         { label: 'An Azurite Vein and a Flare Cache', values: { finds: 'both' }, key: 'game/delve-finds', listed: false },
         { label: 'Both, with dynamite in the pack', values: { finds: 'both', held: true }, listed: false },
+        { label: 'All three finds: a vein, a Dynamite Cache and a flare', values: { finds: 'all' }, listed: false },
         { label: 'An Azurite Vein alone, on the first card', values: { finds: 'vein' }, listed: false },
         { label: 'A Flare Cache alone, on the last card', values: { finds: 'flare' }, listed: false },
         { label: 'A vein struck once: dig deeper, or the way out', values: { finds: 'dig' }, key: 'game/delve-dig', listed: false },
@@ -736,7 +822,7 @@ export function gameScenes(): Scene[] {
         // width, and an iPhone's notch takes more of it again, so there the plate's
         // base type wraps (centred) between the name and the Mirrored line.
         // (tests/qaScenes.test.ts says so if new items or a new curve change it.)
-        { label: 'Answered wrong deeper down: a long base type and the Mirrored line on the plate', values: { at: 'wrong', depth: 15, dice: '79' }, key: 'game/delve-long-base' },
+        { label: 'Answered wrong deeper down: a long base type and the Mirrored line on the plate', values: { at: 'wrong', depth: 15, dice: '81' }, key: 'game/delve-long-base' },
         { label: 'Answered right as it happens, then on to the next depth', values: { at: 'right' }, key: 'game/delve-answer', listed: false },
         { label: '1 to 2: the same width', values: { at: 'right', depth: 1 }, key: 'game/delve-depth', listed: false },
         { label: '9 to 10 with no zone card: a figure more, eased', values: { at: 'right', depth: 9 }, listed: false },
@@ -760,7 +846,7 @@ export function gameScenes(): Scene[] {
       build: (v = {}) => {
         const when = v.at ?? 'cards';
         if (when === 'end') return runEnds();
-        const t = delveSeeded(v.dice === '79' ? 79 : undefined);
+        const t = delveSeeded(v.dice === '81' ? 81 : undefined);
         if (Number(v.lives ?? 3) < 3) t.pick().answer(null, false).wait(1000).next();
         // (The round is a depth on: the line shows round 2 as Depth 1, shownDepth.)
         t.playTo((s) => s.round >= Number(v.depth ?? 0) + 1 && s.phase === 'choosing');
@@ -851,19 +937,198 @@ export function gameScenes(): Scene[] {
         }
         // The cards: finds among them as set, a vein on the first and a flare on
         // the last, or one of them alone, its note on its card's side (where a
-        // phone's browser on its side gives the lock rule the other); or a vein
+        // phone's browser on its side gives the lock rule the other); all three,
+        // a Dynamite Cache in the middle, to set a new card beside; or a vein
         // struck once, dig deeper or the way out; and dynamite in the pack, for
         // the line on what stays unused on them.
-        const [vein, , flare] = t.s.offered;
+        const [vein, middle, flare] = t.s.offered;
         const on = v.finds ?? 'as';
         if (on === 'dig') digging(t);
         else if (on !== 'as')
           t.s.delve!.finds = [
             ...(on === 'flare' ? [] : [{ category: vein, kind: 'azurite' as const }]),
+            ...(on === 'all' ? [{ category: middle, kind: 'dynamite' as const }] : []),
             ...(on === 'vein' ? [] : [{ category: flare, kind: 'flare' as const }]),
           ];
         if (v.held) t.s.delve!.inventory = { [pid('Kalguur')]: { wards: 0, flares: 0, dynamite: 1 } };
         return shown(t, v);
+      },
+    });
+  }
+
+  /**
+   * A fossil in Delve alone (lib/fossils.ts). On the cards: the one card lit
+   * from behind, amber (CardEngraving `lit`), saying only its tier ("Fossil",
+   * "Rare Fossil", a rare's deeper and flecked with gold), never which. Alone,
+   * or beside one or two finds (its note shortened to a line then, which with
+   * the finds' notes and an unused stick's must fit a small phone's browser,
+   * 375 x 635, and a phone on its side, 844 x 340); the first one, the hook,
+   * on the first offer at depth 5. Its card shows its category's emblem
+   * caught in the amber, so any category can carry it: the gems' cut brooch,
+   * or an item with others of its kinds behind it.
+   * Its question: the fossil card's seals in its name plate on panes of amber
+   * lit from behind (NamePlate.svelte's `fossil`), answered as it happens
+   * (lib/fossilFlight.ts): right, the seals flare and the fossil the card
+   * never named comes out of the left one into the circle's heart, named,
+   * then flown to the line; wrong, the seals go out and the fossil is lost;
+   * dynamite blasts the question away with it (rule 7), its amber shattering,
+   * and the question that comes in from the next card is plain. Still up, the
+   * question as it's asked.
+   */
+  function delveFossilScene(): Scene {
+    const atQuestion = { at: ['question'] };
+    return scene('delve-fossil', 'Delve alone', 'A fossil', [ALONE], delveAlone, {
+      controls: [
+        moment([
+          ['cards', 'Among the cards'],
+          ['question', 'Its question'],
+        ]),
+        FOSSIL_TIER,
+        FOSSIL_CAT,
+        {
+          kind: 'choice',
+          key: 'beside',
+          label: 'Finds beside it',
+          default: 'none',
+          when: { at: ['cards'] },
+          options: [
+            { value: 'none', label: 'None' },
+            { value: 'one', label: 'A vein' },
+            { value: 'two', label: 'A vein and a flare' },
+          ],
+        },
+        { kind: 'toggle', key: 'held', label: 'Dynamite in the pack', default: false, when: { at: ['cards'] } },
+        { kind: 'toggle', key: 'hook', label: 'The first one, at depth 5', default: false, when: { at: ['cards'] } },
+        // A fossil's question asked by name, or by picture (deeper down, where pictures come).
+        {
+          kind: 'choice',
+          key: 'asked',
+          label: 'Asked as',
+          default: 'name',
+          when: atQuestion,
+          options: [
+            { value: 'name', label: 'Names' },
+            { value: 'art', label: 'Pictures' },
+          ],
+        },
+        // The zone it's asked in (each its own backdrop, the hall's amber light swelling through it): a few depths into it.
+        { kind: 'choice', key: 'zone', label: 'Its zone', default: '0', when: atQuestion, options: backdrops.zones.map((z, k) => ({ value: String(k), label: z.name })) },
+        { kind: 'range', key: 'before', label: 'Fossils held before', min: 0, max: 24, step: 1, default: 6, when: atQuestion },
+        // The question held up, its fossil waiting in it, never answered.
+        { kind: 'toggle', key: 'up', label: 'Still up', default: false, when: atQuestion },
+        { kind: 'toggle', key: 'right', label: 'Answered right', default: true, when: atQuestion },
+        { kind: 'toggle', key: 'early', label: 'Delve Deeper mid-flight', default: false, when: atQuestion },
+        { kind: 'toggle', key: 'blast', label: 'Dynamite instead', default: false, when: atQuestion },
+      ],
+      states: [
+        { label: 'A fossil alone', values: {} },
+        { label: 'A rare fossil alone', values: { tier: 'rare' }, listed: false },
+        { label: 'A fossil beside an Azurite Vein', values: { beside: 'one' }, listed: false },
+        { label: 'A rare one beside an Azurite Vein', values: { beside: 'one', tier: 'rare' } },
+        { label: 'Beside a vein and a Flare Cache, dynamite in the pack', values: { beside: 'two', held: true } },
+        { label: 'The first fossil, at depth 5', values: { hook: true }, listed: false },
+        { label: 'A fossil’s question answered right: kept, which one shown, flown to the line', values: { at: 'question' }, key: 'game/delve-fossil-found', listed: false },
+        { label: 'A rare kept', values: { at: 'question', tier: 'rare' } },
+        { label: 'Still up: a common’s question', values: { at: 'question', up: true } },
+        { label: 'Still up: a rare’s, asked by pictures', values: { at: 'question', up: true, tier: 'rare', asked: 'art' } },
+        { label: 'Asked by pictures, kept', values: { at: 'question', asked: 'art' } },
+        { label: 'The first fossil kept', values: { at: 'question', before: 0 } },
+        { label: 'The 25th: the set complete', values: { at: 'question', before: 24, tier: 'rare' } },
+        { label: 'Answered wrong: the fossil lost', values: { at: 'question', right: false } },
+        { label: 'Delve Deeper mid-flight', values: { at: 'question', early: true } },
+        { label: 'A fossil’s question blasted away with dynamite: the fossil goes with it', values: { at: 'question', blast: true }, key: 'game/delve-fossil-blast' },
+      ],
+      build: (v = {}) => {
+        const tier = v.tier === 'rare' ? 'rare' : 'common';
+        if ((v.at ?? 'cards') === 'cards') {
+          const beside = String(v.beside ?? 'none');
+          const cat = String(v.cat ?? 'dealt');
+          const t = v.hook ? delveAlone().playTo((s) => s.round >= 6 && s.phase === 'choosing') : delveAlone();
+          // The chosen category on the middle card, swapped with the card that held it if it was dealt.
+          if (cat !== 'dealt') t.s.offered = t.s.offered.map((c, i) => (i === 1 ? cat : c === cat ? t.s.offered[1] : c));
+          const [first, middle, last] = t.s.offered;
+          t.s.delve!.finds = [
+            ...(beside === 'none' ? [] : [{ category: first, kind: 'azurite' as const }]),
+            ...(beside === 'two' ? [{ category: last, kind: 'flare' as const }] : []),
+          ];
+          t.s.delve!.fossil = { category: middle, tier };
+          if (v.held) t.s.delve!.inventory = { [pid('Kalguur')]: { wards: 0, flares: 0, dynamite: 1 } };
+          return shown(t, v);
+        }
+        const held = heldBefore(Number(v.before ?? 6), tier);
+        const zone = Number(v.zone ?? 0);
+        const t = zone ? delveAlone().playTo((s) => s.round >= 10 * zone + 3 && s.phase === 'choosing') : delveAlone();
+        // (None found on the way down: a run gives each player one.)
+        if (zone) t.s = { ...t.s, delve: { ...t.s.delve!, fossils: [], fossilsMissed: [] } };
+        t.engine.setFossilsHeld((ids) => ids.map(() => fossilMask(held)));
+        if (v.blast) t.s = { ...t.s, delve: { ...t.s.delve!, inventory: { [pid('Kalguur')]: { wards: 0, flares: 0, dynamite: 1 } } } };
+        fossilPicked(t, v, tier);
+        const before = t.s;
+        const at = t.clock.now + INTO;
+        if (v.up) return { state: before, act: t.room, at, stored: storedFossils(held) } satisfies Built;
+        const answered = v.blast ? t.wait(INTO + BLOW_AFTER).act({ type: 'blast', askedAt: t.q.askedAt }, null).s : t.answer(null, v.right !== false, INTO + BLOW_AFTER).s;
+        return {
+          state: before,
+          act: t.room,
+          at,
+          stored: storedFossils(held),
+          steps: [{ wait: BLOW_AFTER }, { then: answered, at: t.clock.now }, ...pressedEarly(v)],
+        } satisfies Built;
+      },
+    });
+  }
+
+  /**
+   * A fossil on the team's cards, with Doryani's one for the run already
+   * found (the card is for the others, its note says so); and its question
+   * cleared, played as it happens: everyone standing who can take one keeps
+   * one of their own (Doryani none, if he has had this run's), each piece
+   * flying on its keeper's screen.
+   */
+  function togetherFossilScene(): Scene {
+    const answered = { at: ['answered'] };
+    return scene('delve-together-fossil', 'Delve together', 'A fossil, together', roomSeats, delveTogether, {
+      controls: [
+        moment([
+          ['cards', 'Among the cards, Doryani’s found this run'],
+          ['answered', 'Its question answered'],
+        ]),
+        players(2, 3),
+        FOSSIL_TIER,
+        { kind: 'toggle', key: 'right', label: 'Answered right', default: true, when: answered },
+        { kind: 'toggle', key: 'taken', label: 'Doryani’s found one this run', default: false, when: answered },
+      ],
+      states: [
+        { label: 'A fossil among the cards, Doryani’s found this run', values: {} },
+        { label: 'A fossil’s question answered right: everyone standing keeps one of their own, each seeing theirs', values: { at: 'answered' }, key: 'game/delve-together-fossil-found', listed: false },
+        { label: 'A rare, each their own', values: { at: 'answered', tier: 'rare' } },
+        { label: 'Doryani’s found one this run', values: { at: 'answered', taken: true } },
+        { label: 'Answered wrong: the fossil lost', values: { at: 'answered', right: false } },
+      ],
+      build: (v = {}) => {
+        const tier = v.tier === 'rare' ? 'rare' : 'common';
+        const t = delveTogether(v);
+        const doryani = pid('Doryani');
+        if ((v.at ?? 'cards') === 'cards') {
+          // Down to depth 7, Doryani naming each one.
+          while (t.s.round < 8) {
+            for (const p of t.s.players) t.act({ type: 'vote', category: t.s.offered[0] }, p.name);
+            if (t.s.phase === 'choosing') t.act({ type: 'expire' }, null);
+            t.answer('Doryani', true).wait(1000).next();
+          }
+          t.s.delve!.fossils = [{ id: 'scorched', depth: 6, at: t.clock.now - 90_000, to: [doryani] }];
+          t.s.delve!.fossil = { category: t.s.offered[1], tier };
+          return shown(t, v);
+        }
+        const held = heldBefore(6, tier);
+        t.engine.setFossilsHeld((ids) => ids.map(() => fossilMask(held)));
+        if (v.taken) t.s.delve!.fossils = [{ id: 'scorched', depth: 2, at: t.clock.now - 90_000, to: [doryani] }];
+        t.s.delve!.fossil = { category: t.s.offered[0], tier };
+        voted(t);
+        const before = t.s;
+        const at = t.clock.now + INTO;
+        const after = t.answer('Doryani', v.right !== false, INTO + BLOW_AFTER).s;
+        return { state: before, act: t.room, at, stored: storedFossils(held), steps: [{ wait: BLOW_AFTER }, { then: after, at: t.clock.now }] } satisfies Built;
       },
     });
   }

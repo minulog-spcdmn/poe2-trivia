@@ -7,6 +7,8 @@
 import type { Answer } from '../../lib/codex.ts';
 import { DELVE_RULESET } from '../../lib/delve.ts';
 import type { DelveRun } from '../../lib/delveRecord.ts';
+import { FOSSILS } from '../../lib/fossils.ts';
+import { serializeFossils, type FossilStore } from '../../lib/fossilStore.ts';
 import type { Control, Values } from '../bench.ts';
 import { id } from '../build/people.ts';
 import type { Built, Scene, Step } from '../scene.ts';
@@ -14,6 +16,20 @@ import type { Built, Scene, Step } from '../scene.ts';
 function filled(steps: Step[] = [], depths = [8, 14, 27, 19, 33, 23, 41]): Built {
   const runs: DelveRun[] = depths.map((depth, i) => ({ id: 2000 + i, at: 2000 + i, depth, players: i % 3 ? 1 : 3, ruleset: DELVE_RULESET, mixed: false, ...(i % 3 ? {} : { perished: [depth] }) }));
   return { state: null, hash: '#codex', met: 140, runs, steps };
+}
+
+/**
+ * The first `n` fossils found, a few days apart, the rare ones mixed in from
+ * the fourth on (so 17 holds three of them), one of them in a run together;
+ * `commons`: the 17 common ones alone, every square of the packing filled.
+ */
+function fossils(n: number, { commons = false } = {}): Record<string, string> {
+  const common = FOSSILS.filter((f) => !f.rare);
+  const rares = FOSSILS.filter((f) => f.rare);
+  const order = commons ? common : n >= FOSSILS.length ? FOSSILS : [...common.slice(0, 3), ...rares.slice(0, 3), ...common.slice(3), ...rares.slice(3)];
+  const found: FossilStore['found'] = {};
+  for (const [i, f] of order.slice(0, n).entries()) found[f.id] = { at: Date.UTC(2026, 8, 1) + i * 3 * 86_400_000, depth: f.rare ? 28 + i : 7 + i, ...(i === 1 ? { together: true } : {}) };
+  return { fossils: serializeFossils({ found }) };
 }
 
 /**
@@ -117,8 +133,44 @@ const RUNS: Control = {
   ],
   default: 'seven',
 };
+/**
+ * Its fossils (components/codex/DelveFossils.svelte), beside the zones
+ * reached: the 17 common ones in Bidwell's packing, the 8 rare ones together
+ * beside it (under it on a phone upright), one not kept yet only its shape, a
+ * kept one's tooltip beside it: none; one; some (a kept rare one's tooltip
+ * up); every common one (the packing full, a tilted one's tooltip up); all 25.
+ */
+const FOSSILS_KEPT: Control = {
+  kind: 'choice',
+  key: 'fossils',
+  label: 'Fossils',
+  default: 'none',
+  when: { page: ['delve'] },
+  options: [
+    { value: 'none', label: 'None' },
+    { value: 'one', label: 'The first' },
+    { value: 'some', label: '17, a rare one’s tooltip up' },
+    { value: 'commons', label: 'Every common one, a tooltip up' },
+    { value: 'all', label: 'All 25' },
+  ],
+};
+/** How many each holds, and the slot whose tooltip a click brings up (made as it's chosen). */
+const KEPT: Record<string, () => { stored: Record<string, string>; click?: string }> = {
+  one: () => ({ stored: fossils(1) }),
+  some: () => ({ stored: fossils(17), click: '.fossils .cell.got.rare' }),
+  commons: () => ({ stored: fossils(17, { commons: true }), click: '.fossils .grid.common li:nth-child(5) .cell' }),
+  all: () => ({ stored: fossils(FOSSILS.length) }),
+};
 
 function pages(v: Values = {}): Built {
+  const built = runsShown(v);
+  const kept = v.page === 'feats' ? undefined : KEPT[String(v.fossils ?? 'none')]?.();
+  if (!kept) return built;
+  return { ...built, stored: { ...built.stored, ...kept.stored }, ...(kept.click ? { steps: [...(built.steps ?? []), { click: kept.click }] } : {}) };
+}
+
+/** The page with its runs as set. */
+function runsShown(v: Values): Built {
   const tab: Step = { click: v.page === 'feats' ? '#codex-tab-feats' : '#codex-tab-delve' };
   if (v.runs === 'new') return { state: null, hash: '#codex', met: 40, steps: [tab] };
   if (v.runs === 'none') return filled([tab], []);
@@ -165,7 +217,7 @@ export function codexScenes(): Scene[] {
     },
     {
       ...codex('delve', 'The Delve and Achievements pages', () => pages()),
-      controls: [PAGE, RUNS],
+      controls: [PAGE, RUNS, FOSSILS_KEPT],
       states: [
         { label: 'The Delve page', values: {} },
         { label: 'The Delve page, never delved', values: { runs: 'none' }, key: 'codex/delve-none', listed: false },
@@ -173,6 +225,10 @@ export function codexScenes(): Scene[] {
         { label: 'The Delve page: finds taken, a vein caved in on strike 1 and one on strike 2', values: { runs: 'finds' }, key: 'codex/delve-finds', listed: false },
         { label: 'The Achievements page', values: { page: 'feats' }, key: 'codex/feats', listed: false },
         { label: 'The Delve page, no run yet', values: { runs: 'new' }, key: 'codex/delve-empty', listed: false },
+        { label: 'The Delve page, the first fossil', values: { fossils: 'one' }, key: 'codex/fossils-1', listed: false },
+        { label: 'The Delve page, 17 fossils, one chosen', values: { fossils: 'some' }, key: 'codex/fossils-some', listed: false },
+        { label: 'The Delve page, every common fossil', values: { fossils: 'commons' }, key: 'codex/fossils-commons', listed: false },
+        { label: 'The Delve page, all 25 fossils', values: { fossils: 'all' }, key: 'codex/fossils-all', listed: false },
       ],
       build: pages,
     },
