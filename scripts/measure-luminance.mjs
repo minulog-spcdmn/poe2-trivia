@@ -7,10 +7,12 @@
 //
 // It serves a page that mounts only the backdrop (no app), through Vite with
 // the project's own config, and reads the drawn frame back with readPixels:
-// the average Rec. 709 luma of the 8-bit pixels, 0 to 1. The backdrop's
-// reduced motion is switched from here (a stand-in for matchMedia), so with
-// it on every frame is the same (the clock at 0, the embers still) and with
-// it off the scene moves and several frames are averaged.
+// the average Rec. 709 luma of the 8-bit pixels, 0 to 1. The still mode
+// (lib/still.ts), which the game settles once as a page loads, is in this
+// script's hands: its page is served a lib/still.ts of its own, whose STILL
+// it sets as it goes (the backdrop reads it every frame). Held still, every
+// frame is the same (the clock at 0, the embers still); let go, the scene
+// moves and several frames are averaged.
 //
 // Usage:
 //   node scripts/measure-luminance.mjs curve [--from 1] [--to 200] [--motion] [--frames 6] [--skip 3] [--out f.json]
@@ -59,17 +61,14 @@ const ranges = (s) =>
       return Array.from({ length: b - a + 1 }, (_, i) => a + i);
     });
 
-// The page: the backdrop alone, full screen, with reduced motion in our hands
+// The page: the backdrop alone, full screen, with the still mode in our hands
 // and the drawing buffer kept so it can be read back.
 const PAGE = `<!doctype html><html><head><meta charset="UTF-8" />
 <style>html, body { margin: 0; background: #000; overflow: hidden } canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block }</style>
 </head><body><canvas id="c"></canvas>
 <script type="module">
-const motion = { matches: true, media: '(prefers-reduced-motion: reduce)', onchange: null, fs: new Set(),
-  addEventListener(t, f) { this.fs.add(f); }, removeEventListener(t, f) { this.fs.delete(f); },
-  addListener(f) { this.fs.add(f); }, removeListener(f) { this.fs.delete(f); }, dispatchEvent() { return true; } };
-const real = matchMedia.bind(window);
-window.matchMedia = (q) => (q.includes('prefers-reduced-motion') ? motion : real(q));
+// Held still or let go: this page's own lib/still.ts takes it (see the server's plugin), held still to begin with.
+const hold = (on) => window.__still(on);
 let gl = null;
 let draws = 0;
 const getContext = HTMLCanvasElement.prototype.getContext;
@@ -83,7 +82,7 @@ HTMLCanvasElement.prototype.getContext = function (type, attrs) {
   return c;
 };
 const D = await import('/src/lib/descent.ts');
-const { startBackdrop, wantDelveBackdrop, delveBackdropReady } = await import('/src/lib/backdrop.ts');
+const { startBackdrop, wantDelveBackdrop, delveBackdropReady, redrawBackdrop } = await import('/src/lib/backdrop.ts');
 // Delve's programs (built in the background) before anything is measured.
 wantDelveBackdrop();
 startBackdrop(document.getElementById('c'), () => console.log('context lost'));
@@ -105,12 +104,13 @@ function luma() {
   return s / (w * h) / 255;
 }
 let changed = false;
-const redraw = async () => { motion.fs.forEach((f) => f()); await drawn(); };
+// (Resting, the backdrop draws only what it sees change: it is told, for a scene set by hand or the mode switched.)
+const redraw = async () => { redrawBackdrop(); await drawn(); };
 window.M = {
   D,
   /** Shows depth d, held still, and returns the scene drawn. */
   async depth(d) {
-    motion.matches = true;
+    hold(true);
     // (Its light worked out at once: a jump otherwise shows the scene before
     // for a few frames while it is worked out, see waiting in lib/descent.ts.)
     D.lightAt(d + 0.001);
@@ -139,14 +139,14 @@ window.M = {
    */
   async luma(moving = false, n = 6, skip = 3) {
     if (!moving) return luma();
-    motion.matches = false;
+    hold(false);
     await redraw();
     const out = [];
     for (let i = 0; i < n; i++) {
       for (let k = 0; k < skip; k++) await drawn();
       out.push(luma());
     }
-    motion.matches = true;
+    hold(true);
     await redraw();
     return out;
   },
@@ -160,16 +160,16 @@ window.M = {
     const sum = { [a]: 0, [b]: 0 };
     for (let i = 0; i < n; i++) {
       for (const d of i % 2 ? [b, a] : [a, b]) {
-        motion.matches = true;
+        hold(true);
         D.setDescent(d);
         await redraw();
-        motion.matches = false;
+        hold(false);
         await redraw();
         await drawn();
         sum[d] += luma();
       }
     }
-    motion.matches = true;
+    hold(true);
     return [sum[a] / n, sum[b] / n];
   },
 };
@@ -184,6 +184,12 @@ const server = await createServer({
   plugins: [
     {
       name: 'measure-page',
+      enforce: 'pre',
+      // This page's lib/still.ts: the still mode as the page sets it, a live binding the backdrop reads every frame.
+      // (The game's own settles it once as it loads, for good: no player's page is ever switched.)
+      load(id) {
+        if (id.split('?')[0].endsWith('/src/lib/still.ts')) return 'export let STILL = true; window.__still = (on) => void (STILL = on);';
+      },
       configureServer(s) {
         s.middlewares.use(async (req, res, next) => {
           if (!req.url?.startsWith('/__measure')) return next();

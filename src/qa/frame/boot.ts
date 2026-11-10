@@ -152,7 +152,8 @@ export async function boot(asked: URLSearchParams) {
   // A game saved before a reload, where the page looks for it as it loads ('session.v4', lib/session.svelte.ts' SAVE).
   if (built.saved) storage.writeStored('session.v4', JSON.stringify(built.saved), 'session');
   if (built.stored?.keys) (await import('../../lib/keybinds.svelte.ts')).reloadKeys();
-  // (fx/core read the battery saver as it loaded, before it was written.)
+  // (fx/core read the battery saver as it loaded, before it was written. It takes at a touch size alone, as on a
+  // player's device, SAVER_OFFERED: at any other the frame shows what a desktop does with one saved, which is nothing.)
   if (built.stored?.saver) (await import('../../lib/fx/core.ts')).setBatterySaver(built.stored.saver === '1');
   // How its sync stands (only where the scene says: sync's link is loaded for those scenes alone).
   if (built.sync) {

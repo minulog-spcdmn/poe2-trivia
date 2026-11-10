@@ -224,8 +224,8 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   ring (CSS) marks her then and wherever no effects are drawn (the battery
   saver, no WebGL2). Her name is struck in gold
   foil, and a glint of light crosses it every nine seconds
-  (`src/lib/glint.ts`: one timer, transforms only, nothing under
-  *prefers-reduced-motion*). Online, everyone else gets a notice when she
+  (`src/lib/glint.ts`: one timer, transforms only, nothing in the still
+  mode). Online, everyone else gets a notice when she
   walks into the room (`src/lib/herald.ts`).
 - **Delve's descent** (`src/lib/descent.ts`): each zone is a look (the
   hall's dark, the light from below, smoke in four hues, mist, embers,
@@ -334,15 +334,46 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   decorates (a seal's breath, a light passing now and then), so a screen
   where nothing happens draws nothing; and it silences the game as muting
   does (`saverSilences` in `src/lib/sound.ts`), the sound's own settings
-  kept for when it's off. It stays on the device it was switched on: sync
+  kept for when it's off. It is a touch device's alone, a phone's or a
+  tablet's (`SAVER_OFFERED`: a touch screen at all, `(any-pointer:
+  coarse)`, settled as the page loads): it is there for a battery, and
+  nobody else gets the game with its motion held, the owner's call, as
+  with the still mode below. A touch screen at all, not a finger for the
+  main pointer: a tablet in a keyboard case says its main pointer is a
+  fine one and would lose the saver it chose, so a laptop with a touch
+  screen has the switch too. Anywhere else the settings have no switch
+  for it, nothing switches it (`setBatterySaver` does nothing there), and
+  one saved as on (every device had the switch until November 2026) isn't
+  followed, only left as saved (`tests/saver.test.ts`). The lab and its
+  kin keep their switch on any device, and a QA frame has it at its touch
+  sizes. It stays on the device it was switched on: sync
   never carries it (`tests/sync.test.ts`). What each piece costs an iPhone
   is in `docs/iphone.md`, the November findings. What runs its course
   still plays, transitions, entrances and a moment's animation: a few
-  frames cost next to nothing, and *prefers-reduced-motion* is there for
-  whoever wants the motion gone (it rests everything, effects off too). In
-  code, `motion.still` (`src/lib/motion.svelte.ts`) is reduced motion, for
-  what runs its course; `motion.resting` is either, for what never ends. A new
-  endless loop that decorates checks `motion.resting`, or in CSS stops
+  frames cost next to nothing.
+- **The still mode** (`src/lib/still.ts`, `html[data-still]`) rests
+  everything, effects off too: what runs its course is skipped, and each
+  thing simply stands in its place. No player gets it. It was the game's
+  answer to a system asking for reduced motion, but Windows says so
+  whenever its own animations are off, a common tweak, and such a player
+  got a game that looked dead, with nothing in the settings to say why
+  (a streamer showed it so, November 2026). So the game no longer asks the
+  system, and has no setting for it: the owner's call. It stays for the
+  checks, which shoot and compare screens that hold still: a browser
+  driven by a script (`navigator.webdriver`, Playwright's) that asks for
+  reduced motion gets it, as the sweep, the QA desk's before and after and
+  the headless checks do; the lab's **Held still** shows it by hand. CSS
+  writes it as ever, `@media (prefers-reduced-motion: reduce)` at the
+  sheet's top level, which the build turns into the mark (`stillMark.ts`,
+  a PostCSS step; what it can't say as a mark stops the build: the @media
+  inside a rule, a @keyframes inside it, a query with `not` or `or`). A
+  page gets the mark by loading `still.ts`, which every page of the game's
+  does; one that only loads `app.css` imports it by name. Script reads
+  `motion.still` (`src/lib/motion.svelte.ts`) or `STILL`, never the
+  system (`tests/still.test.ts`).
+- In code, `motion.still` is the still mode, for what runs its course;
+  `motion.resting` is that or the battery saver, for what never ends. A
+  new endless loop that decorates checks `motion.resting`, or in CSS stops
   under `html[data-saver]` and `prefers-reduced-motion`. Quality drops by
   itself (resolution) on devices that can't keep up. Without WebGL2 the
   site falls back to its CSS look.
@@ -470,6 +501,37 @@ effect): find what holds the frame up.
    would.
 4. **Whether it still looks the same**: the QA desk's before and after
    (B, on the dev server; `docs/qa.md`).
+
+## Looking in Firefox
+
+Firefox reads and draws some things differently from Chrome, and neither
+the tests nor the QA sweep (Chromium both) show it.
+`scripts/pc/firefox.mjs` opens a page in the Firefox installed on this PC,
+on its screen, and shoots it:
+
+```bash
+node scripts/pc/firefox.mjs "http://localhost:5173/qa.html?frame=0&s=game/turns-choosing&size=fit" .pc/firefox/cards.png --scale 1 --hover 450,360
+```
+
+`--reduced` is a system asking for reduced motion (which the game no
+longer follows: it should look no different; refused on the live game,
+where the page is told a script drives it so the visit isn't counted, and
+would be held still), `--scale 1` a 1080p screen
+at 100%, `--eval` prints what the page says (a computed style) and
+`--css` tries a rule. The shot is the window's own pixels as the screen
+has them, not Firefox's screenshot, which draws the page again for the
+shot and smooths what the screen shows in steps. One run at a time, and
+only for what the code can't settle: it slows every other session here.
+What it has found:
+
+- **A `calc()` that comes to a bare number is no stroke width** to
+  Firefox, nor a stroke's dashes or their offset: the line falls back to a
+  width of 1. Write the unit, `calc((var(--w) + 1.8) * 1px)`
+  (`tests/strokeCalc.test.ts`). The descent's ouroboros lost its bodies'
+  lines so, and only its heads showed.
+- **A box turned in 3D inside a `preserve-3d` gets stepped edges** unless
+  something of it reaches past its box, a shadow or an outline nobody
+  sees: the category cards' faces (`docs/category-cards.md`).
 
 ## Refreshing item data
 

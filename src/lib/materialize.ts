@@ -19,6 +19,7 @@ import { Burn, type BurnSetup } from './burn';
 import { fxDensity, veilIgnites, veilSpark } from './fx/moments';
 import { HIDDEN_CHECK_MS, onShownAgain, PING_MS, PREP_STALL_MS, stallWatch } from './prepPool';
 import { zoomOf } from './stage';
+import { STILL } from './still';
 import type { BurnJob, BurnNews, Pixels } from './burnWorker';
 import type { PatchImage } from './veilCut';
 
@@ -49,7 +50,6 @@ export function fxWidth(canvas: HTMLElement, artW: number): number {
 /** Burns at once; past this (a picture arriving with many patches in) patches just fade in. */
 const MAX_BURNING = 14;
 
-const reduce = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
 let burning = 0;
 
 export interface BurnParams {
@@ -336,9 +336,9 @@ export function materialize(canvas: HTMLCanvasElement, params: BurnParams) {
     const screen = fxWidth(canvas, aw);
     W = Math.max(1, Math.round(screen && !params.quick ? screen : Math.min(screen || Infinity, img.width)));
     H = Math.max(1, Math.round((W * ah) / aw));
-    if (reduce?.matches || burning >= MAX_BURNING) {
+    if (STILL || burning >= MAX_BURNING) {
       draw(img);
-      canvas.animate([{ opacity: 0 }, { opacity: 1 }], { duration: reduce?.matches ? 300 : 450, easing: 'ease-out' });
+      canvas.animate([{ opacity: 0 }, { opacity: 1 }], { duration: STILL ? 300 : 450, easing: 'ease-out' });
       return;
     }
     burning++;

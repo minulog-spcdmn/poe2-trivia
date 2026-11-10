@@ -2,7 +2,7 @@
 // the real game screen the cards are dealt on.
 // Served by the dev server and built into the beta only (vite.config.ts).
 
-// First, before any module of the game reads the reduced-motion setting.
+// First, before any module of the game reads the still mode's mark (the lab's Held still, lib/still.ts).
 import '../lab/motion';
 import { BETA } from '../lib/channel';
 import { CARD_BENCH, LAB } from '../lib/storage';

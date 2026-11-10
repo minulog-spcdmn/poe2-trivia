@@ -1358,6 +1358,18 @@
     backface-visibility: hidden;
     isolation: isolate;
   }
+  /* Firefox draws a face turned in 3D (tilted under the pointer, turning up
+     in the deal) with its edges in steps once nothing of it reaches past its
+     box, as when the backdrop draws its soft shadow and CSS draws none: the
+     edge is then where its picture is cut, which Firefox doesn't soften
+     inside a preserve-3d. An outline nobody sees gives the picture a pixel
+     of room round the card, so the card's edge lies inside it and comes out
+     smooth. (The back keeps a shadow of its own, which does the same. Not
+     on Chromium's sharp faces, smooth as they are: there it would be one
+     more thing under the face's filter.) */
+  .choose:not(.sharp) .frame {
+    outline: 1px solid transparent;
+  }
   /* A faint grain over both sides, so they read as worked plates rather than
      flat fills: under all else on the side, an element of its own (see
      `corners`, in the script). */
