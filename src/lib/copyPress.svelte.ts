@@ -84,6 +84,20 @@ export class CopyPress {
     };
   };
 
+  /**
+   * Copied from a button beside it that offers the same (the graphics
+   * notice's address), on that button's click: the note comes by that press,
+   * `touch` for a finger's or a pen's. A mouse's or a key's selects it first,
+   * as a click on the code itself would have: lit while it's copied, and
+   * there for the Ctrl+C the note asks for where the copy is refused.
+   */
+  copy = (at: At, touch = false) => {
+    this.#touched = touch;
+    this.#down.copied = false;
+    if (!touch && this.el) getSelection()?.selectAllChildren(this.el);
+    void this.#copy(at);
+  };
+
   #press = (e: PointerEvent) => {
     if (e.button !== 0) return;
     this.#touched = e.pointerType !== 'mouse';

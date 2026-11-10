@@ -12,8 +12,14 @@
 import { backdropUp, backdropsUp } from './behindDialog';
 import { sfx } from './sound';
 
-/** How a dialog closes: its own close, and the control in it a key's press is heard from (a selector: its ✕, its Cancel). */
-export type Closes = { close: () => void; closer: string };
+/**
+ * How a dialog closes: its own close, and the control in it a key's press is
+ * heard from (a selector: its ✕, its Cancel). `beside: false`: by Escape
+ * alone, not by a press beside the box, for a dialog that comes up by itself
+ * (the graphics notice): a click meant for the page it rose over mustn't
+ * answer it.
+ */
+export type Closes = { close: () => void; closer: string; beside?: false };
 
 /** Backdrops whose dialog has been closed (fading out): no longer the one a press or Escape is for. */
 const closed = new WeakSet<HTMLElement>();
@@ -34,7 +40,7 @@ export function dialogBackdrop(node: HTMLElement, closes?: Closes) {
   let began = false;
   const press = (e: PointerEvent) => (began = beside(e.target));
   const click = (e: MouseEvent) => {
-    if (!closes || closed.has(node) || !began || !beside(e.target)) return;
+    if (!closes || closes.beside === false || closed.has(node) || !began || !beside(e.target)) return;
     sfx('click', { from: { x: e.clientX } });
     shut();
   };

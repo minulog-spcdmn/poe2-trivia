@@ -32,13 +32,15 @@ function save(map: Bindings) {
 /** Kinds of field a key types into; a slider, a box or a button doesn't. */
 const NOT_TYPED = new Set(['range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'color', 'file']);
 
-/** Whether a key press goes into a field being typed in, where no key of the game's should act. */
-export function typing(e: KeyboardEvent): boolean {
-  const t = e.target;
+/** Whether `t` is a field a key types into. */
+export function typedIn(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;
   if (t.isContentEditable || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return true;
   return t instanceof HTMLInputElement && !NOT_TYPED.has(t.type);
 }
+
+/** Whether a key press goes into a field being typed in, where no key of the game's should act. */
+export const typing = (e: KeyboardEvent): boolean => typedIn(e.target);
 
 /** A control whose Enter or Space presses it. */
 const PRESSED_BY_KEY = 'button, a[href], summary, [role="button"]';

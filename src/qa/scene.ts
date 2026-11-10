@@ -148,6 +148,8 @@ export interface Built {
   circle?: PlateName | null;
   /** A page whose chunk never comes, as with the Wi-Fi gone as it's fetched (lib/chunkRetry.ts): what a player gets then. */
   lost?: RetriedPage;
+  /** The browser draws the game without the GPU (lib/gpuNotice.svelte.ts, which never asks in the frame): the settings keep their line for it. */
+  gpuOff?: boolean;
   /** How this device's sync stands (lib/sync/link.svelte.ts: the frame never syncs, so this is all there is). Missing: not paired. */
   sync?: { code: string; met: boolean; status: 'connecting' | 'waiting' | 'linked' | 'offline'; linked?: number; lastAt?: number };
 }

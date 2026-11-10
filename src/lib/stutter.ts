@@ -6,7 +6,7 @@
 // the page is seen: the gaps between its animation frames. What goes out is
 // coarse: the device's class, how much of the game's time went to frames
 // over LONG_MS (smooth, some, many), and for a game that stuttered, the
-// moment most of it fell in; or, on a computer whose browser draws WebGL
+// moment most of it fell in; or, on a computer whose browser draws the game
 // without the GPU, only that (software). Nothing finer: no timings, no
 // device details beyond the class, never the renderer's name. Pure, so the
 // tests can feed it; count.ts gives it the browser.
@@ -135,8 +135,9 @@ export class FrameTally {
 }
 
 /**
- * A game in a browser that draws WebGL in software (lib/gpuCheck.ts): about
- * 6 frames a second, so it would always read "many", whatever the game
+ * A game in a browser that draws without the GPU (lib/gpuCheck.ts: WebGL
+ * in software, or in Firefox the page put together in software): 5 to 13
+ * frames a second, so it would always read "many", whatever the game
  * does. Counted apart, by itself, and only on a computer, where hardware
  * acceleration can be switched off (count.ts).
  */
