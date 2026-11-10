@@ -367,6 +367,29 @@ runs the types and the tests, as the deploy does once it's merged. Redraws
 rest, or a moment (a deal, a pick, the pointer over a card, a name plate drawn
 in) drawing more than it did ([docs/qa.md](docs/qa.md), “Redraws”).
 
+### A deploy that stalls
+
+Now and then GitHub never finishes taking a deployment in: the `deploy` job
+waits `actions/deploy-pages`’ 10 minutes and gives up. The job then tries
+once more by itself, with a deployment under a name of its own. Pages knows a
+deployment by its build version, which has to be a commit, and
+`actions/deploy-pages` always sends the run’s own; putting the same upload up
+again under that name got nowhere on 10 Nov 2026 (five tries in an hour, none
+ever started, until a new commit on `main` went up in 16 seconds). So the
+`spares` job makes each run three spare commits (the deployed commit’s files
+with that commit as the parent, on no branch or tag), and the second try
+deploys under one through the Pages API. A run that needed it is green, 10 to
+15 minutes late after a stall, with a notice saying so.
+
+- **Both tries failed:** run the failed job again, or the whole workflow with
+  *beta* empty. A run’s first three attempts each take a spare of their own
+  (the fourth is back at the first), and a new run, or all of a run’s jobs
+  run again, makes new ones, so no empty commit on `main` is needed.
+- **Check the second try:** Run workflow with *second-try* ticked deploys
+  through it alone, skipping the first. A stall can’t be brought about, so
+  that run is how to know the second try still works, after a change to the
+  job, say.
+
 ### Beta
 
 A second build at **poe2.quest/beta/** is for trying a change before it goes
