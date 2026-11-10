@@ -98,7 +98,7 @@ function idle() {
   }
 }
 
-const { startBackdrop, opaqueCanvasStalls, wantDelveBackdrop, delveBackdropReady } = await import('../src/lib/backdrop.ts');
+const { startBackdrop, opaqueCanvasStalls, wantDelveBackdrop, delveBackdropReady, whenBackdropInSoftware } = await import('../src/lib/backdrop.ts');
 const { backdropShadow } = await import('../src/lib/backdropShadow.ts');
 const { setDescent, snapDescent } = await import('../src/lib/descent.ts');
 
@@ -118,7 +118,7 @@ function fakeGl(parallel = true, floats = true) {
   /** What was let go: programs by kind, targets by name. */
   const deleted: string[] = [];
   /** (`letGo`: how often the context was given back with WEBGL_lose_context; `atlas`: how often the drop shadows' sharp atlas was uploaded, the one texImage2D from a canvas.) */
-  const state = { done: false, fails: new Set<string>(), letGo: 0, atlas: 0 };
+  const state = { done: false, fails: new Set<string>(), letGo: 0, atlas: 0, renderer: 'fake' };
   const consts = new Map<string, number>();
   const K = (name: string) => {
     if (!consts.has(name)) consts.set(name, consts.size + 1);
@@ -136,7 +136,7 @@ function fakeGl(parallel = true, floats = true) {
     getSupportedExtensions: () => (floats ? ['EXT_color_buffer_float'] : []),
     getExtension: (name: string) =>
       name === 'KHR_parallel_shader_compile' ? (parallel ? { COMPLETION_STATUS_KHR: K('COMPLETION_STATUS_KHR') } : null) : name === 'WEBGL_lose_context' ? { loseContext: () => void state.letGo++ } : {},
-    getParameter: (p: number) => (p === K('MAX_FRAGMENT_UNIFORM_VECTORS') ? 1024 : 'fake'),
+    getParameter: (p: number) => (p === K('MAX_FRAGMENT_UNIFORM_VECTORS') ? 1024 : state.renderer),
     checkFramebufferStatus: () => K('FRAMEBUFFER_COMPLETE'),
     getSyncParameter: () => K('SIGNALED'),
     createProgram: () => ({}),
@@ -183,10 +183,10 @@ function fakeGl(parallel = true, floats = true) {
   return { gl, log, state, draws, deleted };
 }
 
-function fakeCanvas(gl: object) {
+function fakeCanvas(gl: object, refuses = false) {
   const attrs = new Set<string>();
-  /** What the context was asked for with. */
-  const asked: { options?: WebGLContextAttributes } = {};
+  /** What the context was asked for with: the last time, and every time. */
+  const asked: { options?: WebGLContextAttributes; all: WebGLContextAttributes[] } = { all: [] };
   return {
     attrs,
     asked,
@@ -194,7 +194,12 @@ function fakeCanvas(gl: object) {
     clientHeight: 600,
     width: 0,
     height: 0,
-    getContext: (_: string, options: WebGLContextAttributes) => ((asked.options = options), gl),
+    // (A browser drawing in software refuses one asked for with failIfMajorPerformanceCaveat.)
+    getContext: (_: string, options: WebGLContextAttributes) => {
+      asked.options = options;
+      asked.all.push(options);
+      return refuses && options.failIfMajorPerformanceCaveat ? null : gl;
+    },
     toggleAttribute: (name: string, on: boolean) => void (on ? attrs.add(name) : attrs.delete(name)),
     removeAttribute: (name: string) => void attrs.delete(name),
     listeners: new Map<string, (e: Event) => void>(),
@@ -208,11 +213,13 @@ function fakeCanvas(gl: object) {
 }
 
 /** Starts the backdrop on a fresh fake context: its logs, and how to step and stop it. */
-function start(parallel = true, fails: string[] = [], floats = true, done = false) {
+/** (`refused`: the canvas refuses a context asked for with failIfMajorPerformanceCaveat, and the plain one it gives has this renderer's name.) */
+function start(parallel = true, fails: string[] = [], floats = true, done = false, refused?: string) {
   const { gl, log, state, draws, deleted } = fakeGl(parallel, floats);
   for (const f of fails) state.fails.add(f);
   state.done = done;
-  const canvas = fakeCanvas(gl);
+  if (refused) state.renderer = refused;
+  const canvas = fakeCanvas(gl, !!refused);
   let lost = false;
   let restorable: boolean | null = null;
   let drawn = 0;
@@ -481,6 +488,60 @@ test('the canvas has an alpha channel only where an opaque one stalls the page: 
   const b = start();
   assert.equal(b.canvas.asked.options?.alpha, opaqueCanvasStalls(globalThis.navigator?.userAgent ?? ''));
   b.stop!();
+});
+
+test('asked to tell of software, it asks first for a context drawn with the GPU; refused that and given a plain one, it tells as its first frame is drawn', (t) => {
+  // Nobody to hear of it: one context, asked for plainly.
+  const plain = start();
+  assert.equal(plain.canvas.asked.all.length, 1);
+  assert.equal(plain.canvas.asked.options?.failIfMajorPerformanceCaveat, undefined);
+  plain.stop!();
+
+  let heard = 0;
+  const off = whenBackdropInSoftware(() => heard++);
+  // (Called off whatever fails here: the tests after this one start their backdrops with nobody to hear.)
+  t.after(off);
+  // With a GPU the first context is the one drawn with: nothing more asked, nothing told.
+  const gpu = start(true, [], true, true);
+  assert.equal(gpu.canvas.asked.all.length, 1);
+  assert.equal(gpu.canvas.asked.options?.failIfMajorPerformanceCaveat, true);
+  assert.equal(gpu.drawn(), 1);
+  assert.equal(heard, 0);
+  gpu.stop!();
+
+  // In software that one is refused: a plain one is asked for, the same but for the caveat, and drawn with.
+  const WARP = 'ANGLE (Microsoft, Microsoft Basic Render Driver (0x0000008C) Direct3D11 vs_5_0 ps_5_0, D3D11)';
+  const soft = start(true, [], true, false, WARP);
+  assert.ok(soft.stop, 'started all the same');
+  const [first, second] = soft.canvas.asked.all;
+  assert.equal(soft.canvas.asked.all.length, 2);
+  assert.deepEqual(first, { ...second, failIfMajorPerformanceCaveat: true });
+  assert.equal(heard, 0, 'not before a frame is drawn');
+  frame();
+  assert.equal(soft.drawn(), 1);
+  assert.equal(heard, 1);
+  soft.stop!();
+
+  // Its first frame drawn at once (a warm cache), it tells at once.
+  const warm = start(true, [], true, true, WARP);
+  assert.equal(warm.drawn(), 1);
+  assert.equal(heard, 2);
+  warm.stop!();
+
+  // Refused, but the plain one's renderer is a graphics card by name: drawn with, and nothing told (the worker's check is left to say).
+  const card = start(true, [], true, true, 'ANGLE (NVIDIA, NVIDIA GeForce RTX 5070 (0x00002F04) Direct3D11 vs_5_0 ps_5_0, D3D11)');
+  assert.equal(card.canvas.asked.all.length, 2);
+  assert.equal(card.drawn(), 1);
+  assert.equal(heard, 2);
+  card.stop!();
+
+  // Called off, the next backdrop asks plainly again.
+  off();
+  const after = start(true, [], true, false, WARP);
+  assert.equal(after.canvas.asked.all.length, 1);
+  frame();
+  assert.equal(heard, 2);
+  after.stop!();
 });
 
 test('the pointer turned from touch: a main pass with all the UI parts is built, warmed off the frame, and takes over', () => {

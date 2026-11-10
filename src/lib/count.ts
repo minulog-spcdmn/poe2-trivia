@@ -744,21 +744,21 @@ let frames: GameFrames | null = null;
 /** This page's first counted game went out as its visit's too (stutter.ts VISIT). */
 let visitCounted = false;
 
-/** Whether the game draws WebGL in software now, as gpuNotice.ts found (noteSoftware); not until it has. */
+/** Whether the browser draws the game without the GPU, as gpuNotice.svelte.ts found (noteSoftware); not until it has. */
 let software = () => false;
 
 /**
- * Whether a game's frames want to know if the browser draws WebGL in
- * software (gpuNotice.ts asks, off the main thread): where they're counted,
+ * Whether a game's frames want to know if the browser draws without the
+ * GPU (gpuNotice.svelte.ts asks, in a quiet moment): where they're counted,
  * on a computer, the only place hardware acceleration can be switched off.
  */
 export const asksSoftware = () => counting && !notCounted() && deviceOf(navigator as BrowserSays).startsWith('desktop');
 
 /**
- * What gpuNotice.ts found, asked as a game is counted (its backdrop can
- * have fallen back to CSS meanwhile, which runs smoothly anyway): a game's
- * frames then count as drawn in software (stutter.ts SOFTWARE). Only that
- * is kept, never the renderer's name.
+ * What gpuNotice.svelte.ts found, asked as a game is counted: a game's
+ * frames then count as drawn in software (stutter.ts SOFTWARE), whatever
+ * its backdrop is drawn with (without the GPU the CSS one is slow too).
+ * Only that is kept, never the renderer's name.
  */
 export const noteSoftware = (drawsInSoftware: () => boolean) => void (software = drawsInSoftware);
 

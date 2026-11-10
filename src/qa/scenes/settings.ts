@@ -24,6 +24,8 @@ const KEYS: Control = { kind: 'toggle', key: 'keys', label: 'Keys changed', defa
 const COLOUR: Control = { kind: 'toggle', key: 'colour', label: 'A colour picked', default: false };
 const KEPT: Control = { kind: 'toggle', key: 'kept', label: 'Named zoe_arcana (ruby kept)', default: false };
 const SAVER: Control = { kind: 'toggle', key: 'saver', label: 'Battery saver on', default: false };
+/** The browser draws without the GPU: the line that opens the notice's steps again (the dialog itself is the Graphics notice bench's). */
+const GPU: Control = { kind: 'toggle', key: 'gpu', label: 'Graphics acceleration off', default: false };
 const SYNC: Control = {
   kind: 'choice',
   key: 'sync',
@@ -136,7 +138,7 @@ export function settingsScenes(): Scene[] {
       group: 'Settings',
       label: 'The settings page',
       seats: [{ mode: 'none', me: null }],
-      controls: [SOUND, KEYS, COLOUR, KEPT, SAVER],
+      controls: [SOUND, KEYS, COLOUR, KEPT, SAVER, GPU],
       states: [
         { label: 'As it comes', values: {} },
         { label: 'Sound down, keys changed', values: { sound: 'quiet', keys: true } },
@@ -144,12 +146,14 @@ export function settingsScenes(): Scene[] {
         { label: 'Sapphire picked', values: { colour: true }, listed: false },
         { label: "zoe_arcana's ruby, kept", values: { kept: true }, listed: false },
         { label: 'Battery saver on', values: { saver: true }, listed: false },
+        { label: 'Graphics acceleration off', values: { gpu: true }, listed: false },
       ],
       build: (v = {}): Built => ({
         state: null,
         hash: '#settings',
         sound: v.sound === 'off' ? { muted: true } : v.sound === 'quiet' ? { volume: 0.35, ambience: 0 } : undefined,
         stored: { ...(v.keys ? { keys: JSON.stringify(CHANGED) } : {}), ...(v.colour ? { colour: '1' } : {}), ...(v.kept ? { name: 'zoe_arcana' } : {}), ...(v.saver ? { saver: '1' } : {}) },
+        ...(v.gpu ? { gpuOff: true } : {}),
       }),
     },
     {

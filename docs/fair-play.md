@@ -125,10 +125,11 @@ computer), `desktop-other`, `ios` (iPhone and iPad) or `android`; `smooth`,
 (1% and 5%; time, not frames, so a 240 Hz screen reads as a 60 Hz one does);
 and for one that stuttered, `begin` (the game's first 3 seconds, from the
 state change that started it), `deal`, `question` or `reveal`, where most of
-it fell. A computer whose browser draws WebGL without the GPU sends
+it fell. A computer whose browser draws the game without the GPU sends
 `frames2/<device>/software` instead, nothing more: whether it does is all
 that is kept of the check (`src/lib/gpuCheck.ts`), never the renderer's
-name. It goes as the game is decided or left, or as the page is left, or
+name, nor what Firefox answered of video and WebGPU. It goes as the game
+is decided or left, or as the page is left, or
 on a phone as it's hidden (not again for the same game if it's seen once
 more; a computer's game switched away from is counted when it ends, as a
 whole); a game seen for

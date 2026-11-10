@@ -23,6 +23,7 @@ import { onVein, veinLevel, veinQuake } from './vein';
 import { DIALOG_BLUR, DIALOG_DIM, openDialog } from './behindDialog';
 import { buildPrograms, maxDrawSize, refuseWebgl2, setGpuCatchUp, startPrograms, type Build, type Pending, type ProgramSource } from './fx/gl';
 import { frameEvent, timed } from './fpsMeter';
+import { rendererOf, softwareRenderer } from './gpuCheck';
 import { whenIdle } from './idle';
 import { backdropFps, switchedOff } from './switchedOff';
 
@@ -1254,10 +1255,26 @@ function letGo(gl: WebGL2RenderingContext): null {
  */
 export const opaqueCanvasStalls = (userAgent: string) => /Windows NT/.test(userAgent) && /Chrome\//.test(userAgent);
 
-/** How many backdrops draw with WebGL now (one, but an old one's stop can come after a new one's start). */
-let onWebgl = 0;
-/** Whether the backdrop is drawn with WebGL now (not the CSS one: refused, failed or lost). */
-export const backdropOnWebgl = () => onWebgl > 0;
+/** Who hears that the backdrop is drawn in software (whenBackdropInSoftware). */
+let softwareHeard: (() => void) | null = null;
+/**
+ * Has the backdrop tell `heard` should the browser draw it in software
+ * (hardware acceleration switched off, most often). It asks first for a
+ * context the browser draws with the GPU (failIfMajorPerformanceCaveat) and,
+ * refused, for a plain one, as lib/gpuCheck.ts's check does of a canvas of
+ * its own, and tells where that one's renderer is a software one by name
+ * too: so it's known as the first frame is drawn, seconds before that
+ * check can say (lib/gpuNotice.svelte.ts), in time for a player on their way
+ * into a game. Where there's a GPU nothing more is asked than without it:
+ * the first context is the one drawn with. Asked for before the backdrop
+ * starts; returns what calls it off.
+ */
+export function whenBackdropInSoftware(heard: () => void): () => void {
+  softwareHeard = heard;
+  return () => {
+    if (softwareHeard === heard) softwareHeard = null;
+  };
+}
 
 /**
  * Starts rendering the backdrop into `canvas`, with the lean programs (its
@@ -1276,14 +1293,24 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
   // (With an alpha channel where an opaque canvas stalls the page: see
   // opaqueCanvasStalls. Every pixel is drawn opaque all the same, the main
   // pass writing alpha 1.)
-  const gl = canvas.getContext('webgl2', {
+  const asks: WebGLContextAttributes = {
     alpha: opaqueCanvasStalls(globalThis.navigator?.userAgent ?? ''),
     antialias: false,
     depth: false,
     stencil: false,
     premultipliedAlpha: true,
     powerPreference: 'low-power',
-  });
+  };
+  // (Where someone is to hear of software, asked first for one drawn with
+  // the GPU: see whenBackdropInSoftware. A canvas refused a context can be
+  // asked again; one that has its context, given back after a loss, gives
+  // that one whatever is asked.)
+  const strict = softwareHeard ? canvas.getContext('webgl2', { ...asks, failIfMajorPerformanceCaveat: true }) : null;
+  const gl = strict ?? canvas.getContext('webgl2', asks);
+  // (Software only where the plain one's renderer says so by name as well,
+  // as Chrome's do: a refusal for any other reason, at a start where much
+  // is still on its way, is left to the worker's check in a quiet moment.)
+  const inSoftware = !!softwareHeard && !strict && !!gl && softwareRenderer(rendererOf(gl));
   if (!gl) {
     // (The effects' overlay won't get one either: see prepare in fx/core.ts.)
     refuseWebgl2();
@@ -2410,8 +2437,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
     embers.tint(on ? VEIN_EMBERS : CALM);
     embers.vein(on);
   });
-  // (Counted in onWebgl once its frames have begun.)
-  let counted = false;
   // Stop can come twice: lost, then the caller's. Only the first does
   // anything: by the second the canvas may have its context back, drawn with
   // by a backdrop started afresh, which letGo would lose again.
@@ -2420,8 +2445,6 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
   function stop(dead = false) {
     if (stopped) return;
     stopped = true;
-    if (counted) onWebgl--;
-    counted = false;
     offVein();
     cancelAnimationFrame(firstRaf);
     first!.cancel();
@@ -2504,8 +2527,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
     offScale = onFxScale(fit);
     raf = requestAnimationFrame(frame);
     if (lean.ui === 'drops') whenPageIdle(leanNext, replaceLean, 3000);
-    onWebgl++;
-    counted = true;
+    // (Told only now: drawn with WebGL in software is what's slow, and it is as of this frame.)
+    if (inSoftware) softwareHeard?.();
     onDrawn?.();
   }
 
