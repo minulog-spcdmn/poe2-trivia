@@ -19,6 +19,7 @@ import { polyfillsFirst, polyfillsScript, readableRegexes } from './polyfillsFir
 import { peerjsProbe } from './peerjsProbe.ts';
 import { qaServer } from './qaServer.ts';
 import { themedCursors } from './themedCursors.ts';
+import { stillMark } from './stillMark.ts';
 import { unwatched } from './unwatched.ts';
 import { weaveTile } from './weaveTile.ts';
 import { whereMaps } from './whereMaps.ts';
@@ -365,7 +366,7 @@ export default defineConfig(({ command, mode }) => {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
     plugins: [svelte(), glslMinify(), peerjsProbe(), polyfillsFirst(), csp(env), errorsFirst(), readableRegexes(), betaPages(env), preloadFonts(), fontinNotice(), keyframesFirst(), backdropSave(), devHub(env), weaveTile(), whereMaps(), qaServer(process.cwd())],
-    css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors] } },
+    css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors, stillMark] } },
     // Not the scripts' builds, runs and profiles, nor other worktrees: walking them held up a cold start (unwatched.ts).
     // From this checkout down, where the config is (the QA desk's "before" server loads its own from elsewhere).
     server: { watch: { ignored: unwatched(fileURLToPath(new URL('.', import.meta.url))) } },

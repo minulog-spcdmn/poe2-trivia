@@ -13,7 +13,7 @@
   import { fly } from 'svelte/transition';
   import { calm, motion } from '../lib/motion.svelte';
   import { getAmbience, getVolume, isMuted, onSoundChange, setAmbience, setMuted, setVolume, sfx } from '../lib/sound';
-  import { setBatterySaver } from '../lib/fx/core';
+  import { SAVER_OFFERED, setBatterySaver } from '../lib/fx/core';
   import { NAME_KEY, session, savedName, saveName } from '../lib/session.svelte';
   import { MAX_NAME, nameRefusal } from '../lib/names';
   import { pressed, refuseName } from '../lib/nameField';
@@ -244,8 +244,8 @@
 
       <section class="block" in:fly={enter(-30, 110)}>
         <header><h2>Screen</h2></header>
-        <!-- (With reduced motion everything it would stop is still already; but on, it silences the game too, so it stays to be switched off.) -->
-        {#if !motion.reduced || saver}
+        <!-- A touch device's alone: nobody else gets the game with its motion held (fx/core's SAVER_OFFERED). -->
+        {#if SAVER_OFFERED}
           <div class="row">
             <span class="label">Battery saver</span>
             <div class="seg">
@@ -956,7 +956,7 @@
       box-shadow: 0 0 20px rgba(241, 217, 155, 0.65);
     }
   }
-  /* Held still with the battery saver on or reduced motion asked for: lit, not breathing. */
+  /* Held still with the battery saver on, or in the still mode: lit, not breathing. */
   :global(html[data-saver]) .seal.on {
     animation: none;
   }

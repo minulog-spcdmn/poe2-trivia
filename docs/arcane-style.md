@@ -127,7 +127,7 @@ The circle mounts with every question and some six hundred lines draw in, so how
 - **Right answer**: a flare at the centre and a ring of light running out over the circle (scale 0.2 to 1.15, fading); the colour warms to pale gold; the pupil widens (scale 1.3).
 - **Wrong answer**: the rotating layers jar (a 0.7 s rotation shudder of ±2.5° settling out); the colour cools to rust and dims; the pupil narrows (0.72).
 - **At rest**: the eye blinks about every 9 s (vertical scale to 0.06 and back in about 0.3 s).
-- Reduced motion: `app.css` cuts the animations short, and the pen sets each line down whole as it's due.
+- The still mode (the checks', `src/lib/still.ts`; no player gets it): `app.css` cuts the animations short, and the pen sets each line down whole as it's due.
 - The battery saver (`html[data-saver]`): the rings still wind in and the pen still draws, then the circle rests; no turning, swaying, breathing, blink, gaze or beat, since a loop that never ends keeps the screen drawing. A new piece's idle motion stops the same way.
 
 ## How to iterate quickly

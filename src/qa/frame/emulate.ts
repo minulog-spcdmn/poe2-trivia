@@ -5,8 +5,7 @@
 // @media rules (the PostCSS step in vite.config.ts puts every :hover in one).
 // matchMedia and the stylesheets get the device's features written into
 // their queries as always-true or always-false tests, so a query that also
-// asks about width still asks the real frame. The lab's reduced-motion
-// switch (src/lab/motion.ts) works the same way.
+// asks about width still asks the real frame.
 //
 // Only an approximation: the page is still drawn at the desk's own pixel
 // ratio, a mouse stays a mouse (pointerType), and image sets pick by the

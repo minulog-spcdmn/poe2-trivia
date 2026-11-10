@@ -305,7 +305,7 @@ export const WEBGL_SCENES: { scene: string; why: string }[] = [
   { scene: 'game/delve-dig', why: 'A vein shakes the page (tremor.ts through fx/core.ts’s shake, a translate on .shell every frame): the effects’ own, so without WebGL it never runs. The October shake was this.' },
   { scene: 'home/returning', why: 'The start page’s daily streak lights in WebGL with the effects on and in CSS without (DailyStreak, onFxChange).' },
   { scene: 'over/n-lost', why: 'GameOver plays its lights in WebGL with the effects on and in CSS without (fxActive), and the winner’s row ignites in the effects.' },
-  { scene: 'settings/key', why: 'Settings turns the battery saver on and off (the effects go, and html[data-saver] holds what never ends still), and its seals light with the effects.' },
+  { scene: 'settings/key', why: 'Settings turns the battery saver on and off, on a touch device (the effects go, and html[data-saver] holds what never ends still), and its seals light with the effects.' },
   { scene: 'lobby/room', why: 'The lobby lights its seats in the effects as players arrive (fx/moments.ts creatorArrived, playerArrived): the effects’ own, so without WebGL they never run.' },
   { scene: 'codex/item', why: 'An item’s art lights in the effects as it’s revealed (CodexItem, fx/moments.ts artRevealed).' },
 ];

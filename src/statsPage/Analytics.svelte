@@ -21,6 +21,8 @@
   // period read for the first time shows its counts as soon as they're in,
   // who came and from where after.
   import { onMount, setContext, tick, untrack } from 'svelte';
+  // (The still mode's mark, which this page's CSS reads too: lib/still.ts.)
+  import '../lib/still';
   import { onStoredElsewhere, readStored, removeStored, removeStoredStarting, storeKey, writeStored } from '../lib/storage';
   import { ApiError, Cancelled, DASHBOARD, HOUR_LIMIT, accountZone, forgetKey, pathCounts, pathsBy, requestsLastHour, saveKey, savedKey, visitorsBy, type Named, type Span } from './api';
   import { sameSites, spikesOf } from './insights';

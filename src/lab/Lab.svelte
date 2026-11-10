@@ -435,10 +435,10 @@
         <summary>Settings</summary>
         <div class="toggles">
           <label><input type="checkbox" checked={saver} onchange={() => setBatterySaver(!batterySaver())} /> Battery saver</label>
-          <label><input type="checkbox" checked={reduceMotion} onchange={() => setReduceMotion(!reduceMotion)} /> Reduced motion</label>
+          <label><input type="checkbox" checked={reduceMotion} onchange={() => setReduceMotion(!reduceMotion)} /> Held still</label>
           <label><input type="checkbox" checked={!muted} onchange={toggleSound} /> Sound</label>
         </div>
-        <p class="hint">Reduced motion reloads the page (the game reads it as it loads). The lab keeps its own saves, settings, codex and records, apart from the game's.</p>
+        <p class="hint">Held still is the mode the checks run in, which no player gets; it reloads the page (the game reads it as it loads). The lab keeps its own saves, settings, codex and records, apart from the game's.</p>
         <div class="grid">
           <button onclick={L.clearRecords}>Clear lab records</button>
         </div>

@@ -11,6 +11,7 @@
   import { onDestroy, untrack } from 'svelte';
   import { springAtRest, stepSpring, type Spring } from '../lib/spring';
   import { CURSOR_SPRING } from '../lib/startMenu';
+  import { STILL } from '../lib/still';
 
   let { at, lit }: { at: number; lit: boolean } = $props();
 
@@ -43,7 +44,7 @@
   }
   function travel(n: number) {
     target = n * slotPx();
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return rest(n);
+    if (STILL) return rest(n);
     if (!frame) {
       last = performance.now();
       frame = requestAnimationFrame(tick);

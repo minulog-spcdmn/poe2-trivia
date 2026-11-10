@@ -23,7 +23,8 @@ const SOUND: Control = {
 const KEYS: Control = { kind: 'toggle', key: 'keys', label: 'Keys changed', default: false };
 const COLOUR: Control = { kind: 'toggle', key: 'colour', label: 'A colour picked', default: false };
 const KEPT: Control = { kind: 'toggle', key: 'kept', label: 'Named zoe_arcana (ruby kept)', default: false };
-const SAVER: Control = { kind: 'toggle', key: 'saver', label: 'Battery saver on', default: false };
+/** (A touch device's alone: at a desktop's size it has no row in the settings, and one saved as on changes nothing.) */
+const SAVER: Control = { kind: 'toggle', key: 'saver', label: 'Battery saver on (touch sizes)', default: false };
 /** The browser draws without the GPU: the line that opens the notice's steps again (the dialog itself is the Graphics notice bench's). */
 const GPU: Control = { kind: 'toggle', key: 'gpu', label: 'Graphics acceleration off', default: false };
 const SYNC: Control = {
@@ -145,7 +146,7 @@ export function settingsScenes(): Scene[] {
         { label: 'Sound off', values: { sound: 'off' }, listed: false },
         { label: 'Sapphire picked', values: { colour: true }, listed: false },
         { label: "zoe_arcana's ruby, kept", values: { kept: true }, listed: false },
-        { label: 'Battery saver on', values: { saver: true }, listed: false },
+        { label: 'Battery saver on (touch sizes)', values: { saver: true }, listed: false },
         { label: 'Graphics acceleration off', values: { gpu: true }, listed: false },
       ],
       build: (v = {}): Built => ({

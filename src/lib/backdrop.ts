@@ -26,6 +26,7 @@ import { frameEvent, timed } from './fpsMeter';
 import { rendererOf, softwareRenderer } from './gpuCheck';
 import { whenIdle } from './idle';
 import { backdropFps, switchedOff } from './switchedOff';
+import { STILL } from './still';
 
 /** ?bgfps (lib/switchedOff.ts): the least gap between two frames of the backdrop (ms), or 0. */
 const BG_GAP = backdropFps ? 1000 / backdropFps : 0;
@@ -1276,6 +1277,17 @@ export function whenBackdropInSoftware(heard: () => void): () => void {
   };
 }
 
+/** Has the backdrop running draw its scene again (set while one runs): see redrawBackdrop. */
+let drawAgainNow: (() => void) | null = null;
+/**
+ * Draws the scene again though nothing the backdrop watches changed. Only
+ * for what changes a scene behind its back: scripts/measure-luminance.mjs
+ * sets the fields of the scene shown by hand, while the backdrop rests.
+ */
+export function redrawBackdrop() {
+  drawAgainNow?.();
+}
+
 /**
  * Starts rendering the backdrop into `canvas`, with the lean programs (its
  * first frame drawn at once: see begin); Delve's follow in the background
@@ -1854,15 +1866,14 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, SLOTS, TILES, 0, gl.RGBA, gl.FLOAT, null);
   const paths = BLOBS.map(blobPath);
 
-  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
   // With the battery saver on (in the settings) the backdrop's own drift
   // stops where it stands (the breathing, the smoke, the embers, the god
   // rays), and it's only drawn when something changes; what runs its course
-  // (a depth easing in, the scene sinking, a light) still does. Reduced
-  // motion rests everything, and what runs its course snaps. (?bgfps keeps it
-  // drifting under the saver too, at that rate: what a saver that only slows
-  // it would save.)
-  const calm = () => reduceMotion.matches || (batterySaver() && !backdropFps);
+  // (a depth easing in, the scene sinking, a light) still does. The still
+  // mode (lib/still.ts) rests everything, and what runs its course snaps.
+  // (?bgfps keeps it drifting under the saver too, at that rate: what a
+  // saver that only slows it would save.)
+  const calm = () => STILL || (batterySaver() && !backdropFps);
   /** The backdrop's own clock (ms): it stops while calm(). */
   let clock = 0;
   let raf = 0;
@@ -1888,10 +1899,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
   }
   function drawUntimed() {
     // Every gradient breathes on its own cycle; the periods share no common
-    // factor, so the combined motion takes hours to repeat. Reduced motion
+    // factor, so the combined motion takes hours to repeat. The still mode
     // freezes them all (and the blobs and embers) at rest; the battery
     // saver freezes them where they are.
-    const still = reduceMotion.matches;
+    const still = STILL;
     const ms = still ? 0 : clock;
     const glow = still ? 0 : breathe(ms, 9000);
     const bottom = still ? 0 : breathe(ms, 13000, 0.3);
@@ -1928,7 +1939,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
     if (v === lean) standIn = deep;
     else if (standIn) {
       standIn = false;
-      delveIn = reduceMotion.matches ? 1 : 0;
+      delveIn = STILL ? 1 : 0;
     }
     // Delve's parts coming in, after the lean programs stood in for them:
     // each of them scaled from none (the lean picture) to all of it. (The
@@ -2219,10 +2230,10 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
     // (A frame's time can come before the last one's; it never runs backwards here.)
     const dt = Math.max(0, Math.min(0.1, (now - lastStep) / 1000));
     // Resting (calm()), the backdrop's own drift stops and it's drawn only
-    // when something changes; held still (reduced motion), what would run
+    // when something changes; held still (the still mode), what would run
     // its course (a depth easing in, a plunge, the vein shaking) snaps too.
     const resting = calm();
-    const still = reduceMotion.matches;
+    const still = STILL;
     if (!resting) {
       clock += 1000 * dt;
       // (The magma flows as fast as it is hot: slower as it cools, still once it has.)
@@ -2332,7 +2343,9 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
     draw();
   }
 
-  const onMotionChange = () => (dirty = true);
+  /** The scene is drawn again in the next frame, resting or not. */
+  const drawAgain = () => (dirty = true);
+  drawAgainNow = drawAgain;
 
   // Size the drawing buffer to the exact device pixels the canvas covers.
   // Any mismatch makes the browser resample the canvas, which smears the dither.
@@ -2469,8 +2482,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
     viewRo.disconnect();
     viewProbe.remove();
     canvas.removeEventListener('webglcontextlost', contextLost);
-    reduceMotion.removeEventListener('change', onMotionChange);
     offFx();
+    if (drawAgainNow === drawAgain) drawAgainNow = null;
     releaseAll();
     releaseAllDrops();
     if (!dead) letGo(gl!);
@@ -2494,8 +2507,7 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
     onLost(true);
   }
   canvas.addEventListener('webglcontextlost', contextLost);
-  reduceMotion.addEventListener('change', onMotionChange);
-  const offFx = onFxChange(onMotionChange);
+  const offFx = onFxChange(drawAgain);
 
   /** Reads the lean programs (see begin): false if one failed. */
   function takeFirst() {
