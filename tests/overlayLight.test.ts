@@ -23,7 +23,7 @@ const LIGHT_PASSES: Record<string, string> = {
   'components/Darkness.svelte .edge': 'a soft vignette at the screen’s edge, see-through',
   'components/FxLayer.svelte .fx': 'the effects layer itself',
   'components/GameOver.svelte .sparks': 'light of its own, a canvas of sparks',
-  'components/Inventory.svelte .tip': 'a popover, in the top layer over the effects layer',
+  'components/HoverTip.svelte .tip': 'a popover, in the top layer over the effects layer',
   'components/LegalSheet.svelte .sheet': 'a modal <dialog>, in the top layer over the effects layer',
   'components/ItemWindow.svelte .window': 'hides the light from its script (hideLightIn)',
   'components/PeerCursors.svelte .cursors': 'other players’ pointers, small and moving',

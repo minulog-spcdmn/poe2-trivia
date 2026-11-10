@@ -75,6 +75,8 @@ export type Step =
   | { clock: number }
   /** Scrolls the first element `selector` finds into the middle of the view, at once (nothing if none). */
   | { scroll: string }
+  /** A mouse comes to the first element `selector` finds (its pointerenter): what a script shows on hover (a tooltip, HoverTip.svelte), until the real mouse comes into the frame and says where it is. Nothing at a touch screen's size, which has no mouse. */
+  | { hover: string }
   /** A key pressed, by where it sits (KeyboardEvent.code), on what has the focus (a key set on the settings page). */
   | { press: string }
   /** The start page's list finds these rooms from now on, and looks again at once, as its Refresh would (a room opening or closing). */

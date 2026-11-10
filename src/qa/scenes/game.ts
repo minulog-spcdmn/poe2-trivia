@@ -460,6 +460,7 @@ export function gameScenes(): Scene[] {
           ['cards', 'The cards, the vote'],
           ['question', 'A question'],
           ['cleared', 'Cleared'],
+          ['count', 'Doryani’s right answers'],
           ['miss', 'Kalguur misses'],
           ['fallen', 'Una perishes'],
           ['perish', 'Una perishes, from her seat'],
@@ -480,7 +481,7 @@ export function gameScenes(): Scene[] {
             { value: 'dig', label: 'A vein struck once' },
           ],
         },
-        { kind: 'toggle', key: 'held', label: 'Dynamite in a pack', default: false, when: { at: ['cards'] } },
+        { kind: 'toggle', key: 'held', label: 'Dynamite in a pack', default: false, when: { at: ['cards', 'count'] } },
         { kind: 'toggle', key: 'voted', label: 'Doryani has voted', default: true, when: { at: ['cards'] } },
         { kind: 'toggle', key: 'idle', label: 'Una idle', default: false, when: { at: ['cards'] } },
         { kind: 'toggle', key: 'closing', label: 'The vote’s clock running out', default: false, when: { at: ['cards'] } },
@@ -499,6 +500,8 @@ export function gameScenes(): Scene[] {
         { label: 'A vein struck once, the team voting: dig deeper, or the way out', values: { finds: 'dig' }, key: 'game/delve-together-dig', listed: false },
         { label: 'A question, after the vote', values: { at: 'question' }, key: 'game/delve-together-question', listed: false },
         { label: 'Cleared: Doryani named it first', values: { at: 'cleared' }, key: 'game/delve-together-cleared', listed: false },
+        { label: 'Doryani’s right answers, the pointer on her token', values: { at: 'count' }, key: 'game/delve-together-count', listed: false },
+        { label: 'Her right answers, a stick of dynamite beside her token with a tooltip of its own', values: { at: 'count', held: true }, listed: false },
         { label: 'Kalguur misses, from his seat: his line fades in', values: { at: 'miss' }, key: 'game/delve-together-miss', listed: false },
         { label: 'Una perishes: the revive heart', values: { at: 'fallen' }, key: 'game/delve-together-fallen', listed: false },
         { label: 'Kalguur brings her back with his second life', values: { at: 'fallen', gives: true }, listed: false },
@@ -514,6 +517,19 @@ export function gameScenes(): Scene[] {
         }
         if (when === 'question') return shown(voted(delveTogether(v)), v);
         if (when === 'cleared') return shown(voted(delveTogether(v)).answer('Doryani', true), v);
+        if (when === 'count') {
+          // Four depths in, three cleared by Doryani and one by Kalguur: a mouse comes to her token, and her right
+          // answers show under it (HoverTip.svelte), as his do under his; Una, with none, has nothing to show, and
+          // a touch screen nothing at all. Only on the token: with dynamite in her pack, the stick beside it keeps
+          // its own rule's tooltip, and the rest of the entry shows none.
+          const t = delveTogether(v);
+          for (const by of ['Doryani', 'Kalguur', 'Doryani']) voted(t).answer(by, true).wait(1000).next();
+          if (v.held) t.s.delve!.inventory = { [pid('Doryani')]: { wards: 0, flares: 0, dynamite: 1 } };
+          const b = shown(voted(t).answer('Doryani', true), v);
+          // (Her token by her entry's place: the game seats the team in an order of its own.)
+          const hers = t.s.players.findIndex((p) => p.name === 'Doryani') + 1;
+          return { ...b, steps: [...(b.steps ?? []), { hover: `.board > li:nth-child(${hers}) > .avatar` }] } satisfies Built;
+        }
         if (when === 'miss') {
           // Kalguur's own miss on the team's question, from his seat: the line on what it cost him fades in.
           const t = voted(delveTogether(v));
