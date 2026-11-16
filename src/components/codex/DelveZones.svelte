@@ -6,17 +6,18 @@
   // day you first got there, the two columns named over them. A thread runs
   // down from seal to seal, stopping short of each as an engraver's line
   // stops at a seal, passing from one zone's colour into the next's; under
-  // the deepest it goes on, dotted, to an empty seal, the dull impression
-  // the descent leaves for a zone not reached (lib/descentPlate), named only
-  // "uncharted": the zones ahead are a surprise. Past five zones the middle
-  // ones wait behind a button, the Mines kept at the top.
+  // the deepest it goes on, dotted, through empty seals, the dull impression
+  // the descent leaves for a zone not reached (lib/descentPlate), each at the
+  // depth its zone starts, fading into the dark as they go: the zones ahead
+  // as the fossils' card shows the fossils not found, as shapes still to
+  // fill. Only the next is named, "uncharted": the zones ahead are a
+  // surprise. Past five zones the middle ones wait behind a button, the
+  // Mines kept at the top; folded, the descent is always six rows, sharing
+  // the card beside the fossils (CodexDelve holds it to their height).
   //
-  // Held to a height (beside the fossils, CodexDelve), the descent fills it:
-  // the uncharted seal at its foot, the thread from the deepest zone running
-  // down to it, so the way still to go is the card's empty part. All the
-  // zones shown then scroll inside it; on a phone, where nothing stands
-  // beside it, the card grows instead. Either way they open where the
-  // button was: the rows under it go down to their places as the hidden
+  // All the zones shown scroll inside the card; on a phone, where nothing
+  // stands beside it, the card grows instead. Either way they open where
+  // the button was: the rows under it go down to their places as the hidden
   // ones come in behind them.
   import { hollow, ring, wear } from '../../lib/arcane';
   import { accentAt, stratumName } from '../../lib/descent';
@@ -26,12 +27,18 @@
   const SHOWN = 5;
   const DEEPEST = 3;
 
-  /** The empty seal: the title card's two rings (zonecard/ZoneSeal), worn, round the hollow's shading. */
-  const EMPTY = {
-    // (The name's hash folded into the wear's generator's range, as ZoneSeal folds its own.)
-    rings: [ring([0, 0], 12.6, { wear: wear(((seedOf('uncharted') >>> 0) % 2147483646) + 1) }), ring([0, 0], 11.4)],
-    hollow: hollow([0, 0], 10.7, 1.5),
-  };
+  /** Rows to a folded descent: the zones and the empty seals under them. */
+  const ROWS = 6;
+  /** Each empty seal a step further into the dark than the one over it. */
+  const DIM = 0.7;
+
+  /** An empty seal: the title card's two rings (zonecard/ZoneSeal), each worn its own way, round the hollow's shading. */
+  const HOLLOW = hollow([0, 0], 10.7, 1.5);
+  const INNER = ring([0, 0], 11.4);
+  const empties = new Map<number, string>();
+  // (The name's hash folded into the wear's generator's range, as ZoneSeal folds its own.)
+  const emptyRing = (k: number) =>
+    empties.get(k) ?? empties.set(k, ring([0, 0], 12.6, { wear: wear(((seedOf(`uncharted ${k}`) >>> 0) % 2147483646) + 1) })).get(k)!;
 
   /** A seal's play: nothing. Held still, the title card's seal shows whole from the start. */
   const still = () => new Animation();
@@ -69,7 +76,7 @@
   import { motion } from '../../lib/motion.svelte';
   import { backdropShadow } from '../../lib/backdropShadow';
   import { shownDepth } from '../../lib/delve';
-  import type { ZoneProgress, ZoneReached } from '../../lib/codexStats';
+  import { zone, type ZoneProgress, type ZoneReached } from '../../lib/codexStats';
   import ZoneSeal from '../zonecard/ZoneSeal.svelte';
 
   let { zones }: { zones: ZoneProgress } = $props();
@@ -78,17 +85,28 @@
   const word = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : many);
 
   let all = $state(false);
-  type Row = { z: ZoneReached } | { gap: number };
+  /** A zone reached, the button over the ones between, or an empty seal (the `i`th, from the next zone down). */
+  type Row = { z: ZoneReached } | { gap: number } | { ahead: number; i: number };
   const rows: Row[] = $derived.by(() => {
     const r = zones.reached;
-    if (all || r.length <= SHOWN) return r.map((z) => ({ z }));
-    return [{ z: r[0] }, { gap: r.length - 1 - DEEPEST }, ...r.slice(-DEEPEST).map((z) => ({ z }))];
+    const shown: Row[] = all || r.length <= SHOWN ? r.map((z) => ({ z })) : [{ z: r[0] }, { gap: r.length - 1 - DEEPEST }, ...r.slice(-DEEPEST).map((z) => ({ z }))];
+    const next = zones.next;
+    if (!next) return shown;
+    const ahead = all ? 1 : Math.max(1, ROWS - shown.length);
+    for (let i = 0; i < ahead && zone(next.k + i).k === next.k + i; i++) shown.push({ ahead: next.k + i, i });
+    return shown;
   });
+  const keyOf = (row: Row) => ('z' in row ? row.z.k : 'gap' in row ? 'gap' : `a${row.ahead}`);
   /** Each zone's colour, and the next one's, which its thread passes into. */
   const inkOf = (z: ZoneReached) => accentAt(z.depth);
   const nextInk = (i: number) => {
     const next = rows[i + 1];
     return next && 'z' in next ? inkOf(next.z) : null;
+  };
+  /** What a row's thread passes into: a zone shown, or (dotted) zones not shown or not reached. */
+  const into = (i: number) => {
+    const next = rows[i + 1];
+    return !next ? null : 'z' in next ? 'zone' : 'gap' in next ? 'gap' : 'ahead';
   };
 
   let list = $state<HTMLOListElement>();
@@ -120,24 +138,13 @@
     // The rows that stay go down from where they were to their places.
     let from = 0;
     let by = 0;
-    let last = 0;
     for (const li of el.children) {
       const then = was.get(li);
       if (then === undefined) continue;
       const dy = then - top(li);
       if (Math.abs(dy) < 0.5) continue;
       moves.push(li.animate({ translate: [`0 ${dy}px`, '0 0'] }, { duration: MOVE, easing: EASING }));
-      if (!li.classList.contains('ahead')) {
-        if (!by) [from, by] = [then, -dy];
-        last = dy;
-        continue;
-      }
-      // The uncharted seal goes a shorter way than the zones over it (held to the card, its row was the rest of the card): its thread keeps hold of the deepest seal as they close up.
-      const thread = li.querySelector<HTMLElement>('.thread');
-      if (!thread || Math.abs(last - dy) < 0.5) continue;
-      const end = parseFloat(getComputedStyle(thread).top);
-      const close = thread.animate({ top: [`${end + last - dy}px`, `${end}px`] }, { duration: MOVE, easing: EASING });
-      moves.push(close);
+      if (!by && dy < 0) [from, by] = [then, -dy];
     }
     // The rows shown now each fade in as the rows going down clear their place, one after another.
     let n = 0;
@@ -157,14 +164,15 @@
   {#if zones.reached.length}
     <div class="descent" style:--gutter="{gutter}px">
       <div class="cols" aria-hidden="true"><span class="from">From depth</span><span class="first">Reached</span></div>
-      <ol bind:this={list} class:onward={!!zones.next} style:--rows={rows.length}>
-        {#each rows as row, i ('z' in row ? row.z.k : 'gap')}
+      <ol bind:this={list} style:--rows={rows.length}>
+        {#each rows as row, i (keyOf(row))}
           {#if 'z' in row}
             {@const ink = inkOf(row.z)}
             <li
               class="zone"
-              class:to-gap={'gap' in (rows[i + 1] ?? {})}
-              class:last={i === rows.length - 1}
+              class:to-gap={into(i) === 'gap'}
+              class:to-ahead={into(i) === 'ahead'}
+              class:last={!into(i)}
               style:--accent={ink}
               style:--accent-next={nextInk(i) ?? 'var(--dull)'}
             >
@@ -175,26 +183,26 @@
               <span class="depth n"><span class="sr-only">from depth</span> {shownDepth(row.z.depth)}</span>
               <span class="when n"><span class="when-word">reached</span> {date(row.z.at)}</span>
             </li>
-          {:else}
+          {:else if 'gap' in row}
             <li class="gap">
               <span class="mark" aria-hidden="true"></span>
               <button class="more" onclick={showAll}>Show all {zones.reached.length} zones</button>
             </li>
+          {:else}
+            <!-- The next zone named, the rest only shapes in the dark. -->
+            <li class="ahead" class:last={!into(i)} aria-hidden={row.i ? 'true' : undefined} data-dim={row.i ? '' : undefined} style:opacity={row.i ? DIM ** row.i : undefined}>
+              <span class="mark" aria-hidden="true">
+                <svg viewBox="-14 -14 28 28">
+                  <path class="shade" d={HOLLOW} />
+                  <path d={emptyRing(row.ahead)} />
+                  <path class="thin" d={INNER} />
+                </svg>
+              </span>
+              {#if !row.i}<span class="name">uncharted<span class="sr-only">: the next zone, not reached yet</span></span>{/if}
+              <span class="depth n"><span class="sr-only">from depth</span> {shownDepth(zone(row.ahead).depth)}</span>
+            </li>
           {/if}
         {/each}
-        {#if zones.next}
-          <li class="ahead">
-            <span class="thread" aria-hidden="true"></span>
-            <span class="mark" aria-hidden="true">
-              <svg viewBox="-14 -14 28 28">
-                <path class="shade" d={EMPTY.hollow} />
-                <path d={EMPTY.rings[0]} />
-                <path class="thin" d={EMPTY.rings[1]} />
-              </svg>
-            </span>
-            <span class="name">uncharted<span class="sr-only">: the next zone, not reached yet</span></span>
-          </li>
-        {/if}
       </ol>
     </div>
   {:else}
@@ -271,8 +279,9 @@
     /* What a thread leaves clear above and below a seal. */
     --clear: 3px;
     --dull: #6f6453;
-    /* What the list keeps clear at its ends, where it fades as it scrolls. */
+    /* What the list keeps clear at its ends, where it fades as it scrolls (deeper at the foot, where more is to come). */
     --fade: 0.5rem;
+    --fade-foot: 1.5rem;
     flex: 1 1 auto;
     display: grid;
     /* (The day's column wide enough for any English date, and wider for all of them where a language writes one longer.) */
@@ -314,23 +323,19 @@
     grid-column: 4;
     justify-self: end;
   }
-  /* As deep as the Delve goes, nothing uncharted under it: the rows share the card. */
+  /* The rows share the card beside the fossils (their least a row's height, all of them shown then scrolling). */
   .descent ol {
     grid-template-rows: repeat(var(--rows), minmax(var(--row), 1fr));
     margin: 0;
-    padding: var(--fade) 0;
+    padding: var(--fade) 0 var(--fade-foot);
     list-style: none;
     overflow-y: auto;
     scrollbar-color: var(--gold-lo) transparent;
   }
-  /* The uncharted row: the rest of the card, its seal at the foot. */
-  .descent ol.onward {
-    grid-template-rows: repeat(var(--rows), var(--row)) minmax(var(--row), 1fr);
-  }
   /* All of them shown, held to the card: they scroll, fading at its edges. */
   .open .descent ol {
     min-height: 0;
-    mask-image: linear-gradient(transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent);
+    mask-image: linear-gradient(transparent, #000 var(--fade), #000 calc(100% - var(--fade-foot)), transparent);
   }
   .descent li {
     --ink: color-mix(in srgb, var(--accent) 55%, var(--gold));
@@ -352,29 +357,27 @@
   /*
    * The thread to the next row's seal, from just under this one to just
    * over that one: the rows are all of a height, so it runs a row's height
-   * less a seal and the clearance at each end. (Into the uncharted, the
-   * uncharted row draws it, as tall as that row is.)
+   * less a seal and the clearance at each end.
    */
-  .descent li:not(.last, .ahead)::after,
-  .ahead .thread {
+  .descent li:not(.last)::after {
     content: '';
     position: absolute;
     left: calc(var(--seal) / 2 - 0.5px);
-    width: 1px;
-    opacity: 0.85;
-  }
-  .descent li:not(.last, .ahead)::after {
     top: calc(50% + var(--seal) / 2 + var(--clear));
+    width: 1px;
     height: calc(100% - var(--seal) - 2 * var(--clear));
     background: linear-gradient(color-mix(in srgb, var(--accent) 40%, var(--gold-lo)), color-mix(in srgb, var(--accent-next) 40%, var(--gold-lo)));
+    opacity: 0.85;
   }
-  /* Dotted where it passes zones not shown, and on into the uncharted. */
+  /* Dotted where it passes zones not shown, and on into the ones not reached. */
   .descent li.to-gap::after,
   .descent li.gap::after,
-  .ahead .thread {
+  .descent li.to-ahead::after,
+  .descent li.ahead::after {
     background: repeating-linear-gradient(color-mix(in srgb, var(--accent, var(--dull)) 40%, var(--gold-lo)) 0 1.5px, transparent 1.5px 4.5px);
   }
-  .descent li.gap::after {
+  .descent li.gap::after,
+  .descent li.ahead::after {
     --accent: var(--dull);
   }
   /* Through the gap's own place, where a seal would be, from the thread above to the one below. */
@@ -406,6 +409,11 @@
     font-weight: 700;
     color: var(--gold-hi);
   }
+  /* (Clear of the depths, however long a language's date.) */
+  .when,
+  .cols .first {
+    padding-left: 0.8rem;
+  }
   .when {
     grid-column: 4;
     translate: 0 0.08em;
@@ -424,20 +432,7 @@
     white-space: nowrap;
   }
 
-  /*
-   * The zone ahead: an empty, dull impression at the row's foot, as far
-   * under the deepest seal as the rest of the card leaves (a row's height
-   * at the least, its seal then where any row's is), and only a word for it.
-   */
-  .descent li.ahead {
-    align-items: end;
-    padding-bottom: calc((var(--row) - var(--seal)) / 2);
-  }
-  .ahead .thread {
-    top: calc(var(--seal) / 2 + var(--clear) - var(--row) / 2);
-    bottom: calc((var(--row) + var(--seal)) / 2 + var(--clear));
-    --accent: var(--dull);
-  }
+  /* The zones ahead: empty, dull impressions, at the depths they start. */
   .ahead svg {
     width: 100%;
     height: 100%;
@@ -458,11 +453,10 @@
     opacity: 0.5;
   }
   .ahead .name {
-    grid-column: 2 / -1;
-    display: flex;
-    align-items: center;
-    height: var(--seal);
     font-style: italic;
+    color: var(--muted);
+  }
+  .ahead .depth {
     color: var(--muted);
   }
 
@@ -511,6 +505,7 @@
       grid-column: 2;
       grid-row: 2;
       align-self: start;
+      padding-left: 0;
       min-width: 0;
       overflow: hidden;
       text-align: left;
