@@ -427,8 +427,10 @@ effect): find what holds the frame up.
    (`--mute-audio`: the sound still plays in the page, only not out of the
    speakers). The first run on the
    fresh profile (`.pc/profile`) has a cold shader cache, so run each
-   variant twice. Parts come away without editing code through `CSS=` (a
-   style sheet added), `INIT=` (a script run first) and the `?off=`
+   variant twice (or clear the GPU caches with `COLD=1`, for a first
+   visit; `GAMES=2` plays games one after another in the same page, to
+   set a page's first game against its second). Parts come away without
+   editing code through `CSS=` (a style sheet added), `INIT=` (a script run first) and the `?off=`
    switches (`src/lib/switchedOff.ts`). `CATS=` sets the trace's
    categories; the defaults are `toplevel,gpu,blink.user_timing,devtools.timeline`.
    `cc` and `disabled-by-default-devtools.timeline.invalidationTracking`
@@ -494,6 +496,9 @@ effect): find what holds the frame up.
      style of a clone of the screen (`getComputedStyle` forces style
      alone) against the rules as they are, alternated. A hidden browser
      pane does for that: style needs no screen.
+   - **A page's first game, on a Chrome that never drew the site.** The
+     GPU process compiles Skia's programs as the lobby and the game screen
+     first show, and the frames wait: "A page's first game", below.
 3. **On the iPhone**, the same questions through its Web Inspector:
    `docs/iphone.md`. A scene on its own is `qa.html?frame&s=<scene
    key>&size=fit` in a `--qa` build. Without `&size=fit` the desk plays a
@@ -501,6 +506,86 @@ effect): find what holds the frame up.
    would.
 4. **Whether it still looks the same**: the QA desk's before and after
    (B, on the dev server; `docs/qa.md`).
+
+### A page's first game
+
+Parked on 16 November 2026, nothing built yet (#331 has the runs, its
+comments of that day). What's known, so the next look starts here:
+
+- **What happens.** Chrome draws the page's CSS with Skia (on this PC
+  Ganesh, GL through ANGLE on Direct3D 11) and compiles a program for each
+  new kind of draw the first time it's needed (a rect or a rounded rect
+  with a given fill, a gradient's shape, text, a layer's own surface with
+  a filter, a mask or a fade), on the GPU process's main thread, the one
+  that presents the frames. The page's own thread sits idle meanwhile: its
+  long animation frames hold no script and no style. Chrome keeps the
+  programs on disk per profile, so a returning player has them.
+- **What it costs,** on a cold cache (`COLD=1`), a solo Take-turns game
+  (`GAMES=2 node scripts/pc/game.mjs <url> <label> 2`, a local-channel
+  production build): programs compiled (`CATS` with
+  `disabled-by-default-skia.shaders`, counting `cache_miss`) 65 on the
+  start page, 39 as the lobby opens (its frame up to 213 ms, not counted
+  by `stutter.ts`), 41 at Begin (3 or 4 frames over 50 ms, the worst 108
+  to 121 ms), 23 at the first pick (the worst 33 to 54 ms), 21 at the
+  first answer, and 1 in the whole second game. With the cache warm the
+  first game costs what the second does. About half of Begin's programs
+  are the display compositor's (`SkiaOutputSurfaceImplOnGpu::FinishPaintRenderPass`:
+  render passes with filters, masks or fades), the rest the tiles'
+  raster. `ChooseCategory.svelte` alone has 27 `filter`s, 24 masks and 11
+  perspectives. A warm cache can still miss one: a second game's first
+  pick once stalled 361 ms on a single program.
+- **What a page can't do:** ask Chrome to compile its CSS's programs
+  ahead or off that thread. Only drawing compiles them. `opacity: 0`,
+  `visibility: hidden` and a cover leave the drawing out, so nothing
+  compiles; at `opacity: 0.004` (1/255, unseen) everything is drawn and
+  compiled.
+- **Tried, a warm-up from copies:** the screens' DOM, captured from a
+  game, put on the settled start page at 1/255, `inert`. All at once it
+  compiled 69 programs and froze the start page (a 517 ms frame); one at a
+  time, each faded and scaled in like a screen, 84. Begin went from 43
+  programs to 19, the first pick from 24 to 7, but Begin kept a 75 to 100
+  ms frame: copies level off at about half, missing what the components do
+  in script (the deal, canvases, images arriving), and the 1/255 box is a
+  surface of its own, so some of its compositor programs aren't the
+  game's (more were compiled in all). Copies can't ship anyway: Svelte's
+  class names change with each build, and the game screen can't be
+  mounted twice (`Game.svelte` and 22 components read the one session).
+- **The levers,** and only these: fewer kinds of draw for the same look
+  (simpler CSS, a look drawn ahead as a picture as the cards' engravings
+  are, or drawn in the site's own WebGL, whose programs compile in the
+  background and are warmed: `warmUp` in `lib/backdrop.ts`); or a paced
+  warm-up of the real pieces. A red team's spec for that: the lobby, the
+  game's frame and header, a dealt hand at rest, a card mid-turn, the
+  question and the reveal, each mounted with sample data for two
+  presented frames in its own idle moment (the start page, then the
+  lobby), full window at the real stage zoom (blur radii and text sizes
+  change the programs), at 1/255, inert; stopping at once where the first
+  piece's frames come back promptly (a warm cache) or a game was already
+  played. It needs those pieces to take what they show as props. Smaller
+  ideas not yet tried: start the game screen's fade only once its first
+  frame is up (moves one of Begin's stalls between screens), mount the
+  next screen under the outgoing one during its outro, and drawing just
+  outside the viewport, which Chrome rasters ahead.
+- **What the runs don't settle yet** (an adversarial review's points):
+  - Every run was Take turns; players mostly play Delve (95 Delve games
+    to 6 that week).
+  - A cleared cache is the worst case: a new visitor's Chrome holds the
+    common programs from other sites. Warm a profile on other pages
+    first to see how many of the 216 are this site's alone.
+  - Playwright keeps Chrome's field trials out (`SEED=1` lets them in),
+    so the GPU features traced may not be players'. Check the Skia
+    backend in `chrome://gpu` against an everyday Chrome.
+  - Program counts don't track frame cost: what matters is how many land
+    in one frame.
+  - The live counts: from 16 November a stuttered first game names its
+    moment (`frames2/<device>/visit/stuttered/<moment>`), which says
+    whether players' first games stutter at Begin and the first pick. A
+    fix should bring visits' share down toward the games'.
+- **Tracing it:** keep the categories light. `disabled-by-default-skia.gpu`
+  names the draws but floods the buffer (620 MB for a game, the oldest
+  events lost: `chrome.mjs` warns now), so trace only the steps it's
+  for. `toplevel,gpu,blink.user_timing,devtools.timeline,disabled-by-default-skia.shaders`
+  is enough to count programs a step.
 
 ## Looking in Firefox
 

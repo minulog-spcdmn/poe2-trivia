@@ -134,8 +134,10 @@ on a phone as it's hidden (not again for the same game if it's seen once
 more; a computer's game switched away from is counted when it ends, as a
 whole); a game seen for
 less than 20 seconds sends nothing. The first game a page counts goes once
-more as `frames2/<device>/visit/smooth` or `…/visit/stuttered`
-(`stutter.ts` VISIT), sent as a step is, so once a visitor in eight hours,
+more as `frames2/<device>/visit/smooth` or `…/visit/stuttered/<moment>`
+(`stutter.ts` VISIT; the moment from 16 November 2026, a page from before
+sends `…/visit/stuttered` alone, read as a stuttered visit at no moment),
+sent as a step is, so once a visitor in eight hours,
 and only from a page arrived at (not one reloaded or come back to):
 nothing tells whose a game is, and one slow device's run of games would
 otherwise read as many players stuttering. Until 1 November 2026 it was

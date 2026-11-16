@@ -8,6 +8,9 @@
 // next step's.
 //   node scripts/pc/game.mjs <url> <label> [turns]
 //   python scripts/pc/read.py .pc/runs/<label>.json
+// GAMES=<n> plays n games one after another in the same page, leaving each
+// by the header's Leave: what only a page's first game pays shows against
+// the next. Each game's steps are marked "g1 begin", "g2 begin" and so on.
 
 import { mark, open, sleep, trace } from './chrome.mjs';
 
@@ -25,19 +28,22 @@ await page.goto(url, { waitUntil: 'load' });
 await sleep(4000);
 
 /** Marks the step, then the pointer travels to the first visible, enabled button whose name matches and clicks it. */
-async function press(re, name) {
+async function press(re, step) {
+  const name = `${prefix}${step}`;
   const box = await page.evaluate((src) => {
     const re = new RegExp(src, 'i');
     const el = [...document.querySelectorAll('button, [role=button], [role=radio]')].find((b) => re.test((b.getAttribute('aria-label') || b.textContent || '').trim()) && b.getBoundingClientRect().width > 0 && !b.disabled);
     if (!el) return null;
     const r = el.getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, text: (el.getAttribute('aria-label') || el.textContent || '').trim().slice(0, 40) };
   }, re.source);
   if (!box) {
     console.log(`!! no button for ${name}`);
     return false;
   }
   await mark(page, name);
+  // (Which category was picked: a picture never drawn before can stall the GPU on its first draw.)
+  if (step.startsWith('category')) console.log(`${name}: ${box.text}`);
   await page.mouse.move(box.x, box.y, { steps: 25 });
   await sleep(250);
   await page.mouse.click(box.x, box.y);
@@ -46,22 +52,36 @@ async function press(re, name) {
 
 const CATEGORY = /^(One-Handed|Two-Handed|Gloves|Off-Hands|Body Armours|Helmets|Boots|Rings|Amulets|Belts|Jewels|Flasks|Quivers|Shields|Charms|Foci|Relics|Talismans|Tablets|Waystones|Sceptres|Wands|Staves|Bows|Crossbows|Spears|Maces|Quarterstaves)/;
 
-await press(/^New game$/, 'new game');
-await sleep(2500);
-await press(/^Take turns$/, 'take turns');
-await sleep(1500);
-await press(/^Begin the hunt$/, 'begin');
-await sleep(3000);
-for (let i = 0; i < turns; i++) {
-  if (!(await press(CATEGORY, `category ${i}`))) break;
+const games = Number(process.env.GAMES ?? 1);
+/** The steps' names' start: none for one game, as before; "g1 ", "g2 " for more. */
+let prefix = '';
+
+for (let g = 1; g <= games; g++) {
+  if (games > 1) prefix = `g${g} `;
+  await press(/^New game$/, 'new game');
+  await sleep(2500);
+  await press(/^Take turns$/, 'take turns');
+  await sleep(1500);
+  await press(/^Begin the hunt$/, 'begin');
   await sleep(3000);
-  if (!(await press(/^[1-6]( |$)/, `answer ${i}`))) break;
-  await sleep(4000);
-  if (!(await press(/^(Next turn|Next|Continue)/, `next ${i}`))) break;
+  for (let i = 0; i < turns; i++) {
+    if (!(await press(CATEGORY, `category ${i}`))) break;
+    await sleep(3000);
+    if (!(await press(/^[1-6]( |$)/, `answer ${i}`))) break;
+    await sleep(4000);
+    if (!(await press(/^(Next turn|Next|Continue)/, `next ${i}`))) break;
+    await sleep(3000);
+  }
+  if (g === games) break;
+  // Back to the start page, as a player leaving to play again would.
+  await press(/^Leave game$/, 'leave');
+  await sleep(1000);
+  await press(/^Leave$/, 'leave, sure');
   await sleep(3000);
 }
 await mark(page, 'end');
 const kept = await end();
+prefix = '';
 await press(/^Leave game$/, 'leave');
 await sleep(1000);
 await ctx.close();
