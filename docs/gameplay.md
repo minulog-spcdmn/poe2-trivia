@@ -667,7 +667,9 @@ times you perished and were brought back, lives you gave); finds and wards
 (veins and caches taken and what they gave, questions blasted away, lives
 warded, flares burnt), one panel alone and one together; the zones reached,
 each with the depth it starts at and the day you first got there, the
-zones ahead as empty seals at their depths; and a run log (the latest ten rows, all on
+zones ahead as empty seals at their depths (past five, the middle ones on
+request, then all of them as seals at a glance, the one pointed at or
+tapped read out under them); and a run log (the latest ten rows, all on
 request; runs under other rules listed apart). Zones you haven't reached
 are never named, and "Begin the descent" starts a run alone. Only runs
 under the current rules count, judged by the rules each run was played

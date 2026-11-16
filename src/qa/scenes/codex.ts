@@ -132,8 +132,10 @@ const RUNS: Control = {
     { value: 'first', label: 'One, in the Mines' },
     { value: 'seven', label: 'Seven' },
     { value: 'many', label: 'Sixteen: all shown, then the latest' },
-    { value: 'deep', label: 'Fourteen zones, past depth 100: the middle ones behind a button, then all' },
+    { value: 'six', label: 'Six zones, the fewest behind a button: then all, at a glance' },
+    { value: 'deep', label: 'Fourteen zones, past depth 100: the middle ones behind a button, then all at a glance' },
     { value: 'bottom', label: 'Every zone, to depth 999: nothing uncharted' },
+    { value: 'all', label: 'Every zone, all at a glance' },
     { value: 'finds', label: 'Seven, finds taken' },
     { value: 'none', label: 'None' },
     { value: 'new', label: 'None, and little met' },
@@ -184,14 +186,14 @@ function runsShown(v: Values): Built {
   if (v.runs === 'first') return filled([tab], [6]);
   // Finds taken alone, the page brought down to them.
   if (v.runs === 'finds') return { ...filled(v.page === 'feats' ? [tab] : [tab, { wait: 1200 }, { scroll: '[aria-labelledby="find-h-Alone"]' }]), log: findsLog() };
-  // Fourteen zones reached, the last four past depth 100 (generated, each with its own name and colour, the sigil of the zone it's made after): the Mines and the deepest three, the rest behind a button, then all of them, scrolling inside the card beside the fossils.
-  if (v.runs === 'deep')
-    return filled(
-      v.page === 'feats' ? [tab] : [tab, { wait: 1200 }, { scroll: '.zones button.more' }, { wait: 900 }, { click: '.zones button.more' }],
-      [8, 14, 27, 19, 33, 23, 41, 52, 47, 61, 58, 73, 66, 85, 97, 112, 104, 131],
-    );
-  // As deep as Delve goes: all hundred zones, the last one's thread ending at its seal.
-  if (v.runs === 'bottom') return filled([tab], [12, 31, 64, 140, 233, 410, 702, 999]);
+  // The middle zones behind a button, then all of them: the seals at a glance, filling the card beside the fossils.
+  const opened: Step[] = v.page === 'feats' ? [tab] : [tab, { wait: 1200 }, { scroll: '.zones button.more' }, { wait: 900 }, { click: '.zones button.more' }];
+  // Six zones, the fewest the button hides any of: one between the Mines and the deepest three.
+  if (v.runs === 'six') return filled(opened, [8, 23, 41, 56]);
+  // Fourteen zones reached, the last four past depth 100 (generated, each with its own name and colour, the sigil of the zone it's made after).
+  if (v.runs === 'deep') return filled(opened, [8, 14, 27, 19, 33, 23, 41, 52, 47, 61, 58, 73, 66, 85, 97, 112, 104, 131]);
+  // As deep as Delve goes: all hundred zones, the last one's thread ending at its seal; folded, or all of them at a glance.
+  if (v.runs === 'bottom' || v.runs === 'all') return filled(v.runs === 'all' ? opened : [tab], [12, 31, 64, 140, 233, 410, 702, 999]);
   if (v.runs !== 'many') return filled([tab]);
   // More runs than its short list: all of them shown (the new rows fading in), then the short list again from the button, which stays where it was.
   return filled(
@@ -239,7 +241,9 @@ export function codexScenes(): Scene[] {
         { label: 'The Delve page, never delved', values: { runs: 'none' }, key: 'codex/delve-none', listed: false },
         { label: 'The Delve page: every run shown, then the latest again', values: { runs: 'many' }, key: 'codex/runs', listed: false },
         { label: 'The Delve page: finds taken, a vein caved in on strike 1 and one on strike 2', values: { runs: 'finds' }, key: 'codex/delve-finds', listed: false },
-        { label: 'The Delve page, fourteen zones, past depth 100: the middle ones behind a button, then all', values: { runs: 'deep' }, key: 'codex/zones-deep', listed: false },
+        { label: 'The Delve page, six zones, then all at a glance', values: { runs: 'six' }, key: 'codex/zones-six', listed: false },
+        { label: 'The Delve page, fourteen zones, past depth 100: the middle ones behind a button, then all at a glance', values: { runs: 'deep' }, key: 'codex/zones-deep', listed: false },
+        { label: 'The Delve page, every zone, all at a glance', values: { runs: 'all' }, key: 'codex/zones-all', listed: false },
         { label: 'The Achievements page', values: { page: 'feats' }, key: 'codex/feats', listed: false },
         { label: 'The Delve page, no run yet', values: { runs: 'new' }, key: 'codex/delve-empty', listed: false },
         { label: 'The Delve page, the first fossil', values: { fossils: 'one' }, key: 'codex/fossils-1', listed: false },
