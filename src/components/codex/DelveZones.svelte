@@ -110,11 +110,8 @@
   };
 
   let list = $state<HTMLOListElement>();
-  /** The scrollbar's room (none where scrollbars float over the page), which the descent keeps out in the panel's padding so its columns end where the header does. */
-  let gutter = $state(0);
-  $effect(() => {
-    if (list) gutter = list.offsetWidth - list.clientWidth;
-  });
+  /** How far the list's top fade reaches past its padding: none at the top, deepening as it scrolls, so a row going up under the column names fades before it gets there. */
+  let lift = $state(0);
 
   /** All the zones shown, opening where the button was. */
   async function showAll() {
@@ -127,14 +124,8 @@
     all = true;
     await tick();
     if (motion.still) return;
-    // No scrollbar while it moves: one comes in after, where the list is held to the card.
-    el.style.overflow = 'hidden';
-    const moves: Animation[] = [];
     // Where nothing stands beside it, the list's box grows on down the page, the rows going down riding its foot.
-    if (el.offsetHeight > height + 0.5) {
-      const open = el.animate({ height: [`${height}px`, `${el.offsetHeight}px`] }, { duration: MOVE, easing: EASING });
-      moves.push(open);
-    }
+    if (el.offsetHeight > height + 0.5) el.animate({ height: [`${height}px`, `${el.offsetHeight}px`] }, { duration: MOVE, easing: EASING });
     // The rows that stay go down from where they were to their places.
     let from = 0;
     let by = 0;
@@ -143,7 +134,7 @@
       if (then === undefined) continue;
       const dy = then - top(li);
       if (Math.abs(dy) < 0.5) continue;
-      moves.push(li.animate({ translate: [`0 ${dy}px`, '0 0'] }, { duration: MOVE, easing: EASING }));
+      li.animate({ translate: [`0 ${dy}px`, '0 0'] }, { duration: MOVE, easing: EASING });
       if (!by && dy < 0) [from, by] = [then, -dy];
     }
     // The rows shown now each fade in as the rows going down clear their place, one after another.
@@ -152,19 +143,17 @@
       if (was.has(li)) continue;
       const clear = by > 0 ? (top(li) + li.getBoundingClientRect().height - from) / by : 0;
       const delay = Math.min(MOVE, Math.max(timeAt(Math.min(1, Math.max(0, clear))) * MOVE, n++ * NEXT));
-      moves.push(li.animate({ opacity: [0, 1] }, { duration: FADE, delay, easing: 'ease-out', fill: 'backwards' }));
+      li.animate({ opacity: [0, 1] }, { duration: FADE, delay, easing: 'ease-out', fill: 'backwards' });
     }
-    await Promise.all(moves.map((a) => a.finished.catch(() => {})));
-    el.style.overflow = '';
   }
 </script>
 
 <section class="panel zones" class:open={all} use:backdropShadow={{ fill: 'linear' }} aria-labelledby="zone-h">
   <header><h2 id="zone-h">Zones reached</h2>{#if zones.biomes}<span class="col-label">{zones.biomes} {word(zones.biomes, 'biome')}</span>{/if}</header>
   {#if zones.reached.length}
-    <div class="descent" style:--gutter="{gutter}px">
+    <div class="descent">
       <div class="cols" aria-hidden="true"><span class="from">From depth</span><span class="first">Reached</span></div>
-      <ol bind:this={list} style:--rows={rows.length}>
+      <ol bind:this={list} style:--rows={rows.length} style:--lift="{lift}px" onscroll={() => (lift = Math.min(list?.scrollTop ?? 0, 24))}>
         {#each rows as row, i (keyOf(row))}
           {#if 'z' in row}
             {@const ink = inkOf(row.z)}
@@ -288,8 +277,6 @@
     grid-template-columns: var(--seal) minmax(0, 1fr) minmax(2.2rem, auto) minmax(6.2rem, auto);
     grid-template-rows: auto minmax(0, 1fr);
     column-gap: 0.8rem;
-    /* The scrollbar's room out in the panel's padding. */
-    margin-right: calc(-1 * var(--gutter));
   }
   .open .descent {
     min-height: 0;
@@ -299,13 +286,9 @@
     grid-column: 1 / -1;
     display: grid;
     grid-template-columns: subgrid;
-    /* (Both keep the same room for a scrollbar, so their columns end together.) */
-    scrollbar-gutter: stable;
-    scrollbar-width: thin;
   }
   /* The columns' names, as the run log's table names its own, quieter: labels. */
   .cols {
-    overflow: hidden;
     font-family: var(--font-display);
     font-size: 0.66rem;
     letter-spacing: 0.16em;
@@ -329,13 +312,17 @@
     margin: 0;
     padding: var(--fade) 0 var(--fade-foot);
     list-style: none;
+    /* Scrolled by the wheel, a finger or the keys, with no bar: its fading edges say there's more. */
     overflow-y: auto;
-    scrollbar-color: var(--gold-lo) transparent;
+    scrollbar-width: none;
   }
-  /* All of them shown, held to the card: they scroll, fading at its edges. */
+  .descent ol::-webkit-scrollbar {
+    display: none;
+  }
+  /* All of them shown, held to the card: they scroll, fading at its edges (deeper at the foot, where more is to come). */
   .open .descent ol {
     min-height: 0;
-    mask-image: linear-gradient(transparent, #000 var(--fade), #000 calc(100% - var(--fade-foot)), transparent);
+    mask-image: linear-gradient(transparent, #000 calc(var(--fade) + var(--lift)), #000 calc(100% - var(--fade-foot)), transparent);
   }
   .descent li {
     --ink: color-mix(in srgb, var(--accent) 55%, var(--gold));
