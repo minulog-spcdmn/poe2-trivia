@@ -942,6 +942,26 @@ test('the codex erased while a save is on its way takes the entry out only once 
   assert.deepEqual([loadKept(), loadSent(), loadLeft()], [null, null, []]);
 });
 
+test('a save still being sealed as a Forget or an erase starts is never sent', async () => {
+  serve();
+  const one = fresh();
+  const bucket = await bucketOf(one);
+  play();
+  saveKept({ secret: one, at: 100, bucket });
+  let { log } = gated();
+  await Promise.all([send(), forgetBackup()]);
+  assert.deepEqual(log, [`POST ${bucket}/forget`, `POST ${bucket}/forget: 204`], 'only the Forget');
+  // The codex erased: only its entry taken out.
+  store.clear();
+  serve();
+  play();
+  saveKept({ secret: one, at: 100, bucket });
+  const entry = `${bucket}/${deviceId()}`;
+  ({ log } = gated());
+  await Promise.all([send(), eraseBackup()]);
+  assert.deepEqual(log, [`POST ${entry} (empty)`, `POST ${entry} (empty): 204`], 'only the entry taken out');
+});
+
 test('Keep it safe names the passkey with the day it was made; a secret taken while its sheet was up is left with a note, and only a save under the new one counts', async () => {
   serve();
   play({ [A.id]: 3 });
