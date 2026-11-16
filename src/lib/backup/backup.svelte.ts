@@ -334,6 +334,8 @@ export async function bootBackup() {
 // ---- at the player's word ---------------------------------------------------------
 
 const challenge = () => crypto.getRandomValues(new Uint8Array(32));
+/** A computer: no touch screen (a laptop with one passes for a phone, and is offered its own passkey first). */
+const ON_COMPUTER = typeof matchMedia === 'function' && !matchMedia('(any-pointer: coarse)').matches;
 
 /** The desk's buttons act it out: no passkey, no server. */
 async function actedOut(busy: NonNullable<typeof backup.busy>, then: () => void) {
@@ -350,21 +352,25 @@ export async function keepSafe() {
   // (Asked for before anything else is awaited: Safari makes a passkey only straight from the press.)
   const secret = newSecret();
   backup.busy = 'making';
+  // (`hints` is the spec's and Chrome's, but not yet in TypeScript's own type for these options.)
+  const publicKey: PublicKeyCredentialCreationOptions & { hints?: string[] } = {
+    challenge: challenge(),
+    rp: { name: 'PoE2.Quest' },
+    user: { id: userId(secret, CHANNEL), name: PASSKEY_NAME, displayName: PASSKEY_NAME },
+    pubKeyCredParams: [
+      { type: 'public-key', alg: -7 },
+      { type: 'public-key', alg: -257 },
+    ],
+    // (Not this device's alone: a computer's own passkey never reaches a phone, which can't scan a computer's
+    // code, while a phone's serves any computer that shows one. So on a computer the browser offers the phone
+    // first, a code to scan with it; on a phone, its own. Either way the player may pick the other.)
+    authenticatorSelection: { residentKey: 'required', requireResidentKey: true, userVerification: 'preferred' },
+    hints: ON_COMPUTER ? ['hybrid', 'client-device'] : ['client-device', 'hybrid'],
+    attestation: 'none',
+    timeout: 120_000,
+  };
   try {
-    await navigator.credentials.create({
-      publicKey: {
-        challenge: challenge(),
-        rp: { name: 'PoE2.Quest' },
-        user: { id: userId(secret, CHANNEL), name: PASSKEY_NAME, displayName: PASSKEY_NAME },
-        pubKeyCredParams: [
-          { type: 'public-key', alg: -7 },
-          { type: 'public-key', alg: -257 },
-        ],
-        authenticatorSelection: { authenticatorAttachment: 'platform', residentKey: 'required', requireResidentKey: true, userVerification: 'preferred' },
-        attestation: 'none',
-        timeout: 120_000,
-      },
-    });
+    await navigator.credentials.create({ publicKey });
   } catch (err) {
     backup.busy = null;
     // (Turned down at the passkey's sheet: nothing to say.)
