@@ -184,7 +184,7 @@ function runsShown(v: Values): Built {
   if (v.runs === 'first') return filled([tab], [6]);
   // Finds taken alone, the page brought down to them.
   if (v.runs === 'finds') return { ...filled(v.page === 'feats' ? [tab] : [tab, { wait: 1200 }, { scroll: '[aria-labelledby="find-h-Alone"]' }]), log: findsLog() };
-  // Fourteen zones reached, the last four past depth 100 (generated, each with its own name and colour, the sigil of the zone it's made after): the Mines and the deepest three, the rest behind a button, then all of them, running on past the fossils.
+  // Fourteen zones reached, the last four past depth 100 (generated, each with its own name and colour, the sigil of the zone it's made after): the Mines and the deepest three, the rest behind a button, then all of them, scrolling inside the card beside the fossils.
   if (v.runs === 'deep')
     return filled(
       v.page === 'feats' ? [tab] : [tab, { wait: 1200 }, { scroll: '.zones button.more' }, { wait: 900 }, { click: '.zones button.more' }],

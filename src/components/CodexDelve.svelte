@@ -14,7 +14,6 @@
     findStats,
     leadingKind,
     mergeClimbs,
-    milestones,
     otherRules,
     runStory,
     runsOf,
@@ -161,7 +160,6 @@
 
   /** Alone and together as one: each new deepest, and the zones they reached. */
   const climb = $derived(mergeClimbs(climbOf(records, true), climbOf(records, false)));
-  const steps = $derived(milestones(climb));
   const zones = $derived(zonesReached(climb));
 </script>
 
@@ -275,7 +273,7 @@
       <!-- The set of 25 fossils Delve turns up (lib/fossils.ts), beside the zones reached: what the descent has given up. -->
       <div class="found">
         <DelveFossils store={fossils} />
-        <DelveZones {zones} {steps} />
+        <DelveZones {zones} />
       </div>
 
       {#if allRuns >= MIN_RUNS}
@@ -486,19 +484,23 @@
 
   /* ---- panels ---- */
   /* The fossil set as wide as it needs, the zones reached in the rest of the row. */
-  /*
-   * The zones as tall as the fossils beside them, but not the other way:
-   * all of a long descent shown (up to a hundred zones) runs on down the
-   * page past the fossils, which keep their own height.
-   */
   .found {
     display: grid;
     grid-template-columns: minmax(0, 35rem) minmax(0, 1fr);
     align-items: start;
     gap: 1rem;
   }
+  /*
+   * Beside the fossils, the zones take their height and never set it: held
+   * to its size, the card asks the row for nothing (but room for its
+   * folded descent, should the fossils ever stand shorter), so all of a
+   * long descent shown scrolls inside it and leaves no gap under the
+   * fossils. Over a phone's width the two stack, each as tall as it is.
+   */
   .found > :global(.zones) {
     align-self: stretch;
+    contain: size;
+    min-height: 27rem;
   }
   .split {
     display: grid;
@@ -761,6 +763,10 @@
     .found,
     .split {
       grid-template-columns: 1fr;
+    }
+    .found > :global(.zones) {
+      contain: none;
+      min-height: 0;
     }
   }
   @media (max-width: 560px) {

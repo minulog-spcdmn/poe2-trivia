@@ -665,8 +665,8 @@ items, from all your answers; where you fall (lives lost in each zone that
 5 runs reached); a Together panel (usual depth and lives lost together,
 times you perished and were brought back, lives you gave); finds and wards
 (veins and caches taken and what they gave, questions blasted away, lives
-warded, flares burnt), one panel alone and one together; the zones reached, each dated,
-with your deepest over time; and a run log (the latest ten rows, all on
+warded, flares burnt), one panel alone and one together; the zones reached,
+each with the depth it starts at and the day you first got there; and a run log (the latest ten rows, all on
 request; runs under other rules listed apart). Zones you haven't reached
 are never named, and "Begin the descent" starts a run alone. Only runs
 under the current rules count, judged by the rules each run was played

@@ -13,7 +13,6 @@ import {
   livesLost,
   medianOfCounts,
   mergeClimbs,
-  milestones,
   otherRules,
   runStory,
   toward,
@@ -465,13 +464,6 @@ test('finds and wards apart: the answers of runs alone, and of runs together', (
   assert.deepEqual([solo.finds.flare.taken, solo.finds.azurite.taken, solo.wardsBroke, solo.blasted], [1, 0, 0, 1]);
   assert.deepEqual([team_.finds.flare.taken, team_.finds.azurite.taken, team_.wardsBroke, team_.blasted], [0, 1, 1, 1]);
   assert.deepEqual(parseCodex(serializeCodex(x)), x, 'round trip');
-});
-
-test('milestones keep the first best and the latest few, with a gap between', () => {
-  const at = (...ds: number[]) => ds.map((depth, i) => ({ depth, at: i }));
-  assert.deepEqual(milestones(at(3, 8, 12)), [3, 8, 12]);
-  assert.deepEqual(milestones(at(3, 8, 12, 20, 26, 35, 43)), [3, null, 20, 26, 35, 43]);
-  assert.deepEqual(milestones([]), []);
 });
 
 test('what kills you also counts the wards that broke in a life\'s place and the dynamite that went off', () => {
