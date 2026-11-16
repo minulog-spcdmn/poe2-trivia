@@ -332,12 +332,15 @@ follows them to a new phone on the same account. `src/lib/backup/`:
 - Sync passes the secret on, the newer winning, so one press keeps every
   paired device’s, and Forget (in the settings: the bucket deleted) stops all
   of them, stamped later than what it replaces whatever the device’s clock
-  says. Erasing the codex takes this device’s entry out and stops keeping
+  says. A Forget leaves a mark on the server in the bucket’s place, so a
+  device that never heard of it (one not paired, another tab) can’t keep there
+  again: told the bucket is gone, it stops keeping too, and its passkey brings
+  nothing back. Erasing the codex takes this device’s entry out and stops keeping
   here only: paired again, it keeps with the others again.
 - The server has the bucket’s name, each device’s random name, what it can’t
   read, and when it came. A bucket keeps 64 entries of 512 KB at most (the one
   written longest ago goes first), and is deleted after 18 months without a
-  write. Requests count against the same `PER_ADDRESS` limit and the free
+  write; a Forget’s mark, 18 months after the Forget. Requests count against the same `PER_ADDRESS` limit and the free
   plan’s allowances as matchmaking, and writes against a tighter one of their
   own (`KEEP_WRITES`, 30 a minute an address: anyone may make up a bucket, and
   this keeps a script from filling the free plan’s storage quickly): a page
