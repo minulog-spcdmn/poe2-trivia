@@ -21,7 +21,8 @@
 
   /** The empty seal: the title card's two rings (zonecard/ZoneSeal), worn, round the hollow's shading. */
   const EMPTY = {
-    rings: [ring([0, 0], 12.6, { wear: wear(seedOf('uncharted')) }), ring([0, 0], 11.4)],
+    // (The name's hash folded into the wear's generator's range, as ZoneSeal folds its own.)
+    rings: [ring([0, 0], 12.6, { wear: wear(((seedOf('uncharted') >>> 0) % 2147483646) + 1) }), ring([0, 0], 11.4)],
     hollow: hollow([0, 0], 10.7, 1.5),
   };
 

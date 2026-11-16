@@ -702,7 +702,7 @@
     filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
   }
 
-  /* A name with a note under it and a figure on the right: finds, zones. */
+  /* A name with a note under it and a figure on the right: finds. */
   .list {
     list-style: none;
     margin: 0;
