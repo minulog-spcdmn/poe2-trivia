@@ -955,7 +955,11 @@
         class:armed={confirming === p.id}
         class:active class:you={coop && p.id === me} class:wide class:revivable={reviveOk} class:revived={p.id in revived} class:out class:benched class:duelist class:fallen={fell !== null} class:hit={p.id in hit} class:warded={p.id in guard} class:offline={!p.connected} animate:glide out:leave style:--c={playerColor(p.hue)}>
         <span class="armed-wash" aria-hidden="true"></span>
-        <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={32} dim={!p.connected} wrong={out} />
+        <!-- Delve together: the questions they answered right so far (each first right answer scores 1), under
+             their token while a mouse is on it (only there: the finds beside it have tooltips of their own).
+             Never on show, so the strip ranks nobody as the team plays; with none yet, nothing to tell. -->
+        {#snippet right()}<b>{p.score}</b> {p.score === 1 ? 'right answer' : 'right answers'}{/snippet}
+        <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={32} dim={!p.connected} wrong={out} tip={coop && p.score > 0 ? right : undefined} />
         <div class="info">
           <span class="name-row">
             <span class="name cut-name">

@@ -2,9 +2,9 @@
 // per-frame tasks (emitters, comets), and drives the renderer only while
 // something is alive. Also runs camera shake and adapts quality to the device.
 //
-// Effects are off while the battery saver is on, when the system asks for
-// reduced motion, or when WebGL2 isn't available; every call below is then a
-// cheap no-op, so callers never need to check.
+// Effects are off while the battery saver is on, in the still mode the
+// checks run in (lib/still.ts), or when WebGL2 isn't available; every call
+// below is then a cheap no-op, so callers never need to check.
 //
 // While the tab is in the background no frames come, and nothing moves on.
 // What would run its course meanwhile is dropped as it goes away, and not
@@ -22,7 +22,8 @@ import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
 import { cornerOnScreen } from '../corner';
 import { zoomOf } from '../stage';
-import { readStored, removeStored, writeStored } from '../storage';
+import { LAB, readStored, removeStored, writeStored } from '../storage';
+import { STILL } from '../still';
 import { whenIdle } from '../idle';
 import { scrollFollow } from '../scrollFollow';
 import { pageScroll } from '../pageScroll';
@@ -156,18 +157,35 @@ type LiveTask = { fn: Task; age: number; life: number; keep: boolean; group: num
 
 // ---------- state ----------
 
+/** A screen whose main pointer is a finger: the effects' quality starts lower there (below). */
+const coarse = typeof matchMedia === 'function' ? matchMedia('(pointer: coarse)') : null;
 /**
- * The battery saver (the settings' Screen): no effects drawn, so the
- * overlay costs nothing, as on a device without WebGL2. Kept as 'saver';
- * the visual effects switch it replaced kept 'fx', '0' while off, and
- * whoever had them off has it on.
+ * Whether the battery saver is this page's to have: a touch device's alone,
+ * settled as the page loads. It is there for a phone's battery. Nobody else
+ * gets the game with its motion held (the owner's call; lib/still.ts is the
+ * other half of it): the settings show its switch only here, it can't be
+ * switched anywhere else (setBatterySaver), and what was saved where it
+ * isn't offered, from when every device had the switch, isn't followed. It
+ * stays as saved, never cleared.
+ *
+ * A touch device is one with a touch screen at all (`any-pointer`), not one
+ * whose main pointer is a finger: a tablet in a keyboard case, or a phone
+ * with a mouse plugged in, says its main pointer is a fine one, and would
+ * lose the saver it chose. So a laptop with a touch screen has the switch
+ * too; the two can't be told apart. The lab and its kin keep their switch
+ * on any device, to look at the saver from a desk.
  */
-let saver = readStored('saver') === null ? readStored('fx') === '0' : readStored('saver') === '1';
+export const SAVER_OFFERED = LAB || (typeof matchMedia === 'function' && !!matchMedia('(any-pointer: coarse)')?.matches);
+/**
+ * The battery saver (the settings' Screen, on a touch device): no effects
+ * drawn, so the overlay costs nothing, as on a device without WebGL2. Kept
+ * as 'saver'; the visual effects switch it replaced kept 'fx', '0' while
+ * off, and whoever had them off has it on.
+ */
+let saver = SAVER_OFFERED && (readStored('saver') === null ? readStored('fx') === '0' : readStored('saver') === '1');
 /** Marks the page html[data-saver] while it's on, for CSS and lib/motion.svelte.ts: set as this loads, before the first paint, so no loop starts only to stop. (A test's made-up page may have no such call.) */
 const markSaver = () => typeof document !== 'undefined' && document.documentElement?.toggleAttribute?.('data-saver', saver);
 markSaver();
-const reduce = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
-const coarse = typeof matchMedia === 'function' ? matchMedia('(pointer: coarse)') : null;
 
 let canvas: HTMLCanvasElement | null = null;
 let renderer: FxRenderer | null = null;
@@ -242,12 +260,12 @@ const saverOff = () => (saver && !endlessFxFps && !fxCapFps) || noFx;
 
 /** Are effects being drawn right now? */
 export function fxActive() {
-  return (!!renderer || coming()) && !saverOff() && !reduce?.matches;
+  return (!!renderer || coming()) && !saverOff() && !STILL;
 }
 
-/** Whether effects could be drawn: the renderer there (or coming), and no reduced motion. */
+/** Whether effects could be drawn: the renderer there (or coming), and the page not held still. */
 export function fxAvailable() {
-  return (!!renderer || coming()) && !reduce?.matches;
+  return (!!renderer || coming()) && !STILL;
 }
 
 /** Whether the battery saver is on (lib/motion.svelte.ts says what else it holds still). */
@@ -255,7 +273,9 @@ export function batterySaver() {
   return saver;
 }
 
+/** Switches it, where it's offered (SAVER_OFFERED: the settings' switch, the lab's). Anywhere else nothing is switched and nothing saved, whoever asks: a page held there would have no switch to let it go. */
 export function setBatterySaver(on: boolean) {
+  if (!SAVER_OFFERED) return;
   saver = on;
   markSaver();
   writeStored('saver', on ? '1' : '0');
@@ -266,7 +286,7 @@ export function setBatterySaver(on: boolean) {
   for (const l of listeners) l();
 }
 
-/** Calls `fn` whenever effects come or go: the battery saver, reduced motion, the renderer made or lost. */
+/** Calls `fn` whenever effects come or go: the battery saver, the renderer made or lost. */
 export function onFxChange(fn: () => void) {
   listeners.add(fn);
   return () => listeners.delete(fn);
@@ -1482,7 +1502,7 @@ function teardown() {
 }
 
 /** Whether effects would be drawn, once the renderer is made. */
-const wanted = () => !saverOff() && !reduce?.matches;
+const wanted = () => !saverOff() && !STILL;
 
 /**
  * Gets the overlay on `c` ready to take effects: the particle pool now, the
@@ -1651,12 +1671,6 @@ export function startFx(c: HTMLCanvasElement): () => void {
   placedAt = '';
   hide();
   prepare(c);
-  const onMotion = () => {
-    if (!fxActive()) clearAll();
-    else hurry();
-    for (const l of listeners) l();
-  };
-  reduce?.addEventListener('change', onMotion);
   setHidden(document.hidden);
   const onVisibility = () => setHidden(document.hidden);
   document.addEventListener('visibilitychange', onVisibility);
@@ -1681,7 +1695,6 @@ export function startFx(c: HTMLCanvasElement): () => void {
   c.addEventListener('webglcontextlost', onLost);
   c.addEventListener('webglcontextrestored', onRestored);
   return () => {
-    reduce?.removeEventListener('change', onMotion);
     document.removeEventListener('visibilitychange', onVisibility);
     c.removeEventListener('webglcontextlost', onLost);
     c.removeEventListener('webglcontextrestored', onRestored);

@@ -32,7 +32,7 @@
   import CardEngraving from './CardEngraving.svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import Avatar from './Avatar.svelte';
-  import { actionOf, typing } from '../lib/keybinds.svelte';
+  import { actionOf, ownKey, typing } from '../lib/keybinds.svelte';
   import { optionIndex } from '../lib/keys';
   import { keyTap } from '../lib/pointerAnchor';
 
@@ -917,8 +917,8 @@
   /** An option's key (settings page) picks its card, or votes for it, as a click would. */
   function onKey(e: KeyboardEvent) {
     if (typing(e)) return;
-    // An item's window (ItemWindow) has its own keys, as on a question.
-    if (e.target instanceof Element && e.target.closest('[data-item-window]')) return;
+    // Enter or Space on a control of its own (one tabbed to, an item's window's) presses that, as on a question.
+    if (ownKey(e)) return;
     if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || document.querySelector('[aria-modal="true"]')) return;
     const n = optionIndex(actionOf(e));
     const cat = n === null ? undefined : s.offered[n];
@@ -1357,6 +1357,18 @@
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
     isolation: isolate;
+  }
+  /* Firefox draws a face turned in 3D (tilted under the pointer, turning up
+     in the deal) with its edges in steps once nothing of it reaches past its
+     box, as when the backdrop draws its soft shadow and CSS draws none: the
+     edge is then where its picture is cut, which Firefox doesn't soften
+     inside a preserve-3d. An outline nobody sees gives the picture a pixel
+     of room round the card, so the card's edge lies inside it and comes out
+     smooth. (The back keeps a shadow of its own, which does the same. Not
+     on Chromium's sharp faces, smooth as they are: there it would be one
+     more thing under the face's filter.) */
+  .choose:not(.sharp) .frame {
+    outline: 1px solid transparent;
   }
   /* A faint grain over both sides, so they read as worked plates rather than
      flat fills: under all else on the side, an element of its own (see

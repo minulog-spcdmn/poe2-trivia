@@ -17,7 +17,7 @@
 // since a read before it) and `alert` (joining and the game's own scripts
 // failing far more than usual).
 
-import { MOMENTS, SOFTWARE, framesEvent } from '../lib/stutter.ts';
+import { MOMENTS, SOFTWARE, framesEvent, readFramesPath, visitEvent } from '../lib/stutter.ts';
 import type { Named } from './api.ts';
 import { keptChanges } from './changes.ts';
 import { sameSites, spikesOf, stepsOf } from './insights.ts';
@@ -80,6 +80,8 @@ const REACH_FROM = '2026-09-01';
 const MODES_FROM = '2026-10-14';
 /** The day the made-up game began counting how smoothly a game's frames came (count.ts countGameFrames). */
 const FRAMES_FROM = '2026-10-01';
+/** Of the games a device shows, the share that are a visit's first (stutter.ts VISIT). */
+const FIRST_OF_VISIT = 0.4;
 /** The devices games are played on, how often a game stutters some and many on each, the moment it most often does, and how often it's drawn in software (a computer's alone). */
 const DEVICE_MIX = [
   { device: 'desktop-chrome', share: 0.46, some: 0.08, many: 0.02, mostly: 'question', software: 0.03 },
@@ -114,6 +116,8 @@ const BACK = [
 function dayCounts(day: string, upTo = 24): Map<string, number[]> {
   const rnd = stream(seedOf(day));
   const frames = stream(seedOf(`${day}/frames`));
+  // (Its own stream too: the visits were counted later than the frames.)
+  const visits = stream(seedOf(`${day}/visits`));
   // (Its own stream, so the paths read later don't move the rest's numbers.)
   const later = stream(seedOf(`${day}/later`));
   const out = new Map<string, number[]>();
@@ -228,7 +232,14 @@ function dayCounts(day: string, upTo = 24): Map<string, number[]> {
         const size = g.sizes[Math.floor(rnd() ** 1.6 * g.sizes.length)];
         add(`size/${key}-${size}p`, h, 1);
         // Each device in it counts its own frames: those at one screen are one device.
-        if (day >= FRAMES_FROM) for (let s = 0; s < (oneDevice ? 1 : size); s++) add(framesPath(day, frames), h, 1);
+        if (day >= FRAMES_FROM)
+          for (let s = 0; s < (oneDevice ? 1 : size); s++) {
+            const path = framesPath(day, frames);
+            add(path, h, 1);
+            // A visit's first game goes once more as the visit's; one drawn in software is none.
+            const f = readFramesPath(path);
+            if (f && f.bucket !== SOFTWARE && visits() < FIRST_OF_VISIT) add(visitEvent(f.device, { bucket: f.bucket, worst: f.worst }), h, 1);
+          }
         if (rnd() >= 0.78) continue;
         add(`end/${key}`, h, 1);
         // Most runs end shallow, a few go far down.

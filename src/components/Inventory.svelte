@@ -1,8 +1,3 @@
-<script lang="ts" module>
-  /** The item tooltip open now, on any player's pill: closes it at once (one shows at a time). */
-  let closeOpenTip: (() => void) | null = null;
-</script>
-
 <script lang="ts">
   // Delve: the finds a player carries beside their phial (Phial.svelte), each
   // a small engraving with its count: flares and dynamite. (Azurite Wards are
@@ -12,89 +7,15 @@
   // kept, unseen, so they have somewhere to land.
   import { untrack } from 'svelte';
   import type { Inventory } from '../lib/delve';
-  import { ownRect, zoomOf } from '../lib/stage';
   import { ITEM_TIPS } from '../lib/difficultyText';
   import type { InventoryMoment } from '../lib/inventoryArt';
+  import HoverTip, { tipOnHover } from './HoverTip.svelte';
   import ItemGlyph from './ItemGlyph.svelte';
 
   let { inv, moment = null, expect = null }: { inv: Inventory; moment?: InventoryMoment | null; expect?: 'flare' | 'dynamite' | null } = $props();
 
   /** A flare or stick a blast just destroyed: it stays to crumble, its count already one down. */
   const blown = $derived(moment?.kind === 'blown' ? moment.item : null);
-  /**
-   * Its tooltip in the browser's top layer (a popover), over everything,
-   * the effects layer's light included: under the count, its arrow on it,
-   * kept on the screen; only for a mouse. It fades in and out, and stays
-   * while the pointer is on the count or on the tooltip itself (the short
-   * wait before it goes lets the pointer cross the gap). Where popovers
-   * aren't supported it shows in place on hover (CSS).
-   */
-  const TIP_GAP = 9;
-  const TIP_EDGE = 8;
-  const TIP_LINGER_MS = 140;
-  const TIP_FADE_MS = 160;
-  function tipOnHover(count: HTMLElement) {
-    const tip = count.querySelector<HTMLElement>('.tip');
-    if (!tip || typeof tip.showPopover !== 'function') return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const open = () => tip.matches(':popover-open');
-    const place = () => {
-      // In the tip's own px: the page (and the tip with it) may be zoomed (lib/stage.ts), the window isn't.
-      const z = zoomOf(count);
-      const r = ownRect(count);
-      const mid = r.left + r.width / 2;
-      const w = tip.offsetWidth;
-      const left = Math.max(TIP_EDGE, Math.min(mid - w / 2, innerWidth / z - w - TIP_EDGE));
-      tip.style.left = `${left}px`;
-      tip.style.top = `${r.bottom + TIP_GAP}px`;
-      tip.style.setProperty('--arrow-x', `${mid - left}px`);
-    };
-    /** Gone at once, no fade: another item's tooltip takes its place. */
-    const close = () => {
-      clearTimeout(timer);
-      tip.classList.remove('on');
-      if (open()) tip.hidePopover();
-      if (closeOpenTip === close) closeOpenTip = null;
-    };
-    const show = (e: PointerEvent) => {
-      if (e.pointerType !== 'mouse') return;
-      clearTimeout(timer);
-      // Moving from one item to the next swaps the tooltip outright, so the
-      // old one never fades out under the new one; only the first fades in.
-      const swap = closeOpenTip !== null && closeOpenTip !== close;
-      if (swap) closeOpenTip!();
-      closeOpenTip = close;
-      if (!open()) {
-        tip.showPopover();
-        place();
-        if (swap) {
-          tip.classList.add('instant', 'on');
-          requestAnimationFrame(() => tip.classList.remove('instant'));
-        } else {
-          // A frame shown at 0 first, so the fade has somewhere to start from.
-          requestAnimationFrame(() => requestAnimationFrame(() => tip.classList.add('on')));
-        }
-      } else tip.classList.add('on');
-    };
-    const hide = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        tip.classList.remove('on');
-        timer = setTimeout(close, TIP_FADE_MS);
-      }, TIP_LINGER_MS);
-    };
-    // The tooltip is the count's child in the DOM (if not on the screen), so
-    // entering it enters the count again and keeps it up.
-    count.addEventListener('pointerenter', show);
-    count.addEventListener('pointerleave', hide);
-    return {
-      destroy() {
-        count.removeEventListener('pointerenter', show);
-        count.removeEventListener('pointerleave', hide);
-        close();
-      },
-    };
-  }
   let flareEl = $state<HTMLElement>();
   let dynamiteEl = $state<HTMLElement>();
   // Its width as it starts to go, for the close to run from: read as the
@@ -157,7 +78,7 @@
           <span class="grow"><ItemGlyph kind="flare" /></span>
         {/key}
         <b>{inv.flares}</b>
-        <span class="tip flare-tip" popover="manual"><strong>{ITEM_TIPS.flares.name}</strong>{ITEM_TIPS.flares.text}</span>
+        <HoverTip tone="#f7a3b3"><strong>{ITEM_TIPS.flares.name}</strong>{ITEM_TIPS.flares.text}</HoverTip>
       </span>
     {/if}
     {#if inv.dynamite > 0 || dynamiteHeld || moment?.kind === 'blast' || blown === 'dynamite' || expect === 'dynamite'}
@@ -178,7 +99,7 @@
           <span class="grow"><ItemGlyph kind="dynamite" /></span>
         {/key}
         <b>{inv.dynamite}</b>
-        <span class="tip dynamite-tip" popover="manual"><strong>{ITEM_TIPS.dynamite.name}</strong>{ITEM_TIPS.dynamite.text}</span>
+        <HoverTip tone="#eebf96"><strong>{ITEM_TIPS.dynamite.name}</strong>{ITEM_TIPS.dynamite.text}</HoverTip>
       </span>
     {/if}
   </span>
@@ -205,95 +126,9 @@
     align-items: center;
     gap: 1px;
   }
-  /* How it works, under it on hover (a pointer's; the counts are hidden
-     from screen readers, whose players read the rules in the lobby). */
-  .tip {
-    position: absolute;
-    z-index: 5;
-    top: calc(100% + 9px);
-    left: 50%;
-    /* (Through var(), as the build keeps it beside a transform: tests/minifiedTransforms.) */
-    --tip-shift: -50% 0;
-    translate: var(--tip-shift);
-    width: max-content;
-    max-width: 16rem;
-    padding: 0.45em 0.7em 0.5em;
-    font-family: var(--font-body);
-    font-size: 1rem;
-    font-weight: 400;
-    line-height: 1.3;
-    text-align: left;
-    white-space: normal;
-    color: var(--text);
-    background: #100c09;
-    border: 1px solid color-mix(in srgb, var(--tip) 55%, transparent);
-    border-radius: 4px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
-    opacity: 0;
-    transform: translateY(-3px);
-    transition:
-      opacity 0.15s,
-      transform 0.15s var(--ease-out);
-    pointer-events: none;
-  }
-  /* Its name first, in its colour, as the finds are named on the rules page. */
-  .tip strong {
-    display: block;
-    margin-bottom: 0.2em;
-    font-family: var(--font-display);
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--tip);
-  }
-  .flare-tip {
-    --tip: #f7a3b3;
-  }
-  .dynamite-tip {
-    --tip: #eebf96;
-  }
+  /* Its rule under it on hover (HoverTip.svelte), over the counts beside it where it shows in place. */
   .count:hover {
     z-index: 5;
-  }
-  .count:hover .tip {
-    opacity: 1;
-    transform: none;
-  }
-  /* In the top layer: fixed under the count (tipOnHover sets left, top and
-     the arrow's place), faded in once it is open and out before it closes. */
-  .tip:popover-open {
-    position: fixed;
-    inset: auto;
-    margin: 0;
-    overflow: visible;
-    --tip-shift: none;
-    opacity: 0;
-    transform: translateY(-4px);
-    transition:
-      opacity 0.16s ease,
-      transform 0.16s var(--ease-out);
-    pointer-events: auto;
-  }
-  .tip:popover-open:global(.instant) {
-    transition: none;
-  }
-  .tip:popover-open:global(.on) {
-    opacity: 1;
-    transform: none;
-  }
-  /* Its arrow, pointing up at the item. */
-  .tip::before {
-    content: '';
-    position: absolute;
-    top: -6px;
-    left: var(--arrow-x, 50%);
-    width: 10px;
-    height: 10px;
-    background: #100c09;
-    border-left: 1px solid color-mix(in srgb, var(--tip) 55%, transparent);
-    border-top: 1px solid color-mix(in srgb, var(--tip) 55%, transparent);
-    transform: translateX(-50%) rotate(45deg);
   }
   /* Kept for a find on its way. */
   .count.kept {

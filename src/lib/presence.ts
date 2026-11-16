@@ -119,7 +119,8 @@ export function namesList(names: string[], most = 2): string {
 
 // ---- this device ------------------------------------------------------
 
-const INPUTS = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'] as const;
+/** What's taken as a sign of this device's player (the open rooms list takes the same, components/OpenRooms.svelte). */
+export const INPUTS = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'] as const;
 /** How often this device checks whether it has gone idle. */
 const CHECK_MS = 5000;
 

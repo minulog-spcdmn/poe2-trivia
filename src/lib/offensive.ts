@@ -48,6 +48,17 @@ const MORE: [string[], string[]][] = [
       ...['dickerson', 'fagin'],
       ...['pachinko', 'penistone', 'pussycat', 'pussyfoot', 'rappe', 'rapeseed', 'retardant', 'cockpit', 'cocksure', 'booboo'],
       ...['vandyke', 'klondyke'],
+      // Family and first names, and everyday words of other languages. Each as far as it is innocent and no further
+      // ("dicker", not "dick" with anything after it; a Thai name whole, not every name ending in "porn").
+      ...['fagan', 'fagen', 'fager', 'fagus', 'fagund', 'fagiol', 'faggio', 'faggian', 'fagnan'],
+      ...['semenov', 'semenoff', 'semenk', 'semeny', 'semench', 'semeni', 'semene', 'semenz'],
+      ...['dickel', 'dicker', 'dickes', 'dickie', 'dicky', 'dickkopf', 'dickmann', 'dickmilch', 'dickicht', 'dickhaut', 'dickhoff'],
+      ...['riddick', 'reddick', 'roddick', 'burdick', 'murdick', 'chaddick', 'updyke', 'dykema'],
+      ...['pornthip', 'porntip', 'pornchai', 'pornpimol', 'pornpimon', 'pornsak', 'pornpan', 'pornphan', 'pornsiri', 'pornchanok'],
+      ...['siriporn', 'somporn', 'supaporn', 'thitiporn', 'nattaporn', 'ratchaporn', 'kanyaporn', 'pattaraporn', 'jiraporn'],
+      ...['cumhur', 'cumali', 'cumar', 'cumple', 'cumana', 'cumprimento', 'cummins', 'cummerbund', 'cumquat'],
+      ...['kanal', 'sanal', 'fanal', 'analia', 'analie', 'analphabet', 'analfabet', 'analges'],
+      ...['kikeriki', 'kiken', 'penisola', 'rapero', 'rapel', 'slutsk', 'slutzk', 'boobytrap'],
     ],
   ],
 ];

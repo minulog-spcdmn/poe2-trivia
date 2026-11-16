@@ -400,10 +400,11 @@
   });
   let confirmReset = $state(false);
   function reset() {
+    // Kept with a passkey, the other devices' progress would come back the same: this browser's goes from what's
+    // kept, and it stops keeping (first, under the name sync's erase lets go of).
+    eraseBackup();
     // Synced, the other devices' progress would come straight back: this browser stops syncing, and theirs stays theirs.
     eraseSync();
-    // Kept with a passkey, the same: this browser's goes from what's kept, and it stops keeping.
-    eraseBackup();
     resetCodex();
     resetRecords();
     resetAchievements();

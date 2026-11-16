@@ -376,7 +376,8 @@
     position: absolute;
     left: 0;
     right: 0;
-    height: calc(var(--bar) + env(safe-area-inset-top));
+    /* The header's own height, which holds the top safe area already; the bottom matches it, so the two read alike (a home indicator's strip is not added). */
+    height: var(--bar);
     background: #050403;
     pointer-events: auto;
   }
@@ -385,7 +386,6 @@
   }
   .bar.bottom {
     bottom: 0;
-    height: calc(var(--bar) + env(safe-area-inset-bottom));
   }
   .bar .hair {
     position: absolute;
@@ -420,7 +420,7 @@
   /* (The window's size in the card's zoomed px, lib/stage.ts.) */
   .plate {
     position: absolute;
-    inset: calc(var(--bar) + env(safe-area-inset-top) + 12px) 0 calc(var(--bar) + env(safe-area-inset-bottom) + 0.06 * var(--view-h) / var(--stage-zoom, 1));
+    inset: calc(var(--bar) + 12px) 0 calc(var(--bar) + 0.06 * var(--view-h) / var(--stage-zoom, 1));
     margin: 0 auto;
     width: min(46rem, 100vw / var(--stage-zoom, 1) - 32px);
     display: flex;
@@ -604,7 +604,7 @@
         var(--dither);
     }
     .plate {
-      inset: calc(var(--bar) + env(safe-area-inset-top) + 4px) 0 calc(var(--bar) + env(safe-area-inset-bottom) + 4px);
+      inset: calc(var(--bar) + 4px) 0 calc(var(--bar) + 4px);
     }
     .word {
       font-size: clamp(1.6rem, 3vw + 1rem, 2.6rem);

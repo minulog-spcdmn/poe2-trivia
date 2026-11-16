@@ -40,7 +40,7 @@ import { countEvent } from '../count.ts';
 import { keepOwnerKey, ownerKeyKept, ownerUnlocked } from '../ownerKey.ts';
 import { codeKey, newCode, peerName, prove, proves } from './code.ts';
 import { showSynced, tellsLink } from './notice.ts';
-import { OWN_NAMES, TAKEN_NAMES, inParts, ownNow, takeCopies, takeIn, takenNow } from './shared.ts';
+import { OWN_NAMES, TAKEN_NAMES, forgetOwn, inParts, ownNow, takeCopies, takeIn, takenNow } from './shared.ts';
 import {
   COPY_KINDS,
   MAX_COPY,
@@ -678,9 +678,10 @@ function forget() {
   restart();
 }
 
-/** The codex erased: unpaired, and the other devices' copies let go of (theirs is still theirs). */
+/** The codex erased: unpaired, the other devices' copies let go of (theirs is still theirs), and this one's name among them with it (forgetOwn). */
 export function eraseSync() {
   // (Not unpair: one waiting to bring a device home would go back to the others, and their progress straight back in.)
   forget();
   clearCopies();
+  forgetOwn();
 }

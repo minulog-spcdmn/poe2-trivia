@@ -11,6 +11,8 @@ import {
   deviceOf,
   framesEvent,
   readFramesPath,
+  readVisitPath,
+  visitEvent,
   type FrameClock,
   type Verdict,
 } from '../src/lib/stutter.ts';
@@ -144,6 +146,35 @@ test("a game drawn in software counts as that alone, never its frames' bucket", 
   assert.equal(framesEvent('desktop-chrome', SOFTWARE), 'frames2/desktop-chrome/software');
   assert.deepEqual(readFramesPath('frames2/desktop-other/software'), { device: 'desktop-other', bucket: SOFTWARE, worst: null });
   assert.equal(readFramesPath('frames2/desktop-chrome/software/deal'), null);
+});
+
+test("a visit's first game counts under a path of its own, smooth or stuttered, which is no game's", () => {
+  assert.equal(visitEvent('ios', { bucket: 'smooth', worst: null }), 'frames2/ios/visit/smooth');
+  assert.equal(visitEvent('android', { bucket: 'some', worst: 'reveal' }), 'frames2/android/visit/stuttered/reveal');
+  assert.equal(visitEvent('desktop-chrome', { bucket: 'many', worst: 'begin' }), 'frames2/desktop-chrome/visit/stuttered/begin');
+  assert.deepEqual(readVisitPath('frames2/android/visit/stuttered/reveal'), { device: 'android', stuttered: true, worst: 'reveal' });
+  assert.deepEqual(readVisitPath('frames2/desktop-other/visit/smooth'), { device: 'desktop-other', stuttered: false, worst: null });
+  for (const p of [
+    'frames2/ios/smooth',
+    'frames2/ios/some/reveal',
+    'frames2/ios/visit',
+    'frames2/ios/visit/some',
+    'frames2/toaster/visit/smooth',
+    'frames/ios/visit/smooth',
+    'frames2/ios/visit/smooth/reveal',
+    'frames2/ios/visit/stuttered/lobby',
+    'frames2/ios/visit/stuttered/reveal/more',
+  ])
+    assert.equal(readVisitPath(p), null, p);
+  // A page that reads only games (an older stats page, the games' own figures) takes a visit for nothing: no game is counted twice.
+  assert.equal(readFramesPath('frames2/ios/visit/smooth'), null);
+  assert.equal(readFramesPath('frames2/android/visit/stuttered/deal'), null);
+});
+
+test("a visit's first game from a page older than its moment still reads as a stuttered visit", () => {
+  // Pages up to two weeks old send "…/visit/stuttered" with no moment (before 16 November 2026).
+  assert.deepEqual(readVisitPath('frames2/android/visit/stuttered'), { device: 'android', stuttered: true, worst: null });
+  assert.equal(readFramesPath('frames2/android/visit/stuttered'), null);
 });
 
 test('counts of the older generation (by 50 ms, no begin) are no frames of this one: old and new never mix', () => {

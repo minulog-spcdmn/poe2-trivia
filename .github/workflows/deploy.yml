@@ -10,6 +10,10 @@ run-name: "${{ inputs.beta && format('Beta: {0}', inputs.beta) || github.event.h
 # commit's build (cached by commit) back next to main's. Run it with "beta"
 # empty to redeploy as is.
 #
+# A deployment that GitHub never finishes gets a second try under a name of
+# its own (the jobs "spares" and "deploy"). A stall can't be brought about,
+# so "second-try" runs that try alone, to check it still works.
+#
 # The beta's own code (its install scripts, tests and build) runs only in the
 # beta job, which has a read-only token and nothing of the live site; the
 # other jobs run only main's code. A beta that no longer builds doesn't hold
@@ -24,6 +28,10 @@ on:
         description: Branch, tag or commit SHA to put on poe2.quest/beta/ (empty keeps the current beta)
         required: false
         default: ''
+      second-try:
+        description: Skip the first try and deploy through the second, to check that it still works
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -189,6 +197,7 @@ jobs:
     permissions: {}
     outputs:
       new-beta: ${{ steps.pick.outputs.new }}
+      artifact: ${{ steps.upload.outputs.artifact_id }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -266,7 +275,8 @@ jobs:
           key: beta-dist-v3-${{ needs.find-beta.outputs.sha }}
       - if: steps.pick.outputs.from
         run: cp -r beta-dist dist/beta
-      - uses: actions/upload-pages-artifact@v3
+      - id: upload
+        uses: actions/upload-pages-artifact@v3
         with:
           path: dist
 
@@ -296,8 +306,41 @@ jobs:
             -f environment_url=https://poe2.quest/beta/ \
             -f log_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > /dev/null
 
+  # Names for the deploy's second try. Pages knows a deployment by its build
+  # version, which has to be a commit of this repository (others report a
+  # 404 for anything else), and actions/deploy-pages always sends the run's
+  # own. So these are commits made for the purpose: this commit's files with
+  # this commit as the parent, on no branch or tag, so nothing lists them.
+  # Three, one for each time the deploy job is run (running only the failed
+  # job again doesn't run this one). Runs no code but the calls below, which
+  # is why the write token is here and not in the deploy job.
+  spares:
+    needs: live
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    # Without them the second try goes up under the commit's own name.
+    continue-on-error: true
+    outputs:
+      commits: ${{ steps.make.outputs.commits }}
+    steps:
+      - name: Make the spare commits
+        id: make
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tree=$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$GITHUB_SHA" --jq .tree.sha)
+          commits=
+          for n in 1 2 3; do
+            commits+="$(gh api "repos/$GITHUB_REPOSITORY/git/commits" \
+              -f tree="$tree" -f "parents[]=$GITHUB_SHA" \
+              -f message="A spare name for the Pages deployment of $GITHUB_SHA (run $GITHUB_RUN_ID, attempt $GITHUB_RUN_ATTEMPT, spare $n)" \
+              --jq .sha) "
+          done
+          echo "commits=$commits" >> "$GITHUB_OUTPUT"
+
   deploy:
-    needs: [assemble, record-beta]
+    needs: [assemble, record-beta, spares]
     if: ${{ !cancelled() && needs.assemble.result == 'success' && needs.record-beta.result != 'failure' }}
     runs-on: ubuntu-latest
     permissions:
@@ -308,12 +351,87 @@ jobs:
       url: ${{ steps.again.outputs.page_url || steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
+        if: ${{ !inputs.second-try }}
         uses: actions/deploy-pages@v4
         continue-on-error: true
       # Now and then GitHub's side never finishes taking an upload in
       # (syncing_files until the step's 10 minutes run out, and it cancels
-      # it), however healthy the build: put up the same one once more, as
-      # running the job again by hand did.
-      - id: again
-        if: steps.deployment.outcome == 'failure'
-        uses: actions/deploy-pages@v4
+      # it), however healthy the build. Putting the same one up again under
+      # the same name has failed five times running (10 Nov 2026: no status
+      # at all until the time ran out, while a new commit went up in 16
+      # seconds), so the second try is a deployment of its own, under a
+      # spare commit's name: what actions/deploy-pages does (the same three
+      # calls, its 10 minutes, its 10 failed answers), but for the name.
+      - name: Deploy once more, under a spare name
+        id: again
+        if: ${{ inputs.second-try || steps.deployment.outcome == 'failure' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ needs.assemble.outputs.artifact }}
+          SPARES: ${{ needs.spares.outputs.commits }}
+        run: |
+          api="repos/$GITHUB_REPOSITORY/pages/deployments"
+          # This attempt's spare; the fourth attempt is back at the first.
+          version=$(echo "$SPARES" | cut -d' ' -f$(( (GITHUB_RUN_ATTEMPT - 1) % 3 + 1 )))
+          if [ -z "$version" ]; then
+            echo "::warning::No spare commit to name this deployment after, so it goes up as $GITHUB_SHA again."
+            version=$GITHUB_SHA
+          fi
+
+          if [ -z "$ARTIFACT" ]; then
+            echo "::error::The assemble job named no upload to deploy."
+            exit 1
+          fi
+
+          # Pages refuses a new deployment while another is under way ("due
+          # to in progress deployment"), as the one just cancelled may still
+          # be: asked again for five minutes, each time with a new token
+          # (they don't last long).
+          created=
+          for try in 1 2 3 4 5 6 7 8 9 10; do
+            token=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r .value)
+            echo "::add-mask::$token"
+            if created=$(gh api "$api" -F artifact_id="$ARTIFACT" -f pages_build_version="$version" -f oidc_token="$token" \
+              --jq '[.id // (.status_url | split("/") | last), .page_url] | @tsv'); then break; fi
+            echo "Pages didn't take the deployment (try $try): $created"
+            created=
+            sleep 30
+          done
+          if [ -z "$created" ]; then
+            echo "::error::Pages took no deployment under $version."
+            exit 1
+          fi
+          id=$(echo "$created" | cut -f1)
+          echo "page_url=$(echo "$created" | cut -f2)" >> "$GITHUB_OUTPUT"
+          echo "Created deployment $id for artifact $ARTIFACT"
+
+          cancel() {
+            echo "Cancelling deployment $id"
+            gh api -X POST "$api/$id/cancel" || true
+          }
+          # A cancelled run takes its deployment with it.
+          trap 'cancel; exit 1' INT TERM
+
+          started=$SECONDS
+          unanswered=0
+          while :; do
+            sleep 5
+            if status=$(gh api "$api/$id" --jq '.status // ""'); then
+              echo "Current status: $status"
+              case "$status" in
+                succeed)
+                  echo "::notice::The site went up on the second try, as $version."
+                  exit 0 ;;
+                deployment_failed | deployment_perms_error | deployment_content_failed | deployment_cancelled | deployment_lost)
+                  echo "::error::The deployment ended as $status."
+                  exit 1 ;;
+              esac
+            else
+              unanswered=$((unanswered + 1))
+            fi
+            if [ "$unanswered" -ge 10 ] || [ $((SECONDS - started)) -ge 600 ]; then
+              echo "::error::The deployment didn't finish in 10 minutes (or its status went unanswered 10 times)."
+              cancel
+              exit 1
+            fi
+          done

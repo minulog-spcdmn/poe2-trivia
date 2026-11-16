@@ -46,7 +46,7 @@
   import VerdictSign from './VerdictSign.svelte';
   import { inspect } from '../lib/itemWindow.svelte';
   import type { GlyphKind } from '../lib/inventoryArt';
-  import { actionOf, optionCap, optionKeys, typing } from '../lib/keybinds.svelte';
+  import { actionOf, optionCap, optionKeys, ownKey, typing } from '../lib/keybinds.svelte';
   import { optionIndex } from '../lib/keys';
   import { readsShellHeights } from '../lib/shellHeights.svelte';
 
@@ -1007,8 +1007,10 @@
     const now = session.state;
     if (!now || (now.phase !== 'question' && now.phase !== 'reveal') || now.question?.askedAt !== shownAt) return;
     if (typing(e)) return;
-    // An item's window (ItemWindow) has buttons of its own: Enter there isn't Next.
-    if (e.target instanceof Element && e.target.closest('[data-item-window]')) return;
+    // Enter or Space on a control the player tabbed to (an item's details, a teammate's heart), or on one of an
+    // item's window's own buttons (ItemWindow), presses that: it isn't Next. Next's own button is, as its key.
+    // (Every other key pressed with the focus in the window is still the game's: an answer's, Detonate's.)
+    if (ownKey(e) && e.target !== nextEl) return;
     // Browser shortcuts (Ctrl/Cmd+1 switches tabs), held keys, and an open dialog aren't answers.
     if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || document.querySelector('[aria-modal="true"]')) return;
     // The player's keys (settings page): an option's, Next's, Detonate's.

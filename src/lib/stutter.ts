@@ -6,7 +6,7 @@
 // the page is seen: the gaps between its animation frames. What goes out is
 // coarse: the device's class, how much of the game's time went to frames
 // over LONG_MS (smooth, some, many), and for a game that stuttered, the
-// moment most of it fell in; or, on a computer whose browser draws WebGL
+// moment most of it fell in; or, on a computer whose browser draws the game
 // without the GPU, only that (software). Nothing finer: no timings, no
 // device details beyond the class, never the renderer's name. Pure, so the
 // tests can feed it; count.ts gives it the browser.
@@ -135,8 +135,9 @@ export class FrameTally {
 }
 
 /**
- * A game in a browser that draws WebGL in software (lib/gpuCheck.ts): about
- * 6 frames a second, so it would always read "many", whatever the game
+ * A game in a browser that draws without the GPU (lib/gpuCheck.ts: WebGL
+ * in software, or in Firefox the page put together in software): 5 to 13
+ * frames a second, so it would always read "many", whatever the game
  * does. Counted apart, by itself, and only on a computer, where hardware
  * acceleration can be switched off (count.ts).
  */
@@ -159,6 +160,46 @@ export function readFramesPath(path: string): { device: Device; bucket: Bucket |
   if (!(BUCKETS as readonly string[]).includes(m[3])) return null;
   if (m[4] !== undefined && !(MOMENTS as readonly string[]).includes(m[4])) return null;
   return { device, bucket: m[3] as Bucket, worst: (m[4] as Moment | undefined) ?? null };
+}
+
+/**
+ * A visit's first game, counted once more beside its games
+ * ("frames2/android/visit/stuttered/begin", count.ts countGameFrames): the first
+ * game a page counts, as smooth or stuttered (some and many together; from
+ * 16 November 2026 with the moment most of it fell in, as the game's own
+ * count has it, so a first game's own costs show where they land), sent
+ * the way a step is (count.ts countReach), which GoatCounter counts once a
+ * visitor in eight hours. Nothing tells whose a game is, so five games in a
+ * row on one slow phone are five stuttered games; here they are one visit,
+ * and a share of visits says how many players' devices stuttered, which is
+ * what a deploy moves (the stats' health check weighs these, insights.ts
+ * healthOf). Only a page arrived at sends it, not one reloaded or come back
+ * to, and a visitor who arrives twice in those hours counts once under each
+ * of the paths at most. Counted from November 2026; a game drawn in
+ * software (SOFTWARE) is no first game. A page from before the moment was
+ * added sends "…/visit/stuttered" alone, which still reads as a stuttered
+ * visit, at no moment.
+ *
+ * Why the moment: on a cold shader cache (a new visitor), Chrome compiles
+ * its drawing's shaders as the lobby and the game screen first show, and a
+ * page's first game stutters at Begin and the first pick where its second
+ * doesn't (docs/development.md, "A page's first game"). The moment says
+ * whether players' first games stutter there.
+ */
+export const VISIT = 'visit';
+
+/** The path a visit's first game is counted under: "frames2/ios/visit/smooth", "frames2/android/visit/stuttered/reveal". */
+export const visitEvent = (device: Device, v: Verdict) =>
+  `${FRAMES}/${device}/${VISIT}/${v.bucket === 'smooth' ? 'smooth' : `stuttered${v.worst ? `/${v.worst}` : ''}`}`;
+
+/** What a path says (visitEvent), or null for one that isn't a visit's first game of this generation (FRAMES); `worst`, null for a smooth one and for an older page's stuttered one, which sent no moment. */
+export function readVisitPath(path: string): { device: Device; stuttered: boolean; worst: Moment | null } | null {
+  const [frames, device, visit, how, moment, ...more] = path.split('/');
+  if (frames !== FRAMES || visit !== VISIT || more.length || !(DEVICES as readonly string[]).includes(device)) return null;
+  if (how === 'smooth') return moment === undefined ? { device: device as Device, stuttered: false, worst: null } : null;
+  if (how !== 'stuttered') return null;
+  if (moment === undefined) return { device: device as Device, stuttered: true, worst: null };
+  return (MOMENTS as readonly string[]).includes(moment) ? { device: device as Device, stuttered: true, worst: moment as Moment } : null;
 }
 
 /** The browser's frames as GameFrames needs them (requestAnimationFrame), the time on their clock (performance.now), and whether the page is seen. */

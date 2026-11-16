@@ -9,7 +9,7 @@ Only when really necessary: several sessions share this machine, and every headl
 
 To check something that isn't the effects or the animations:
 
-- Hide WebGL before the page loads (`context.addInitScript(() => { delete window.WebGL2RenderingContext; delete window.WebGLRenderingContext; })`, which keeps `src/lib/fx/` off) and pass `reducedMotion: 'reduce'` to the context. The effects render in software there and make every step crawl.
+- Hide WebGL before the page loads (`context.addInitScript(() => { delete window.WebGL2RenderingContext; delete window.WebGLRenderingContext; })`, which keeps `src/lib/fx/` off) and pass `reducedMotion: 'reduce'` to the context. The effects render in software there and make every step crawl. (A scripted browser asking for reduced motion is the one way into the game's still mode, `src/lib/still.ts`: no player's browser gets it, so what a check sees there is the layout and the text, not how the game looks to a player.)
 - With two players in two contexts, `bringToFront()` the page you read from (a window behind gets no animation frames, and its timers run about once a second, a host's pointer batches too).
 - Poll until what you read settles rather than waiting a fixed time.
 - Retry a join that says it couldn't reach the room (PeerJS signalling fails now and then from the cloud container).

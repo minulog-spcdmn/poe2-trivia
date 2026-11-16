@@ -203,6 +203,33 @@ test('the check itself broken (answers of a new shape, a bug) fails the run, not
   assert.ok(unsaid(lines));
 });
 
+test("a device stuttering more is said by visits where those were weighed, by games where they weren't yet counted", () => {
+  const check = (by: 'visits' | 'games') => ({ day: YESTERDAY, trouble: null, health: { errors: [], stutter: [{ device: 'android' as const, share: 57.1, before: 14.7, of: 21, by }] } });
+  assert.deepEqual(firedOf(check('visits')), ['Android: the first game stuttered on 57% of 21 visits, against 15% before']);
+  assert.deepEqual(firedOf(check('games')), ['Android: 57% of 21 games stuttered, against 15% before']);
+});
+
+test("the check itself goes by visits once they're counted on 3 of the 7 days before: one phone's evening of games is no mail, most phones stuttering is", () => {
+  const days = Array.from({ length: BEFORE + 2 }, (_, i) => addDays(YESTERDAY, i - BEFORE - 1));
+  /** A path counted `n` on each of the last `last` days before yesterday, and `y` yesterday. */
+  const p = (path: string, n: number, y: number, last = days.length) => {
+    const per = Object.fromEntries(days.map((d, i) => [d, d === YESTERDAY ? y : i >= days.length - 1 - last ? n : 0]));
+    return { path, event: path !== '/', count: Object.values(per).reduce((a, b) => a + b, 0), days: per };
+  };
+  const quiet = [p('/', 100, 100), p('frames2/android/smooth', 12, 0), p('frames2/android/some/reveal', 3, 9)];
+  // By games, as before visits were counted: nine stuttered games of nine.
+  assert.deepEqual(firedOf(checkDay(quiet, YESTERDAY, ZONE)), ['Android: 100% of 9 games stuttered, against 20% before']);
+  // Visits counted on two of the days before: still by games.
+  const two = [...quiet, p('frames2/android/visit/smooth', 5, 0, 2), p('frames2/android/visit/stuttered', 1, 1, 2)];
+  assert.equal(firedOf(checkDay(two, YESTERDAY, ZONE)).length, 1);
+  // On three: the nine games were one visit, which says nothing.
+  const three = [...quiet, p('frames2/android/visit/smooth', 5, 0, 3), p('frames2/android/visit/stuttered', 1, 1, 3)];
+  assert.deepEqual(firedOf(checkDay(three, YESTERDAY, ZONE)), []);
+  // Most of a day's visits stuttering is said, by visits.
+  const worse = [...quiet, p('frames2/android/visit/smooth', 5, 3, 3), p('frames2/android/visit/stuttered', 1, 11, 3)];
+  assert.deepEqual(firedOf(checkDay(worse, YESTERDAY, ZONE)), ['Android: the first game stuttered on 79% of 14 visits, against 17% before']);
+});
+
 test('a day without its 7 before counted is not checked: counting began too late', async () => {
   const r = await run([], { from: addDays(YESTERDAY, -3) });
   assert.equal(r.code, 0);

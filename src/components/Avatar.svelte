@@ -5,12 +5,16 @@
   import { arcaneAura } from '../lib/fx/aura';
   import { CREATOR_TITLE } from '../lib/site';
   import VerdictSign from './VerdictSign.svelte';
+  import HoverTip, { tipOnHover } from './HoverTip.svelte';
   import { motion } from '../lib/motion.svelte';
-  import { onMount, untrack } from 'svelte';
+  import { onMount, untrack, type Snippet } from 'svelte';
   import { classOf, isPlayerClass, SIGIL_FITS, sigilUrl, SMALL_INK, type PlayerClass } from '../lib/classSigils';
   import { sigilTrial } from '../lib/sigilTrial.svelte';
 
-  /** wrong: answered wrong, the token face down (the scoreboard). sigil: their class's sigil, worn behind their initial (lib/classSigils.ts). */
+  /**
+   * wrong: answered wrong, the token face down (the scoreboard). sigil: their class's sigil, worn behind their initial (lib/classSigils.ts).
+   * tip: what a tooltip under the token says while a mouse is on it (HoverTip.svelte), edged in their colour; none, no tooltip.
+   */
   let {
     name,
     hue,
@@ -18,6 +22,7 @@
     dim = false,
     wrong = false,
     sigil,
+    tip,
   }: {
     name: string;
     hue: number;
@@ -25,6 +30,7 @@
     dim?: boolean;
     wrong?: boolean;
     sigil?: PlayerClass;
+    tip?: Snippet;
   } = $props();
   // Only one this build knows (a newer host's may not be). (On the QA desk,
   // everyone can wear one, by their name.)
@@ -94,6 +100,8 @@
     if (live) show();
     return { update: show };
   }
+  /** Its tooltip's hover, only on a token that has one (most never do). */
+  const tipHover = (node: HTMLElement) => tipOnHover(node).destroy;
   /** Keeps the face-down side on the token until the turn back up is edge on. */
   const untilEdgeOn = (_node: Element) => ({ duration: turn === 'up' ? TURN_MS / 2 : 0 });
 </script>
@@ -111,9 +119,10 @@
   style:--turn="{TURN_MS}ms"
   role={crowned ? 'img' : undefined}
   aria-label={crowned ? CREATOR_TITLE : undefined}
-  title={crowned ? CREATOR_TITLE : undefined}
+  title={crowned && !tip ? CREATOR_TITLE : undefined}
   bind:this={el}
   use:arcaneAura={{ on: creator, dim: dim || !crowned || turn !== null }}
+  {@attach tip && tipHover}
   >{#if worn && fit}<span
       class="sigil"
       class:gilt={!small}
@@ -127,7 +136,7 @@
     ><text x="50" y="50" {dy} text-anchor="middle">{initial}</text></svg
   >{#if wrong}<span class="face-down" class:landing out:untilEdgeOn role="img" aria-label="{name} answered wrong" title="Answered wrong"
       ><VerdictSign icon="cross" token /></span
-    >{/if}</span
+    >{/if}{#if tip}<HoverTip tone="var(--c)" through>{@render tip()}</HoverTip>{/if}</span
 >
 
 <style>

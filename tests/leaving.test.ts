@@ -11,6 +11,8 @@ class FakeElement {
   style = { pointerEvents: '' };
   attrs = new Map<string, string>();
   children: FakeElement[] = [];
+  /** Its capture listeners, by event type. */
+  capturing = new Map<string, Set<(e: Event) => void>>();
   blurred = 0;
   inertSet = 0;
   // (The prototype's own, as the page's elements have it.)
@@ -27,6 +29,20 @@ class FakeElement {
   removeAttribute = (name: string) => void this.attrs.delete(name);
   contains = (other: FakeElement): boolean => other === this || this.children.some((c) => c.contains(other));
   blur = () => void this.blurred++;
+  addEventListener = (type: string, f: (e: Event) => void, capture?: boolean) => {
+    if (capture) this.capturing.set(type, (this.capturing.get(type) ?? new Set()).add(f));
+  };
+  removeEventListener = (type: string, f: (e: Event) => void, capture?: boolean) => {
+    if (capture) this.capturing.get(type)?.delete(f);
+  };
+  /** A press, a hover or a move coming down to it: whether anything under it would still get it. */
+  press(type: string) {
+    let stopped = false;
+    let prevented = false;
+    const e = { stopPropagation: () => (stopped = true), preventDefault: () => (prevented = true) } as unknown as Event;
+    for (const f of this.capturing.get(type) ?? []) f(e);
+    return !stopped && !prevented;
+  }
 }
 const g = globalThis as { HTMLElement?: unknown; document?: { activeElement: unknown }; requestAnimationFrame?: unknown; cancelAnimationFrame?: unknown };
 g.HTMLElement = FakeElement;
@@ -61,7 +77,13 @@ test("an outro's inert marks the element as leaving, and none of it inert", () =
   assert.equal(stage.attrs.has('inert'), false);
   assert.equal(stage.inert, true, 'it reads as going out');
   assert.equal(stage.dataset.leaving, '');
-  assert.equal(stage.style.pointerEvents, 'none');
+  for (const type of ['pointerdown', 'click', 'keydown', 'keyup']) assert.equal(stage.press(type), false, `a ${type} goes nowhere`);
+  // (Nor a hover: no control's sound or embers, no card's fire, as inert would have it.)
+  for (const type of ['pointerover', 'pointerenter']) assert.equal(stage.press(type), false, `a ${type} goes nowhere`);
+  // (But a move goes on: the others follow this player's pointer by it, at the window.)
+  assert.equal(stage.press('pointermove'), true);
+  // (Not by pointer-events, which is inherited: all under it would be restyled.)
+  assert.equal(stage.style.pointerEvents, '');
   // (The focus and the screen readers let go of in the frame's animation frame: a blur lays the page out.)
   assert.equal(button.blurred, 0);
   assert.equal(stage.getAttribute('aria-hidden'), null);
@@ -73,7 +95,7 @@ test("an outro's inert marks the element as leaving, and none of it inert", () =
   stage.inert = false;
   assert.equal(stage.inert, false);
   assert.equal(stage.dataset.leaving, undefined);
-  assert.equal(stage.style.pointerEvents, '');
+  assert.equal(stage.press('click'), true, 'it takes presses again');
   assert.equal(stage.getAttribute('aria-hidden'), null);
   action.destroy();
   stage.inert = true;
@@ -92,13 +114,11 @@ test('the focus on the element itself goes too, as inert would take it', () => {
 
 test('what it had of its own comes back with it', () => {
   const card = new FakeElement();
-  card.style.pointerEvents = 'auto';
   card.setAttribute('aria-hidden', 'false');
   outWithoutInert(card as unknown as HTMLElement);
   card.inert = true;
   frame();
   card.inert = false;
-  assert.equal(card.style.pointerEvents, 'auto');
   assert.equal(card.getAttribute('aria-hidden'), 'false');
 });
 

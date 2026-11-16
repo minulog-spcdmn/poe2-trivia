@@ -123,6 +123,8 @@ g.document = {
   createElement: () => ({ width: 0, height: 0, getContext: () => new Proxy({}, { get: () => () => ({}) }) }),
 };
 g.localStorage = { getItem: () => null, setItem() {}, removeItem() {} };
+// (A touch device, the only kind with a battery saver to switch: lib/fx/core.ts, SAVER_OFFERED. Its main pointer a mouse's all the same, so the effects' quality starts as on a desktop.)
+g.matchMedia = (q: string) => ({ matches: q === '(any-pointer: coarse)', addEventListener() {}, removeEventListener() {} });
 g.Element = class {};
 g.WebGL2RenderingContext = class {};
 g.devicePixelRatio = 1;

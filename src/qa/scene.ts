@@ -75,6 +75,8 @@ export type Step =
   | { clock: number }
   /** Scrolls the first element `selector` finds into the middle of the view, at once (nothing if none). */
   | { scroll: string }
+  /** A mouse comes to the first element `selector` finds (its pointerenter): what a script shows on hover (a tooltip, HoverTip.svelte), until the real mouse comes into the frame and says where it is. Nothing at a touch screen's size, which has no mouse. */
+  | { hover: string }
   /** A key pressed, by where it sits (KeyboardEvent.code), on what has the focus (a key set on the settings page). */
   | { press: string }
   /** The start page's list finds these rooms from now on, and looks again at once, as its Refresh would (a room opening or closing). */
@@ -146,6 +148,8 @@ export interface Built {
   circle?: PlateName | null;
   /** A page whose chunk never comes, as with the Wi-Fi gone as it's fetched (lib/chunkRetry.ts): what a player gets then. */
   lost?: RetriedPage;
+  /** The browser draws the game without the GPU (lib/gpuNotice.svelte.ts, which never asks in the frame): the settings keep their line for it. */
+  gpuOff?: boolean;
   /** How this device's sync stands (lib/sync/link.svelte.ts: the frame never syncs, so this is all there is). Missing: not paired. */
   sync?: { code: string; met: boolean; status: 'connecting' | 'waiting' | 'linked' | 'offline'; linked?: number; lastAt?: number };
   /** How this device's backup stands (lib/backup/backup.svelte.ts: the frame never keeps, so this is all there is; its buttons act it out). Missing: no passkey to keep it with. */

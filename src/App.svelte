@@ -45,13 +45,14 @@
   import { toasts } from './lib/toasts.svelte';
   import { BETA, LOCAL } from './lib/channel';
   import { watchFullscreenTip } from './lib/fullscreenTip';
-  import { watchGpuNotice } from './lib/gpuNotice';
+  import { gpuNotice, watchGpuNotice } from './lib/gpuNotice.svelte';
   import { setCursorColor } from './lib/ownCursor';
   import DuelMark from './components/DuelMark.svelte';
   import { MediaQuery } from 'svelte/reactivity';
   import { wantsRecording } from './lib/recorder';
   import { playerColor } from './lib/ui';
   import { flat, fullRoom } from './lib/layout';
+  import { outWithoutInert } from './lib/leaving';
   import { landing } from './lib/sync/boot.svelte';
   import { CopyPress } from './lib/copyPress.svelte';
   import CopyNote from './components/CopyNote.svelte';
@@ -138,11 +139,17 @@
   const settingsOver = $derived(settingsRoute.open && !codexAllowed);
   // The room ended (left, closed, kicked) with the settings open over it: they
   // go with it, to the start page, not on as the settings page. (Dropped, not
-  // gone back from: the entry before is the room's address.)
+  // gone back from: the entry before is the room's address.) So does the
+  // question whether to leave: there is nothing left to leave, and its Leave
+  // would take down the notice saying why the room is gone.
   let wasInRoom = untrack(() => !codexAllowed);
   $effect(() => {
     const inRoom = !codexAllowed;
-    if (wasInRoom && !inRoom) untrack(() => settingsRoute.drop());
+    if (wasInRoom && !inRoom)
+      untrack(() => {
+        settingsRoute.drop();
+        confirmLeave = false;
+      });
     wasInRoom = inRoom;
   });
   const codex = $derived(screen === 'codex');
@@ -156,15 +163,15 @@
   const fullscreenTip = watchFullscreenTip();
   $effect(() => fullscreenTip.stop);
   // Whoever's browser draws without the GPU is told how to switch it back
-  // on, on the same calm screens (see lib/gpuNotice.ts).
-  const gpuNotice = watchGpuNotice();
-  $effect(() => gpuNotice.stop);
+  // on, in a dialog, on the same calm screens (see lib/gpuNotice.svelte.ts).
+  const gpuWatch = watchGpuNotice();
+  $effect(() => gpuWatch.stop);
   $effect(() => {
     const calm = screen !== 'game';
     // Untracked: taking a notice down writes the toast list, which mustn't rerun this.
     untrack(() => {
       fullscreenTip.calm(calm);
-      gpuNotice.calm(calm);
+      gpuWatch.calm(calm);
     });
   });
 
@@ -499,6 +506,16 @@
     ));
   // The settings page, a chunk of its own too: fetched again and counted as the codex's is.
   const loadSettingsPage = retried(() => import('./components/Settings.svelte'), countFailedImport, 'Settings');
+  // The graphics notice's dialog comes by itself, so nobody is there to ask
+  // for it again: one that failed takes the notice down, and the next calm
+  // screen (or the settings' line) fetches it afresh.
+  const loadGpuDialog = retried(
+    () => import('./components/GpuDialog.svelte'),
+    (e) => {
+      countFailedImport(e);
+      gpuNotice.open = false;
+    },
+  );
 
   // A room's screens (the lobby and the other players' pointers; a question,
   // a zone's card, the end of a game) are chunks of their own, so the start
@@ -862,10 +879,12 @@
          by the {#key} itself, not by a block made with it, so its own (local) transitions play. -->
     {#key shown}
       <!-- The backdrop follows the swap (data-bs-follow, lib/backdropShadow.ts): the fills it draws stay with it,
-           rather than going to CSS and back, a jump in how they look as the screen starts to go or settles. -->
+           rather than going to CSS and back, a jump in how they look as the screen starts to go or settles.
+           Going, it's let go without being made inert, which would restyle and repaint all of it (lib/leaving.ts). -->
       <div
         class="screen"
         data-bs-follow
+        use:outWithoutInert
         in:screenIn
         out:screenOut
         onintroend={(e) => {
@@ -965,6 +984,13 @@
 {#if landing.code}
   {#await import('./components/SyncDialog.svelte') then { default: SyncDialog }}
     <SyncDialog offered={landing.code} onclose={() => (landing.code = null)} />
+  {/await}
+{/if}
+
+<!-- The browser draws without the GPU: what that does to the game, and how to switch it back on (lib/gpuNotice.svelte.ts). -->
+{#if gpuNotice.open}
+  {#await loadGpuDialog() then { default: GpuDialog }}
+    <GpuDialog />
   {/await}
 {/if}
 

@@ -6,9 +6,10 @@
   import { portal } from '../lib/portal';
   import { calm, motion } from '../lib/motion.svelte';
   import { phone } from '../lib/layout';
-  import { closeItemWindow, readPlace, writePlace, type WindowPlace } from '../lib/itemWindow.svelte';
+  import { closeItemWindow, itemWindow, readPlace, writePlace, type WindowPlace } from '../lib/itemWindow.svelte';
   import { hideLightIn } from '../lib/fx/core';
   import { sfx } from '../lib/sound';
+  import { typing } from '../lib/keybinds.svelte';
   import { zoomOf } from '../lib/stage';
   import NamePlate, { SOCKET_X } from './NamePlate.svelte';
   import ItemDetails, { loadStats, statsLoaded } from './ItemDetails.svelte';
@@ -153,6 +154,23 @@
   }
 
   /**
+   * Escape closes it, wherever the focus is: it takes none as it opens (the
+   * game's keys go on under it), so the key is heard at the window, not on
+   * it. Not one something over or beside it took first (the settings over the
+   * game, a life's offer, an armed kick: each heard before this, and each
+   * says so), nor while a dialog is open, whose key it is.
+   */
+  function escape(e: KeyboardEvent) {
+    // (Closed already and on its way off the screen, it has nothing left to close.)
+    if (e.key !== 'Escape' || !itemWindow.item || e.defaultPrevented || e.repeat || e.ctrlKey || e.metaKey || e.altKey || typing(e)) return;
+    if (document.querySelector('[aria-modal="true"]')) return;
+    e.preventDefault();
+    // A key's press, from its ✕.
+    sfx('key', { from: { from: box?.querySelector('.close') } });
+    closeItemWindow();
+  }
+
+  /**
    * In from the side of the screen it's on, and out to the side it's on as
    * it goes (asked as each starts: dragged across meanwhile, it leaves by
    * the nearer edge).
@@ -163,7 +181,7 @@
   };
 </script>
 
-<svelte:window onresize={measure} />
+<svelte:window onresize={measure} onkeydown={escape} />
 
 <!-- (Its transitions global: it sits in this block of its own, and comes and goes with the game's.) -->
 {#if ready}
@@ -181,13 +199,6 @@
     onintroend={() => {
       folded = false;
       settled = true;
-    }}
-    onkeydown={(e) => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      // A key's press, from its ✕.
-      sfx('key', { from: { from: e.currentTarget.querySelector('.close') } });
-      closeItemWindow();
     }}
     role="dialog"
     aria-labelledby="item-window-name"

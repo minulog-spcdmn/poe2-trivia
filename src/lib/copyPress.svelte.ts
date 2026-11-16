@@ -75,7 +75,7 @@ export class CopyPress {
     return () => {
       for (const [type, f] of on) node.removeEventListener(type, f);
       document.removeEventListener('copy', this.#byHand);
-      removeEventListener('pointerup', this.#released);
+      removeEventListener('pointerup', this.#released, { capture: true });
       clearTimeout(this.#holdTimer);
       clearTimeout(this.#clickTimer);
       clearTimeout(this.#litTimer);
@@ -84,10 +84,25 @@ export class CopyPress {
     };
   };
 
+  /**
+   * Copied from a button beside it that offers the same (the graphics
+   * notice's address), on that button's click: the note comes by that press,
+   * `touch` for a finger's or a pen's. A mouse's or a key's selects it first,
+   * as a click on the code itself would have: lit while it's copied, and
+   * there for the Ctrl+C the note asks for where the copy is refused.
+   */
+  copy = (at: At, touch = false) => {
+    this.#touched = touch;
+    this.#down.copied = false;
+    if (!touch && this.el) getSelection()?.selectAllChildren(this.el);
+    void this.#copy(at);
+  };
+
   #press = (e: PointerEvent) => {
     if (e.button !== 0) return;
     this.#touched = e.pointerType !== 'mouse';
-    if (!this.#touched) return addEventListener('pointerup', this.#released, { once: true });
+    // (At the window as it comes down: let go over what is on its way out, it stops there, lib/leaving.ts.)
+    if (!this.#touched) return addEventListener('pointerup', this.#released, { once: true, capture: true });
     this.#down = { x: e.clientX, y: e.clientY, holding: true, long: false, refused: false, copied: false, menu: false };
     clearTimeout(this.#holdTimer);
     clearTimeout(this.#clickTimer);

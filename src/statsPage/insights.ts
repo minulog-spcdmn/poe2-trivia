@@ -531,12 +531,12 @@ export const beyondChanceOf = (now: number, usual: number) => beyondChance(now -
  * Whether two percents differ by more than chance would make, each of `n`
  * and `nBefore` (`z` times the spread of their difference, twice unless a
  * list asks more; a share near 0 or 100 is taken a little in from the
- * edge), and by at least 3 of the smaller side's: 3 of 3 against 0 of 3 is
- * a handful, never sure.
+ * edge), and by at least 3 of the smaller side's (`least`): 3 of 3 against
+ * 0 of 3 is a handful, never sure.
  */
-export function rateBeyondChance(pct: number, n: number, pctBefore: number, nBefore: number, z = 2): boolean {
+export function rateBeyondChance(pct: number, n: number, pctBefore: number, nBefore: number, z = 2, least = 3): boolean {
   if (n <= 0 || nBefore <= 0) return false;
-  if ((Math.abs(pct - pctBefore) * Math.min(n, nBefore)) / 100 < 3) return false;
+  if ((Math.abs(pct - pctBefore) * Math.min(n, nBefore)) / 100 < least) return false;
   // (A rate of more than one each, as failures can run to, spreads at least as a share at the edge would.)
   const edge = (v: number) => Math.min(100, Math.max(0, v));
   const p = (edge(pct) * n + 100) / (n + 2) / 100;
@@ -564,13 +564,57 @@ export function troubleOf(now: Counts, before: Counts): Trouble | null {
 /**
  * The game going worse than in the period before, the way a deploy breaks
  * it: its own scripts' errors, or pages missing a part that didn't load,
- * far above the period before's for as many visits; a kind of device whose
- * games stuttered far more often. Each beyond chance for one of them all
- * (zFor), as the overview speaks of any. Null where none is.
+ * far above the period before's for as many visits; a kind of device that
+ * stuttered far more often (stutterBy: for a share of its visits, or of its
+ * games until those are counted; `of`, how many the share is of). Each
+ * beyond chance for one of them all (zFor), as the overview speaks of any.
+ * Null where none is.
  */
 export interface Health {
   errors: { key: 'script' | 'chunk'; count: number; expected: number }[];
-  stutter: { device: Device; share: number; before: number; games: number }[];
+  stutter: { device: Device; share: number; before: number; of: number; by: StutterBy }[];
+}
+
+/** The days of the period before that must have visits' first games counted for stutter to be judged by them (stutterBy): so many, and a third of its days. */
+export const VISIT_DAYS = 3;
+/**
+ * The visits one device can make in a day: GoatCounter's visit is eight
+ * hours (stutter.ts VISIT), so a phone played on morning, afternoon and
+ * night is three. A day's share of visits is news only from one more than
+ * that above the usual (healthOf), or one slow phone among a kind of device
+ * that never stuttered would still be.
+ */
+export const ONE_DEVICE_VISITS = 3;
+
+/**
+ * What stutter is judged by. A game is no chance of its own: nothing tells
+ * whose it is, and a slow device's five games in a row are that device's
+ * speed counted five times, so a share of games moves far beyond what
+ * rateBeyondChance allows it whenever one such player has a long evening
+ * (the alerts of 7 and 8 November 2026, issues #421 and #422: two phones'
+ * 7 games; one computer's 7 in an hour). A visit's first game is one
+ * (stutter.ts VISIT: each visitor once), so the share of visits where it
+ * stuttered is weighed once it's counted on VISIT_DAYS or more of the
+ * period before's days, and a third of them (a month before isn't spoken
+ * for by its last three days). Until then, and for periods from before
+ * November 2026, by games, each side's taken as resting on as many fewer
+ * as games come in bunches (gamesSpreadOf): that quiets a usual evening's
+ * run, though not a long one's, which moves the share itself. Never back
+ * to games after: a day with no visit of its own (a device's, or
+ * everyone's) has nothing to say.
+ */
+export type StutterBy = 'visits' | 'games';
+export function stutterBy(before: Counts): StutterBy {
+  const daysWith = (c: Counts) => c.days.filter((_, i) => DEVICES.some((d) => c.frames[d].visits[i] > 0)).length;
+  const n = daysWith(before);
+  return n >= VISIT_DAYS && n >= before.days.length / 3 ? 'visits' : 'games';
+}
+
+/** A kind of device's stutter in a period, as stutterBy says to weigh it: how many visits (or games), and how many of them stuttered. */
+export function stutterOf(c: Counts, device: Device, by: StutterBy): { of: number; part: number } {
+  const sum = (vs: number[]) => vs.reduce((n, v) => n + v, 0);
+  const f = c.frames[device];
+  return by === 'visits' ? { of: sum(f.visits), part: sum(f.visitsStuttered) } : { of: sum(f.games), part: sum(f.stuttered) };
 }
 
 export function healthOf(now: Counts, before: Counts): Health | null {
@@ -584,14 +628,18 @@ export function healthOf(now: Counts, before: Counts): Health | null {
         .filter((e) => e.count > e.was * scale && countsApart(e.count, e.was, { scale, z }))
         .map(({ key, count, was }) => ({ key, count, expected: was * scale }))
     : [];
-  const sum = (vs: number[]) => vs.reduce((n, v) => n + v, 0);
+  const by = stutterBy(before);
+  // A visit is a chance of its own; games come several a player, so they rest on that many fewer.
+  const per = by === 'visits' ? 1 : gamesSpreadOf(now, before);
+  // (Visits: more than one device makes in a day, each of the period's days.)
+  const least = by === 'visits' ? ONE_DEVICE_VISITS * now.days.length + 1 : 3;
   const stutter = DEVICES.flatMap((device) => {
-    const games = sum(now.frames[device].games);
-    const gamesBefore = sum(before.frames[device].games);
-    if (!games || !gamesBefore) return [];
-    const share = (100 * sum(now.frames[device].stuttered)) / games;
-    const was = (100 * sum(before.frames[device].stuttered)) / gamesBefore;
-    return share > was && rateBeyondChance(share, games, was, gamesBefore, z) ? [{ device, share, before: was, games }] : [];
+    const is = stutterOf(now, device, by);
+    const had = stutterOf(before, device, by);
+    if (!is.of || !had.of) return [];
+    const share = (100 * is.part) / is.of;
+    const was = (100 * had.part) / had.of;
+    return share > was && rateBeyondChance(share, is.of / per, was, had.of / per, z, least) ? [{ device, share, before: was, of: is.of, by }] : [];
   });
   return errors.length || stutter.length ? { errors, stutter } : null;
 }

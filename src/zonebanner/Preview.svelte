@@ -113,7 +113,7 @@
       <label class="tog at"><input type="range" min="0" max="7000" step="50" bind:value={at} /> {(at / 1000).toFixed(2)} s</label>
     {/if}
     <label class="tog"><input type="checkbox" checked={saver} onchange={(e) => setSaver(e.currentTarget.checked)} /> Battery saver</label>
-    <label class="tog"><input type="checkbox" checked={reduced} onchange={(e) => setReduced(e.currentTarget.checked)} /> Reduced motion</label>
+    <label class="tog"><input type="checkbox" checked={reduced} onchange={(e) => setReduced(e.currentTarget.checked)} /> Held still</label>
     <span class="hint">Click the screen once for sound.</span>
   </header>
   <div class="stage" class:phone>

@@ -286,12 +286,12 @@
       transform: translateY(-18px) rotateX(70deg);
     }
   }
-  @media (max-width: 520px) {
+  @media (max-width: 900px) {
     .glyphs {
       gap: 0.35rem;
     }
     .glyph {
-      height: 54px;
+      height: 60px;
     }
   }
 </style>

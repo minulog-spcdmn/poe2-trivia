@@ -40,7 +40,7 @@ or wrong answer, a time-out, a ward breaking, a cave-in, a flare at 0,
 a blast (Detonate), dynamite at 0 (its fuse), items gained, a find answered right, the last
 life, deeper than ever, a new zone, the plunge); pauses and moves the
 clock; shows the end screens (perished, deeper than ever, together); and
-switches effects, sound and reduced motion. Events go through the engine
+switches effects, sound and the still mode (the checks', held still). Events go through the engine
 and the session as a game's would; setup changes start the run afresh
 under a new id, so they play nothing themselves.
 
@@ -138,7 +138,7 @@ all as in a game.
   (its cards never dealt) and stops it at the moment the slider sets, to
   look at any frame of it. **Battery saver** shows it as those players see
   it (its CSS alone, no effects drawn on it; the page plays it again as it
-  reloads), **Reduced motion** too (it fades in and out whole). Click the screen
+  reloads), **Held still** too (the checks' mode: it fades in and out whole). Click the screen
   once for sound.
 - **Open it:** `npm run dev`, then `http://localhost:5173/zones.html`; on
   the beta, **poe2.quest/beta/zones.html**. Like the lab, the live build

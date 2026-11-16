@@ -4,7 +4,7 @@
 // any sound from where the screen has it. Served by the dev server and built
 // into the beta only (vite.config.ts).
 
-// First, before any module of the game reads the reduced-motion setting.
+// First, before any module of the game reads the still mode's mark (the lab's Held still, lib/still.ts).
 import '../lab/motion';
 import { mount } from 'svelte';
 import '../app.css';

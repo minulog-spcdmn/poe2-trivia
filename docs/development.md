@@ -224,8 +224,8 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   ring (CSS) marks her then and wherever no effects are drawn (the battery
   saver, no WebGL2). Her name is struck in gold
   foil, and a glint of light crosses it every nine seconds
-  (`src/lib/glint.ts`: one timer, transforms only, nothing under
-  *prefers-reduced-motion*). Online, everyone else gets a notice when she
+  (`src/lib/glint.ts`: one timer, transforms only, nothing in the still
+  mode). Online, everyone else gets a notice when she
   walks into the room (`src/lib/herald.ts`).
 - **Delve's descent** (`src/lib/descent.ts`): each zone is a look (the
   hall's dark, the light from below, smoke in four hues, mist, embers,
@@ -334,15 +334,46 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   decorates (a seal's breath, a light passing now and then), so a screen
   where nothing happens draws nothing; and it silences the game as muting
   does (`saverSilences` in `src/lib/sound.ts`), the sound's own settings
-  kept for when it's off. It stays on the device it was switched on: sync
+  kept for when it's off. It is a touch device's alone, a phone's or a
+  tablet's (`SAVER_OFFERED`: a touch screen at all, `(any-pointer:
+  coarse)`, settled as the page loads): it is there for a battery, and
+  nobody else gets the game with its motion held, the owner's call, as
+  with the still mode below. A touch screen at all, not a finger for the
+  main pointer: a tablet in a keyboard case says its main pointer is a
+  fine one and would lose the saver it chose, so a laptop with a touch
+  screen has the switch too. Anywhere else the settings have no switch
+  for it, nothing switches it (`setBatterySaver` does nothing there), and
+  one saved as on (every device had the switch until November 2026) isn't
+  followed, only left as saved (`tests/saver.test.ts`). The lab and its
+  kin keep their switch on any device, and a QA frame has it at its touch
+  sizes. It stays on the device it was switched on: sync
   never carries it (`tests/sync.test.ts`). What each piece costs an iPhone
   is in `docs/iphone.md`, the November findings. What runs its course
   still plays, transitions, entrances and a moment's animation: a few
-  frames cost next to nothing, and *prefers-reduced-motion* is there for
-  whoever wants the motion gone (it rests everything, effects off too). In
-  code, `motion.still` (`src/lib/motion.svelte.ts`) is reduced motion, for
-  what runs its course; `motion.resting` is either, for what never ends. A new
-  endless loop that decorates checks `motion.resting`, or in CSS stops
+  frames cost next to nothing.
+- **The still mode** (`src/lib/still.ts`, `html[data-still]`) rests
+  everything, effects off too: what runs its course is skipped, and each
+  thing simply stands in its place. No player gets it. It was the game's
+  answer to a system asking for reduced motion, but Windows says so
+  whenever its own animations are off, a common tweak, and such a player
+  got a game that looked dead, with nothing in the settings to say why
+  (a streamer showed it so, November 2026). So the game no longer asks the
+  system, and has no setting for it: the owner's call. It stays for the
+  checks, which shoot and compare screens that hold still: a browser
+  driven by a script (`navigator.webdriver`, Playwright's) that asks for
+  reduced motion gets it, as the sweep, the QA desk's before and after and
+  the headless checks do; the lab's **Held still** shows it by hand. CSS
+  writes it as ever, `@media (prefers-reduced-motion: reduce)` at the
+  sheet's top level, which the build turns into the mark (`stillMark.ts`,
+  a PostCSS step; what it can't say as a mark stops the build: the @media
+  inside a rule, a @keyframes inside it, a query with `not` or `or`). A
+  page gets the mark by loading `still.ts`, which every page of the game's
+  does; one that only loads `app.css` imports it by name. Script reads
+  `motion.still` (`src/lib/motion.svelte.ts`) or `STILL`, never the
+  system (`tests/still.test.ts`).
+- In code, `motion.still` is the still mode, for what runs its course;
+  `motion.resting` is that or the battery saver, for what never ends. A
+  new endless loop that decorates checks `motion.resting`, or in CSS stops
   under `html[data-saver]` and `prefers-reduced-motion`. Quality drops by
   itself (resolution) on devices that can't keep up. Without WebGL2 the
   site falls back to its CSS look.
@@ -396,8 +427,10 @@ effect): find what holds the frame up.
    (`--mute-audio`: the sound still plays in the page, only not out of the
    speakers). The first run on the
    fresh profile (`.pc/profile`) has a cold shader cache, so run each
-   variant twice. Parts come away without editing code through `CSS=` (a
-   style sheet added), `INIT=` (a script run first) and the `?off=`
+   variant twice (or clear the GPU caches with `COLD=1`, for a first
+   visit; `GAMES=2` plays games one after another in the same page, to
+   set a page's first game against its second). Parts come away without
+   editing code through `CSS=` (a style sheet added), `INIT=` (a script run first) and the `?off=`
    switches (`src/lib/switchedOff.ts`). `CATS=` sets the trace's
    categories; the defaults are `toplevel,gpu,blink.user_timing,devtools.timeline`.
    `cc` and `disabled-by-default-devtools.timeline.invalidationTracking`
@@ -463,6 +496,9 @@ effect): find what holds the frame up.
      style of a clone of the screen (`getComputedStyle` forces style
      alone) against the rules as they are, alternated. A hidden browser
      pane does for that: style needs no screen.
+   - **A page's first game, on a Chrome that never drew the site.** The
+     GPU process compiles Skia's programs as the lobby and the game screen
+     first show, and the frames wait: "A page's first game", below.
 3. **On the iPhone**, the same questions through its Web Inspector:
    `docs/iphone.md`. A scene on its own is `qa.html?frame&s=<scene
    key>&size=fit` in a `--qa` build. Without `&size=fit` the desk plays a
@@ -470,6 +506,117 @@ effect): find what holds the frame up.
    would.
 4. **Whether it still looks the same**: the QA desk's before and after
    (B, on the dev server; `docs/qa.md`).
+
+### A page's first game
+
+Parked on 16 November 2026, nothing built yet (#331 has the runs, its
+comments of that day). What's known, so the next look starts here:
+
+- **What happens.** Chrome draws the page's CSS with Skia (on this PC
+  Ganesh, GL through ANGLE on Direct3D 11) and compiles a program for each
+  new kind of draw the first time it's needed (a rect or a rounded rect
+  with a given fill, a gradient's shape, text, a layer's own surface with
+  a filter, a mask or a fade), on the GPU process's main thread, the one
+  that presents the frames. The page's own thread sits idle meanwhile: its
+  long animation frames hold no script and no style. Chrome keeps the
+  programs on disk per profile, so a returning player has them.
+- **What it costs,** on a cold cache (`COLD=1`), a solo Take-turns game
+  (`GAMES=2 node scripts/pc/game.mjs <url> <label> 2`, a local-channel
+  production build): programs compiled (`CATS` with
+  `disabled-by-default-skia.shaders`, counting `cache_miss`) 65 on the
+  start page, 39 as the lobby opens (its frame up to 213 ms, not counted
+  by `stutter.ts`), 41 at Begin (3 or 4 frames over 50 ms, the worst 108
+  to 121 ms), 23 at the first pick (the worst 33 to 54 ms), 21 at the
+  first answer, and 1 in the whole second game. With the cache warm the
+  first game costs what the second does. About half of Begin's programs
+  are the display compositor's (`SkiaOutputSurfaceImplOnGpu::FinishPaintRenderPass`:
+  render passes with filters, masks or fades), the rest the tiles'
+  raster. `ChooseCategory.svelte` alone has 27 `filter`s, 24 masks and 11
+  perspectives. A warm cache can still miss one: a second game's first
+  pick once stalled 361 ms on a single program.
+- **What a page can't do:** ask Chrome to compile its CSS's programs
+  ahead or off that thread. Only drawing compiles them. `opacity: 0`,
+  `visibility: hidden` and a cover leave the drawing out, so nothing
+  compiles; at `opacity: 0.004` (1/255, unseen) everything is drawn and
+  compiled.
+- **Tried, a warm-up from copies:** the screens' DOM, captured from a
+  game, put on the settled start page at 1/255, `inert`. All at once it
+  compiled 69 programs and froze the start page (a 517 ms frame); one at a
+  time, each faded and scaled in like a screen, 84. Begin went from 43
+  programs to 19, the first pick from 24 to 7, but Begin kept a 75 to 100
+  ms frame: copies level off at about half, missing what the components do
+  in script (the deal, canvases, images arriving), and the 1/255 box is a
+  surface of its own, so some of its compositor programs aren't the
+  game's (more were compiled in all). Copies can't ship anyway: Svelte's
+  class names change with each build, and the game screen can't be
+  mounted twice (`Game.svelte` and 22 components read the one session).
+- **The levers,** and only these: fewer kinds of draw for the same look
+  (simpler CSS, a look drawn ahead as a picture as the cards' engravings
+  are, or drawn in the site's own WebGL, whose programs compile in the
+  background and are warmed: `warmUp` in `lib/backdrop.ts`); or a paced
+  warm-up of the real pieces. A red team's spec for that: the lobby, the
+  game's frame and header, a dealt hand at rest, a card mid-turn, the
+  question and the reveal, each mounted with sample data for two
+  presented frames in its own idle moment (the start page, then the
+  lobby), full window at the real stage zoom (blur radii and text sizes
+  change the programs), at 1/255, inert; stopping at once where the first
+  piece's frames come back promptly (a warm cache) or a game was already
+  played. It needs those pieces to take what they show as props. Smaller
+  ideas not yet tried: start the game screen's fade only once its first
+  frame is up (moves one of Begin's stalls between screens), mount the
+  next screen under the outgoing one during its outro, and drawing just
+  outside the viewport, which Chrome rasters ahead.
+- **What the runs don't settle yet** (an adversarial review's points):
+  - Every run was Take turns; players mostly play Delve (95 Delve games
+    to 6 that week).
+  - A cleared cache is the worst case: a new visitor's Chrome holds the
+    common programs from other sites. Warm a profile on other pages
+    first to see how many of the 216 are this site's alone.
+  - Playwright keeps Chrome's field trials out (`SEED=1` lets them in),
+    so the GPU features traced may not be players'. Check the Skia
+    backend in `chrome://gpu` against an everyday Chrome.
+  - Program counts don't track frame cost: what matters is how many land
+    in one frame.
+  - The live counts: from 16 November a stuttered first game names its
+    moment (`frames2/<device>/visit/stuttered/<moment>`), which says
+    whether players' first games stutter at Begin and the first pick. A
+    fix should bring visits' share down toward the games'.
+- **Tracing it:** keep the categories light. `disabled-by-default-skia.gpu`
+  names the draws but floods the buffer (620 MB for a game, the oldest
+  events lost: `chrome.mjs` warns now), so trace only the steps it's
+  for. `toplevel,gpu,blink.user_timing,devtools.timeline,disabled-by-default-skia.shaders`
+  is enough to count programs a step.
+
+## Looking in Firefox
+
+Firefox reads and draws some things differently from Chrome, and neither
+the tests nor the QA sweep (Chromium both) show it.
+`scripts/pc/firefox.mjs` opens a page in the Firefox installed on this PC,
+on its screen, and shoots it:
+
+```bash
+node scripts/pc/firefox.mjs "http://localhost:5173/qa.html?frame=0&s=game/turns-choosing&size=fit" .pc/firefox/cards.png --scale 1 --hover 450,360
+```
+
+`--reduced` is a system asking for reduced motion (which the game no
+longer follows: it should look no different; refused on the live game,
+where the page is told a script drives it so the visit isn't counted, and
+would be held still), `--scale 1` a 1080p screen
+at 100%, `--eval` prints what the page says (a computed style) and
+`--css` tries a rule. The shot is the window's own pixels as the screen
+has them, not Firefox's screenshot, which draws the page again for the
+shot and smooths what the screen shows in steps. One run at a time, and
+only for what the code can't settle: it slows every other session here.
+What it has found:
+
+- **A `calc()` that comes to a bare number is no stroke width** to
+  Firefox, nor a stroke's dashes or their offset: the line falls back to a
+  width of 1. Write the unit, `calc((var(--w) + 1.8) * 1px)`
+  (`tests/strokeCalc.test.ts`). The descent's ouroboros lost its bodies'
+  lines so, and only its heads showed.
+- **A box turned in 3D inside a `preserve-3d` gets stepped edges** unless
+  something of it reaches past its box, a shadow or an outline nobody
+  sees: the category cards' faces (`docs/category-cards.md`).
 
 ## Refreshing item data
 

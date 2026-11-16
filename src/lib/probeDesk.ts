@@ -1,8 +1,9 @@
 // How a room answers probes (lib/rooms.ts): browsers that only ask after it,
 // the room list's scan on a public room's listing slot and an invite link's
-// screen on the room's own id. They ask over the signalling server (a ping),
-// and connect only to a room that answers no ping (an older version, or one
-// past its share of pings).
+// screen on the room's own id. They ask over the signalling server (a ping).
+// The list leaves it at that; an invite's screen connects to a room that
+// answers no ping (an older version, or one past its share of pings), and so
+// does the list of a page loaded before it stopped.
 // Apart from rooms.ts, which needs PeerJS, so tests can reach it.
 
 import type { DataConnection } from 'peerjs';
@@ -15,11 +16,12 @@ const MAX_OPEN = 8;
 const MAX_PER_10S = 60;
 /**
  * Pings answered per 10 seconds, and from any one id (which holds back a
- * single sender only: ids cost nothing). Past them pings go unanswered, and
- * an honest asker falls back on connecting (rooms.ts), as every probe did
- * before pings: so pings have a share of their own, which a flood of them,
- * costing a message each, can use up without touching the share of probes
- * that connect.
+ * single sender only: ids cost nothing). Past them pings go unanswered: the
+ * room list keeps the room as last heard and asks less often
+ * (roomRefresh.ts), and an invite's screen falls back on connecting
+ * (rooms.ts), as every probe did before pings. So pings have a share of
+ * their own, which a flood of them, costing a message each, can use up
+ * without touching the share of probes that connect.
  */
 const MAX_PINGS_PER_10S = 60;
 const MAX_PINGS_PER_SENDER = 3;

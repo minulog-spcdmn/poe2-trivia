@@ -152,7 +152,8 @@ export async function boot(asked: URLSearchParams) {
   // A game saved before a reload, where the page looks for it as it loads ('session.v4', lib/session.svelte.ts' SAVE).
   if (built.saved) storage.writeStored('session.v4', JSON.stringify(built.saved), 'session');
   if (built.stored?.keys) (await import('../../lib/keybinds.svelte.ts')).reloadKeys();
-  // (fx/core read the battery saver as it loaded, before it was written.)
+  // (fx/core read the battery saver as it loaded, before it was written. It takes at a touch size alone, as on a
+  // player's device, SAVER_OFFERED: at any other the frame shows what a desktop does with one saved, which is nothing.)
   if (built.stored?.saver) (await import('../../lib/fx/core.ts')).setBatterySaver(built.stored.saver === '1');
   // How its sync stands (only where the scene says: sync's link is loaded for those scenes alone).
   if (built.sync) {
@@ -164,6 +165,8 @@ export async function boot(asked: URLSearchParams) {
     const { backup } = await import('../../lib/backup/backup.svelte.ts');
     Object.assign(backup, { supported: true, savedAt: 0, busy: null, ...built.backup });
   }
+  // The browser drawing without the GPU (only where the scene says, as with sync's link).
+  if (built.gpuOff) (await import('../../lib/gpuNotice.svelte.ts')).gpuNotice.off = true;
   // A page that never comes (only where the scene says, as with sync's link).
   if (built.lost) (await maybe('../../lib/chunkRetry.ts'))?.loseOnCue(built.lost);
   // The tip to play fullscreen is about the desk's own window, never the scene's (lib/fullscreenTip.ts): taken as read.
@@ -321,6 +324,23 @@ export async function boot(asked: URLSearchParams) {
     // (In a tree before the back guard there's no Back of the game's to show: the tab's own history is the desk's.)
     else if ('back' in step) steps?.back();
     else if ('scroll' in step) document.querySelector(step.scroll)?.scrollIntoView({ block: 'center', behavior: 'instant' });
+    else if ('hover' in step) {
+      // (A touch screen's frame answers that it has no hover: emulate.ts.)
+      const on = matchMedia('(hover: hover)').matches ? await found(step.hover) : null;
+      if (on) {
+        // Once the fonts it shows are in (asked for as it's laid out): a tooltip takes its place from where things are as it opens.
+        void on.offsetWidth;
+        await document.fonts.ready;
+        on.dispatchEvent(new PointerEvent('pointerenter', { pointerType: 'mouse' }));
+        // Until the real mouse comes into the frame, which says where the pointer is from then on: off it, it leaves.
+        const real = (e: PointerEvent) => {
+          if (!e.isTrusted) return;
+          removeEventListener('pointerover', real, true);
+          if (!on.contains(e.target as Node)) on.dispatchEvent(new PointerEvent('pointerleave', { pointerType: 'mouse' }));
+        };
+        addEventListener('pointerover', real, true);
+      }
+    }
     else if ('press' in step) (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', { code: step.press, bubbles: true, cancelable: true }));
     else if ('rooms' in step) {
       // Found from now on; then a look at once, once the list's last look is over (Refresh waits out its 1.5 s).

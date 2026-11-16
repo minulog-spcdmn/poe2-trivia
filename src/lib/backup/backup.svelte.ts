@@ -423,10 +423,12 @@ export function eraseBackup() {
   if (timer) clearTimeout(timer);
   timer = null;
   const secret = k.secret;
+  // (Its name now: sync's erase gives it a new one.)
+  const me = deviceId();
   forgetKept();
   forgetSent();
   readState();
-  void fromKept(secret).then(({ bucket }) => fetch(BASE + `${bucket}/${deviceId()}`, { method: 'POST', headers: { 'Content-Type': 'text/plain' } }).catch(() => {}));
+  void fromKept(secret).then(({ bucket }) => fetch(BASE + `${bucket}/${me}`, { method: 'POST', headers: { 'Content-Type': 'text/plain' } }).catch(() => {}));
 }
 
 /** After a game: once, where a passkey can keep it and there's enough played for it to matter, a notice offering to keep it safe. */

@@ -93,9 +93,11 @@ with that in mind. Guests, on the other hand, are treated as untrusted:
 - **Room codes** are 6 characters (about a billion combinations).
 
 **Privacy:** guests connect directly to the host (WebRTC), also briefly
-while browsing the open rooms list or on opening an invite link, so the
-host and guests can see each other's IP address (unless the connection
-runs through a TURN relay). Guests never connect to each other. The
+on opening an invite link to a room that doesn't answer over the
+matchmaking server, so the host and guests can see each other's IP address
+(unless the connection runs through a TURN relay). The open rooms list
+asks rooms through the matchmaking server alone and connects to none.
+Guests never connect to each other. The
 privacy policy says so; the game itself doesn't show a notice.
 
 **Visit counts** (GoatCounter, `src/lib/count.ts`) are sent from the live
@@ -123,14 +125,22 @@ computer), `desktop-other`, `ios` (iPhone and iPad) or `android`; `smooth`,
 (1% and 5%; time, not frames, so a 240 Hz screen reads as a 60 Hz one does);
 and for one that stuttered, `begin` (the game's first 3 seconds, from the
 state change that started it), `deal`, `question` or `reveal`, where most of
-it fell. A computer whose browser draws WebGL without the GPU sends
+it fell. A computer whose browser draws the game without the GPU sends
 `frames2/<device>/software` instead, nothing more: whether it does is all
 that is kept of the check (`src/lib/gpuCheck.ts`), never the renderer's
-name. It goes as the game is decided or left, or as the page is left, or
+name, nor what Firefox answered of video and WebGPU. It goes as the game
+is decided or left, or as the page is left, or
 on a phone as it's hidden (not again for the same game if it's seen once
 more; a computer's game switched away from is counted when it ends, as a
 whole); a game seen for
-less than 20 seconds sends nothing. Until 1 November 2026 it was
+less than 20 seconds sends nothing. The first game a page counts goes once
+more as `frames2/<device>/visit/smooth` or `…/visit/stuttered/<moment>`
+(`stutter.ts` VISIT; the moment from 16 November 2026, a page from before
+sends `…/visit/stuttered` alone, read as a stuttered visit at no moment),
+sent as a step is, so once a visitor in eight hours,
+and only from a page arrived at (not one reloaded or come back to):
+nothing tells whose a game is, and one slow device's run of games would
+otherwise read as many players stuttering. Until 1 November 2026 it was
 `frames/…`, by frames over 50 ms and with no `begin`; the stats page reads
 only `frames2/`, so the two never mix. Visits count
 once a person in eight hours, and so do the steps (`countReach`, each once a
@@ -196,8 +206,11 @@ above it all speaks only when something's wrong: joining failing well
 above the usual rate, today's or the period's (`insights.ts` troubleOf),
 and, where the period before was counted in full, the game breaking more
 than before (its scripts' errors, or pages missing a part that didn't
-load, for as many visits) or a kind of device stuttering more
-(`insights.ts` healthOf); each opens Joining or Stutter. "What happened"
+load, for as many visits) or a kind of device stuttering more, weighed by
+its visits' first games once those are counted on 3 of the period before's
+days and a third of them, from more than one device's visits (3 a day),
+and until then by its games, taken as resting on as many fewer as each
+player plays (`insights.ts` healthOf, stutterBy); each opens Joining or Stutter. "What happened"
 reads out the days far busier than usual (the median of the days within
 two weeks of it) and the site behind each, and the sites and countries
 that brought far more or fewer than the period before, beyond how they
@@ -265,7 +278,7 @@ a day on each kind of device, small charts on one axis with the period's
 share dashed across, so a deploy that made things worse on one shows as a
 jump there (a day resting on fewer than 5 games hollow, and out of the
 axis), and each device's period against the period before, with the moment
-most stuttered and the games drawn in software, counted apart. `#groups` (Groups) opens on what stands out between groups,
+most stuttered, the share of visits whose first game stuttered, and the games drawn in software, counted apart. `#groups` (Groups) opens on what stands out between groups,
 each a sentence and only beyond what chance makes of groups so small
 (`slices.ts` apartFrom), and sets the visits from a country, or on a system or
 a kind of device, against everyone in a table, each row saying what it

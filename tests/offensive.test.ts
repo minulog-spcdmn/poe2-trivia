@@ -16,7 +16,9 @@ const BAD = [
   ...['Hitler', 'AdolfHitler', 'heilhitler', 'HeilHitler88', 'siegheil', 'sieg_heil', 'Sieg Heil', 'WhitePower', 'white_power'],
   ...['1488', '14/88', 'KKK_Member', 'KuKluxKlan', 'rahowa', 'holohoax', 'Untermensch', 'heilwhitler', 'whitler88'],
   // An innocent word spares only itself, not the same word elsewhere in the name.
-  ...['FaginFag', 'CumMingCum', 'PussyCatPussy'],
+  ...['FaginFag', 'CumMingCum', 'PussyCatPussy', 'KanalAnal', 'DickerDick', 'SemenovSemen', 'SiripornPorn'],
+  // Nor what merely starts as one does.
+  ...['faggit', 'DickEater', 'dickhead', 'analsex', 'girlsporn', 'pornhub', 'cumshot', 'slutty'],
   ...['gasthejews', 'gas the jews', 'killalljews', 'KillAllJews', 'kill the gays'],
   ...['Neger', 'Schwuchtel', 'Kanake', 'Judensau', 'Zigeuner', 'Fotze', 'maricón', 'sudaca', 'negrata', 'bougnoule', 'youpin'],
   ...['cumslut', 'rapist', 'pussyslayer', 'DickMage', 'PenisMage', 'BigCock', 'Porn_Star', 'whore', 'cunt', 'Bestiality'],
@@ -33,6 +35,11 @@ const FINE = [
   ...['kkkkk', 'Brazil kkkk', 'Sir/Knight', 'Mage#1', 'Unit14ab88', 'Rose & Thorn', 'Analise', 'Dickey'],
   // Split where the case changes, these still read as the innocent word.
   ...['PussyCat', 'DickSon', 'DickInson', 'CumMing', 'RapeSeed', 'KlonDyke', 'AnalYst'],
+  // People's names, and everyday words of other languages.
+  ...['Fagan', 'Fagundes', 'Fagerström', 'Fagerlund', 'Fagioli', 'Faggio', 'Semenov', 'Semenova', 'Semenko', 'Semenya', 'Semenchuk'],
+  ...['Dickie', 'Dicker', 'Dickmann', 'Dickkopf', 'Riddick', 'Roddick', 'Burdick', 'Updyke', 'Slutsky', 'Slutskaya'],
+  ...['Pornthip', 'Porntip', 'Pornchai', 'Siriporn', 'Supaporn', 'Cumhur', 'Cumhuriyet', 'Cumali', 'Cumpleaños', 'Cummins', 'Cummerbund'],
+  ...['Kanal', 'Kanalratte', 'Sanal', 'Analia', 'Analiese', 'Analphabet', 'Analfabeta', 'Kikeriki', 'Kiken', 'Penisola', 'Rapero', 'Boobytrap'],
 ];
 
 test('slurs, hate slogans and sexual terms are caught through the usual disguises', () => {

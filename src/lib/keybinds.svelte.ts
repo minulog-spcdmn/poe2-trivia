@@ -32,12 +32,44 @@ function save(map: Bindings) {
 /** Kinds of field a key types into; a slider, a box or a button doesn't. */
 const NOT_TYPED = new Set(['range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'color', 'file']);
 
-/** Whether a key press goes into a field being typed in, where no key of the game's should act. */
-export function typing(e: KeyboardEvent): boolean {
-  const t = e.target;
+/** Whether `t` is a field a key types into. */
+export function typedIn(t: EventTarget | null): boolean {
   if (!(t instanceof HTMLElement)) return false;
   if (t.isContentEditable || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return true;
   return t instanceof HTMLInputElement && !NOT_TYPED.has(t.type);
+}
+
+/** Whether a key press goes into a field being typed in, where no key of the game's should act. */
+export const typing = (e: KeyboardEvent): boolean => typedIn(e.target);
+
+/** A control whose Enter or Space presses it. */
+const PRESSED_BY_KEY = 'button, a[href], summary, [role="button"]';
+
+/**
+ * How the focus last came where it is: by the keyboard (Tab), when its ring
+ * shows and the player means the control it is on, or by a press, which
+ * leaves the focus on what was pressed but not the keys with it. (Kept here,
+ * not asked of :focus-visible, which a browser may turn on at any key.)
+ */
+let tabbed = false;
+if (typeof addEventListener === 'function') {
+  addEventListener('keydown', (e) => void (e.key === 'Tab' && (tabbed = true)), true);
+  addEventListener('pointerdown', () => void (tabbed = false), true);
+}
+
+/**
+ * Whether Enter or Space is the focused control's own, not the game's (Next's,
+ * as it comes): on a button or a link the player tabbed to, or on any of an
+ * item's window's (ItemWindow), which has no key of the game's. A control
+ * pressed with the mouse keeps the focus but not the keys: Space after a
+ * click on a picture is still Next. `byTab`: how the focus came (the page's
+ * own count, unless told).
+ */
+export function ownKey(e: KeyboardEvent, byTab = tabbed): boolean {
+  if (e.key !== 'Enter' && e.key !== ' ') return false;
+  const control = (e.target as Element | null)?.closest?.(PRESSED_BY_KEY);
+  if (!control || (control as HTMLButtonElement).disabled) return false;
+  return byTab || !!control.closest('[data-item-window]');
 }
 
 /** The action a key press is bound to, or null. */

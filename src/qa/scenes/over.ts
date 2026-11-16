@@ -206,7 +206,23 @@ function teamRun(names: string[], more: { left?: string; streak?: number } = {})
     streak: more.streak,
   });
   if (more.left) s.players.find((p) => p.name === more.left)!.connected = false;
+  // Right answers: each depth is cleared by one delver's answer (game.ts coopReveal), so they add up to the depth reached less one.
+  // The highlights name whoever has the most (recap.ts partyHighlights): Una with three or six, Una and Rog level with twelve.
+  const right = shares(26, names.map((n) => RIGHT_WEIGHT[n] ?? 1));
+  names.forEach((n, i) => (s.players.find((p) => p.name === n)!.score = right[i]));
   return s;
+}
+/** How large a share of the right answers each delver gives (the one who lasted longest isn't the quickest; the last two none). */
+const RIGHT_WEIGHT: Record<string, number> = { Kalguur: 5, Doryani: 3, 'Una of the Vaal': 7, 'Hooded One': 4, Rog: 6, Zelina: 2, Alva: 3, Oswin: 1, Dannig: 2, Finn: 1, 'Sekhema Asala': 0, Renly: 0 };
+/** `total` split by `weights` in whole numbers that add up to it (largest remainder; earlier first among equals). */
+function shares(total: number, weights: number[]): number[] {
+  const sum = weights.reduce((a, b) => a + b, 0) || 1;
+  const exact = weights.map((w) => (total * w) / sum);
+  const out = exact.map(Math.floor);
+  let left = total - out.reduce((a, b) => a + b, 0);
+  const order = exact.map((x, i) => [x - Math.floor(x), i]).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+  for (const [, i] of order) if (left-- > 0) out[i] += 1;
+  return out;
 }
 const teamLog = () => [miss(10, 'Ingenuity', 20, team('Kalguur')), miss(40, "Atziri's Disdain", 27, team('Kalguur'))];
 const guestLog = () => [
@@ -425,7 +441,11 @@ function anyTogether(v: Values): AsSet {
     s.delve!.entrants = [...s.delve!.entrants, pid('Tujen')];
     s.delve!.leftAt = 17;
   }
-  if (twist === 'quiet') s.recap = { answers: {}, misses: [] };
+  if (twist === 'quiet') {
+    s.recap = { answers: {}, misses: [] };
+    // (Nobody with two right answers either: a run that has none to name, as a very short one.)
+    for (const p of s.players) p.score = 0;
+  }
   if (twist === 'no-recap') delete s.recap;
   if (v.you === 'watching') return { state: watched(s), seat: { mode: 'client', me: pid('Watcher') } };
   const result = String(v.best);
