@@ -192,7 +192,8 @@
    */
   .descent {
     --seal: 2.4rem;
-    --row: 3.1rem;
+    /* Tall enough for a thread of 10 px or so between seals at the least: a line, not a tick. */
+    --row: 3.4rem;
     /* What a thread leaves clear above and below a seal. */
     --clear: 3px;
     --dull: #6f6453;
@@ -268,8 +269,10 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* Cinzel's figures sit on the name's baseline (centred, their boxes leave them a little high). */
   .depth {
     grid-area: depth;
+    translate: 0 0.07em;
     text-align: right;
     font-size: 0.85rem;
     font-weight: 700;
@@ -277,6 +280,7 @@
   }
   .when {
     grid-area: when;
+    translate: 0 0.08em;
     text-align: right;
     font-size: 0.75rem;
     color: var(--muted);
@@ -301,7 +305,7 @@
   .ahead path.shade {
     stroke-width: 0.32;
     stroke-linecap: round;
-    opacity: 0.75;
+    opacity: 0.5;
   }
   .ahead .name {
     grid-column: 2 / -1;
@@ -326,9 +330,10 @@
     text-transform: uppercase;
     color: #d8a26a;
   }
+  /* Under the descent, quieter than the zones it sums up. */
   .climb-steps {
-    font-size: 1.05rem;
-    color: var(--gold-hi);
+    font-size: 0.95rem;
+    color: var(--gold);
   }
   .climb-steps .n {
     font-weight: 700;
