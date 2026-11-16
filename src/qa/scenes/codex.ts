@@ -203,7 +203,7 @@ export function codexScenes(): Scene[] {
         { label: 'Part filled, not kept: the way to keep it', values: { backed: 'off', met: 'part' } },
         { label: 'Part filled, kept: no button, the line says so', values: { backed: 'on', met: 'part' } },
         { label: 'Part filled, kept but never saved: the line says it will be', values: { backed: 'unsaved', met: 'part' }, listed: false },
-        { label: 'Kept, Erase asked for: its entry goes too', values: { backed: 'on', met: 'part', asked: true }, listed: false },
+        { label: 'Kept, Erase asked for: its own copy goes, the others’ stay', values: { backed: 'on', met: 'part', asked: true }, listed: false },
         { label: 'Kept and synced, Erase asked for: it only stops keeping', values: { backed: 'synced', met: 'part', asked: true }, listed: false },
       ],
       build: (v = {}): Built => {
