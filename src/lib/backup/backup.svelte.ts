@@ -20,9 +20,13 @@
 // the others.
 //
 // Sync passes the secret on (./kept.ts), so one press keeps every paired
-// device's. A device that moves to another secret, or erases its codex,
-// takes its entry out of the one it left (clearLeft), so a passkey never
-// brings back an old part of the progress as if it were all of it. Only
+// device's. A device that moves to another secret leaves a note in its place
+// under the one it left, sealed as its entry was, saying where it went
+// (clearLeft): so a passkey never brings back an old part of the progress as
+// if it were all of it, and a computer's own passkey, which only that
+// computer can use, still brings back everything once its secret has lost
+// to another's. Bring it back follows the notes (walk). A device that erases
+// its codex takes its entry out. Only
 // the game itself keeps (SYNC_HERE): never the lab, the bot or the QA desk,
 // whose benches set `backup` as they like and whose buttons only act it out.
 
@@ -35,7 +39,7 @@ import { base64url, fromBase64url } from '../base64url.ts';
 import { loadCodex } from '../codex.ts';
 import { COPY_KINDS, COPY_NAMES, MAX_COPY, SYNC_HERE, deviceId, isDevice, isStamp, readCopies, type CopyKind } from '../sync/store.ts';
 import { OWN_NAMES, TAKEN_NAMES, fingerprint, ownNow, takeCopies, takeIn, takenNow } from '../sync/shared.ts';
-import { KEPT_NAME, dropLeft, forgetKept, forgetSent, forgetToSend, leave, loadKept, loadLeft, loadSent, markAsked, markForgotten, nextAt, repoint, saveKept, saveSent, wasAsked } from './kept.ts';
+import { KEPT_NAME, dropLeft, forgetKept, forgetSent, forgetToSend, isSecret, leave, loadKept, loadLeft, loadSent, markAsked, markForgotten, nextAt, repoint, saveKept, saveSent, wasAsked } from './kept.ts';
 import { fromSecret, newSecret, secretIn, seal, unseal, userId } from './seal.ts';
 import { OFFER } from './words.ts';
 
@@ -96,11 +100,19 @@ function readState() {
   if (!backup.on) backup.failing = false;
 }
 
-/** Whether this browser can keep progress with a passkey. */
+/** Whether this browser can keep progress with a passkey: one of its own, or one on a phone (a computer without its own, through the phone's code). */
 async function canKeep(): Promise<boolean> {
   if (!SYNC_HERE || !BASE || !isSecureContext || typeof PublicKeyCredential === 'undefined' || !crypto?.subtle || typeof CompressionStream !== 'function') return false;
   try {
-    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+    if (await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()) return true;
+  } catch {
+    /* none of its own, as far as it says */
+  }
+  // (Newer browsers only: where it's missing, a browser without its own passkey isn't offered one.)
+  const caps = (PublicKeyCredential as { getClientCapabilities?: () => Promise<Record<string, boolean>> }).getClientCapabilities;
+  if (typeof caps !== 'function') return false;
+  try {
+    return (await caps.call(PublicKeyCredential)).hybridTransport === true;
   } catch {
     return false;
   }
@@ -199,14 +211,22 @@ async function sendNow(leaving: boolean) {
   void clearLeft();
 }
 
+/** A note left in a device's place under a secret it moved on from: the secret it moved to, and when. */
+export interface Note {
+  next: string;
+  at: number;
+}
+
 let clearing: Promise<void> | null = null;
 /**
- * Takes out of the server the entries this device left under secrets it no
- * longer keeps with (./kept.ts leave): one it moved on from, once its
- * progress is saved under the one it moved to (the bucket last sent to);
- * one it stopped keeping with, at once. One it's kept with again is its
- * own again, and the next save takes its place. What doesn't go is tried
- * again after the next save, or as the page next starts.
+ * Replaces the entries this device left under secrets it no longer keeps
+ * with (./kept.ts leave): one it moved on from, once its progress is saved
+ * under the one it moved to (the bucket last sent to), with a note saying
+ * where it went, so the passkey that opens it still brings everything back
+ * (bringBack follows it); one it stopped keeping with, at once, with
+ * nothing. One it's kept with again is its own again, and the next save
+ * takes its place, note or entry. What doesn't go is tried again after the
+ * next save, or as the page next starts.
  */
 export function clearLeft(): Promise<void> {
   // (One at a time: one asked for meanwhile goes after it.)
@@ -222,12 +242,13 @@ async function clearLeftNow() {
       continue;
     }
     if (left.after !== null && (await fromKept(left.after)).bucket !== loadSent()?.bucket) continue;
-    const { bucket } = await fromKept(left.secret);
+    const { bucket, key } = await fromKept(left.secret);
+    // (A note where it moved on, sealed as its entry was and for the device it was; an empty entry takes it out.)
+    const body = left.after === null ? undefined : await seal(JSON.stringify({ v: 1, next: left.after, at: Date.now() }), key, bucket, left.device);
     const stop = new AbortController();
     const late = setTimeout(() => stop.abort(), SEND_WITHIN_MS);
     try {
-      // (An empty entry takes it out.)
-      if ((await fetch(BASE + `${bucket}/${left.device}`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, signal: stop.signal })).ok) dropLeft(left);
+      if ((await fetch(BASE + `${bucket}/${left.device}`, { method: 'POST', body, headers: { 'Content-Type': 'text/plain' }, signal: stop.signal })).ok) dropLeft(left);
     } catch {
       /* out of reach: again in a while */
     } finally {
@@ -390,8 +411,8 @@ export async function keepSafe() {
   else toasts.show('Your progress is kept with your passkey from now on, saved as you play.', 'info', { title: 'Kept safe' });
 }
 
-/** The entries kept under `secret`, each device's that opens, or null where the server can't be reached. */
-async function fetchEntries(secret: string): Promise<{ device: string; entry: Entry }[] | null> {
+/** What's kept under `secret`, each device's that opens: its entry, or its note where it moved on; null where the server can't be reached. */
+async function fetchKept(secret: string): Promise<{ entries: { device: string; entry: Entry }[]; notes: Note[] } | null> {
   const { bucket, key } = await fromKept(secret);
   let body: Uint8Array<ArrayBuffer>;
   try {
@@ -401,13 +422,50 @@ async function fetchEntries(secret: string): Promise<{ device: string; entry: En
   } catch {
     return null;
   }
-  const out: { device: string; entry: Entry }[] = [];
+  const entries: { device: string; entry: Entry }[] = [];
+  const notes: Note[] = [];
   for (const { device, data } of unpack(body)) {
     const text = await unseal(data, key, bucket, device, MAX_ENTRY_TEXT);
-    const entry = text === null ? null : readEntry(text);
-    if (entry) out.push({ device, entry });
+    if (text === null) continue;
+    const entry = readEntry(text);
+    if (entry) entries.push({ device, entry });
+    else {
+      const note = readNote(text);
+      if (note) notes.push(note);
+    }
   }
-  return out;
+  return { entries, notes };
+}
+
+/** The most buckets Bring it back opens, following notes. */
+export const MAX_WALK = 8;
+
+/**
+ * What's kept under `secret` and under every secret its notes lead to, and
+ * on (A to B and B back to A may both be there, each opened once, no more
+ * than MAX_WALK): every entry, and the secret to keep with from then on, the
+ * one the newest note names, or `secret` itself where there is none. Null
+ * where any can't be reached, so none of it is taken in by halves.
+ */
+export async function walk(secret: string): Promise<{ entries: { device: string; entry: Entry }[]; next: string } | null> {
+  const seen = new Set<string>();
+  const queue = [secret];
+  const entries: { device: string; entry: Entry }[] = [];
+  let newest: Note | null = null;
+  while (queue.length && seen.size < MAX_WALK) {
+    const s = queue.shift()!;
+    const { bucket } = await fromKept(s);
+    if (seen.has(bucket)) continue;
+    seen.add(bucket);
+    const got = await fetchKept(s);
+    if (!got) return null;
+    entries.push(...got.entries);
+    for (const note of got.notes) {
+      if (!newest || note.at > newest.at) newest = note;
+      queue.push(note.next);
+    }
+  }
+  return { entries, next: newest?.next ?? secret };
 }
 
 /** The frames the server sends a bucket's entries in (signal/worker.js pack). */
@@ -426,7 +484,18 @@ export function unpack(body: Uint8Array<ArrayBuffer>): { device: string; data: U
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-/** A device's entry as it was kept, or null for one this build can't read. */
+/** A device's note where it moved on (clearLeft), or null where it's something else. */
+export function readNote(text: string): Note | null {
+  try {
+    const v: unknown = JSON.parse(text);
+    if (!isObj(v) || v.v !== 1 || !isSecret(v.next) || typeof v.at !== 'number' || !Number.isSafeInteger(v.at)) return null;
+    return { next: v.next, at: v.at };
+  } catch {
+    return null;
+  }
+}
+
+/** A device's entry as it was kept, or null for one this build can't read (a note among them, as a build before notes reads it too). */
 export function readEntry(text: string): Entry | null {
   try {
     const v: unknown = JSON.parse(text);
@@ -474,14 +543,15 @@ export async function bringBack() {
     toasts.show(got ? `That one is “${PASSKEY_NAMES[got.elsewhere]}”. Pick “${PASSKEY_NAME}”.` : 'That passkey isn’t one the game made.', 'error', { title: 'Not brought back' });
     return;
   }
-  const secret = base64url(got);
-  const { bucket } = await fromKept(secret);
-  const entries = await fetchEntries(secret);
+  const brought = await walk(base64url(got));
   backup.busy = null;
-  if (!entries) {
+  if (!brought) {
     toasts.show('The server can’t be reached just now. Try again in a while.', 'error', { title: 'Not brought back' });
     return;
   }
+  // (Where the notes lead: the secret its devices moved on to, kept with from now on.)
+  const { entries, next: secret } = brought;
+  const { bucket } = await fromKept(secret);
   const was = loadKept()?.secret ?? null;
   // (Nothing kept with it, while this browser keeps with another: most likely not the one it was, so it stays with the one it has.)
   if (!entries.length && was && was !== secret) {
@@ -490,7 +560,7 @@ export async function bringBack() {
   }
   const changed = takeEntries(entries, deviceId());
   if (changed.length) announceStored(changed);
-  // (Moved on from the one it had: its entry there goes once this device's is saved under this one.)
+  // (Moved on from the one it had: its entry there gives way to a note once this device's is saved under this one.)
   if (was && was !== secret) leave(was, deviceId(), secret);
   // (Kept with it from now on, and every paired device with it: newer than any it had. All of it sent
   // again, whatever was sent before: the bucket may have been forgotten since.)

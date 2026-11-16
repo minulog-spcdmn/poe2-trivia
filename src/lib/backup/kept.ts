@@ -11,9 +11,10 @@
 // A device that moves from one secret to another (a newer one through sync,
 // another passkey brought back) or erases its codex leaves its entry behind
 // under the old one: frozen there, it would come back as if it were all of
-// its progress. So it notes it (LEFT), and takes it out once its progress is
-// saved under the new one (backup.svelte.ts clearLeft): a passkey brings back
-// everything, or nothing.
+// its progress. So it notes it (LEFT), and once its progress is saved under
+// the new one puts a note in its place saying where it went, or takes it out
+// where it stopped keeping (backup.svelte.ts clearLeft): a passkey brings
+// back everything, following the notes, or nothing.
 
 import { readStored, removeStored, writeStored } from '../storage.ts';
 import { fromBase64url } from '../base64url.ts';
@@ -31,7 +32,7 @@ export interface Kept {
   bucket?: string;
 }
 
-const isSecret = (v: unknown): v is string => typeof v === 'string' && fromBase64url(v)?.length === SECRET_BYTES;
+export const isSecret = (v: unknown): v is string => typeof v === 'string' && fromBase64url(v)?.length === SECRET_BYTES;
 /** A bucket's name, as the server takes it (signal/worker.js BUCKET). */
 const isBucket = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9_-]{43}$/.test(v);
 
