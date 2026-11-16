@@ -526,6 +526,9 @@ function env(allowed = Infinity) {
         fetch: async (request: Request) => (reached.push({ request, hint: o?.locationHint }), new Response('object')),
       }),
     },
+    // (The buckets aren't met here: tests/backup.test.ts.)
+    KEEP: { idFromName: (name: string) => name, get: () => ({ fetch: async () => new Response(null, { status: 500 }) }) },
+    KEEP_WRITES: { limit: async () => ({ success: true }) },
   };
 }
 const socket = (query: string, origin = 'https://poe2.quest', more: Record<string, string> = {}) =>

@@ -15,9 +15,19 @@ enabled = false
 name = "SIGNAL"
 class_name = "Signal"
 
+# Players' progress kept with their passkeys (worker.js, Keep): an Object per
+# bucket, SQLite-backed too.
+[[durable_objects.bindings]]
+name = "KEEP"
+class_name = "Keep"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Signal"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["Keep"]
 
 # Connections (and new ids) a single address (an IPv6 one's /56) may ask for
 # a minute: a page makes a few as it hosts, joins or lists the open rooms, and
@@ -29,4 +39,15 @@ namespace_id = "1002"
 
   [ratelimits.simple]
   limit = 120
+  period = 60
+
+# Of those, writes to the progress kept with passkeys (worker.js, Keep): a page
+# sends at most every few minutes, so thirty a minute is a school's or a
+# carrier's many players, and a script making up buckets fills little.
+[[ratelimits]]
+name = "KEEP_WRITES"
+namespace_id = "1003"
+
+  [ratelimits.simple]
+  limit = 30
   period = 60
