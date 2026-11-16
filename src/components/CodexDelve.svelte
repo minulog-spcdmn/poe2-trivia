@@ -486,10 +486,19 @@
 
   /* ---- panels ---- */
   /* The fossil set as wide as it needs, the zones reached in the rest of the row. */
+  /*
+   * The zones as tall as the fossils beside them, but not the other way:
+   * all of a long descent shown (up to a hundred zones) runs on down the
+   * page past the fossils, which keep their own height.
+   */
   .found {
     display: grid;
     grid-template-columns: minmax(0, 35rem) minmax(0, 1fr);
+    align-items: start;
     gap: 1rem;
+  }
+  .found > :global(.zones) {
+    align-self: stretch;
   }
   .split {
     display: grid;

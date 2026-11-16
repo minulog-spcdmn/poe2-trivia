@@ -77,7 +77,7 @@
 <section class="panel zones" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="zone-h">
   <header><h2 id="zone-h">Zones reached</h2>{#if zones.biomes}<span class="col-label">{zones.biomes} {word(zones.biomes, 'biome')}</span>{/if}</header>
   {#if zones.reached.length}
-    <ol class="descent" bind:this={list}>
+    <ol class="descent" bind:this={list} style:--rows={rows.length + (zones.next ? 1 : 0)}>
       {#each rows as row, i ('z' in row ? row.z.k : 'gap')}
         {#if 'z' in row}
           {@const ink = inkOf(row.z)}
@@ -188,8 +188,10 @@
   /*
    * The descent: a row a zone, each the same height, growing to fill the
    * panel beside the fossils (to a point), the seals in a column down its
-   * left. The title card's seal takes its ink from --accent as the card
-   * mixes it (ZoneCard.svelte).
+   * left. One grid for all the rows (each row a subgrid of it), so the
+   * depths and the days keep to their columns however long a language
+   * writes a date. The title card's seal takes its ink from --accent as the
+   * card mixes it (ZoneCard.svelte).
    */
   .descent {
     --seal: 2.4rem;
@@ -198,10 +200,18 @@
     /* What a thread leaves clear above and below a seal. */
     --clear: 3px;
     --dull: #6f6453;
-    flex: 1 0 auto;
-    display: flex;
-    flex-direction: column;
-    margin: 0;
+    /*
+     * Its rows at their least, growing alike into what the fossils leave
+     * (its height from none, so it never asks for more), up to 4.2rem a row.
+     */
+    flex: 1 1 0;
+    max-height: calc(var(--rows) * 4.2rem);
+    display: grid;
+    /* (The day's column wide enough for any English date, and wider for all of them where a language writes one longer.) */
+    grid-template-columns: var(--seal) minmax(0, 1fr) minmax(2.2rem, auto) minmax(6.2rem, auto);
+    grid-auto-rows: minmax(var(--row), auto);
+    column-gap: 0.8rem;
+    margin: 0 0 0.9rem;
     padding: 0;
     list-style: none;
   }
@@ -210,17 +220,13 @@
     --ink-hi: color-mix(in srgb, var(--accent) 45%, var(--gold-hi));
     --glow-c: color-mix(in srgb, var(--accent) 65%, #d9a45a);
     position: relative;
+    grid-column: 1 / -1;
     display: grid;
-    grid-template-columns: var(--seal) minmax(0, 1fr) 2.2rem 6.2rem;
-    grid-template-areas: 'mark name depth when';
+    grid-template-columns: subgrid;
     align-items: center;
-    column-gap: 0.8rem;
-    flex: 1 1 var(--row);
-    min-height: var(--row);
-    max-height: 4.2rem;
   }
   .mark {
-    grid-area: mark;
+    grid-column: 1;
     display: grid;
     place-items: center;
     width: var(--seal);
@@ -262,7 +268,7 @@
   }
 
   .name {
-    grid-area: name;
+    grid-column: 2;
     min-width: 0;
     overflow: hidden;
     font-size: 0.98rem;
@@ -272,7 +278,7 @@
   }
   /* Cinzel's figures sit on the name's baseline (centred, their boxes leave them a little high). */
   .depth {
-    grid-area: depth;
+    grid-column: 3;
     translate: 0 0.07em;
     text-align: right;
     font-size: 0.85rem;
@@ -280,7 +286,7 @@
     color: var(--gold-hi);
   }
   .when {
-    grid-area: when;
+    grid-column: 4;
     translate: 0 0.08em;
     text-align: right;
     font-size: 0.75rem;
@@ -320,7 +326,8 @@
     flex-wrap: wrap;
     align-items: baseline;
     gap: 0.2rem 0.8rem;
-    margin: 0.9rem 0 0;
+    /* At the panel's foot, whatever the descent leaves. */
+    margin: auto 0 0;
     padding-top: 0.7rem;
     border-top: 1px solid rgba(59, 48, 36, 0.45);
   }
@@ -367,19 +374,29 @@
 
   /* Too narrow for a line a zone (a phone, a window just wide enough for the two panels): the day under the name. */
   @container zones (max-width: 22rem) {
+    .descent {
+      grid-template-columns: var(--seal) minmax(0, 1fr) minmax(2.2rem, auto);
+    }
     .descent li {
-      grid-template-columns: var(--seal) minmax(0, 1fr) 2.2rem;
-      grid-template-areas:
-        'mark name depth'
-        'mark when depth';
+      grid-template-rows: auto auto;
       row-gap: 0.1rem;
     }
+    .mark,
+    .depth {
+      grid-row: 1 / span 2;
+    }
     .zone .name {
+      grid-row: 1;
       align-self: end;
     }
     .when {
+      grid-column: 2;
+      grid-row: 2;
       align-self: start;
+      min-width: 0;
+      overflow: hidden;
       text-align: left;
+      text-overflow: ellipsis;
     }
     .ahead .name,
     .gap .more {
