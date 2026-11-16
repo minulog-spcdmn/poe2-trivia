@@ -74,6 +74,7 @@ const BACKED: Control = {
   options: [
     { value: 'off', label: 'Not kept' },
     { value: 'on', label: 'Kept with a passkey' },
+    { value: 'unsaved', label: 'Kept, not saved yet' },
   ],
   default: 'off',
 };
@@ -198,9 +199,10 @@ export function codexScenes(): Scene[] {
         { label: 'Empty: the way back', values: { backed: 'off', met: 'none' } },
         { label: 'Part filled, not kept: the way to keep it', values: { backed: 'off', met: 'part' } },
         { label: 'Part filled, kept: no button, the line says so', values: { backed: 'on', met: 'part' } },
+        { label: 'Part filled, kept but never saved: the line says it will be', values: { backed: 'unsaved', met: 'part' }, listed: false },
       ],
       build: (v = {}): Built => {
-        const backup = { on: v.backed === 'on' };
+        const backup = { on: v.backed !== 'off', savedAt: v.backed === 'on' ? Date.now() - 4 * 60_000 : 0, failing: v.backed === 'unsaved' };
         // (At its foot, where the way to keep it is.)
         return v.met === 'none' ? { state: null, hash: '#codex', met: [], backup } : { ...filled([{ wait: 1400 }, { scroll: 'footer.end' }]), backup };
       },

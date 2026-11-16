@@ -20,7 +20,7 @@ const store = new Map<string, string>();
 
 const { base64url } = await import('../src/lib/base64url.ts');
 const { MAX_ENTRY: PAGE_MAX_ENTRY, entryNow, readEntry, sealEntry, takeEntries, unpack } = await import('../src/lib/backup/backup.svelte.ts');
-const { absorbKept, forgetKept, loadKept, loadSent, nextAt, ownKeptRaw, saveKept, saveSent } = await import('../src/lib/backup/kept.ts');
+const { absorbKept, forgetKept, forgetToSend, loadKept, loadSent, markForgotten, nextAt, ownKeptRaw, saveKept, saveSent } = await import('../src/lib/backup/kept.ts');
 const { clearCopies, deviceId, keepCopy, readCopies } = await import('../src/lib/sync/store.ts');
 const { takeIn, takenNow } = await import('../src/lib/sync/shared.ts');
 const { emptyCodex, loadCodex, serializeCodex } = await import('../src/lib/codex.ts');
@@ -328,4 +328,54 @@ test('the codex erased stops keeping here without a Forget: paired again, the ot
   assert.equal(ownKeptRaw(), null, 'nothing to pass on that would stop the others’');
   assert.ok(absorbKept(JSON.stringify({ v: 1, secret: one, at: 100 })));
   assert.equal(loadKept()?.secret, one);
+});
+
+test('a Forget stops only the backup it names: one kept with another passkey stays, and comes in over it', () => {
+  const one = base64url(newSecret());
+  const A = 'A'.repeat(43);
+  const B = 'B'.repeat(43);
+  // Kept here with one passkey; another device forgot a backup kept with another, later.
+  saveKept({ secret: one, at: 100, bucket: A });
+  assert.equal(absorbKept(JSON.stringify({ v: 1, secret: null, at: 200, bucket: B })), false);
+  assert.equal(loadKept()?.secret, one);
+  // That device takes this one's in, older as it is: both keep with it.
+  store.clear();
+  saveKept({ secret: null, at: 200, bucket: B });
+  assert.equal(absorbKept(JSON.stringify({ v: 1, secret: one, at: 100, bucket: A })), true);
+  assert.equal(loadKept()?.secret, one);
+  // A Forget of this one stops it, as ever.
+  assert.equal(absorbKept(JSON.stringify({ v: 1, secret: null, at: 300, bucket: A })), true);
+  assert.equal(loadKept()?.secret, null);
+  // Where one side doesn't say (an older build saved it), the newer wins, as before.
+  store.clear();
+  saveKept({ secret: one, at: 100 });
+  assert.equal(absorbKept(JSON.stringify({ v: 1, secret: null, at: 200, bucket: B })), true);
+  store.clear();
+  saveKept({ secret: one, at: 100, bucket: A });
+  assert.equal(absorbKept(JSON.stringify({ v: 1, secret: null, at: 200 })), true);
+  // A bucket that isn't one is let go, the rest read as it was.
+  store.clear();
+  assert.equal(absorbKept(JSON.stringify({ v: 1, secret: null, at: 200, bucket: 'short' })), true);
+  assert.deepEqual(loadKept(), { secret: null, at: 200 });
+});
+
+test('a device that hears of a Forget deletes that backup again, once: what it sent before it heard goes too', () => {
+  const one = base64url(newSecret());
+  const A = 'A'.repeat(43);
+  saveKept({ secret: one, at: 100, bucket: A });
+  assert.equal(forgetToSend(), null, 'nothing to delete while it keeps');
+  // Forgotten on another device: heard here, to be deleted from here too.
+  assert.ok(absorbKept(JSON.stringify({ v: 1, secret: null, at: 200, bucket: A })));
+  const k = forgetToSend();
+  assert.deepEqual(k, { secret: null, at: 200, bucket: A });
+  markForgotten(k!);
+  assert.equal(forgetToSend(), null, 'once');
+  // Brought back and forgotten again: deleted again.
+  assert.ok(absorbKept(JSON.stringify({ v: 1, secret: one, at: 300, bucket: A })));
+  assert.ok(absorbKept(JSON.stringify({ v: 1, secret: null, at: 400, bucket: A })));
+  assert.equal(forgetToSend()?.at, 400);
+  // A Forget that doesn't name its backup (an older build's) can't be.
+  store.clear();
+  saveKept({ secret: null, at: 500 });
+  assert.equal(forgetToSend(), null);
 });

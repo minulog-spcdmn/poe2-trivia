@@ -360,7 +360,7 @@
             <span class="label">Backup</span>
             <!-- Kept in its place once it's kept, out of sight, so the row keeps its height. -->
             <button class="btn small" class:gone={backup.on} disabled={!!backup.busy || backup.on} onclick={keepSafe}>Keep it safe</button>
-            <p class="blurb say" class:linked={backup.on && !backup.busy && !forgetting}>
+            <p class="blurb say" class:linked={backup.on && !backup.busy && !forgetting && !backup.failing}>
               <span class:unseen={backup.on || !!backup.busy}
                 >A passkey keeps your codex, Delve runs and achievements if the browser clears them, and brings them to a new phone. Made one before? <button class="reset" disabled={!!backup.busy} onclick={bringBack}>Bring it back</button></span
               >
@@ -372,8 +372,14 @@
                   <button class="reset" onclick={() => ((forgetting = false), void forgetBackup())}>Delete</button><span class="sep bullet" aria-hidden="true">•</span><button class="reset" onclick={() => (forgetting = false)}>Keep it</button></span
                 >
               {:else if backup.on}
+                <!-- Saved only once the server has it: until then, and while it can't be reached, the line says so and the light is out. -->
+                {@const saved = backup.savedAt ? `saved ${ago(backup.savedAt, Math.max(now, backup.savedAt))}` : 'not saved yet'}
                 <span class="paired"
-                  ><span class="light on" aria-hidden="true"></span>Kept with your passkey{backup.savedAt ? `, saved ${ago(backup.savedAt, Math.max(now, backup.savedAt))}` : ''}.
+                  ><span class="light" class:on={!backup.failing} aria-hidden="true"></span>Kept with your passkey, {saved}{backup.failing
+                    ? backup.savedAt
+                      ? '. The server can’t be reached just now.'
+                      : ': the server can’t be reached just now.'
+                    : '.'}
                   <button class="reset" onclick={() => (forgetting = true)}>Forget</button></span
                 >
               {/if}

@@ -943,7 +943,7 @@
   {#if kept}
     <footer class="end">
       {#if backup.on}
-        <p>Your codex, your Delve runs and your achievements live in this browser{sync.code && sync.met ? ' and on the devices it syncs with' : ''}, and are kept safe with your passkey.</p>
+        <p>Your codex, your Delve runs and your achievements live in this browser{sync.code && sync.met ? ' and on the devices it syncs with' : ''}, and {backup.savedAt ? 'are kept safe with your passkey' : 'your passkey keeps them as soon as they’re first saved'}.</p>
       {:else if sync.code && sync.met}
         <p>Your codex, your Delve runs and your achievements live in this browser and on the devices it syncs with; clearing the site’s data erases them here.</p>
       {:else}

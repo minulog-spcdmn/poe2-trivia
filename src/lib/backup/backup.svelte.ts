@@ -33,7 +33,7 @@ import { base64url, fromBase64url } from '../base64url.ts';
 import { loadCodex } from '../codex.ts';
 import { COPY_KINDS, MAX_COPY, SYNC_HERE, deviceId, isDevice, isStamp, readCopies, type CopyKind } from '../sync/store.ts';
 import { OWN_NAMES, TAKEN_NAMES, fingerprint, ownNow, takeCopies, takeIn, takenNow } from '../sync/shared.ts';
-import { KEPT_NAME, forgetKept, forgetSent, loadKept, loadSent, markAsked, nextAt, saveKept, saveSent, wasAsked } from './kept.ts';
+import { KEPT_NAME, forgetKept, forgetSent, forgetToSend, loadKept, loadSent, markAsked, markForgotten, nextAt, saveKept, saveSent, wasAsked } from './kept.ts';
 import { fromSecret, newSecret, secretIn, seal, unseal, userId } from './seal.ts';
 import { OFFER } from './words.ts';
 
@@ -63,6 +63,8 @@ export const backup = $state({
   on: false,
   /** When this device's progress was last sent (0: not yet). */
   savedAt: 0,
+  /** The last send didn't reach the server: it goes again in a while. */
+  failing: false,
   /** What it is doing at the player's word. */
   busy: null as null | 'making' | 'bringing' | 'forgetting',
 });
@@ -77,6 +79,8 @@ const MAX_ENTRY_TEXT = 6 * MAX_COPY;
 const SOON_MS = 20_000;
 /** And no sooner than this after the last time. */
 const APART_MS = 3 * 60_000;
+/** A send given up on after this long without an answer (and tried again in a while). */
+const SEND_WITHIN_MS = 30_000;
 /** The most a send may carry as the page goes away (a browser's limit for what goes on after it, 64 KB). */
 const KEEPALIVE_MAX = 60_000;
 /** The codex this full before the offer after a game: enough played for it to matter. */
@@ -87,6 +91,7 @@ function readState() {
   backup.on = !!k?.secret;
   const sent = loadSent();
   backup.savedAt = backup.on && sent ? sent.at : 0;
+  if (!backup.on) backup.failing = false;
 }
 
 /** Whether this browser can keep progress with a passkey. */
@@ -172,17 +177,41 @@ async function sendNow(leaving: boolean) {
   const data = await sealEntry(now.entry, key, bucket, me);
   // (Its own progress alone more than the server keeps of a device, many times a full codex: it can't be kept.)
   if (!data) return;
+  const stop = new AbortController();
+  const late = setTimeout(() => stop.abort(), SEND_WITHIN_MS);
   try {
-    const r = await fetch(BASE + `${bucket}/${me}`, { method: 'POST', body: data, headers: { 'Content-Type': 'text/plain' }, keepalive: leaving && data.length <= KEEPALIVE_MAX });
-    if (!r.ok) return schedule(APART_MS);
+    const r = await fetch(BASE + `${bucket}/${me}`, { method: 'POST', body: data, headers: { 'Content-Type': 'text/plain' }, keepalive: leaving && data.length <= KEEPALIVE_MAX, signal: stop.signal });
+    if (!r.ok) return missed(k.secret, false);
   } catch {
     // (Out of reach, or cut off as the page went away: again in a while, or as it's hidden next.)
-    return schedule(APART_MS);
+    return missed(k.secret, leaving);
+  } finally {
+    clearTimeout(late);
   }
   // (Forgotten meanwhile, or another secret taken: not this one's to stamp.)
   if (loadKept()?.secret !== k.secret) return;
+  backup.failing = false;
   saveSent({ at: Date.now(), print: now.print, bucket });
   readState();
+}
+
+/**
+ * A send that didn't go: again in a while. Said in the settings and the codex
+ * (backup.failing) unless it was only cut off as the page went away, as a
+ * phone's is each time it switches apps.
+ */
+function missed(secret: string, leaving: boolean) {
+  if (!leaving && loadKept()?.secret === secret) backup.failing = true;
+  schedule(APART_MS);
+}
+
+/** A Forget heard from another device (sync), deleted here too, once: what any device sent before it heard goes with it. */
+function forgetHeard() {
+  const k = forgetToSend();
+  if (!k || !BASE) return;
+  void fetch(BASE + `${k.bucket}/forget`, { method: 'POST', headers: { 'Content-Type': 'text/plain' } })
+    .then((r) => void (r.ok && markForgotten(k)))
+    .catch(() => {});
 }
 
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -208,6 +237,7 @@ function watch() {
     if (name === KEPT_NAME) {
       readState();
       schedule();
+      forgetHeard();
     }
   });
   addEventListener('storage', (e) => {
@@ -254,6 +284,7 @@ export async function bootBackup() {
   await checkBackup();
   watch();
   schedule();
+  forgetHeard();
 }
 
 // ---- at the player's word ---------------------------------------------------------
@@ -296,14 +327,17 @@ export async function keepSafe() {
     if ((err as DOMException)?.name !== 'NotAllowedError') toasts.show('This browser couldn’t make a passkey here.', 'error', { title: 'Not kept' });
     return;
   }
-  saveKept({ secret: base64url(secret), at: nextAt() });
+  const kept = base64url(secret);
+  saveKept({ secret: kept, at: nextAt(), bucket: (await fromKept(kept)).bucket });
   readState();
-  backup.busy = null;
   markAsked();
   if (timer) clearTimeout(timer);
   timer = null;
-  void send();
-  toasts.show('Your progress is kept with your passkey from now on, saved as you play.', 'info', { title: 'Kept safe' });
+  // (Said once the first save is in, or not.)
+  await send();
+  backup.busy = null;
+  if (backup.failing) toasts.show('Your passkey is made, but the server can’t be reached just now. Your progress is saved with it as soon as it can be.', 'error', { title: 'Not saved yet' });
+  else toasts.show('Your progress is kept with your passkey from now on, saved as you play.', 'info', { title: 'Kept safe' });
 }
 
 /** The entries kept under `secret`, each device's that opens, or null where the server can't be reached. */
@@ -391,6 +425,7 @@ export async function bringBack() {
     return;
   }
   const secret = base64url(got);
+  const { bucket } = await fromKept(secret);
   const entries = await fetchEntries(secret);
   backup.busy = null;
   if (!entries) {
@@ -401,7 +436,7 @@ export async function bringBack() {
   if (changed.length) announceStored(changed);
   // (Kept with it from now on, and every paired device with it: newer than any it had. All of it sent
   // again, whatever was sent before: the bucket may have been forgotten since.)
-  saveKept({ secret, at: nextAt() });
+  saveKept({ secret, at: nextAt(), bucket });
   forgetSent();
   readState();
   markAsked();
@@ -428,7 +463,10 @@ export async function forgetBackup() {
     toasts.show('The server can’t be reached just now. Try again in a while.', 'error', { title: 'Not forgotten' });
     return;
   }
-  saveKept({ secret: null, at: nextAt() });
+  // (Naming the backup it forgot: a paired device that hears of it deletes it again, and one kept with another passkey stays.)
+  const gone = { secret: null, at: nextAt(), bucket };
+  markForgotten(gone);
+  saveKept(gone);
   forgetSent();
   readState();
 }
