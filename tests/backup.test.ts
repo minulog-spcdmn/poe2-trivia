@@ -14,7 +14,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { randomBytes } from 'node:crypto';
 import { memoryStorage, items } from './helpers.ts';
 import { fromSecret, newSecret, secretIn, seal, unseal, userId } from '../src/lib/backup/seal.ts';
-import { KEEP_MS, MAX_ENTRIES, MAX_ENTRY, Keep, answer, pack } from '../signal/worker.js';
+import { MAX_ENTRY, Keep, answer, pack } from '../signal/worker.js';
 
 const store = new Map<string, string>();
 (globalThis as { localStorage?: unknown }).localStorage = memoryStorage(store);
@@ -96,48 +96,7 @@ function fakeState() {
   return state;
 }
 
-const BUCKET = 'A'.repeat(43);
 const bytes = (...b: number[]): Uint8Array<ArrayBuffer> => new Uint8Array(b);
-const post = (k: Keep, device: string, body: Uint8Array<ArrayBuffer>) => k.fetch(new Request(`https://x/keep/${BUCKET}/${device}`, { method: 'POST', body }));
-const read = async (k: Keep) => unpack(new Uint8Array(await (await k.fetch(new Request(`https://x/keep/${BUCKET}`))).arrayBuffer()));
-
-test('a bucket keeps each device’s entry in place of what it had, an empty one taken out', async () => {
-  const state = fakeState();
-  const k = new Keep(state);
-  assert.deepEqual(await read(k), []);
-  await post(k, 'phone0000001', bytes(1, 2, 3));
-  await post(k, 'tablet000001', bytes(9));
-  await post(k, 'phone0000001', bytes(4, 5));
-  const got = await read(k);
-  assert.deepEqual(
-    got.map((e) => [e.device, [...e.data]]).sort(),
-    [
-      ['phone0000001', [4, 5]],
-      ['tablet000001', [9]],
-    ],
-  );
-  assert.ok(state.alarm && state.alarm > Date.now() + KEEP_MS - 60_000, 'let go of only after long enough without a write');
-  await post(k, 'tablet000001', bytes());
-  assert.deepEqual((await read(k)).map((e) => e.device), ['phone0000001']);
-  // Too long: refused, the one kept left as it was.
-  assert.equal((await post(k, 'phone0000001', new Uint8Array(MAX_ENTRY + 1))).status, 413);
-  assert.deepEqual([...(await read(k))[0].data], [4, 5]);
-});
-
-test('past the most entries the one written longest ago goes; forgotten or let go, the bucket is empty', async () => {
-  const state = fakeState();
-  const k = new Keep(state);
-  for (let i = 0; i <= MAX_ENTRIES; i++) await k.write(`dev${String(i).padStart(9, '0')}`, bytes(i), 1000 + i);
-  const kept = await read(k);
-  assert.equal(kept.length, MAX_ENTRIES);
-  assert.ok(!kept.some((e) => e.device === 'dev000000000'));
-  await k.fetch(new Request(`https://x/keep/${BUCKET}/forget`, { method: 'POST' }));
-  assert.deepEqual(await read(k), []);
-  assert.equal(state.alarm, null);
-  await post(k, 'phone0000001', bytes(1));
-  await k.alarm();
-  assert.deepEqual(await read(k), []);
-});
 
 test('the frames a bucket is sent in read back as they were', () => {
   const entries = [
@@ -152,6 +111,10 @@ test('the frames a bucket is sent in read back as they were', () => {
   );
   // A body cut short: what's whole of it.
   assert.equal(unpack(pack(entries).slice(0, 40) as Uint8Array<ArrayBuffer>).length, 2);
+});
+
+test('the page fits what the server keeps (signal/worker.js, its own tests in tests/keep.test.ts)', () => {
+  assert.equal(PAGE_MAX_ENTRY, MAX_ENTRY);
 });
 
 /** The Worker's bindings: every bucket its own Keep, the rate limits as given. */
@@ -170,34 +133,6 @@ function env(limited = false, writesLimited = false) {
     },
   };
 }
-
-test('the Worker keeps for the game’s own pages only, at paths it knows, within the rate limit', async () => {
-  const e = env();
-  const at = (path: string, init: RequestInit = {}, origin = 'https://poe2.quest') => answer(new Request(`https://x${path}`, { ...init, headers: { Origin: origin, ...(init.headers ?? {}) } }), e as never);
-  const r = await at(`/keep/${BUCKET}/phone0000001`, { method: 'POST', body: bytes(1, 2), headers: { 'Content-Type': 'text/plain' } });
-  assert.equal(r.status, 204);
-  assert.equal(r.headers.get('Access-Control-Allow-Origin'), 'https://poe2.quest');
-  const got = await at(`/keep/${BUCKET}`);
-  assert.equal(got.status, 200);
-  assert.deepEqual(unpack(new Uint8Array(await got.arrayBuffer())).map((x) => x.device), ['phone0000001']);
-  assert.equal((await at(`/keep/${BUCKET}`, {}, 'https://elsewhere.example')).status, 403);
-  for (const path of [`/keep/short`, `/keep/${BUCKET}/NOT-A-DEVICE`, `/keep/${BUCKET}/phone0000001/more`])
-    assert.equal((await at(path, { method: 'POST', body: bytes(1) })).status, 404, path);
-  assert.equal((await at(`/keep/${BUCKET}/phone0000001`)).status, 404, 'one device’s isn’t read alone');
-  assert.equal((await at(`/keep/${BUCKET}/phone0000001`, { method: 'POST', body: new Uint8Array(MAX_ENTRY + 1) })).status, 413);
-  assert.equal((await answer(new Request(`https://x/keep/${BUCKET}`, { headers: { Origin: 'https://poe2.quest' } }), env(true) as never)).status, 429);
-  // Writes are held to fewer: past them, a bucket is still read.
-  const few = env(false, true);
-  const asked = (init: RequestInit) => answer(new Request(`https://x/keep/${BUCKET}${init.method === 'POST' ? '/phone0000001' : ''}`, { ...init, headers: { Origin: 'https://poe2.quest' } }), few as never);
-  assert.equal((await asked({ method: 'POST', body: bytes(1) })).status, 429);
-  assert.equal((await asked({})).status, 200);
-  // A body sent without its length is counted as it comes.
-  const endless = new ReadableStream<Uint8Array>({ pull: (c) => c.enqueue(new Uint8Array(64 * 1024)) });
-  const unsized = new Request(`https://x/keep/${BUCKET}/phone0000001`, { method: 'POST', body: endless, duplex: 'half' } as RequestInit);
-  assert.equal(unsized.headers.get('Content-Length'), null);
-  assert.equal((await new Keep(fakeState()).fetch(unsized)).status, 413);
-  assert.equal(PAGE_MAX_ENTRY, MAX_ENTRY, 'the page fits what the server keeps');
-});
 
 // ---- bringing it back -----------------------------------------------------------
 
