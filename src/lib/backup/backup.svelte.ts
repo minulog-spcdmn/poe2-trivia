@@ -26,7 +26,7 @@
 
 import { BETA, CHANNEL, LOCAL } from '../channel.ts';
 import { OWN_SIGNAL_HOST } from '../signalHost.ts';
-import { QA, announceStored, onStoredHere, storeKey } from '../storage.ts';
+import { QA, announceStored, onStoredHere, readStored, storeKey, writeStored } from '../storage.ts';
 import { toasts } from '../toasts.svelte.ts';
 import { whenCalm } from '../idle.ts';
 import { base64url, fromBase64url } from '../base64url.ts';
@@ -37,10 +37,28 @@ import { KEPT_NAME, forgetKept, forgetSent, loadKept, loadSent, markAsked, nextA
 import { fromSecret, newSecret, secretIn, seal, unseal, userId } from './seal.ts';
 import { OFFER } from './words.ts';
 
+const BASE = OWN_SIGNAL_HOST ? `https://${OWN_SIGNAL_HOST}/keep/` : '';
+
+/** Whether this browser could make and use a passkey, as it was last found ('1' or '0'). */
+const CAN = 'backup.can';
+/**
+ * Whether it can, from the first frame: as it was last found, or before
+ * that, what the page sees at once (the browser says whether it has a
+ * passkey of its own to make only a moment later). So the settings and the
+ * codex lay their lines out from the start and nothing jumps as it answers;
+ * a browser that turns out to have none drops them once, the first time.
+ */
+function canKeepAtOnce(): boolean {
+  if (!SYNC_HERE) return false;
+  const was = readStored(CAN);
+  if (was !== null) return was === '1';
+  return !!BASE && globalThis.isSecureContext === true && typeof PublicKeyCredential !== 'undefined' && typeof CompressionStream === 'function';
+}
+
 /** How the backup stands, for the settings and the codex (the QA desk's benches set it). */
 export const backup = $state({
   /** This browser can make and use a passkey, and the game keeps here. */
-  supported: false,
+  supported: canKeepAtOnce(),
   /** A secret is kept: this device's progress is kept with it. */
   on: false,
   /** When this device's progress was last sent (0: not yet). */
@@ -48,8 +66,6 @@ export const backup = $state({
   /** What it is doing at the player's word. */
   busy: null as null | 'making' | 'bringing' | 'forgetting',
 });
-
-const BASE = OWN_SIGNAL_HOST ? `https://${OWN_SIGNAL_HOST}/keep/` : '';
 /** What each channel's passkeys are called in the player's password manager, so the beta's isn't taken for the game's. */
 const PASSKEY_NAMES = { live: 'PoE2.Quest progress', beta: 'PoE2.Quest beta progress', local: 'PoE2.Quest local progress' } as const;
 const PASSKEY_NAME = PASSKEY_NAMES[BETA ? 'beta' : LOCAL ? 'local' : 'live'];
@@ -211,8 +227,13 @@ let checked: Promise<void> | null = null;
 export function checkBackup(): Promise<void> {
   if (!SYNC_HERE) return Promise.resolve();
   readState();
-  return (checked ??= canKeep().then((can) => void (backup.supported = can)));
+  return (checked ??= canKeep().then((can) => {
+    backup.supported = can;
+    if (readStored(CAN) !== (can ? '1' : '0')) writeStored(CAN, can ? '1' : '0');
+  }));
 }
+// (How it stands from the first frame too: the settings and the codex import this as they open.)
+if (SYNC_HERE) readState();
 
 /**
  * Asks the browser to keep the site's storage when the device runs short of
