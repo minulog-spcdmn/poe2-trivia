@@ -17,10 +17,18 @@
 // Variants, without editing the code: CSS="<rules>" adds a style sheet once
 // the page is up, INIT="<js>" runs before the page's own scripts, and
 // CATS="<categories>" picks the trace's categories.
+// COLD=1 deletes the profile's GPU caches first (Skia's programs, the
+// shaders, Dawn's), as a Chrome that never drew this site would have them:
+// what a new visitor's first game pays (docs/development.md, "A page's
+// first game"). It's the worst case: a player's Chrome holds the common
+// programs from other sites. SEED=1 lets Chrome fetch its field trials
+// (Playwright's --disable-background-networking keeps them out), so the GPU
+// features it runs with are those players' Chrome gets; give it a run or
+// two to arrive. The profile keeps them after.
 
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { createWriteStream, mkdirSync, writeFileSync } from 'node:fs';
+import { createWriteStream, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -62,11 +70,22 @@ function behind() {
   });
 }
 
+/** The profile's GPU caches (COLD=1): Skia's programs, the GPU process's shaders, Dawn's. */
+const GPU_CACHES = ['GrShaderCache', 'ShaderCache', 'GPUPersistentCache', 'Default/GPUCache', 'Default/DawnGraphiteCache', 'Default/DawnWebGPUCache'];
+
 /** Chrome on the screen (behind the other windows: behind.ps1), its first tab, and the page's records set up. */
 export async function open() {
   mkdirSync(runs, { recursive: true });
+  const profile = join(work, 'profile');
+  if (process.env.COLD) for (const d of GPU_CACHES) rmSync(join(profile, d), { recursive: true, force: true });
   await behind();
-  const ctx = await chromium.launchPersistentContext(join(work, 'profile'), { channel: 'chrome', headless: false, viewport: null, args: ['--start-maximized', '--mute-audio'] });
+  const ctx = await chromium.launchPersistentContext(profile, {
+    channel: 'chrome',
+    headless: false,
+    viewport: null,
+    args: ['--start-maximized', '--mute-audio'],
+    ...(process.env.SEED ? { ignoreDefaultArgs: ['--disable-background-networking'] } : {}),
+  });
   await ctx.addInitScript(RECORD);
   if (process.env.INIT) await ctx.addInitScript(process.env.INIT);
   if (process.env.CSS) await ctx.addInitScript(`document.addEventListener('DOMContentLoaded', () => { const st = document.createElement('style'); st.textContent = ${JSON.stringify(process.env.CSS)}; document.head.append(st); });`);
@@ -95,7 +114,8 @@ export async function trace(ctx, page, label) {
       first = false;
     }
   });
-  const done = new Promise((r) => cdp.once('Tracing.tracingComplete', r));
+  // (A trace that overflowed Chrome's buffer lost its oldest events: recordContinuously keeps the newest.)
+  const done = new Promise((r) => cdp.once('Tracing.tracingComplete', (e) => r(e.dataLossOccurred && console.warn(`trace: events were lost (${label}); fewer CATS, or a shorter run`))));
   const cats = (process.env.CATS ?? 'toplevel,gpu,blink.user_timing,devtools.timeline').split(',');
   await cdp.send('Tracing.start', { traceConfig: { includedCategories: cats, recordMode: 'recordContinuously' }, transferMode: 'ReportEvents' });
   return async () => {

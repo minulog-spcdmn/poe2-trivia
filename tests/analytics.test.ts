@@ -1012,6 +1012,24 @@ test("stutter is judged by visits once they're counted on 3 of the days before, 
   assert.deepEqual([three.frames.ios.games, three.frames.ios.stuttered, three.frames.ios.visits, three.frames.ios.visitsStuttered], [[22, 22, 22, 22, 22, 22, 22], [2, 2, 2, 2, 2, 2, 2], [0, 0, 0, 0, 8, 8, 8], [0, 0, 0, 0, 1, 1, 1]]);
 });
 
+test("a visit's first game with its moment and one from an older page without it are stuttered visits alike", () => {
+  // From 16 November 2026 a stuttered first game names its moment (stutter.ts visitEvent); pages up to two weeks old don't.
+  const days = ['2026-11-15', '2026-11-16', '2026-11-17'];
+  const c = countsOf(
+    [
+      path('/', [10, 10, 10], false),
+      dayPath('frames2/ios/visit/smooth', days, [4, 4, 4]),
+      dayPath('frames2/ios/visit/stuttered', days, [2, 1, 0]),
+      dayPath('frames2/ios/visit/stuttered/begin', days, [0, 1, 1]),
+      dayPath('frames2/ios/visit/stuttered/question', days, [0, 0, 1]),
+    ],
+    days,
+  );
+  assert.deepEqual([c.frames.ios.visits, c.frames.ios.visitsStuttered], [[6, 6, 6], [2, 2, 2]]);
+  // Still no games among them.
+  assert.deepEqual(c.frames.ios.games, [0, 0, 0]);
+});
+
 test("one phone's three visits in a day are no news, even among phones that never stuttered: only more than one device makes", () => {
   // A phone played on morning, afternoon and night is three of GoatCounter's visits (eight hours each).
   const before = framesIn(WEEK, 'android', [], [[6, 0], [6, 0], [6, 0], [6, 0], [6, 0], [6, 0], [6, 0]]);
