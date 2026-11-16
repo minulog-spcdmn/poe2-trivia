@@ -674,19 +674,29 @@
   /*
    * The lamplight (lib/glint.ts): a slanted slit masked to a narrow band,
    * holding a brighter copy of the fossil, the band sliding across it. Kept
-   * to the slot.
+   * to the art's box (as `.slot img`: 12% in, 76% across), the only place
+   * the copy paints, and on a layer of its own there, so a pass draws again
+   * only that box, not the panel the set lies on (the codex's panel, 110k px
+   * a frame while the light crossed, and the dialog's page as much).
    */
   .lamp {
     position: absolute;
-    inset: 0;
+    left: 12%;
+    top: 12%;
+    width: 76%;
+    height: 76%;
     overflow: hidden;
-    border-radius: inherit;
     pointer-events: none;
+    will-change: opacity;
   }
+  /* The slit is the slot's box still (round the lamp's, 12 / 76 of it out), so the band crosses as it did over the slot. */
   .slit {
     --band: 16%;
     position: absolute;
-    inset: 0;
+    left: calc(-12% / 0.76);
+    top: calc(-12% / 0.76);
+    width: calc(100% / 0.76);
+    height: calc(100% / 0.76);
     -webkit-mask-image: linear-gradient(90deg, transparent calc(50% - var(--band) / 3), #000 50%, transparent calc(50% + var(--band) / 3));
     mask-image: linear-gradient(90deg, transparent calc(50% - var(--band) / 3), #000 50%, transparent calc(50% + var(--band) / 3));
     -webkit-mask-size: 300% 100%;

@@ -139,7 +139,7 @@ export const PAINTED: Painted[] = [
   {
     file: 'src/lib/glint.ts',
     animate: { in: ['pass'], props: ['-webkit-mask-position', 'mask-position'] },
-    why: 'A light crossing the creator’s name (1.4 s every 9 s) or an achievement’s seal (now and then): the slit’s mask slides, the slit (a name’s line, a seal) drawn again while it crosses, and nothing between passes.',
+    why: 'A light crossing the creator’s name (1.4 s every 9 s), an achievement’s seal (now and then) or a kept fossil (1.5 s every 12 s, a rare’s 1.4 s every 7 s): the slit’s mask slides, the slit (a name’s line, a seal, a fossil’s art on a layer of its own) drawn again while it crosses, and nothing between passes. All 25 fossils in the codex, 12k px a frame at rest, the page; 20 in the set over the end screen, 21k.',
   },
   {
     file: 'src/lib/dialogIn.ts',
