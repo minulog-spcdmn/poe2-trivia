@@ -20,9 +20,11 @@
 // the others.
 //
 // Sync passes the secret on (./kept.ts), so one press keeps every paired
-// device's. Only the game itself keeps (SYNC_HERE): never the lab, the bot or
-// the QA desk, whose benches set `backup` as they like and whose buttons only
-// act it out.
+// device's. A device that moves to another secret, or erases its codex,
+// takes its entry out of the one it left (clearLeft), so a passkey never
+// brings back an old part of the progress as if it were all of it. Only
+// the game itself keeps (SYNC_HERE): never the lab, the bot or the QA desk,
+// whose benches set `backup` as they like and whose buttons only act it out.
 
 import { BETA, CHANNEL, LOCAL } from '../channel.ts';
 import { OWN_SIGNAL_HOST } from '../signalHost.ts';
@@ -33,7 +35,7 @@ import { base64url, fromBase64url } from '../base64url.ts';
 import { loadCodex } from '../codex.ts';
 import { COPY_KINDS, COPY_NAMES, MAX_COPY, SYNC_HERE, deviceId, isDevice, isStamp, readCopies, type CopyKind } from '../sync/store.ts';
 import { OWN_NAMES, TAKEN_NAMES, fingerprint, ownNow, takeCopies, takeIn, takenNow } from '../sync/shared.ts';
-import { KEPT_NAME, forgetKept, forgetSent, forgetToSend, loadKept, loadSent, markAsked, markForgotten, nextAt, saveKept, saveSent, wasAsked } from './kept.ts';
+import { KEPT_NAME, dropLeft, forgetKept, forgetSent, forgetToSend, leave, loadKept, loadLeft, loadSent, markAsked, markForgotten, nextAt, repoint, saveKept, saveSent, wasAsked } from './kept.ts';
 import { fromSecret, newSecret, secretIn, seal, unseal, userId } from './seal.ts';
 import { OFFER } from './words.ts';
 
@@ -193,6 +195,45 @@ async function sendNow(leaving: boolean) {
   backup.failing = false;
   saveSent({ at: Date.now(), print: now.print, bucket });
   readState();
+  // (Saved under it: what this device left under the one before goes.)
+  void clearLeft();
+}
+
+let clearing: Promise<void> | null = null;
+/**
+ * Takes out of the server the entries this device left under secrets it no
+ * longer keeps with (./kept.ts leave): one it moved on from, once its
+ * progress is saved under the one it moved to (the bucket last sent to);
+ * one it stopped keeping with, at once. One it's kept with again is its
+ * own again, and the next save takes its place. What doesn't go is tried
+ * again after the next save, or as the page next starts.
+ */
+export function clearLeft(): Promise<void> {
+  // (One at a time: one asked for meanwhile goes after it.)
+  if (clearing) return clearing.then(() => clearLeft());
+  return (clearing = clearLeftNow().finally(() => (clearing = null)));
+}
+
+async function clearLeftNow() {
+  if (!BASE) return;
+  for (const left of loadLeft()) {
+    if (left.secret === (loadKept()?.secret ?? null) && left.device === deviceId()) {
+      dropLeft(left);
+      continue;
+    }
+    if (left.after !== null && (await fromKept(left.after)).bucket !== loadSent()?.bucket) continue;
+    const { bucket } = await fromKept(left.secret);
+    const stop = new AbortController();
+    const late = setTimeout(() => stop.abort(), SEND_WITHIN_MS);
+    try {
+      // (An empty entry takes it out.)
+      if ((await fetch(BASE + `${bucket}/${left.device}`, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, signal: stop.signal })).ok) dropLeft(left);
+    } catch {
+      /* out of reach: again in a while */
+    } finally {
+      clearTimeout(late);
+    }
+  }
 }
 
 /**
@@ -239,6 +280,7 @@ function watch() {
       readState();
       schedule();
       forgetHeard();
+      void clearLeft();
     }
   });
   addEventListener('storage', (e) => {
@@ -286,6 +328,7 @@ export async function bootBackup() {
   watch();
   schedule();
   forgetHeard();
+  void clearLeft();
 }
 
 // ---- at the player's word ---------------------------------------------------------
@@ -433,8 +476,16 @@ export async function bringBack() {
     toasts.show('The server can’t be reached just now. Try again in a while.', 'error', { title: 'Not brought back' });
     return;
   }
+  const was = loadKept()?.secret ?? null;
+  // (Nothing kept with it, while this browser keeps with another: most likely not the one it was, so it stays with the one it has.)
+  if (!entries.length && was && was !== secret) {
+    toasts.show('Nothing was kept with that passkey. Your progress here stays kept with the one it has.', 'info', { title: 'Nothing kept with it' });
+    return;
+  }
   const changed = takeEntries(entries, deviceId());
   if (changed.length) announceStored(changed);
+  // (Moved on from the one it had: its entry there goes once this device's is saved under this one.)
+  if (was && was !== secret) leave(was, deviceId(), secret);
   // (Kept with it from now on, and every paired device with it: newer than any it had. All of it sent
   // again, whatever was sent before: the bucket may have been forgotten since.)
   saveKept({ secret, at: nextAt(), bucket });
@@ -442,7 +493,8 @@ export async function bringBack() {
   readState();
   markAsked();
   void send();
-  toasts.show(entries.length ? 'Your codex, Delve runs and achievements are back.' : 'Nothing was kept with that passkey yet. Your progress is kept with it from now on.', 'info', { title: entries.length ? 'Brought back' : 'Kept safe' });
+  if (entries.length) toasts.show('Your codex, Delve runs and achievements are back.', 'info', { title: 'Brought back' });
+  else toasts.show('If you made another passkey, bring that one back. Until then, your progress here is kept with this one.', 'info', { title: 'Nothing kept with it' });
 }
 
 /** Deletes what was kept online and stops keeping it, here and on every paired device; this browser's progress stays. */
@@ -467,28 +519,31 @@ export async function forgetBackup() {
   // (Naming the backup it forgot: a paired device that hears of it deletes that one again, never another.)
   const gone = { secret: null, at: nextAt(), bucket };
   markForgotten(gone);
+  // (Nothing of its own left to take out, since the bucket went whole; what waited for a save under it waits no more.)
+  repoint(k.secret, null);
   saveKept(gone);
   forgetSent();
   readState();
+  void clearLeft();
 }
 
 /**
- * The codex erased: this device's entry goes from the backup, and this
- * browser stops keeping (it stops syncing too). Not forgotten: paired again
- * with the others, it keeps with them again, and never stops theirs.
+ * The codex erased: this device's entry goes from the backup (tried again
+ * until it does, ./kept.ts leave), and this browser stops keeping (it stops
+ * syncing too). Not forgotten: paired again with the others, it keeps with
+ * them again, and never stops theirs.
  */
-export function eraseBackup() {
+export function eraseBackup(): Promise<void> {
   const k = loadKept();
-  if (!k?.secret || QA) return;
+  if (!k?.secret || QA) return Promise.resolve();
   if (timer) clearTimeout(timer);
   timer = null;
-  const secret = k.secret;
-  // (Its name now: sync's erase gives it a new one.)
-  const me = deviceId();
+  // (Under its name now: sync's erase gives it a new one.)
+  leave(k.secret, deviceId(), null);
   forgetKept();
   forgetSent();
   readState();
-  void fromKept(secret).then(({ bucket }) => fetch(BASE + `${bucket}/${me}`, { method: 'POST', headers: { 'Content-Type': 'text/plain' } }).catch(() => {}));
+  return clearLeft();
 }
 
 /** After a game: once, where a passkey can keep it and there's enough played for it to matter, a notice offering to keep it safe. */

@@ -373,6 +373,7 @@
                 >
               {:else if backup.on}
                 <!-- Saved only once the server has it: until then, and while it can't be reached, the line says so and the light is out. -->
+                <!-- And under it, the way to another passkey (one made before the browser was wiped, say), while the server can be reached. -->
                 {@const saved = backup.savedAt ? `saved ${ago(backup.savedAt, Math.max(now, backup.savedAt))}` : 'not saved yet'}
                 <span class="paired"
                   ><span class="light" class:on={!!backup.savedAt && !backup.failing} aria-hidden="true"></span>Kept with your passkey, {saved}{backup.failing
@@ -380,7 +381,8 @@
                       ? '. The server can’t be reached just now.'
                       : ': the server can’t be reached just now.'
                     : '.'}
-                  <button class="reset" onclick={() => (forgetting = true)}>Forget</button></span
+                  <button class="reset" onclick={() => (forgetting = true)}>Forget</button
+                  >{#if !backup.failing}<br /><span class="again">Made one before? <button class="reset" onclick={bringBack}>Bring it back</button></span>{/if}</span
                 >
               {/if}
             </p>
@@ -793,6 +795,10 @@
   }
   .backup-row .btn.gone {
     visibility: hidden;
+  }
+  /* The way to another passkey, under how it stands: an aside, so it keeps the note's grey as the line turns green. */
+  .backup-row .again {
+    color: var(--note);
   }
   .sync-row .sep {
     margin-left: 0.4rem;

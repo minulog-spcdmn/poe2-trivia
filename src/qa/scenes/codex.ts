@@ -75,9 +75,12 @@ const BACKED: Control = {
     { value: 'off', label: 'Not kept' },
     { value: 'on', label: 'Kept with a passkey' },
     { value: 'unsaved', label: 'Kept, not saved yet' },
+    { value: 'synced', label: 'Kept, and synced with another device' },
   ],
   default: 'off',
 };
+/** Erase codex pressed, its confirm left up: what it says of the backup, kept or not, synced or not. */
+const ASKED: Control = { kind: 'toggle', key: 'asked', label: 'Erase asked for', default: false, when: { met: ['part'] } };
 const ITEM: Control = { kind: 'choice', key: 'item', label: 'The “ffi” item', default: 'Prism Guardian', options: FFI.map((n) => ({ value: n, label: n })) };
 
 /** The steps for what's done in the collection. */
@@ -194,17 +197,23 @@ export function codexScenes(): Scene[] {
       // a full one's way to keep it safe beside Erase codex, at its foot, or the words that it is. (The frame keeps nothing: its buttons act it out.)
       ...codex('backup', 'Kept with a passkey, or not', () => ({ state: null, hash: '#codex', met: [], backup: { on: false } })),
       // (Empty first: the way back is what a browser that lost its progress meets.)
-      controls: [BACKED, { ...MET, default: 'none' }],
+      controls: [BACKED, { ...MET, default: 'none' }, ASKED],
       states: [
         { label: 'Empty: the way back', values: { backed: 'off', met: 'none' } },
         { label: 'Part filled, not kept: the way to keep it', values: { backed: 'off', met: 'part' } },
         { label: 'Part filled, kept: no button, the line says so', values: { backed: 'on', met: 'part' } },
         { label: 'Part filled, kept but never saved: the line says it will be', values: { backed: 'unsaved', met: 'part' }, listed: false },
+        { label: 'Kept, Erase asked for: its entry goes too', values: { backed: 'on', met: 'part', asked: true }, listed: false },
+        { label: 'Kept and synced, Erase asked for: it only stops keeping', values: { backed: 'synced', met: 'part', asked: true }, listed: false },
       ],
       build: (v = {}): Built => {
-        const backup = { on: v.backed !== 'off', savedAt: v.backed === 'on' ? Date.now() - 4 * 60_000 : 0, failing: v.backed === 'unsaved' };
-        // (At its foot, where the way to keep it is.)
-        return v.met === 'none' ? { state: null, hash: '#codex', met: [], backup } : { ...filled([{ wait: 1400 }, { scroll: 'footer.end' }]), backup };
+        const backup = { on: v.backed !== 'off', savedAt: v.backed === 'on' || v.backed === 'synced' ? Date.now() - 4 * 60_000 : 0, failing: v.backed === 'unsaved' };
+        // (Paired with a device and linked to it, as the settings' sync bench has it.)
+        const sync = v.backed === 'synced' ? { sync: { code: 'K7QXM2PA9FHE3TDW', met: true, status: 'linked' as const, linked: 1, lastAt: Date.now() } } : {};
+        if (v.met === 'none') return { state: null, hash: '#codex', met: [], backup, ...sync };
+        // (At its foot, where the way to keep it is; or Erase codex pressed there, its confirm left up.)
+        const steps: Step[] = [{ wait: 1400 }, { scroll: 'footer.end' }, ...(v.asked ? [{ wait: 600 }, { click: 'footer.end .btn.danger' }] : [])];
+        return { ...filled(steps), backup, ...sync };
       },
     },
     // Its chunk lost: the Reload, as each try shows it while the connection is down (lib/chunkRetry.ts).

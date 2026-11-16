@@ -5,7 +5,8 @@
 // or let go after long enough); whom it answers; and what's brought back,
 // a save from an older build too, and the copies a device held of others',
 // taken in as sync takes another device's: never counted twice, and passed
-// on with the secret, the newer winning.
+// on with the secret, the newer winning; and what a device leaves under a
+// secret it moved on from, taken out once it's saved under the new one.
 import './asVite.ts';
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,16 +20,26 @@ const store = new Map<string, string>();
 (globalThis as { localStorage?: unknown }).localStorage = memoryStorage(store);
 
 const { base64url } = await import('../src/lib/base64url.ts');
-const { MAX_ENTRY: PAGE_MAX_ENTRY, entryNow, readEntry, sealEntry, takeEntries, unpack } = await import('../src/lib/backup/backup.svelte.ts');
-const { absorbKept, forgetKept, forgetToSend, loadKept, loadSent, markForgotten, nextAt, ownKeptRaw, saveKept, saveSent } = await import('../src/lib/backup/kept.ts');
-const { clearCopies, deviceId, keepCopy, readCopies } = await import('../src/lib/sync/store.ts');
+const { MAX_ENTRY: PAGE_MAX_ENTRY, bringBack, clearLeft, entryNow, eraseBackup, readEntry, sealEntry, takeEntries, unpack } = await import('../src/lib/backup/backup.svelte.ts');
+const { MAX_LEFT, absorbKept, forgetKept, forgetToSend, leave, loadKept, loadLeft, loadSent, markForgotten, nextAt, ownKeptRaw, saveKept, saveSent } = await import('../src/lib/backup/kept.ts');
+const { clearCopies, deviceId, forgetDevice, keepCopy, readCopies } = await import('../src/lib/sync/store.ts');
+const { CHANNEL } = await import('../src/lib/channel.ts');
+const { fromBase64url } = await import('../src/lib/base64url.ts');
 const { takeIn, takenNow } = await import('../src/lib/sync/shared.ts');
 const { emptyCodex, loadCodex, serializeCodex } = await import('../src/lib/codex.ts');
 const { storeKey } = await import('../src/lib/storage.ts');
 
+/** Where the page's requests go: nowhere, unless a test puts a server there. */
+const nowhere = async (): Promise<Response> => {
+  throw new TypeError('no server in a test');
+};
+let server: (r: Request) => Promise<Response> = nowhere;
+globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => server(new Request(url, init))) as typeof fetch;
+
 beforeEach(() => {
   clearCopies();
   store.clear();
+  server = nowhere;
 });
 
 // ---- the seal -------------------------------------------------------------------
@@ -374,4 +385,167 @@ test('a device that hears of a Forget deletes that backup again, once: what it s
   store.clear();
   saveKept({ secret: null, at: 500 });
   assert.equal(forgetToSend(), null);
+});
+
+// ---- leaving a secret behind -------------------------------------------------------
+
+/** The Worker as the page reaches it, with a bucket for every secret. */
+function serve() {
+  const e = env();
+  server = (r) => answer(new Request(r, { headers: { ...Object.fromEntries(r.headers), Origin: 'https://poe2.quest' } }), e as never);
+}
+const made = (secret: string) => fromSecret(fromBase64url(secret)!, CHANNEL);
+const bucketOf = async (secret: string) => (await made(secret)).bucket;
+const KEEP_URL = 'https://poe2-signal.poe2quest.workers.dev/keep/';
+/** The devices with an entry under `secret`. */
+const devicesIn = async (secret: string) => unpack(new Uint8Array(await (await fetch(KEEP_URL + (await bucketOf(secret)))).arrayBuffer())).map((e) => e.device);
+/** `device`'s entry, sealed as the page seals it, put under `secret`. */
+async function putEntry(secret: string, device: string) {
+  const { bucket, key } = await made(secret);
+  const data = await seal(JSON.stringify({ v: 1, copies: [], taken: {} }), key, bucket, device);
+  assert.ok((await fetch(KEEP_URL + `${bucket}/${device}`, { method: 'POST', body: data, headers: { 'Content-Type': 'text/plain' } })).ok);
+}
+/** A save of this device's under `secret`, as the page makes one: its entry in, the bucket stamped, then what it left goes. */
+async function saveUnder(secret: string) {
+  await putEntry(secret, deviceId());
+  saveSent({ at: Date.now(), print: '1:1', bucket: await bucketOf(secret) });
+  await clearLeft();
+}
+const fresh = () => base64url(newSecret());
+
+test('moving to a newer secret through sync leaves the old entry until a save under the new one, then nothing of it is there', async () => {
+  serve();
+  const [one, two] = [fresh(), fresh()];
+  saveKept({ secret: one, at: 100 });
+  const me = deviceId();
+  await saveUnder(one);
+  assert.deepEqual(await devicesIn(one), [me]);
+  // A paired device kept with another passkey since: taken in here.
+  assert.ok(absorbKept(JSON.stringify({ v: 1, secret: two, at: 200 })));
+  assert.deepEqual(loadLeft(), [{ secret: one, device: me, after: two }]);
+  // Not saved under the new one yet (the last save was the old one's): the old entry stays, the only one there is.
+  await clearLeft();
+  assert.deepEqual(await devicesIn(one), [me]);
+  assert.equal(loadLeft().length, 1);
+  await saveUnder(two);
+  assert.deepEqual(await devicesIn(one), [], 'the passkey left behind holds nothing of this device’s');
+  assert.deepEqual(await devicesIn(two), [me]);
+  assert.deepEqual(loadLeft(), []);
+});
+
+test('Bring it back while kept with another passkey leaves the old one’s entry; one with nothing kept isn’t taken on', async () => {
+  serve();
+  const [one, two, empty] = [fresh(), fresh(), fresh()];
+  saveKept({ secret: one, at: 100 });
+  const me = deviceId();
+  await saveUnder(one);
+  // The passkey the player picks, as the browser hands it over.
+  let picked = two;
+  Object.defineProperty(globalThis.navigator, 'credentials', {
+    configurable: true,
+    value: { get: async () => ({ response: { userHandle: userId(fromBase64url(picked)!, CHANNEL).buffer } }) },
+  });
+  // Nothing kept with it: this browser stays kept with the one it has, and leaves nothing.
+  picked = empty;
+  await bringBack();
+  assert.equal(loadKept()?.secret, one);
+  assert.deepEqual(loadLeft(), []);
+  // Another device's progress kept with the second: brought back, and this device's under the first left to go
+  // once its own is saved under the second (the save Bring it back starts, with progress to keep).
+  store.set(storeKey('codex'), codexWith({ [A.id]: 3 }));
+  await putEntry(two, 'tablet000001');
+  picked = two;
+  await bringBack();
+  assert.equal(loadKept()?.secret, two);
+  assert.deepEqual(loadLeft(), [{ secret: one, device: me, after: two }]);
+  for (let i = 0; i < 200 && loadLeft().length; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(loadSent()?.bucket, await bucketOf(two));
+  assert.deepEqual(loadLeft(), []);
+  assert.deepEqual(await devicesIn(one), []);
+  assert.deepEqual((await devicesIn(two)).sort(), [me, 'tablet000001'].sort());
+  // Not kept at all, a passkey with nothing kept with it is taken on.
+  store.clear();
+  picked = empty;
+  await bringBack();
+  assert.equal(loadKept()?.secret, empty);
+  assert.deepEqual(loadLeft(), []);
+});
+
+test('a Forget leaves nothing to take out, and what waited for a save under the forgotten one waits no more', async () => {
+  serve();
+  const [zero, one] = [fresh(), fresh()];
+  saveKept({ secret: one, at: 100 });
+  assert.ok(absorbKept(JSON.stringify({ v: 1, secret: null, at: 200, bucket: await bucketOf(one) })));
+  assert.deepEqual(loadLeft(), []);
+  // Moved from a first to a second, never saved under the second, which is then forgotten: the first's entry goes at once.
+  store.clear();
+  saveKept({ secret: zero, at: 100 });
+  const me = deviceId();
+  await saveUnder(zero);
+  assert.ok(absorbKept(JSON.stringify({ v: 1, secret: one, at: 200 })));
+  assert.ok(absorbKept(JSON.stringify({ v: 1, secret: null, at: 300, bucket: await bucketOf(one) })));
+  assert.deepEqual(loadLeft(), [{ secret: zero, device: me, after: null }]);
+  await clearLeft();
+  assert.deepEqual(await devicesIn(zero), []);
+  assert.deepEqual(loadLeft(), []);
+});
+
+test('moving back to a secret drops what was left under it, the next save taking its place; a longer way is followed to its end', async () => {
+  serve();
+  const [one, two, three] = [fresh(), fresh(), fresh()];
+  saveKept({ secret: one, at: 100 });
+  const me = deviceId();
+  await saveUnder(one);
+  absorbKept(JSON.stringify({ v: 1, secret: two, at: 200 }));
+  absorbKept(JSON.stringify({ v: 1, secret: one, at: 300 }));
+  assert.deepEqual(
+    loadLeft().map((l) => l.secret),
+    [one, two],
+  );
+  // Back on the first before any save under the second: what was left under the first is dropped unsent, its entry there kept.
+  await clearLeft();
+  assert.deepEqual(loadLeft(), []);
+  assert.deepEqual(await devicesIn(one), [me]);
+  // From the first to the second to the third, saved only under the third: neither of the two left holds anything of it.
+  absorbKept(JSON.stringify({ v: 1, secret: two, at: 400 }));
+  await saveUnder(two);
+  absorbKept(JSON.stringify({ v: 1, secret: three, at: 500 }));
+  absorbKept(JSON.stringify({ v: 1, secret: one, at: 600 }));
+  absorbKept(JSON.stringify({ v: 1, secret: three, at: 700 }));
+  await saveUnder(three);
+  assert.deepEqual([await devicesIn(one), await devicesIn(two), await devicesIn(three)], [[], [], [me]]);
+  assert.deepEqual(loadLeft(), []);
+});
+
+test('the codex erased takes this device’s entry out under the name it had, tried again until it goes', async () => {
+  const one = fresh();
+  saveKept({ secret: one, at: 100 });
+  const me = deviceId();
+  // Out of reach as it's erased; sync's erase gives this browser a new name.
+  await eraseBackup();
+  forgetDevice();
+  assert.notEqual(deviceId(), me);
+  assert.equal(loadKept(), null);
+  assert.deepEqual(loadLeft(), [{ secret: one, device: me, after: null }]);
+  // Reached, as the page next starts.
+  serve();
+  await putEntry(one, me);
+  await putEntry(one, 'tablet000001');
+  await clearLeft();
+  assert.deepEqual(await devicesIn(one), ['tablet000001']);
+  assert.deepEqual(loadLeft(), []);
+});
+
+test('a save from before the list reads as none, and it keeps the newest few', () => {
+  assert.deepEqual(loadLeft(), []);
+  for (const raw of ['nonsense', '{}', JSON.stringify([{ secret: 'short', device: 'phone0000001', after: null }])]) {
+    store.set(storeKey('backup.left'), raw);
+    assert.deepEqual(loadLeft(), [], raw);
+  }
+  const secrets = Array.from({ length: MAX_LEFT + 2 }, fresh);
+  for (const s of secrets) leave(s, 'phone0000001', null);
+  assert.deepEqual(
+    loadLeft().map((l) => l.secret),
+    secrets.slice(2),
+  );
 });

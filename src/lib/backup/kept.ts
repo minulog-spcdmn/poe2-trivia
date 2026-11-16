@@ -7,10 +7,18 @@
 // deletes that backup again, whatever it sent before it heard
 // (backup.svelte.ts). Which record wins is only ever the newer: so every
 // device ends on the same one, whatever order they meet in.
+//
+// A device that moves from one secret to another (a newer one through sync,
+// another passkey brought back) or erases its codex leaves its entry behind
+// under the old one: frozen there, it would come back as if it were all of
+// its progress. So it notes it (LEFT), and takes it out once its progress is
+// saved under the new one (backup.svelte.ts clearLeft): a passkey brings back
+// everything, or nothing.
 
 import { readStored, removeStored, writeStored } from '../storage.ts';
 import { fromBase64url } from '../base64url.ts';
 import { SECRET_BYTES } from './seal.ts';
+import { deviceId, isDevice } from '../sync/store.ts';
 
 export const KEPT_NAME = 'backup';
 
@@ -57,6 +65,10 @@ export function absorbKept(raw: string): boolean {
   if (!theirs || (mine && mine.at >= theirs.at)) return false;
   // (Forgotten: what was sent went with the bucket, so all of it goes again if it's brought back.)
   if (!theirs.secret) forgetSent();
+  // (Moved on to another: this device's entry under the one it had goes, once it's saved under the new one.)
+  if (mine?.secret && theirs.secret && mine.secret !== theirs.secret) leave(mine.secret, deviceId(), theirs.secret);
+  // (Stopped by a Forget: nothing of its own to note, since the bucket goes whole, but what waited for a save under it waits no more.)
+  else if (mine?.secret && !theirs.secret) repoint(mine.secret, null);
   return saveKept(theirs);
 }
 
@@ -78,6 +90,46 @@ export function loadSent(): Sent | null {
 }
 export const saveSent = (s: Sent) => writeStored(SENT, JSON.stringify(s));
 export const forgetSent = () => removeStored(SENT);
+
+/**
+ * A device's entry under a secret it left (`after`: the one it moved to,
+ * null where it stopped keeping), to be taken out of the server: the
+ * oldest first, and no more than MAX_LEFT. Only ever this browser's own,
+ * never passed on by sync.
+ */
+const LEFT = 'backup.left';
+export interface Left {
+  secret: string;
+  device: string;
+  after: string | null;
+}
+export const MAX_LEFT = 8;
+const isLeft = (v: unknown): v is Left => {
+  const l = v as Partial<Left> | null;
+  return typeof l === 'object' && l !== null && isSecret(l.secret) && isDevice(l.device) && (l.after === null || isSecret(l.after));
+};
+/** What's waiting to be taken out (none where an older build saved nothing of it). */
+export function loadLeft(): Left[] {
+  try {
+    const v: unknown = JSON.parse(readStored(LEFT) ?? '[]');
+    return Array.isArray(v) ? v.filter(isLeft) : [];
+  } catch {
+    return [];
+  }
+}
+const saveLeft = (list: Left[]) => (list.length ? writeStored(LEFT, JSON.stringify(list.slice(-MAX_LEFT))) : removeStored(LEFT));
+/** What waited for a save under `from` waits for one under `to` instead (null: for none), as the device moves on from it before any. */
+export function repoint(from: string, to: string | null) {
+  const list = loadLeft();
+  if (list.some((l) => l.after === from)) saveLeft(list.map((l) => (l.after === from ? { ...l, after: to } : l)));
+}
+/** `device`'s entry under `secret`, left for `after`: noted, to be taken out. */
+export function leave(secret: string, device: string, after: string | null) {
+  repoint(secret, after);
+  saveLeft([...loadLeft().filter((l) => !(l.secret === secret && l.device === device)), { secret, device, after }]);
+}
+/** One taken out (or no longer to be). */
+export const dropLeft = (gone: Left) => saveLeft(loadLeft().filter((l) => !(l.secret === gone.secret && l.device === gone.device)));
 
 /** The last Forget this device deleted the backup for (its own, or one taken in), as `bucket@at`. */
 const FORGOT = 'backup.forgot';

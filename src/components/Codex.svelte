@@ -402,7 +402,7 @@
   function reset() {
     // Kept with a passkey, the other devices' progress would come back the same: this browser's goes from what's
     // kept, and it stops keeping (first, under the name sync's erase lets go of).
-    eraseBackup();
+    void eraseBackup();
     // Synced, the other devices' progress would come straight back: this browser stops syncing, and theirs stays theirs.
     eraseSync();
     resetCodex();
@@ -971,7 +971,9 @@
       <h3>Erase your codex?</h3>
       <p>Every item you have seen, every answer, every Delve run and every achievement recorded in this browser is lost. This can’t be undone.</p>
       {#if sync.code && sync.met}<p>This browser stops syncing too; your other devices keep theirs.</p>{/if}
-      {#if backup.on}<p>What your passkey keeps of this browser goes too, and it stops keeping.</p>{/if}
+      <!-- (Paired, the other devices keep copies of this one's, and keep them with the passkey: this browser's own goes, but not all of it.) -->
+      {#if backup.on && sync.code && sync.met}<p>This browser stops keeping it with your passkey.</p>
+      {:else if backup.on}<p>What your passkey keeps of this browser goes too, and it stops keeping.</p>{/if}
       <div class="actions">
         <button class="btn ghost" onclick={() => (confirmReset = false)}>Keep it</button>
         <button class="btn danger" onclick={reset}>Erase</button>
