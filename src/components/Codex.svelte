@@ -950,7 +950,7 @@
         <p>Your codex, your Delve runs and your achievements live in this browser only; clearing the site’s data erases them.</p>
       {/if}
       <div class="end-actions">
-        {#if backup.supported && !backup.on}<button class="btn small" disabled={!!backup.busy} onclick={keepSafe}>{backup.busy === 'making' ? 'Making the passkey…' : 'Keep them safe'}</button>{/if}
+        {#if backup.supported && !backup.on}<button class="btn small" disabled={!!backup.busy} onclick={keepSafe}>{backup.busy === 'making' ? 'Making the passkey…' : 'Keep it safe'}</button>{/if}
         <button class="btn danger small" onclick={() => (confirmReset = true)}>Erase codex</button>
       </div>
     </footer>

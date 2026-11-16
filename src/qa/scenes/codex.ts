@@ -197,7 +197,7 @@ export function codexScenes(): Scene[] {
       states: [
         { label: 'Empty: the way back', values: { backed: 'off', met: 'none' } },
         { label: 'Part filled, not kept: the way to keep it', values: { backed: 'off', met: 'part' } },
-        { label: 'Part filled, kept', values: { backed: 'on', met: 'part' }, listed: false },
+        { label: 'Part filled, kept: no button, the line says so', values: { backed: 'on', met: 'part' } },
       ],
       build: (v = {}): Built => {
         const backup = { on: v.backed === 'on' };

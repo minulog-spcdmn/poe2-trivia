@@ -353,16 +353,20 @@
               >
             {/if}
           </p>
-        </div>
-        {#if backup.supported}
-          <!-- Set as Sync is: what it does stays beneath whatever it says now, unseen, so the row keeps its height. -->
-          <div class="row sync-row backup-row">
-            <span class="label">Backup</span>
-            <!-- Kept in its place once it's kept, out of sight, so the row keeps its height. -->
-            <button class="btn small" class:gone={backup.on} disabled={!!backup.busy || backup.on} onclick={keepSafe}>Keep it safe</button>
-            <p class="blurb say" class:linked={backup.on && !backup.busy && !forgetting}>
+          {#if backup.supported}
+            <!-- Kept with a passkey (lib/backup/), a line of its own under sync's: what it does and its two ways in, or how it
+                 stands. Set as sync's is, what it does beneath whatever it says now, unseen, so nothing jumps; one line on a
+                 laptop, so the column ends level with the keys and the sigils stay in the window. -->
+            <p class="blurb say backup" class:linked={backup.on && !backup.busy && !forgetting}>
               <span class:unseen={backup.on || !!backup.busy}
-                >A passkey keeps your codex, Delve runs and achievements if the browser clears them, and brings them to a new phone. Made one before? <button class="reset" disabled={!!backup.busy} onclick={bringBack}>Bring it back</button></span
+                >A passkey keeps it all if the browser clears it:
+                <span class="ways"
+                  ><button class="reset" disabled={!!backup.busy} onclick={keepSafe}>Keep it safe</button><span class="sep bullet" aria-hidden="true">•</span><button
+                    class="reset"
+                    disabled={!!backup.busy}
+                    onclick={bringBack}>Bring it back</button
+                  ></span
+                ></span
               >
               {#if backup.busy}
                 <span>{BUSY[backup.busy]}</span>
@@ -378,8 +382,8 @@
                 >
               {/if}
             </p>
-          </div>
-        {/if}
+          {/if}
+        </div>
       </section>
       {/if}
     </div>
@@ -780,8 +784,16 @@
     background: currentColor;
     box-shadow: 0 0 0.35em currentColor;
   }
-  .backup-row .btn.gone {
-    visibility: hidden;
+  /* The backup's line under sync's, as one paragraph: no gap between them. */
+  .sync-row .say.backup {
+    margin-top: -0.3rem;
+  }
+  /* Its two ways in kept together: where the line is short, they go on to the next as one. */
+  .sync-row .ways {
+    white-space: nowrap;
+  }
+  .sync-row .ways > .reset:first-child {
+    margin-left: 0;
   }
   .sync-row .sep {
     margin-left: 0.4rem;

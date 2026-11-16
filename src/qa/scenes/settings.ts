@@ -28,7 +28,7 @@ const KEPT: Control = { kind: 'toggle', key: 'kept', label: 'Named zoe_arcana (r
 const SAVER: Control = { kind: 'toggle', key: 'saver', label: 'Battery saver on (touch sizes)', default: false };
 /** The browser draws without the GPU: the line that opens the notice's steps again (the dialog itself is the Graphics notice bench's). */
 const GPU: Control = { kind: 'toggle', key: 'gpu', label: 'Graphics acceleration off', default: false };
-const SYNC: Control = {
+const SYNC = {
   kind: 'choice',
   key: 'sync',
   label: 'Sync',
@@ -42,7 +42,7 @@ const SYNC: Control = {
     { value: 'offline', label: 'Server out of reach' },
   ],
   default: 'paired',
-};
+} satisfies Control;
 const ASKED: Control = {
   kind: 'choice',
   key: 'asked',
@@ -137,6 +137,22 @@ const BACKUP: Control = {
   ],
   default: 'off',
 };
+/** Sync as it stands, as the frame takes it (`s`: a SYNC option). */
+function syncAs(s: string): Pick<Built, 'sync'> {
+  if (s === 'off') return {};
+  const met = s !== 'waiting';
+  return {
+    sync: {
+      code: SYNC_CODE,
+      met,
+      status: s === 'linked' || s === 'three' ? 'linked' : s === 'offline' ? 'offline' : 'waiting',
+      linked: s === 'three' ? 3 : s === 'linked' ? 1 : 0,
+      // (Paired and away: last synced 25 minutes before.)
+      lastAt: s === 'paired' ? Date.now() - 25 * 60_000 : 0,
+    },
+  };
+}
+
 /** What's pressed once the page shows: the buttons act it out. */
 const PRESS: Control = {
   kind: 'choice',
@@ -183,20 +199,24 @@ export function settingsScenes(): Scene[] {
         sound: v.sound === 'off' ? { muted: true } : v.sound === 'quiet' ? { volume: 0.35, ambience: 0 } : undefined,
         stored: { ...(v.keys ? { keys: JSON.stringify(CHANGED) } : {}), ...(v.colour ? { colour: '1' } : {}), ...(v.kept ? { name: 'zoe_arcana' } : {}), ...(v.saver ? { saver: '1' } : {}) },
         ...(v.gpu ? { gpuOff: true } : {}),
+        // (As a browser that can make a passkey has it, as most can: the backup's line under sync's.)
+        backup: { on: false },
       }),
     },
     {
-      // The backup, under sync: what it does with Keep it safe and Bring it back, or how it stands (kept, when it was last saved) and Forget;
-      // and a press on either, acted out (the frame makes no passkey).
+      // The backup, a line under sync's: what it does with Keep it safe and Bring it back, or how it stands (kept, when it was
+      // last saved) and Forget; beside each of sync's states (paired and synced, its status two lines, is the tallest), and
+      // a press on either, acted out (the frame makes no passkey).
       key: 'settings/backup',
       screen: 'settings',
       group: 'Settings',
       label: 'Backup, kept or not',
       seats: [{ mode: 'none', me: null }],
-      controls: [BACKUP, PRESS],
+      controls: [BACKUP, { ...SYNC, default: 'off' }, PRESS],
       states: [
         { label: 'Not kept', values: { backup: 'off' } },
         { label: 'Kept', values: { backup: 'on' } },
+        { label: 'Kept and synced', values: { backup: 'on', sync: 'paired' } },
         { label: 'Forget asked for', values: { backup: 'forget' }, listed: false },
         { label: 'Making the passkey', values: { backup: 'making' }, listed: false },
         { label: 'Bringing it back', values: { backup: 'bringing' }, listed: false },
@@ -205,12 +225,13 @@ export function settingsScenes(): Scene[] {
       build: (v = {}): Built => {
         const b = String(v.backup ?? 'off');
         const steps: Step[] = [
-          ...(b === 'forget' ? [{ click: '.backup-row .paired .reset' }] : []),
-          ...(v.press === 'keep' ? [{ wait: 1000 }, { click: '.backup-row .btn.small:not(.gone)' }] : v.press === 'bring' ? [{ wait: 1000 }, { click: '.backup-row .say > span:first-child .reset' }] : []),
+          ...(b === 'forget' ? [{ click: '.say.backup .paired .reset' }] : []),
+          ...(v.press === 'keep' ? [{ wait: 1000 }, { click: '.say.backup > span:first-child .reset:first-of-type' }] : v.press === 'bring' ? [{ wait: 1000 }, { click: '.say.backup > span:first-child .reset:last-of-type' }] : []),
         ];
         return {
           state: null,
           hash: '#settings',
+          ...syncAs(String(v.sync ?? 'off')),
           backup: {
             on: b === 'on' || b === 'forget',
             savedAt: b === 'on' || b === 'forget' ? Date.now() - 4 * 60_000 : 0,
@@ -248,18 +269,7 @@ export function settingsScenes(): Scene[] {
         return {
           state: null,
           hash: '#settings',
-          ...(s === 'off'
-            ? {}
-            : {
-                sync: {
-                  code: SYNC_CODE,
-                  met,
-                  status: s === 'linked' || s === 'three' ? 'linked' : s === 'offline' ? 'offline' : 'waiting',
-                  linked: s === 'three' ? 3 : s === 'linked' ? 1 : 0,
-                  // (Paired and away: last synced 25 minutes before.)
-                  lastAt: s === 'paired' ? Date.now() - 25 * 60_000 : 0,
-                },
-              }),
+          ...syncAs(s),
           ...(steps.length ? { steps } : {}),
         };
       },
