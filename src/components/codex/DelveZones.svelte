@@ -68,7 +68,11 @@
     if (!el || motion.still) return;
     const to = el.offsetHeight;
     el.style.overflow = 'clip';
-    const open = el.animate({ height: [`${from}px`, `${to}px`] }, { duration: 350, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
+    // Its height is the flex's (it fills the panel), so the move sizes its basis, nothing growing it or holding it open meanwhile.
+    const open = el.animate(
+      { flexBasis: [`${from}px`, `${to}px`], flexGrow: [0, 0], minHeight: ['0px', '0px'] },
+      { duration: 350, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' },
+    );
     await open.finished.catch(() => {});
     el.style.overflow = '';
   }
@@ -211,9 +215,12 @@
     grid-template-columns: var(--seal) minmax(0, 1fr) minmax(2.2rem, auto) minmax(6.2rem, auto);
     grid-auto-rows: minmax(var(--row), auto);
     column-gap: 0.8rem;
-    margin: 0 0 0.9rem;
+    margin: 0;
     padding: 0;
     list-style: none;
+  }
+  .descent:not(:last-child) {
+    margin-bottom: 0.9rem;
   }
   .descent li {
     --ink: color-mix(in srgb, var(--accent) 55%, var(--gold));
