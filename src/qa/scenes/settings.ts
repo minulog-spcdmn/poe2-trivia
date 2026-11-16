@@ -199,14 +199,13 @@ export function settingsScenes(): Scene[] {
         sound: v.sound === 'off' ? { muted: true } : v.sound === 'quiet' ? { volume: 0.35, ambience: 0 } : undefined,
         stored: { ...(v.keys ? { keys: JSON.stringify(CHANGED) } : {}), ...(v.colour ? { colour: '1' } : {}), ...(v.kept ? { name: 'zoe_arcana' } : {}), ...(v.saver ? { saver: '1' } : {}) },
         ...(v.gpu ? { gpuOff: true } : {}),
-        // (As a browser that can make a passkey has it, as most can: the backup's line under sync's.)
+        // (As a browser that can make a passkey has it, as most can: the backup's row under sync's.)
         backup: { on: false },
       }),
     },
     {
-      // The backup, a line under sync's: what it does with Keep it safe and Bring it back, or how it stands (kept, when it was
-      // last saved) and Forget; beside each of sync's states (paired and synced, its status two lines, is the tallest), and
-      // a press on either, acted out (the frame makes no passkey).
+      // The backup, under sync: what it does with Keep it safe and Bring it back, or how it stands (kept, when it was last
+      // saved) and Forget; beside each of sync's states, and a press on either, acted out (the frame makes no passkey).
       key: 'settings/backup',
       screen: 'settings',
       group: 'Settings',
@@ -225,8 +224,8 @@ export function settingsScenes(): Scene[] {
       build: (v = {}): Built => {
         const b = String(v.backup ?? 'off');
         const steps: Step[] = [
-          ...(b === 'forget' ? [{ click: '.say.backup .paired .reset' }] : []),
-          ...(v.press === 'keep' ? [{ wait: 1000 }, { click: '.say.backup > span:first-child .reset:first-of-type' }] : v.press === 'bring' ? [{ wait: 1000 }, { click: '.say.backup > span:first-child .reset:last-of-type' }] : []),
+          ...(b === 'forget' ? [{ click: '.backup-row .paired .reset' }] : []),
+          ...(v.press === 'keep' ? [{ wait: 1000 }, { click: '.backup-row .btn.small:not(.gone)' }] : v.press === 'bring' ? [{ wait: 1000 }, { click: '.backup-row .say > span:first-child .reset' }] : []),
         ];
         return {
           state: null,

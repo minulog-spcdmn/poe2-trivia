@@ -353,20 +353,16 @@
               >
             {/if}
           </p>
-          {#if backup.supported}
-            <!-- Kept with a passkey (lib/backup/), a line of its own under sync's: what it does and its two ways in, or how it
-                 stands. Set as sync's is, what it does beneath whatever it says now, unseen, so nothing jumps; one line on a
-                 laptop, so the column ends level with the keys and the sigils stay in the window. -->
-            <p class="blurb say backup" class:linked={backup.on && !backup.busy && !forgetting}>
+        </div>
+        {#if backup.supported}
+          <!-- Set as Sync is: what it does stays beneath whatever it says now, unseen, so the row keeps its height. -->
+          <div class="row sync-row backup-row">
+            <span class="label">Backup</span>
+            <!-- Kept in its place once it's kept, out of sight, so the row keeps its height. -->
+            <button class="btn small" class:gone={backup.on} disabled={!!backup.busy || backup.on} onclick={keepSafe}>Keep it safe</button>
+            <p class="blurb say" class:linked={backup.on && !backup.busy && !forgetting}>
               <span class:unseen={backup.on || !!backup.busy}
-                >A passkey keeps it all if the browser clears it:
-                <span class="ways"
-                  ><button class="reset" disabled={!!backup.busy} onclick={keepSafe}>Keep it safe</button><span class="sep bullet" aria-hidden="true">•</span><button
-                    class="reset"
-                    disabled={!!backup.busy}
-                    onclick={bringBack}>Bring it back</button
-                  ></span
-                ></span
+                >A passkey keeps your codex, Delve runs and achievements if the browser clears them, and brings them to a new phone. Made one before? <button class="reset" disabled={!!backup.busy} onclick={bringBack}>Bring it back</button></span
               >
               {#if backup.busy}
                 <span>{BUSY[backup.busy]}</span>
@@ -382,8 +378,8 @@
                 >
               {/if}
             </p>
-          {/if}
-        </div>
+          </div>
+        {/if}
       </section>
       {/if}
     </div>
@@ -489,6 +485,11 @@
   }
   .cols:not(.one, .over) .col.side {
     justify-content: space-between;
+  }
+  /* But the keys' card keeps its own height: where the side runs longer, it sits midway beside it rather than
+     stretching into a bare band of panel. */
+  .cols:not(.one, .over) .keys.panel {
+    align-self: center;
   }
   .cols.one {
     grid-template-columns: minmax(0, 480px);
@@ -784,16 +785,8 @@
     background: currentColor;
     box-shadow: 0 0 0.35em currentColor;
   }
-  /* The backup's line under sync's, as one paragraph: no gap between them. */
-  .sync-row .say.backup {
-    margin-top: -0.3rem;
-  }
-  /* Its two ways in kept together: where the line is short, they go on to the next as one. */
-  .sync-row .ways {
-    white-space: nowrap;
-  }
-  .sync-row .ways > .reset:first-child {
-    margin-left: 0;
+  .backup-row .btn.gone {
+    visibility: hidden;
   }
   .sync-row .sep {
     margin-left: 0.4rem;
@@ -1047,6 +1040,27 @@
   @media (max-width: 420px) {
     .slide input {
       --len: 140px;
+    }
+  }
+  /* A short window, a 13-inch laptop's: the lobby's tighter rhythm (its rows and sections closer), so the page and its
+     sigils stay in the window before anything gets smaller. */
+  @media (min-width: 1100px) and (max-height: 760px) {
+    .settings:not(.over) .col.side {
+      gap: 0.9rem;
+    }
+    .settings:not(.over) .row {
+      padding: 0.5rem 0;
+    }
+    .settings:not(.over) .sync-row {
+      margin-top: 0.35rem;
+      padding-bottom: 0;
+    }
+    .settings:not(.over) .name-row {
+      padding-top: 0.5rem;
+    }
+    .settings:not(.over) .sigil-row {
+      margin-top: 0.75rem;
+      padding-top: 0.45rem;
     }
   }
   /* Desktop: the lobby's stage, straight on the backdrop, the columns in the middle of the window's height. */
