@@ -183,8 +183,8 @@ let sending: Promise<void> | null = null;
 /** Nothing sent while a Forget goes (forgetBackup). */
 let hold = false;
 
-/** Sends this device's progress if it changed since it was last sent; `leaving`, as the page goes away. */
-function send(leaving = false): Promise<void> {
+/** Sends this device's progress if it changed since it was last sent; `leaving`, as the page goes away. (Exported for tests/backup.test.ts, which drives it.) */
+export function send(leaving = false): Promise<void> {
   // (One at a time: a change meanwhile is sent after it.)
   if (sending) return sending.then(() => send(leaving));
   // (One that fails along the way is tried again in a while, as one the server didn't take.)
@@ -193,8 +193,8 @@ function send(leaving = false): Promise<void> {
     .finally(() => (sending = null)));
 }
 
-/** Until no save is on its way: what's sent after it lands after it. */
-async function settled() {
+/** Until no save is on its way: what's sent after it lands after it. (Exported for tests/backup.test.ts, which waits on it.) */
+export async function settled() {
   while (sending) await sending;
 }
 
