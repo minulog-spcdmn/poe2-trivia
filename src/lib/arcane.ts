@@ -235,6 +235,24 @@ export const hatch = (o: Pt, l: Pt, t: Pt, gap: number, opts: LineOpts = {}) => 
 };
 
 /**
+ * An empty seal's hollow, a dull impression's (the descent's zones not
+ * reached, lib/descentPlate; the codex's next zone): the shadow under its
+ * upper left rim, a crescent (the circle less the same circle moved down
+ * and right, as Luna is cut), shaded in level strokes `gap` apart.
+ */
+export function hollow(c: Pt, r: number, gap: number): string {
+  const o = r * 0.36;
+  let d = '';
+  for (let y = -r + gap * 0.7; y < r; y += gap) {
+    const x1 = Math.sqrt(r * r - y * y);
+    const dy = y - o;
+    const end = Math.abs(dy) < r ? Math.min(x1, o - Math.sqrt(r * r - dy * dy)) : x1;
+    if (end - 0.35 - (-x1 + 0.35) > 0.35) d += `M${f(c[0] - x1 + 0.35)} ${f(c[1] + y)}H${f(c[0] + end - 0.35)}`;
+  }
+  return d;
+}
+
+/**
  * A pointed ray out of `c` at `a`, from a base `half` degrees either side
  * at `r0` to its tip at `r1`: its two edges, a ridge down its middle, and
  * hatching down one side.

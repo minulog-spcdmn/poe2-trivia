@@ -1,8 +1,5 @@
 <script lang="ts">
-  import { fade } from 'svelte/transition';
   import { engine } from '../lib/session.svelte';
-  import { tick } from 'svelte';
-  import { calm, motion } from '../lib/motion.svelte';
   import type { Codex } from '../lib/codex';
   import {
     CATEGORY_MIN,
@@ -37,6 +34,7 @@
   import CodexMedallion from './codex/CodexMedallion.svelte';
   import EmptyPlate from './codex/EmptyPlate.svelte';
   import DelveFossils from './codex/DelveFossils.svelte';
+  import DelveZones from './codex/DelveZones.svelte';
   import { circleOf } from './circles';
 
   /** The circle behind it (lib/circlePlaces.ts). */
@@ -62,7 +60,6 @@
     onbegin,
   }: { codex: Codex; records: DelveRecords; fossils?: import('../lib/fossilStore').FossilStore; onopen: (item: Item) => void; onbegin: () => void } = $props();
 
-  const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const fmt = (n: number) => n.toLocaleString();
   const usual = (m: number) => (Number.isInteger(m) ? `${m}` : m.toFixed(1));
   const word = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : many);
@@ -166,24 +163,6 @@
   const climb = $derived(mergeClimbs(climbOf(records, true), climbOf(records, false)));
   const steps = $derived(milestones(climb));
   const zones = $derived(zonesReached(climb));
-  const ZONE_ROWS = 6;
-  let allZones = $state(false);
-  const zoneRows = $derived(allZones || zones.reached.length <= ZONE_ROWS + 1 ? [...zones.reached].reverse() : zones.reached.slice(-ZONE_ROWS).reverse());
-  const zonesHidden = $derived(zones.reached.length - zoneRows.length);
-  let zoneList = $state<HTMLElement>();
-  /** All the zones shown, the list opens to its full height as the new rows fade in (as the run log's). */
-  async function showAllZones() {
-    const el = zoneList;
-    const from = el?.offsetHeight ?? 0;
-    allZones = true;
-    await tick();
-    if (!el || motion.still) return;
-    const to = el.offsetHeight;
-    el.style.overflow = 'clip';
-    const open = el.animate({ height: [`${from}px`, `${to}px`] }, { duration: 350, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
-    await open.finished.catch(() => {});
-    el.style.overflow = '';
-  }
 </script>
 
 {#snippet meter(share: number)}
@@ -196,38 +175,6 @@
 
 {#snippet glyph(category: string)}
   <span class="glyph" style:--src="url('{categoryGlyph(category)}')" aria-hidden="true"></span>
-{/snippet}
-
-{#snippet zonesPanel()}
-        <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="zone-h">
-          <header><h2 id="zone-h">Zones reached</h2>{#if zones.biomes}<span class="col-label">{zones.biomes} {word(zones.biomes, 'biome')}</span>{/if}</header>
-          {#if zones.reached.length}
-            {#if steps.length > 1}
-              <p class="climb">
-                <span class="climb-label">Deepest over time</span>
-                <span class="climb-steps"
-                  >{#each steps as s, i (i)}{#if i}<span class="arrow" aria-hidden="true"> → </span><span class="sr-only">, then </span>{/if}{#if s === null}<span
-                        class="gap">…</span
-                      >{:else}<span class="n">{shownDepth(s)}</span>{/if}{/each}</span
-                >
-              </p>
-            {/if}
-            <ol class="list zones" bind:this={zoneList}>
-              {#each zoneRows as z (z.k)}
-                <li in:fade={calm({ duration: allZones ? 200 : 0 })}>
-                  <span class="z-depth n">{shownDepth(z.depth)}</span>
-                  <span class="l-name"><span>{z.name}</span></span>
-                  <span class="z-when n">{date(z.at)}</span>
-                </li>
-              {/each}
-            </ol>
-            {#if zonesHidden > 0}
-              <button class="more" onclick={showAllZones}>Show all {zones.reached.length} zones</button>
-            {/if}
-          {:else}
-            <p class="hint">The zones you reach, and when you first got there, show up here.</p>
-          {/if}
-        </section>
 {/snippet}
 
 {#snippet rowList(list: Row[])}
@@ -328,7 +275,7 @@
       <!-- The set of 25 fossils Delve turns up (lib/fossils.ts), beside the zones reached: what the descent has given up. -->
       <div class="found">
         <DelveFossils store={fossils} />
-        {@render zonesPanel()}
+        <DelveZones {zones} {steps} />
       </div>
 
       {#if allRuns >= MIN_RUNS}
@@ -443,17 +390,6 @@
     font-style: normal;
     font-variant-numeric: lining-nums;
     font-size: 0.88em;
-  }
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-    border: 0;
   }
 
   /* ---- summary: your best between four figures ---- */
@@ -806,67 +742,6 @@
     font-family: var(--font-cinzel);
     font-size: 1.05rem;
     color: var(--gold-hi);
-  }
-  .zones li {
-    padding: 0.3rem 0;
-  }
-  .z-depth {
-    width: 2.2rem;
-    text-align: right;
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: var(--gold-hi);
-  }
-  .z-when {
-    font-size: 0.75rem;
-    color: var(--muted);
-    white-space: nowrap;
-  }
-  .climb {
-    margin: 0 0 0.6rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-  }
-  .climb-label {
-    font-family: var(--font-display);
-    font-size: 0.72rem;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: #d8a26a;
-  }
-  .climb-steps {
-    font-size: 1.05rem;
-    color: var(--gold-hi);
-  }
-  .climb-steps .n {
-    font-weight: 700;
-  }
-  .arrow,
-  .gap {
-    color: var(--gold-lo);
-  }
-  .more {
-    align-self: center;
-    display: block;
-    margin: 0.3rem auto 0;
-    min-height: 44px;
-    padding: 0 1rem;
-    border: 0;
-    background: none;
-    font-family: var(--font-display);
-    font-size: 0.78rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--gold);
-    text-decoration: underline 1px rgba(201, 164, 92, 0.4);
-    text-underline-offset: 0.35em;
-    cursor: pointer;
-    transition: color 0.2s;
-  }
-  .more:hover {
-    color: var(--gold-hi);
-    text-decoration-color: var(--gold-hi);
   }
 
   @media (max-width: 900px) {

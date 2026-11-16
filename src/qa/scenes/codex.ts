@@ -13,8 +13,12 @@ import type { Control, Values } from '../bench.ts';
 import { id } from '../build/people.ts';
 import type { Built, Scene, Step } from '../scene.ts';
 
+/** The first run's evening, the rest three days apart and at other hours, all before the desk's date (20 October 2026): so a date the page shows reads as a player's would. */
+const FIRST_RUN = Date.UTC(2026, 7, 30, 19, 40);
+const runAt = (i: number) => FIRST_RUN + i * 3 * 86_400_000 + (i % 3) * 2 * 3_600_000;
+
 function filled(steps: Step[] = [], depths = [8, 14, 27, 19, 33, 23, 41]): Built {
-  const runs: DelveRun[] = depths.map((depth, i) => ({ id: 2000 + i, at: 2000 + i, depth, players: i % 3 ? 1 : 3, ruleset: DELVE_RULESET, mixed: false, ...(i % 3 ? {} : { perished: [depth] }) }));
+  const runs: DelveRun[] = depths.map((depth, i) => ({ id: 2000 + i, at: runAt(i), depth, players: i % 3 ? 1 : 3, ruleset: DELVE_RULESET, mixed: false, ...(i % 3 ? {} : { perished: [depth] }) }));
   return { state: null, hash: '#codex', met: 140, runs, steps };
 }
 
@@ -125,8 +129,10 @@ const RUNS: Control = {
   key: 'runs',
   label: 'Runs',
   options: [
+    { value: 'first', label: 'One, in the Mines' },
     { value: 'seven', label: 'Seven' },
     { value: 'many', label: 'Sixteen: all shown, then the latest' },
+    { value: 'deep', label: 'Nine zones deep: the middle ones behind a button, then all' },
     { value: 'finds', label: 'Seven, finds taken' },
     { value: 'none', label: 'None' },
     { value: 'new', label: 'None, and little met' },
@@ -174,8 +180,15 @@ function runsShown(v: Values): Built {
   const tab: Step = { click: v.page === 'feats' ? '#codex-tab-feats' : '#codex-tab-delve' };
   if (v.runs === 'new') return { state: null, hash: '#codex', met: 40, steps: [tab] };
   if (v.runs === 'none') return filled([tab], []);
+  if (v.runs === 'first') return filled([tab], [6]);
   // Finds taken alone, the page brought down to them.
   if (v.runs === 'finds') return { ...filled(v.page === 'feats' ? [tab] : [tab, { wait: 1200 }, { scroll: '[aria-labelledby="find-h-Alone"]' }]), log: findsLog() };
+  // Nine zones reached: the Mines and the deepest four, the four between behind a button, then all of them.
+  if (v.runs === 'deep')
+    return filled(
+      v.page === 'feats' ? [tab] : [tab, { wait: 1200 }, { scroll: '.zones button.more' }, { wait: 900 }, { click: '.zones button.more' }],
+      [8, 14, 27, 19, 33, 23, 41, 52, 47, 61, 58, 73, 66, 85],
+    );
   if (v.runs !== 'many') return filled([tab]);
   // More runs than its short list: all of them shown (the new rows fading in), then the short list again from the button, which stays where it was.
   return filled(
@@ -223,6 +236,7 @@ export function codexScenes(): Scene[] {
         { label: 'The Delve page, never delved', values: { runs: 'none' }, key: 'codex/delve-none', listed: false },
         { label: 'The Delve page: every run shown, then the latest again', values: { runs: 'many' }, key: 'codex/runs', listed: false },
         { label: 'The Delve page: finds taken, a vein caved in on strike 1 and one on strike 2', values: { runs: 'finds' }, key: 'codex/delve-finds', listed: false },
+        { label: 'The Delve page, nine zones deep: the middle ones behind a button, then all', values: { runs: 'deep' }, key: 'codex/zones-deep', listed: false },
         { label: 'The Achievements page', values: { page: 'feats' }, key: 'codex/feats', listed: false },
         { label: 'The Delve page, no run yet', values: { runs: 'new' }, key: 'codex/delve-empty', listed: false },
         { label: 'The Delve page, the first fossil', values: { fossils: 'one' }, key: 'codex/fossils-1', listed: false },
