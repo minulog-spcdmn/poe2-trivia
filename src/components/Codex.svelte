@@ -971,9 +971,9 @@
       <h3>Erase your codex?</h3>
       <p>Every item you have seen, every answer, every Delve run and every achievement recorded in this browser is lost. This can’t be undone.</p>
       {#if sync.code && sync.met}<p>This browser stops syncing too; your other devices keep theirs.</p>{/if}
-      <!-- (Paired, the other devices keep copies of this one's, and keep them with the passkey: this browser's own goes, but not all of it.) -->
+      <!-- (Its own copy goes from what the passkey keeps; what it kept from other browsers stays, this one's before a wipe among them, and paired, the copies the others hold of this one's.) -->
       {#if backup.on && sync.code && sync.met}<p>This browser stops keeping it with your passkey.</p>
-      {:else if backup.on}<p>What your passkey keeps of this browser goes too, and it stops keeping.</p>{/if}
+      {:else if backup.on}<p>This browser stops keeping it with your passkey, and takes its own copy out. What the passkey kept from other browsers stays.</p>{/if}
       <div class="actions">
         <button class="btn ghost" onclick={() => (confirmReset = false)}>Keep it</button>
         <button class="btn danger" onclick={reset}>Erase</button>

@@ -3,10 +3,11 @@
 // the player's other devices (lib/sync/shared.ts), so they keep theirs under
 // the same, and the newer of two always wins: a backup turned on on one
 // device is on on all of them, and one forgotten is forgotten on all of them.
-// A Forget names the backup it forgot, and each device that hears of it
-// deletes that backup again, whatever it sent before it heard
-// (backup.svelte.ts). Which record wins is only ever the newer: so every
-// device ends on the same one, whatever order they meet in.
+// A Forget names the backup it forgot; the server keeps a mark in its place,
+// so whatever a device sends there after is refused (backup.svelte.ts gone).
+// Which record wins is only ever the newer, two of the same moment in a fixed
+// order (wins): so every device ends on the same one, whatever order they
+// meet in.
 //
 // A device that moves from one secret to another (a newer one through sync,
 // another passkey brought back) or erases its codex leaves its entry behind
@@ -59,15 +60,20 @@ export const nextAt = () => Math.max(Date.now(), (loadKept()?.at ?? 0) + 1);
 /** As sync sends it: null where nothing was ever set. */
 export const ownKeptRaw = (): string | null => (loadKept() ? readStored(KEPT_NAME) : null);
 
-/** Another device's, taken where it is newer; whether it was. */
+/** The order two records of the same moment stand in, the same on every device: a Forget first. */
+const rank = (k: Kept) => `${k.secret === null ? '0' : `1${k.secret}`}|${k.bucket ?? ''}`;
+/** Whether `a` stands over `b`: the newer, or of the same moment, the first in that order. */
+export const wins = (a: Kept, b: Kept) => (a.at !== b.at ? a.at > b.at : rank(a) < rank(b));
+
+/** Another device's, taken where it stands over this one's; whether it was. */
 export function absorbKept(raw: string): boolean {
   const theirs = parseKept(raw);
   const mine = loadKept();
-  if (!theirs || (mine && mine.at >= theirs.at)) return false;
-  // (Forgotten: what was sent went with the bucket, so all of it goes again if it's brought back.)
-  if (!theirs.secret) forgetSent();
+  if (!theirs || (mine && !wins(theirs, mine))) return false;
+  // (All of it sent again under the one taken, whatever was sent before: a save is only skipped for one known to be there.)
+  forgetSent();
   // (Moved on to another: this device's entry under the one it had goes, once it's saved under the new one.)
-  if (mine?.secret && theirs.secret && mine.secret !== theirs.secret) leave(mine.secret, deviceId(), theirs.secret);
+  if (mine?.secret && theirs.secret && mine.secret !== theirs.secret) leave(mine.secret, deviceId(), theirs.secret, theirs.at);
   // (Stopped by a Forget: nothing of its own to note, since the bucket goes whole, but what waited for a save under it waits no more.)
   else if (mine?.secret && !theirs.secret) repoint(mine.secret, null);
   return saveKept(theirs);
@@ -103,11 +109,13 @@ export interface Left {
   secret: string;
   device: string;
   after: string | null;
+  /** When the record it moved to was set (its Kept.at), the note's time; none where an older build saved it. */
+  at?: number;
 }
 export const MAX_LEFT = 8;
 const isLeft = (v: unknown): v is Left => {
   const l = v as Partial<Left> | null;
-  return typeof l === 'object' && l !== null && isSecret(l.secret) && isDevice(l.device) && (l.after === null || isSecret(l.after));
+  return typeof l === 'object' && l !== null && isSecret(l.secret) && isDevice(l.device) && (l.after === null || isSecret(l.after)) && (l.at === undefined || (typeof l.at === 'number' && Number.isSafeInteger(l.at)));
 };
 /** What's waiting to be taken out (none where an older build saved nothing of it). */
 export function loadLeft(): Left[] {
@@ -119,28 +127,18 @@ export function loadLeft(): Left[] {
   }
 }
 const saveLeft = (list: Left[]) => (list.length ? writeStored(LEFT, JSON.stringify(list.slice(-MAX_LEFT))) : removeStored(LEFT));
-/** What waited for a save under `from` waits for one under `to` instead (null: for none), as the device moves on from it before any. */
-export function repoint(from: string, to: string | null) {
+/** What waited for a save under `from` waits for one under `to` instead (null: for none), set `at`, as the device moves on from it before any. */
+export function repoint(from: string, to: string | null, at?: number) {
   const list = loadLeft();
-  if (list.some((l) => l.after === from)) saveLeft(list.map((l) => (l.after === from ? { ...l, after: to } : l)));
+  if (list.some((l) => l.after === from)) saveLeft(list.map((l) => (l.after === from ? { secret: l.secret, device: l.device, after: to, ...(at === undefined ? {} : { at }) } : l)));
 }
-/** `device`'s entry under `secret`, left for `after`: noted, to be taken out. */
-export function leave(secret: string, device: string, after: string | null) {
-  repoint(secret, after);
-  saveLeft([...loadLeft().filter((l) => !(l.secret === secret && l.device === device)), { secret, device, after }]);
+/** `device`'s entry under `secret`, left for `after`, set `at`: noted, to be taken out. */
+export function leave(secret: string, device: string, after: string | null, at?: number) {
+  repoint(secret, after, at);
+  saveLeft([...loadLeft().filter((l) => !(l.secret === secret && l.device === device)), { secret, device, after, ...(at === undefined ? {} : { at }) }]);
 }
 /** One taken out (or no longer to be). */
 export const dropLeft = (gone: Left) => saveLeft(loadLeft().filter((l) => !(l.secret === gone.secret && l.device === gone.device)));
-
-/** The last Forget this device deleted the backup for (its own, or one taken in), as `bucket@at`. */
-const FORGOT = 'backup.forgot';
-const forgetMark = (k: Kept) => `${k.bucket}@${k.at}`;
-/** A Forget with the bucket it names, not yet deleted from here: null where there is none. */
-export function forgetToSend(): Kept | null {
-  const k = loadKept();
-  return k && !k.secret && k.bucket && readStored(FORGOT) !== forgetMark(k) ? k : null;
-}
-export const markForgotten = (k: Kept) => writeStored(FORGOT, forgetMark(k));
 
 /** The offer after a game (lib/backup/backup.svelte.ts offerBackup) was made: never again. */
 const ASKED = 'backup.asked';
