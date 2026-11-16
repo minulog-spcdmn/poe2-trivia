@@ -3,9 +3,10 @@
 // the player's other devices (lib/sync/shared.ts), so they keep theirs under
 // the same, and the newer of two always wins: a backup turned on on one
 // device is on on all of them, and one forgotten is forgotten on all of them.
-// A Forget names the backup it forgot, so it never stops one kept with
-// another passkey, and each device that hears of it deletes that backup
-// again, whatever it sent before it heard (backup.svelte.ts).
+// A Forget names the backup it forgot, and each device that hears of it
+// deletes that backup again, whatever it sent before it heard
+// (backup.svelte.ts). Which record wins is only ever the newer: so every
+// device ends on the same one, whatever order they meet in.
 
 import { readStored, removeStored, writeStored } from '../storage.ts';
 import { fromBase64url } from '../base64url.ts';
@@ -49,22 +50,11 @@ export const nextAt = () => Math.max(Date.now(), (loadKept()?.at ?? 0) + 1);
 /** As sync sends it: null where nothing was ever set. */
 export const ownKeptRaw = (): string | null => (loadKept() ? readStored(KEPT_NAME) : null);
 
-/**
- * Whether `a` takes `b`'s place: the newer, but a Forget only ever stops the
- * backup it names. One kept with another passkey stays, and comes in over it.
- */
-export function takesOver(a: Kept, b: Kept): boolean {
-  const names = (forgot: Kept, live: Kept) => !forgot.bucket || !live.bucket || forgot.bucket === live.bucket;
-  if (!a.secret && b.secret && !names(a, b)) return false;
-  if (a.secret && !b.secret && !names(b, a)) return true;
-  return a.at > b.at;
-}
-
-/** Another device's, taken where it takes this one's place; whether it was. */
+/** Another device's, taken where it is newer; whether it was. */
 export function absorbKept(raw: string): boolean {
   const theirs = parseKept(raw);
   const mine = loadKept();
-  if (!theirs || (mine && !takesOver(theirs, mine))) return false;
+  if (!theirs || (mine && mine.at >= theirs.at)) return false;
   // (Forgotten: what was sent went with the bucket, so all of it goes again if it's brought back.)
   if (!theirs.secret) forgetSent();
   return saveKept(theirs);

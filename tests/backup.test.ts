@@ -330,30 +330,26 @@ test('the codex erased stops keeping here without a Forget: paired again, the ot
   assert.equal(loadKept()?.secret, one);
 });
 
-test('a Forget stops only the backup it names: one kept with another passkey stays, and comes in over it', () => {
+test('the newer always wins, so devices end on the same one in whatever order they meet; a Forget names its backup', () => {
   const one = base64url(newSecret());
+  const two = base64url(newSecret());
   const A = 'A'.repeat(43);
   const B = 'B'.repeat(43);
-  // Kept here with one passkey; another device forgot a backup kept with another, later.
-  saveKept({ secret: one, at: 100, bucket: A });
-  assert.equal(absorbKept(JSON.stringify({ v: 1, secret: null, at: 200, bucket: B })), false);
-  assert.equal(loadKept()?.secret, one);
-  // That device takes this one's in, older as it is: both keep with it.
-  store.clear();
-  saveKept({ secret: null, at: 200, bucket: B });
-  assert.equal(absorbKept(JSON.stringify({ v: 1, secret: one, at: 100, bucket: A })), true);
-  assert.equal(loadKept()?.secret, one);
-  // A Forget of this one stops it, as ever.
-  assert.equal(absorbKept(JSON.stringify({ v: 1, secret: null, at: 300, bucket: A })), true);
-  assert.equal(loadKept()?.secret, null);
-  // Where one side doesn't say (an older build saved it), the newer wins, as before.
-  store.clear();
-  saveKept({ secret: one, at: 100 });
-  assert.equal(absorbKept(JSON.stringify({ v: 1, secret: null, at: 200, bucket: B })), true);
-  store.clear();
-  saveKept({ secret: one, at: 100, bucket: A });
-  assert.equal(absorbKept(JSON.stringify({ v: 1, secret: null, at: 200 })), true);
-  // A bucket that isn't one is let go, the rest read as it was.
+  // Kept with one passkey on a device, with another on a second, and the second's forgotten on a third, last.
+  const records = [
+    { v: 1, secret: two, at: 5, bucket: B },
+    { v: 1, secret: one, at: 7, bucket: A },
+    { v: 1, secret: null, at: 10, bucket: A },
+  ];
+  const orders = [
+    [0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0],
+  ];
+  for (const order of orders) {
+    store.clear();
+    for (const i of order) absorbKept(JSON.stringify(records[i]));
+    assert.deepEqual(loadKept(), { secret: null, at: 10, bucket: A }, `met in the order ${order}`);
+  }
+  // Where it doesn't say (an older build saved it), it reads as before; a bucket that isn't one is let go.
   store.clear();
   assert.equal(absorbKept(JSON.stringify({ v: 1, secret: null, at: 200, bucket: 'short' })), true);
   assert.deepEqual(loadKept(), { secret: null, at: 200 });

@@ -31,7 +31,7 @@ import { toasts } from '../toasts.svelte.ts';
 import { whenCalm } from '../idle.ts';
 import { base64url, fromBase64url } from '../base64url.ts';
 import { loadCodex } from '../codex.ts';
-import { COPY_KINDS, MAX_COPY, SYNC_HERE, deviceId, isDevice, isStamp, readCopies, type CopyKind } from '../sync/store.ts';
+import { COPY_KINDS, COPY_NAMES, MAX_COPY, SYNC_HERE, deviceId, isDevice, isStamp, readCopies, type CopyKind } from '../sync/store.ts';
 import { OWN_NAMES, TAKEN_NAMES, fingerprint, ownNow, takeCopies, takeIn, takenNow } from '../sync/shared.ts';
 import { KEPT_NAME, forgetKept, forgetSent, forgetToSend, loadKept, loadSent, markAsked, markForgotten, nextAt, saveKept, saveSent, wasAsked } from './kept.ts';
 import { fromSecret, newSecret, secretIn, seal, unseal, userId } from './seal.ts';
@@ -229,7 +229,8 @@ let watching = false;
 function watch() {
   if (watching) return;
   watching = true;
-  const names = new Set([...Object.values(OWN_NAMES).flat(), ...TAKEN_NAMES.filter((n) => n !== KEPT_NAME)]);
+  // (The copies sync brings of the other devices too: what a lost phone sent its pair is kept even if it never kept its own.)
+  const names = new Set([...Object.values(OWN_NAMES).flat(), ...COPY_NAMES, ...TAKEN_NAMES.filter((n) => n !== KEPT_NAME)]);
   const keys = new Set([...names].map(storeKey));
   onStoredHere((name) => {
     if (names.has(name)) schedule();
@@ -463,7 +464,7 @@ export async function forgetBackup() {
     toasts.show('The server can’t be reached just now. Try again in a while.', 'error', { title: 'Not forgotten' });
     return;
   }
-  // (Naming the backup it forgot: a paired device that hears of it deletes it again, and one kept with another passkey stays.)
+  // (Naming the backup it forgot: a paired device that hears of it deletes that one again, never another.)
   const gone = { secret: null, at: nextAt(), bucket };
   markForgotten(gone);
   saveKept(gone);
