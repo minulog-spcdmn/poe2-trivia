@@ -148,14 +148,23 @@
     const el = descent;
     const card = panel;
     if (!el || !card) return;
-    const seen = new ResizeObserver(() => {
+    // (Measured the frame after: the seals sized to it set the height of a card that grows, which the observer would otherwise be told of in the same frame and give up on.)
+    let frame = 0;
+    const measure = () => {
       const w = el.clientWidth;
       const h = getComputedStyle(card).contain.includes('size') ? el.clientHeight : Infinity;
       const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
       if (w !== room.w || h !== room.h || rem !== room.rem) room = { w, h, rem };
+    };
+    const seen = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
     });
     seen.observe(el);
-    return () => seen.disconnect();
+    return () => {
+      seen.disconnect();
+      cancelAnimationFrame(frame);
+    };
   });
   const held = $derived(room.h < Infinity);
   const layout = $derived(fit(cells.length, room.w, room.h - (READ + OVER) * room.rem));
