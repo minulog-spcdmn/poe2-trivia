@@ -220,7 +220,7 @@ test('every biome has a sigil of its own, within its seal', () => {
   }
 });
 
-test('a zone bears its best drawing; past depth 100 a place bears its zone’s second and third in turn, so all thirty show', () => {
+test('a zone bears its best drawing; past depth 100 a place bears its zone’s second and third in turn, every zone’s but the Mines’', () => {
   for (const name of SIGIL_NAMES) {
     assert.deepEqual([...RANKED[name]].sort(), ['current', 'scenes', 'third'], name);
     assert.equal(sigilOf(name), drawingOf(RANKED[name][0], name), name);
@@ -233,8 +233,8 @@ test('a zone bears its best drawing; past depth 100 a place bears its zone’s s
     assert.equal(turn, Math.floor((k - 10) / ARCHETYPES.length), name);
     assert.equal(sigilOf(name), drawingOf(RANKED[zone][1 + (turn % 2)], zone), name);
   }
-  // Every zone is some archetype's, so its second and third show past 100 too.
-  for (const name of SIGIL_NAMES) assert.ok(ARCHETYPES.some((a) => a.emblem === name), name);
+  // Every zone but the Mines is some archetype's, so its second and third show past 100 too; the Mines' stay in the Mines (the owner's call).
+  for (const name of SIGIL_NAMES) assert.equal(ARCHETYPES.some((a) => a.emblem === name), name !== 'The Mines', name);
 });
 
 test('the zone a depth is in', () => {

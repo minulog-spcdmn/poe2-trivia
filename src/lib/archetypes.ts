@@ -101,7 +101,7 @@ export interface Archetype {
   dense: number;
   /** More (positive) or fewer embers than the settings have. */
   crowd: number;
-  /** The zone whose emblem its strata bear (the sigil on the seal of their title card, lib/zoneSigils.ts: that zone's second and third best drawings, in turn). Between them the archetypes bear every zone's. */
+  /** The zone whose emblem its strata bear (the sigil on the seal of their title card, lib/zoneSigils.ts: that zone's second and third best drawings, in turn). Between them the archetypes bear every zone's but the Mines': the owner wants the Mines' own drawings kept to the Mines. */
   emblem: string;
   /** Its strata's names: the curated ones first, then every epithet with every place. */
   names: string[];
@@ -234,7 +234,7 @@ export const ARCHETYPES: readonly Archetype[] = [
     hazeK: [0.35, 0.5],
     dense: -0.1,
     crowd: -0.05,
-    emblem: 'The Mines',
+    emblem: 'Abyssal City',
     names: ['Necropolis of Lamps', 'The Lantern Tombs', 'City of the Unburied', 'The Seven Bells', 'Mausoleum Row', 'The Vigil Streets', 'The Last Lamplighter'],
     epithets: ['Lamplit', 'Mourning', 'Unburied', 'Tolling', 'Shrouded'],
     places: ['Catacombs', 'Ossuary', 'Boneyard', 'Crypts'],
