@@ -39,7 +39,11 @@ function grid(n: number, cols: number, left: number, right: number, gap: number,
   });
 }
 
-/** Measured: the lobby's party rows (two to a row, down from rowsTop, 47 lower for a host: its own controls above) and its three modes. */
+/**
+ * Measured: the lobby's party rows (two to a row, down from rowsTop, 47 lower for a host: its own controls above) and its
+ * two mode cards, Delve's the wider (worked out from the three cards measured before, in the same row: 0.58 of it less the
+ * gap, Lobby.svelte's --lead, which these follow; 76 px high).
+ */
 const LOBBY = {
   rowsLeft: 188.3,
   rowsRight: 416.9,
@@ -49,12 +53,11 @@ const LOBBY = {
   rowH: 49.5,
   hostDrop: 47.3,
   modes: [
-    [512.2, 605.2],
-    [609.3, 702.4],
-    [706.5, 799.5],
+    [512.2, 676.5],
+    [680.6, 799.5],
   ],
   modesTop: 153.9,
-  modesBottom: 248,
+  modesBottom: 231.7,
 };
 
 /** Measured: the game's column (the art and answers, the pictures), and how far Delve's taller scoreboard (its lives) puts it down. */

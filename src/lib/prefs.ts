@@ -1,5 +1,5 @@
 // The host's room settings, remembered in this browser so the next room they
-// open starts the way they left the last one.
+// open starts the way they left the last one, but always on Delve, the way to play.
 
 import { DEFAULT_SETTINGS, cleanKnobs, difficultyOf, isDifficulty, snapTimer, type Difficulty, type GameMode, type Knobs, type Settings } from './game.ts';
 import { readLegacy, removeLegacy, storeKey, tryReadStored, writeStored } from './storage.ts';
@@ -10,6 +10,10 @@ export interface RoomPrefs {
   difficulty: Difficulty;
   /** The host's last custom difficulty (missing until they first pick it). */
   custom?: Knobs;
+  /**
+   * The mode the host's room was last set to (Delve as soon as a new one opens): read by tabs from older builds, which
+   * open their room on it; a new room here opens on Delve whatever it is.
+   */
   mode: GameMode;
   public: boolean;
   /** Streamer mode: don't show the room code on screen. */
@@ -120,7 +124,7 @@ export function savePrefs(change: Partial<RoomPrefs>) {
   write(next);
 }
 
-/** The game settings a new room starts with. */
+/** The game settings a new room starts with: on Delve, the way to play, whatever the host played last. */
 export function roomSettings(p: RoomPrefs = roomPrefs()): Settings {
   return {
     ...DEFAULT_SETTINGS,
@@ -128,7 +132,7 @@ export function roomSettings(p: RoomPrefs = roomPrefs()): Settings {
     timer: p.timer,
     difficulty: p.difficulty,
     ...(p.custom ? { custom: { ...p.custom } } : {}),
-    mode: p.mode,
+    mode: 'delve',
     public: p.public,
     locked: false,
   };

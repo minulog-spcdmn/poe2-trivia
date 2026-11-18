@@ -802,11 +802,12 @@ they're worth more sigils than are unlocked already. Kept in this browser (`src/
     WebRTC. Then everyone can still play at the host's screen.
 - **Open rooms:** a host can set their room to **Public**, which lists it
   under "Open rooms" on the start page. A first-time host's room starts
-  public (and in Delve); after that the room starts the way the host left
-  the last one. A room whose host has gone from the end screen (idle there,
-  or away from it for a minute) or from the lobby (no sign of them for ten
-  minutes) is left off the list until they're back, since only they can
-  start the next game; it keeps its listing number meanwhile, and its
+  public; after that the room starts the way the host left the last one,
+  but always on Delve, the recommended way to play. A room whose host has
+  gone from the end screen (idle there, or away from it for a minute) or
+  from the lobby (no sign of them for ten minutes) is left off the list
+  until they're back, since only they can start the next game; it keeps
+  its listing number meanwhile, and its
   invite link still says whose room it is (`src/lib/presence.ts`
   goneFromEnd, goneFromLobby).
   Without a server there's no central list, so a public room claims the
@@ -820,7 +821,12 @@ they're worth more sigils than are unlocked already. Kept in this browser (`src/
   players at their screen. A hot-seat game saved before that, or a Delve run
   started from a shared link, still plays on one device as before.
 
-The host picks the mode (take turns, race or Delve: three buttons, each
-with an engraved emblem, and only the chosen mode's description below
-them), then, outside Delve, the difficulty, the target score and an
-optional time limit per question (off / 8 / 16 / 32 / 64 s).
+The host picks the mode in two cards, each with an engraved emblem: Delve,
+the recommended way to play, on the wider card first, and Versus. A box
+under the cards says what the chosen one is, its notch sliding to point up
+at it. Versus brings its settings: first its mode, take turns or race, on a
+switch like the room's Private / Public (the box then describes the one
+picked), then the difficulty, the target score and an optional time limit
+per question (off / 8 / 16 / 32 / 64 s). Versus's card goes back to the
+mode the room last had, a Delve game between or not (take turns in a new
+room; the session keeps it, `versusGame`).

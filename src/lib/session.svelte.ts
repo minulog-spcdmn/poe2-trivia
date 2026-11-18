@@ -28,6 +28,7 @@ import {
   activeRules,
   clockRuns,
   type Action,
+  type GameMode,
   type GameState,
   type Grayscale,
   type Item,
@@ -797,6 +798,13 @@ class Session {
    */
   delveLink = false;
 
+  /**
+   * The Versus game (Take turns or Race) this room was last set to: the lobby's
+   * Versus card goes back to it, a Delve game between or not. Take turns until
+   * then, and again in the next room.
+   */
+  versusGame: Exclude<GameMode, 'delve'> = 'turns';
+
   /** A Delve run alone on this device, straight from a shared link. Nothing changes for a name that can't be played under. */
   startDelve(name: string) {
     if (!nameUsable(name)) return;
@@ -1073,12 +1081,14 @@ class Session {
   }
 
   /**
-   * A new room's game: the room's settings (Delve, from a shared link), the
-   * host seated. Null once it has said why it couldn't be (`failure` counted).
+   * A new room's game: the room's settings (on Delve, as every new room is, a
+   * shared link's too), the host seated. Null once it has said why it couldn't
+   * be (`failure` counted).
    */
   private newRoomGame(failure?: Failure): GameState | null {
     const me = this.priv.myPlayerId;
-    const s = createGame(me, this.delveLink ? { ...roomSettings(), mode: 'delve' } : roomSettings());
+    const s = createGame(me, roomSettings());
+    // (A shared link's Delve is used up by this room, as by a game on this device.)
     this.delveLink = false;
     try {
       return engine.apply(s, { type: 'join', playerId: me, name: this.joinName, ...wornSigil(), ...likedColour() }, me);
@@ -3418,6 +3428,8 @@ class Session {
     this.hissFuse(next);
     // A game past its lobby (joined into one under way, too): no newcomer here any more (lib/started.ts).
     if (next.phase !== 'lobby') markStarted();
+    // (A room saved before race mode may have no mode at all: its Versus game stays as it was.)
+    if (next.settings.mode === 'turns' || next.settings.mode === 'race') this.versusGame = next.settings.mode;
     if (!prev) return;
     // Back in the lobby: the sigil worn now, if another was picked while the game went on.
     if (prev.phase !== 'lobby' && next.phase === 'lobby') queueMicrotask(() => this.wearSigil());
@@ -3838,6 +3850,7 @@ class Session {
     this.sealedArt.clear();
     this.labRoomless = false;
     this.hereOnly = false;
+    this.versusGame = 'turns';
     for (const c of this.guests.keys()) c.close();
     this.guests.clear();
     this.standing = {};

@@ -6,7 +6,7 @@
   import { DIFFICULTY_NAMES, MODE_NAMES, describe } from '../lib/difficultyText';
   import CustomDifficulty from './CustomDifficulty.svelte';
   import DelveRules from './DelveRules.svelte';
-  import ModeIcon from './ModeIcon.svelte';
+  import ModeIcon, { type ModeCard } from './ModeIcon.svelte';
   import { bestOf, deepestShown, findsMet, lastOf, loadRecords } from '../lib/delveRecord';
   import { MAX_NAME, nameRefusal, nameTooShort } from '../lib/names';
   import { creatorShown, nameFit } from '../lib/creator';
@@ -43,10 +43,10 @@
   import { backGuard } from '../lib/backGuard';
 
   const TARGETS = [5, 10, 15, 20];
-  const MODES: { id: GameMode; name: string; isNew?: boolean }[] = [
-    { id: 'turns', name: MODE_NAMES.turns },
-    { id: 'race', name: MODE_NAMES.race },
-    { id: 'delve', name: MODE_NAMES.delve, isNew: true },
+  /** The mode cards: Delve, the way to play, first and widest; then Versus, whose game (Take turns or Race) is the first setting under it. */
+  const CARDS: { id: ModeCard; name: string }[] = [
+    { id: 'delve', name: MODE_NAMES.delve },
+    { id: 'versus', name: 'Versus' },
   ];
   const DIFFS = (Object.entries(DIFFICULTY_NAMES) as [Difficulty, string][]).map(([id, name]) => ({ id, name }));
 
@@ -63,7 +63,7 @@
   let copied = $state(false);
 
   const inviteLink = $derived(inviteUrl(session.code));
-  /** Desktop: the start page's two columns, no panels. Tall: the modes' names go under their emblems. */
+  /** Tall windows: the mode cards taller, their emblems a size up. */
   const tall = new MediaQuery('(min-height: 860px)');
   /** The start sticks to the foot of its panel, the rules passing under it (as its style has it, below). */
   const stickyStart = new MediaQuery(`${FLAT} and (max-width: 1099px)`);
@@ -405,11 +405,22 @@
   function setMode(mode: GameMode) {
     session.dispatch({ type: 'settings', settings: mode === 'race' && s.settings.timer === 0 ? { mode, timer: RACE_DEFAULT_TIMER } : { mode } });
   }
-  /** Hot-seat: Race can't be played here, so tapping it only says why (for a few seconds, in the mode's description). */
+  /** Hot-seat: Race can't be played here, so tapping it only says why (for a few seconds, in the box under the cards). */
   let peek = $state(false);
   let peekTimer: ReturnType<typeof setTimeout> | undefined;
   onMount(() => () => clearTimeout(peekTimer));
   const offline = (m: GameMode) => m === 'race' && local;
+  /** The card chosen: Delve, or Versus for either of its games. */
+  const card = $derived<ModeCard>(s.settings.mode === 'delve' ? 'delve' : 'versus');
+  /**
+   * What a card picks. Versus's keeps the game on, or from Delve goes back to the one this room last had (the session
+   * keeps it, the lobby gone meanwhile for a Delve game or not): Take turns at first, and always in hot-seat.
+   */
+  function modeOf(c: ModeCard): GameMode {
+    if (c === 'delve') return 'delve';
+    const m = s.settings.mode === 'turns' || s.settings.mode === 'race' ? s.settings.mode : session.versusGame;
+    return offline(m) ? 'turns' : m;
+  }
   function pickMode(m: GameMode, node: HTMLElement) {
     if (offline(m)) {
       refuse(node);
@@ -421,19 +432,17 @@
     peek = false;
     if (m !== s.settings.mode) setMode(m);
   }
-  /** The modes are a radio group: the arrow keys move the choice along it (skipping Race in hot-seat). */
+  /** The cards are a radio group: the arrow keys move the choice between Delve and Versus. */
   function modeKeys(e: KeyboardEvent) {
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
     if (!step || !isHost) return;
     e.preventDefault();
-    const open = MODES.filter((m) => !offline(m.id));
-    const i = open.findIndex((m) => m.id === s.settings.mode);
-    const next = open[(i + step + open.length) % open.length].id;
-    // (Heard only as the choice moves: with one mode open, it stays.)
-    const moves = next !== s.settings.mode;
-    setMode(next);
+    const i = CARDS.findIndex((c) => c.id === card);
+    const next = CARDS[(i + step + CARDS.length) % CARDS.length].id;
+    peek = false;
+    setMode(modeOf(next));
     const chosen = (e.currentTarget as HTMLElement).querySelector<HTMLElement>(`[data-mode="${next}"]`);
-    if (moves) sfx('key', { from: { from: chosen } });
+    sfx('key', { from: { from: chosen } });
     chosen?.focus();
   }
   /** Delve together: a room of two or more online plays as a team. */
@@ -834,34 +843,31 @@
     <section class="col block game settings panel" data-cursor="settings" use:backdropShadow={{ fill: 'linear' }} in:fly={{ x: 30, duration: 500, delay: 200 }}>
       <header><h2>Game</h2></header>
 
-      <div class="setting">
-        <div class="modes" data-cursor="modes" class:tall={tall.current} class:live={modesLive} role="radiogroup" aria-label="Mode" aria-describedby="mode-blurb" tabindex={-1} onkeydown={modeKeys}>
-          {#each MODES as m, i (m.id)}
-            {@const on = s.settings.mode === m.id}
+      <div class="setting mode-pick" class:versus={!delve}>
+        <!-- Delve, the way to play, the wider card; Versus, the games played against each other, beside it. -->
+        <div class="modes" data-cursor="modes" class:tall={tall.current} class:live={modesLive} role="radiogroup" aria-label="Game" aria-describedby="mode-blurb" tabindex={-1} onkeydown={modeKeys}>
+          {#each CARDS as m, i (m.id)}
+            {@const on = card === m.id}
             <button
               data-cursor="card:{i}"
               class="mode"
+              class:lead={m.id === 'delve'}
               class:on
               use:backdropShadow={{ fill: on ? 'linear' : undefined }}
-              class:off={offline(m.id)}
               role="radio"
               aria-checked={on}
-              aria-disabled={offline(m.id) || undefined}
               tabindex={on ? 0 : -1}
               data-mode={m.id}
-              aria-label={m.isNew ? `${m.name}, new` : undefined}
               disabled={!isHost && !on}
-              title={offline(m.id) ? 'Race needs every player on their own device' : undefined}
-              onclick={(e) => isHost && pickMode(m.id, e.currentTarget)}
+              onclick={(e) => isHost && pickMode(modeOf(m.id), e.currentTarget)}
             >
               <ModeIcon mode={m.id} />
               <b use:backdropDropShadow>{m.name}</b>
-              {#if m.isNew}<span class="new" aria-hidden="true">New</span>{/if}
             </button>
           {/each}
         </div>
-        <!-- The chosen mode's description, under a notch that points up at it. -->
-        <div class="about" data-cursor="about" id="mode-blurb" style:--at={peek ? 1 : MODES.findIndex((m) => m.id === s.settings.mode)} class:peek>
+        <!-- What the chosen card is (in Versus, its mode), under a notch that slides to point up at it. -->
+        <div class="about" data-cursor="about" id="mode-blurb" style:--at={delve ? 0 : 1} class:peek>
           <span class="about-frame" aria-hidden="true"></span>
           {#key peek ? 'peek' : delve ? `delve ${together}` : s.settings.mode}
             <div class="about-text" in:fly={{ y: -6, duration: 260 }}>
@@ -888,7 +894,31 @@
           <DelveRules {deepest} last={lastRun} {seen} {together} {met} />
         </div>
       {:else}
-        <!-- One row per setting: its name, then its choices (a guest, who can't change them, reads the value). -->
+        <!-- One row per setting: its name, then its choices (a guest, who can't change them, reads the value).
+             Versus's mode comes first, with the cards and their box (no rule over it): the rest follow from it. -->
+        <div class="setting row game-row" in:fade={calm({ duration: 260 })}>
+          <span class="label">Mode</span>
+          {#if !isHost}{#key s.settings.mode}<b class="val" in:fly={calm({ y: -6, duration: 260 })}>{MODE_NAMES[s.settings.mode]}</b>{/key}{:else}
+          <!-- Take turns or Race: one switch with both its sides named, as Private / Public is (in hot-seat, a tap says why Race can't be played). -->
+          <button
+            class="vis-toggle game-toggle"
+            class:race
+            class:offline={local}
+            role="switch"
+            aria-checked={race}
+            aria-label="Race"
+            aria-disabled={(local && !race) || undefined}
+            aria-describedby="mode-blurb"
+            title={local ? 'Race needs every player on their own device' : undefined}
+            onclick={(e) => pickMode(race ? 'turns' : 'race', e.currentTarget)}
+          >
+            <span class="vt-plate" aria-hidden="true"></span>
+            <span class="vt-word" class:on={!race}>{MODE_NAMES.turns}</span>
+            <span class="vt-word" class:on={race} class:off={local}>{MODE_NAMES.race}</span>
+          </button>
+          {/if}
+        </div>
+
         <div class="setting row" data-cursor="target" in:fade={calm({ duration: 260 })}>
           <span class="label">Points to win</span>
           {#if !isHost}{#key s.settings.targetScore}<b class="val num" in:fly={calm({ y: -6, duration: 260 })}>{s.settings.targetScore}</b>{/key}{:else}
@@ -1091,8 +1121,20 @@
       0 0 14px rgba(201, 164, 92, 0.3);
     transition: translate 0.3s var(--ease-out);
   }
-  .vis-toggle.public .vt-plate {
+  .vis-toggle.public .vt-plate,
+  .vis-toggle.race .vt-plate {
     translate: calc(100% - 1px) 0;
+  }
+  /* Take turns / Race: the same switch, wide enough for its longer words. */
+  .game-toggle {
+    width: 14rem;
+  }
+  /* Race in hot-seat: the switch can't move; a tap only says why. */
+  .game-toggle.offline {
+    cursor: not-allowed;
+  }
+  .vt-word.off {
+    opacity: 0.5;
   }
   .vt-word {
     position: relative;
@@ -1115,7 +1157,7 @@
   .vis-toggle:hover {
     border-color: var(--gold-lo);
   }
-  .vis-toggle:hover .vt-word:not(.on) {
+  .vis-toggle:hover .vt-word:not(.on, .off) {
     color: var(--gold-hi);
   }
   .vis-toggle:focus-visible {
@@ -1545,12 +1587,24 @@
     font-family: var(--font-display);
     color: var(--gold-hi);
   }
+  /* Delve, the way to play, takes --lead of the cards' row (less the gap), Versus the rest. */
+  .mode-pick {
+    --lead: 0.58;
+  }
+  /* Versus's mode belongs with the cards and their box: no rule over it, and nearer under them than a setting's gap. */
+  .mode-pick.versus {
+    margin-bottom: 0;
+  }
+  .setting.row.game-row {
+    border-top: 0;
+    padding-top: 0.6rem;
+  }
   .modes {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: calc((100% - 0.5rem) * var(--lead)) minmax(0, 1fr);
     gap: 0.5rem;
   }
-  /* Icon and name side by side: the same buttons, half as tall. */
+  /* A mode card: its emblem beside its name (over it on a phone). */
   .mode {
     position: relative;
     display: flex;
@@ -1558,6 +1612,7 @@
     align-items: center;
     justify-content: center;
     gap: 0.55rem;
+    --mode-icon: 19px;
     min-width: 0;
     min-height: 52px;
     padding: 0.5rem 0.4rem;
@@ -1616,10 +1671,20 @@
   }
   .mode b {
     font-family: var(--font-display);
-    font-size: 0.9rem;
+    font-size: 0.95rem;
     letter-spacing: 0.06em;
     white-space: nowrap;
     color: var(--gold-hi);
+  }
+  /* Delve, the lead: its emblem and name a clear step up. */
+  .mode.lead {
+    --mode-icon: 30px;
+    gap: 0.8rem;
+    padding-block: 0.3rem;
+  }
+  .mode.lead b {
+    font-size: 1.4rem;
+    letter-spacing: 0.08em;
   }
   .mode:hover:not(:disabled) {
     border-color: var(--gold-lo);
@@ -1644,33 +1709,11 @@
     --drop-shadow: 0 0 12px rgba(241, 217, 155, 0.45);
     text-shadow: var(--drop-shadow-paint, var(--drop-shadow));
   }
-  /* A small engraved tag in the corner, clear of the emblem, like the site's own Beta mark;
-     in the teal of skill gems, so it reads as fresh rather than unfinished. */
-  .mode .new {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    padding: 1px 2px 0 4px;
-    font-family: var(--font-cinzel);
-    font-weight: 700;
-    font-size: 0.5rem;
-    line-height: 1.4;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: #4fd0b4;
-    border: 1px solid rgba(79, 208, 180, 0.45);
-    border-radius: 2px;
-    pointer-events: none;
-  }
   .mode:disabled {
     cursor: default;
   }
-  .mode:disabled:not(.on),
-  .mode.off {
+  .mode:disabled:not(.on) {
     opacity: 0.5;
-  }
-  .mode.off {
-    cursor: not-allowed;
   }
   .mode:focus-visible {
     outline: 1px solid var(--gold-hi);
@@ -1701,8 +1744,8 @@
     position: absolute;
     /* One pixel into the border, so the two always touch. */
     top: calc(-1 * var(--notch));
-    /* Under the middle of the chosen button: three columns, two gaps of 0.5rem. */
-    left: calc((100% - 1rem) / 6 + var(--at, 0) * ((100% - 1rem) / 3 + 0.5rem) - var(--notch) - 1px);
+    /* Under the middle of the chosen card (--at: 0 Delve, 1 Versus): Delve's --lead of the row less the gap, Versus the rest. */
+    left: calc((100% - 0.5rem) * (var(--lead) + var(--at, 0)) / 2 + var(--at, 0) * 0.5rem - var(--notch) - 1px);
     width: calc(2 * var(--notch));
     height: var(--notch);
     background: var(--line);
@@ -1805,7 +1848,7 @@
   }
   .seg > button:active:not(:disabled),
   .stepper button:active:not(:disabled),
-  .mode:active:not(:disabled, .off) {
+  .mode:active:not(:disabled) {
     transform: scale(0.96);
   }
   .seg button:disabled {
@@ -1988,7 +2031,8 @@
     .setting.row {
       grid-template-columns: 1fr;
     }
-    .mode {
+    .mode,
+    .mode.lead {
       flex-direction: column;
       gap: 0.25rem;
     }
@@ -2080,20 +2124,30 @@
       margin-top: 1rem;
     }
   }
-  /* Tall windows: each mode a card, its emblem over its name. */
-  .modes.tall .mode {
-    flex-direction: column;
-    gap: 0.4rem;
-    min-height: 92px;
+  /* Tall windows (wider than a phone): the cards taller, their emblems and names a size up. */
+  @media (min-width: 521px) {
+    .modes.tall .mode {
+      min-height: 76px;
+      --mode-icon: 24px;
+    }
+    .modes.tall .mode b {
+      font-size: 1.1rem;
+    }
+    .modes.tall .mode.lead {
+      --mode-icon: 40px;
+      gap: 1rem;
+    }
+    .modes.tall .mode.lead b {
+      font-size: 1.65rem;
+    }
   }
-  .modes.tall .mode :global(svg) {
-    width: 30px;
-    height: 30px;
-  }
-  /* Short desktop windows (a 13-inch laptop): the settings sit a little closer. */
-  @media (min-width: 1100px) and (max-height: 760px) {
+  /* Short desktop windows (a 13- or 14-inch laptop): the settings sit a little closer, so Versus's four rows fit over Begin. */
+  @media (min-width: 1100px) and (max-height: 840px) {
     .setting.row {
-      padding: 0.5rem 0;
+      padding: 0.4rem 0;
+    }
+    .setting.row.game-row {
+      padding-top: 0.45rem;
     }
     .setting {
       margin-bottom: 0.7rem;
@@ -2109,12 +2163,41 @@
     }
     .mode {
       min-height: 46px;
+      padding-block: 0.3rem;
+      --mode-icon: 18px;
+    }
+    .mode b {
+      font-size: 0.9rem;
+    }
+    .mode.lead {
+      --mode-icon: 26px;
+    }
+    .mode.lead b {
+      font-size: 1.3rem;
     }
     .about {
       padding: 0.45rem 0.8rem 0.5rem;
     }
     .start {
       padding-top: 0.8rem;
+    }
+    .game.panel .rules {
+      margin-bottom: 0.75rem;
+    }
+  }
+  /* The shortest (a 13-inch laptop's): closer still, so Versus's box and four rows fit over Begin. */
+  @media (min-width: 1100px) and (max-height: 760px) {
+    .setting.row {
+      padding: 0.35rem 0;
+    }
+    .setting.row.game-row {
+      padding-top: 0.35rem;
+    }
+    .about {
+      padding: 0.4rem 0.8rem 0.45rem;
+    }
+    .game.panel .rules {
+      margin-bottom: 0.6rem;
     }
   }
   /* Narrower than a desktop's column: the label over its choices. */

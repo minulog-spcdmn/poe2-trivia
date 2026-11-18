@@ -46,14 +46,14 @@ test('the pictures to pick from: in rows as wide as the column, a tall item\'s i
   assert.ok(near(layout(question('art', 10, true)).get('opt:9')!, [652.8, 526.4, 754, 731.1]));
 });
 
-test("the lobby has the party's rows two to a row and the three modes; a host's rows sit lower", () => {
+test("the lobby has the party's rows two to a row and the two mode cards, Delve's the wider; a host's rows sit lower", () => {
   const lobby = { phase: 'lobby', players, hostId: 'a', offered: [] } as unknown as GameState;
   const guest = layout(lobby, 'b');
   const host = layout(lobby, 'a');
-  assert.deepEqual([...guest.keys()].sort(), ['card:0', 'card:1', 'card:2', 'row:0', 'row:1', 'row:2']);
+  assert.deepEqual([...guest.keys()].sort(), ['card:0', 'card:1', 'row:0', 'row:1', 'row:2']);
   assert.ok(near(guest.get('row:0')!, [188.3, 363.8, 300.5, 413.3]) && near(guest.get('row:1')!, [304.7, 363.8, 416.9, 413.3]) && near(guest.get('row:2')!, [188.3, 421.5, 300.5, 471]));
   assert.ok(near(host.get('row:0')!, [188.3, 411.1, 300.5, 460.7]));
-  assert.ok(near(guest.get('card:0')!, [512.2, 153.9, 605.2, 248]) && near(host.get('card:2')!, [706.5, 153.9, 799.5, 248]));
+  assert.ok(near(guest.get('card:0')!, [512.2, 153.9, 676.5, 231.7]) && near(host.get('card:1')!, [680.6, 153.9, 799.5, 231.7]));
 });
 
 test("at the end, the winner's circle and the standings down a column, best first", () => {
