@@ -1,7 +1,9 @@
 // The codex: which items this browser has met in games, and how well its
 // player knows them. Kept in localStorage, never sent anywhere but to the
 // player's own devices, paired to sync (lib/sync, which reads the others' in
-// with it: loadCodex).
+// with it: loadCodex). Apart from it, where visits are counted, each answer
+// it takes in (and the start page's) goes into a tally of every player's
+// answers per item, with nothing to say whose (onTaken, lib/itemTally.ts).
 //
 // Every question this device sees revealed counts as an encounter with its
 // answer. Only this device's own answers count toward accuracy: its turn, its
@@ -323,6 +325,43 @@ export function blastedEncounter(s: GameState, blast: Blast, me: string | null, 
       : {}),
     ...(struck ? { answer: { ok: false, pickedId: null, pickedLabel: null } } : {}),
   };
+}
+
+/**
+ * For the item tally alone (onTaken, lib/itemTally.ts), never the codex: a
+ * question dynamite blasted away as a miss of this device's player, the one
+ * who set it off (`by`); alone also when it went off by itself as the clock
+ * hit 0 (their time-out), but not for a run only watched. A teammate's
+ * blast is none of theirs (a wrong answer struck on it first is: `e.answer`
+ * says so). Null when it counts as no answer of theirs, or as the one `e`
+ * holds.
+ */
+export function blastAside(s: GameState, blast: Blast, me: string | null, hotSeat: boolean, e: Encounter): Aside | null {
+  if (e.answer) return null;
+  if (!isGroupRun(s)) {
+    const mine = hotSeat ? s.players.length === 1 : !!me && !!s.delve?.entrants.includes(me) && (!blast.by || blast.by === me);
+    return mine ? { ok: false } : null;
+  }
+  return !hotSeat && me && blast.by === me ? { ok: false } : null;
+}
+
+/**
+ * For the item tally alone, never the codex: in hot-seat with several
+ * players, the turn's answer as the reveal shows it, whoever gave it (the
+ * codex counts none there, as it can't tell them apart). Delve at one
+ * screen is played alone and Race not at all, so only Take turns has one.
+ * Online, a race the clock ended with nobody right is a miss for a player
+ * in it who never guessed (`me`, `e` the encounter without an answer): they
+ * ran out of time, as a time-out is in Take turns; the codex counts none,
+ * as it can't tell that from being beaten to it.
+ */
+export function screenAside(s: GameState, hotSeat: boolean, me: string | null = null, e?: Encounter): Aside | null {
+  const r = s.reveal;
+  if (s.phase !== 'reveal' || !r || s.delve) return null;
+  if (s.settings.mode === 'race')
+    return !hotSeat && me && r.timedOut && !r.winnerId && !e?.answer && s.players.some((p) => p.id === me) ? { ok: false } : null;
+  if (!hotSeat || s.players.length < 2) return null;
+  return { ok: r.correct };
 }
 
 const fresh = (at: number): ItemEntry => ({ seen: 1, first: at, last: at, name: noTally(), art: noTally(), mixed: {} });
@@ -689,23 +728,74 @@ function write(c: Codex): boolean {
   }
 }
 
-/** Changes the stored codex: not over one a newer build wrote, and anything else unreadable kept aside first. */
-function update(change: (c: Codex) => Codex) {
+/** Changes the stored codex: not over one a newer build wrote, and anything else unreadable kept aside first. Whether it was written. */
+function update(change: (c: Codex) => Codex): boolean {
   // The first time, it starts from the old name's (left as it is).
   const opened = openStored(CODEX, CODEX_VERSION, (raw) => parseCodex(storedRaw(raw)));
-  if (!opened) return;
+  if (!opened) return false;
   const prev = opened.was ?? emptyCodex();
   const next = change(prev);
-  if (next !== prev && write(next)) saved?.();
+  if (next === prev || !write(next)) return false;
+  saved?.();
+  return true;
 }
 
 let saved: (() => void) | null = null;
 /** Told each time the stored codex is written to (main.ts: a newcomer's first save is counted, count.ts countSaved). */
 export const onSaved = (f: () => void) => void (saved = f);
 
+/**
+ * Said of an encounter only to onTaken's listener (lib/itemTally.ts), never
+ * stored: the answer given to it where the encounter holds none (`ok`: a
+ * question dynamite blasted away, hot-seat with several players: blastAside,
+ * screenAside), and `daily`, today's unique on the start page (recordSeen).
+ */
+export interface Aside {
+  ok?: boolean;
+  daily?: true;
+}
+
+/** An encounter the stored codex took in: whether its item had no entry in it before, and what was said beside it. */
+export interface Taken {
+  e: Encounter;
+  first: boolean;
+  aside?: Aside;
+}
+
+let taken: ((t: Taken) => void) | null = null;
+/**
+ * Told of each encounter the stored codex takes in, once it is written
+ * (lib/itemTally.ts): a question it has already (a rejoin, a second tab) is
+ * never told again, and nothing is told when storage refuses the write.
+ */
+export const onTaken = (f: (t: Taken) => void) => void (taken = f);
+
+/** An encounter on its way into the codex, and what was said beside it. */
+type Met = { e: Encounter; aside?: Aside };
+
+/** Adds encounters to the stored codex, in one write; then tells onTaken's listener which it took. */
+function take(met: Met[]) {
+  const took: Taken[] = [];
+  const wrote = update((c) =>
+    met.reduce((x, { e, aside }) => {
+      const y = record(x, e);
+      if (y !== x) took.push({ e, first: !x.items[e.itemId], ...(aside ? { aside } : {}) });
+      return y;
+    }, c),
+  );
+  if (!wrote || !taken) return;
+  // (Its listener's trouble never stops the write's own work after it: recordWhenCalm's `then`.)
+  for (const t of took)
+    try {
+      taken(t);
+    } catch (err) {
+      console.warn('codex', err);
+    }
+}
+
 /** Adds an encounter to the stored codex. */
 export function recordEncounter(e: Encounter) {
-  update((c) => record(c, e));
+  take([{ e }]);
 }
 
 /**
@@ -713,14 +803,14 @@ export function recordEncounter(e: Encounter) {
  * Writing one reads and writes the whole codex again, a dozen ms or more on
  * a phone with a full one, which held a frame of the reveal it came with.
  */
-let waiting: Encounter[] = [];
+let waiting: Met[] = [];
 
-/** Writes the encounters waiting, all in one. */
-function recordWaiting() {
+/** Writes the encounters waiting, all in one (and the item tally, as the page goes, before it sends: lib/itemTally.ts). */
+export function recordWaiting() {
   if (!waiting.length) return;
   const met = waiting;
   waiting = [];
-  update((c) => met.reduce((x, e) => record(x, e), c));
+  take(met);
 }
 // The Delve records read the log raw (a run's wards, the finds met), not
 // through loadCodex: what waits is written first there too.
@@ -731,10 +821,11 @@ beforeCodexRead(recordWaiting);
  * whenCalm), and then does `then` (the achievements checked with it in the
  * codex); or as the codex is next read, should that come first (the end
  * screen after a quick Next: loadCodex; a run recorded as it ends or is
- * left: delveRecord.ts), so it is never read without it.
+ * left: delveRecord.ts), so it is never read without it. `aside`: told to
+ * onTaken's listener with it, not stored.
  */
-export function recordWhenCalm(e: Encounter, then?: () => void) {
-  waiting.push(e);
+export function recordWhenCalm(e: Encounter, then?: () => void, aside?: Aside | null) {
+  waiting.push(aside ? { e, aside } : { e });
   whenCalm(() => {
     recordWaiting();
     then?.();
@@ -744,10 +835,12 @@ export function recordWhenCalm(e: Encounter, then?: () => void) {
 /**
  * Items met outside a game (today's unique on the start page, and in "Find
  * the art" a wrong pick, which the reveal names): seen, no answer counted.
+ * `ok`: today's answer, right or wrong, for onTaken's listener alone, said of
+ * the first (the item asked for).
  */
-export function recordSeen(at: number, mode: QuestionMode, ids: string[]) {
+export function recordSeen(at: number, mode: QuestionMode, ids: string[], ok?: boolean) {
   // (Difficulty and race only count with an answer.)
-  update((c) => ids.reduce((x, itemId) => record(x, { at, itemId, mode, difficulty: 'custom', race: false }), c));
+  take(ids.map((itemId, i) => ({ e: { at, itemId, mode, difficulty: 'custom', race: false }, ...(i === 0 && ok !== undefined ? { aside: { ok, daily: true as const } } : {}) })));
 }
 
 // ---- practice ----------------------------------------------------------

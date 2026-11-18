@@ -21,6 +21,15 @@ class_name = "Signal"
 name = "KEEP"
 class_name = "Keep"
 
+# Every player's answers, added up per item, form and the rules each was
+# asked under (worker.js, Tally): one Object, SQLite-backed, keeping the
+# sums (200,000 at most) and, for a day, each batch's random id with when it
+# came, writing 850 rows a UTC hour at most (about 20,000 a day) and its full
+# reads going through 1,000,000 rows a UTC day at most.
+[[durable_objects.bindings]]
+name = "TALLY"
+class_name = "Tally"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Signal"]
@@ -28,6 +37,10 @@ new_sqlite_classes = ["Signal"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["Keep"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["Tally"]
 
 # Connections (and new ids) a single address (an IPv6 one's /56) may ask for
 # a minute: a page makes a few as it hosts, joins or lists the open rooms, and
@@ -47,6 +60,21 @@ namespace_id = "1002"
 [[ratelimits]]
 name = "KEEP_WRITES"
 namespace_id = "1003"
+
+  [ratelimits.simple]
+  limit = 30
+  period = 60
+
+# Of those, the answers tallied (worker.js, Tally): a page sends as a game or
+# run ends, as it's hidden (on a phone, each time the player switches away)
+# and every forty answers, a batch turned down going again with the next.
+# Schools and carriers put many players behind one address, so thirty a
+# minute; asked before the address's own limit, so a batch turned away here
+# leaves its matchmaking allowance alone. The tally's share of the free
+# plan's writes is held in the Worker itself (TALLY_HOURLY).
+[[ratelimits]]
+name = "TALLY_WRITES"
+namespace_id = "1004"
 
   [ratelimits.simple]
   limit = 30

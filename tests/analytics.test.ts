@@ -5,7 +5,7 @@ import { axis, dayRange, labelled, pct, restsOn } from '../src/statsPage/chart.t
 import { demoRead, demoSlices, demoStateOf, demoUpdate } from '../src/statsPage/demo.ts';
 import { READY_ROWS, START_JOURNEY, dailyBackOf, delveSharedOf, readinessOf, readyCount, startStepsOf, appShare, backShare, beforeShare, beyondChanceOf, busiestStandsOut, comersOf, countsApart, failureRate, gamesSpread, healthOf, stutterBy, stutterOf, sameLabels, firstStepsOf, rateBeyondChance, recentCohorts, toldFromStart, backBeforeOf, journeyOf, moversOf, reachedOf, reachedShare, sameSites, spikeSource, spikesOf, stepsOf, troubleOf } from '../src/statsPage/insights.ts';
 import { dayRefsOf, dayRefsToKeep } from '../src/statsPage/dayRefs.ts';
-import { READ_V, counted, coverOf, keptRead, orReading, spansOf, untilDay } from '../src/statsPage/read.ts';
+import { READ_V, VIEWS, counted, coverOf, keptRead, orReading, readsPeriod, spansOf, untilDay } from '../src/statsPage/read.ts';
 import { anyNew, changesOf, freshOf, keptChanges } from '../src/statsPage/changes.ts';
 import { apartFrom, countsIn, depthCalls, depthsIn, groupPaths, hashOf, knowsPlayed, modeLink, phoneShare, profileIn, profileOf, segments, selOf, sliceCalls, standouts, whereOf, type Sel, type Slices } from '../src/statsPage/slices.ts';
 import { currentName, isoWeek, underNamesNow, weekMonday, busiest, hoursHad, seatsOf, weekAverage, zFor, weekHours, weekday, change, countsOf, dailyAverage, dailyDays, countedSpan, dayAverageHours, dayAverages, firstCounted, finishedShare, utcPerDay, daysBetween, descentOf, deviceOf, grouped, hardestAndEasiest, medianRange, modesOf, percent, pointsChange, sharePerDay, sizeName, sizesOf, stutterTop, usualByNow, usualByNowUtc, USUAL_DAYS, wholeDayAverage, type Counts, type PathCount } from '../src/statsPage/model.ts';
@@ -1858,4 +1858,11 @@ test("the demo's query gives each state it names, and the countries to yesterday
   const alert = demoRead(7, at, q('demo&alert'));
   assert.ok(troubleOf(alert.now, alert.before)?.today);
   assert.deepEqual(healthOf(alert.now, alert.before)?.errors.map((e) => e.key), ['script']);
+});
+
+test('behind the item tally’s view no period is read from GoatCounter by itself; every other view, and the board over it, reads as before', () => {
+  for (const { value } of VIEWS) {
+    assert.equal(readsPeriod(value, false), value !== 'items', value);
+    assert.equal(readsPeriod(value, true), true, `${value} under the board`);
+  }
 });
