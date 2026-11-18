@@ -940,14 +940,15 @@
   {#if kept}
     <footer class="end">
       {#if backup.on}
-        <p>Your codex, your Delve runs and your achievements live in this browser{sync.code && sync.met ? ' and on the devices it syncs with' : ''}, and {backup.savedAt ? 'are kept safe with your passkey' : 'your passkey keeps them as soon as they’re first saved'}.</p>
+        {@const whose = backup.borrowed ? 'your other device’s passkey' : 'your passkey'}
+        <p>Your codex, your Delve runs and your achievements live in this browser{sync.code && sync.met ? ' and on the devices it syncs with' : ''}, and {backup.savedAt ? `are kept safe with ${whose}` : `${whose} keeps them as soon as they’re first saved`}.</p>
       {:else if sync.code && sync.met}
         <p>Your codex, your Delve runs and your achievements live in this browser and on the devices it syncs with; clearing the site’s data erases them here.</p>
       {:else}
         <p>Your codex, your Delve runs and your achievements live in this browser only; clearing the site’s data erases them.</p>
       {/if}
       <div class="end-actions">
-        {#if backup.supported && !backup.on}<button class="btn small" disabled={!!backup.busy} onclick={keepSafe}>{backup.busy === 'making' ? 'Making the passkey…' : 'Keep it safe'}</button>{/if}
+        {#if backup.supported && (!backup.on || backup.borrowed)}<button class="btn small" disabled={!!backup.busy} onclick={keepSafe}>{backup.busy === 'making' ? 'Making the passkey…' : 'Keep it safe'}</button>{/if}
         <button class="btn danger small" onclick={() => (confirmReset = true)}>Erase codex</button>
       </div>
     </footer>
@@ -966,11 +967,10 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="confirm panel" in:dialogIn out:dialogOut onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <h3>Erase your codex?</h3>
-      <p>Every item you have seen, every answer, every Delve run and every achievement recorded in this browser is lost. This can’t be undone.</p>
+      <p>Every item you have seen, every answer, every Delve run and every achievement recorded in this browser is lost{backup.on ? '.' : '. This can’t be undone.'}</p>
       {#if sync.code && sync.met}<p>This browser stops syncing too; your other devices keep theirs.</p>{/if}
-      <!-- (Its own copy goes from what the passkey keeps; what it kept from other browsers stays, this one's before a wipe among them, and paired, the copies the others hold of this one's.) -->
-      {#if backup.on && sync.code && sync.met}<p>This browser stops keeping it with your passkey.</p>
-      {:else if backup.on}<p>This browser stops keeping it with your passkey, and takes its own copy out. What the passkey kept from other browsers stays.</p>{/if}
+      <!-- (The backup is left alone: sync's erase gives the browser a new name, so it keeps on as a new device, and what was erased can come back.) -->
+      {#if backup.on}<p>Your passkey still keeps what was saved: Bring it back restores it, and Forget in the settings deletes it.</p>{/if}
       <div class="actions">
         <button class="btn ghost" onclick={() => (confirmReset = false)}>Keep it</button>
         <button class="btn danger" onclick={reset}>Erase</button>

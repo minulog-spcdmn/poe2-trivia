@@ -134,6 +134,8 @@ const BACKUP: Control = {
     { value: 'out', label: 'Kept, saved days ago, the server out of reach' },
     { value: 'unsaved', label: 'Kept, not saved yet, the server out of reach' },
     { value: 'forget', label: 'Kept, Forget asked for' },
+    { value: 'borrowed', label: 'Kept with another device’s passkey' },
+    { value: 'forget-borrowed', label: 'Kept with another device’s passkey, Forget asked for' },
     { value: 'making', label: 'Making the passkey' },
     { value: 'bringing', label: 'Bringing it back' },
   ],
@@ -220,7 +222,9 @@ export function settingsScenes(): Scene[] {
         { label: 'Kept and synced', values: { backup: 'on', sync: 'paired' } },
         { label: 'Kept, the server out of reach', values: { backup: 'out' } },
         { label: 'Kept, never saved: the server out of reach', values: { backup: 'unsaved' } },
+        { label: 'Kept with another device’s passkey: Keep it safe stays', values: { backup: 'borrowed', sync: 'paired' } },
         { label: 'Forget asked for', values: { backup: 'forget' }, listed: false },
+        { label: 'Forget asked for, another device’s passkey: it only stops', values: { backup: 'forget-borrowed', sync: 'paired' }, listed: false },
         { label: 'Making the passkey', values: { backup: 'making' }, listed: false },
         { label: 'Bringing it back', values: { backup: 'bringing' }, listed: false },
         { label: 'Keep it safe pressed', values: { backup: 'off', press: 'keep' }, listed: false },
@@ -228,7 +232,7 @@ export function settingsScenes(): Scene[] {
       build: (v = {}): Built => {
         const b = String(v.backup ?? 'off');
         const steps: Step[] = [
-          ...(b === 'forget' ? [{ click: '.backup-row .paired .reset' }] : []),
+          ...(b === 'forget' || b === 'forget-borrowed' ? [{ click: '.backup-row .paired .reset' }] : []),
           ...(v.press === 'keep' ? [{ wait: 1000 }, { click: '.backup-row .btn.small:not(.gone)' }] : v.press === 'bring' ? [{ wait: 1000 }, { click: '.backup-row .say > span:first-child .reset' }] : []),
         ];
         return {
@@ -236,8 +240,9 @@ export function settingsScenes(): Scene[] {
           hash: '#settings',
           ...syncAs(String(v.sync ?? 'off')),
           backup: {
-            on: b === 'on' || b === 'forget' || b === 'out' || b === 'unsaved',
-            savedAt: b === 'on' || b === 'forget' ? Date.now() - 4 * 60_000 : b === 'out' ? Date.now() - 3 * 86_400_000 : 0,
+            on: b === 'on' || b === 'forget' || b === 'out' || b === 'unsaved' || b === 'borrowed' || b === 'forget-borrowed',
+            borrowed: b === 'borrowed' || b === 'forget-borrowed',
+            savedAt: b === 'on' || b === 'forget' || b === 'borrowed' || b === 'forget-borrowed' ? Date.now() - 4 * 60_000 : b === 'out' ? Date.now() - 3 * 86_400_000 : 0,
             failing: b === 'out' || b === 'unsaved',
             ...(b === 'making' || b === 'bringing' ? { busy: b } : {}),
           },

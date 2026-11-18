@@ -321,26 +321,39 @@ follows them to a new phone on the same account. `src/lib/backup/`:
   `signal/worker.js`), with the copies it holds of the player’s other devices:
   one whose browser was cleared before it was kept lives on only there. Past
   what the server keeps, the oldest of those copies are left out. 20 s after a
-  change at the soonest, no sooner than 3 minutes after the last send, and as
+  change at the soonest, no sooner than 10 minutes after the last send, and as
   the page is hidden; unchanged, nothing is sent, and one that didn’t go is
-  tried again 3 minutes later.
+  tried again 3 minutes later. (A browser only loses its storage after days
+  away, so saving more often would save nothing more, and would spend the
+  free plan’s requests matchmaking shares.)
 - Bring it back asks for the passkey and takes every device’s in as sync takes
   another device’s (`takeCopies`, `takeIn`): only up, nothing counted twice. A
   browser brought back is a new device, its old self one of the others, which
   is why sync keeps up to 64 devices’ copies (`KEEP_DEVICES`) and sends them in
   parts any build reads.
-- Sync passes the secret on, the newer winning, so one press keeps every
-  paired device’s, and Forget (in the settings: the bucket deleted) stops all
-  of them, stamped later than what it replaces whatever the device’s clock
-  says. A Forget leaves a mark on the server in the bucket’s place, so a
-  device that never heard of it (one not paired, another tab) can’t keep there
-  again: told the bucket is gone, it stops keeping too, and its passkey brings
-  nothing back. Erasing the codex takes this device’s entry out and stops keeping
-  here only: paired again, it keeps with the others again.
+- Each device keeps with a passkey of its own, one it made or brought back.
+  A paired device without one borrows another’s through sync, and never
+  swaps a passkey it has for one offered: so nothing has to agree on one,
+  and every box holds everything its devices knew at their last save, the
+  others’ as the copies sync brought. A device with one borrowed may still
+  make its own, and keeps with that from then on. Bring it back with a
+  device that has none (or one borrowed) keeps with the passkey brought
+  back; with one of its own, it only takes the progress in.
+- Forget with a device’s own passkey deletes its bucket and leaves a mark on
+  the server in its place, so every device keeping there (one that borrowed
+  it, one that brought it back) is refused: told the bucket is gone, it stops
+  keeping too, and may borrow another, never that one. Forget with a borrowed
+  one only stops this device: the bucket is the other device’s backup.
+  Erasing the codex leaves the backup alone: sync’s erase gives the browser a
+  new name, so it keeps on as a new device, and Bring it back can restore what
+  was erased.
 - The server has the bucket’s name, each device’s random name, what it can’t
   read, and when it came. A bucket keeps 64 entries of 512 KB at most (the one
-  written longest ago goes first), and is deleted after 18 months without a
-  write; a Forget’s mark, 18 months after the Forget. Requests count against the same `PER_ADDRESS` limit and the free
+  written longest ago goes first), and is deleted after 3 years without a
+  write; a Forget’s mark, 3 years after the Forget. A bucket grows a little
+  with each wipe it’s brought back after (each browser a new entry, carrying
+  copies of the ones before): a few hundred KB after ten, a few MB for a
+  heavy player wiped often. Requests count against the same `PER_ADDRESS` limit and the free
   plan’s allowances as matchmaking, and writes against a tighter one of their
   own (`KEEP_WRITES`, 30 a minute an address: anyone may make up a bucket, and
   this keeps a script from filling the free plan’s storage quickly): a page
@@ -351,7 +364,7 @@ follows them to a new phone on the same account. `src/lib/backup/`:
   notices’ “The offer to keep it safe”).
 
 To turn it off: revert (pages loaded since send nothing); the buckets are
-deleted 18 months after their last write, or at once with the `Keep` class (a
+deleted 3 years after their last write, or at once with the `Keep` class (a
 deleting migration in `signal/wrangler.toml`).
 
 ### Relay

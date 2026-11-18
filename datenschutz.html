@@ -205,10 +205,11 @@
         zusammen mit der Gerätekennung und dem Zeitpunkt. Weder ich noch Cloudflare können diese Daten lesen oder einer
         Person zuordnen. Gesichert wird, wenn sich der Fortschritt ändert; mit „Bring it back“ und dem Passkey holen Sie
         ihn in einen Browser zurück. Beim Übertragen sieht der Server Ihre IP-Adresse (wie in Abschnitt 4 nur pro Minute
-        gezählt, um Massenanfragen zu bremsen, und nicht gespeichert). Sind Ihre Geräte gekoppelt, sichern alle ihren
-        Fortschritt mit demselben Schlüssel. Mit „Forget“ in den Einstellungen löschen Sie die Sicherung; unter ihrer
-        Kennung bleibt danach 18 Monate lang nur ein Vermerk, dass und wann sie gelöscht wurde, damit nichts mehr in sie
-        gesichert wird. Eine Sicherung, in die 18 Monate lang nichts gesichert wurde, wird von selbst gelöscht. Den Passkey selbst löschen Sie in der
+        gezählt, um Massenanfragen zu bremsen, und nicht gespeichert). Ein gekoppeltes Gerät ohne eigenen Passkey sichert
+        mit dem eines anderen. Mit „Forget“ in den Einstellungen löschen Sie die Sicherung (auf einem Gerät, das mit dem
+        Passkey eines anderen sichert, hört nur dieses Gerät damit auf); unter ihrer Kennung bleibt danach 3 Jahre lang
+        nur ein Vermerk, dass und wann sie gelöscht wurde, damit nichts mehr in sie gesichert wird. Eine Sicherung, in
+        die 3 Jahre lang nichts gesichert wurde, wird von selbst gelöscht. Den Passkey selbst löschen Sie in der
         Passwortverwaltung Ihres Geräts. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (die von Ihnen gewählte
         Sicherung).
       </p>
@@ -384,10 +385,10 @@
             keeps it on the game’s matchmaking server (a Cloudflare Worker), under a name also worked out from that key,
             with your device id and when it came; neither I nor Cloudflare can read it or tell whose it is. It is saved
             as it changes, and Bring it back with the passkey brings it into a browser. The server sees your IP address as
-            it is sent (counted over the last minute to slow bulk use, not stored). Paired devices all keep theirs under
-            the same key. Forget in the settings deletes it, leaving under its name only a mark that it was deleted, and
-            when, for 18 months, so nothing is saved there again; one nothing was saved to for 18 months is deleted by
-            itself.
+            it is sent (counted over the last minute to slow bulk use, not stored). A paired device without a passkey of
+            its own keeps under one of the others’. Forget in the settings deletes it (on a device keeping with another
+            device’s passkey, only that device stops), leaving under its name only a mark that it was deleted, and when,
+            for 3 years, so nothing is saved there again; one nothing was saved to for 3 years is deleted by itself.
             You delete the passkey itself in your device’s password manager.
           </li>
           <li>

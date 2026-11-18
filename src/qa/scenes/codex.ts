@@ -76,6 +76,7 @@ const BACKED: Control = {
     { value: 'on', label: 'Kept with a passkey' },
     { value: 'unsaved', label: 'Kept, not saved yet' },
     { value: 'synced', label: 'Kept, and synced with another device' },
+    { value: 'borrowed', label: 'Kept with another device’s passkey' },
   ],
   default: 'off',
 };
@@ -203,13 +204,14 @@ export function codexScenes(): Scene[] {
         { label: 'Part filled, not kept: the way to keep it', values: { backed: 'off', met: 'part' } },
         { label: 'Part filled, kept: no button, the line says so', values: { backed: 'on', met: 'part' } },
         { label: 'Part filled, kept but never saved: the line says it will be', values: { backed: 'unsaved', met: 'part' }, listed: false },
-        { label: 'Kept, Erase asked for: its own copy goes, the others’ stay', values: { backed: 'on', met: 'part', asked: true }, listed: false },
-        { label: 'Kept and synced, Erase asked for: it only stops keeping', values: { backed: 'synced', met: 'part', asked: true }, listed: false },
+        { label: 'Part filled, kept with another device’s passkey: the button stays', values: { backed: 'borrowed', met: 'part' }, listed: false },
+        { label: 'Kept, Erase asked for: Bring it back restores it', values: { backed: 'on', met: 'part', asked: true }, listed: false },
+        { label: 'Kept and synced, Erase asked for', values: { backed: 'synced', met: 'part', asked: true }, listed: false },
       ],
       build: (v = {}): Built => {
-        const backup = { on: v.backed !== 'off', savedAt: v.backed === 'on' || v.backed === 'synced' ? Date.now() - 4 * 60_000 : 0, failing: v.backed === 'unsaved' };
-        // (Paired with a device and linked to it, as the settings' sync bench has it.)
-        const sync = v.backed === 'synced' ? { sync: { code: 'K7QXM2PA9FHE3TDW', met: true, status: 'linked' as const, linked: 1, lastAt: Date.now() } } : {};
+        const backup = { on: v.backed !== 'off', borrowed: v.backed === 'borrowed', savedAt: v.backed === 'on' || v.backed === 'synced' || v.backed === 'borrowed' ? Date.now() - 4 * 60_000 : 0, failing: v.backed === 'unsaved' };
+        // (Paired with a device and linked to it, as the settings' sync bench has it; a borrowed passkey comes from one.)
+        const sync = v.backed === 'synced' || v.backed === 'borrowed' ? { sync: { code: 'K7QXM2PA9FHE3TDW', met: true, status: 'linked' as const, linked: 1, lastAt: Date.now() } } : {};
         if (v.met === 'none') return { state: null, hash: '#codex', met: [], backup, ...sync };
         // (At its foot, where the way to keep it is; or Erase codex pressed there, its confirm left up.)
         const steps: Step[] = [{ wait: 1400 }, { scroll: 'footer.end' }, ...(v.asked ? [{ wait: 600 }, { click: 'footer.end .btn.danger' }] : [])];
