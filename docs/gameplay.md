@@ -927,5 +927,6 @@ at it. Versus brings its settings: first its mode, take turns or race, on a
 switch like the room's Private / Public (the box then describes the one
 picked), then the difficulty, the target score and an optional time limit
 per question (off / 8 / 16 / 32 / 64 s). Versus's card goes back to the
-mode the room last had, a Delve game between or not (take turns in a new
-room; the session keeps it, `versusGame`).
+mode the host last played, a Delve game between or not, in the next room
+too (saved with the room's settings, `src/lib/prefs.ts`, in the field older
+builds read as the mode; a hot-seat room takes turns).
