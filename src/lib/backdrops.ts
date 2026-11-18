@@ -224,15 +224,29 @@ export function endgameName(k: number): string {
 
 /** Every endgame name, by the archetype it is one of (lib/archetypes.ts). */
 let byName: Map<string, number> | null = null;
-/** The zone whose emblem (its sigil and ornament) a stratum called `name` bears: its own for a zone, its archetype's for one past the zones, or undefined. */
-export function emblemOf(name: string): string | undefined {
-  if (zones.some((z) => z.name === name)) return name;
+function archetypeNamed(name: string): number | undefined {
   if (!byName) {
     byName = new Map();
     ARCHETYPES.forEach((a, i) => [...a.names, ...composedNames(a)].forEach((n) => byName!.set(n, i)));
   }
-  const a = byName.get(name);
+  return byName.get(name);
+}
+
+/** The zone whose emblem (its sigil and ornament) a stratum called `name` bears: its own for a zone, its archetype's for one past the zones, or undefined. */
+export function emblemOf(name: string): string | undefined {
+  if (zones.some((z) => z.name === name)) return name;
+  const a = archetypeNamed(name);
   return a === undefined ? undefined : ARCHETYPES[a].emblem;
+}
+
+/**
+ * How many times its archetype has come round before the stratum called
+ * `name` (its place in the order the archetype's strata take their names,
+ * `endgameName`: one a round), or undefined for a name of no archetype.
+ */
+export function turnOfName(name: string): number | undefined {
+  const a = archetypeNamed(name);
+  return a === undefined ? undefined : namesOf(a).indexOf(name);
 }
 
 /** What kind of place stratum `k` is: its zone's name, or past the zones its archetype's kind (the codex counts the biomes reached so). */

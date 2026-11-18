@@ -8,12 +8,13 @@
   // Held still, it is all there from the start.
   import { onMount } from 'svelte';
   import { ring, wear } from '../../lib/arcane';
-  import { sigilStrokes } from '../../lib/zoneSigils';
+  import { sigilStrokes, strokesOf, type Sigil } from '../../lib/zoneSigils';
   import { T, drawPlan } from '../../lib/zoneTitleTiming';
   import { DRAW_LINE, type Ctx } from './family';
 
   let {
     sigil,
+    bears,
     play,
     still,
     seed,
@@ -21,13 +22,15 @@
   }: {
     /** The place whose sigil it bears (a stratum's name). */
     sigil: string;
+    /** A sigil to bear in place of the place's own (the QA desk's zone sigils bench, weighing other drawings of it). */
+    bears?: Sigil;
     play: Ctx['play'];
     still: boolean;
     seed: number;
     el?: HTMLElement;
   } = $props();
 
-  const s = $derived(sigilStrokes(sigil));
+  const s = $derived(bears ? strokesOf(bears) : sigilStrokes(sigil));
   const pieces = (d: string) => d.split(/(?=M)/).filter((p) => p.trim());
   /** The wear's seeds, from the name's (any 32-bit number) into its generator's range (lib/arcane.ts seeded), well apart for the two rings. */
   const worn = $derived(((seed >>> 0) % 2147483646) + 1);

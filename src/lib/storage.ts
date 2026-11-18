@@ -87,6 +87,12 @@ export const STORE =
   (QA ? `qa.${(QA_SLOT ?? QA_SEAT)!.replace(/[^a-z0-9-]/gi, '') || 'frame'}.` : '');
 /** Where the lab's own keys start, on every page that runs its game (the lab, zones.html, spatial.html, cards.html): for settings they share. */
 export const LAB_STORE = CHANNEL + 'lab.';
+/**
+ * The whole key of `name` in the QA desk's own storage (the desk page's,
+ * which nothing clears), for a piece's frame that keeps something across its
+ * reloads: its own keys start cleared each time it opens (src/qa/frame/piece.ts).
+ */
+export const deskKey = (name: string) => CHANNEL + 'qa.desk.' + name;
 
 export type Area = 'local' | 'session';
 
