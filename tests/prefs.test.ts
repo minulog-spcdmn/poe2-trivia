@@ -141,9 +141,10 @@ test("saving keeps what another tab saved for the other fields", () => {
   assert.deepEqual(parsePrefs(store.get(PREFS_KEY) ?? null), { ...custom, targetScore: 25, hideCode: true });
 });
 
-test('a new room starts unlocked with the saved settings', () => {
+test('a new room starts unlocked with the saved settings, on Delve whatever was played last', () => {
   const s = roomSettings(custom);
-  assert.deepEqual(s, { targetScore: 15, timer: 32, difficulty: 'eternal', custom: knobs, mode: 'turns', public: true, locked: false });
+  assert.deepEqual(s, { targetScore: 15, timer: 32, difficulty: 'eternal', custom: knobs, mode: 'delve', public: true, locked: false });
+  assert.equal(roomSettings({ ...custom, mode: 'race' }).mode, 'delve');
 });
 
 test('custom knobs are remembered; entries from before them, or with odd knobs, keep the rest', () => {
@@ -151,10 +152,10 @@ test('custom knobs are remembered; entries from before them, or with odd knobs, 
   assert.deepEqual(parsePrefs(serializePrefs(mine)), mine);
   const { custom: _, ...older } = custom;
   assert.deepEqual(parsePrefs(JSON.stringify({ v: PREFS_VERSION, ...older })), older);
-  // A room that never used Custom keeps the saved knobs.
+  // A room that never used Custom keeps the saved knobs (the room, as it opened, on Delve).
   store.set(PREFS_KEY, serializePrefs(custom));
   savePrefs(prefsFrom({ ...roomSettings(older), difficulty: 'cruel' }));
-  assert.deepEqual(parsePrefs(store.get(PREFS_KEY) ?? null), { ...custom, difficulty: 'cruel' });
+  assert.deepEqual(parsePrefs(store.get(PREFS_KEY) ?? null), { ...custom, difficulty: 'cruel', mode: 'delve' });
   const odd = { ...knobs, options: 5, veil: 'sideways', grayscale: true };
   assert.deepEqual(parsePrefs(JSON.stringify({ v: PREFS_VERSION, ...custom, custom: odd }))?.custom, {
     ...knobs,
@@ -189,4 +190,9 @@ test('a Delve room is stored as turns with a flag, so older tabs still read it',
   assert.equal(parsePrefs(JSON.stringify({ ...raw, delveOn: undefined }))?.mode, 'turns');
   const kept = prefsFrom({ targetScore: 15, timer: 32, difficulty: 'eternal', mode: 'delve', public: false, locked: false } as Settings);
   assert.deepEqual([kept.mode, kept.targetScore, kept.timer, kept.difficulty], ['delve', 15, 32, 'eternal']);
+  // An entry an older build saved, on Delve or from before it, opens a room on Delve with the rest as saved.
+  for (const old of [serializePrefs(delve), JSON.stringify({ ...raw, delveOn: undefined })]) {
+    const s = roomSettings(parsePrefs(old)!);
+    assert.deepEqual([s.mode, s.targetScore, s.timer, s.difficulty, s.public], ['delve', custom.targetScore, custom.timer, custom.difficulty, custom.public]);
+  }
 });

@@ -87,10 +87,15 @@ if (where === 'name') {
   await sleep(300);
   await ev(`[...document.querySelectorAll('button[type="submit"]')].find((b) => b.offsetParent && /Start/.test(b.textContent)).click()`);
 }
-await until(`!!document.querySelector('button[data-mode="${MODE}"]')`, 'lobby');
+await until(`!!document.querySelector('button[data-mode="delve"]')`, 'lobby');
 await mark('lobby');
 await sleep(2500);
-await ev(`document.querySelector('button[data-mode="${MODE}"]').click()`);
+// Take turns and Race are Versus's: its card, then its Mode switch (checked for Race), flipped only if it isn't on the one wanted.
+await ev(`document.querySelector('button[data-mode="${MODE === 'delve' ? 'delve' : 'versus'}"]').click()`);
+if (MODE !== 'delve') {
+  await until(`!!document.querySelector('button.game-toggle')`, 'mode switch');
+  await ev(`(() => { const t = document.querySelector('button.game-toggle'); if ((t.getAttribute('aria-checked') === 'true') !== ${MODE === 'race'}) t.click(); })()`);
+}
 await until(`!document.querySelector('button[data-cursor="begin"]')?.disabled`, 'begin enabled');
 await sleep(2000);
 await mark('begin');

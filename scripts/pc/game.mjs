@@ -1,5 +1,5 @@
 // A solo Take-turns game in Chrome on this PC's screen, traced (chrome.mjs):
-// the start page, New game, Take turns, Begin, then each turn's category,
+// the start page, New game, Versus (Take turns), Begin, then each turn's category,
 // answer and next, the pointer travelling to each button as a player's
 // would. Each step is a mark, so read.py gives each its frames and the GPU's
 // raster time. The mark is made as the pointer sets off, so a step's last
@@ -60,7 +60,8 @@ for (let g = 1; g <= games; g++) {
   if (games > 1) prefix = `g${g} `;
   await press(/^New game$/, 'new game');
   await sleep(2500);
-  await press(/^Take turns$/, 'take turns');
+  // A new room opens on Delve: Versus's card, which opens on Take turns (the step keeps its name, for older runs).
+  await press(/^Versus$/, 'take turns');
   await sleep(1500);
   await press(/^Begin the hunt$/, 'begin');
   await sleep(3000);

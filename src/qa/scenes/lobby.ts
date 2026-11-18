@@ -88,11 +88,14 @@ function oneScreen(v: Values = {}): Built {
     // (A room that never went online has no guest: the host's seat alone.)
     built = { ...atScreen(['Kalguur'], v), hereOnly: true, seat: host('Kalguur') };
   } else built = atScreen(['Kalguur', 'Doryani'], v);
+  // The host taps the Mode switch toward Race (a state's own, no control): in hot-seat it can't be played, and the box under the cards says why for a few seconds.
+  // (Versus's switch only: on Delve there's none.)
+  if (v.race && v.mode !== 'delve') built = { ...built, steps: [{ wait: 1200 }, { click: 'button.game-toggle' }] };
   if (!v.refused) return built;
   // A name turned down at the host's screen: the notice stays up, so on a phone a tap in the name field brings the keyboard up under it (it keeps under what shows of the header, or to the top of what shows).
   // The host's seat alone: only the host's screen has the field, so a guest never sees the refusal.
   // (One already playing here: a name too short can't be added at all, its Add greyed out.)
-  return { ...built, ...(built.seat ? {} : { seat: host('Kalguur') }), steps: [{ toast: nameProblem('Doryani', ['Kalguur', 'Doryani'])!, kind: 'error' }] };
+  return { ...built, ...(built.seat ? {} : { seat: host('Kalguur') }), steps: [{ toast: nameProblem('Doryani', ['Kalguur', 'Doryani'])!, kind: 'error' }, ...(built.steps ?? [])] };
 }
 
 /** The room as the host has set it, played through the engine. */
@@ -178,7 +181,8 @@ const HAPPENS: Control = {
     { value: 'host-leaves', label: 'The host leaves: the next one hosts' },
     { value: 'onlookers', label: 'Two arrive to watch' },
     { value: 'sigils', label: 'Sigils put on, changed and taken off' },
-    { value: 'mode', label: 'The host clicks Delve, then Take turns' },
+    { value: 'mode', label: 'The host clicks Delve, then Versus' },
+    { value: 'versus', label: 'The host picks Race, then Take turns' },
     { value: 'lock', label: 'The host locks it, then unlocks it' },
     { value: 'invite', label: 'The host copies the invite link' },
     { value: 'hide', label: 'The host hides the code, then shows it' },
@@ -244,7 +248,12 @@ function live(v: Values, happens: string): Built {
 const CLICKS: Record<string, [number, string][]> = {
   mode: [
     [1200, '.modes button[data-mode="delve"]'],
-    [1600, '.modes button[data-mode="turns"]'],
+    [1600, '.modes button[data-mode="versus"]'],
+  ],
+  // Versus's Mode switch: to Race, then back to Take turns.
+  versus: [
+    [1200, 'button.game-toggle'],
+    [1600, 'button.game-toggle'],
   ],
   lock: [
     [1200, 'button.lock'],
@@ -267,8 +276,8 @@ const CLICKS: Record<string, [number, string][]> = {
 
 /** The room as its host's own clicks change it: what each click does on this device, from the host's seat. */
 function moves(v: Values, does: string): Built {
-  // (Custom's editor needs Custom picked.)
-  const t = table(does === 'custom' ? { ...v, difficulty: 'custom' } : v);
+  // (Custom's editor needs Custom picked; Versus's switch, a Versus game.)
+  const t = table(does === 'custom' ? { ...v, difficulty: 'custom' } : does === 'versus' && v.mode === 'delve' ? { ...v, mode: 'turns' } : v);
   const clicks = CLICKS[does].flatMap(([wait, click]): Step[] => [{ wait }, { click }]);
   // (Copied whether or not the frame may write to the clipboard.)
   // The host's clicks change the room, as they would (Built.own), rather than only saying what they'd send.
@@ -305,7 +314,8 @@ export function lobbyScenes(): Scene[] {
         { label: 'The host leaves: the banner comes to Doryani', values: { happens: 'host-leaves' }, listed: false },
         { label: 'Two arrive to watch', values: { happens: 'onlookers' }, listed: false },
         { label: 'Sigils put on, changed and taken off', values: { happens: 'sigils' }, listed: false },
-        { key: 'lobby/moves', label: 'Delve picked, then Take turns: Begin glides both ways', values: { happens: 'mode' }, listed: false },
+        { key: 'lobby/moves', label: 'Delve picked, then Versus: Begin glides both ways', values: { happens: 'mode' }, listed: false },
+        { label: 'Versus: Race picked, then Take turns', values: { happens: 'versus' }, listed: false },
         { label: 'Locked, then unlocked', values: { happens: 'lock' }, listed: false },
         { label: 'The invite link copied', values: { happens: 'invite' }, listed: false },
         { label: 'The code hidden, then shown', values: { happens: 'hide' }, listed: false },
@@ -330,6 +340,7 @@ export function lobbyScenes(): Scene[] {
         { label: 'A room that couldn’t go online: two at the screen', values: { where: 'here' }, listed: false },
         { label: 'A room that couldn’t go online: Delve', values: { where: 'here', mode: 'delve' }, listed: false },
         { key: 'lobby/hot-seat', label: 'Hot-seat: three on one device', values: { where: 'hot-seat' }, listed: false },
+        { label: 'Hot-seat: the host taps Race, which says why it can’t be played', values: { where: 'hot-seat', race: true }, listed: false },
       ],
       build: oneScreen,
     },

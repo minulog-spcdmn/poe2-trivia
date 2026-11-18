@@ -205,8 +205,8 @@ Cinzel bold gold:
 
 ### Panel
 
-- **Heading:** the mode played, "Take turns" or "Race" (the lobby's `MODES`
-  names).
+- **Heading:** the mode played, "Take turns" or "Race" (the names in
+  `MODE_NAMES`, `src/lib/difficultyText.ts`).
 - **The ranking**, as today's end screen draws it, in the lobby's chip style:
   rank as a plain lining numeral (muted), avatar 28, name, score in Cinzel
   bold gold. The winner's row gold (border `#c9a45c`, a warm gradient and a
