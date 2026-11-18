@@ -4,8 +4,10 @@
 
 A multiplayer Path of Exile 2 trivia game: name the unique item or lineage gem
 from its art. It runs entirely in the browser and is hosted as a static site on
-GitHub Pages. No game server needed; only a small Worker hands out relay
-logins (see "Relay").
+GitHub Pages. No game server needed; two small Cloudflare Workers help players
+meet and hand out relay logins (see "Matchmaking server" and "Relay").
+
+[![The project map: your PC, GitHub, the player’s browser, the services it reaches and the jobs that watch the live site, with every connection between them](docs/project-map.svg)](docs/project-map.svg)
 
 ## How to play
 
@@ -89,8 +91,9 @@ with the sites people came from.
 
 ## Development
 
-The whole project on one page, for a first look at how its parts fit together:
-[docs/project-map.svg](docs/project-map.svg) (a PNG copy beside it).
+The map at the top shows the whole project on one page, for a first look at
+how its parts fit together: [docs/project-map.svg](docs/project-map.svg) (a PNG
+copy beside it).
 
 ```sh
 npm install
