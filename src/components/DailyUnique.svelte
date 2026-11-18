@@ -20,6 +20,7 @@
   import { answerDrawn, isFake, questionTopic, type Item, type Question } from '../lib/game';
   import { clock } from '../lib/clock';
   import { countDaily, countStep } from '../lib/count';
+  import { loadTally } from '../lib/tallyLoader';
   import { DAILY_KEY, DAYS_KEY, answerLog, answeredOn, askOne, dailyEngine, dailyGame, dailyQuestion, aTopic, dropAhead, graceOn, loadLog, mergeLogs, nextIn, replay, saveLog, settleDays, streakOn, untilNextMinute, upTo, utcDay } from '../lib/daily';
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
@@ -284,13 +285,25 @@
     // counted), with in "Find the art" a wrong pick, which the reveal names;
     // a practice question's answer to the practice tally alone (it finds
     // nothing: there's no end of them to be had without a game). Which it
-    // was is settled now, not once the codex has loaded.
+    // was is settled now, not once the codex has loaded. And either answer
+    // into the item tally where visits are counted (lib/itemTally.ts, loaded
+    // once by lib/tallyLoader.ts): the tally started first, so it hears of
+    // today's as the codex takes it in; today's sent at once, the day's one
+    // answer being all there is.
     const asked = q;
     const isPractice = !!practice;
     const pickedId = asked.options[i];
     const seen = [asked.itemId, ...(asked.mode === 'art' && !good && pickedId && !isFake(pickedId) ? [pickedId] : [])];
-    void import('../lib/codex')
-      .then(({ recordSeen, recordPractice }) => (isPractice ? recordPractice(good) : recordSeen(at, asked.mode, seen)))
+    void Promise.all([loadTally(), import('../lib/codex')])
+      .then(([t, { recordSeen, recordPractice }]) => {
+        if (isPractice) {
+          recordPractice(good);
+          t?.notePractice(asked.itemId, asked.mode, good);
+        } else {
+          recordSeen(at, asked.mode, seen, good);
+          t?.sendTally();
+        }
+      })
       .catch((err) => console.warn('codex', err));
     sfx(good ? 'correct' : 'wrong');
     // After the marks have rendered, so the light can find them.

@@ -13,6 +13,11 @@
 // much it stuttered ("frames2/ios/some/reveal"), never a timing; a page's
 // first one once more as its visit's ("frames2/ios/visit/stuttered").
 //
+// Apart from these, every answer the player gives goes, per item and the
+// rules it was asked under, with nothing to say whose, into a tally of every
+// player's kept by the matchmaking server (itemTally.ts), on the same terms:
+// only where this counts, and never from a browser that opted out.
+//
 // Not GoatCounter's count.js: it sends the address's query too, and an
 // invite link's carries the room's code. This sends only what's named here.
 // So count.js's #toggle-goatcounter means nothing to GoatCounter here;

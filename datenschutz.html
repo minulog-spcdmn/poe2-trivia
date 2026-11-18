@@ -31,8 +31,9 @@
       <p>
         PoE2.Quest ist ein Browserspiel ohne eigenen Spielserver (nur ein kleiner Dienst für Relay-Zugangsdaten,
         Abschnitt 4), ohne Benutzerkonten und ohne Cookies. Die Nutzung wird
-        nur mit dem cookielosen Dienst GoatCounter gezählt, der keine IP-Adressen speichert und Besuche keiner Person
-        zuordnet (Abschnitt 7). Schriftarten und Bilder werden von dieser Website selbst ausgeliefert, nicht von Drittanbietern.
+        mit dem cookielosen Dienst GoatCounter gezählt, der keine IP-Adressen speichert und Besuche keiner Person
+        zuordnet; Antworten auf die Fragen zählt der eigene Vermittlungsserver des Spiels nur zu Summen je Gegenstand zusammen,
+        ohne Bezug zu einer Person (Abschnitt 7). Schriftarten und Bilder werden von dieser Website selbst ausgeliefert, nicht von Drittanbietern.
         Spielstände werden nicht zentral gespeichert: Das Spiel läuft im Browser der Person, die einen Raum eröffnet
         („Host“), und die Geräte der Mitspielenden verbinden sich direkt miteinander.
       </p>
@@ -70,7 +71,8 @@
           Inc., USA), der dasselbe verarbeitet: Wer einen Raum eröffnet, ist auf beiden Servern erreichbar, ein
           Einladungslink fragt bei beiden nach dem Raum, und wer beitritt, fragt auch dort nach ihm und tritt dort bei, wenn
           PeerJS ihn nicht hat. Ist PeerJS von Ihrem Netz aus nicht erreichbar oder ausgefallen, nutzt die Seite nur ihn, bis PeerJS wieder antwortet. Er zählt, um massenhafte
-          Verbindungen zu bremsen, je Adresse die Verbindungen der letzten Minute und speichert nichts davon.
+          Verbindungen zu bremsen, je Adresse die Verbindungen der letzten Minute und speichert nichts davon. Was er
+          von Antworten zusammenzählt, steht in Abschnitt 7.
         </li>
         <li>
           <strong>STUN-Server von Google:</strong> Um eine direkte Verbindung zu ermöglichen, fragt Ihr Browser beim
@@ -163,7 +165,8 @@
           Ihren Spielfortschritt: den Codex (welche Gegenstände Ihnen in Spielen begegnet sind, wie oft Sie sie richtig
           erkannt haben und wie schnell; er lässt sich auf der Codex-Seite löschen), Ihre Übungsantworten, Ihre
           Delve-Läufe, Ihre Erfolge, Ihre Klassensiegel und Ihre Antwort auf die tägliche Frage; an andere Geräte geht
-          davon nur etwas, wenn Sie Ihre eigenen koppeln (Abschnitt 4);
+          davon nur etwas, wenn Sie Ihre eigenen koppeln (Abschnitt 4; was von Ihren Antworten gezählt wird, steht
+          in Abschnitt 7);
         </li>
         <li>
           Ihre Einstellungen: Ton und Lautstärke, die Effekte (samt einer Messung, wie flüssig Ihr Gerät sie darstellt),
@@ -191,7 +194,7 @@
         Sie es löschen, über die Einstellungen Ihres Browsers jederzeit.
       </p>
 
-      <h2>7. Reichweitenmessung (GoatCounter)</h2>
+      <h2>7. Reichweitenmessung (GoatCounter) und Zählung der Antworten</h2>
       <p>
         Um zu erfahren, wie viele Menschen das Spiel besuchen, welche Spielmodi gespielt werden und ob es flüssig läuft, nutzt diese Website
         den Dienst GoatCounter (betrieben von Martin Tournoij, Irland; Server der Hetzner Online GmbH in Deutschland und
@@ -226,7 +229,7 @@
         Auflösung) es am meisten ruckelte; bei einem Computer, dessen Browser ohne Grafikkarte zeichnet (Hardwarebeschleunigung aus),
         stattdessen nur das. Für das erste Spiel eines Besuchs wird einmal mehr gesendet, ob es flüssig lief oder ruckelte, und wenn es ruckelte, bei welchem Spielabschnitt am meisten (mit der Art des Geräts). Gemessen wird dafür nur während eines Spiels und nur in Ihrem Browser;
         Zeitmessungen und weitere Angaben zum Gerät (auch nicht der Name der Grafikkarte) werden nicht gesendet.
-        Spielnamen, Antworten, Raumcodes und die Gerätekennung werden nicht übermittelt.
+        Spielnamen, Antworten, Raumcodes und die Gerätekennung werden an GoatCounter nicht übermittelt.
       </p>
       <p>
         GoatCounter leitet aus Ihrer IP-Adresse und der Kennung Ihres Browsers (User-Agent) das Land, den Browser und
@@ -235,6 +238,25 @@
         IP-Adresse und User-Agent höchstens acht Stunden im Arbeitsspeicher gehalten. GoatCounter setzt keine Cookies,
         speichert nichts auf Ihrem Gerät und liest dort nichts aus. Ausgewertet werden nur zusammengefasste
         Zahlen; ein Bezug zu einzelnen Personen wird nicht hergestellt.
+      </p>
+      <p>
+        <strong>Zählung der Antworten:</strong> Um zu erfahren, welche Gegenstände kaum jemand erkennt, sendet das Spiel
+        zu jeder Frage, die Sie beantworten (in jedem Spielmodus, bei Übungsfragen und bei der täglichen Frage), an
+        seinen eigenen Vermittlungsserver (den Cloudflare Worker aus Abschnitt 4): welcher Gegenstand gefragt war, ob
+        nach seinem Namen oder seinem Bild, ob die Antwort richtig oder falsch war (eine abgelaufene Zeit und eine mit
+        Dynamit weggesprengte Frage zählen als falsch), unter welchen Regeln gefragt wurde (der Spielmodus und die
+        Schwierigkeit, bei Delve der Tiefenbereich, etwa „21 bis 30“) und ob der Gegenstand auf diesem Gerät zum ersten
+        Mal vorkam (dafür liest das Spiel den Codex, den es ohnehin in Ihrem Browser speichert). Gesendet wird in Paketen
+        von höchstens 40 Antworten, am Ende eines Spiels und wenn Sie die Seite verlassen oder sie in den Hintergrund
+        rückt; ohne Spielnamen, Raumcode, Gerätekennung oder Uhrzeit. Ein Paket, das nicht ankommt, wird höchstens
+        zweimal erneut gesendet. Jedes Paket trägt eine zufällige Kennung, die der Server einen Tag lang speichert,
+        damit ein erneut gesendetes Paket nicht doppelt zählt; mit Ihrem Gerät oder anderen Paketen ist sie nicht
+        verbunden. Der Server zählt diese Angaben nur zu Summen je Gegenstand zusammen; daraus lässt sich
+        nicht ablesen, wer wann was geantwortet hat, und die Summen sind öffentlich abrufbar.
+        Ihre IP-Adresse verarbeitet er dabei nur, um je Adresse die Sendungen der letzten Minute zu zählen und
+        massenhafte Sendungen zu bremsen; gespeichert wird sie nicht. Wie die Zählung mit GoatCounter geschieht das nur
+        auf poe2.quest selbst, und nicht, wenn Sie die Zählung abgeschaltet haben oder Ihr Browser das Signal
+        „Global Privacy Control“ sendet; dann wird dafür auch nichts gelesen.
       </p>
       <p>
         Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse an einer datensparsamen Messung der
@@ -304,7 +326,8 @@
             <strong>Online play and the open rooms list:</strong> the PeerJS matchmaking server (0.peerjs.com), the game’s own
             matchmaking server (a Worker of the game’s on Cloudflare, which every room’s host is on too, an invite link and a
             guest ask too, the guest joining there when PeerJS doesn’t have the room, and that a page uses alone while PeerJS doesn’t answer it,
-            counting each address’s connections over the last minute to slow bulk use and storing nothing) and Cloudflare
+            counting each address’s connections over the last minute to slow bulk use and storing nothing of that; for the
+            answers it adds up, see below) and Cloudflare
             (Cloudflare, Inc., USA: a small Worker of the game’s that hands the page a relay login lasting twelve hours, asked once you open or join a room or sync your devices and renewed while the page stays open, counting each address’s asks over the last minute to slow bulk use, its STUN server and, if needed, its
             relay servers (TURN), through which the game’s data then runs) and Google’s STUN server (stun.l.google.com) process your IP address to connect players.
             Guests connect directly to the host, so <strong>the host can see your IP address</strong> and you can see
@@ -340,7 +363,7 @@
             <strong>Your browser</strong> stores your name, colour and the device token; your progress (the codex of the
             items you have seen in games and how well you answered, which can be erased on the codex page, your practice
             answers, Delve runs, achievements, class sigils and daily answers; sent only to your own paired devices, if you
-            pair any); your settings (sound and volume, effects with a measure of how smoothly your device runs them, key
+            pair any, apart from the answers counted below); your settings (sound and volume, effects with a measure of how smoothly your device runs them, key
             bindings, your last room settings including hide-code, where the item window was, the views you chose last,
             which tips were shown, and your choice not to be counted, if you made it); and, with paired devices, the
             pairing code, this device’s id and the others’ progress; plus small markers for the game’s flow, such as the
@@ -368,13 +391,28 @@
             (code, invite link or open rooms list) and whether it works, pairing a device, connection failures (for a room that answered but never connected, also what the relay was doing then: whether there was a relay login and, if not, why, or whether a route through the relay was found), a room you opened losing the matchmaking server (whether the page was in sight then, and roughly how long until it was back), that a script error happened (only where in the game’s code, nothing else about it) or part of the page
             didn’t load (nothing about that), and once a game how smoothly it ran on your device: its kind (a computer with Chrome or another Chromium browser, a computer with another
             browser, an iPhone or iPad, Android), whether the game ran smoothly or stuttered some or a lot, and at which part (its start, the deal, a question or the reveal) it
-            stuttered most; for a computer whose browser draws without the graphics card (hardware acceleration off), only that instead. For a visit’s first game, whether it ran smoothly or stuttered, and if it stuttered at which part most, is sent once more (with the device’s kind). That is measured only during a game and only in your browser; no timings or other details of the device (nor the graphics card’s name) are sent. No names, answers, room codes or device tokens are sent. It works out your country, browser and system
+            stuttered most; for a computer whose browser draws without the graphics card (hardware acceleration off), only that instead. For a visit’s first game, whether it ran smoothly or stuttered, and if it stuttered at which part most, is sent once more (with the device’s kind). That is measured only during a game and only in your browser; no timings or other details of the device (nor the graphics card’s name) are sent. No names, answers, room codes or device tokens are sent to GoatCounter. It works out your country, browser and system
             from your IP address and browser and stores only those, never the IP address or the full browser string; it sets no cookies and stores nothing on your
             device. Nothing is counted if your browser sends Global Privacy Control.
             <div class="count-toggle" data-count-toggle hidden>
               <p class="state"></p>
               <button type="button" class="btn small"></button>
             </div>
+          </li>
+          <li>
+            <strong>Counting the answers:</strong> to learn which items hardly anyone recognises, the game sends its own
+            matchmaking server, for each question you answer (in every mode, practice questions and the daily unique
+            included): which item was asked, whether by its name or its picture, whether the answer was right or wrong (a
+            time-out and a question blasted away with dynamite count as wrong), the rules it was asked under (the mode and
+            difficulty, in Delve the depth range, such as “21 to 30”), and whether the item came up on this device for the
+            first time (for which the game reads the codex it keeps in your browser anyway). It is sent in batches of up to
+            40 answers, at the end of a game and as you leave the page or it goes into the background, with no name, room
+            code, device token or time; a batch that doesn’t arrive is sent again at most twice. Each batch carries a random id, which the server keeps
+            for a day so a batch sent again isn’t counted twice, and which is tied to nothing else. The server only adds these
+            up into totals per item, which can’t tell who answered what or when and which anyone can read; it uses your IP address only to count each
+            address’s sends over the last minute and slow bulk use, and doesn’t store it. As with the visitor counts, this
+            happens only on poe2.quest itself, and not with counting switched off or Global Privacy Control sent; then
+            nothing is read for it either.
           </li>
           <li>
             <strong>PayPal:</strong> a plain link; nothing is sent to PayPal unless you click it. If you donate, I receive

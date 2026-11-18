@@ -77,7 +77,8 @@ third-party service.
 
 The visitor counts' opt-out is one flag in the browser
 (`src/lib/countOptOut.ts`, shared by every channel) that `src/lib/count.ts`
-checks before every count, as it does Global Privacy Control. The privacy
+checks before every count, as it does Global Privacy Control, and the item
+tally (`src/lib/itemTally.ts`) before every batch. The privacy
 page's switch sets it (`src/legal/countToggle.ts`), and so does opening
 poe2.quest/#toggle-goatcounter. An iPhone's home-screen app keeps storage
 apart from Safari's, so there, and only there, the privacy link in a room
@@ -237,7 +238,37 @@ protocol, one Durable Object holding every peer's socket in memory.
   carries); 5,000 peers at once at most. An id whose socket was lost (not
   closed by its page) is kept for it 15 s, so a host's blip doesn't hand its
   room to whoever asks next. What waits for an id nobody holds is capped at
-  4 MB, and 256 KB from one address. Nothing is stored or logged.
+  4 MB, and 256 KB from one address. Nothing of matchmaking is stored or
+  logged.
+- It also adds up how every item fares, to find the items hardly anyone
+  recognises (`POST /tally`, the `Tally` Object): every answer a player
+  gives, in every mode, practice and the Daily, goes with its item, name or
+  art, right or wrong (a time-out, a ward's save and their own blast too),
+  the rules it was asked under (`d1`..`d20` a Delve run alone by the depth
+  band its rules came from, `g1`..`g20` together, `t-`/`r-` and the preset
+  for Take turns and Race, `practice`, `daily`) and whether this device met
+  the item for the first time. A page sends at a game's end, as it is
+  hidden or left and every 40 answers, trying a failed batch twice more,
+  counted where the visit counts are and not otherwise (`lib/itemTally.ts`,
+  datenschutz.html section 7). The Object keeps sums only, no time and no
+  address, at most 200,000 of them. It stays within its own share of the
+  free plan's daily allowances, which the matchmaking and the passkey
+  backups need too: at most 850 rows written a UTC hour (about 20,000 a
+  day; past it a batch is let go, and the Worker turns the rest of the
+  hour's away without waking the Object) and 1,000,000 rows read a UTC day
+  in full reads of the table, which it keeps in memory once read, so a
+  read while it's awake costs nothing. An address may send 30 batches a
+  minute, held to that before matchmaking's limit is touched. A version
+  number in each sum keeps answers apart once what the game deals changes;
+  the Worker takes only versions the game has used, and only the items in
+  `signal/itemIds.json` (written by `npm run fetch-data` beside items.json,
+  in `signal/` so a data refresh redeploys the Worker), an unknown one let
+  go of alone. Each batch carries a random id, kept a day, so one sent
+  again after a lost answer counts once.
+  `GET /tally` reads them (any page could, which is fine for sums);
+  `npm run item-tally` and the stats page's Items view list the items most
+  missed against what their rules would expect (all answers in one pool,
+  or first meetings only).
 - Cloudflare's free plan gives a Durable Object 100,000 requests a day, a
   socket's messages counting 20 to one (a peer on ours sends a heartbeat
   every 25 s, not PeerJS's 5), and the account 100,000 Worker requests a
@@ -449,6 +480,20 @@ mails when stats.html would warn: in a dry run over the 13 days that could be
 checked (6 Nov 2026), once, on 5 Nov, when joining failures rose with the
 matchmaking server’s first day. A dry run over past days: `GOATCOUNTER_KEY=...
 node --experimental-strip-types scripts/daily-health.mjs --backtest 60`.
+
+### Item tally readiness
+
+`.github/workflows/tally-ready.yml` asks once a day whether the item tally
+holds enough answers to tell which items players miss far more than the
+rest, for a balance change that keeps them out of Delve’s shallow depths.
+`scripts/tally-ready.mjs` reads the tally and sorts every item as clearly
+above a score of 1.5, clearly below or undecided (ranked as the Items view
+ranks them); its summary is on each run’s page. Once at most a quarter of the
+items are undecided, Claude weighs the summary on the API credit
+(`scripts/claude-in-ci.sh`, no tools) and answers ready or not yet; ready
+opens an issue for the owner, and the check then stops until `TALLY_VERSION`
+changes. Days below that floor cost nothing. The same summary by hand:
+`node --experimental-strip-types scripts/tally-ready.mjs`.
 
 ---
 

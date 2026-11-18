@@ -34,7 +34,13 @@
 //
 // It also keeps players' progress for them (`/keep/…`, Keep below): what a
 // page encrypted, under a name made from the player's passkey, neither of
-// which it can read back to anyone.
+// which it can read back to anyone. And it adds up how every player's
+// answers went, per item and the rules each was asked under (`/tally`,
+// Tally below): the sums, and for a day each batch's random id with when
+// it came (so a batch sent again is added once); nothing of who answered or
+// from where.
+
+import ITEM_IDS from './itemIds.json' with { type: 'json' };
 
 /** How long a message waits for an id nobody holds before its sender is told EXPIRE (ms), and how often that's looked at: the PeerJS server's. */
 export const EXPIRE_MS = 5000;
@@ -103,8 +109,10 @@ const LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[\w-]+\.localhost|10\
  * @typedef {{
  *   SIGNAL: { idFromName(name: string): unknown, get(id: unknown, o?: { locationHint?: string }): { fetch(r: Request): Promise<Response> } },
  *   KEEP: { idFromName(name: string): unknown, get(id: unknown, o?: { locationHint?: string }): { fetch(r: Request): Promise<Response> } },
+ *   TALLY: { idFromName(name: string): unknown, get(id: unknown, o?: { locationHint?: string }): { fetch(r: Request): Promise<Response> } },
  *   PER_ADDRESS: { limit(o: { key: string }): Promise<{ success: boolean }> },
  *   KEEP_WRITES: { limit(o: { key: string }): Promise<{ success: boolean }> },
+ *   TALLY_WRITES: { limit(o: { key: string }): Promise<{ success: boolean }> },
  * }} Env
  */
 
@@ -629,13 +637,387 @@ async function keep(request, url, env, headers) {
   return new Response(r.body, { status: r.status, headers: { ...headers, ...(r.status === 200 ? { 'Content-Type': 'application/octet-stream' } : {}) } });
 }
 
+// ---- the item tally ------------------------------------------------------------
+//
+// How every player's answers went, per item (src/lib/itemTally.ts), so the
+// items players miss can be told from those they know, each against others
+// asked under the same rules. A page sends its answers in batches, each an
+// item, the question's form, the rules it was asked under (its context:
+// Delve alone or together by the band of ten depths its question came from,
+// Take turns and Race by the room's difficulty, practice, today's unique),
+// whether the item was new to the player, and right or wrong; here they're
+// only added up. Nothing of who sent them is kept: no address or device;
+// only the sums, and for a day each batch's random id with when it came, in
+// one Object.
+//
+// - POST /tally: `{"v":1,"id":"9f2c04e1b7a3d865","a":[["4f588a87bc12","n","d3",0,"w"], …]}`
+//   (as text/plain, so a page's request needs no preflight), added up.
+//   Anything off in its shape refuses it whole. `v` is a version of the
+//   tally's rules this Worker knows (TALLY_VERSION), so sums are kept only
+//   under one the ranking reads. An answer for an item the game doesn't
+//   have (itemIds.json, written with items.json by scripts/fetch-data.mjs;
+//   from a page loaded before an item was renamed or removed) is dropped
+//   alone, the rest of its batch kept, so sums are only of real items.
+//   `id` is the batch's own, random, kept a day (TALLY_SEEN_MS): a page
+//   sends a batch it heard nothing back for again, as it was, and one that
+//   had arrived after all is added once. Held to fewer an address than
+//   matchmaking (TALLY_WRITES, wrangler.toml), asked first, so a batch
+//   turned away leaves the address's matchmaking allowance as it was.
+// - GET /tally: every sum, as JSON (scripts/item-tally.mjs and the stats
+//   page's Items view read them).
+//
+// The free plan's SQLite rows and Durable Object requests are the account's,
+// a day's, which the matchmaking (Signal) and the passkey backups (Keep)
+// need too; so the tally keeps to a share of each, leaving them the rest,
+// counted in its storage, where an Object started afresh finds them:
+// - Sums: past TALLY_ROWS a new one is dropped, those kept still added to.
+// - Writes: TALLY_HOURLY rows a UTC hour, an hour's share of the day's, not
+//   the day's at once, the batch ids kept and let go of counted with the
+//   sums. Past them a batch is answered as taken and dropped (a page doesn't
+//   send it again), and the Worker, told so, answers the rest of the hour's
+//   batches itself, the Object left asleep.
+// - Reads: the Object reads its rows only for a GET, then keeps them and
+//   their JSON in memory, a write bringing them up to date, so a read
+//   answered from memory reads nothing. Its full reads keep to TALLY_READS
+//   rows a UTC day: past them a GET it can't answer from memory is answered
+//   503, and it can be read again after midnight UTC.
+
+/** The longest batch (bytes) and the most answers in it: a page sends forty at most. */
+export const MAX_TALLY = 4096;
+export const MAX_TALLIED = 40;
+/** The most sums kept: items, forms, contexts and firsts under each version (about 100,000 today, more with each patch's items). */
+export const TALLY_ROWS = 200_000;
+/** The most rows the tally writes a UTC hour: about 20,000 a day, a fifth of the 100,000 the free plan gives the account. */
+export const TALLY_HOURLY = 850;
+/** The version of the tally's rules the pages send now (src/lib/itemTallyRank.ts TALLY_VERSION, held equal by tests/itemTally.test.ts): none past it is taken. */
+export const TALLY_VERSION = 1;
+/** Every item the tally keeps sums for. */
+const KNOWN_ITEMS = new Set(ITEM_IDS);
+/** A batch's id, as a page makes it: 16 hex characters from crypto.getRandomValues. */
+const BATCH_ID = /^[0-9a-f]{16}$/;
+/** How long a batch's id is kept (ms): a page sends a batch again only with its next send, as a rule well within a day. */
+export const TALLY_SEEN_MS = 86_400_000;
+/** The most ids past TALLY_SEEN_MS let go of with each batch: more than the one it brings, so they never pile up, and few, so a batch's writes stay bounded. */
+export const TALLY_PRUNE = 2;
+/** The most rows one batch writes: its sums, the counts' own row, its id and the ids let go of, each of those two rows (the id's own and its index's). */
+export const TALLY_BATCH_ROWS = MAX_TALLIED + 1 + 2 * (1 + TALLY_PRUNE);
+/** The most rows the tally's full reads go through a UTC day: a fifth of the 5 million the free plan gives the account. */
+export const TALLY_READS = 1_000_000;
+/** The header on the Object's answer to a batch once the hour's writes are spent: when the hour ends (ms). The Worker's alone; a page never sees it. */
+export const TALLY_SPENT = 'Tally-Spent';
+/** An item's id, as items.json has them. */
+const ITEM = /^[0-9a-f]{12}$/;
+/** Delve's bands of ten depths (src/lib/itemTally.ts BANDS). */
+const BANDS = 20;
+const PRESETS = ['cruel', 'merciless', 'eternal', 'custom'];
+/** Every context an answer may be tallied under, as src/lib/itemTally.ts CONTEXTS has them: fifty. */
+export const TALLY_CONTEXTS = new Set([
+  ...['d', 'g'].flatMap((p) => Array.from({ length: BANDS }, (_, i) => `${p}${i + 1}`)),
+  ...['t', 'r'].flatMap((p) => PRESETS.map((x) => `${p}-${x}`)),
+  'practice',
+  'daily',
+]);
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
+
+/**
+ * One answer: item, form ("n" name, "a" art), context (TALLY_CONTEXTS), first (0, 1), outcome ("r", "w").
+ * @typedef {[string, 'n' | 'a', string, 0 | 1, 'r' | 'w']} Tallied
+ */
+
+/**
+ * A batch as sent, or null when anything in its shape is off; its answers
+ * for items the game doesn't have left out (none left: `a` empty).
+ * @param {Uint8Array} body @returns {{ v: number, id: string, a: Tallied[] } | null}
+ */
+export function tallied(body) {
+  /** @type {unknown} */
+  let m;
+  try {
+    m = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(body));
+  } catch {
+    return null;
+  }
+  if (typeof m !== 'object' || m === null || Array.isArray(m) || Object.keys(m).length !== 3) return null;
+  const { v, id, a } = /** @type {{ v?: unknown, id?: unknown, a?: unknown }} */ (m);
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > TALLY_VERSION) return null;
+  if (typeof id !== 'string' || !BATCH_ID.test(id)) return null;
+  if (!Array.isArray(a) || a.length < 1 || a.length > MAX_TALLIED) return null;
+  for (const x of a)
+    if (
+      !Array.isArray(x) ||
+      x.length !== 5 ||
+      typeof x[0] !== 'string' ||
+      !ITEM.test(x[0]) ||
+      (x[1] !== 'n' && x[1] !== 'a') ||
+      typeof x[2] !== 'string' ||
+      !TALLY_CONTEXTS.has(x[2]) ||
+      (x[3] !== 0 && x[3] !== 1) ||
+      (x[4] !== 'r' && x[4] !== 'w')
+    )
+      return null;
+  return { v, id, a: /** @type {Tallied[]} */ (a).filter((x) => KNOWN_ITEMS.has(x[0])) };
+}
+
+/**
+ * The SQL storage as Tally uses it: a cursor gives its rows one at a time
+ * or all at once, and says how many rows it read and wrote, as they're
+ * billed, where the runtime does (all it read once it has given every row).
+ * @typedef {Iterable<Record<string, unknown>> & { toArray(): Record<string, unknown>[], rowsRead?: number, rowsWritten?: number }} TallyCursor
+ * @typedef {{ exec(query: string, ...bindings: unknown[]): TallyCursor }} TallySql
+ * @typedef {{ storage: { sql: TallySql, transactionSync?<T>(f: () => T): T } }} TallyState
+ * What Tally keeps count of: its sums, the rows written in the UTC hour `hour` and those its full reads went through on the UTC day `day`.
+ * @typedef {{ rows: number, hour: number, written: number, day: number, scanned: number }} TallyKept
+ */
+
+/**
+ * A sum's key in memory, in the order the table keeps them (the version padded, so the keys sort as the rows do).
+ * @param {number} v @param {string} item @param {string} form @param {string} ctx @param {number} first
+ */
+const sumKey = (v, item, form, ctx, first) => `${String(v).padStart(4, '0')} ${item} ${form} ${ctx} ${first}`;
+
+/**
+ * A sum as a read sends it.
+ * @param {number} v @param {string} item @param {string} form @param {string} ctx @param {number} first @param {number} r @param {number} w
+ */
+const rowJson = (v, item, form, ctx, first, r, w) =>
+  `{"v":${v},"item":${JSON.stringify(item)},"form":${JSON.stringify(form)},"ctx":${JSON.stringify(ctx)},"first":${first},"r":${r},"w":${w}}`;
+
+/** A sum in memory as a read sends it. @param {string} key @param {[number, number]} rw */
+function sumJson(key, [r, w]) {
+  const [v, item, form, ctx, first] = key.split(' ');
+  return rowJson(Number(v), item, form, ctx, Number(first), r, w);
+}
+
+/** Whether no more batches go in this hour: one more might not fit in what's left of its writes. @param {TallyKept} k */
+const spent = (k) => k.written + TALLY_BATCH_ROWS > TALLY_HOURLY;
+
+/** Every player's answers added up, per version, item, form, context and first. */
+export class Tally {
+  /** @param {TallyState} ctx */
+  constructor(ctx) {
+    this.ctx = ctx;
+    // Keyed by the sum itself (no rowid beside it), so a sum written is one row written.
+    ctx.storage.sql.exec(
+      'CREATE TABLE IF NOT EXISTS tally (v INTEGER NOT NULL, item TEXT NOT NULL, form TEXT NOT NULL, ctx TEXT NOT NULL, first INTEGER NOT NULL, r INTEGER NOT NULL DEFAULT 0, w INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (v, item, form, ctx, first)) WITHOUT ROWID',
+    );
+    // What it keeps count of (TallyKept), in one row.
+    ctx.storage.sql.exec(
+      'CREATE TABLE IF NOT EXISTS kept (id INTEGER PRIMARY KEY CHECK (id = 1), rows INTEGER NOT NULL, hour INTEGER NOT NULL, written INTEGER NOT NULL, day INTEGER NOT NULL, scanned INTEGER NOT NULL)',
+    );
+    // The ids of the batches added up in the last TALLY_SEEN_MS, with when each came (ms): indexed by that, so letting go of the oldest reads only them.
+    ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS seen (id TEXT PRIMARY KEY, at INTEGER NOT NULL) WITHOUT ROWID');
+    ctx.storage.sql.exec('CREATE INDEX IF NOT EXISTS seen_at ON seen (at)');
+    /** Every sum, right and wrong by its key (sumKey), once a read has loaded them; null until then. @type {Map<string, [number, number]> | null} */
+    this.sums = null;
+    /** Whether `sums` is in the table's order (a sum started goes at its end). */
+    this.sorted = true;
+    /** The sums as a read sends them, until a write changes one. @type {string | null} */
+    this.json = null;
+  }
+
+  /** @param {Request} request */
+  async fetch(request) {
+    if (request.method === 'GET') {
+      const json = this.read();
+      return json === null ? new Response(null, { status: 503 }) : new Response(json, { headers: { 'Content-Type': 'application/json' } });
+    }
+    const batch = tallied(new Uint8Array(await request.arrayBuffer()));
+    if (!batch) return new Response(null, { status: 400 });
+    if (!batch.a.length) return new Response(null, { status: 204 });
+    const now = Date.now();
+    const { spent } = this.add(batch.v, batch.a, now, batch.id);
+    // (Past the hour's writes too: the page has nothing to send again. The Worker hears when the hour ends.)
+    return new Response(null, { status: 204, headers: spent ? { [TALLY_SPENT]: String((Math.floor(now / HOUR_MS) + 1) * HOUR_MS) } : {} });
+  }
+
+  /** What's kept count of, as stored (nought before anything is). @returns {TallyKept} */
+  kept() {
+    const k = this.ctx.storage.sql.exec('SELECT rows, hour, written, day, scanned FROM kept WHERE id = 1').toArray()[0];
+    if (!k) return { rows: 0, hour: 0, written: 0, day: 0, scanned: 0 };
+    return { rows: Number(k.rows), hour: Number(k.hour), written: Number(k.written), day: Number(k.day), scanned: Number(k.scanned) };
+  }
+
+  /** What's kept count of at `now`: the hour's writes and the day's reads begun afresh as each starts. @param {number} now */
+  keptAt(now) {
+    const k = this.kept();
+    const hour = Math.floor(now / HOUR_MS);
+    const day = Math.floor(now / DAY_MS);
+    if (k.hour !== hour) [k.hour, k.written] = [hour, 0];
+    if (k.day !== day) [k.day, k.scanned] = [day, 0];
+    return k;
+  }
+
+  /** The counts stored, their own row counted with the writes. @param {TallyKept} k */
+  store(k) {
+    k.written++;
+    this.ctx.storage.sql.exec(
+      'INSERT INTO kept (id, rows, hour, written, day, scanned) VALUES (1, ?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET rows = excluded.rows, hour = excluded.hour, written = excluded.written, day = excluded.day, scanned = excluded.scanned',
+      k.rows,
+      k.hour,
+      k.written,
+      k.day,
+      k.scanned,
+    );
+  }
+
+  /**
+   * Every sum, as JSON: from memory once loaded, else read through whole
+   * and kept, unless that would take the UTC day of `now` past TALLY_READS
+   * rows read: then null.
+   * @param {number} [now]
+   */
+  read(now = Date.now()) {
+    if (this.json !== null) return this.json;
+    if (!this.sums) {
+      const k = this.keptAt(now);
+      if (k.scanned + k.rows > TALLY_READS) return null;
+      // Row by row into memory and the JSON at once, in the table's order: no more than the sums and their text held together.
+      const c = this.ctx.storage.sql.exec('SELECT v, item, form, ctx, first, r, w FROM tally ORDER BY v, item, form, ctx, first');
+      /** @type {Map<string, [number, number]>} */
+      const sums = new Map();
+      let json = '[';
+      let n = 0;
+      for (const x of c) {
+        const [v, item, form, ctx, first, r, w] = [Number(x.v), String(x.item), String(x.form), String(x.ctx), Number(x.first), Number(x.r), Number(x.w)];
+        sums.set(sumKey(v, item, form, ctx, first), [r, w]);
+        json += `${n++ ? ',' : ''}${rowJson(v, item, form, ctx, first, r, w)}`;
+      }
+      // (The cursor's count is whole once every row is given.)
+      k.scanned += c.rowsRead ?? n;
+      // (Its own row written whatever the hour's writes: every read through is counted.)
+      this.store(k);
+      this.sums = sums;
+      this.sorted = true;
+      this.json = `${json}]`;
+      return this.json;
+    }
+    // A sum started since went at the end: put in the table's order, once.
+    if (!this.sorted) {
+      const sums = this.sums;
+      this.sums = new Map([...sums.keys()].sort().map((key) => [key, /** @type {[number, number]} */ (sums.get(key))]));
+      this.sorted = true;
+    }
+    let json = '[';
+    let n = 0;
+    for (const [key, rw] of this.sums) json += `${n++ ? ',' : ''}${sumJson(key, rw)}`;
+    this.json = `${json}]`;
+    return this.json;
+  }
+
+  /**
+   * A batch's answers added to their sums, each sum written once however
+   * often it comes in the batch, in the UTC hour of `now`; one past
+   * TALLY_ROWS starts none, and once the hour's writes are spent (`spent`)
+   * nothing is written. With the batch's `id`, one whose id came in the
+   * last TALLY_SEEN_MS adds nothing; otherwise its id is kept with the sums,
+   * in the same transaction, and the oldest past TALLY_SEEN_MS let go of
+   * (TALLY_PRUNE at most). Whether it was added, and whether the hour's
+   * writes are spent.
+   * @param {number} v @param {Tallied[]} answers @param {number} [now] @param {string} [id]
+   */
+  add(v, answers, now = Date.now(), id) {
+    const sql = this.ctx.storage.sql;
+    const k = this.keptAt(now);
+    if (spent(k)) return { added: false, spent: true };
+    /** @type {Map<string, { key: [number, string, string, string, number], r: number, w: number }>} */
+    const sums = new Map();
+    for (const [item, form, ctx, first, outcome] of answers) {
+      const name = sumKey(v, item, form, ctx, first);
+      const s = sums.get(name) ?? { key: /** @type {[number, string, string, string, number]} */ ([v, item, form, ctx, first]), r: 0, w: 0 };
+      s[outcome]++;
+      sums.set(name, s);
+    }
+    /** Each sum written, as it now stands. @type {[string, [number, number]][]} */
+    const done = [];
+    /** Whether the batch is new, and so written. */
+    const write = () => {
+      if (id !== undefined) {
+        if (sql.exec('SELECT 1 FROM seen WHERE id = ?', id).toArray().length) return false;
+        k.written += sql.exec('INSERT INTO seen (id, at) VALUES (?, ?)', id, now).rowsWritten ?? 1;
+        k.written += sql.exec('DELETE FROM seen WHERE id IN (SELECT id FROM seen WHERE at < ? ORDER BY at LIMIT ?)', now - TALLY_SEEN_MS, TALLY_PRUNE).rowsWritten ?? 0;
+      }
+      for (const [name, { key, r, w }] of sums) {
+        // Under TALLY_ROWS a sum is added to or started; past it only added to.
+        const open = k.rows < TALLY_ROWS;
+        const c = open
+          ? sql.exec(
+              'INSERT INTO tally (v, item, form, ctx, first, r, w) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (v, item, form, ctx, first) DO UPDATE SET r = r + excluded.r, w = w + excluded.w RETURNING r, w',
+              ...key,
+              r,
+              w,
+            )
+          : sql.exec('UPDATE tally SET r = r + ?, w = w + ? WHERE v = ? AND item = ? AND form = ? AND ctx = ? AND first = ? RETURNING r, w', r, w, ...key);
+        const got = c.toArray()[0];
+        k.written += c.rowsWritten ?? (got ? 1 : 0);
+        if (!got) continue;
+        /** @type {[number, number]} */
+        const sum = [Number(got.r), Number(got.w)];
+        // A sum started holds this batch's answers alone; one added to held some already (none is kept at nought).
+        if (open && sum[0] === r && sum[1] === w) k.rows++;
+        done.push([name, sum]);
+      }
+      this.store(k);
+      return true;
+    };
+    const added = this.ctx.storage.transactionSync ? this.ctx.storage.transactionSync(write) : write();
+    if (!added) return { added: false, spent: spent(k) };
+    // Memory brought up to date once the writes are in (one that failed leaves it as it was).
+    if (this.sums && done.length) {
+      for (const [name, sum] of done) {
+        if (!this.sums.has(name)) this.sorted = false;
+        this.sums.set(name, sum);
+      }
+      this.json = null;
+    }
+    return { added: true, spent: spent(k) };
+  }
+}
+
+/** Until when (ms) the tally's writes are spent, as its Object last said: this isolate's, to the end of that UTC hour. */
+let tallySpentUntil = 0;
+
+/**
+ * A request for the tally, passed to its Object; null for any other path.
+ * @param {Request} request @param {URL} url @param {Env} env @param {Record<string, string>} headers
+ */
+async function tally(request, url, env, headers) {
+  if (url.pathname !== '/tally') return null;
+  const write = request.method === 'POST';
+  if (!write && request.method !== 'GET') return new Response(null, { status: 404, headers });
+  if (write && Number(request.headers.get('Content-Length') ?? 0) > MAX_TALLY) return new Response(null, { status: 413, headers });
+  // The hour's writes spent: taken and dropped here, as the Object would, without waking it or spending a limit.
+  if (write && Date.now() < tallySpentUntil) return new Response(null, { status: 204, headers });
+  const key = addressKey(request.headers.get('CF-Connecting-IP') ?? '');
+  // The tally's own limit first: a batch it turns away leaves the address's matchmaking allowance alone.
+  for (const limit of write ? [env.TALLY_WRITES, env.PER_ADDRESS] : [env.PER_ADDRESS])
+    if (!(await limit.limit({ key })).success) return new Response(null, { status: 429, headers: { ...headers, 'Retry-After': '60' } });
+  // Western Europe, as the matchmaking's.
+  const store = env.TALLY.get(env.TALLY.idFromName('all'), { locationHint: 'weur' });
+  if (!write) {
+    const r = await store.fetch(new Request(request.url));
+    return new Response(r.body, { status: r.status, headers: { ...headers, ...(r.status === 200 ? { 'Content-Type': 'application/json' } : {}) } });
+  }
+  const body = await upTo(request.body, MAX_TALLY);
+  if (!body) return new Response(null, { status: 413, headers });
+  const batch = tallied(body);
+  if (!batch) return new Response(null, { status: 400, headers });
+  // Nothing left once the answers for items the game doesn't have are dropped: taken, the Object left asleep.
+  if (!batch.a.length) return new Response(null, { status: 204, headers });
+  // Only what was checked goes on, as checked: nothing else of the request.
+  const r = await store.fetch(new Request(request.url, { method: 'POST', body: JSON.stringify(batch) }));
+  const until = Number(r.headers.get(TALLY_SPENT) ?? 0);
+  if (until > tallySpentUntil) tallySpentUntil = until;
+  return new Response(null, { status: r.status, headers });
+}
+
 /** @param {Request} request @param {Env} env */
 export async function answer(request, env) {
   const origin = request.headers.get('Origin') ?? '';
   if (origin !== LIVE && !LOCAL.test(origin)) return new Response(null, { status: 403 });
   const headers = { 'Access-Control-Allow-Origin': origin, Vary: 'Origin', 'Cache-Control': 'no-store' };
   const url = new URL(request.url);
-  const kept = await keep(request, url, env, headers);
+  const kept = (await keep(request, url, env, headers)) ?? (await tally(request, url, env, headers));
   if (kept) return kept;
   const socket = url.pathname === '/peerjs' && request.headers.get('Upgrade')?.toLowerCase() === 'websocket';
   const newId = url.pathname === '/peerjs/id' && request.method === 'GET';

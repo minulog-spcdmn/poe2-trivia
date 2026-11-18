@@ -16,8 +16,14 @@
 // (GoatCounter left some out), `first` (a first load, with nothing new
 // since a read before it) and `alert` (joining and the game's own scripts
 // failing far more than usual).
+//
+// And a made-up item tally for the Items view (demoTally), as the
+// matchmaking server keeps it: most items answered in every mode, the
+// deeper Delve's bands missed more for each, a handful hardly anyone knows,
+// a few hardly asked, and two ids no item has.
 
 import { MOMENTS, SOFTWARE, framesEvent, readFramesPath, visitEvent } from '../lib/stutter.ts';
+import type { TallyRow } from '../lib/itemTallyRank.ts';
 import type { Named } from './api.ts';
 import { keptChanges } from './changes.ts';
 import { sameSites, spikesOf, stepsOf } from './insights.ts';
@@ -536,4 +542,70 @@ export function demoSlices(read: Read): Slices {
     systems: spread(read.systems),
     depths: { locations: depths(read.countries), systems: depths(read.systems) },
   };
+}
+
+/** Delve's bands the made-up runs reach (lib/itemTally.ts BANDS has twenty), each a little less answered than the one before. */
+const TALLY_BANDS = 14;
+/** The other contexts, and how many answers each item has in them against Delve alone's first band. */
+const TALLY_OTHERS: [ctx: string, weight: number][] = [
+  ['t-cruel', 0.5],
+  ['t-merciless', 0.35],
+  ['t-eternal', 0.2],
+  ['t-custom', 0.08],
+  ['r-cruel', 0.7],
+  ['r-merciless', 0.5],
+  ['r-eternal', 0.25],
+  ['r-custom', 0.1],
+  ['practice', 0.9],
+];
+/** Ids no item has, as someone making them up would send. */
+const MADE_UP_IDS = ['0badc0ffee00', 'deadbeef1234'];
+
+/**
+ * A made-up item tally (signal/worker.js Tally's rows) over `ids`, the ids
+ * items.json has: each item a knowledge of its own, its misses rising with
+ * the depth band and in art questions, and on first meetings; one in twenty
+ * never asked, six hardly anyone knows, five hardly asked, and two ids no
+ * item has. The same rows every time.
+ */
+export function demoTally(ids: readonly string[]): TallyRow[] {
+  const rnd = stream(seedOf('tally'));
+  const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
+  const rows: TallyRow[] = [];
+  const add = (item: string, form: 'n' | 'a', ctx: string, first: 0 | 1, n: number, miss: number) => {
+    if (n <= 0) return;
+    const w = ofThem(n, miss, rnd);
+    rows.push({ v: 1, item, form, ctx, first, r: n - w, w });
+  };
+  const asked = ids.filter(() => rnd() > 0.05);
+  asked.forEach((item, i) => {
+    // How well players know it: most fairly well, a long tail less.
+    const normal = Math.sqrt(-2 * Math.log(1 - rnd())) * Math.cos(2 * Math.PI * rnd());
+    const obscure = i % 80 === 7;
+    const known = obscure ? -1.6 : 1.4 + 0.8 * normal;
+    const few = i % 97 === 11;
+    // How often it comes up: some items more than others.
+    const often = few ? 0.04 : 0.6 + rnd();
+    for (const form of ['n', 'a'] as const) {
+      // Finding the art for a name is a little harder.
+      const k = known - (form === 'a' ? 0.35 : 0);
+      for (const first of [0, 1] as const) {
+        // Once met, it's known better.
+        const kk = k - (first ? 0.7 : 0);
+        const share = first ? 0.35 : 1;
+        for (let b = 1; b <= TALLY_BANDS; b++) {
+          const n = around(14 * often * share * 0.82 ** (b - 1), rnd);
+          // Deeper bands deal harder questions: each missed more.
+          add(item, form, `d${b}`, first, n, sigmoid(-(kk - 0.22 * (b - 1))));
+          if (b <= 8) add(item, form, `g${b}`, first, around(5 * often * share * 0.78 ** (b - 1), rnd), sigmoid(-(kk + 0.3 - 0.2 * (b - 1))));
+        }
+        for (const [ctx, weight] of TALLY_OTHERS) add(item, form, ctx, first, around(14 * often * share * weight, rnd), sigmoid(-(kk + (ctx.endsWith('cruel') ? 0.4 : ctx.endsWith('eternal') ? -0.5 : 0))));
+      }
+    }
+    // Today's unique asks one item a day.
+    if (i % 17 === 3) add(item, 'n', 'daily', rnd() < 0.5 ? 1 : 0, around(60, rnd), sigmoid(-known));
+  });
+  // A script's, making ids up: a few sums each.
+  for (const item of MADE_UP_IDS) for (const ctx of ['d1', 'practice', 't-cruel']) add(item, 'n', ctx, 1, 1 + Math.floor(rnd() * 3), 0.5);
+  return rows;
 }

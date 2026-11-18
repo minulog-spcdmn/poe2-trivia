@@ -61,6 +61,7 @@ import { CREATOR_TITLE } from './site';
 import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, livesOf, pausedUsed, standingIds, type CardFind, type FindKind } from './delve';
 import { GameCounts, RoomOff, Steps, countEvent, countFailure, countGameFrames, countStep, counting, hiddenSince, markActive, type Failure, type JoinVia } from './count';
 import { loadLooks } from './looks';
+import { loadTally, tallyAsked } from './tallyLoader';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
 import { keeping } from './keptCopy';
@@ -3103,22 +3104,24 @@ class Session {
   /**
    * Delve: this device's run goes into its records: alone as it falls,
    * together once nobody stands (a run left before that is kept as left, see
-   * recordLeaving). Hot-seat runs are always alone.
+   * recordLeaving). Hot-seat runs are always alone. Whether a run of this
+   * device's ended here.
    */
-  private noteRun(prev: GameState | null, next: GameState) {
+  private noteRun(prev: GameState | null, next: GameState): boolean {
     const d = next.delve;
-    if (!d) return;
+    if (!d) return false;
     if (prev?.delve?.startedAt !== d.startedAt) {
       this.delveResult = null;
       this.bestAtStart = bestOf(loadRecords(), d.entrants.length < 2, d.ruleset)?.depth ?? null;
     }
     const run = runEvent(prev, next, this.myPlayerId, this.mode === 'local');
-    if (!run) return;
+    if (!run) return false;
     const r = recordRun(run);
-    if (!r) return;
+    if (!r) return true;
     this.noteAchievements(gameOf(next));
     const was = this.delveResult?.id === run.id ? this.delveResult : null;
     this.delveResult = { id: run.id, depth: run.depth, previousBest: was ? was.previousBest : r.previousBest, best: was ? was.best : r.best };
+    return true;
   }
 
   private gameCounts = new GameCounts();
@@ -3153,9 +3156,10 @@ class Session {
     this.noteClock(next);
     this.notePlay(prev, next);
     countGameFrames(next);
-    this.noteRun(prev, next);
+    // (A game over, or this device's run.)
+    const ended = this.noteRun(prev, next) || (next.phase === 'over' && !!prev && prev.phase !== 'over');
     this.onNewState(prev, next);
-    this.noteEncounter(prev, next);
+    this.noteEncounter(prev, next, ended);
     this.noteMoments(prev, next);
   }
 
@@ -3193,46 +3197,77 @@ class Session {
     }
   }
 
+  /** The item tally (lib/itemTally.ts), loaded and started with the first game begun, where visits are counted (tallyLoader.ts). */
+  private tallyFor(s: GameState) {
+    if (s.phase !== 'lobby') void loadTally();
+  }
+  /** Sends what the item tally holds, if it's loaded, a game or run having ended or been left: once what waits for calm is in (whenCalm keeps the order asked in). */
+  private sendTally() {
+    const tally = tallyAsked();
+    if (tally) whenCalm(() => void tally.then((t) => t?.sendTally()));
+  }
+
   /**
    * A question just revealed goes into this browser's codex; so does one
    * dynamite just blasted away, as seen (together, as a miss for a player
-   * who struck an option on it first: codex.ts blastedEncounter).
+   * who struck an option on it first: codex.ts blastedEncounter). The item
+   * tally hears of each from the codex, with what the encounter can't hold
+   * beside it (codex.ts blastAside, screenAside), and sends what it holds
+   * once the game or this device's run has ended (`ended`), after the
+   * answers still waiting for calm.
    */
-  private noteEncounter(prev: GameState | null, next: GameState) {
+  private noteEncounter(prev: GameState | null, next: GameState, ended = false) {
     const me = this.myPlayerId;
     const hotSeat = this.mode === 'local';
     const blast = blastedAway(prev, next);
     // (Only the items this build has: online, the reveal is the host's word.)
     const known = (id: string) => engine.byId.has(id);
+    // Listening by the time the codex takes the encounter in, as a rule (the
+    // codex never waits for it: an answer met while it loads goes untallied).
+    this.tallyFor(next);
+    // After the codex's chunk is in, so a reveal's encounter still on its way
+    // there (its import begun on an earlier state) waits for calm first.
+    const send = () => {
+      const go = () => this.sendTally();
+      if (ended) void import('./codex').then(go, go);
+    };
     // Written once the moment has played out, or as the codex is read
     // (codex.ts recordWhenCalm): the whole codex is read and written again
     // for it, a dozen ms or more on a phone with a full one, which held a
     // frame of the reveal as it began.
     if (blast) {
       void import('./codex')
-        .then(({ blastedEncounter, keepable, recordWhenCalm }) => {
+        .then(({ blastAside, blastedEncounter, keepable, recordWhenCalm }) => {
           const e = keepable(blastedEncounter(next, blast, me, hotSeat), known);
-          if (e) recordWhenCalm(e);
+          if (e) recordWhenCalm(e, undefined, blastAside(next, blast, me, hotSeat, e));
+          send();
         })
         .catch((err) => console.warn('codex', err));
       return;
     }
     // Not after a refresh into a reveal: it was likely counted before the
     // refresh. The codex itself skips a question it already has (a rejoin).
-    if (!prev || next.phase !== 'reveal') return;
+    if (!prev || next.phase !== 'reveal') {
+      send();
+      return;
+    }
     const qid = next.question?.askedAt;
-    if (prev.phase === 'reveal' && prev.question?.askedAt === qid) return;
+    if (prev.phase === 'reveal' && prev.question?.askedAt === qid) {
+      send();
+      return;
+    }
     const ms = this.answered?.qid === qid ? this.answered?.ms : undefined;
     // The game what it earns is earned in, as it is now: by the time the page is calm, Again may have begun the next.
     const game = gameOf(next);
     // Its own chunk: the first download stays small.
     // After a redeploy the old chunk is gone; the encounter just goes unrecorded.
     void import('./codex')
-      .then(({ encounterAt, keepable, recordWhenCalm }) => {
+      .then(({ encounterAt, keepable, recordWhenCalm, screenAside }) => {
         const met = encounterAt(next, me, hotSeat, ms);
         const e = met && keepable(met, known);
         // (Then the achievements, checked with it in the codex.)
-        if (e) recordWhenCalm(e, () => this.noteAchievements(game));
+        if (e) recordWhenCalm(e, () => this.noteAchievements(game), screenAside(next, hotSeat, me, e));
+        send();
       })
       .catch((err) => console.warn('codex', err));
   }
@@ -3789,8 +3824,9 @@ class Session {
     this.peerEpoch++;
     this.closeAsked = false;
     this.recordLeaving();
-    // The game's frames, as far as they got, counted as it's left (count.ts).
+    // The game's frames, as far as they got, counted as it's left (count.ts); its answers into the item tally sent.
     countGameFrames(null);
+    this.sendTally();
     // A join never let in leaves the saved name as it was (turned down, given up, left).
     this.nameToKeep.dropped();
     // A new attempt (or leaving) makes the last one's errors moot.
