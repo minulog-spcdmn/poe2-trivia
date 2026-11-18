@@ -706,6 +706,24 @@ test('Bring it back says when everything kept with the passkey is here already',
 
 // ---- the codex erased ---------------------------------------------------------------
 
+test('Delve’s fossils go with the backup, through sync’s shared table: found on a lost phone, a new one brings them back', async () => {
+  const { TAKEN_NAMES } = await import('../src/lib/sync/shared.ts');
+  const { keepFossils, loadFossils } = await import('../src/lib/fossilStore.ts');
+  assert.ok(TAKEN_NAMES.includes('fossils'), 'a find is a change the backup hears');
+  serve();
+  const one = fresh();
+  await on('phone');
+  await keeps(one);
+  play();
+  assert.deepEqual(keepFossils(['jagged'], 9, false, 1000), ['jagged']);
+  await send();
+  wipe('phone');
+  await on('new phone');
+  assert.deepEqual(loadFossils().found, {});
+  await bringBackWith(one);
+  assert.deepEqual(loadFossils().found, { jagged: { at: 1000, depth: 9 } });
+});
+
 test('the codex erased leaves the backup alone: the next save is a new entry, and Bring it back brings the erased progress back', async () => {
   serve();
   const one = fresh();
