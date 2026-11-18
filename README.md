@@ -89,6 +89,9 @@ with the sites people came from.
 
 ## Development
 
+The whole project on one page, for a first look at how its parts fit together:
+[docs/project-map.svg](docs/project-map.svg) (a PNG copy beside it).
+
 ```sh
 npm install
 npm run dev        # local dev server (its own rooms)
