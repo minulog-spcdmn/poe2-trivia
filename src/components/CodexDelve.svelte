@@ -1,8 +1,5 @@
 <script lang="ts">
-  import { fade } from 'svelte/transition';
   import { engine } from '../lib/session.svelte';
-  import { tick } from 'svelte';
-  import { calm, motion } from '../lib/motion.svelte';
   import type { Codex } from '../lib/codex';
   import {
     CATEGORY_MIN,
@@ -17,7 +14,6 @@
     findStats,
     leadingKind,
     mergeClimbs,
-    milestones,
     otherRules,
     runStory,
     runsOf,
@@ -36,6 +32,8 @@
   import DelveRunLog from './codex/DelveRunLog.svelte';
   import CodexMedallion from './codex/CodexMedallion.svelte';
   import EmptyPlate from './codex/EmptyPlate.svelte';
+  import DelveFossils from './codex/DelveFossils.svelte';
+  import DelveZones from './codex/DelveZones.svelte';
   import { circleOf } from './circles';
 
   /** The circle behind it (lib/circlePlaces.ts). */
@@ -53,9 +51,14 @@
   // what kills you, the deadliest items, finds and wards (their notes say
   // so). Zones ahead are never named: they are a surprise.
   // codexStats.ts says what each number means.
-  let { codex, records, onopen, onbegin }: { codex: Codex; records: DelveRecords; onopen: (item: Item) => void; onbegin: () => void } = $props();
+  let {
+    codex,
+    records,
+    fossils = undefined,
+    onopen,
+    onbegin,
+  }: { codex: Codex; records: DelveRecords; fossils?: import('../lib/fossilStore').FossilStore; onopen: (item: Item) => void; onbegin: () => void } = $props();
 
-  const date = (t: number) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   const fmt = (n: number) => n.toLocaleString();
   const usual = (m: number) => (Number.isInteger(m) ? `${m}` : m.toFixed(1));
   const word = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : many);
@@ -157,26 +160,7 @@
 
   /** Alone and together as one: each new deepest, and the zones they reached. */
   const climb = $derived(mergeClimbs(climbOf(records, true), climbOf(records, false)));
-  const steps = $derived(milestones(climb));
   const zones = $derived(zonesReached(climb));
-  const ZONE_ROWS = 6;
-  let allZones = $state(false);
-  const zoneRows = $derived(allZones || zones.reached.length <= ZONE_ROWS + 1 ? [...zones.reached].reverse() : zones.reached.slice(-ZONE_ROWS).reverse());
-  const zonesHidden = $derived(zones.reached.length - zoneRows.length);
-  let zoneList = $state<HTMLElement>();
-  /** All the zones shown, the list opens to its full height as the new rows fade in (as the run log's). */
-  async function showAllZones() {
-    const el = zoneList;
-    const from = el?.offsetHeight ?? 0;
-    allZones = true;
-    await tick();
-    if (!el || motion.still) return;
-    const to = el.offsetHeight;
-    el.style.overflow = 'clip';
-    const open = el.animate({ height: [`${from}px`, `${to}px`] }, { duration: 350, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
-    await open.finished.catch(() => {});
-    el.style.overflow = '';
-  }
 </script>
 
 {#snippet meter(share: number)}
@@ -189,38 +173,6 @@
 
 {#snippet glyph(category: string)}
   <span class="glyph" style:--src="url('{categoryGlyph(category)}')" aria-hidden="true"></span>
-{/snippet}
-
-{#snippet zonesPanel()}
-        <section class="panel" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="zone-h">
-          <header><h2 id="zone-h">Zones reached</h2>{#if zones.biomes}<span class="col-label">{zones.biomes} {word(zones.biomes, 'biome')}</span>{/if}</header>
-          {#if zones.reached.length}
-            {#if steps.length > 1}
-              <p class="climb">
-                <span class="climb-label">Deepest over time</span>
-                <span class="climb-steps"
-                  >{#each steps as s, i (i)}{#if i}<span class="arrow" aria-hidden="true"> → </span><span class="sr-only">, then </span>{/if}{#if s === null}<span
-                        class="gap">…</span
-                      >{:else}<span class="n">{shownDepth(s)}</span>{/if}{/each}</span
-                >
-              </p>
-            {/if}
-            <ol class="list zones" bind:this={zoneList}>
-              {#each zoneRows as z (z.k)}
-                <li in:fade={calm({ duration: allZones ? 200 : 0 })}>
-                  <span class="z-depth n">{shownDepth(z.depth)}</span>
-                  <span class="l-name"><span>{z.name}</span></span>
-                  <span class="z-when n">{date(z.at)}</span>
-                </li>
-              {/each}
-            </ol>
-            {#if zonesHidden > 0}
-              <button class="more" onclick={showAllZones}>Show all {zones.reached.length} zones</button>
-            {/if}
-          {:else}
-            <p class="hint">The zones you reach, and when you first got there, show up here.</p>
-          {/if}
-        </section>
 {/snippet}
 
 {#snippet rowList(list: Row[])}
@@ -318,6 +270,12 @@
         <DelveLastRun run={last} {story} median={lastOf.median} best={lastOf.best} {onopen} />
       {/if}
 
+      <!-- The set of 25 fossils Delve turns up (lib/fossils.ts), beside the zones reached: what the descent has given up. -->
+      <div class="found">
+        <DelveFossils store={fossils} />
+        <DelveZones {zones} />
+      </div>
+
       {#if allRuns >= MIN_RUNS}
       <div class="split">
         <section class="panel by-cat" use:backdropShadow={{ fill: 'linear' }} aria-labelledby="kill-h">
@@ -392,8 +350,6 @@
         {#if teamed}{@render teamPanel()}{/if}
 
         {@render findPanels()}
-
-        {@render zonesPanel()}
       </div>
       {:else}
         <p class="waiting">
@@ -403,7 +359,6 @@
         <div class="insights">
           {#if teamed}{@render teamPanel()}{/if}
           {@render findPanels()}
-          {@render zonesPanel()}
         </div>
       {/if}
     {:else}
@@ -414,6 +369,7 @@
           <button class="btn primary" onclick={onbegin}>Begin the descent</button>
         </div>
       </EmptyPlate>
+      <DelveFossils store={fossils} />
     {/if}
 
     <DelveRunLog {runs} {others} {byRun} total={allRuns} {onopen} />
@@ -432,17 +388,6 @@
     font-style: normal;
     font-variant-numeric: lining-nums;
     font-size: 0.88em;
-  }
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-    border: 0;
   }
 
   /* ---- summary: your best between four figures ---- */
@@ -538,6 +483,25 @@
   }
 
   /* ---- panels ---- */
+  /* The fossil set as wide as it needs, the zones reached in the rest of the row. */
+  .found {
+    display: grid;
+    grid-template-columns: minmax(0, 35rem) minmax(0, 1fr);
+    align-items: start;
+    gap: 1rem;
+  }
+  /*
+   * Beside the fossils, the zones take their height and never set it: held
+   * to its size, the card asks the row for nothing (but room for its
+   * folded descent, should the fossils ever stand shorter), so all of a
+   * long descent shown scrolls inside it and leaves no gap under the
+   * fossils. Over a phone's width the two stack, each as tall as it is.
+   */
+  .found > :global(.zones) {
+    align-self: stretch;
+    contain: size;
+    min-height: 27rem;
+  }
   .split {
     display: grid;
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
@@ -749,7 +713,7 @@
     filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8));
   }
 
-  /* A name with a note under it and a figure on the right: finds, zones. */
+  /* A name with a note under it and a figure on the right: finds. */
   .list {
     list-style: none;
     margin: 0;
@@ -790,75 +754,19 @@
     font-size: 1.05rem;
     color: var(--gold-hi);
   }
-  .zones li {
-    padding: 0.3rem 0;
-  }
-  .z-depth {
-    width: 2.2rem;
-    text-align: right;
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: var(--gold-hi);
-  }
-  .z-when {
-    font-size: 0.75rem;
-    color: var(--muted);
-    white-space: nowrap;
-  }
-  .climb {
-    margin: 0 0 0.6rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-  }
-  .climb-label {
-    font-family: var(--font-display);
-    font-size: 0.72rem;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: #d8a26a;
-  }
-  .climb-steps {
-    font-size: 1.05rem;
-    color: var(--gold-hi);
-  }
-  .climb-steps .n {
-    font-weight: 700;
-  }
-  .arrow,
-  .gap {
-    color: var(--gold-lo);
-  }
-  .more {
-    align-self: center;
-    display: block;
-    margin: 0.3rem auto 0;
-    min-height: 44px;
-    padding: 0 1rem;
-    border: 0;
-    background: none;
-    font-family: var(--font-display);
-    font-size: 0.78rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--gold);
-    text-decoration: underline 1px rgba(201, 164, 92, 0.4);
-    text-underline-offset: 0.35em;
-    cursor: pointer;
-    transition: color 0.2s;
-  }
-  .more:hover {
-    color: var(--gold-hi);
-    text-decoration-color: var(--gold-hi);
-  }
 
   @media (max-width: 900px) {
     .summary {
       grid-template-columns: 1fr 1fr;
       row-gap: 1rem;
     }
+    .found,
     .split {
       grid-template-columns: 1fr;
+    }
+    .found > :global(.zones) {
+      contain: none;
+      min-height: 0;
     }
   }
   @media (max-width: 560px) {

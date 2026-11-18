@@ -128,6 +128,23 @@
 }
 
 :root {
+  /* Fossils: the one amber every fossil surface draws on (the card's pane,
+     the question's mark, the find moment, the codex, the end screen), as
+     the fossils' own icons are lit (direction A, "held to the lamp"): the
+     light's heart, its middle and its edge through the amber, the resin's
+     dark, and the note's ink; a rare's deeper, red-gold, with gold flecks.
+     lib/fossilFlight.ts takes the same for its light (tests/fossilPalette). */
+  --fossil-core: #ffe066;
+  --fossil-mid: #ffaa2c;
+  --fossil-edge: #ec6a10;
+  --fossil-resin: #5a2004;
+  --fossil-ink: #ff9a3c;
+  --fossil-rare-core: #ffc43a;
+  --fossil-rare-mid: #f27c1c;
+  --fossil-rare-edge: #c8300c;
+  --fossil-rare-resin: #4a1204;
+  --fossil-rare-ink: #ff7a3a;
+  --fossil-fleck: #fff2c4;
   --bg: #0a0908;
   --line: #3b3024;
   --gold: #c9a45c;
@@ -1100,4 +1117,97 @@ h3,
 }
 [data-bs-fill] {
   --bs-fill-paint: transparent;
+}
+
+/* Find moment: a fossil kept (lib/fossilFlight.ts). The fossil comes out
+   of the name plate's left seal into the circle's heart, whole, in its own
+   art (inside its outline, --outline: its picture's alpha has a haze that an
+   overbright copy shows as a square); a band of lamplight sweeps it; its
+   name is written in beneath, its count under that, and it flies to the
+   line. All of it hangs on the body, outside the game's stage, zoomed as the
+   stage is (global for that). The big light round it is the backdrop's
+   (lights.ts), dithered. */
+.fossil-reveal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+}
+.fossil-reveal .fr-piece {
+  position: absolute;
+  opacity: 0;
+  -webkit-mask: var(--outline, linear-gradient(#000, #000)) center / contain no-repeat;
+  mask: var(--outline, linear-gradient(#000, #000)) center / contain no-repeat;
+}
+.fossil-reveal .fr-art,
+.fossil-reveal .fr-sweep {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+/* The band of lamplight: the fossil again, overbright, under a stripe that slides across it (as glint.ts's). */
+.fossil-reveal .fr-sweep {
+  opacity: 0;
+  filter: brightness(2.2) saturate(1.3);
+  -webkit-mask-image: linear-gradient(105deg, transparent 40%, #000 50%, transparent 60%);
+  mask-image: linear-gradient(105deg, transparent 40%, #000 50%, transparent 60%);
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+  -webkit-mask-position: 100% 0;
+  mask-position: 100% 0;
+}
+/* A rare's second sweep, red-gold. */
+.fossil-reveal .fr-sweep.red {
+  filter: brightness(1.9) sepia(1) saturate(4) hue-rotate(-18deg);
+}
+.fossil-reveal .fr-label {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  opacity: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  text-align: center;
+}
+/* Named as a PoE tooltip names a currency item (its #aa9e82 a shade lighter, to read on the page). */
+.fossil-reveal .fr-name {
+  font-family: var(--font-tooltip);
+  font-size: 1.3rem;
+  line-height: 1.15;
+  color: #b6a98b;
+  --drop-shadow: 0 1px 2px rgba(0, 0, 0, 0.95), 0 0 12px rgba(0, 0, 0, 0.85);
+  text-shadow: var(--drop-shadow-paint, var(--drop-shadow));
+}
+.fossil-reveal .fr-count,
+.fossil-reveal .fr-rare {
+  opacity: 0;
+  font-family: var(--font-cinzel);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  color: var(--text);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.95);
+}
+.fossil-reveal .fr-rare {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--fossil-rare-core);
+}
+.fossil-reveal .fr-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+}
+@media (max-width: 640px), (orientation: landscape) and (max-height: 500px) and (min-width: 561px) {
+  .fossil-reveal .fr-name {
+    font-size: 1.1rem;
+  }
+  .fossil-reveal .fr-count {
+    font-size: 0.72rem;
+  }
 }

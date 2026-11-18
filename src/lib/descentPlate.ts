@@ -57,7 +57,7 @@
 // a glint ringing out as it lands, and the red one appears where your last
 // run ended.
 
-import { at, hatch, line, seeded, star8 } from './arcane.ts';
+import { at, hatch, hollow, line, seeded, star8 } from './arcane.ts';
 import { FINDS_IN_ORDER, shownDepth, type FindKind } from './delve.ts';
 import { STRATA } from './descent.ts';
 import { sigilOf, type Sigil } from './zoneSigils.ts';
@@ -418,23 +418,6 @@ const hatchPoly = (poly: Pt[], angle: number, gap: number, holes: Hole[] = [], p
   hatchSegs(poly, angle, gap, pad)
     .map(([p, q]) => cut([p, q], holes))
     .join('');
-
-/**
- * An empty seal's hollow: the shadow under its upper left rim, a crescent
- * (the circle less the same circle moved down and right, as Luna is cut),
- * shaded in level strokes.
- */
-function hollow(c: Pt, r: number, gap: number): string {
-  const o = r * 0.36;
-  let d = '';
-  for (let y = -r + gap * 0.7; y < r; y += gap) {
-    const x1 = Math.sqrt(r * r - y * y);
-    const dy = y - o;
-    const end = Math.abs(dy) < r ? Math.min(x1, o - Math.sqrt(r * r - dy * dy)) : x1;
-    if (end - 0.35 - (-x1 + 0.35) > 0.35) d += `M${f(c[0] - x1 + 0.35)} ${f(c[1] + y)}H${f(c[0] + end - 0.35)}`;
-  }
-  return d;
-}
 
 /**
  * The ouroboros' ring, measured in its drawing's px (lib/ouroborosArt): the

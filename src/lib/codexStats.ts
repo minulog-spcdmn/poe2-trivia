@@ -287,13 +287,6 @@ export function mergeClimbs(...cs: Frontier[][]): Frontier[] {
   return out;
 }
 
-/** A climb's depths to show in a line, the first and the latest few: [6, null, 20, 35, 43] (null for those left out). */
-export function milestones(climb: Frontier[], max = 5): (number | null)[] {
-  const ds = climb.map((f) => f.depth);
-  if (ds.length <= max) return ds;
-  return [ds[0], null, ...ds.slice(-(max - 1))];
-}
-
 export interface ZoneRisk extends Zone {
   /** Runs that got this deep. */
   reached: number;

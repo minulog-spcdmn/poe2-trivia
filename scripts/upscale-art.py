@@ -11,6 +11,12 @@
 # The originals stay in art-source/items/ (fetch-data puts them there); only
 # those without an upscaled copy yet are done, unless --all.
 #
+# With --fossils it does the Path of Exile fossils instead: art-source/fossils/
+# (scripts/fetch-fossil-art.mjs puts them there) to public/fossils/, the same
+# way. Their 78 px icons are one cell each, so 4x and the one-cell mix.
+#
+# The model runs on the GPU when torch finds a CUDA one, on the CPU otherwise.
+#
 # On its own the model repaints the art (smooth, waxy, painterly). In blind
 # tests the mix at 30% beat 50% and 70% (and the plain model, other models,
 # and the original as it was) on 35 items, small and big alike. Small items
@@ -23,14 +29,20 @@
 # QUALITY came out a third smaller than WebP at 90 and closer to the
 # unencoded picture (SSIM, over 48 items).
 #
-# Setup, once (CPU is enough; the whole set takes about an hour):
+# Setup, once (CPU is enough; the whole set takes about an hour). For a CUDA
+# GPU, install the CUDA build of torch instead (cu128 is for an RTX 50 series;
+# on Windows the scripts are in Scripts/, and the model goes in a subfolder,
+# since Python on Windows reads any .pth file in the venv's own folder as a
+# path list):
 #   python3 -m venv .venv-art
 #   .venv-art/bin/pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   (GPU:) pip install torch --index-url https://download.pytorch.org/whl/cu128
 #   .venv-art/bin/pip install pillow numpy
 #   curl -L -o .venv-art/RealESRGAN_x4plus.pth \
 #     https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth
 # Run:
-#   .venv-art/bin/python scripts/upscale-art.py [--all] [ids...]
+#   .venv-art/bin/python scripts/upscale-art.py [--all] [--fossils] [ids...]
+# (ART_MODEL=<file> names the model if it is not at .venv-art/.)
 # With ART_KEEP=<folder> set, the model's own 4x pictures are kept there too
 # (lossless), and an item whose picture is kept there is made from it without
 # running the model, so a later change to the mix or the scale takes minutes:
@@ -114,22 +126,25 @@ class RRDBNet(nn.Module):
         return self.conv_last(self.lrelu(self.conv_hr(feat)))
 
 
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
 def load_model():
     sd = torch.load(MODEL, map_location='cpu', weights_only=True)
     net = RRDBNet()
     net.load_state_dict(sd.get('params_ema', sd.get('params', sd)), strict=True)
-    return net.eval()
+    return net.eval().to(DEVICE)
 
 
 def run(net, rgb):
     """rgb (h, w, 3) uint8 -> (4h, 4w, 3) uint8. Mirrored padding gives the edges context."""
-    t = torch.from_numpy(rgb.copy()).permute(2, 0, 1)[None].float() / 255
+    t = torch.from_numpy(rgb.copy()).permute(2, 0, 1)[None].float().to(DEVICE) / 255
     p = 8
     t = F.pad(t, (p, p, p, p), mode='reflect')
     with torch.no_grad():
         o = net(t).clamp(0, 1)
     o = o[:, :, 4 * p : -4 * p, 4 * p : -4 * p]
-    return (o[0].permute(1, 2, 0).numpy() * 255).round().astype(np.uint8)
+    return (o[0].permute(1, 2, 0).cpu().numpy() * 255).round().astype(np.uint8)
 
 
 def upscale(net, src, out):
@@ -235,16 +250,21 @@ def done(iid):
 
 
 def main():
+    global SRC_DIR, OUT_DIR
     args = sys.argv[1:]
     redo = '--all' in args
+    if '--fossils' in args:
+        SRC_DIR = os.path.join(ROOT, 'art-source', 'fossils')
+        OUT_DIR = os.path.join(ROOT, 'public', 'fossils')
     ids = [a for a in args if not a.startswith('--')]
     if not ids:
         ids = sorted(f[: -len('.webp')] for f in os.listdir(SRC_DIR) if f.endswith('.webp'))
     todo = [i for i in ids if redo or not done(i)]
     if not todo:
-        print('All item art is upscaled.')
+        print('All fossil art is upscaled.' if '--fossils' in args else 'All item art is upscaled.')
         return
     os.makedirs(OUT_DIR, exist_ok=True)
+    print(f'Model on {DEVICE}', flush=True)
     torch.set_num_threads(os.cpu_count() or 4)
     keep = os.environ.get('ART_KEEP')
     # The model only loads if some item has no kept picture to start from.

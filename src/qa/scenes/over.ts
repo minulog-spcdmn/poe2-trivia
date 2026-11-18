@@ -15,6 +15,8 @@ import type { Built, Scene, Seat, Step } from '../scene.ts';
 import type { PlateName } from '../../lib/plates/index.ts';
 import type { SizeKey } from '../sizes.ts';
 import type { Standing } from '../../lib/presence.ts';
+import { FOSSILS, type FossilId } from '../../lib/fossils.ts';
+import { serializeFossils, type FossilStore } from '../../lib/fossilStore.ts';
 
 export { pid };
 export type Mode = 'host' | 'client' | 'local';
@@ -43,6 +45,8 @@ export interface EndScene {
   runs?: DelveRun[];
   /** Items this device met before, besides its log (../scene.ts' met). */
   met?: string[] | number;
+  /** Other things this device keeps, by their storage names (../scene.ts' stored): its fossils. */
+  stored?: Record<string, string>;
   /** What comes in once the screen is up (../scene.ts' steps): an achievement judged late, the codex read again. */
   steps?: Step[];
 }
@@ -464,6 +468,24 @@ function anyTogether(v: Values): AsSet {
 const D = 'desktop';
 const P = 'phone';
 
+/**
+ * This device's fossils as the run ends (lib/fossilStore.ts): the first `n` of the set, this run's (`run`, kept at
+ * its reveal) among them, the latest; the rest a few days apart before it.
+ */
+function heldFossils(n: number, run?: FossilId): { stored: Record<string, string> } {
+  const ids = [...(run ? [run] : []), ...FOSSILS.map((f) => f.id).filter((f) => f !== run)].slice(0, n);
+  const found: FossilStore['found'] = {};
+  for (const [i, f] of ids.entries()) found[f] = { at: f === run ? RUN + 22 : RUN - (ids.length - i) * 3 * 86_400_000, depth: 7 + i };
+  return { stored: { fossils: serializeFossils({ found }) } };
+}
+/** A run alone that met a fossil: given it at `depth` (engine depth), or its card picked and answered wrong there. */
+function soloFossil(o: { found?: FossilId; missed?: number }): GameState {
+  const s = solo();
+  if (o.found) s.delve!.fossils = [{ id: o.found, depth: 22, at: RUN + 22, to: [K] }];
+  if (o.missed) s.delve!.fossilsMissed = [{ depth: o.missed, tier: 'common', to: [K] }];
+  return s;
+}
+
 /** The handoff's boards, each state once (its boards at the other sizes come with it), and the edge cases beside them: normal games first, then Delve. */
 export function endScenes(): EndScene[] {
   const dannig = pid('Dannig');
@@ -540,6 +562,58 @@ export function endScenes(): EndScene[] {
       delveResult: measured(45, 37, true),
       log: [miss(10, 'Headhunter', 28), miss(20, 'Briarpatch', 39), miss(30, "Kaom's Heart", 45, { find: 'azurite', lives: 1, wards: 1 })],
       runs: runs([16, 24, 11, 18, 22, 13, 20, 21, 30], 45, false),
+    },
+    // Every Delve end screen's fossil line (GameOver.svelte): a fossil kept
+    // this run as its prize (a rare one; a common one together), under where
+    // it reached and a usual the run lifted (its line, one only); a fossil's
+    // card answered wrong; no fossil this run (the set's count, last); the set
+    // complete. (A first run with none yet: d-first.)
+    {
+      key: 'd-fossils',
+      label: 'Alone: a rare fossil kept, the usual lifted',
+      short: 'Alone: a rare fossil kept',
+      view: D,
+      mode: 'local',
+      me: null,
+      state: soloFossil({ found: 'bloodstained' }),
+      delveResult: measured(23, 27, false),
+      log: soloLog(),
+      runs: runs([9, 12, 27, 11, 14, 16], 23, false),
+      ...heldFossils(7, 'bloodstained'),
+    },
+    { key: 'd-fossil-missed', label: 'Alone: a fossil’s card answered wrong', short: 'Alone: a fossil lost', view: D, mode: 'local', me: null, state: soloFossil({ missed: 15 }), ...solo23(), ...heldFossils(6) },
+    { key: 'd-fossils-none', label: 'Alone: no fossil this run, 6 of 25', short: 'Alone: no fossil, 6 of 25', view: D, mode: 'local', me: null, state: solo(), ...solo23(), ...heldFossils(6) },
+    { key: 'd-fossils-all', label: 'Alone: every fossil kept', short: 'Alone: every fossil kept', view: D, mode: 'local', me: null, state: solo(), ...solo23(), ...heldFossils(FOSSILS.length) },
+    // The fossil line opened: the codex's set over the screen (FossilsDialog.svelte, codex/DelveFossils embedded), read only.
+    {
+      key: 'd-fossils-set',
+      label: 'Alone: the fossil set opened, 20 of 25',
+      short: 'Alone: the fossil set opened',
+      view: D,
+      mode: 'local',
+      me: null,
+      state: solo(),
+      ...solo23(),
+      ...heldFossils(20),
+      steps: [{ wait: 600 }, { click: '.fossil-line .set-link' }],
+    },
+    {
+      key: 'd-fossils-team',
+      label: 'Together: you and Doryani each kept one',
+      short: 'Together: a fossil each',
+      view: D,
+      mode: 'host',
+      me: K,
+      state: (() => {
+        const s = teamRun(TEAM3);
+        s.delve!.fossils = [
+          { id: 'jagged', depth: 22, at: RUN + 22, to: [K] },
+          { id: 'bloodstained', depth: 22, at: RUN + 22, to: [pid('Doryani')] },
+        ];
+        return s;
+      })(),
+      ...host6(),
+      ...heldFossils(10, 'jagged'),
     },
     { key: 'd-team', label: 'Together: three delvers (host)', short: 'Together: three delvers (host)', boards: { desktop: 'd-team' }, view: D, mode: 'host', me: K, state: teamRun(TEAM3), ...host6() },
     {
