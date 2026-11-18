@@ -1,82 +1,92 @@
 // What this browser keeps of its backup (lib/backup/backup.svelte.ts): the
-// secret its progress is kept under, and when it was set. Sync passes it to
-// the player's other devices (lib/sync/shared.ts), so they keep theirs under
-// the same, and the newer of two always wins: a backup turned on on one
-// device is on on all of them, and one forgotten is forgotten on all of them.
-// A Forget names the backup it forgot; the server keeps a mark in its place,
-// so whatever a device sends there after is refused (backup.svelte.ts gone).
-// Which record wins is only ever the newer, two of the same moment in a fixed
-// order (wins): so every device ends on the same one, whatever order they
-// meet in.
+// secret its progress is kept under, and whose it is. A secret this device
+// made (Keep it safe) or brought back (Bring it back) is its own. Sync
+// offers it to the player's other devices (lib/sync/shared.ts), and one that
+// keeps with none borrows it, so it's kept too; a device never swaps a
+// secret it has for an offered one. Saves only add up, so whichever passkey
+// brings it back, it brings back what its devices knew.
 //
-// A device that moves from one secret to another (a newer one through sync,
-// another passkey brought back) or erases its codex leaves its entry behind
-// under the old one: frozen there, it would come back as if it were all of
-// its progress. So it notes it (LEFT), and once its progress is saved under
-// the new one puts a note in its place saying where it went, or takes it out
-// where it stopped keeping (backup.svelte.ts clearLeft): a passkey brings
-// back everything, following the notes, or nothing.
+// Stopped keeping, the record says why: a Forget pressed here ('here'),
+// after which it never borrows again, only Keep it safe or Bring it back
+// keeps again; or its backup forgotten on another device ('gone',
+// backup.svelte.ts gone), after which it may borrow another, but never that
+// one again. The server keeps a mark where a forgotten backup was, so
+// whatever a device sends there after is refused.
 
 import { readStored, removeStored, writeStored } from '../storage.ts';
 import { fromBase64url } from '../base64url.ts';
+import { OWN_SIGNAL_HOST } from '../signalHost.ts';
 import { SECRET_BYTES } from './seal.ts';
-import { deviceId, isDevice } from '../sync/store.ts';
 
 export const KEPT_NAME = 'backup';
 
-export interface Kept {
-  /** The secret, in base64url; null once it was forgotten. */
-  secret: string | null;
-  /** When it was set or forgotten (on that device's clock). */
-  at: number;
-  /** The bucket it keeps in, or forgotten, the one it kept in (none where an older build saved it). */
-  bucket?: string;
-}
+/** Keeping, or stopped keeping; no record where it never kept (or an older build erased it with the codex). */
+export type Kept =
+  | {
+      /** The secret, in base64url. */
+      secret: string;
+      /** The bucket it keeps in (none where an older build saved it without). */
+      bucket?: string;
+      /** Made or brought back here; false: borrowed through sync. */
+      own: boolean;
+      /** When it was set (Date.now()), for display and tests only. */
+      at: number;
+    }
+  | {
+      secret: null;
+      /** The bucket it kept in (none where an older build saved it without). */
+      bucket?: string;
+      /** Forget pressed here, or its backup forgotten on another device. */
+      stopped: 'here' | 'gone';
+      at: number;
+    };
 
 export const isSecret = (v: unknown): v is string => typeof v === 'string' && fromBase64url(v)?.length === SECRET_BYTES;
 /** A bucket's name, as the server takes it (signal/worker.js BUCKET). */
 const isBucket = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9_-]{43}$/.test(v);
 
+/** A record as stored: this build's (v2), or one an older build saved (v1: `{ v: 1, secret, at, bucket? }`, its secret its own, or forgotten here). */
 function parseKept(raw: string | null): Kept | null {
   try {
     const v: unknown = JSON.parse(raw ?? 'null');
     if (typeof v !== 'object' || v === null) return null;
-    const { v: version, secret, at, bucket } = v as Record<string, unknown>;
-    if (version !== 1 || typeof at !== 'number' || !Number.isSafeInteger(at) || at <= 0) return null;
-    if (secret !== null && !isSecret(secret)) return null;
-    return isBucket(bucket) ? { secret, at, bucket } : { secret, at };
+    const { v: version, secret: s, at, bucket, own, stopped } = v as Record<string, unknown>;
+    if ((version !== 1 && version !== 2) || typeof at !== 'number' || !Number.isSafeInteger(at) || at <= 0) return null;
+    const secret = s === null ? null : isSecret(s) ? s : undefined;
+    if (secret === undefined) return null;
+    const where = isBucket(bucket) ? { bucket } : {};
+    if (version === 1) return secret ? { secret, ...where, own: true, at } : { secret: null, ...where, stopped: 'here', at };
+    if (secret) return typeof own === 'boolean' ? { secret, ...where, own, at } : null;
+    return stopped === 'here' || stopped === 'gone' ? { secret: null, ...where, stopped, at } : null;
   } catch {
     return null;
   }
 }
 
 export const loadKept = (): Kept | null => parseKept(readStored(KEPT_NAME));
-export const saveKept = (k: Kept) => writeStored(KEPT_NAME, JSON.stringify({ v: 1, ...k }));
-/** None set here, not even forgotten: another device's, met again, is taken in (the codex erased). */
-export const forgetKept = () => removeStored(KEPT_NAME);
-/** When a secret set or forgotten now is from: later than the one it replaces, whatever this device's clock says, so a Forget is never undone by a device whose clock runs ahead. */
-export const nextAt = () => Math.max(Date.now(), (loadKept()?.at ?? 0) + 1);
+export const saveKept = (k: Kept) => writeStored(KEPT_NAME, JSON.stringify({ v: 2, ...k }));
 
-/** As sync sends it: null where nothing was ever set. */
-export const ownKeptRaw = (): string | null => (loadKept() ? readStored(KEPT_NAME) : null);
+/** What this device offers its paired devices through sync: its record where it keeps (own or borrowed), else null. */
+export const ownKeptRaw = (): string | null => (loadKept()?.secret ? readStored(KEPT_NAME) : null);
 
-/** The order two records of the same moment stand in, the same on every device: a Forget first. */
-const rank = (k: Kept) => `${k.secret === null ? '0' : `1${k.secret}`}|${k.bucket ?? ''}`;
-/** Whether `a` stands over `b`: the newer, or of the same moment, the first in that order. */
-export const wins = (a: Kept, b: Kept) => (a.at !== b.at ? a.at > b.at : rank(a) < rank(b));
+/** Whether this browser can seal what it keeps and send it (not Safari before 16.4): where it can't, it never says it keeps. */
+export const canSeal = () => !!OWN_SIGNAL_HOST && globalThis.isSecureContext === true && !!globalThis.crypto?.subtle && typeof CompressionStream === 'function';
 
-/** Another device's, taken where it stands over this one's; whether it was. */
+/**
+ * Another device's offer, borrowed where this device keeps with none: it
+ * never kept, or its backup was forgotten on another device and this is
+ * another one. An older build's record borrows as well (an older build
+ * can't read this one's, so it passes it over). Whether it was.
+ */
 export function absorbKept(raw: string): boolean {
   const theirs = parseKept(raw);
+  if (!theirs?.secret || !canSeal()) return false;
   const mine = loadKept();
-  if (!theirs || (mine && !wins(theirs, mine))) return false;
-  // (All of it sent again under the one taken, whatever was sent before: a save is only skipped for one known to be there.)
+  // (Forgotten: never that one again. One whose bucket isn't named may be it, so it isn't taken either.)
+  if (mine && !(mine.secret === null && mine.stopped === 'gone' && mine.bucket && theirs.bucket && theirs.bucket !== mine.bucket)) return false;
+  // (All of it sent under the one borrowed, whatever was sent before.)
   forgetSent();
-  // (Moved on to another: this device's entry under the one it had goes, once it's saved under the new one.)
-  if (mine?.secret && theirs.secret && mine.secret !== theirs.secret) leave(mine.secret, deviceId(), theirs.secret, theirs.at);
-  // (Stopped by a Forget: nothing of its own to note, since the bucket goes whole, but what waited for a save under it waits no more.)
-  else if (mine?.secret && !theirs.secret) repoint(mine.secret, null);
-  return saveKept(theirs);
+  return saveKept({ secret: theirs.secret, ...(theirs.bucket ? { bucket: theirs.bucket } : {}), own: false, at: Date.now() });
 }
 
 /** When this device's progress was last sent, and what it was (its print), and to which bucket. */
@@ -97,48 +107,6 @@ export function loadSent(): Sent | null {
 }
 export const saveSent = (s: Sent) => writeStored(SENT, JSON.stringify(s));
 export const forgetSent = () => removeStored(SENT);
-
-/**
- * A device's entry under a secret it left (`after`: the one it moved to,
- * null where it stopped keeping), to be taken out of the server: the
- * oldest first, and no more than MAX_LEFT. Only ever this browser's own,
- * never passed on by sync.
- */
-const LEFT = 'backup.left';
-export interface Left {
-  secret: string;
-  device: string;
-  after: string | null;
-  /** When the record it moved to was set (its Kept.at), the note's time; none where an older build saved it. */
-  at?: number;
-}
-export const MAX_LEFT = 8;
-const isLeft = (v: unknown): v is Left => {
-  const l = v as Partial<Left> | null;
-  return typeof l === 'object' && l !== null && isSecret(l.secret) && isDevice(l.device) && (l.after === null || isSecret(l.after)) && (l.at === undefined || (typeof l.at === 'number' && Number.isSafeInteger(l.at)));
-};
-/** What's waiting to be taken out (none where an older build saved nothing of it). */
-export function loadLeft(): Left[] {
-  try {
-    const v: unknown = JSON.parse(readStored(LEFT) ?? '[]');
-    return Array.isArray(v) ? v.filter(isLeft) : [];
-  } catch {
-    return [];
-  }
-}
-const saveLeft = (list: Left[]) => (list.length ? writeStored(LEFT, JSON.stringify(list.slice(-MAX_LEFT))) : removeStored(LEFT));
-/** What waited for a save under `from` waits for one under `to` instead (null: for none), set `at`, as the device moves on from it before any. */
-export function repoint(from: string, to: string | null, at?: number) {
-  const list = loadLeft();
-  if (list.some((l) => l.after === from)) saveLeft(list.map((l) => (l.after === from ? { secret: l.secret, device: l.device, after: to, ...(at === undefined ? {} : { at }) } : l)));
-}
-/** `device`'s entry under `secret`, left for `after`, set `at`: noted, to be taken out. */
-export function leave(secret: string, device: string, after: string | null, at?: number) {
-  repoint(secret, after, at);
-  saveLeft([...loadLeft().filter((l) => !(l.secret === secret && l.device === device)), { secret, device, after, ...(at === undefined ? {} : { at }) }]);
-}
-/** One taken out (or no longer to be). */
-export const dropLeft = (gone: Left) => saveLeft(loadLeft().filter((l) => !(l.secret === gone.secret && l.device === gone.device)));
 
 /** The offer after a game (lib/backup/backup.svelte.ts offerBackup) was made: never again. */
 const ASKED = 'backup.asked';

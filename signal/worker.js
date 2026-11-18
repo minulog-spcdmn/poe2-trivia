@@ -507,8 +507,8 @@ const DEVICE = /^[0-9a-z]{12}$/;
 export const MAX_ENTRY = 512 * 1024;
 /** The most entries a bucket keeps: past it, the one written longest ago goes. A browser whose data was cleared comes back as a new device. */
 export const MAX_ENTRIES = 64;
-/** How long a bucket nobody writes to is kept (ms): about eighteen months. */
-export const KEEP_MS = 548 * 24 * 3600_000;
+/** How long a bucket nobody writes to is kept (ms): about three years. */
+export const KEEP_MS = 1096 * 24 * 3600_000;
 
 /**
  * A bucket's entries as one body: for each, the device's name (12 bytes), the

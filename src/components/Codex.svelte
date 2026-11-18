@@ -34,7 +34,7 @@
   import { announceAchievements } from '../lib/achievementToasts';
   import { countReach } from '../lib/count';
   import { eraseSync, sync } from '../lib/sync/link.svelte';
-  import { backup, bringBack, checkBackup, eraseBackup, keepSafe } from '../lib/backup/backup.svelte';
+  import { backup, bringBack, checkBackup, keepSafe } from '../lib/backup/backup.svelte';
   import CodexAchievements from './CodexAchievements.svelte';
 
   let codex = $state.raw(loadCodex());
@@ -400,9 +400,6 @@
   });
   let confirmReset = $state(false);
   function reset() {
-    // Kept with a passkey, the other devices' progress would come back the same: this browser's goes from what's
-    // kept, and it stops keeping (first, under the name sync's erase lets go of).
-    void eraseBackup();
     // Synced, the other devices' progress would come straight back: this browser stops syncing, and theirs stays theirs.
     eraseSync();
     resetCodex();

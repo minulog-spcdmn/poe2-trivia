@@ -90,7 +90,7 @@ const TAKEN: Record<string, { own: () => string | null; take: (raw: string) => b
   started: { own: ownStartedRaw, take: absorbStarted, name: STARTED },
   name: { own: () => chosenNow('name'), take: (raw) => takeChosen('name', raw), name: NAME_STORED },
   colour: { own: () => chosenNow('colour'), take: (raw) => takeChosen('colour', raw), name: COLOUR_NAME },
-  // The backup's secret (lib/backup/kept.ts): the newer wins, so all the player's devices keep theirs under one.
+  // The backup's secret (lib/backup/kept.ts): offered to the others, and borrowed by one that keeps with none.
   backup: { own: ownKeptRaw, take: absorbKept, name: KEPT_NAME },
 };
 

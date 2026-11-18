@@ -153,7 +153,7 @@ export interface Built {
   /** How this device's sync stands (lib/sync/link.svelte.ts: the frame never syncs, so this is all there is). Missing: not paired. */
   sync?: { code: string; met: boolean; status: 'connecting' | 'waiting' | 'linked' | 'offline'; linked?: number; lastAt?: number };
   /** How this device's backup stands (lib/backup/backup.svelte.ts: the frame never keeps, so this is all there is; its buttons act it out). Missing: no passkey to keep it with. */
-  backup?: { on: boolean; savedAt?: number; failing?: boolean; busy?: 'making' | 'bringing' | 'forgetting' };
+  backup?: { on: boolean; borrowed?: boolean; savedAt?: number; failing?: boolean; busy?: 'making' | 'bringing' | 'forgetting' };
 }
 
 export interface Scene {
