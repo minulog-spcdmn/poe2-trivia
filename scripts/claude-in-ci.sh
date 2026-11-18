@@ -47,12 +47,15 @@ printf '{"version":"1.0","authentication":{"type":"oidc_federation"}}\n' > "$dir
 identity_file="$dir/identity-token"
 
 b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+# Each request gets a few tries, none longer than 30 seconds: one that hung
+# would stop the renewer below for the rest of the run.
+request() { curl -sSf --retry 3 --max-time 30 "$@"; }
 
 # GitHub's identity tokens live minutes; the CLI rereads the file each time
 # it renews its Claude token, so a fresh one is always there.
 fetch_identity() {
   local jwt
-  jwt=$(curl -sSf --retry 3 -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+  jwt=$(request -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
     "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=https://api.anthropic.com" | jq -r .value)
   [ -n "$jwt" ] && [ "$jwt" != null ] || return 1
   echo "::add-mask::$jwt"
@@ -73,9 +76,9 @@ app_jwt() {
 fetch_app_token() {
   local jwt install token
   jwt=$(app_jwt)
-  install=$(curl -sSf --retry 3 -H "Authorization: Bearer $jwt" -H "Accept: application/vnd.github+json" \
+  install=$(request -H "Authorization: Bearer $jwt" -H "Accept: application/vnd.github+json" \
     "https://api.github.com/repos/$GITHUB_REPOSITORY/installation" | jq -r .id)
-  token=$(curl -sSf --retry 3 -X POST -H "Authorization: Bearer $jwt" -H "Accept: application/vnd.github+json" \
+  token=$(request -X POST -H "Authorization: Bearer $jwt" -H "Accept: application/vnd.github+json" \
     -d "{\"repositories\":[\"${GITHUB_REPOSITORY#*/}\"]}" \
     "https://api.github.com/app/installations/$install/access_tokens" | jq -r .token)
   [ -n "$token" ] && [ "$token" != null ] || return 1
@@ -90,11 +93,12 @@ if [ -n "${GH_APP_ID:-}" ] && [ -n "${GH_APP_KEY:-}" ]; then
   with_app=true
   fetch_app_token
   env -u GH_TOKEN -u GITHUB_TOKEN GH_CONFIG_DIR="$dir/gh" gh auth setup-git
-  # Commits are the app's own, and Claude learns its login (BOT_LOGIN) to
-  # tell its own pull requests and issues from strangers'.
-  slug=$(curl -sSf --retry 3 -H "Authorization: Bearer $(app_jwt)" -H "Accept: application/vnd.github+json" \
+  # Commits are the app's own, and Claude learns its login (BOT_LOGIN, and
+  # BOT_AUTHOR as gh's --author takes it) to tell its own pull requests and
+  # issues from strangers'.
+  slug=$(request -H "Authorization: Bearer $(app_jwt)" -H "Accept: application/vnd.github+json" \
     https://api.github.com/app | jq -r .slug)
-  export BOT_LOGIN="$slug[bot]"
+  export BOT_LOGIN="$slug[bot]" BOT_AUTHOR="app/$slug"
   bot_id=$(env -u GH_TOKEN -u GITHUB_TOKEN GH_CONFIG_DIR="$dir/gh" gh api "users/$BOT_LOGIN" --jq .id)
   git config --global user.name "$BOT_LOGIN"
   git config --global user.email "$bot_id+$BOT_LOGIN@users.noreply.github.com"
@@ -102,12 +106,14 @@ fi
 
 (
   n=0
+  renewed=0
   while sleep 240; do
     fetch_identity || echo "::warning::Couldn't renew the GitHub identity token for Claude"
     n=$((n + 1))
-    # The app's token lives an hour: a new one every 40 minutes.
-    if $with_app && [ $((n % 10)) -eq 0 ]; then
-      fetch_app_token || echo "::warning::Couldn't renew the GitHub app's token"
+    # The app's token lives an hour: a new one every 40 minutes, and after a
+    # failed try, again 4 minutes later.
+    if $with_app && [ $((n - renewed)) -ge 10 ]; then
+      fetch_app_token && renewed=$n || echo "::warning::Couldn't renew the GitHub app's token"
     fi
   done
 ) &

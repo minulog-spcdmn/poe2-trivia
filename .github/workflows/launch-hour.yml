@@ -14,9 +14,10 @@ run-name: "Launch hour: ${{ github.event_name == 'schedule' && 'daily check' || 
 # stored (scripts/claude-in-ci.sh says how and why). It needs the repository
 # secrets ANTHROPIC_FEDERATION_RULE_ID and ANTHROPIC_ORGANIZATION_ID (and
 # ANTHROPIC_SERVICE_ACCOUNT_ID and ANTHROPIC_WORKSPACE_ID if the rule names
-# them). Claude gets no GitHub
-# access and no tools but web search and reading pages: its answer is its
-# last message, and a later job, without Claude, opens the issue from it.
+# them). Claude gets no GitHub access and no tools but web search and
+# reading pages (--tools, so the repository's own settings add none): its
+# answer is its last message, and a later job, without Claude, opens the
+# issue from it.
 
 on:
   # 09:07 UTC, off the hour when GitHub's scheduled runs bunch up. GGG posts
@@ -81,7 +82,7 @@ jobs:
           ANTHROPIC_SERVICE_ACCOUNT_ID: ${{ secrets.ANTHROPIC_SERVICE_ACCOUNT_ID }}
           ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
         run: |
-          npm install --global --no-fund --no-audit @anthropic-ai/claude-code
+          npm install --global --no-fund --no-audit @anthropic-ai/claude-code@2.1.327
           cat > "$RUNNER_TEMP/prompt.md" <<'PROMPT'
           Check whether Grinding Gear Games (GGG) has announced the exact launch hour (time of day) of Path of Exile 2's full 1.0 release. So far they have given only the day: December 11, 2026 in Pacific time (December 12 in Japan), with no hour.
 
@@ -100,7 +101,9 @@ jobs:
           bash scripts/claude-in-ci.sh "$RUNNER_TEMP/prompt.md" "$RUNNER_TEMP/answer.md" \
             --model claude-sonnet-5-5 \
             --max-turns 30 \
+            --max-budget-usd 2 \
             --permission-mode default \
+            --tools WebSearch,WebFetch \
             --allowedTools WebSearch,WebFetch
 
       - name: Read the answer
@@ -108,6 +111,8 @@ jobs:
         if: steps.needed.outputs.run == 'true'
         run: |
           answer="$RUNNER_TEMP/answer.md"
+          # From its first line with words on it.
+          sed -i '/[^[:space:]]/,$!d' "$answer"
           first=$(head -n 1 "$answer" | tr -d '[:space:]')
           case "$first" in
             NONE)
@@ -116,11 +121,13 @@ jobs:
               ;;
             FOUND)
               echo "found=true" >> "$GITHUB_OUTPUT"
+              # A delimiter no page's text can hold.
+              end="LAUNCH_REPORT_$(openssl rand -hex 16)"
               {
-                echo 'report<<LAUNCH_REPORT_END'
+                echo "report<<$end"
                 tail -n +2 "$answer" | head -c 6000
                 echo
-                echo 'LAUNCH_REPORT_END'
+                echo "$end"
               } >> "$GITHUB_OUTPUT"
               ;;
             *)
