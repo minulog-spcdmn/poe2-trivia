@@ -34,7 +34,7 @@
   import { announceAchievements } from '../lib/achievementToasts';
   import { countReach } from '../lib/count';
   import { eraseSync, sync } from '../lib/sync/link.svelte';
-  import { backup, bringBack, checkBackup, keepSafe } from '../lib/backup/backup.svelte';
+  import { backup, bringBack, checkBackup, keepSafe, saveBeforeErase } from '../lib/backup/backup.svelte';
   import CodexAchievements from './CodexAchievements.svelte';
 
   let codex = $state.raw(loadCodex());
@@ -399,7 +399,12 @@
     });
   });
   let confirmReset = $state(false);
-  function reset() {
+  /** What the passkey keeps can bring it back: saved, the save not failing, and a passkey this browser can use. */
+  const restorable = $derived(backup.on && backup.supported && !!backup.savedAt && !backup.failing);
+  async function reset() {
+    confirmReset = false;
+    // Kept with a passkey: what isn't saved yet goes first, under this browser's name as it is, so Bring it back restores all of it.
+    await saveBeforeErase();
     // Synced, the other devices' progress would come straight back: this browser stops syncing, and theirs stays theirs.
     eraseSync();
     resetCodex();
@@ -410,7 +415,6 @@
     delve = loadRecords();
     achievements = loadAchievements();
     wins = loadWins();
-    confirmReset = false;
   }
   /** The tabs going as it's erased: they close their room as they fade, the column's gap after them with it, so the page glides up. */
   function closeTabs(node: HTMLElement) {
@@ -967,10 +971,10 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="confirm panel" in:dialogIn out:dialogOut onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <h3>Erase your codex?</h3>
-      <p>Every item you have seen, every answer, every Delve run and every achievement recorded in this browser is lost{backup.on ? '.' : '. This can’t be undone.'}</p>
+      <p>Every item you have seen, every answer, every Delve run and every achievement recorded in this browser is lost{restorable ? '.' : '. This can’t be undone.'}</p>
       {#if sync.code && sync.met}<p>This browser stops syncing too; your other devices keep theirs.</p>{/if}
       <!-- (The backup is left alone: sync's erase gives the browser a new name, so it keeps on as a new device, and what was erased can come back.) -->
-      {#if backup.on}<p>Your passkey still keeps what was saved: Bring it back restores it, and Forget in the settings deletes it.</p>{/if}
+      {#if restorable}<p>The passkey still keeps what was saved: Bring it back restores it, and Forget in the settings deletes it.</p>{/if}
       <div class="actions">
         <button class="btn ghost" onclick={() => (confirmReset = false)}>Keep it</button>
         <button class="btn danger" onclick={reset}>Erase</button>

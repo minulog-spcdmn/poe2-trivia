@@ -34,7 +34,7 @@
 
 import { BETA, CHANNEL, LOCAL } from '../channel.ts';
 import { OWN_SIGNAL_HOST } from '../signalHost.ts';
-import { QA, announceStored, onStoredHere, readStored, storeKey, writeStored } from '../storage.ts';
+import { QA, announceStored, onStoredHere, readStored, removeStored, storeKey, writeStored } from '../storage.ts';
 import { toasts } from '../toasts.svelte.ts';
 import { whenCalm } from '../idle.ts';
 import { base64url, fromBase64url } from '../base64url.ts';
@@ -205,10 +205,11 @@ async function sendNow(leaving: boolean) {
   if (hold || !k?.secret) return;
   const now = entryNow();
   if (!now) return;
+  // (Under the name it had as its entry was made: an erase meanwhile gives it another, and this entry is the old one's.)
+  const me = deviceId();
   const { bucket, key } = await fromKept(k.secret);
   const was = loadSent();
   if (was?.print === now.print && was.bucket === bucket) return;
-  const me = deviceId();
   const data = await sealEntry(now.entry, key, bucket, me);
   // (Its own progress alone more than the server keeps of a device, many times a full codex: it can't be kept.)
   if (!data) return;
@@ -248,13 +249,19 @@ function missed(secret: string, leaving: boolean) {
  * from (one not paired, another tab): it stops keeping with it too, naming
  * it, so it never borrows it again.
  */
-function gone(secret: string, bucket: string) {
+function gone(secret: string, bucket: string, quiet = false) {
   if (loadKept()?.secret !== secret) return;
-  saveKept({ secret: null, bucket, stopped: 'gone', at: Date.now() });
+  // (Forgotten here, its answer lost on the way or heard first in another tab: stopped here, as the player asked, and nothing to tell.)
+  const mine = readStored(FORGETTING) === bucket;
+  saveKept({ secret: null, bucket, stopped: mine ? 'here' : 'gone', at: Date.now() });
+  if (mine) removeStored(FORGETTING);
   forgetSent();
   readState();
-  toasts.show('What your passkey kept was deleted on another device, so this browser stops keeping it too.', 'info', { title: 'No longer kept' });
+  if (!quiet && !mine) toasts.show('What your passkey kept was deleted on another device, so this browser stops keeping it too.', 'info', { title: 'No longer kept' });
 }
+
+/** A Forget asked for here, by the bucket's name, until its answer comes: a 410 met meanwhile (the answer lost, another tab) is this Forget's. */
+const FORGETTING = 'backup.forgetting';
 
 let timer: ReturnType<typeof setTimeout> | null = null;
 /** A change to send: soon, but no sooner than APART_MS after the last time (or `wait`: RETRY_MS, for a send that didn't go). */
@@ -491,8 +498,9 @@ export async function bringBack() {
     toasts.show('The server can’t be reached just now. Try again in a while.', 'error', { title: 'Not brought back' });
     return;
   }
-  // (Forgotten: nothing to bring back, and nothing changes here.)
+  // (Forgotten: nothing to bring back. Where it's the one this device keeps with, it stops, as its next save would find.)
   if (brought.gone) {
+    gone(secret, (await fromKept(secret)).bucket, true);
     toasts.show('What was kept with that passkey was deleted with Forget, so it brings nothing back.', 'info', { title: 'Nothing kept with it' });
     return;
   }
@@ -539,6 +547,8 @@ export async function forgetBackup() {
   await settled();
   const { bucket } = await fromKept(k.secret);
   if (k.own) {
+    // (Marked before it goes: should its answer be lost, the 410 a save meets after is known as this Forget's.)
+    writeStored(FORGETTING, bucket);
     let ok = false;
     const stop = new AbortController();
     const late = setTimeout(() => stop.abort(), SEND_WITHIN_MS);
@@ -559,12 +569,28 @@ export async function forgetBackup() {
   }
   hold = false;
   backup.busy = null;
-  // (Another taken meanwhile, in another tab: it stands, and one forgotten is gone from the server all the same.)
-  if (loadKept()?.secret !== k.secret) return;
+  // (Another taken meanwhile, in another tab, or stopped there by this Forget's 410: it stands, and one forgotten is gone from the server all the same.)
+  if (loadKept()?.secret !== k.secret) return void removeStored(FORGETTING);
   // (Naming the backup it stopped with.)
   saveKept({ secret: null, bucket, stopped: 'here', at: Date.now() });
+  removeStored(FORGETTING);
   forgetSent();
   readState();
+}
+
+/** How long Erase codex waits for the save before it at most. */
+const ERASE_WAIT_MS = 2000;
+/**
+ * The codex about to be erased: what isn't saved yet goes first, under this
+ * device's name as it is (the erase gives it another, and its entry is never
+ * topped up after), so Bring it back restores all of it. Waited for a moment
+ * at most: a save that takes longer still goes, under the old name.
+ */
+export async function saveBeforeErase() {
+  if (QA || !loadKept()?.secret) return;
+  if (timer) clearTimeout(timer);
+  timer = null;
+  await Promise.race([settled().then(() => send()), new Promise((r) => setTimeout(r, ERASE_WAIT_MS))]);
 }
 
 /** After a game: once, where a passkey can keep it and there's enough played for it to matter, a notice offering to keep it safe. */

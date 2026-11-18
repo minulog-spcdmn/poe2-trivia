@@ -354,12 +354,13 @@
             {/if}
           </p>
         </div>
-        {#if backup.supported}
+        <!-- (Shown where a passkey can be made here, or where it keeps with another device's: a browser that can't make one still sees that, and can stop.) -->
+        {#if backup.supported || backup.on}
           <!-- Set as Sync is: what it does stays beneath whatever it says now, unseen, so the row keeps its height. -->
           <div class="row sync-row backup-row">
             <span class="label">Backup</span>
             <!-- Kept in its place once it keeps with a passkey of its own, out of sight, so the row keeps its height; with another device's, it stays: this one may make its own. -->
-            <button class="btn small" class:gone={backup.on && !backup.borrowed} disabled={!!backup.busy || (backup.on && !backup.borrowed)} onclick={keepSafe}>Keep it safe</button>
+            <button class="btn small" class:gone={(backup.on && !backup.borrowed) || !backup.supported} disabled={!!backup.busy || (backup.on && !backup.borrowed) || !backup.supported} onclick={keepSafe}>Keep it safe</button>
             <p class="blurb say" class:linked={backup.on && !backup.busy && !forgetting && !!backup.savedAt && !backup.failing}>
               <span class:unseen={backup.on || !!backup.busy}
                 >A passkey keeps your codex, Delve runs and achievements if the browser clears them, and brings them to a new phone. Made one before? <button class="reset" disabled={!!backup.busy} onclick={bringBack}>Bring it back</button></span
@@ -383,7 +384,7 @@
                       : ': the server can’t be reached just now.'
                     : '.'}
                   <button class="reset" onclick={() => (forgetting = true)}>Forget</button
-                  >{#if !backup.failing}<br /><span class="again">Made one before? <button class="reset" onclick={bringBack}>Bring it back</button></span>{/if}</span
+                  >{#if !backup.failing && backup.supported}<br /><span class="again">Made one before? <button class="reset" onclick={bringBack}>Bring it back</button></span>{/if}</span
                 >
               {/if}
             </p>
