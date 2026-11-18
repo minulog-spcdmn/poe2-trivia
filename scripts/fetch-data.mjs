@@ -2,7 +2,8 @@
 // Scrapes unique items and lineage support gems from poe2db.tw and downloads
 // their art into art-source/items/. Writes the item index to
 // src/data/items.json, and their tooltips to src/data/itemStats.json
-// (scripts/fetch-stats.mjs). An item drawn more than one way (Grand
+// (scripts/fetch-stats.mjs); their ids to signal/itemIds.json too, for the
+// matchmaking server's item tally. An item drawn more than one way (Grand
 // Spectrum's three jewels, each its own colour) keeps its other art as its
 // variants: the list page shows only the first, so each unique's own page is
 // read for the rest. The site shows upscaled copies of the art: run
@@ -10,10 +11,11 @@
 // npm run looks and npm run bake-icons.
 //
 // Nothing is written until everything is fetched and checked: a run that
-// stops leaves items.json, itemStats.json and the art as they were. An item
-// that is no longer on poe2db stops it, unless the run says what became of
-// it (scripts/refresh-plan.mjs): renamed, keeping its id, or dropped. It
-// ends by saying what was added, renamed, dropped, changed and left out.
+// stops leaves items.json, itemIds.json, itemStats.json and the art as
+// they were. An item that is no longer on poe2db stops it, unless the run
+// says what became of it (scripts/refresh-plan.mjs): renamed, keeping its
+// id, or dropped. It ends by saying what was added, renamed, dropped,
+// changed and left out.
 // An item new in the run is stamped with its UTC day (`added`), kept by
 // later runs: the start page counts a release's new items by it
 // (src/lib/releases.ts).
@@ -38,7 +40,7 @@ import {
   statsReport,
   writeStats,
 } from './fetch-stats.mjs';
-import { artPlan, changedItems, firstSeen, reconcile, refreshArgs, summaryLines, withoutTooltip } from './refresh-plan.mjs';
+import { artPlan, changedItems, firstSeen, itemIdsText, reconcile, refreshArgs, summaryLines, withoutTooltip } from './refresh-plan.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -49,6 +51,8 @@ const SITE_DIR = path.join(ROOT, 'public', 'items');
 /** The smaller copies' folders under SITE_DIR (THUMBS in scripts/upscale-art.py, ITEM_THUMBS in src/lib/ui-paths.ts). */
 const THUMBS = [256, 128];
 const DATA_FILE = path.join(ROOT, 'src', 'data', 'items.json');
+/** The item ids the matchmaking server tallies answers for (refresh-plan.mjs itemIdsText). */
+const IDS_FILE = path.join(ROOT, 'signal', 'itemIds.json');
 
 // Map the art folder (below Art/2DItems/) to a fine-grained group and a broad
 // quiz category. Categories are deliberately broad and similar in size so no
@@ -301,6 +305,7 @@ async function main() {
 
   await mkdir(path.dirname(DATA_FILE), { recursive: true });
   await writeFile(DATA_FILE, JSON.stringify(out, null, 1) + '\n');
+  await writeFile(IDS_FILE, itemIdsText(out));
   await writeStats(listed, found.stats);
 
   const perCat = {};

@@ -139,8 +139,19 @@ export const VIEWS = [
   { value: 'visitors', name: 'Visitors' },
   { value: 'games', name: 'Games' },
   { value: 'daily', name: "Today's unique" },
+  // (The item tally's: no period, no key needed, but behind the door as the rest.)
+  { value: 'items', name: 'Items' },
   { value: 'joining', name: 'Joining' },
   { value: 'stutter', name: 'Stutter' },
   { value: 'groups', name: 'Groups' },
 ] as const;
 export type View = (typeof VIEWS)[number]['value'];
+
+/**
+ * Whether what's on show reads a period from GoatCounter: every view but
+ * the item tally's (Items), whose numbers come from the matchmaking server;
+ * the overview full screen (`board`) whichever view it was opened over.
+ * While it doesn't, the page reads no period by itself (none at once, none
+ * as it grows stale), and shows no progress for one.
+ */
+export const readsPeriod = (view: View, board: boolean) => board || view !== 'items';

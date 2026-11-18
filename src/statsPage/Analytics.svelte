@@ -32,18 +32,21 @@
   import DailyView from './DailyView.svelte';
   import GamesView from './GamesView.svelte';
   import GroupsView from './GroupsView.svelte';
+  import ItemsView from './ItemsView.svelte';
   import JoiningView from './JoiningView.svelte';
   import StutterView from './StutterView.svelte';
   import KeyGate from './KeyGate.svelte';
   import { countedSpan, countsOf, daysBetween, firstCounted } from './model';
   import Overview from './Overview.svelte';
-  import { COMPARE, PERIODS, READ_V, VIEWS, counted, coverOf, keptRead, spansOf, untilDay, type Read, type View } from './read';
+  import { COMPARE, PERIODS, READ_V, VIEWS, counted, coverOf, keptRead, readsPeriod, spansOf, untilDay, type Read, type View } from './read';
   import Seg from './Seg.svelte';
   import { depthCalls, hashOf, selOf, sliceCalls, type Sel, type Slices } from './slices';
   import VisitorsView from './VisitorsView.svelte';
   import { addDays, dayIn, midnight } from './zone';
   import { CHANNEL } from '../lib/channel';
-  import { demoSlices, demoStateOf, demoUpdate } from './demo';
+  import { demoSlices, demoStateOf, demoTally, demoUpdate } from './demo';
+  import { readTally } from './tally';
+  import type { TallyRow } from '../lib/itemTallyRank';
   import { keepAwake } from '../lib/wakeLock';
 
   /** A period is read again once it's this old. */
@@ -478,6 +481,59 @@
     untrack(() => void loadDepths(r, s));
   });
 
+  // ---- the item tally: from the matchmaking server, not GoatCounter (no key, nothing counted against the hour's), read each time its view opens ----
+  let tally = $state<TallyRow[] | null>(null);
+  let tallyAt = $state(0);
+  let tallying = $state(false);
+  let tallyFailed = $state('');
+  let tallier: AbortController | null = null;
+  /** Reads the tally again, what was read before staying on show till it's in. */
+  async function loadTally() {
+    tallier?.abort();
+    const ctrl = (tallier = new AbortController());
+    tallying = true;
+    tallyFailed = '';
+    try {
+      const rows = demo ? demoTally((await import('../data/items.json')).default.map((i) => i.id)) : await readTally(ctrl.signal);
+      if (tallier !== ctrl) return;
+      tally = rows;
+      tallyAt = Date.now();
+    } catch (err) {
+      if (tallier === ctrl && !ctrl.signal.aborted) tallyFailed = err instanceof Error ? err.message : 'Something went wrong.';
+    } finally {
+      if (tallier === ctrl) {
+        tallier = null;
+        tallying = false;
+      }
+    }
+  }
+  function stopTally() {
+    tallier?.abort();
+    tallier = null;
+    tallying = false;
+  }
+  /**
+   * A read this recent is shown again as the view reopens, not read again:
+   * a full read spends the Worker's day of them (signal/worker.js
+   * TALLY_READS), its Object forgetting the sums once idle. Read again still reads.
+   */
+  const TALLY_FRESH_MS = 10 * 60_000;
+  $effect(() => {
+    if (view !== 'items' || board || !key) return;
+    untrack(() => {
+      if (!tallying && (!tally || Date.now() - tallyAt >= TALLY_FRESH_MS)) void loadTally();
+    });
+  });
+  /** The tally's view on show: no period, its own read; none of GoatCounter's made behind it (read.ts readsPeriod). */
+  const items = $derived(!readsPeriod(view, board));
+  /** Whether the tally's view was on show when last looked at: leaving it reads the period at once, should it have grown stale meanwhile, or never been read (the page opened on the tally's view). */
+  let wasItems = false;
+  $effect(() => {
+    const now = items;
+    if (wasItems && !now) untrack(() => (read ? update() : void load()));
+    wasItems = now;
+  });
+
   /** The hour's requests, counted once for the footer and for whether updating by itself holds off. */
   let used = $state(requestsLastHour().length);
   function countRequests() {
@@ -485,11 +541,11 @@
     held = used > HOUR_LIMIT - KEEP_SPARE;
   }
 
-  /** Reads the period picked again if it's grown stale, or what's on show is another's or has only its counts, unless the hour's requests are running low. */
+  /** Reads the period picked again if it's grown stale, or what's on show is another's or has only its counts, unless the hour's requests are running low or the tally's view is on show. */
   function update() {
     clock = Date.now();
     countRequests();
-    if (!key || loading || held || document.visibilityState !== 'visible') return;
+    if (!key || items || loading || held || document.visibilityState !== 'visible') return;
     // After a failure, not again until the wait is over (the Read again button still reads at once).
     if (fails.n && clock - fails.at < waitAfterFails()) return;
     if (!read || read.span !== span || isPartial || clock - read.at >= FRESH_MS) void load();
@@ -500,7 +556,8 @@
     removeStoredStarting(`${DAY_REFS_KEY}.`);
     // Reads were kept a tab each once (sessionStorage): they're the browser's now.
     removeStoredStarting('analytics.read.', 'session');
-    void load();
+    // (Opened on the tally's view: the period's read once another is picked.)
+    if (!items) void load();
     const ticking = setInterval(update, 20_000);
     document.addEventListener('visibilitychange', update);
     document.addEventListener('click', follow);
@@ -582,6 +639,10 @@
     slicing = 0;
     stopDepths();
     slices = null;
+    stopTally();
+    tally = null;
+    tallyAt = 0;
+    tallyFailed = '';
     cache.clear();
     zone = null;
     fails = { n: 0, at: 0, busy: false };
@@ -672,9 +733,9 @@
     {#if key}
       <div class="tools">
         <span class="fresh" aria-live="polite">
-          {#if busy}Updating…{:else if read}Updated {ago(read.at)}{/if}{#if held && !busy}<em title="Paused to stay under GoatCounter's 500 requests an hour">, paused for now</em>{/if}
+          {#if items}{#if tallying}Reading…{:else if tallyAt}Read {ago(tallyAt)}{/if}{:else if busy}Updating…{:else if read}Updated {ago(read.at)}{/if}{#if held && !busy && !items}<em title="Paused to stay under GoatCounter's 500 requests an hour">, paused for now</em>{/if}
         </span>
-        <button type="button" class="icon-btn" class:spin={loading} onclick={() => void load(span, true)} disabled={loading} title="Read again" aria-label="Read again">
+        <button type="button" class="icon-btn" class:spin={items ? tallying : loading} onclick={() => void (items ? loadTally() : load(span, true))} disabled={items ? tallying : loading} title="Read again" aria-label="Read again">
           <svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66" /><path d="M20 4v5h-5" /></svg>
         </button>
         {#if board}
@@ -701,18 +762,21 @@
   {#if key}
     <nav class="row choices">
       {#if !board}<Seg label="View" options={VIEWS} value={view} onpick={go} />{/if}
-      {#if read}<span class="range">{#if demo}<b class="made-up-tag" title="Nothing here was read from GoatCounter">Made-up numbers</b>{/if}{dayRange(read.from, read.to)}{#if read.compare}, against {dayRange(read.fromBefore, read.toBefore)}{/if}</span>{/if}
-      <Seg label="Period" options={periodOptions} value={cover && span > cover.value ? cover.value : span} onpick={pick} />
+      {#if read && !items}<span class="range">{#if demo}<b class="made-up-tag" title="Nothing here was read from GoatCounter">Made-up numbers</b>{/if}{dayRange(read.from, read.to)}{#if read.compare}, against {dayRange(read.fromBefore, read.toBefore)}{/if}</span>{/if}
+      <!-- (The tally keeps no dates, so no period: the dates line below says so.) -->
+      {#if !items}<Seg label="Period" options={periodOptions} value={cover && span > cover.value ? cover.value : span} onpick={pick} />{/if}
     </nav>
   {/if}
-  <div class="progress" class:on={loading} aria-hidden="true"><i style:width="{Math.max(6, progress * 100)}%"></i></div>
+  <div class="progress" class:on={loading && !items} aria-hidden="true"><i style:width="{Math.max(6, progress * 100)}%"></i></div>
 </header>
 
-<main class="analytics" class:idle class:stale aria-busy={stale}>
+<main class="analytics" class:idle class:stale={stale && !items} aria-busy={stale && !items}>
   {#if !key}
     <KeyGate onkey={useKey} {refused} {typed} />
   {:else}
-    {#if read}
+    {#if items}
+      <p class="dates"><b>All answers so far</b>: the tally keeps no dates, so no period applies{#if tallying || tallyAt}<span class="phone-fresh">; {tallying ? 'reading…' : `read ${ago(tallyAt)}`}</span>{/if}</p>
+    {:else if read}
       <p class="dates">
         <b>{period.now}</b>, {dayRange(read.from, read.to)}{#if read.compare}, against {period.before} ({dayRange(read.fromBefore, read.toBefore)}){:else if counted(read)}{read.began ? `; counting began partway through ${shortDay(read.began)}, so there's nothing before to compare with yet` : ': nothing before to compare with yet'}{:else}; {period.before} weren't counted in full, so nothing is compared with them{/if}<span class="phone-fresh">; {busy ? 'updating…' : `updated ${ago(read.at)}`}{held && !busy ? ', paused for now' : ''}</span>
       </p>
@@ -723,18 +787,20 @@
     {#if demo}
       <p class="note made-up" role="status">Made-up numbers, to look at the page with: nothing here was read from GoatCounter.</p>
     {/if}
-    {#if failed}
+    {#if failed && !items}
       <!-- (Where what's on show isn't the period picked, or has only its counts, it says so.) -->
       <p class="note bad" role="alert">
         {failed}{#if stale}{' '}Still showing {period.now.toLowerCase()}.{:else if isPartial}{' '}Only the counts are in: who came, on what and from where is still missing.{/if}
         <button type="button" class="again" onclick={() => void load(span, true)}>Try again</button>
       </p>
     {/if}
-    {#if read && !read.complete}
+    {#if read && !read.complete && !items}
       <p class="note" role="status">There were more paths than Analytics reads (1,000): some counts may be missing.</p>
     {/if}
 
-    {#if !read && busy}
+    {#if items}
+      <ItemsView rows={tally} reading={tallying} failed={tallyFailed} onagain={() => void loadTally()} />
+    {:else if !read && busy}
       <!-- The view's outline, in the overview's grid where it's that, so nothing jumps as it arrives. -->
       <div class="waiting" class:ov={board || view === 'overview'} aria-busy="true" aria-label="Reading">
         {#if board || view === 'overview'}

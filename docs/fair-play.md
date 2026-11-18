@@ -173,6 +173,25 @@ from one address. `new/acted`, `new/create` and `new/host` wait at the
 queue's head, behind the visit, so a newcomer who leaves at the portal is
 still counted as the page is left.
 
+**Item tally** (`src/lib/itemTally.ts`, the signal Worker's `POST /tally`):
+not GoatCounter, but behind the same gates (the live page, not opted out,
+no Global Privacy Control). Every answer a player gives goes, in every
+mode, practice and the Daily: the item, name or art, right or wrong (a
+time-out, a ward's save and a blast they set off count as wrong; a
+teammate's blast isn't theirs), the rules it was asked under (the mode, and
+the preset or Delve's depth band, a find's by the depth its rules come
+from) and whether the codex had met the item before (practice never
+touches the codex, so its answers count as not known to be first); sent at a game's end,
+as the page is hidden or left, and every 40 answers, a failed batch tried
+twice more. A player who gave no answer (watching, a race lost before
+guessing, a teammate clearing it first) counts nothing. The Worker keeps
+sums per item only, under a version number that changes when what the game
+deals changes, taking only the versions and items the game has
+(`signal/itemIds.json`); each batch carries a random id it keeps a day, so
+a batch sent again after a lost answer counts once. It is there to find the items hardly anyone recognises, so
+they can be kept out of Delve's first depths; `npm run item-tally` lists
+them, each against what its rules would expect.
+
 **Reading them:** `stats.html` (Analytics, `src/statsPage`), with the
 owner's read-only GoatCounter API key, which stays in that browser until
 "Forget the key on this browser" at the foot of the page (the day
@@ -190,7 +209,16 @@ of its period as it lands. A
 period read for the first time shows its counts as soon as the hits are
 in, about 1.5 s, with "Reading…" where the lists of who came, on what and
 from where are still on the way (`read.ts` orReading); a read kept by an
-older build (another `READ_V`) is read again.
+older build (another `READ_V`) is read again. Its Items view (`#items`)
+reads the item tally from the matchmaking server instead, as the view opens
+and on Read again, with no period (the tally keeps no dates), and lists the
+items most missed against their rules first, ranked as `npm run item-tally`
+ranks them (`src/lib/itemTallyRank.ts`): each item against all answers
+under the same rules in one pool, first meetings and repeats together, as
+a first meeting here may still be an item a player knows well from Path of
+Exile 2; "First meetings only" narrows it to those. Whether the tally holds
+enough answers to act on is checked once a day (`tally-ready.yml`, README,
+"Item tally readiness").
 
 Its overview answers "how is it going?" and keeps to what's worth a
 glance, with room around it: four figures for the period (visits, games

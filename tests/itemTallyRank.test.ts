@@ -1,0 +1,171 @@
+// How the item tally's items are ranked (lib/itemTallyRank.ts), as the stats
+// page's Items view and scripts/item-tally.mjs list them: each item's misses
+// against those its contexts' rates expect, with a 90% interval, the items
+// surely missed most first.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { TALLY_ROWS, TALLY_VERSION, poisson, rank, type TallyRow } from '../src/lib/itemTallyRank.ts';
+
+const row = (item: string, ctx: string, r: number, w: number, more: Partial<TallyRow> = {}): TallyRow => ({ v: 1, item, form: 'n', ctx, first: 0, r, w, ...more });
+const close = (a: number, b: number, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} is not ${b}`);
+
+test('poisson: no misses has nothing below, and the interval holds the count', () => {
+  const [low0, high0] = poisson(0);
+  assert.equal(low0, 0);
+  // Byar's upper end for 0 at 90% two-sided: about 3.0 (the exact one, 2.996).
+  close(high0, 3, 0.1);
+  for (const k of [1, 5, 20, 200]) {
+    const [low, high] = poisson(k);
+    assert.ok(low >= 0 && low < k && high > k, `${k}: ${low} to ${high}`);
+  }
+  // 10 observed: the exact 90% interval is 5.43 to 16.96.
+  const [l, h] = poisson(10);
+  close(l, 5.43, 0.05);
+  close(h, 16.96, 0.05);
+});
+
+test('rank: an item is held to its own contexts, its expected misses summed over them', () => {
+  const rows = [
+    // d1: 20 answers, 2 missed (rate 0.1); d5: 20 answers, 10 missed (rate 0.5).
+    row('a', 'd1', 9, 1),
+    row('b', 'd1', 9, 1),
+    row('a', 'd5', 5, 5),
+    row('c', 'd5', 5, 5),
+  ];
+  const { v, list } = rank(rows);
+  assert.equal(v, 1);
+  const a = list.find((s) => s.item === 'a')!;
+  assert.equal(a.n, 20);
+  assert.equal(a.miss, 6);
+  close(a.expected, 10 * 0.1 + 10 * 0.5);
+  close(a.score!, 1);
+  const [low, high] = poisson(6);
+  close(a.low, low / 6);
+  close(a.high, high / 6);
+  // Deep or shallow, each item missed exactly as its context's rate: all score 1.
+  for (const s of list) close(s.score!, 1);
+});
+
+test('rank: most surely missed first, by the interval low end', () => {
+  const rows = [
+    // A big context where most know the item.
+    ...Array.from({ length: 20 }, (_, i) => row(`k${i}`, 'd2', 95, 5)),
+    // Missed half the time over many answers: surely missed more.
+    row('hard', 'd2', 50, 50),
+    // Missed every time, but only twice: as high a share, far less sure.
+    row('few', 'd2', 0, 2),
+  ];
+  const { list } = rank(rows);
+  assert.equal(list[0].item, 'hard');
+  const few = list.find((s) => s.item === 'few')!;
+  assert.ok(few.score! > list[0].score!, 'the share alone would put it first');
+  assert.ok(few.low < list[0].low);
+});
+
+test('rank: the filters apply before the rates', () => {
+  const rows = [
+    // First meetings are missed far more: 50% against 10% for the rest.
+    row('a', 'd1', 5, 5, { first: 1 }),
+    row('b', 'd1', 5, 5, { first: 1 }),
+    row('a', 'd1', 45, 5),
+    row('b', 'd1', 45, 5),
+  ];
+  // Among first meetings alone, a is as missed as the rest.
+  const a = rank(rows, { first: true }).list.find((s) => s.item === 'a')!;
+  assert.equal(a.n, 10);
+  close(a.expected, 5);
+  close(a.score!, 1);
+  // The form and the mode narrow it the same way.
+  const art = [row('x', 'd1', 0, 10, { form: 'a' }), row('y', 'd1', 10, 0, { form: 'a' }), row('x', 'practice', 10, 0)];
+  assert.deepEqual(
+    rank(art, { form: 'a' }).list.map((s) => [s.item, s.n]),
+    [
+      ['x', 10],
+      ['y', 10],
+    ],
+  );
+  assert.deepEqual(
+    rank(art, { mode: 'practice' }).list.map((s) => s.item),
+    ['x'],
+  );
+  assert.deepEqual(
+    rank([row('g', 'g3', 1, 1), row('t', 't-cruel', 1, 1), row('r', 'r-eternal', 1, 1), row('d', 'daily', 1, 1)], { mode: 'together' }).list.map((s) => s.item),
+    ['g'],
+  );
+});
+
+test('rank: this build’s version by default (not a newer one sent made up), another when asked', () => {
+  const rows = [row('now', 'd1', 1, 1, { v: TALLY_VERSION }), row('made-up', 'd1', 1, 1, { v: 1000 })];
+  assert.deepEqual(
+    rank(rows).list.map((s) => s.item),
+    ['now'],
+  );
+  assert.equal(rank(rows).v, TALLY_VERSION);
+  assert.deepEqual(
+    rank(rows, { v: 1000 }).list.map((s) => s.item),
+    ['made-up'],
+  );
+  assert.deepEqual(rank([]), { v: TALLY_VERSION, list: [] });
+});
+
+test('rank: the fewest answers is counted over every context, after the rates', () => {
+  const rows = [row('a', 'd1', 3, 2), row('a', 'd2', 3, 2), row('b', 'd1', 5, 0), row('b', 'd2', 0, 0)];
+  // a has 10 answers in all, though 5 in each context.
+  assert.deepEqual(
+    rank(rows, { min: 10 }).list.map((s) => s.item),
+    ['a'],
+  );
+  // Leaving b out doesn't change a's rates: d1 is still 2 of 10 (b's 5 right in it), d2 2 of 5.
+  close(rank(rows, { min: 10 }).list[0].expected, 5 * 0.2 + 5 * 0.4);
+});
+
+test('rank: with nothing expected there is no score, and it goes last', () => {
+  const rows = [row('sure', 'practice', 10, 0), row('a', 'd1', 5, 5), row('b', 'd1', 8, 2)];
+  const { list } = rank(rows);
+  const sure = list.at(-1)!;
+  assert.equal(sure.item, 'sure');
+  assert.equal(sure.score, null);
+  assert.equal(sure.low, 0);
+  assert.equal(sure.high, Infinity);
+  // Below an item never missed where others were (its low end 0 too), however many more answers it has.
+  const tied = rank([row('sure', 'practice', 50, 0), row('a', 'd1', 5, 0), row('b', 'd1', 8, 2)]).list;
+  assert.deepEqual(
+    tied.map((s) => s.item),
+    ['b', 'a', 'sure'],
+  );
+});
+
+test('the stats page takes the Worker’s rows only in the shape it knows', async () => {
+  const { tallyRowsOf } = await import('../src/statsPage/tally.ts');
+  const ok = [{ v: 1, item: '4f588a87bc12', form: 'n', ctx: 'd3', first: 0, r: 4, w: 1 }];
+  assert.deepEqual(tallyRowsOf(ok), ok);
+  assert.deepEqual(tallyRowsOf([]), []);
+  for (const bad of [null, {}, [{ ...ok[0], form: 'x' }], [{ ...ok[0], r: -1 }], [{ ...ok[0], first: 2 }], [{ item: 'a' }]]) assert.throws(() => tallyRowsOf(bad));
+});
+
+test('the demo’s made-up tally: most items, deeper bands missed more, a few obscure, ids no item has', async () => {
+  const { demoTally } = await import('../src/statsPage/demo.ts');
+  const { default: items } = await import('../src/data/items.json', { with: { type: 'json' } });
+  const ids = items.map((i: { id: string }) => i.id);
+  const rows = demoTally(ids);
+  assert.deepEqual(demoTally(ids), rows, 'the same rows every time');
+  const known = new Set(ids);
+  const tallied = new Set(rows.map((x) => x.item));
+  assert.ok([...tallied].filter((id) => known.has(id)).length > 0.9 * ids.length);
+  assert.ok([...tallied].some((id) => !known.has(id)));
+  for (const x of rows) assert.match(x.item, /^[0-9a-f]{12}$/);
+  const missed = (ctx: string) => {
+    const s = rows.filter((x) => x.ctx === ctx).reduce((a, x) => ({ n: a.n + x.r + x.w, w: a.w + x.w }), { n: 0, w: 0 });
+    return s.w / s.n;
+  };
+  assert.ok(missed('d1') < missed('d5') && missed('d5') < missed('d10'));
+  const { list } = rank(rows, { min: 10 });
+  assert.ok(list.filter((s) => s.low > 2).length >= 3, 'a handful clearly obscure');
+});
+
+test('rank: a tally at its cap of rows ranks as any other', () => {
+  const rows = Array.from({ length: TALLY_ROWS }, (_, i) => row((i % 600).toString(16).padStart(12, '0'), `d${1 + (i % 20)}`, 3, 1, { form: i % 2 ? 'n' : 'a', first: i % 3 ? 0 : 1 }));
+  const { v, list } = rank(rows);
+  assert.equal(v, 1);
+  assert.equal(list.length, 600);
+});

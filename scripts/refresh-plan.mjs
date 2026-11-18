@@ -253,3 +253,14 @@ export function summaryLines({ added = [], renamed = [], dropped = [], changed =
     lines.push(`  The ${added.length} added are first seen ${day}: the start page counts them as the newest release's in src/lib/releases.ts, if it starts on or before that day (a new league's refresh adds its release there first).`);
   return lines;
 }
+
+/**
+ * signal/itemIds.json as a run writes it beside items.json: every item's id,
+ * sorted, one a line (an item's other art keeps an id of its own, but answers
+ * are tallied by the item's). The matchmaking server tallies answers for
+ * these items alone (signal/worker.js), and lives in signal/ so a refresh
+ * that changes them deploys it again; tests/itemTallyWorker.test.ts holds
+ * it to items.json.
+ * @param {{ id: string }[]} items
+ */
+export const itemIdsText = (items) => JSON.stringify(items.map((it) => it.id).sort(), null, 1) + '\n';
