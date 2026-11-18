@@ -8,13 +8,33 @@
 import type { Answer } from '../../lib/codex.ts';
 import { DELVE_RULESET } from '../../lib/delve.ts';
 import type { DelveRun } from '../../lib/delveRecord.ts';
+import { FOSSILS } from '../../lib/fossils.ts';
+import { serializeFossils, type FossilStore } from '../../lib/fossilStore.ts';
 import type { Control, Values } from '../bench.ts';
 import { id } from '../build/people.ts';
 import type { Built, Scene, Step } from '../scene.ts';
 
+/** The first run's evening, the rest three days apart and at other hours, all before the desk's date (20 October 2026): so a date the page shows reads as a player's would. */
+const FIRST_RUN = Date.UTC(2026, 7, 20, 19, 40);
+const runAt = (i: number) => FIRST_RUN + i * 3 * 86_400_000 + (i % 3) * 2 * 3_600_000;
+
 function filled(steps: Step[] = [], depths = [8, 14, 27, 19, 33, 23, 41]): Built {
-  const runs: DelveRun[] = depths.map((depth, i) => ({ id: 2000 + i, at: 2000 + i, depth, players: i % 3 ? 1 : 3, ruleset: DELVE_RULESET, mixed: false, ...(i % 3 ? {} : { perished: [depth] }) }));
+  const runs: DelveRun[] = depths.map((depth, i) => ({ id: 2000 + i, at: runAt(i), depth, players: i % 3 ? 1 : 3, ruleset: DELVE_RULESET, mixed: false, ...(i % 3 ? {} : { perished: [depth] }) }));
   return { state: null, hash: '#codex', met: 140, runs, steps };
+}
+
+/**
+ * The first `n` fossils found, a few days apart, the rare ones mixed in from
+ * the fourth on (so 17 holds three of them), one of them in a run together;
+ * `commons`: the 17 common ones alone, every square of the packing filled.
+ */
+function fossils(n: number, { commons = false } = {}): Record<string, string> {
+  const common = FOSSILS.filter((f) => !f.rare);
+  const rares = FOSSILS.filter((f) => f.rare);
+  const order = commons ? common : n >= FOSSILS.length ? FOSSILS : [...common.slice(0, 3), ...rares.slice(0, 3), ...common.slice(3), ...rares.slice(3)];
+  const found: FossilStore['found'] = {};
+  for (const [i, f] of order.slice(0, n).entries()) found[f.id] = { at: Date.UTC(2026, 8, 1) + i * 3 * 86_400_000, depth: f.rare ? 28 + i : 7 + i, ...(i === 1 ? { together: true } : {}) };
+  return { fossils: serializeFossils({ found }) };
 }
 
 /**
@@ -126,21 +146,71 @@ const RUNS: Control = {
   key: 'runs',
   label: 'Runs',
   options: [
+    { value: 'first', label: 'One, in the Mines' },
     { value: 'seven', label: 'Seven' },
     { value: 'many', label: 'Sixteen: all shown, then the latest' },
+    { value: 'six', label: 'Six zones, the fewest behind a button: then all, at a glance' },
+    { value: 'deep', label: 'Fourteen zones, past depth 100: the middle ones behind a button, then all at a glance' },
+    { value: 'bottom', label: 'Every zone, to depth 999: nothing uncharted' },
+    { value: 'all', label: 'Every zone, all at a glance' },
     { value: 'finds', label: 'Seven, finds taken' },
     { value: 'none', label: 'None' },
     { value: 'new', label: 'None, and little met' },
   ],
   default: 'seven',
 };
+/**
+ * Its fossils (components/codex/DelveFossils.svelte), beside the zones
+ * reached: the 17 common ones in Bidwell's packing, the 8 rare ones together
+ * beside it (under it on a phone upright), one not kept yet only its shape, a
+ * kept one's tooltip beside it: none; one; some (a kept rare one's tooltip
+ * up); every common one (the packing full, a tilted one's tooltip up); all 25.
+ */
+const FOSSILS_KEPT: Control = {
+  kind: 'choice',
+  key: 'fossils',
+  label: 'Fossils',
+  default: 'none',
+  when: { page: ['delve'] },
+  options: [
+    { value: 'none', label: 'None' },
+    { value: 'one', label: 'The first' },
+    { value: 'some', label: '17, a rare one’s tooltip up' },
+    { value: 'commons', label: 'Every common one, a tooltip up' },
+    { value: 'all', label: 'All 25' },
+  ],
+};
+/** How many each holds, and the slot whose tooltip a click brings up (made as it's chosen). */
+const KEPT: Record<string, () => { stored: Record<string, string>; click?: string }> = {
+  one: () => ({ stored: fossils(1) }),
+  some: () => ({ stored: fossils(17), click: '.fossils .cell.got.rare' }),
+  commons: () => ({ stored: fossils(17, { commons: true }), click: '.fossils .grid.common li:nth-child(5) .cell' }),
+  all: () => ({ stored: fossils(FOSSILS.length) }),
+};
 
 function pages(v: Values = {}): Built {
+  const built = runsShown(v);
+  const kept = v.page === 'feats' ? undefined : KEPT[String(v.fossils ?? 'none')]?.();
+  if (!kept) return built;
+  return { ...built, stored: { ...built.stored, ...kept.stored }, ...(kept.click ? { steps: [...(built.steps ?? []), { click: kept.click }] } : {}) };
+}
+
+/** The page with its runs as set. */
+function runsShown(v: Values): Built {
   const tab: Step = { click: v.page === 'feats' ? '#codex-tab-feats' : '#codex-tab-delve' };
   if (v.runs === 'new') return { state: null, hash: '#codex', met: 40, steps: [tab] };
   if (v.runs === 'none') return filled([tab], []);
+  if (v.runs === 'first') return filled([tab], [6]);
   // Finds taken alone, the page brought down to them.
   if (v.runs === 'finds') return { ...filled(v.page === 'feats' ? [tab] : [tab, { wait: 1200 }, { scroll: '[aria-labelledby="find-h-Alone"]' }]), log: findsLog() };
+  // The middle zones behind a button, then all of them: the seals at a glance, filling the card beside the fossils.
+  const opened: Step[] = v.page === 'feats' ? [tab] : [tab, { wait: 1200 }, { scroll: '.zones button.more' }, { wait: 900 }, { click: '.zones button.more' }];
+  // Six zones, the fewest the button hides any of: one between the Mines and the deepest three.
+  if (v.runs === 'six') return filled(opened, [8, 23, 41, 56]);
+  // Fourteen zones reached, the last four past depth 100 (generated, each with its own name and colour, the sigil of the zone it's made after).
+  if (v.runs === 'deep') return filled(opened, [8, 14, 27, 19, 33, 23, 41, 52, 47, 61, 58, 73, 66, 85, 97, 112, 104, 131]);
+  // As deep as Delve goes: all hundred zones, the last one's thread ending at its seal; folded, or all of them at a glance.
+  if (v.runs === 'bottom' || v.runs === 'all') return filled(v.runs === 'all' ? opened : [tab], [12, 31, 64, 140, 233, 410, 702, 999]);
   if (v.runs !== 'many') return filled([tab]);
   // More runs than its short list: all of them shown (the new rows fading in), then the short list again from the button, which stays where it was.
   return filled(
@@ -182,14 +252,21 @@ export function codexScenes(): Scene[] {
     },
     {
       ...codex('delve', 'The Delve and Achievements pages', () => pages()),
-      controls: [PAGE, RUNS],
+      controls: [PAGE, RUNS, FOSSILS_KEPT],
       states: [
         { label: 'The Delve page', values: {} },
         { label: 'The Delve page, never delved', values: { runs: 'none' }, key: 'codex/delve-none', listed: false },
         { label: 'The Delve page: every run shown, then the latest again', values: { runs: 'many' }, key: 'codex/runs', listed: false },
         { label: 'The Delve page: finds taken, a vein caved in on strike 1 and one on strike 2', values: { runs: 'finds' }, key: 'codex/delve-finds', listed: false },
+        { label: 'The Delve page, six zones, then all at a glance', values: { runs: 'six' }, key: 'codex/zones-six', listed: false },
+        { label: 'The Delve page, fourteen zones, past depth 100: the middle ones behind a button, then all at a glance', values: { runs: 'deep' }, key: 'codex/zones-deep', listed: false },
+        { label: 'The Delve page, every zone, all at a glance', values: { runs: 'all' }, key: 'codex/zones-all', listed: false },
         { label: 'The Achievements page', values: { page: 'feats' }, key: 'codex/feats', listed: false },
         { label: 'The Delve page, no run yet', values: { runs: 'new' }, key: 'codex/delve-empty', listed: false },
+        { label: 'The Delve page, the first fossil', values: { fossils: 'one' }, key: 'codex/fossils-1', listed: false },
+        { label: 'The Delve page, 17 fossils, one chosen', values: { fossils: 'some' }, key: 'codex/fossils-some', listed: false },
+        { label: 'The Delve page, every common fossil', values: { fossils: 'commons' }, key: 'codex/fossils-commons', listed: false },
+        { label: 'The Delve page, all 25 fossils', values: { fossils: 'all' }, key: 'codex/fossils-all', listed: false },
       ],
       build: pages,
     },

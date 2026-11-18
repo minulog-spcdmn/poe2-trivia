@@ -7,10 +7,10 @@ import assert from 'node:assert/strict';
 import { metaLine, NEWS_MOST, SUBTITLE_MOST, SUBTITLES, TREATMENTS, subtitleAt, treatmentAt, zoneNews, zoneTitleAt, type Family } from '../src/lib/zoneTitle.ts';
 import { T, drawPlan, glowAt, timeline } from '../src/lib/zoneTitleTiming.ts';
 import { ARCHETYPES, composedNames, NAME_MOST } from '../src/lib/archetypes.ts';
-import { biomeAt, emblemOf } from '../src/lib/backdrops.ts';
+import { biomeAt, emblemOf, turnOfName } from '../src/lib/backdrops.ts';
 import { STRATA, stratumName } from '../src/lib/descent.ts';
 import { opensZone, ZONE_DESCENT_MS } from '../src/lib/delve.ts';
-import { sigilOf, sigilStrokes, SIGIL_NAMES, zoneAt } from '../src/lib/zoneSigils.ts';
+import { drawingOf, RANKED, sigilOf, sigilStrokes, SIGIL_NAMES, zoneAt, type SigilSet } from '../src/lib/zoneSigils.ts';
 import { roman } from '../src/lib/roman.ts';
 
 /** The dash the house never uses (CLAUDE.md), made from its code so this file doesn't hold one. */
@@ -211,12 +211,30 @@ test('every biome has a sigil of its own, within its seal', () => {
   // Past depth 100 each stratum has a name of its own, and bears its archetype's zone's emblem.
   for (let k = 10; k < 30; k++) assert.ok(SIGIL_NAMES.includes(emblemOf(stratumName(k))!), stratumName(k));
   for (const a of ARCHETYPES) assert.ok(SIGIL_NAMES.includes(a.emblem), a.kind);
-  for (let k = 10; k < 30; k++) assert.deepEqual(sigilOf(stratumName(k)), sigilOf(emblemOf(stratumName(k))!));
   for (const name of SIGIL_NAMES) {
-    const { lines, fine } = sigilOf(name);
-    assert.ok(lines.length > 20, name);
-    for (const [x, y] of points(lines + fine)) assert.ok(Math.hypot(x, y) <= 10.6, `${name} reaches ${Math.hypot(x, y).toFixed(1)}`);
+    for (const set of ['current', 'scenes', 'third'] as SigilSet[]) {
+      const { lines, fine } = drawingOf(set, name);
+      assert.ok(lines.length > 20, `${name}, ${set}`);
+      for (const [x, y] of points(lines + fine)) assert.ok(Math.hypot(x, y) <= 10.6, `${name}, ${set}, reaches ${Math.hypot(x, y).toFixed(1)}`);
+    }
   }
+});
+
+test('a zone bears its best drawing; past depth 100 a place bears its zone’s second and third in turn, every zone’s but the Mines’', () => {
+  for (const name of SIGIL_NAMES) {
+    assert.deepEqual([...RANKED[name]].sort(), ['current', 'scenes', 'third'], name);
+    assert.equal(sigilOf(name), drawingOf(RANKED[name][0], name), name);
+  }
+  // An archetype's strata take its names one a round: the first time it comes round its zone's second, the next its third.
+  for (let k = 10; k < 10 + 4 * ARCHETYPES.length; k++) {
+    const name = stratumName(k);
+    const zone = emblemOf(name)!;
+    const turn = turnOfName(name)!;
+    assert.equal(turn, Math.floor((k - 10) / ARCHETYPES.length), name);
+    assert.equal(sigilOf(name), drawingOf(RANKED[zone][1 + (turn % 2)], zone), name);
+  }
+  // Every zone but the Mines is some archetype's, so its second and third show past 100 too; the Mines' stay in the Mines (the owner's call).
+  for (const name of SIGIL_NAMES) assert.equal(ARCHETYPES.some((a) => a.emblem === name), name !== 'The Mines', name);
 });
 
 test('the zone a depth is in', () => {

@@ -56,8 +56,8 @@ export type Gilt = { parts: { d: string; tone: 'glass' | 'body' | 'flame' }[]; s
 
 // Where things sit, in pixels from the card's top left (inside its border).
 // ChooseCategory's CSS places the emblem and the name to match.
-/** A tall card's face: the panel's foot, the nameplate's top, and the emblem's centre. */
-export const TALL = { panelFoot: 232, plateTop: 238, emblemY: 132 };
+/** A tall card's face: the panel's foot, the nameplate's top, the emblem's centre and where the arch springs. */
+export const TALL = { panelFoot: 232, plateTop: 238, emblemY: 132, springing: 110 };
 /** A card in a row: the emblem's centre from the left, and the divider after it. */
 export const ROW = { emblemX: 62, divider: 118 };
 /** The largest Sol and Luna in the spandrels of a tall face (each as large as its corner allows, up to this). */
@@ -121,7 +121,7 @@ const lensReach = (c: Pt, deg: number, { a, b, r }: Lens) => {
 };
 
 /** A rectangle with its corners notched by quarter circles of radius `n` about them, its sides `d` in, broken at `holes`. */
-const notched = (x0: number, y0: number, x1: number, y1: number, n: number, d: number, holes: Hole[] = []) => {
+export const notched = (x0: number, y0: number, x1: number, y1: number, n: number, d: number, holes: Hole[] = []) => {
   const s = Math.sqrt(n * n - d * d);
   const o = { holes };
   const corner = (from: Pt, to: Pt) => `M${pt(from)}A${n} ${n} 0 0 0 ${pt(to)}`;
@@ -149,6 +149,12 @@ export class Plate {
   knockout = '';
   /** The motif gilded, if it is (see Gilt). */
   gilt: Gilt | null = null;
+  /**
+   * The pane a fossil's card is lit through (ChooseCategory, CardEngraving
+   * `lit`): the face's window, a row's square round its emblem, the back's
+   * mandorla; its middle, and how far it reaches from there.
+   */
+  pane: { d: string; c: Pt; r: number } | null = null;
   /**
    * While true, what is added stands in front of the emblem as well as the
    * plate (CardEngraving's front layer, over the category's item), solid:
@@ -361,7 +367,7 @@ const tallFace = (w: number, h: number, p: Plate, v?: Variant) => {
   // The arch: a half circle on two sides, its springing at S.
   const ri = MID - 26;
   const ro = ri + 3.5;
-  const S = 110;
+  const S = TALL.springing;
   const A: Pt = [MID, S];
   // The keystone, flaring a little, its left half hatched; the arcs stop at it.
   const key = [at(A, -4.5, ri), at(A, 4.5, ri), at(A, 5.4, ro + 2.2), at(A, -5.4, ro + 2.2)];
@@ -533,6 +539,7 @@ const tallFace = (w: number, h: number, p: Plate, v?: Variant) => {
   p.out = p.out.map((s, i) => (s.cls === 'ray' || (v?.glory && i >= before) ? { ...s, d: clipOut(s.d, daisCuts) } : s));
   p.fade = { c: C, from: 70, r: 128 };
   p.window = `M${f(MID - ri)} ${f(y1 - 2.5)}V${f(S)}A${f(ri)} ${f(ri)} 0 0 1 ${f(MID + ri)} ${f(S)}V${f(y1 - 2.5)}Z`;
+  p.pane = { d: p.window, c: C, r: ri };
   if (v?.face) {
     const g: TallLayout = { row: false, w, h, panel: [x0, y0, x1, y1], inner, plate, arch: { A, ri, ro }, floor, pedestal: { capTop, capR, baseR }, emblem: C, sol, luna };
     hook(p, true, () => v.face!(p, g));
@@ -567,6 +574,7 @@ const rowFace = (w: number, h: number, p: Plate, v?: Variant) => {
   if (v?.glory) hook(p, false, () => v.glory!(p, C, reach, true));
   else p.glory(C, 64, 28, reach, 0.6);
   p.fade = { c: C, from: 32, r: 64 };
+  p.pane = { d: `M${f(box[0])} ${f(box[1])}H${f(box[2])}V${f(box[3])}H${f(box[0])}Z`, c: C, r: (box[3] - box[1]) / 2 };
   if (v?.face) hook(p, true, () => v.face!(p, { row: true, w, h, emblem: C, divider: x }));
 };
 
@@ -608,6 +616,8 @@ const back = (w: number, h: number, p: Plate, v?: Variant) => {
     p.sun(c, sunR, Math.min(row ? 24 : 42, room(0)), Math.min(row ? 18 : 31, room(22.5)), { holes });
   }
   p.fade = { c, from: 0, r: row ? len + 10 : len + 6 };
+  const [t0, t1] = [tipAt(-1, 0), tipAt(1, 0)];
+  p.pane = { d: `M${f(t0[0])} ${f(t0[1])}A${f(R)} ${f(R)} 0 0 1 ${f(t1[0])} ${f(t1[1])}A${f(R)} ${f(R)} 0 0 1 ${f(t0[0])} ${f(t0[1])}Z`, c, r: wid };
 };
 
 /** A side's plate, as engrave() gives it. */
@@ -658,5 +668,5 @@ const engraveAnew = (side: 'face' | 'back', w: number, h: number, v?: Variant) =
   }
   const rank = (s: Stroke) => (s.front ? 2 : s.motif ? 1 : 0);
   const strokes = [...by.values()].sort((a, b) => rank(a) - rank(b)).map(({ cls, d, motif, front }) => (front ? { cls, d, motif, front } : motif ? { cls, d, motif } : { cls, d }));
-  return { strokes, fade: p.fade, window: p.window, knockout: p.knockout || null, gilt: p.gilt, solid: p.solid || null };
+  return { strokes, fade: p.fade, window: p.window, knockout: p.knockout || null, gilt: p.gilt, solid: p.solid || null, pane: p.pane };
 };

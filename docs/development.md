@@ -249,7 +249,9 @@ Everything is drawn in WebGL2 with float precision and dithered once at the
   (`src/lib/likeness.ts`), made once and cached. Its name is its
   archetype's next (`endgameName`): the curated ones first, then epithets
   and places composed; its sigil and ornament its archetype's zone's
-  (`emblemOf`).
+  (`emblemOf`): the sigil that zone's second best drawing the first time
+  the archetype comes round, its third the next, in turn (`sigilOf`,
+  `RANKED` in `src/lib/zoneSigils.ts`; the zone itself shows its best).
   From a zone's 6th depth to the next one's 1st, five depths, the scene
   turns into the next (`strataAt`, `turnInto`; `TURN_FROM`,
   `TURN_DEPTHS`), the turn coming a fifth a depth to the zone's 8th, a

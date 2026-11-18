@@ -101,7 +101,7 @@ export interface Archetype {
   dense: number;
   /** More (positive) or fewer embers than the settings have. */
   crowd: number;
-  /** The zone whose emblem its strata bear (the sigil on the seal of their title card, lib/zoneSigils.ts). */
+  /** The zone whose emblem its strata bear (the sigil on the seal of their title card, lib/zoneSigils.ts: that zone's second and third best drawings, in turn). Between them the archetypes bear every zone's but the Mines': the owner wants the Mines' own drawings kept to the Mines. */
   emblem: string;
   /** Its strata's names: the curated ones first, then every epithet with every place. */
   names: string[];
@@ -362,7 +362,7 @@ export const ARCHETYPES: readonly Archetype[] = [
     hazeK: [0.45, 0.65],
     dense: 0.05,
     crowd: 0.05,
-    emblem: 'Fungal Caverns',
+    emblem: 'Petrified Forest',
     names: ['The Witchfire Grove', 'Coven of Embers', 'The Hexed Thicket', 'The Blighted Copse', 'Grove of Green Flame', 'The Cauldron Wood', 'The Wicker Circle'],
     epithets: ['Cursed', 'Witchlit', 'Bewitched', 'Baleful', 'Gnarled'],
     places: ['Wildwood', 'Coppice', 'Brambles', 'Briarwood'],

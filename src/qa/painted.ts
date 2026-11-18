@@ -139,12 +139,17 @@ export const PAINTED: Painted[] = [
   {
     file: 'src/lib/glint.ts',
     animate: { in: ['pass'], props: ['-webkit-mask-position', 'mask-position'] },
-    why: 'A light crossing the creator’s name (1.4 s every 9 s) or an achievement’s seal (now and then): the slit’s mask slides, the slit (a name’s line, a seal) drawn again while it crosses, and nothing between passes.',
+    why: 'A light crossing the creator’s name (1.4 s every 9 s), an achievement’s seal (now and then) or a kept fossil (1.5 s every 12 s, a rare’s 1.4 s every 7 s): the slit’s mask slides, the slit (a name’s line, a seal, a fossil’s art on a layer of its own) drawn again while it crosses, and nothing between passes. All 25 fossils in the codex, 12k px a frame at rest, the page; 20 in the set over the end screen, 21k.',
   },
   {
     file: 'src/lib/dialogIn.ts',
     animate: { in: ['play'], props: ['?'] },
     why: 'A Svelte transition played on a dialog Svelte doesn’t make (the privacy sheet, LegalSheet.svelte): its keyframes sampled from the transition’s css, which the test can’t read; dialogIn’s and dialogOut’s are opacity and transform alone.',
+  },
+  {
+    file: 'src/lib/fossilFlight.ts',
+    animate: { in: ['revealFossil'], props: ['filter', '-webkit-mask-position', 'mask-position', 'color'] },
+    why: 'Once a question at most, about 1 s, as a fossil kept is shown: its picture (120 px at most) comes out of the name plate’s seal overbright and cools to its own light as it lands, a band of light slides across a copy of it once (twice for a rare), and its name’s letters, written in one by one, cool from a pale light to their colour.',
   },
   { file: 'src/spatialPage/Menu.svelte', animate: { in: ['flash'], props: ['box-shadow'] }, why: 'A dev page’s (spatial.html), never the game’s: 0.7 s, the shadow round an option or a score row as a sound plays from it.' },
   { file: 'src/components/zonecard/family.ts', animate: { in: ['enterDefault', 'exitDefault'], props: ['filter'] }, why: LETTERS },
@@ -172,7 +177,7 @@ export const PAINTED: Painted[] = [
   { file: 'src/components/zonecard/ZoneSeal.svelte', animate: { in: ['draw'], props: ['stroke-dashoffset', 'stroke-dasharray'] }, why: 'Once, about 1.3 s, as a zone’s seal draws itself on its title card: its rings and sigil, an svg 36 to 72 px across.' },
   { file: 'src/components/zonecard/NewsMark.svelte', animate: { in: ['onMount'], props: ['stroke-dashoffset', 'stroke-dasharray'] }, why: 'Once, 0.3 s, as what’s new on a zone’s title card gets its mark: the mark’s rings, a small svg in a box 6.5 rem wide.' },
   { file: 'src/App.svelte', animate: { in: ['easeWidth'], props: ['width'] }, why: 'Once, 0.2 to 0.5 s, as the header’s depth gains or loses a digit or its zone changes (unless under a zone card’s bars): the line’s box, one line of text in the header.' },
-  { file: 'src/components/CodexDelve.svelte', animate: { in: ['open'], props: ['height'] }, why: 'Once, 0.35 s, as “Show all zones” opens on the codex’s Delve page: that list’s box.' },
+  { file: 'src/components/codex/DelveZones.svelte', animate: { in: ['showAll'], props: ['height'] }, why: 'Once, 0.45 s, as “Show all zones” opens on a phone, the codex’s Delve page: that list’s box, growing with the rows going down.' },
   { file: 'src/components/Lobby.svelte', animate: { in: ['settle'], props: ['clip-path', 'margin-bottom'] }, why: 'Once, a few tenths of a second, as a hint in the lobby’s room panel grows or goes (the lock’s): the hint’s box, a line or two.' },
   { file: 'src/components/Lobby.svelte', animate: { in: ['untrack'], props: ['margin-top', 'margin-bottom'] }, why: 'Once, 0.26 s, as Begin glides when a mode’s settings change height, below a desktop: Begin’s row.' },
   { file: 'src/components/Scoreboard.svelte', animate: { in: ['$effect'], props: ['min-width', 'width'] }, why: 'Once, about 0.35 s, as the scoreboard’s entries take their new widths (a player removed, a heart given): each entry, a pill one line tall.' },
