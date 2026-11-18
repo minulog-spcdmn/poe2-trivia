@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { pack } from 'peerjs-js-binarypack';
+import { pack, unpack } from 'peerjs-js-binarypack';
 import {
   CursorOutbox,
   moveOn,
@@ -156,6 +156,13 @@ test('a pointer from a guest is checked like any message', () => {
   ];
   for (const at of bad) assert.equal(parseClientMsg({ t: 'cursor', at }), null, JSON.stringify(at));
   assert.equal(parseCursorAt([16, 0, 0, true]), undefined);
+});
+
+test('a pointer on the highest anchor code crosses the wire whole, the code in one byte', () => {
+  const msg = { t: 'cursor', at: cursorAt([[MAX_ANCHOR, 500, 600], [anchorCode('settings')!, 900, 400]], 0) };
+  const sent = bytes(msg);
+  assert.deepEqual(parseClientMsg(unpack(sent.buffer.slice(sent.byteOffset, sent.byteOffset + sent.byteLength) as ArrayBuffer)), msg);
+  assert.equal(bytes(MAX_ANCHOR).length, 1);
 });
 
 test("a host's batch is checked, and read back", () => {

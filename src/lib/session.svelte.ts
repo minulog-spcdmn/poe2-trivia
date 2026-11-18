@@ -800,10 +800,10 @@ class Session {
 
   /**
    * The Versus game (Take turns or Race) this room was last set to: the lobby's
-   * Versus card goes back to it, a Delve game between or not. Take turns until
-   * then, and again in the next room.
+   * Versus card goes back to it, a Delve game between or not. Until then, the
+   * one the host last played (saved with the room's settings, prefs.ts).
    */
-  versusGame: Exclude<GameMode, 'delve'> = 'turns';
+  versusGame: Exclude<GameMode, 'delve'> = roomPrefs().versus;
 
   /** A Delve run alone on this device, straight from a shared link. Nothing changes for a name that can't be played under. */
   startDelve(name: string) {
@@ -1087,7 +1087,9 @@ class Session {
    */
   private newRoomGame(failure?: Failure): GameState | null {
     const me = this.priv.myPlayerId;
-    const s = createGame(me, roomSettings());
+    const prefs = roomPrefs();
+    const s = createGame(me, roomSettings(prefs));
+    this.versusGame = prefs.versus;
     // (A shared link's Delve is used up by this room, as by a game on this device.)
     this.delveLink = false;
     try {
@@ -3850,7 +3852,7 @@ class Session {
     this.sealedArt.clear();
     this.labRoomless = false;
     this.hereOnly = false;
-    this.versusGame = 'turns';
+    this.versusGame = roomPrefs().versus;
     for (const c of this.guests.keys()) c.close();
     this.guests.clear();
     this.standing = {};

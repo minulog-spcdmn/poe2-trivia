@@ -896,7 +896,7 @@
       {:else}
         <!-- One row per setting: its name, then its choices (a guest, who can't change them, reads the value).
              Versus's mode comes first, with the cards and their box (no rule over it): the rest follow from it. -->
-        <div class="setting row game-row" in:fade={calm({ duration: 260 })}>
+        <div class="setting row game-row" data-cursor="mode" in:fade={calm({ duration: 260 })}>
           <span class="label">Mode</span>
           {#if !isHost}{#key s.settings.mode}<b class="val" in:fly={calm({ y: -6, duration: 260 })}>{MODE_NAMES[s.settings.mode]}</b>{/key}{:else}
           <!-- Take turns or Race: one switch with both its sides named, as Private / Public is (in hot-seat, a tap says why Race can't be played). -->

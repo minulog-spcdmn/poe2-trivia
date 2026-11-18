@@ -60,8 +60,13 @@ for (let g = 1; g <= games; g++) {
   if (games > 1) prefix = `g${g} `;
   await press(/^New game$/, 'new game');
   await sleep(2500);
-  // A new room opens on Delve: Versus's card, which opens on Take turns (the step keeps its name, for older runs).
+  // A new room opens on Delve: Versus's card (the step keeps its name, for older runs). The card goes back to the
+  // Versus game this profile last hosted, so a Race left there by hand is switched back to Take turns.
   await press(/^Versus$/, 'take turns');
+  await page.evaluate(() => {
+    const t = document.querySelector('button.game-toggle');
+    if (t?.getAttribute('aria-checked') === 'true') t.click();
+  });
   await sleep(1500);
   await press(/^Begin the hunt$/, 'begin');
   await sleep(3000);

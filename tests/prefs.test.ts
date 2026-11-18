@@ -20,7 +20,7 @@ const store = new Map<string, string>();
 beforeEach(() => store.clear());
 
 const knobs = { ...PRESETS.cruel, options: 10, veil: 'slowest' as const, grayscale: 'all' as const, lockout: 0 };
-const custom: RoomPrefs = { targetScore: 15, timer: 32, difficulty: 'eternal', custom: knobs, mode: 'turns', public: true, hideCode: true };
+const custom: RoomPrefs = { targetScore: 15, timer: 32, difficulty: 'eternal', custom: knobs, mode: 'turns', versus: 'turns', public: true, hideCode: true };
 
 test('round-trips saved settings', () => {
   assert.deepEqual(parsePrefs(serializePrefs(custom)), custom);
@@ -118,7 +118,7 @@ test("keeps the old hidden-code setting when the new entry can't be written", ()
 test('settings from a room saved by an older build are made valid before saving', () => {
   const old = { targetScore: 7.6, timer: 999 } as unknown as Settings;
   const p = prefsFrom(old);
-  assert.deepEqual(p, { targetScore: 8, timer: 64, difficulty: 'merciless', mode: 'turns', public: false });
+  assert.deepEqual(p, { targetScore: 8, timer: 64, difficulty: 'merciless', mode: 'turns', versus: 'turns', public: false });
   store.set(PREFS_KEY, serializePrefs(custom));
   savePrefs(p);
   assert.deepEqual(parsePrefs(store.get(PREFS_KEY) ?? null), { ...custom, ...p });
@@ -194,5 +194,39 @@ test('a Delve room is stored as turns with a flag, so older tabs still read it',
   for (const old of [serializePrefs(delve), JSON.stringify({ ...raw, delveOn: undefined })]) {
     const s = roomSettings(parsePrefs(old)!);
     assert.deepEqual([s.mode, s.targetScore, s.timer, s.difficulty, s.public], ['delve', custom.targetScore, custom.timer, custom.difficulty, custom.public]);
+  }
+});
+
+test('the Versus game is remembered under Delve, in the field older builds read', () => {
+  const race: Settings = { ...roomSettings(custom), mode: 'race' };
+  savePrefs(prefsFrom(race));
+  // The next room opens on Delve; the host plays it, and the Versus game stays saved.
+  savePrefs(prefsFrom(roomSettings(loadPrefs())));
+  const p = loadPrefs();
+  assert.deepEqual([p.mode, p.versus], ['delve', 'race']);
+  assert.equal(roomSettings(p).mode, 'delve');
+  // Stored in the shape older builds read: the entry's mode, with Delve a flag beside it.
+  const raw = JSON.parse(store.get(PREFS_KEY)!);
+  assert.deepEqual([raw.mode, raw.delveOn, 'versus' in raw], ['race', true, false]);
+  assert.deepEqual(parsePrefs(serializePrefs(p)), p);
+  // Take turns, saved again, replaces it.
+  savePrefs(prefsFrom({ ...race, mode: 'turns' }));
+  assert.deepEqual([loadPrefs().mode, loadPrefs().versus], ['turns', 'turns']);
+});
+
+test('entries older builds saved give the Versus game they last played', () => {
+  const base = { v: 1, targetScore: 15, timer: 32, difficulty: 'eternal', public: true, hideCode: false };
+  for (const [old, versus] of [
+    // On Delve (its flag beside the turns every build before this one stored)
+    [{ ...base, mode: 'turns', delveOn: true }, 'turns'],
+    // On Race, or from before Delve
+    [{ ...base, mode: 'race' }, 'race'],
+    [{ ...base, mode: 'turns' }, 'turns'],
+  ] as const) {
+    store.set(PREFS_KEY, JSON.stringify(old));
+    const p = loadPrefs();
+    assert.equal(p.versus, versus, JSON.stringify(old));
+    assert.equal(roomSettings(p).mode, 'delve');
+    assert.equal(store.get(PREFS_KEY), JSON.stringify(old), 'read without being rewritten');
   }
 });

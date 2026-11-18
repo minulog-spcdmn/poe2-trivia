@@ -15,6 +15,12 @@ export interface RoomPrefs {
    * open their room on it; a new room here opens on Delve whatever it is.
    */
   mode: GameMode;
+  /**
+   * The Versus game (Take turns or Race) the host last set a room to, which the lobby's Versus card goes back to,
+   * in the next room too. Stored as the entry's mode, with Delve a flag beside it, so the entry keeps the shape
+   * older builds read.
+   */
+  versus: Exclude<GameMode, 'delve'>;
   public: boolean;
   /** Streamer mode: don't show the room code on screen. */
   hideCode: boolean;
@@ -32,6 +38,7 @@ export const DEFAULT_PREFS: RoomPrefs = {
   timer: DEFAULT_SETTINGS.timer,
   difficulty: DEFAULT_SETTINGS.difficulty,
   mode: 'delve',
+  versus: 'turns',
   public: true,
   hideCode: false,
 };
@@ -64,6 +71,7 @@ export function parsePrefs(raw: string | null): RoomPrefs | null {
     ...(o.custom === undefined ? {} : { custom: cleanKnobs(o.custom) }),
     // Delve is a flag next to turns, so tabs from before it still read the entry.
     mode: o.delveOn === true ? 'delve' : o.mode,
+    versus: o.mode,
     public: o.public,
     hideCode: o.hideCode,
   };
@@ -72,14 +80,14 @@ export function parsePrefs(raw: string | null): RoomPrefs | null {
 /**
  * Custom is stored as a flag next to a preset, so a tab still running a build
  * from before Custom reads the entry (with the preset) instead of throwing
- * every saved setting away.
+ * every saved setting away. Delve likewise, next to the Versus game.
  */
-export const serializePrefs = (p: RoomPrefs) =>
+export const serializePrefs = ({ versus, ...p }: RoomPrefs) =>
   JSON.stringify({
     v: PREFS_VERSION,
     ...p,
     ...(p.difficulty === 'custom' ? { difficulty: DEFAULT_SETTINGS.difficulty, customOn: true } : {}),
-    ...(p.mode === 'delve' ? { mode: 'turns', delveOn: true } : {}),
+    ...(p.mode === 'delve' ? { mode: versus, delveOn: true } : {}),
   });
 
 /** Whether the entry could be stored. */
@@ -145,13 +153,18 @@ const clampInt = (v: unknown, min: number, max: number, fallback: number) =>
  * The part of a room's settings worth remembering (whether it's locked is
  * not), made valid first: a room saved by an older build may lack some.
  */
-export const prefsFrom = (s: Settings): Partial<RoomPrefs> => ({
-  targetScore: clampInt(s.targetScore, 1, 50, DEFAULT_PREFS.targetScore),
-  timer: snapTimer(clampInt(s.timer, 0, 120, DEFAULT_PREFS.timer)),
-  difficulty: difficultyOf(s.difficulty),
-  // Only once the room has one, so a room that never used it keeps the saved one.
-  ...(s.custom ? { custom: cleanKnobs(s.custom) } : {}),
+export function prefsFrom(s: Settings): Partial<RoomPrefs> {
   // Rooms from before race mode existed played in turns.
-  mode: s.mode === 'race' || s.mode === 'delve' ? s.mode : 'turns',
-  public: !!s.public,
-});
+  const mode = s.mode === 'race' || s.mode === 'delve' ? s.mode : 'turns';
+  return {
+    targetScore: clampInt(s.targetScore, 1, 50, DEFAULT_PREFS.targetScore),
+    timer: snapTimer(clampInt(s.timer, 0, 120, DEFAULT_PREFS.timer)),
+    difficulty: difficultyOf(s.difficulty),
+    // Only once the room has one, so a room that never used it keeps the saved one.
+    ...(s.custom ? { custom: cleanKnobs(s.custom) } : {}),
+    // A Delve room keeps the Versus game saved before it.
+    mode,
+    ...(mode === 'delve' ? {} : { versus: mode }),
+    public: !!s.public,
+  };
+}
