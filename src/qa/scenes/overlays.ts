@@ -17,6 +17,7 @@ import { ACHIEVEMENTS } from '../../lib/achievements.ts';
 import { METALS, TIERS, type Tier } from '../../lib/metals.ts';
 // (A namespace: the code before this change has no ACHIEVEMENT_SOUNDS, and a name it lacks fails the whole screen there.)
 import * as soundDesign from '../../lib/soundDesign.ts';
+import { OFFER } from '../../lib/backup/words.ts';
 import type { Control, Values } from '../bench.ts';
 import type { Built, Scene, Seat, Step } from '../scene.ts';
 
@@ -94,6 +95,7 @@ const NOTICES: Control = {
   options: [
     { value: 'news', label: 'A burst of news' },
     { value: 'link', label: 'The link to the host lost' },
+    { value: 'backup', label: 'The offer to keep it safe, and kept' },
     ...TIERS.map((t) => ({ value: String(t), label: `Achievements in ${METALS[t].name}` })),
   ],
   default: 'news',
@@ -110,6 +112,13 @@ function notices(v: Values = {}): Built {
       { link: 'gaveUp' },
       { wait: 2600 },
       { link: 'back' },
+    ]);
+  // The offer after a game to keep the progress safe with a passkey, worded as lib/backup/backup.svelte.ts offerBackup words it, with its button; then what a press brings.
+  if (v.notices === 'backup')
+    return inGame([
+      { toast: OFFER.message, opts: { ...OFFER.opts, action: { label: 'Keep it safe', run: () => {} } } },
+      { wait: 2600 },
+      { toast: 'Your progress is kept with your passkey from now on, saved as you play.', opts: { title: 'Kept safe' } },
     ]);
   // Achievements earned mid-question, worded as lib/achievementToasts.ts words them: one alone, and three as one notice under the first's seal, all of the metal picked.
   if (v.notices !== undefined && v.notices !== 'news') return achievementNotices(Number(v.notices) as Tier);
@@ -189,6 +198,7 @@ export function overlayScenes(): Scene[] {
       states: [
         { label: 'News during a question: a burst of notices', values: {} },
         { label: 'A guest’s link to the host lost: reconnecting, given up, back', values: { notices: 'link' }, key: 'overlay/lost', listed: false },
+        { label: 'The offer to keep progress safe, then kept', values: { notices: 'backup' }, key: 'overlay/backup-offer', listed: false },
         ...TIERS.map((t, i) => ({ label: `Achievements in ${METALS[t].name}`, values: { notices: String(t) }, listed: false as const, ...(i ? {} : { key: 'overlay/achievement' }) })),
       ],
       build: notices,

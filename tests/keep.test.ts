@@ -70,19 +70,62 @@ test('a bucket keeps each device’s entry in place of what it had, an empty one
   assert.deepEqual([...(await read(k))[0].data], [4, 5]);
 });
 
-test('past the most entries the one written longest ago goes; forgotten or let go, the bucket is empty', async () => {
+test('past the most entries the one written longest ago goes; let go of, the bucket is empty', async () => {
   const state = fakeState();
   const k = new Keep(state);
   for (let i = 0; i <= MAX_ENTRIES; i++) await k.write(`dev${String(i).padStart(9, '0')}`, bytes(i), 1000 + i);
   const kept = await read(k);
   assert.equal(kept.length, MAX_ENTRIES);
   assert.ok(!kept.some((e) => e.device === 'dev000000000'));
-  await k.fetch(new Request(`https://x/keep/${BUCKET}/forget`, { method: 'POST' }));
-  assert.deepEqual(await read(k), []);
-  assert.equal(state.alarm, null);
-  await post(k, 'phone0000001', bytes(1));
   await k.alarm();
   assert.deepEqual(await read(k), []);
+});
+
+test('forgotten, a bucket is gone: nothing read, nothing kept again, until the mark is let go of', async () => {
+  const state = fakeState();
+  const k = new Keep(state);
+  const forget = () => k.fetch(new Request(`https://x/keep/${BUCKET}/forget`, { method: 'POST' }));
+  await post(k, 'phone0000001', bytes(1, 2));
+  assert.equal((await forget()).status, 204);
+  assert.equal((await k.fetch(new Request(`https://x/keep/${BUCKET}`))).status, 410);
+  // A device that never heard of it (not paired, another tab) sends after it: refused, nothing kept.
+  assert.equal((await post(k, 'tablet000001', bytes(9))).status, 410);
+  assert.equal((await post(k, 'phone0000001', bytes())).status, 410);
+  const at = state.alarm;
+  assert.ok(at && at > Date.now() + KEEP_MS - 60_000, 'the mark let go of after as long as a bucket');
+  // Forgotten again: the same, its time unchanged.
+  assert.equal((await forget()).status, 204);
+  assert.equal(state.alarm, at);
+  await k.alarm();
+  assert.deepEqual(await read(k), [], 'let go of, it can be kept in again');
+  assert.equal((await post(k, 'phone0000001', bytes(3))).status, 204);
+  assert.deepEqual((await read(k)).map((e) => e.device), ['phone0000001']);
+});
+
+test('a Forget that comes while a save’s body is still coming in has the last word: nothing of the save stays under the mark', async () => {
+  const state = fakeState();
+  const k = new Keep(state);
+  let rest!: () => void;
+  const held = new Promise<void>((r) => (rest = r));
+  const body = new ReadableStream<Uint8Array>({
+    async pull(c) {
+      await held;
+      c.enqueue(bytes(7));
+      c.close();
+    },
+  });
+  const saving = k.fetch(new Request(`https://x/keep/${BUCKET}/tablet000001`, { method: 'POST', body, duplex: 'half' } as RequestInit));
+  assert.equal((await k.fetch(new Request(`https://x/keep/${BUCKET}/forget`, { method: 'POST' }))).status, 204);
+  rest();
+  assert.equal((await saving).status, 410);
+  assert.deepEqual(
+    state.storage.sql
+      .exec("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .toArray()
+      .map((r) => r.name),
+    ['gone'],
+    'only the mark',
+  );
 });
 
 /** The Worker's bindings: every bucket its own Keep, the rate limits as given. */
@@ -117,6 +160,11 @@ test('the Worker keeps for the game’s own pages only, at paths it knows, withi
   assert.equal((await at(`/keep/${BUCKET}/phone0000001`)).status, 404, 'one device’s isn’t read alone');
   assert.equal((await at(`/keep/${BUCKET}/phone0000001`, { method: 'POST', body: new Uint8Array(MAX_ENTRY + 1) })).status, 413);
   assert.equal((await answer(new Request(`https://x/keep/${BUCKET}`, { headers: { Origin: 'https://poe2.quest' } }), env(true) as never)).status, 429);
+  // Forgotten: gone to the page as well, with the headers it needs to read so.
+  assert.equal((await at(`/keep/${BUCKET}/forget`, { method: 'POST' })).status, 204);
+  const gone = await at(`/keep/${BUCKET}`);
+  assert.equal(gone.status, 410);
+  assert.equal(gone.headers.get('Access-Control-Allow-Origin'), 'https://poe2.quest');
   // Writes are held to fewer: past them, a bucket is still read.
   const few = env(false, true);
   const asked = (init: RequestInit) => answer(new Request(`https://x/keep/${BUCKET}${init.method === 'POST' ? '/phone0000001' : ''}`, { ...init, headers: { Origin: 'https://poe2.quest' } }), few as never);

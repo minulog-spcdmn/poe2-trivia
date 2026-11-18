@@ -492,8 +492,12 @@ export function addressKey(ip) {
 // - POST /keep/<bucket>/<device>: that device's, in place of what it had; an
 //   empty body takes it out. Sent as text/plain, so a page's request needs no
 //   preflight.
-// - POST /keep/<bucket>/forget: the whole bucket deleted.
-// A bucket nobody has written to for KEEP_MS is deleted (its alarm).
+// - POST /keep/<bucket>/forget: the whole bucket deleted, and a mark left in
+//   its place: from then on it is gone (410), read or written, so a device
+//   that never heard of the Forget (one not paired, another tab) can't put
+//   it back.
+// A bucket nobody has written to for KEEP_MS is deleted (its alarm), and so
+// is a Forget's mark, that long after.
 
 /** A bucket's name: 32 bytes of the page's making, in base64url. */
 const BUCKET = /^[A-Za-z0-9_-]{43}$/;
@@ -503,8 +507,8 @@ const DEVICE = /^[0-9a-z]{12}$/;
 export const MAX_ENTRY = 512 * 1024;
 /** The most entries a bucket keeps: past it, the one written longest ago goes. A browser whose data was cleared comes back as a new device. */
 export const MAX_ENTRIES = 64;
-/** How long a bucket nobody writes to is kept (ms): about eighteen months. */
-export const KEEP_MS = 548 * 24 * 3600_000;
+/** How long a bucket nobody writes to is kept (ms): about three years. */
+export const KEEP_MS = 1096 * 24 * 3600_000;
 
 /**
  * A bucket's entries as one body: for each, the device's name (12 bytes), the
@@ -542,17 +546,24 @@ export class Keep {
     this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS entries (device TEXT PRIMARY KEY, at INTEGER NOT NULL, data BLOB NOT NULL)');
   }
 
+  /** Whether the bucket was forgotten (its mark, until it's let go of). */
+  gone() {
+    return this.ctx.storage.sql.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'gone'").toArray().length > 0;
+  }
+
   /** @param {Request} request */
   async fetch(request) {
     const device = new URL(request.url).pathname.split('/')[3];
-    if (request.method === 'GET') return new Response(this.read(), { headers: { 'Content-Type': 'application/octet-stream' } });
     if (device === 'forget') {
-      await this.ctx.storage.deleteAlarm();
-      await this.ctx.storage.deleteAll();
+      if (!this.gone()) await this.forget(Date.now());
       return new Response(null, { status: 204 });
     }
+    if (this.gone()) return new Response(null, { status: 410 });
+    if (request.method === 'GET') return new Response(this.read(), { headers: { 'Content-Type': 'application/octet-stream' } });
     const data = await upTo(request.body, MAX_ENTRY);
     if (!data) return new Response(null, { status: 413 });
+    // (Forgotten while its body came in: reading it lets other requests in, and what it put would outlive the Forget.)
+    if (this.gone()) return new Response(null, { status: 410 });
     await this.write(device, data, Date.now());
     return new Response(null, { status: 204 });
   }
@@ -576,7 +587,16 @@ export class Keep {
     await this.ctx.storage.setAlarm(now + KEEP_MS);
   }
 
-  /** Nobody has written for KEEP_MS: the bucket goes. */
+  /** Every entry deleted, and the mark that it was left in their place (let go of KEEP_MS on). @param {number} now */
+  async forget(now) {
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+    this.ctx.storage.sql.exec('CREATE TABLE gone (at INTEGER NOT NULL)');
+    this.ctx.storage.sql.exec('INSERT INTO gone (at) VALUES (?)', now);
+    await this.ctx.storage.setAlarm(now + KEEP_MS);
+  }
+
+  /** Nobody has written for KEEP_MS, or a Forget was that long ago: the bucket goes, mark and all. */
   async alarm() {
     await this.ctx.storage.deleteAll();
   }

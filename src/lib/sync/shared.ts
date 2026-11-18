@@ -5,22 +5,23 @@
 // - the rest, which is the same wherever it was made and is taken into this
 //   device's own: the achievements, the best run of wins, the class sigils
 //   and the one worn, Delve's fossils, today's unique, whether a game has been started
-//   (lib/started.ts), and the name and colour the player chose last
-//   (lib/sync/chosen.ts).
+//   (lib/started.ts), the name and colour the player chose last
+//   (lib/sync/chosen.ts), and the backup's secret (lib/backup/kept.ts).
 
 import { absorbAchievements, absorbWins, ownAchievementsRaw, ownWinsRaw } from '../achievements.ts';
-import { ownCodexRaw, ownPracticeRaw } from '../codex.ts';
+import { ownCodexRaw, ownPracticeRaw, parseCodex, parsePractice } from '../codex.ts';
 import { absorbDaily, absorbDays, ownDaysRaw, utcDay } from '../daily.ts';
 import { clock } from '../clock.ts';
-import { ownRecordsRaw } from '../delveRecord.ts';
+import { ownRecordsRaw, parseRecords } from '../delveRecord.ts';
 import { absorbFossils, ownFossilsRaw } from '../fossilStore.ts';
 import { absorbSigils, ownSigilsRaw } from '../sigils.ts';
 import { STARTED, absorbStarted, ownStartedRaw } from '../started.ts';
 import { readStored, removeStored, writeStored } from '../storage.ts';
 import { chosenNow, takeChosen } from './chosen.ts';
+import { KEPT_NAME, absorbKept, ownKeptRaw } from '../backup/kept.ts';
 import { COLOUR_NAME } from '../colour.ts';
 import { NAME_STORED } from '../names.ts';
-import { forgetDevice, type CopyKind } from './store.ts';
+import { VIEW, forgetDevice, keepCopy, readCopies, type CopyKind } from './store.ts';
 
 /** This device's own progress of each copied kind, as stored (null for none). */
 export const OWN: Record<CopyKind, () => string | null> = {
@@ -28,6 +29,55 @@ export const OWN: Record<CopyKind, () => string | null> = {
   delve: ownRecordsRaw,
   practice: ownPracticeRaw,
 };
+
+/** What reads each kind of copy: one it can't read isn't kept (the browser's room is the device's own progress first). */
+const READS: Record<CopyKind, (raw: string) => unknown> = { codex: parseCodex, delve: parseRecords, practice: parsePractice };
+/** How far ahead of this device's clock a copy may be stamped: past that it would never be replaced by a real one. */
+const AHEAD_MS = 24 * 3600_000;
+
+/**
+ * Keeps each of other devices' copies that is newer than the one held (`me`'s
+ * own never: it is this device's), as sync takes them from a link and a
+ * backup brings them back (lib/backup/): the names of the entries read with
+ * them that changed.
+ */
+export function takeCopies(copies: readonly { device: string; kind: CopyKind; at: number; raw: string }[], me: string): Set<string> {
+  const changed = new Set<string>();
+  // (The newest of each first, its age checked before it's read: Bring it back brings the same copies in every
+  // device's entry, each up to megabytes, and the copies stored are read once a kind.)
+  const held = new Map<CopyKind, Record<string, { at: number }>>();
+  const heldAt = (kind: CopyKind, device: string) => {
+    let h = held.get(kind);
+    if (!h) held.set(kind, (h = readCopies(kind)));
+    return h[device]?.at ?? 0;
+  };
+  const kept = new Set<string>();
+  for (const c of [...copies].sort((a, b) => b.at - a.at)) {
+    const key = `${c.device}:${c.kind}`;
+    if (kept.has(key) || c.device === me || c.at > Date.now() + AHEAD_MS || c.at <= heldAt(c.kind, c.device) || READS[c.kind](c.raw) == null) continue;
+    if (!keepCopy(c.kind, c.device, { at: c.at, raw: c.raw })) continue;
+    kept.add(key);
+    changed.add(VIEW[c.kind]);
+  }
+  return changed;
+}
+
+/** `copies` in parts of at most `count` copies and `chars` characters of progress each, as gives are sent; one part, empty, for none. */
+export function inParts<T extends { raw: string }>(copies: readonly T[], count: number, chars: number): T[][] {
+  const parts: T[][] = [[]];
+  let size = 0;
+  for (const c of copies) {
+    const part = parts[parts.length - 1];
+    if (part.length && (part.length >= count || size + c.raw.length > chars)) {
+      parts.push([c]);
+      size = c.raw.length;
+    } else {
+      part.push(c);
+      size += c.raw.length;
+    }
+  }
+  return parts;
+}
 
 /** The names each kind of own progress is stored under, to hear when it changes. */
 export const OWN_NAMES: Record<CopyKind, string[]> = {
@@ -54,6 +104,8 @@ const TAKEN: Record<string, { own: () => string | null; take: (raw: string) => b
   started: { own: ownStartedRaw, take: absorbStarted, name: STARTED },
   name: { own: () => chosenNow('name'), take: (raw) => takeChosen('name', raw), name: NAME_STORED },
   colour: { own: () => chosenNow('colour'), take: (raw) => takeChosen('colour', raw), name: COLOUR_NAME },
+  // The backup's secret (lib/backup/kept.ts): offered to the others, and borrowed by one that keeps with none.
+  backup: { own: ownKeptRaw, take: absorbKept, name: KEPT_NAME },
 };
 
 /** The names of everything taken in, to hear when this device's own changes. */
@@ -88,7 +140,7 @@ export function takeIn(given: unknown): string[] {
 const STAMPS = 'sync.own';
 
 /** A string's 32-bit FNV-1a hash, with its length: enough to tell a change. */
-function fingerprint(s: string): string {
+export function fingerprint(s: string): string {
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
   return `${s.length}:${h >>> 0}`;

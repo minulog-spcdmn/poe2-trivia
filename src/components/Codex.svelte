@@ -35,6 +35,7 @@
   import { announceAchievements } from '../lib/achievementToasts';
   import { countReach } from '../lib/count';
   import { eraseSync, sync } from '../lib/sync/link.svelte';
+  import { backup, bringBack, checkBackup, keepSafe, saveBeforeErase } from '../lib/backup/backup.svelte';
   import CodexAchievements from './CodexAchievements.svelte';
 
   let codex = $state.raw(loadCodex());
@@ -52,6 +53,8 @@
   onMount(() => {
     for (const place of ['collection', 'achievements', 'codexDelve', 'item'] as const) warmPlate(circleAtPlace(place));
   });
+  // Whether a passkey can keep it here (the way to keep it, at its foot; to bring it back, on an empty one).
+  onMount(() => void checkBackup());
   // A game in another tab may add to it meanwhile.
   onMount(() =>
     onStoredElsewhere({
@@ -399,7 +402,16 @@
     });
   });
   let confirmReset = $state(false);
-  function reset() {
+  /** What the passkey keeps can bring it back: saved, the save not failing, and a passkey this browser can use. */
+  const restorable = $derived(backup.on && backup.supported && !!backup.savedAt && !backup.failing);
+  /** Erasing: the save before it may take a moment, and Erase codex pressed again meanwhile does nothing more. */
+  let erasing = false;
+  async function reset() {
+    confirmReset = false;
+    if (erasing) return;
+    erasing = true;
+    // Kept with a passkey: what isn't saved yet goes first, under this browser's name as it is, so Bring it back restores all of it.
+    await saveBeforeErase().finally(() => (erasing = false));
     // Synced, the other devices' progress would come straight back: this browser stops syncing, and theirs stays theirs.
     eraseSync();
     resetCodex();
@@ -413,7 +425,6 @@
     fossils = loadFossils();
     achievements = loadAchievements();
     wins = loadWins();
-    confirmReset = false;
   }
   /** The tabs going as it's erased: they close their room as they fade, the column's gap after them with it, so the page glides up. */
   function closeTabs(node: HTMLElement) {
@@ -707,6 +718,10 @@
           <p class="muted">Practice on the start page: {pct(practice)} right of {practice.n}.</p>
         {/if}
         <button class="btn primary" onclick={closeCodex}>Begin the hunt</button>
+        <!-- A browser that lost its progress shows it here first: the way back, where a passkey can bring it. -->
+        {#if backup.supported && !backup.on}
+          <p class="muted back">Played before, and kept your progress with a passkey? <button class="link" disabled={!!backup.busy} onclick={bringBack}>{backup.busy === 'bringing' ? 'Bringing it back…' : 'Bring it back'}</button></p>
+        {/if}
       </div>
     </EmptyPlate>
   {:else}
@@ -938,12 +953,18 @@
 
   {#if kept}
     <footer class="end">
-      {#if sync.code && sync.met}
+      {#if backup.on}
+        {@const whose = backup.borrowed ? 'your other device’s passkey' : 'your passkey'}
+        <p>Your codex, your Delve runs and fossils and your achievements live in this browser{sync.code && sync.met ? ' and on the devices it syncs with' : ''}, and {backup.savedAt ? `are kept safe with ${whose}` : `${whose} keeps them as soon as they’re first saved`}.</p>
+      {:else if sync.code && sync.met}
         <p>Your codex, your Delve runs and fossils and your achievements live in this browser and on the devices it syncs with; clearing the site’s data erases them here.</p>
       {:else}
         <p>Your codex, your Delve runs and fossils and your achievements live in this browser only; clearing the site’s data erases them.</p>
       {/if}
-      <button class="btn danger small" onclick={() => (confirmReset = true)}>Erase codex</button>
+      <div class="end-actions">
+        {#if backup.supported && (!backup.on || backup.borrowed)}<button class="btn small" disabled={!!backup.busy} onclick={keepSafe}>{backup.busy === 'making' ? 'Making the passkey…' : 'Keep it safe'}</button>{/if}
+        <button class="btn danger small" onclick={() => (confirmReset = true)}>Erase codex</button>
+      </div>
     </footer>
   {/if}
 </div>
@@ -960,8 +981,10 @@
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="confirm panel" in:dialogIn out:dialogOut onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <h3>Erase your codex?</h3>
-      <p>Every item you have seen, every answer, every Delve run and fossil and every achievement recorded in this browser is lost. This can’t be undone.</p>
+      <p>Every item you have seen, every answer, every Delve run and fossil and every achievement recorded in this browser is lost{restorable ? '.' : '. This can’t be undone.'}</p>
       {#if sync.code && sync.met}<p>This browser stops syncing too; your other devices keep theirs.</p>{/if}
+      <!-- (The backup is left alone: sync's erase gives the browser a new name, so it keeps on as a new device, and what was erased can come back.) -->
+      {#if restorable}<p>The passkey still keeps what was saved: Bring it back restores it, and Forget in the settings deletes it.</p>{/if}
       <div class="actions">
         <button class="btn ghost" onclick={() => (confirmReset = false)}>Keep it</button>
         <button class="btn danger" onclick={reset}>Erase</button>
@@ -1285,6 +1308,27 @@
   }
   .empty .muted {
     font-style: italic;
+  }
+  /* The way back for a browser that lost its progress, under the way on. */
+  .empty .back {
+    margin: 1.2rem 0 0;
+  }
+  /* A control in the italic line it sits in: upright, as the settings' are. */
+  .link {
+    padding: 0;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    font-family: var(--font-body);
+    font-style: normal;
+    font-size: 0.95rem;
+    color: var(--muted);
+    text-decoration: underline;
+    text-decoration-color: var(--gold-lo);
+    text-underline-offset: 3px;
+  }
+  .link:hover {
+    color: var(--gold-hi);
   }
 
   /* ---- panels, as the lobby's ---- */
@@ -1930,6 +1974,12 @@
     text-align: center;
     font-size: 1rem;
     color: var(--note);
+  }
+  .end-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.6rem;
   }
   .end p {
     margin: 0;

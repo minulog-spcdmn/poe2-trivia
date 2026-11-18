@@ -34,6 +34,12 @@ logins (see "Relay").
   device counted is kept apart on the others and added up, never counted
   twice. A device already synced that scans a new one's code brings it into
   the group (`src/lib/sync/`).
+- **Backup:** Keep it safe (in the settings under Sync, at the codex’s foot,
+  or once, after a game, when 30 uniques are in the codex) makes a passkey,
+  and from then on the progress is kept with it: Safari’s week without a
+  visit or clearing the browser’s data can’t lose it, and Bring it back
+  (in the settings, or on an empty codex) brings it to any browser that has
+  the passkey (“Keeping progress”, below).
 - **Settings:** volume and ambience, effects, the room code hidden for
   streaming, your name, your avatar's colour and class sigil, and the keys: 1 to 0 answer, Enter or Space goes on,
   D detonates, M mutes, Esc opens the settings, each one rebindable. Keys are
@@ -233,7 +239,8 @@ protocol, one Durable Object holding every peer's socket in memory.
   carries); 5,000 peers at once at most. An id whose socket was lost (not
   closed by its page) is kept for it 15 s, so a host's blip doesn't hand its
   room to whoever asks next. What waits for an id nobody holds is capped at
-  4 MB, and 256 KB from one address. Nothing is stored or logged.
+  4 MB, and 256 KB from one address. Nothing of matchmaking is stored or
+  logged; the progress players keep with a passkey is (“Keeping progress”).
 - Cloudflare's free plan gives a Durable Object 100,000 requests a day, a
   socket's messages counting 20 to one (a peer on ours sends a heartbeat
   every 25 s, not PeerJS's 5), and the account 100,000 Worker requests a
@@ -289,6 +296,78 @@ loaded since meet on the cloud alone) and delete the Worker.
 To use a [PeerJS server](https://github.com/peers/peerjs-server) of your own
 instead of both, build with `VITE_PEER_HOST`, `VITE_PEER_PORT`,
 `VITE_PEER_PATH` and `VITE_PEER_SECURE`.
+
+### Keeping progress
+
+Players’ progress lives in their browser, which can lose it: Safari deletes a
+site’s storage after seven days of use without a visit
+([WebKit](https://webkit.org/blog/10218/full-third-party-cookie-blocking-and-more/);
+a home-screen app has its own count), and clearing the browser’s data deletes
+it anywhere. Persistent storage doesn’t help there: Safari grants it only to
+home-screen apps, already spared, and nowhere does it outlast clearing; it only
+keeps a device short of room from letting the site’s storage go, so the game
+asks for it where that asks the player nothing (not Firefox, which shows a
+popup). Without an account, what outlasts both is a passkey: it lives in the
+player’s password manager (iCloud Keychain, Google’s, Windows Hello), and
+follows them to a new phone on the same account. `src/lib/backup/`:
+
+- Keep it safe makes a passkey whose user id is a byte naming the channel and
+  a secret of 32 random bytes, made in the page (nothing checks the passkey:
+  it’s only where the secret lives). The secret makes a bucket’s name and a
+  key, apart for each channel, so the beta and the dev server never write into
+  the live game’s (`seal.ts`); the beta’s passkeys are offered on the live
+  game too (one site), and turned away there.
+- Each device puts its own progress (its codex, Delve records and practice, as
+  sync passes them, and what sync takes in) gzipped and sealed with AES-GCM in
+  the bucket, on the matchmaking server’s `Keep` Object (one per bucket,
+  `signal/worker.js`), with the copies it holds of the player’s other devices:
+  one whose browser was cleared before it was kept lives on only there. Past
+  what the server keeps, the oldest of those copies are left out. 20 s after a
+  change at the soonest, no sooner than 10 minutes after the last send, and as
+  the page is hidden; unchanged, nothing is sent, and one that didn’t go is
+  tried again 3 minutes later. (A browser only loses its storage after days
+  away, so saving more often would save nothing more, and would spend the
+  free plan’s requests matchmaking shares.)
+- Bring it back asks for the passkey and takes every device’s in as sync takes
+  another device’s (`takeCopies`, `takeIn`): only up, nothing counted twice. A
+  browser brought back is a new device, its old self one of the others, which
+  is why sync keeps up to 64 devices’ copies (`KEEP_DEVICES`) and sends them in
+  parts any build reads.
+- Each device keeps with a passkey of its own, one it made or brought back.
+  A paired device without one borrows another’s through sync, and never
+  swaps a passkey it has for one offered: so nothing has to agree on one,
+  and every box holds everything its devices knew at their last save, the
+  others’ as the copies sync brought. A device with one borrowed may still
+  make its own, and keeps with that from then on. Bring it back with a
+  device that has none (or one borrowed) keeps with the passkey brought
+  back; with one of its own, it only takes the progress in.
+- Forget with a device’s own passkey deletes its bucket and leaves a mark on
+  the server in its place, so every device keeping there (one that borrowed
+  it, one that brought it back) is refused: told the bucket is gone, it stops
+  keeping too, and may borrow another, never that one. Forget with a borrowed
+  one only stops this device: the bucket is the other device’s backup.
+  Erasing the codex leaves the backup alone: sync’s erase gives the browser a
+  new name, so it keeps on as a new device, and Bring it back can restore what
+  was erased.
+- The server has the bucket’s name, each device’s random name, what it can’t
+  read, and when it came. A bucket keeps 64 entries of 512 KB at most (the one
+  written longest ago goes first), and is deleted after 3 years without a
+  write; a Forget’s mark, 3 years after the Forget. A bucket grows a little
+  with each wipe it’s brought back after (each browser a new entry, carrying
+  copies of the ones before): a few hundred KB after ten, a few MB for a
+  heavy player wiped often. Requests count against the same `PER_ADDRESS` limit and the free
+  plan’s allowances as matchmaking, and writes against a tighter one of their
+  own (`KEEP_WRITES`, 30 a minute an address: anyone may make up a bucket, and
+  this keeps a script from filling the free plan’s storage quickly): a page
+  sends a few an hour while it’s played. Past them, saving waits; nothing in
+  the browser is touched.
+- Only the game keeps (`SYNC_HERE`); the QA desk’s scenes set how it stands and
+  act the buttons out (`settings/backup`, `codex/backup`, and the in-game
+  notices’ “The offer to keep it safe”).
+
+To turn it off: revert (pages loaded since send nothing); the buckets are
+deleted 3 years after their last write, or at once with the `Keep` class (a
+deleting migration in `signal/wrangler.toml`).
 
 ### Relay
 
@@ -425,8 +504,9 @@ live. It has its own rooms, saves and invite links (`VITE_CHANNEL=beta`).
 - The relay: redeploy the old version by hand (“Relay”); in an emergency
   delete the TURN key.
 - What no revert undoes: saved progress. Sync only ever moves progress up and
-  passes it to every paired device (`src/lib/sync/store.ts`), so a change to
-  what’s saved has to keep reading what older builds saved.
+  passes it to every paired device (`src/lib/sync/store.ts`), and a backup
+  brings back what an older build kept, so a change to what’s saved has to
+  keep reading what older builds saved.
 
 ### Daily health check
 

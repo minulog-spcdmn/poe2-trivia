@@ -28,6 +28,8 @@ export interface ToastOptions {
   herald?: boolean;
   /** An achievement earned (lib/achievementToasts.ts): its seal in place of the gem, in its metal. */
   seal?: { sign: Sign; tier: Tier };
+  /** A button under the message, which closes it as it does what it says (an offer: lib/backup/backup.svelte.ts). */
+  action?: { label: string; run: () => void };
 }
 
 export interface Toast extends ToastOptions {

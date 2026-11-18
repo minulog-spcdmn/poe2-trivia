@@ -595,7 +595,8 @@ test('erasing the codex erases the fossils, what was kept aside of them, and the
   assert.deepEqual(loadFossils(), emptyFossils());
   // The page's grid reads the codex's own store, loaded again as it erases (Codex.svelte reset), not only on another tab's change.
   const codex = readFileSync(new URL('../src/components/Codex.svelte', import.meta.url), 'utf8');
-  const reset = codex.slice(codex.indexOf('function reset()'), codex.indexOf('confirmReset = false;'));
+  const from = codex.indexOf('function reset()');
+  const reset = codex.slice(from, codex.indexOf('\n  }\n', from));
   assert.match(reset, /resetFossils\(\);[\s\S]*fossils = loadFossils\(\);/);
   assert.match(codex, /<CodexDelve [^>]*\{fossils\}/);
   store.clear();

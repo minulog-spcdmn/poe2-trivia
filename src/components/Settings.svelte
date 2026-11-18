@@ -28,7 +28,8 @@
   import { COLOUR_KEY, loadColour, saveColour } from '../lib/colour';
   import { PALETTE, RUBY, STONES } from '../lib/palette';
   import { reservedHueOf } from '../lib/game';
-  import { lastSynced, startSync, sync, syncLine, unpair } from '../lib/sync/link.svelte';
+  import { ago, lastSynced, startSync, sync, syncLine, unpair } from '../lib/sync/link.svelte';
+  import { backup, bringBack, checkBackup, forgetBackup, keepSafe } from '../lib/backup/backup.svelte';
   import { gpuNotice, openGpuNotice, shownFix } from '../lib/gpuNotice.svelte';
   import SigilPicker from './SigilPicker.svelte';
 
@@ -124,6 +125,22 @@
   $effect(() => {
     if (!paired) unpairing = false;
   });
+
+  // ---- the backup ----
+
+  onMount(() => void checkBackup());
+  /** Forget asked for, waiting for a yes. */
+  let forgetting = $state(false);
+  $effect(() => {
+    if (!backup.on) forgetting = false;
+  });
+  /** Now, for when it was last saved: moved on every half minute. */
+  let now = $state(Date.now());
+  onMount(() => {
+    const t = setInterval(() => (now = Date.now()), 30_000);
+    return () => clearInterval(t);
+  });
+  const BUSY = { making: 'Making the passkey…', bringing: 'Bringing it back…', forgetting: 'Deleting the copy kept online…' } as const;
 
   // ---- class sigils ----
 
@@ -337,6 +354,42 @@
             {/if}
           </p>
         </div>
+        <!-- (Shown where a passkey can be made here, or where it keeps with another device's: a browser that can't make one still sees that, and can stop.) -->
+        {#if backup.supported || backup.on}
+          <!-- Set as Sync is: what it does stays beneath whatever it says now, unseen, so the row keeps its height. -->
+          <div class="row sync-row backup-row">
+            <span class="label">Backup</span>
+            <!-- Kept in its place once it keeps with a passkey of its own, out of sight, so the row keeps its height; with another device's, it stays: this one may make its own. -->
+            <button class="btn small" class:gone={(backup.on && !backup.borrowed) || !backup.supported} disabled={!!backup.busy || (backup.on && !backup.borrowed) || !backup.supported} onclick={keepSafe}>Keep it safe</button>
+            <p class="blurb say" class:linked={backup.on && !backup.busy && !forgetting && !!backup.savedAt && !backup.failing}>
+              <span class:unseen={backup.on || !!backup.busy}
+                >A passkey keeps your codex, Delve runs and achievements if the browser clears them, and brings them to a new phone. Made one before? <button class="reset" disabled={!!backup.busy} onclick={bringBack}>Bring it back</button></span
+              >
+              {#if backup.busy}
+                <span>{backup.busy === 'forgetting' && backup.borrowed ? 'Stopping…' : BUSY[backup.busy]}</span>
+              {:else if backup.on && forgetting}
+                <!-- (With another device's passkey, this browser only stops: that device's copy is its own backup.) -->
+                <span
+                  >{backup.borrowed ? 'Stop keeping this browser? Your other device’s copy stays.' : 'Delete the copy kept online? Your progress here stays, and every device using this passkey stops keeping.'}
+                  <button class="reset" onclick={() => ((forgetting = false), void forgetBackup())}>{backup.borrowed ? 'Stop' : 'Delete'}</button><span class="sep bullet" aria-hidden="true">•</span><button class="reset" onclick={() => (forgetting = false)}>Keep it</button></span
+                >
+              {:else if backup.on}
+                <!-- Saved only once the server has it: until then, and while it can't be reached, the line says so and the light is out. -->
+                <!-- And under it, the way to another passkey (one made before the browser was wiped, say), while the server can be reached. -->
+                {@const saved = backup.savedAt ? `saved ${ago(backup.savedAt, Math.max(now, backup.savedAt))}` : 'not saved yet'}
+                <span class="paired"
+                  ><span class="light" class:on={!!backup.savedAt && !backup.failing} aria-hidden="true"></span>Kept with {backup.borrowed ? 'your other device’s passkey' : 'your passkey'}, {saved}{backup.failing
+                    ? backup.savedAt
+                      ? '. The server can’t be reached just now.'
+                      : ': the server can’t be reached just now.'
+                    : '.'}
+                  <button class="reset" onclick={() => (forgetting = true)}>Forget</button
+                  >{#if !backup.failing && backup.supported}<br /><span class="again">Made one before? <button class="reset" onclick={bringBack}>Bring it back</button></span>{/if}</span
+                >
+              {/if}
+            </p>
+          </div>
+        {/if}
       </section>
       {/if}
     </div>
@@ -442,6 +495,11 @@
   }
   .cols:not(.one, .over) .col.side {
     justify-content: space-between;
+  }
+  /* But the keys' card keeps its own height: where the side runs longer, it sits midway beside it rather than
+     stretching into a bare band of panel. */
+  .cols:not(.one, .over) .keys.panel {
+    align-self: center;
   }
   .cols.one {
     grid-template-columns: minmax(0, 480px);
@@ -737,6 +795,13 @@
     background: currentColor;
     box-shadow: 0 0 0.35em currentColor;
   }
+  .backup-row .btn.gone {
+    visibility: hidden;
+  }
+  /* The way to another passkey, under how it stands: an aside, so it keeps the note's grey as the line turns green. */
+  .backup-row .again {
+    color: var(--note);
+  }
   .sync-row .sep {
     margin-left: 0.4rem;
     color: var(--gold-lo);
@@ -989,6 +1054,27 @@
   @media (max-width: 420px) {
     .slide input {
       --len: 140px;
+    }
+  }
+  /* A short window, a 13-inch laptop's: the lobby's tighter rhythm (its rows and sections closer), so the page and its
+     sigils stay in the window before anything gets smaller. */
+  @media (min-width: 1100px) and (max-height: 760px) {
+    .settings:not(.over) .col.side {
+      gap: 0.9rem;
+    }
+    .settings:not(.over) .row {
+      padding: 0.5rem 0;
+    }
+    .settings:not(.over) .sync-row {
+      margin-top: 0.35rem;
+      padding-bottom: 0;
+    }
+    .settings:not(.over) .name-row {
+      padding-top: 0.5rem;
+    }
+    .settings:not(.over) .sigil-row {
+      margin-top: 0.75rem;
+      padding-top: 0.45rem;
     }
   }
   /* Desktop: the lobby's stage, straight on the backdrop, the columns in the middle of the window's height. */

@@ -1,7 +1,8 @@
 // The codex, opened from the start page (#codex): its collection, empty or
 // part filled, and what's done in it (as a table, sorted; an item open; its
 // tabs turned; a category picked; an item drawn more ways; erased), and its
-// Delve (with runs and without) and Achievements pages.
+// Delve (with runs and without) and Achievements pages; kept with a passkey
+// or not.
 // And the codex that never came (the Wi-Fi gone as it was fetched).
 
 import type { Answer } from '../../lib/codex.ts';
@@ -75,7 +76,7 @@ const SHOW: Control = {
   ],
   default: 'as',
 };
-const MET: Control = {
+const MET = {
   kind: 'choice',
   key: 'met',
   label: 'Met',
@@ -84,7 +85,23 @@ const MET: Control = {
     { value: 'none', label: 'Nothing yet' },
   ],
   default: 'part',
+} satisfies Control;
+/** Kept with a passkey (lib/backup/), or not. */
+const BACKED: Control = {
+  kind: 'choice',
+  key: 'backed',
+  label: 'Backup',
+  options: [
+    { value: 'off', label: 'Not kept' },
+    { value: 'on', label: 'Kept with a passkey' },
+    { value: 'unsaved', label: 'Kept, not saved yet' },
+    { value: 'synced', label: 'Kept, and synced with another device' },
+    { value: 'borrowed', label: 'Kept with another device’s passkey' },
+  ],
+  default: 'off',
 };
+/** Erase codex pressed, its confirm left up: what it says of the backup, kept or not, synced or not. */
+const ASKED: Control = { kind: 'toggle', key: 'asked', label: 'Erase asked for', default: false, when: { met: ['part'] } };
 const ITEM: Control = { kind: 'choice', key: 'item', label: 'The “ffi” item', default: 'Prism Guardian', options: FFI.map((n) => ({ value: n, label: n })) };
 
 /** The steps for what's done in the collection. */
@@ -252,6 +269,31 @@ export function codexScenes(): Scene[] {
         { label: 'The Delve page, all 25 fossils', values: { fossils: 'all' }, key: 'codex/fossils-all', listed: false },
       ],
       build: pages,
+    },
+    {
+      // Kept with a passkey or not (lib/backup/): an empty codex's way back for a browser that lost its progress, under Begin the hunt;
+      // a full one's way to keep it safe beside Erase codex, at its foot, or the words that it is. (The frame keeps nothing: its buttons act it out.)
+      ...codex('backup', 'Kept with a passkey, or not', () => ({ state: null, hash: '#codex', met: [], backup: { on: false } })),
+      // (Empty first: the way back is what a browser that lost its progress meets.)
+      controls: [BACKED, { ...MET, default: 'none' }, ASKED],
+      states: [
+        { label: 'Empty: the way back', values: { backed: 'off', met: 'none' } },
+        { label: 'Part filled, not kept: the way to keep it', values: { backed: 'off', met: 'part' } },
+        { label: 'Part filled, kept: no button, the line says so', values: { backed: 'on', met: 'part' } },
+        { label: 'Part filled, kept but never saved: the line says it will be', values: { backed: 'unsaved', met: 'part' }, listed: false },
+        { label: 'Part filled, kept with another device’s passkey: the button stays', values: { backed: 'borrowed', met: 'part' }, listed: false },
+        { label: 'Kept, Erase asked for: Bring it back restores it', values: { backed: 'on', met: 'part', asked: true }, listed: false },
+        { label: 'Kept and synced, Erase asked for', values: { backed: 'synced', met: 'part', asked: true }, listed: false },
+      ],
+      build: (v = {}): Built => {
+        const backup = { on: v.backed !== 'off', borrowed: v.backed === 'borrowed', savedAt: v.backed === 'on' || v.backed === 'synced' || v.backed === 'borrowed' ? Date.now() - 4 * 60_000 : 0, failing: v.backed === 'unsaved' };
+        // (Paired with a device and linked to it, as the settings' sync bench has it; a borrowed passkey comes from one.)
+        const sync = v.backed === 'synced' || v.backed === 'borrowed' ? { sync: { code: 'K7QXM2PA9FHE3TDW', met: true, status: 'linked' as const, linked: 1, lastAt: Date.now() } } : {};
+        if (v.met === 'none') return { state: null, hash: '#codex', met: [], backup, ...sync };
+        // (At its foot, where the way to keep it is; or Erase codex pressed there, its confirm left up.)
+        const steps: Step[] = [{ wait: 1400 }, { scroll: 'footer.end' }, ...(v.asked ? [{ wait: 600 }, { click: 'footer.end .btn.danger' }] : [])];
+        return { ...filled(steps), backup, ...sync };
+      },
     },
     // Its chunk lost: the Reload, as each try shows it while the connection is down (lib/chunkRetry.ts).
     codex('lost', "Didn't come: the connection dropped", () => ({ state: null, hash: '#codex', lost: 'Codex' })),

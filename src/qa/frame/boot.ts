@@ -160,6 +160,11 @@ export async function boot(asked: URLSearchParams) {
     const { sync } = await import('../../lib/sync/link.svelte.ts');
     Object.assign(sync, { linked: 0, ...built.sync });
   }
+  // How its backup stands (only where the scene says, as with sync's link).
+  if (built.backup) {
+    const { backup } = await import('../../lib/backup/backup.svelte.ts');
+    Object.assign(backup, { supported: true, borrowed: false, savedAt: 0, failing: false, busy: null, ...built.backup });
+  }
   // The browser drawing without the GPU (only where the scene says, as with sync's link).
   if (built.gpuOff) (await import('../../lib/gpuNotice.svelte.ts')).gpuNotice.off = true;
   // A page that never comes (only where the scene says, as with sync's link).
