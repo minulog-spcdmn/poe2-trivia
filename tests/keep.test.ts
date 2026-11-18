@@ -102,6 +102,32 @@ test('forgotten, a bucket is gone: nothing read, nothing kept again, until the m
   assert.deepEqual((await read(k)).map((e) => e.device), ['phone0000001']);
 });
 
+test('a Forget that comes while a save’s body is still coming in has the last word: nothing of the save stays under the mark', async () => {
+  const state = fakeState();
+  const k = new Keep(state);
+  let rest!: () => void;
+  const held = new Promise<void>((r) => (rest = r));
+  const body = new ReadableStream<Uint8Array>({
+    async pull(c) {
+      await held;
+      c.enqueue(bytes(7));
+      c.close();
+    },
+  });
+  const saving = k.fetch(new Request(`https://x/keep/${BUCKET}/tablet000001`, { method: 'POST', body, duplex: 'half' } as RequestInit));
+  assert.equal((await k.fetch(new Request(`https://x/keep/${BUCKET}/forget`, { method: 'POST' }))).status, 204);
+  rest();
+  assert.equal((await saving).status, 410);
+  assert.deepEqual(
+    state.storage.sql
+      .exec("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .toArray()
+      .map((r) => r.name),
+    ['gone'],
+    'only the mark',
+  );
+});
+
 /** The Worker's bindings: every bucket its own Keep, the rate limits as given. */
 function env(limited = false, writesLimited = false) {
   const objects = new Map<string, Keep>();

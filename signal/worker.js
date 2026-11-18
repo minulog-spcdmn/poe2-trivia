@@ -562,6 +562,8 @@ export class Keep {
     if (request.method === 'GET') return new Response(this.read(), { headers: { 'Content-Type': 'application/octet-stream' } });
     const data = await upTo(request.body, MAX_ENTRY);
     if (!data) return new Response(null, { status: 413 });
+    // (Forgotten while its body came in: reading it lets other requests in, and what it put would outlive the Forget.)
+    if (this.gone()) return new Response(null, { status: 410 });
     await this.write(device, data, Date.now());
     return new Response(null, { status: 204 });
   }

@@ -40,7 +40,7 @@ g.StorageEvent ??= class extends Event {
 g.dispatchEvent ??= () => true;
 
 const { base64url, fromBase64url } = await import('../src/lib/base64url.ts');
-const { APART_MS, MAX_ENTRY: PAGE_MAX_ENTRY, RETRY_MS, backup, bringBack, entryNow, forgetBackup, keepSafe, passkeyName, readEntry, saveBeforeErase, sealEntry, send, settled, takeEntries, unpack } = await import('../src/lib/backup/backup.svelte.ts');
+const { APART_MS, ERASE_WAIT_MS, MAX_ENTRY: PAGE_MAX_ENTRY, RETRY_MS, backup, bringBack, entryNow, forgetBackup, keepSafe, passkeyName, readEntry, saveBeforeErase, sealEntry, send, settled, takeEntries, unpack } = await import('../src/lib/backup/backup.svelte.ts');
 const { absorbKept, loadKept, loadSent, ownKeptRaw, saveKept, saveSent } = await import('../src/lib/backup/kept.ts');
 const { clearCopies, deviceId, keepCopy, readCopies } = await import('../src/lib/sync/store.ts');
 const { CHANNEL } = await import('../src/lib/channel.ts');
@@ -757,6 +757,45 @@ test('the codex erased saves what wasn’t saved yet under the old name first, a
   assert.deepEqual([codex.items[A.id]?.seen, codex.items[B.id]?.seen], [5, 1], 'what was played before the erase, the unsaved part too');
 });
 
+test('the codex erased behind a save slower than Erase waits: what that save hasn’t got still goes under the old name', async () => {
+  serve();
+  const one = fresh();
+  await keeps(one);
+  play({ [A.id]: 3 });
+  await send();
+  const before = deviceId();
+  const real = globalThis.setTimeout;
+  const {
+    held: [post],
+    releaseAll,
+  } = gated((m, p) => m === 'POST' && p.endsWith(`/${before}`));
+  try {
+    // A save on its way, held at the server.
+    play({ [A.id]: 4 });
+    const saving = send();
+    await post.arrived;
+    // Played on meanwhile; then Erase codex, its wait over at once.
+    play({ [A.id]: 5 });
+    globalThis.setTimeout = ((f: () => void, ms = 0) => real(f, ms === ERASE_WAIT_MS ? 0 : ms)) as typeof setTimeout;
+    await saveBeforeErase();
+    globalThis.setTimeout = real;
+    clearCopies();
+    forgetOwn();
+    resetCodex();
+    post.release();
+    await saving;
+    await settled();
+  } finally {
+    globalThis.setTimeout = real;
+    releaseAll();
+  }
+  // A wiped browser brings back what was played before the erase, all of it.
+  clearCopies();
+  store.clear();
+  await bringBackWith(one);
+  assert.equal(loadCodex().items[A.id]?.seen, 5);
+});
+
 test('a save whose entry was made before an erase lands under the name it had then', async () => {
   serve();
   const one = fresh();
@@ -1048,6 +1087,18 @@ test('a save that doesn’t go is tried again after RETRY_MS, not APART_MS', asy
   await settled();
   assert.equal(backup.failing, false);
   assert.equal(loadSent()?.print, entryNow()!.print);
+});
+
+test('a save that didn’t go, saved meanwhile by another tab: its next try says it is saved', async () => {
+  serve();
+  play();
+  await keeps(fresh());
+  await send();
+  const at = loadSent()!.at;
+  // This tab's try failed, and it shows an older save; another tab saved the same since.
+  Object.assign(backup, { failing: true, savedAt: at - 60_000 });
+  await send();
+  assert.deepEqual([backup.failing, backup.savedAt], [false, at]);
 });
 
 test('a save that fails along the way is tried again in a while, never left unhandled', async () => {

@@ -185,12 +185,22 @@ let sending: Promise<void> | null = null;
 /** Nothing sent while a Forget goes (forgetBackup). */
 let hold = false;
 
-/** Sends this device's progress if it changed since it was last sent; `leaving`, as the page goes away. (Exported for tests/backup.test.ts, which drives it.) */
-export function send(leaving = false): Promise<void> {
+/** An entry made already, with the device's name it was made under (saveBeforeErase). */
+interface Made {
+  now: NonNullable<ReturnType<typeof entryNow>>;
+  me: string;
+}
+
+/**
+ * Sends this device's progress if it changed since it was last sent;
+ * `leaving`, as the page goes away; `made`, an entry made before, in place of
+ * one made as it goes. (Exported for tests/backup.test.ts, which drives it.)
+ */
+export function send(leaving = false, made?: Made): Promise<void> {
   // (One at a time: a change meanwhile is sent after it.)
-  if (sending) return sending.then(() => send(leaving));
+  if (sending) return sending.then(() => send(leaving, made));
   // (One that fails along the way is tried again in a while, as one the server didn't take.)
-  return (sending = sendNow(leaving)
+  return (sending = sendNow(leaving, made)
     .catch(() => missed(loadKept()?.secret ?? '', leaving))
     .finally(() => (sending = null)));
 }
@@ -200,16 +210,20 @@ export async function settled() {
   while (sending) await sending;
 }
 
-async function sendNow(leaving: boolean) {
+async function sendNow(leaving: boolean, made?: Made) {
   const k = loadKept();
   if (hold || !k?.secret) return;
-  const now = entryNow();
+  const now = made ? made.now : entryNow();
   if (!now) return;
   // (Under the name it had as its entry was made: an erase meanwhile gives it another, and this entry is the old one's.)
-  const me = deviceId();
+  const me = made ? made.me : deviceId();
   const { bucket, key } = await fromKept(k.secret);
   const was = loadSent();
-  if (was?.print === now.print && was.bucket === bucket) return;
+  // (Sent already, here or by another tab, which may have saved what this one couldn't: so it says.)
+  if (was?.print === now.print && was.bucket === bucket) {
+    backup.failing = false;
+    return readState();
+  }
   const data = await sealEntry(now.entry, key, bucket, me);
   // (Its own progress alone more than the server keeps of a device, many times a full codex: it can't be kept.)
   if (!data) return;
@@ -265,12 +279,19 @@ const FORGETTING = 'backup.forgetting';
 
 let timer: ReturnType<typeof setTimeout> | null = null;
 /** A change to send: soon, but no sooner than APART_MS after the last time (or `wait`: RETRY_MS, for a send that didn't go). */
-function schedule(wait = Math.max(SOON_MS, (loadSent()?.at ?? 0) + APART_MS - Date.now())) {
+function schedule(wait?: number) {
   if (timer || !loadKept()?.secret) return;
-  timer = setTimeout(() => {
-    timer = null;
-    whenCalm(() => void send());
-  }, wait);
+  timer = setTimeout(
+    () => {
+      timer = null;
+      // (Hidden as it waits for calm, it runs at once, as the page goes away, as a hide's own is; one due while the page
+      // was hidden already goes as any other.)
+      const hidden = () => globalThis.document?.visibilityState === 'hidden';
+      const was = hidden();
+      whenCalm(() => void send(!was && hidden()));
+    },
+    wait ?? Math.max(SOON_MS, (loadSent()?.at ?? 0) + APART_MS - Date.now()),
+  );
 }
 
 let watching = false;
@@ -578,19 +599,29 @@ export async function forgetBackup() {
   readState();
 }
 
-/** How long Erase codex waits for the save before it at most. */
-const ERASE_WAIT_MS = 2000;
+/** How long Erase codex waits for the save before it at most. (Exported for tests/backup.test.ts.) */
+export const ERASE_WAIT_MS = 2000;
 /**
  * The codex about to be erased: what isn't saved yet goes first, under this
  * device's name as it is (the erase gives it another, and its entry is never
  * topped up after), so Bring it back restores all of it. Waited for a moment
- * at most: a save that takes longer still goes, under the old name.
+ * at most: a save that takes longer still goes, under the old name, with the
+ * entry made now (one behind a save still on its way would be made after the
+ * erase).
  */
 export async function saveBeforeErase() {
   if (QA || !loadKept()?.secret) return;
+  // (One that can't be made never holds up the erase.)
+  let now: Made['now'] | null = null;
+  try {
+    now = entryNow();
+  } catch {
+    /* nothing saved first */
+  }
+  if (!now) return;
   if (timer) clearTimeout(timer);
   timer = null;
-  await Promise.race([settled().then(() => send()), new Promise((r) => setTimeout(r, ERASE_WAIT_MS))]);
+  await Promise.race([send(false, { now, me: deviceId() }), new Promise((r) => setTimeout(r, ERASE_WAIT_MS))]);
 }
 
 /** After a game: once, where a passkey can keep it and there's enough played for it to matter, a notice offering to keep it safe. */

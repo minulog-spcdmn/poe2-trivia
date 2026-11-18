@@ -42,10 +42,21 @@ const AHEAD_MS = 24 * 3600_000;
  */
 export function takeCopies(copies: readonly { device: string; kind: CopyKind; at: number; raw: string }[], me: string): Set<string> {
   const changed = new Set<string>();
-  for (const c of copies) {
-    if (c.device === me || c.at > Date.now() + AHEAD_MS || READS[c.kind](c.raw) == null) continue;
-    const held = readCopies(c.kind)[c.device];
-    if ((!held || c.at > held.at) && keepCopy(c.kind, c.device, { at: c.at, raw: c.raw })) changed.add(VIEW[c.kind]);
+  // (The newest of each first, its age checked before it's read: Bring it back brings the same copies in every
+  // device's entry, each up to megabytes, and the copies stored are read once a kind.)
+  const held = new Map<CopyKind, Record<string, { at: number }>>();
+  const heldAt = (kind: CopyKind, device: string) => {
+    let h = held.get(kind);
+    if (!h) held.set(kind, (h = readCopies(kind)));
+    return h[device]?.at ?? 0;
+  };
+  const kept = new Set<string>();
+  for (const c of [...copies].sort((a, b) => b.at - a.at)) {
+    const key = `${c.device}:${c.kind}`;
+    if (kept.has(key) || c.device === me || c.at > Date.now() + AHEAD_MS || c.at <= heldAt(c.kind, c.device) || READS[c.kind](c.raw) == null) continue;
+    if (!keepCopy(c.kind, c.device, { at: c.at, raw: c.raw })) continue;
+    kept.add(key);
+    changed.add(VIEW[c.kind]);
   }
   return changed;
 }

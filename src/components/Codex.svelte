@@ -401,10 +401,14 @@
   let confirmReset = $state(false);
   /** What the passkey keeps can bring it back: saved, the save not failing, and a passkey this browser can use. */
   const restorable = $derived(backup.on && backup.supported && !!backup.savedAt && !backup.failing);
+  /** Erasing: the save before it may take a moment, and Erase codex pressed again meanwhile does nothing more. */
+  let erasing = false;
   async function reset() {
     confirmReset = false;
+    if (erasing) return;
+    erasing = true;
     // Kept with a passkey: what isn't saved yet goes first, under this browser's name as it is, so Bring it back restores all of it.
-    await saveBeforeErase();
+    await saveBeforeErase().finally(() => (erasing = false));
     // Synced, the other devices' progress would come straight back: this browser stops syncing, and theirs stays theirs.
     eraseSync();
     resetCodex();

@@ -248,7 +248,6 @@ function readGiven(v: unknown): Given | null {
   return { copies, taken: isObj(v.taken) ? (v.taken as Record<string, string>) : {} };
 }
 
-
 // ---- a run: this device, paired, on the site ----------------------------------------
 
 interface Link {
