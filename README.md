@@ -494,10 +494,6 @@ items are undecided, Claude weighs the summary on the API credit
 opens an issue for the owner, and the check then stops until `TALLY_VERSION`
 changes. Days below that floor cost nothing. The same summary by hand:
 `node --experimental-strip-types scripts/tally-ready.mjs`.
-A second job there, `solo`, sets the tally’s solo Delve answers against the
-solo runs GoatCounter counted since 19 Nov 2026 (`scripts/tally-solo.mjs`, no
-Claude) and opens an issue for the owner once answers arrive, or fails the run
-if runs send none; remove it once its issue is open.
 
 ---
 
