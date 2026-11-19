@@ -7,7 +7,7 @@
 // its cards. As the name locks, the backdrop's embers take the zone's colour
 // and a screen reader is told where the run has come.
 
-import { dealIn, opensZone } from './delve.ts';
+import { dealIn, zoneEntered } from './delve.ts';
 import type { GameState } from './game.ts';
 import { zoneArrival } from './fx/moments.ts';
 import { motion } from './motion.svelte.ts';
@@ -64,16 +64,20 @@ export function previewNext(o: Preview | null) {
 const FAMILY_OF = (f: Family): Treatment => Object.values(TREATMENTS).find((t) => t.family === f && !t.variants.length)!;
 
 /**
- * The run moved on into `s.round`: if that opens a zone, its card is set up
- * and its sounds booked. `hostNow`: the host's clock (session.hostNow), for
- * the time left to the deal. `best`: this device's best depth before the run
- * (solo), `group`: a run together (no "Deeper than ever" then).
+ * The run moved on into `s.round` from `o.from` (a depth up, or more in a
+ * Sulphite rush): if that steps into a new zone, its card is set up and its
+ * sounds booked. `hostNow`: the host's clock (session.hostNow), for the time
+ * left to the deal. `best`: this device's best depth before the run (solo),
+ * `group`: a run together (no "Deeper than ever" then).
  */
-export function beginArrival(s: GameState, hostNow: number, o: { best: number | null; group: boolean }) {
+export function beginArrival(s: GameState, hostNow: number, o: { best: number | null; group: boolean; from?: number }) {
   endArrival();
-  if (!s.delve || !opensZone(s.round)) return;
-  const deeper = !o.group && o.best !== null && s.round === o.best + 1;
-  let title = zoneTitleAt(s.round, deeper);
+  const from = o.from ?? s.round - 1;
+  const opened = s.delve ? zoneEntered(from, s.round) : null;
+  if (!s.delve || opened === null) return;
+  // Past this device's best with this step (one, or a rush's that went over it).
+  const deeper = !o.group && o.best !== null && from <= o.best && s.round > o.best;
+  let title = zoneTitleAt(s.round, deeper, opened);
   const hold = !!preview?.hold;
   if (preview) {
     if (preview.name) title = { ...title, name: preview.name, sigil: preview.name, spoken: title.spoken.replace(title.name, preview.name) };

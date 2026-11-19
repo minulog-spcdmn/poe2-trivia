@@ -21,11 +21,12 @@
   import { portal } from '../lib/portal';
   import { flat, phone } from '../lib/layout';
   import { inVein } from '../lib/vein';
-  import { REVIVE_FROM, WAY_OUT, delveDepth, digOf, fellAt, findFor, opensZone, isGroupRun, livesOf, questionTimer, reviveProblem, shownDepth, standingIds } from '../lib/delve';
+  import { REVIVE_FROM, WAY_OUT, delveDepth, digOf, fellAt, findFor, opensZone, isGroupRun, livesOf, questionTimer, reviveProblem, rushEnded, rushOf, shownDepth, standingIds, zoneEntered } from '../lib/delve';
+  import { RUSH_HALT_S, RUSH_LAND_S } from '../lib/rushScene';
   import { lineOf } from '../lib/delveStart';
   import { noteLine } from '../lib/delveStartSeen';
   import { revivedText } from '../lib/difficultyText';
-  import { accentAt, milestoneAt, stratumName, swing } from '../lib/descent';
+  import { accentAt, milestoneAt, rushBrakeAt, stratumName, swing } from '../lib/descent';
   import { deeperThanEver, descended, zoneArrival } from '../lib/fx/moments';
   import { BLAST_IMPACT_MS, BLAST_IN_DELAY_MS, BLAST_IN_MS, blastAway, prepareBlast } from '../lib/blastAway';
   import { untrack } from 'svelte';
@@ -78,6 +79,18 @@
   // ticks never double.
   const slim = $derived(phone.current && !flat.current);
   const q = $derived(s.phase === 'question' || s.phase === 'reveal' ? s.question : null);
+  /**
+   * Delve: a Sulphite rush under way (a prototype, lib/rushScene.ts): its
+   * gauge, a crystal of sulphite for each of its questions, burnt out as each
+   * is answered; the one asked burning (at its last reveal, all spent).
+   */
+  const rush = $derived.by(() => {
+    if (!run || !q?.rush) return null;
+    const r = rushOf(s);
+    if (!r) return null;
+    const left = r.on?.left ?? 0;
+    return { category: q.category, length: r.length, spent: r.length - left, burning: s.phase === 'question' && left > 0 };
+  });
 
   // Countdown to the automatic skip of a disconnected player's turn.
   let now = $state(Date.now());
@@ -351,6 +364,49 @@
   /** The stage in play: the turn's, or an empty one while its cards are on their way. */
   const stageKey = $derived(held ? `held:${s.turnCount}` : `${s.turnCount}`);
 
+  // Delve: a Sulphite rush just ended (a prototype). Where its last step
+  // stays in the zone, the stage stands over the ride braking and landing
+  // (lib/rushScene.ts) with the banner it ended on, its depth counted on to
+  // where the rush left the run as the scene comes to rest, and how far the
+  // rush took it under that; then the cards are dealt, the banner staying as
+  // it is. Into a new zone, the zone's arrival is the end's moment, and its
+  // first offer says how far the rush came over the banner.
+  const ended = $derived(run ? rushEnded(s) : null);
+  const endsInZone = $derived(!!ended && zoneEntered(ended.last, s.round) !== null);
+  const landing = $derived(held && !!ended && !endsInZone);
+  const landed = $derived(!held && !!ended && !endsInZone);
+  const rushGained = $derived(ended ? ended.to - ended.from : 0);
+  let landingDepth = $state(0);
+  /** The landing under way (its run and when its offer was dealt), so it plays once however often the state comes in meanwhile. */
+  const landingKey = $derived(landing && ended && run ? `${run.startedAt}:${ended.at}:${ended.last}:${ended.to}` : '');
+  $effect(() => {
+    if (!landingKey) return;
+    const end = untrack(() => ended);
+    if (!end) return;
+    const from = shownDepth(end.last);
+    const to = shownDepth(end.to);
+    const secs = to > from ? RUSH_LAND_S : RUSH_HALT_S;
+    untrack(() => (landingDepth = from));
+    if (to <= from || motion.still) {
+      landingDepth = to;
+      return;
+    }
+    // In step with the scene's last step down (descent.ts rushBrakeAt), the last of it landing with the ride.
+    const t0 = performance.now();
+    let raf = 0;
+    const tick = () => {
+      const x = Math.min(1, (performance.now() - t0) / (secs * 1000));
+      const v = from + Math.floor((to - from) * rushBrakeAt(x) + 1e-9);
+      if (v !== landingDepth) {
+        landingDepth = v;
+        sfx('zoneTick');
+      }
+      if (x < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  });
+
   // Delve: each depth, once, as its cards are dealt. A new zone's name has its
   // title card, in the plunge into it (components/zonecard); here the
   // backdrop's embers flare at every depth the run is seen going down to, and
@@ -366,12 +422,14 @@
     const key = `${run.startedAt}:${depth}`;
     if (key === depthSeen) return;
     const deeper = depthSeen.startsWith(`${run.startedAt}:`);
+    // The depth seen before (a Sulphite rush goes down several between offers), or the one above.
+    const before = deeper ? Number(depthSeen.slice(`${run.startedAt}:`.length)) : depth - 1;
     depthSeen = key;
     untrack(() => {
       if (deeper) descended();
       // (This device's best: not a spectator's, watching someone else's run.)
       const best = session.spectating ? null : session.bestAtStart;
-      const past = !group && best !== null && depth === best + 1;
+      const past = !group && best !== null && before <= best && depth > best;
       // The zone this depth opens, if it opens one, and whether this screen saw its card name it.
       const zone = opensZone(depth) ? milestoneAt(depth) : null;
       const unnamed = !!zone && arrival.shownFor !== key;
@@ -384,7 +442,7 @@
         speak(key, `Depth ${shownDepth(depth)}: ${zone}.${past ? ' Deeper than ever.' : ''}`);
         // The embers take the zone's colour all the same, as they would at the card's lock.
         if (deeper) zoneArrival();
-      } else if (live) speak(key, `Deeper than ever: depth ${shownDepth(depth)}, past your best of ${shownDepth(depth - 1)}.`);
+      } else if (live) speak(key, `Deeper than ever: depth ${shownDepth(depth)}, past your best of ${shownDepth(best!)}.`);
     });
   });
   /** Ms from a turn's stage coming in to its line over the banner coming in: once the stage has faded in (stageIn, below). */
@@ -574,7 +632,8 @@
 
 {#snippet timer()}
   <!-- There from the question's start, full while its clock waits for the art, so nothing jumps as it starts. -->
-  {#if lampHeld || (!drawing && q && (q.deadline || (s.phase === 'question' && seconds > 0)))}
+  <!-- (Not while a Sulphite rush's question waits for a new zone's plunge to land: held.) -->
+  {#if !held && (lampHeld || (!drawing && q && (q.deadline || (s.phase === 'question' && seconds > 0))))}
     {#key q?.askedAt}
       <TimerRing deadline={lampHeld ? null : q!.deadline} total={seconds} stopped={s.phase === 'reveal'} {warnFrom} />
     {/key}
@@ -583,21 +642,55 @@
 
 <!-- data-cursor: where other players' pointers are placed (PeerCursors) when over nothing more particular;
      its parts and what's in them have anchors of their own (Scoreboard, ChooseCategory, QuestionView). -->
-<div class="game" class:kicking={!!run && !!pastBest && pastBest.turn === s.turnCount} data-cursor="game">
+<div class="game" class:kicking={(!!run && !!pastBest && pastBest.turn === s.turnCount) || !!rush || landing || (!held && endsInZone)} data-cursor="game">
   <p class="sr" aria-live="polite">{run && arrival.spokenFor === `${run.startedAt}:${depth}` ? arrival.spoken : ''}</p>
   <Scoreboard aside={slim ? timer : undefined} />
 
   <!-- The outgoing and incoming turn share one grid cell while they cross-fade,
        instead of stacking (which briefly doubled the page height). -->
   <div class="turns">
+    {#if rush}
+      <!-- A Sulphite rush's gauge (a prototype), over the banner in the room above it, outside the stage, so
+           it stays put as each of its questions crosses to the next: a crystal of sulphite for each question,
+           burnt out as it is answered. Its category comes last, so on a narrow screen only that is cut short. -->
+      <p class="kicker rush-gauge" transition:fade={{ duration: 300 }} aria-label="Sulphite rush: {rush.length - rush.spent} of {rush.length} left, {rush.category}">
+        <span class="rg-name">Sulphite rush</span>
+        <span class="rg-pips" aria-hidden="true">
+          {#each { length: rush.length } as _, i (i)}
+            <span class="pip" class:spent={i < rush.spent} class:burning={rush.burning && i === rush.spent}></span>
+          {/each}
+        </span>
+        <span class="rg-cat">{rush.category}</span>
+      </p>
+    {/if}
     {#key stageKey}
       <!-- Going, the stage is let go without being made inert, which would repaint it all (lib/leaving.ts). -->
       <div class="stage" style:opacity={STAGE_OPACITY} use:outWithoutInert in:stageIn out:stageOut>
-        {#if held}
+        {#if held && landing && ended}
+          <!-- A Sulphite rush's end (a prototype): the ride lands, the banner it ended on counting on to the depth it reached. -->
+          <div class="head" data-cursor="banner">
+            <p class="kicker rush-spent">Sulphite spent</p>
+            <div class="banner" style:--c={bannerColor}>
+              <span class="rule still"></span>
+              <h2 class="still" use:bannerFit={`Depth ${landingDepth}`} use:backdropDropShadow>Depth {landingDepth}</h2>
+              <span class="rule still"></span>
+            </div>
+          </div>
+          {#if rushGained > 0}
+            <p class="rush-gained" style:--in="{(ended.to > ended.last ? RUSH_LAND_S : RUSH_HALT_S) * 1000 + 150}ms">
+              {rushGained} {rushGained === 1 ? 'depth' : 'depths'} down in one rush
+            </p>
+          {/if}
+        {:else if held}
           <!-- Going down into a new zone: nothing yet but the scene plunging. -->
         {:else}
           <div class="head" data-cursor="banner">
-            {#if run && pastBest && pastBest.turn === s.turnCount}
+            {#if rush}
+              <!-- (A Sulphite rush's gauge stands here, outside the stage: above.) -->
+            {:else if ended && endsInZone && rushGained > 0}
+              <!-- The first offer after a Sulphite rush that ended in a new zone (whose card said if it was deeper than ever): how far it came. -->
+              <p class="kicker rush-spent">Sulphite spent • {rushGained} {rushGained === 1 ? 'depth' : 'depths'} down in one rush</p>
+            {:else if run && pastBest && pastBest.turn === s.turnCount}
               <!-- Over the banner, alone, one past your best says so (in the room
                    above it, so nothing moves when it comes). -->
               <p class="kicker">
@@ -606,10 +699,11 @@
                 </span>
               </p>
             {/if}
+            <!-- (Right after a Sulphite rush's landing, its banner stays as it stood: no arrival again.) -->
             <div class="banner" class:dm={!!dm} style:--c={bannerColor}>
-              <span class="rule"></span>
-              <h2 class:start={startsRun} use:bannerFit={bannerTitle} use:bannerFx={{ color: bannerColor, big: bannerBig }} use:backdropDropShadow>{bannerTitle}</h2>
-              <span class="rule"></span>
+              <span class="rule" class:still={landed}></span>
+              <h2 class:start={startsRun} class:still={landed} use:bannerFit={bannerTitle} use:bannerFx={{ color: bannerColor, big: bannerBig }} use:backdropDropShadow>{bannerTitle}</h2>
+              <span class="rule" class:still={landed}></span>
             </div>
           </div>
 
@@ -788,6 +882,103 @@
     font-size: 0.72rem;
     letter-spacing: 0.12em;
     text-transform: uppercase;
+  }
+  /* The Sulphite rush (a prototype): its gauge over the banner, outside the
+     stage (as .head's kicker sits over it: .turns is where the stage's
+     top is), and the line its end leaves; in the sulphite's pale yellow
+     (lib/rushScene.ts SULPHITE). */
+  .turns {
+    position: relative;
+    --sulphite: #f0d464;
+    --sulphite-hi: #fbf0a8;
+  }
+  .rush-gauge {
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.7em;
+    color: var(--sulphite);
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+  }
+  .rg-name {
+    flex: none;
+  }
+  .rg-cat {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .rg-pips {
+    flex: none;
+    display: inline-flex;
+    gap: 0.42em;
+  }
+  /* A crystal of sulphite: lit, burning (the question asked), or burnt out. */
+  .pip {
+    width: 0.46em;
+    height: 0.46em;
+    rotate: 45deg;
+    background: linear-gradient(135deg, var(--sulphite-hi), var(--sulphite) 60%, #a8861c);
+    box-shadow: 0 0 0.35em color-mix(in srgb, var(--sulphite), transparent 35%);
+    transition:
+      box-shadow 0.6s,
+      opacity 0.6s;
+  }
+  .pip.burning {
+    position: relative;
+    animation: pip-burn 0.9s ease-in-out infinite alternate;
+  }
+  /* The burning crystal's brighter glow fades in and out on a layer of its own, so the pulse never repaints. */
+  .pip.burning::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    box-shadow: 0 0 0.7em color-mix(in srgb, var(--sulphite-hi), transparent 10%);
+    opacity: 0;
+    animation: pip-glow 0.9s ease-in-out infinite alternate;
+  }
+  @keyframes pip-burn {
+    to {
+      scale: 1.15;
+    }
+  }
+  @keyframes pip-glow {
+    to {
+      opacity: 1;
+    }
+  }
+  .pip.spent {
+    background: transparent;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sulphite), transparent 65%);
+    opacity: 0.7;
+  }
+  .kicker.rush-spent {
+    color: var(--sulphite);
+    letter-spacing: 0.12em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* How far the rush took the run, under the banner as it lands. */
+  .rush-gained {
+    margin: 0;
+    text-align: center;
+    font-style: italic;
+    font-size: 1.05rem;
+    color: var(--note);
+    animation: gained-in 0.5s var(--ease-out) var(--in) both;
+  }
+  @keyframes gained-in {
+    from {
+      opacity: 0;
+    }
+  }
+  /* A banner standing as it stood (a rush's landing and the offer after it): no arrival. */
+  .banner h2.still,
+  .rule.still {
+    animation: none;
   }
   .past {
     --track: 0.3em;

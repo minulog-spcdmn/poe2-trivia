@@ -65,11 +65,14 @@ export const PICK_IN_MS = 200;
  * (its art failed) while the cards still hold keeps the hold it had
  * (`held`, for the question it replaces). Null for any other question (one
  * not from the cards, as a race's; resumed; re-asked on a question that had
- * none; or asked as dynamite blasted the last away).
+ * none; or asked as dynamite blasted the last away). A Sulphite rush's
+ * question stepping into a new zone waits for the plunge into it to land,
+ * as the cards would (DelveState.dealAt).
  */
 export function drawHoldUntil(prev: GameState | null, next: GameState, held: { qid: number; until: number } | null = null): number | null {
   const q = next.question;
   if (!q || next.phase !== 'question' || !prev) return null;
+  if (prev.phase === 'reveal' && q.rush && next.delve?.dealAt) return next.delve.dealAt + PICK_IN_MS;
   if (prev.phase === 'choosing') {
     if (next.delve && isGroupRun(next) && prev.delve) return q.askedAt + COOP_DRAW_MS;
     return next.offered.includes(q.category) ? q.askedAt + PICK_IN_MS : null;

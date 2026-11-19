@@ -30,11 +30,17 @@ wantDelveBackdrop();
 L.boot();
 mount(App, { target: document.getElementById('app')! });
 
-export type BenchCard = { category: string; kind: FindKind | null };
+/** What a bench card carries: a find, or sulphite (the Sulphite rush's card, a prototype). */
+export type BenchKind = FindKind | 'sulphite';
+export type BenchCard = { category: string; kind: BenchKind | null };
 
 /** Deals these cards (up to three), replaying the deal. */
 function deal(cards: BenchCard[]) {
-  L.dealThese(cards);
+  const sulphite = cards.find((c) => c.kind === 'sulphite')?.category ?? null;
+  L.dealThese(
+    cards.map((c) => ({ category: c.category, kind: c.kind === 'sulphite' ? null : c.kind })),
+    sulphite,
+  );
 }
 
 // ---- turning a card over ----------------------------------------------------
@@ -99,7 +105,7 @@ for (const type of ['pointerenter', 'pointermove'])
 /** What a card can be: any category's, or the dig's way out (which carries no find). */
 const items = [...engine.categories].sort((a, b) => a.localeCompare(b)).map((c) => ({ value: c, label: c }));
 items.push({ value: WAY_OUT, label: `${WAY_OUT_CARD.title} (a dig's)` });
-const finds = (Object.keys(FIND_TEXT) as FindKind[]).map((kind) => ({ kind, name: FIND_TEXT[kind].name }));
+const finds: { kind: BenchKind; name: string }[] = [...(Object.keys(FIND_TEXT) as FindKind[]).map((kind) => ({ kind, name: FIND_TEXT[kind].name })), { kind: 'sulphite', name: 'Sulphite' }];
 
 /** The plates drawn as live strokes (true), as they were before their prints (lib/platePrint), or as prints: to compare the two. */
 function live(on: boolean) {

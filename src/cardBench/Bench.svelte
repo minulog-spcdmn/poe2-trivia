@@ -9,15 +9,15 @@
   // (cards.html?stage, ./stage.ts) runs the lab's Delve run.
   import { onMount } from 'svelte';
   import { readStored, writeStored } from '../lib/storage';
-  import { WAY_OUT, type FindKind } from '../lib/delve';
-  import type { BenchCard } from './stage';
+  import { WAY_OUT } from '../lib/delve';
+  import type { BenchCard, BenchKind } from './stage';
 
   type Api = {
     deal: (cards: BenchCard[]) => void;
     flip: (i?: number) => void;
     live: (on: boolean) => void;
     items: { value: string; label: string }[];
-    finds: { kind: FindKind; name: string }[];
+    finds: { kind: BenchKind; name: string }[];
     ready: boolean;
   };
   const MAX = 3;
@@ -31,7 +31,7 @@
   };
   let pinned = $state<BenchCard[]>(load('pinned', []));
   let item = $state(load('item', ''));
-  let find = $state<FindKind | ''>(load('find', 'azurite'));
+  let find = $state<BenchKind | ''>(load('find', 'azurite'));
   let phone = $state(load('phone', false));
   /** (Not kept: the prints are what the game shows.) */
   let live = $state(false);
@@ -47,7 +47,7 @@
   let items = $state<Api['items']>([]);
   let finds = $state<Api['finds']>([]);
   const nameOf = (value: string) => items.find((i) => i.value === value)?.label ?? value;
-  const findName = (kind: FindKind | null) => (kind ? (finds.find((f) => f.kind === kind)?.name ?? kind) : 'Plain');
+  const findName = (kind: BenchKind | null) => (kind ? (finds.find((f) => f.kind === kind)?.name ?? kind) : 'Plain');
 
   /** Once the frame's game is up: its lists, and the first cards if none are pinned yet. */
   async function ready() {

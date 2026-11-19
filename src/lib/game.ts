@@ -45,7 +45,6 @@ import {
   veilSeconds,
   voteClosesAt,
   voteDone,
-  opensZone,
   ZONE_DESCENT_MS,
   dealIn,
   DEAL_SLACK_MS,
@@ -63,6 +62,19 @@ import {
   isWayOut,
   lampAfter,
   wardRoom,
+  rushOf,
+  rushRules,
+  rushDepth,
+  sulphiteOdds,
+  firstFindsPassed,
+  zoneEntered,
+  rushStep,
+  rushKept,
+  entropyFilled,
+  entropyDealt,
+  RUSH_END_MS,
+  MAX_FINDS,
+  type RushTuning,
   type CardFind,
   type FindKind,
   type Inventory,
@@ -445,9 +457,9 @@ export function grayscaleFor(s: GameState): Grayscale {
   return gray === undefined ? activeRules(s).grayscale : gray ? 'all' : 'off';
 }
 
-/** The rules of a Delve question at depth `d`, for a find or not. */
-function delveQuestionRules(d: number, q: Pick<Question, 'find' | 'strike'>): DifficultyRules {
-  return q.find ? findRules(q.find, d, q.strike) : delveRules(d);
+/** The rules of a Delve question at depth `d`, for a find, a Sulphite rush's or neither. */
+function delveQuestionRules(d: number, q: Pick<Question, 'find' | 'strike' | 'rushDeeper'>): DifficultyRules {
+  return q.find ? findRules(q.find, d, q.strike) : typeof q.rushDeeper === 'number' ? rushRules(d, q.rushDeeper) : delveRules(d);
 }
 
 /** The last `lockout` categories of a list (none for a lockout of 0). */
@@ -554,6 +566,12 @@ export interface Delve {
   blasts?: number;
   /** An Azurite Vein being dug: from its first right strike to the way out or a cave-in (delve.ts, the dig). */
   dig?: Dig;
+  /**
+   * The Sulphite rush (a prototype, delve.ts rushOf): its tuning, read as a
+   * run alone started on a page with ?rush, and where it stands. Missing
+   * otherwise, and in older saves.
+   */
+  rush?: Rush;
   /** The haul a way out just put into the pack: how many wards, when (host clock). Gone at the next pick. */
   banked?: { wards: number; at: number };
   /**
@@ -609,6 +627,39 @@ export interface Dig {
   light: number;
   /** The categories struck so far, strike 1's first: the vein never runs on into one of them again. */
   struck: string[];
+}
+
+/** The Sulphite rush of a run alone (delve.ts rushOf; read only through it). */
+export interface Rush {
+  /** Questions a rush asks (RushTuning, fixed as the run started). */
+  length: number;
+  /** The pause after a rush answer, as a share of the usual. */
+  pace: number;
+  /** How many depths further down its questions' rules and clock come from. */
+  deeper: number;
+  /** Depths a right answer in it takes the run down. */
+  step: number;
+  /** Ms a step into a new zone in the middle of it holds its next question (RushTuning.zone). */
+  zone: number;
+  /** Once its first card has turned up, the share of the entropy gauge each depth played fills (RushTuning.chance). */
+  chance: number;
+  /** The entropy gauge toward the next sulphite card, in thousandths (delve.ts ENTROPY_FULL a card due): set as the run's first card turns up. */
+  entropy?: number;
+  /** The card on this offer carrying sulphite; gone once another is picked, dealt again on the next offer. */
+  card?: string;
+  /** The rush under way: its category, questions left (the one asked counted), and the depth it was taken at. */
+  on?: { category: string; left: number; from: number };
+  /** Finds certain on a depth the rush passed without an offer (firstFindsPassed): on the first offer after it, room allowing. */
+  owed?: FindKind[];
+  /**
+   * The rush just ended (the player standing): the depth it was taken at,
+   * the depth its last question was asked at and the depth it left the run
+   * at, for its end's moment and the first offer after it; `at`, when that
+   * offer was dealt (host clock). Gone at the next pick, or the next offer.
+   */
+  done?: { from: number; last: number; to: number; at?: number };
+  /** The run's first sulphite card has turned up (taken or passed by): from here on, more by the entropy gauge. */
+  spent?: true;
 }
 
 /** One life passed in co-op: `by` gave one of theirs at depth `depth` to bring back `to`, who had perished at `fell`. */
@@ -688,8 +739,31 @@ export const AUTO_NEXT_MS = 4000;
  * Milliseconds until a reveal stamped `at` moves on by itself, at host-clock
  * time `now` (the full delay for a reveal without a stamp).
  */
-export function autoNextLeft(at: number | undefined, now: number) {
-  return at === undefined ? AUTO_NEXT_MS : Math.min(AUTO_NEXT_MS, Math.max(0, at + AUTO_NEXT_MS - now));
+export function autoNextLeft(at: number | undefined, now: number, ms = AUTO_NEXT_MS) {
+  return at === undefined ? ms : Math.min(ms, Math.max(0, at + ms - now));
+}
+
+/**
+ * How long a reveal waits before it moves on by itself (ms): AUTO_NEXT_MS,
+ * or a Sulphite rush's share of it (Rush.pace) while another of its
+ * questions follows this one.
+ */
+export function revealPauseMs(s: GameState): number {
+  const pace = rushPace(s);
+  return pace === null ? AUTO_NEXT_MS : Math.round(AUTO_NEXT_MS * pace);
+}
+
+/**
+ * A Sulphite rush's pace while the reveal in play is one of its questions'
+ * and the run goes on (its next question follows, or its end's moment), or
+ * null (the usual pause: a player who perished on it waits for Next).
+ */
+export function rushPace(s: GameState): number | null {
+  if (s.phase !== 'reveal' || !s.question?.rush) return null;
+  const rush = rushOf(s);
+  const p = s.players[s.turn];
+  if (!rush || !(rush.on || rush.done) || !p || livesOf(s, p.id) <= 0) return null;
+  return rush.pace;
 }
 
 /** The seconds per question a room can pick, 0 = no timer. */
@@ -817,6 +891,10 @@ export interface Question {
   strike?: number;
   /** Delve, a vein's strike after the first: its clock, the lamp's light left (seconds). */
   light?: number;
+  /** Delve: asked in a Sulphite rush (delve.ts rushOf): no flare or dynamite works on it. */
+  rush?: true;
+  /** Delve, a Sulphite rush's question: how many depths further down its rules and clock come from (delve.ts rushRules). */
+  rushDeeper?: number;
   /**
    * Delve: asked in place of a question dynamite blasted away, at the same
    * depth (see Blast). Kept through a reask.
@@ -1505,6 +1583,14 @@ export class Engine {
     this.seenLines = seen;
   }
 
+  /** The Sulphite rush's tuning for the runs alone this engine starts (delve.ts rushTuning, from the host's URL), or null: none. */
+  private rushTuning: RushTuning | null = null;
+
+  /** Hands over the Sulphite rush's tuning (a prototype: the host's page with ?rush), or null to start runs without it. */
+  setRush(tuning: RushTuning | null) {
+    this.rushTuning = tuning;
+  }
+
   /**
    * Hands over where to ask which fossils each player's device holds (a
    * mask each, fossils.ts fossilMask): the
@@ -1838,6 +1924,8 @@ export class Engine {
             inventory: {},
             finds: [],
             ...(s.players.length > 1 ? { votes: {}, voteFrom: null, missed: {}, revives: [] } : {}),
+            // The Sulphite rush (a prototype): a run alone, on a host page with ?rush; its tuning kept for the run.
+            ...(s.players.length === 1 && this.rushTuning ? { rush: { ...this.rushTuning } } : {}),
           };
         }
         // The first turn goes to someone who is actually here.
@@ -1987,6 +2075,8 @@ export class Engine {
           // A Dynamite Cache's blast takes one thing from their pack too.
           blown = this.blowUp(s, active.id);
         }
+        // A rush's question: one of its questions used, and whether it ends here.
+        if (s.delve && q.rush) this.settleRush(s, active.id, correct);
         if (!timedOut && chosenId && isFake(chosenId)) s.used.push(chosenId);
         if (s.deathmatch) s.deathmatch.results[active.id] = correct;
         this.note(s, active.id, q.itemId, correct, answerMs(action.ms));
@@ -2066,6 +2156,8 @@ export class Engine {
         // One a blast asked stays one (never a find's, see blast); a fossil's stays its fossil's.
         if (voided.blast) s.question.blast = voided.blast;
         if (voided.fossil) s.question.fossil = voided.fossil;
+        // One a rush asked stays one (no item works on it; its rules kept, through makeQuestion).
+        if (voided.rush) s.question.rush = true;
         s.used.push(s.question.itemId);
         break;
       }
@@ -2224,7 +2316,9 @@ export class Engine {
     }
     // Without a session to wait for the art, a question's clock starts as it is asked.
     const q = s.question;
-    if (this.autoClock && s.phase === 'question' && q && !clockRuns(q) && !q.paused && q.askedAt !== prev.question?.askedAt) this.startClock(s, q, q.askedAt);
+    if (this.autoClock && s.phase === 'question' && q && !clockRuns(q) && !q.paused && q.askedAt !== prev.question?.askedAt)
+      // (A Sulphite rush's question waits for a zone's arrival, as cards do: dealAt.)
+      this.startClock(s, q, Math.max(q.askedAt, q.rush ? (s.delve?.dealAt ?? 0) : 0));
     s.version = prev.version + 1;
     return s;
   }
@@ -2388,6 +2482,19 @@ export class Engine {
       if (!dig) {
         if (active) active.recent = lastPicks([...active.recent, category], DELVE_MAX_LOCKOUT);
         else s.recentCategories = lastPicks([...s.recentCategories, category], DELVE_MAX_LOCKOUT);
+      }
+      // The sulphite card taken: the rush starts (its category locked out once, just above), and it is the rush's first question.
+      const rush = rushOf(s);
+      if (rush && s.delve.rush) {
+        if (!dig && rush.card === category) {
+          s.delve.rush = { ...rushKept(rush), on: { category, left: rush.length, from: s.round } };
+          this.askRushQuestion(s, category, s.round);
+          return;
+        }
+        // Passed by: gone, never back (more come by the entropy gauge: sulphiteOdds).
+        if (rush.card) s.delve.rush.spent = true;
+        delete s.delve.rush.card;
+        delete s.delve.rush.done;
       }
       const find = findOn(s, category);
       if (find) kind = dig && find === 'azurite' ? { find, strike: dig.strikes + 1, light: dig.light } : { find };
@@ -2614,10 +2721,18 @@ export class Engine {
    * carry any more of is never offered: its slice finds nothing, so the
    * others' chances stay the depth's.
    */
-  private rollFinds(s: GameState, takers: string[], fresh: boolean): CardFind[] {
+  private rollFinds(s: GameState, takers: string[], fresh: boolean, owed: FindKind[] = []): CardFind[] {
     if (!s.delve || !takers.length || !s.offered.length) return [];
     const room = (item: ItemKind) => takers.some((id) => hasRoom(inventoryOf(s, id), item));
     const chances = (share: number, but?: FindKind) => FINDS.filter((f) => f.kind !== but).map((f) => ({ ...f, chance: findChance(f.kind, s.round) * share }));
+    // After a Sulphite rush: the finds certain on depths it passed (Rush.owed) are certain here, each on a card of its own.
+    if (owed.length) {
+      const own = fresh ? firstFindAt(s.round) : null;
+      const kinds = [...new Set([...(own ? [own] : []), ...owed])];
+      const sure = FINDS.filter((f) => kinds.includes(f.kind) && room(f.item)).sort((a, b) => kinds.indexOf(a.kind) - kinds.indexOf(b.kind));
+      const cards = sample(s.offered, Math.min(MAX_FINDS, sure.length), this.rng);
+      if (cards.length) return cards.map((category, i) => ({ category, kind: sure[i].kind }));
+    }
     const certain = fresh ? FINDS.find((f) => f.kind === firstFindAt(s.round) && room(f.item)) : undefined;
     const first = certain ? { category: sample(s.offered, 1, this.rng)[0], kind: certain.kind } : this.rollFind(chances(1), room, s.offered);
     if (!first) return [];
@@ -2703,6 +2818,7 @@ export class Engine {
     s.question = null;
     s.reveal = null;
     s.offered = [next, WAY_OUT];
+    if (dm.rush) delete dm.rush.card;
     dm.finds = [{ category: next, kind: 'azurite' }];
     delete dm.find;
     delete dm.fossil;
@@ -2774,9 +2890,99 @@ export class Engine {
       return;
     }
     const deeper = wrapped && cleared;
-    if (deeper) s.round++;
+    const before = s.round;
+    // A Sulphite rush's right answer takes the run its step's depths down (rushStep), its last one too.
+    const rushed = s.phase === 'reveal' && !!s.question?.rush;
+    if (deeper) s.round += rushed ? rushStep(s) : 1;
     s.turn = next;
-    this.beginTurn(s, false, deeper);
+    // A rush under way asks its next question straight away, deeper or at the same depth (no offer between).
+    const rush = rushed ? rushOf(s)?.on : undefined;
+    if (rush) {
+      s.turnCount++;
+      this.askRushQuestion(s, rush.category, before);
+      return;
+    }
+    this.beginTurn(s, false, deeper, before);
+  }
+
+  // ---- the Sulphite rush (a prototype, delve.ts rushOf) ---------------------
+
+  /**
+   * A rush's question from `category`, at the run's depth under the rules
+   * and clock of deeper down (delve.ts rushRules), marked so no flare or
+   * dynamite works on it (itemsWorkOn). `from`: the depth the run was at
+   * before (the same for the rush's first, from the sulphite card, whose
+   * offer is kept as a pick keeps it: the cards play their pick as they go;
+   * after that there is no offer). A step into a new zone holds the
+   * question back until the plunge into it lands (dealAt), as an offer's
+   * cards are held: its clock starts no sooner (Session, drawHoldUntil).
+   */
+  private askRushQuestion(s: GameState, category: string, from: number) {
+    const dm = s.delve!;
+    if (s.phase !== 'choosing') {
+      s.offered = [];
+      dm.finds = [];
+      delete dm.find;
+      delete dm.missedHere;
+      delete dm.banked;
+      // (The rush's own hold, shorter than an offer's: RushTuning.zone.)
+      if (zoneEntered(from, s.round) !== null) dm.dealAt = this.now() + (rushOf(s)?.zone ?? ZONE_DESCENT_MS);
+      else delete dm.dealAt;
+    }
+    s.reveal = null;
+    dm.asked = [category];
+    s.question = this.makeQuestion(s, category, { rushDeeper: rushOf(s)?.deeper ?? 0 });
+    s.question.rush = true;
+    s.used.push(s.question.itemId);
+    s.phase = 'question';
+  }
+
+  /**
+   * A rush's question answered (`correct` or not) by `id`: one of its
+   * questions used. It ends after its last question, or with the player
+   * perished, wherever the run is; the finds certain on depths it passed
+   * (firstFindsPassed) are owed to the first offer after it.
+   */
+  private settleRush(s: GameState, id: string, correct: boolean) {
+    const dm = s.delve!;
+    const rush = rushOf(s);
+    if (!rush?.on || !dm.rush) return;
+    const left = rush.on.left - 1;
+    const tuning = rushKept(rush);
+    if (left > 0 && livesOf(s, id) > 0) {
+      dm.rush = { ...tuning, on: { category: rush.on.category, left, from: rush.on.from } };
+      return;
+    }
+    // Where the first offer after it is dealt (advanceDelve: a right answer its step deeper).
+    const to = correct ? s.round + rush.step : s.round;
+    const owed = firstFindsPassed(rush.on.from, to);
+    const standing = livesOf(s, id) > 0;
+    dm.rush = { ...tuning, ...(owed.length && standing ? { owed } : {}), ...(standing ? { done: { from: rush.on.from, last: s.round, to } } : {}) };
+  }
+
+  /**
+   * A run alone's offer: on a depth's first (`fresh`), by its odds
+   * (sulphiteOdds: the run's first certain somewhere from RUSH_FROM to
+   * RUSH_TO, more after it by the entropy gauge, which this depth played
+   * fills), one of its cards carries sulphite, one without a find if any
+   * is. A card due on an offer that can't hold one waits for the next.
+   */
+  private dealSulphite(s: GameState, fresh: boolean) {
+    const dm = s.delve!;
+    if (!dm.rush) return;
+    delete dm.rush.card;
+    const rush = rushOf(s);
+    if (!fresh || !rush) return;
+    if (rush.spent && !rush.on) dm.rush.entropy = rush.entropy = entropyFilled(rush, this.rng);
+    // (Never on a vein's cards, nor on a find's or the fossil's: a card carries one thing.)
+    if (!s.offered.length || s.offered.some(isWayOut)) return;
+    const odds = sulphiteOdds(s, s.round);
+    if (odds <= 0 || this.rng() >= odds) return;
+    const taken = new Set([...(dm.finds ?? []).map((f) => f.category), ...(dm.fossil ? [dm.fossil.category] : [])]);
+    const plain = s.offered.filter((c) => !taken.has(c) && !isWayOut(c));
+    if (!plain.length) return;
+    dm.rush.card = sample(plain, 1, this.rng)[0];
+    dm.rush.entropy = entropyDealt(rush, this.rng);
   }
 
   // ---- delve co-op --------------------------------------------------------
@@ -3000,8 +3206,12 @@ export class Engine {
 
   // ---- turns mode -------------------------------------------------------
 
-  /** `deeper`: the run just went a depth deeper (a new zone's cards are dealt as the plunge into it lands, dealAt). */
-  private beginTurn(s: GameState, first: boolean, deeper = false) {
+  /**
+   * `deeper`: the run just went deeper, from depth `from` (a new zone's cards
+   * are dealt as the plunge into it lands, dealAt; a Sulphite rush may have
+   * gone down more than one depth at a time, and stepped over a zone's first).
+   */
+  private beginTurn(s: GameState, first: boolean, deeper = false, from = s.round - 1) {
     if (!first) s.turnCount++;
     s.phase = 'choosing';
     s.question = null;
@@ -3021,20 +3231,35 @@ export class Engine {
     if (s.delve) {
       // The depth's first offer (a new depth's, or the run's), not one after a miss at it.
       const takers = coop ? standingIds(s) : s.players[s.turn] ? [s.players[s.turn].id] : [];
-      s.delve.finds = this.rollFinds(s, takers, first || deeper);
+      s.delve.finds = this.rollFinds(s, takers, first || deeper, rushOf(s)?.owed);
+      // (Finds a Sulphite rush passed by come on the first offer after it, or not at all.)
+      if (s.delve.rush) delete s.delve.rush.owed;
       const fossil = this.rollFossil(s, takers, first || deeper);
       if (fossil) s.delve.fossil = fossil;
       else delete s.delve.fossil;
       delete s.delve.find;
       delete s.delve.asked;
       delete s.delve.missedHere;
-      if (deeper && opensZone(s.round)) s.delve.dealAt = this.now() + ZONE_DESCENT_MS;
+      // A Sulphite rush just ended: the first offer after it waits for its end's moment (RUSH_END_MS), or a zone's arrival; once.
+      const ended = s.delve.rush?.done;
+      if (ended && ended.at !== undefined) delete s.delve.rush!.done;
+      if (deeper && zoneEntered(from, s.round) !== null) s.delve.dealAt = this.now() + ZONE_DESCENT_MS;
+      else if (ended && ended.at === undefined) s.delve.dealAt = this.now() + RUSH_END_MS;
       else delete s.delve.dealAt;
+      if (ended && ended.at === undefined) ended.at = this.now();
+      // The Sulphite rush (a prototype): only where the run has one (rolls nothing otherwise).
+      if (s.delve.rush) this.dealSulphite(s, first || deeper);
     }
   }
 
   private finish(s: GameState, winners: string[]) {
     if (s.delve) {
+      if (s.delve.rush) {
+        delete s.delve.rush.card;
+        delete s.delve.rush.on;
+        delete s.delve.rush.owed;
+        delete s.delve.rush.done;
+      }
       delete s.delve.dig;
       delete s.delve.leaving;
       s.delve.finds = [];
@@ -3388,17 +3613,20 @@ export class Engine {
   /**
    * Builds a question from the category. Updates `s.used` when the category
    * has to start over. Delve: a `find` gets the rules and clock of deeper
-   * down (delve.ts findRules).
+   * down (delve.ts findRules), and so does a Sulphite rush's (`rushDeeper`,
+   * rushRules).
    */
-  makeQuestion(s: GameState, category: string, kind: Pick<Question, 'find' | 'strike' | 'light'> = {}): Question {
-    const special: Pick<Question, 'find' | 'strike' | 'light'> =
+  makeQuestion(s: GameState, category: string, kind: Pick<Question, 'find' | 'strike' | 'light' | 'rushDeeper'> = {}): Question {
+    const special: Pick<Question, 'find' | 'strike' | 'light' | 'rushDeeper'> =
       s.delve && kind.find
         ? {
             find: kind.find,
             ...(kind.find === 'azurite' && (kind.strike ?? 1) > 1 ? { strike: kind.strike } : {}),
             ...(kind.find === 'azurite' && typeof kind.light === 'number' ? { light: kind.light } : {}),
           }
-        : {};
+        : s.delve && typeof kind.rushDeeper === 'number'
+          ? { rushDeeper: kind.rushDeeper }
+          : {};
     const rules = s.delve ? delveQuestionRules(s.round, special) : activeRules(s);
     const inCat = this.byCategory.get(category) ?? [];
     let mode = this.rollMode(s);
@@ -3527,7 +3755,14 @@ export class Engine {
     const askedAt = Math.max(this.now(), (s.lastAskedAt ?? 0) + 1, (s.question?.askedAt ?? 0) + 1);
     s.lastAskedAt = askedAt;
     // Delve: deep down, "find the art" pictures may burn in as well, each cut much coarser.
-    const tiles = mode === 'art' && !!rules.veil && !!s.delve && this.rng() < (special.find ? findTileVeil(special.find, s.round, special.strike) : delveTileVeil(s.round));
+    const tiles =
+      mode === 'art' &&
+      !!rules.veil &&
+      !!s.delve &&
+      this.rng() <
+        (special.find
+          ? findTileVeil(special.find, s.round, special.strike)
+          : delveTileVeil(typeof special.rushDeeper === 'number' ? rushDepth(s.round, special.rushDeeper) : s.round));
     const secs = questionClock(s, special);
     const size = rules.veil && (tiles ? tileVeilSize(rules.veil.size) : rules.veil.size);
     // Its share of the clock, faster on a short one (veilSeconds); none on a

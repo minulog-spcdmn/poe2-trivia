@@ -1914,7 +1914,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
     const scene = currentDescent();
     const look = scene.look;
     // A plunge draws the dark in and lets it go again as the scene sinks.
-    const close = Math.min(1, scene.close + 0.12 * Math.max(sinking.breath, sinking.slideBreath));
+    // (And a Sulphite rush's speed narrowing the view: its tunnel, lib/descent.ts setCruise.)
+    const close = Math.min(1, scene.close + 0.12 * Math.max(sinking.breath, sinking.slideBreath) + 0.16 * sinking.tunnel);
     const sink = sinking.sink * viewH;
     const slide = sinking.slide * viewH;
     const city = look.env[CITY];
@@ -2286,7 +2287,8 @@ export function startBackdrop(canvas: HTMLCanvasElement, onLost: (restorable: bo
     // A new depth dealt: the scene sinks a little further (plunge in descent.ts),
     // the embers and glints carried up with the walls; never while holding still.
     const sunk = sinking.sink;
-    if (stepPlunge(now, !still)) {
+    // (A Sulphite rush's cruise only while not resting: it would draw the scene every frame of the rush.)
+    if (stepPlunge(now, !still, !resting)) {
       const px = (sinking.sink - sunk) * viewH;
       if (Math.abs(px) < viewH) embers.rise(px, canvasH);
       dirty = true;

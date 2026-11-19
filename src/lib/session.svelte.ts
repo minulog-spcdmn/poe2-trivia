@@ -22,6 +22,8 @@ import {
   grayscaleFor,
   ANSWER_GRACE_MS,
   autoNextLeft,
+  revealPauseMs,
+  rushPace,
   renameCategories,
   DEFAULT_SETTINGS,
   questionClock,
@@ -59,7 +61,7 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, runFossils, livesOf, pausedUsed, standingIds, type CardFind, type FindKind } from './delve';
+import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, runFossils, livesOf, pausedUsed, rushTuning, standingIds, type CardFind, type FindKind } from './delve';
 import { GameCounts, RoomOff, Steps, countEvent, countFailure, countGameFrames, countStep, counting, hiddenSince, markActive, type Failure, type JoinVia } from './count';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
@@ -76,6 +78,7 @@ import {
   drained,
   drawClockFrom,
   drawHoldUntil,
+  PICK_IN_MS,
   expireIn,
   expireKey,
   flareIn,
@@ -1906,7 +1909,9 @@ class Session {
       // The slowest of them still needs half a round trip for the last bytes and the key.
       const rtt = Math.max(0, ...waited.map((l) => honestRtt(l.g)));
       // From the cards: not before the pick's moment (or a vote's draw) has played out on them, theirs starting that half trip late.
-      const hold = this.drawHold?.qid === qid ? drawClockFrom(this.drawHold.until, rtt) : 0;
+      // A Sulphite rush's question stepping into a new zone: not before the plunge lands (a reload mid-plunge too).
+      const landed = s.question?.rush && s.delve?.dealAt ? s.delve.dealAt + PICK_IN_MS : 0;
+      const hold = Math.max(landed, this.drawHold?.qid === qid ? drawClockFrom(this.drawHold.until, rtt) : 0);
       if ((done || capped) && now >= hold - 500) {
         const late = capped ? waited.filter((l) => !l.done) : [];
         this.strikes = capStrikes(this.strikes, links.filter((l) => l.done).map((l) => l.id), late.map((l) => l.id));
@@ -3019,7 +3024,8 @@ class Session {
     let patchesOut: Promise<void> | null = null;
     this.noteChange(prev, next);
     this.state = next;
-    if (this.isHost && next.delve && next.round >= LOOKS_FETCH_FROM) fetchLooks();
+    // (A Sulphite rush asks from deeper down: delve.ts rushRules.)
+    if (this.isHost && next.delve && next.round + (next.question?.rushDeeper ?? 0) >= LOOKS_FETCH_FROM) fetchLooks();
     // A run's line counts as shown on every screen in the room from now, a watcher's too; a guest's hello isn't sent again.
     if (this.isHost && next.delve?.line && next.delve.startedAt !== prev?.delve?.startedAt) {
       const line = START_LINES.indexOf(next.delve.line);
@@ -3552,8 +3558,10 @@ class Session {
         const up = next.players[next.turn];
         sfx(up?.id === me || this.mode === 'local' || (this.mode === 'host' && up?.local) ? 'yourTurn' : 'turn');
       }
-    } else if (prev.phase === 'choosing' && next.phase === 'question') {
-      sfx('reveal');
+    } else if ((prev.phase === 'choosing' || (prev.phase === 'reveal' && !!next.question?.rush)) && next.phase === 'question') {
+      // (A Sulphite rush's question stepping into a new zone comes as the plunge into it lands: dealIn.)
+      const wait = dealIn(next, this.hostNow());
+      sfx('reveal', wait > 0 ? { inMs: wait } : undefined);
     } else if (prev.phase === 'lobby' && next.phase === 'lobby' && next.players.length > prev.players.length) {
       sfx('join');
     }
@@ -3693,7 +3701,9 @@ class Session {
    * around as hot-seat is: Next moves it on there.
    */
   private scheduleAutoNext(s: GameState) {
-    const key = s.phase === 'reveal' && this.mode === 'host' && !this.hereOnly && s.question ? s.question.askedAt : 0;
+    // A Sulphite rush (a prototype) moves on by itself on this device too, at its own pace, while its next question follows.
+    const rushing = rushPace(s) !== null && (this.mode === 'local' || this.mode === 'host');
+    const key = s.phase === 'reveal' && ((this.mode === 'host' && !this.hereOnly) || rushing) && s.question ? s.question.askedAt : 0;
     if (key === this.autoNextFor) return;
     if (this.autoNext) clearTimeout(this.autoNext);
     this.autoNext = null;
@@ -3707,7 +3717,7 @@ class Session {
       } catch {
         /* already moved on */
       }
-    }, autoNextLeft(s.reveal?.at, Date.now()));
+    }, autoNextLeft(s.reveal?.at, Date.now(), revealPauseMs(s)));
   }
 
   /** Turns mode: don't let the game wait forever on a player who dropped out on their turn. */
@@ -4049,6 +4059,8 @@ function writeSaved(saved: Saved | null) {
 export const session = new Session();
 engine.setStartLines((ids) => session.startLinesSeen(ids));
 engine.setFossilsHeld((ids) => session.fossilsHeld(ids));
+// The Sulphite rush, a prototype: on for the runs alone this page starts when its URL has ?rush (tuned by rushLength, rushPace, rushDeeper).
+engine.setRush(typeof location === 'undefined' ? null : rushTuning(location.search));
 // The screen kept on in a room online, and let go of out of it, whatever moves the session there.
 $effect.root(() => {
   $effect(() => session.stayAwake());
