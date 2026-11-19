@@ -3785,6 +3785,13 @@
       font-size: 1rem;
       line-height: 1.25;
     }
+    /* What there is to know while the question is open, its lines closer
+       (as the answers' are), so two of them (a miss over who is still
+       answering, in Delve together) fit the row's height: the room above
+       is the screen's less this row's, so a taller row would scroll it. */
+    .spectate {
+      line-height: 1.15;
+    }
   }
 
   /* Seven names or more on a wide enough screen: the art gives them some of
