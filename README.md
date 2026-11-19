@@ -481,6 +481,26 @@ checked (6 Nov 2026), once, on 5 Nov, when joining failures rose with the
 matchmaking server’s first day. A dry run over past days: `GOATCOUNTER_KEY=...
 node --experimental-strip-types scripts/daily-health.mjs --backtest 60`.
 
+### Live site check
+
+Daily health can’t see a site that’s down: a day with nothing counted fires
+nothing. `scripts/live-check.mjs` can, with no Claude in it; a failed run is
+the alarm, and GitHub emails the owner.
+
+- After each deploy, the deploy job’s last step checks that poe2.quest serves
+  the `index.html` just deployed (its hashed entry scripts and styles are the
+  build’s) and that every file it names answers 200. It tries for about six
+  minutes while the CDN catches up, whichever try put the site up.
+- Once a day, `.github/workflows/live-check.yml` checks that poe2.quest and its
+  files answer 200, that its TLS certificate has at least 14 days left, and
+  that the matchmaking server hands out a peer id (`/peerjs/id`). Scheduled
+  runs here start hours late, so an outage is mailed within about a day. It
+  stays apart from Daily health, whose failures wake the Claude responder,
+  and reads neither the tally nor GoatCounter.
+
+By hand: `node scripts/live-check.mjs daily`, or run the workflow from the
+Actions tab.
+
 ### Item tally readiness
 
 `.github/workflows/tally-ready.yml` asks once a day whether the item tally

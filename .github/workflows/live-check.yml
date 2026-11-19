@@ -1,0 +1,46 @@
+name: Live check
+run-name: "Live check: ${{ github.event_name == 'schedule' && 'daily' || 'run by hand' }}"
+
+# Once a day, is the live site up? poe2.quest and every file its index.html
+# names answer 200, its TLS certificate has at least 14 days left, and the
+# matchmaking server hands out a peer id (GET /peerjs/id: a random UUID,
+# nothing allocated, one count of its per-address limit). It reads no item
+# tally (/tally has a day's read budget) and asks GoatCounter nothing.
+# scripts/live-check.mjs does it all; the deploy job runs the same script
+# after each deploy (deploy.yml).
+#
+# Daily health can't see this: a day with nothing counted fires nothing. A
+# failed run is the alarm: GitHub mails the owner. It stays out of
+# daily-health.yml on purpose, since any failure there wakes the Claude
+# health responder (health-responder.yml), and no code fix brings a site
+# back up.
+#
+# Scheduled runs here start 6 to 9.5 hours late, so an outage is mailed
+# within about a day.
+
+on:
+  # Off the hour, when GitHub's scheduled runs bunch up.
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: Live check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: scripts/live-check.mjs
+          sparse-checkout-cone-mode: false
+      # No npm ci: the script imports no packages.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check the live site
+        run: node scripts/live-check.mjs daily
