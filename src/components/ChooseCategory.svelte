@@ -20,9 +20,9 @@
   import { MAX_H, MAX_W, PAD, WEIGHT, fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
   import { fineMask } from '../lib/fineMask';
   import { activeRules, difficultyOf } from '../lib/game';
-  import { FIND_TEXT, deathmatchText, digNote, findNote, lockoutText, namesOf, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
+  import { FIND_TEXT, deathmatchText, digNote, findNote, lockoutText, namesOf, rushText, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
   import { WAY_OUT_CARD as out } from '../lib/wayOut/lantern';
-  import { digOf, expectedVoters, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, standingIds, voteClosesAt, type FindKind } from '../lib/delve';
+  import { digOf, expectedVoters, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, rushOf, standingIds, sulphiteCard, voteClosesAt, type FindKind } from '../lib/delve';
   import { sfx } from '../lib/sound';
   import { backdropShadow } from '../lib/backdropShadow';
   import { FIND_COLORS, cardHover, cardPicked, cardRevealed, raffleHop, voteCast } from '../lib/fx/moments';
@@ -30,6 +30,9 @@
   import { C, embers, emitter, flare, glints, outline, puffs, ring, shards, sparks } from '../lib/fx/effects';
   import { light } from '../lib/lights';
   import CardEngraving from './CardEngraving.svelte';
+  import SulphiteCharge from './SulphiteCharge.svelte';
+  import { SULPHITE_PLATE } from '../lib/sulphite/plate';
+  import { sulphiteHover, sulphitePicked, sulphiteRevealed } from '../lib/sulphite/moments';
   import { MediaQuery } from 'svelte/reactivity';
   import Avatar from './Avatar.svelte';
   import { actionOf, ownKey, typing } from '../lib/keybinds.svelte';
@@ -91,6 +94,10 @@
   const dig = $derived(s.phase === 'choosing' && s.offered.some(isWayOut) ? digOf(s) : null);
   const haul = $derived(dig?.haul.length ?? 0);
   // (The way out's lantern hangs in its plate, gilded: no emblem stands in its window.)
+  /** Delve: the card on offer carrying sulphite (the Sulphite rush, a prototype), or null. */
+  const sulphite = $derived(
+    s.phase === 'choosing' ? sulphiteCard(s) : s.question?.rush && s.offered.includes(s.question.category) ? s.question.category : null,
+  );
   const iconOf = (cat: string) => (isWayOut(cat) ? '' : categoryIcon(cat));
   const tweakOf = (cat: string) => (isWayOut(cat) ? { k: 1, up: 0, left: 0 } : categoryIconTweak(cat));
   /** A card's name as players read it. */
@@ -364,8 +371,11 @@
    * the first card's on the left and the other's on the right; one alone on
    * its card's side, the middle card's on the left.
    */
-  /** The notes can stand beside the cards (CSS, on a phone on its side): a dig's two, or up to two finds'. */
-  const beside = $derived(!!dig || (finds.length > 0 && finds.length <= 2 && !s.deathmatch));
+  /** The sulphite card on this offer, with its note under it as a find's (the Sulphite rush, a prototype), or null. */
+  const sulphiteNoted = $derived(s.deathmatch ? null : sulphiteCard(s));
+  /** The notes can stand beside the cards (CSS, on a phone on its side): a dig's two, or up to two finds' (the sulphite card's counted). */
+  const noted = $derived(finds.length + (sulphiteNoted ? 1 : 0));
+  const beside = $derived(!!dig || (noted > 0 && noted <= 2 && !s.deathmatch));
   function sideOf(i: number, all: number[]): 'left' | 'right' {
     if (all.length > 1) return i === Math.min(...all) ? 'left' : 'right';
     return 2 * i + 1 > s.offered.length ? 'right' : 'left';
@@ -744,10 +754,11 @@
     // Read now: the cards may be fading out by the time it lands, their deriveds gone inert.
     const kind = kindOf(s.offered[i]);
     const out = isWayOut(s.offered[i]);
+    const sul = sulphite === s.offered[i];
     const dm = !!s.deathmatch;
     const t = setTimeout(() => {
       const frame = node.querySelector('.frame') ?? node;
-      if (dealtAt !== null) onCards(() => (kind ? findRevealed(frame, kind) : out ? outRevealed(frame) : cardRevealed(frame, dm)));
+      if (dealtAt !== null) onCards(() => (kind ? findRevealed(frame, kind) : out ? outRevealed(frame) : sul ? sulphiteRevealed(frame) : cardRevealed(frame, dm)));
       // The pointer may already rest on it, having come while it lay face down.
       if (waiting === i) ignite(i);
     }, (flipAt(i) + FLIP) * 1000);
@@ -775,7 +786,8 @@
     const frame = card?.querySelector('.frame');
     const kind = kindOf(s.offered[i]);
     const out = isWayOut(s.offered[i]);
-    if (frame) burning = onCards(() => (kind ? findHover(frame, card, kind) : out ? outHover(frame, card) : cardHover(frame, card, !!s.deathmatch)));
+    const sul = sulphite === s.offered[i];
+    if (frame) burning = onCards(() => (kind ? findHover(frame, card, kind) : out ? outHover(frame, card) : sul ? sulphiteHover(frame, card) : cardHover(frame, card, !!s.deathmatch)));
   }
   function leave(e: PointerEvent) {
     waiting = null;
@@ -906,6 +918,7 @@
     const kind = kindOf(category);
     if (frame && kind) onCards(() => findPicked(frame, cardEls[i], others, kind));
     else if (frame && isWayOut(category)) onCards(() => outPicked(frame, cardEls[i], others));
+    else if (frame && sulphite === category) onCards(() => sulphitePicked(frame, cardEls[i], others));
     else if (frame) onCards(() => cardPicked(frame, cardEls[i], others, !!s.deathmatch));
     sfx(kind === 'azurite' ? 'veinStrike' : 'pick', { from: { from: cardEls[i] } });
     session.dispatch({ type: 'pick', category });
@@ -1016,11 +1029,12 @@
         data-sfx="none"
         data-fx="none"
         class:dm={!!s.deathmatch}
-        class:special={!!kindOf(cat)}
+        class:special={!!kindOf(cat) || sulphite === cat}
         class:out={isWayOut(cat)}
+        class:sulphite={sulphite === cat}
         style={isWayOut(cat) ? outInk : undefined}
         data-find={kindOf(cat)}
-        aria-describedby={kindOf(cat) && !s.deathmatch ? `${uid}-note-${kindOf(cat)}` : undefined}
+        aria-describedby={kindOf(cat) && !s.deathmatch ? `${uid}-note-${kindOf(cat)}` : sulphiteNoted === cat ? `${uid}-note-sulphite` : undefined}
         class:mine
         class:dim={dimmed}
         class:chosen={chosen === cat || (landed && lit === i)}
@@ -1047,7 +1061,7 @@
             <span class="back" aria-hidden="true">
               {#if filled}
                 <span class="grain"></span>
-                <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} hold={unseen(i, 'back')} />
+                <CardEngraving side="back" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : sulphite === cat ? SULPHITE_PLATE : undefined} print={printed} hold={unseen(i, 'back')} />
                 {@render filigree()}
               {/if}
             </span>
@@ -1059,7 +1073,11 @@
                   <span class="rim shade"></span>
                 {/if}
                 <span class="grain"></span>
-                <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : undefined} print={printed} hold={unseen(i, 'face')} />
+                <CardEngraving side="face" find={kindOf(cat)} custom={isWayOut(cat) ? out.variant : sulphite === cat ? SULPHITE_PLATE : undefined} print={printed} hold={unseen(i, 'face')} />
+                {#if sulphite === cat}
+                  <!-- Its bolts lit: what moves on its still plate. -->
+                  <SulphiteCharge />
+                {/if}
                 <span class="glare"><span class="light"></span></span>
               {/if}
               <span class="sheen"></span>
@@ -1096,11 +1114,13 @@
                   <span class="find-tag" data-zoom>{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span>
                 {:else if isWayOut(cat)}
                   <span class="find-tag out-tag" data-zoom>{out.tag(haul)}</span>
+                {:else if sulphite === cat}
+                  <span class="find-tag" data-zoom>Sulphite</span>
                 {/if}
               {/if}
               <span class="title" class:long={cardName(cat).length > 30} use:fitPlate
                 >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span
-                  >{:else if isWayOut(cat)}<span class="find-tag-row">{out.tag(haul)}</span>{/if}{cardName(cat)}</span
+                  >{:else if isWayOut(cat)}<span class="find-tag-row">{out.tag(haul)}</span>{:else if sulphite === cat}<span class="find-tag-row">Sulphite</span>{/if}{cardName(cat)}</span
               >
             </span>
             <span class="pulse" aria-hidden="true" bind:this={pulses[i]}></span>
@@ -1149,11 +1169,13 @@
         </p>
       {/each}
     </div>
-  {:else if finds.length && !s.deathmatch}
-    <!-- One short note per find, in its colour; what stays unused on them, once for both. -->
-    {@const two = finds.length > 1}
+  {:else if (finds.length || sulphiteNoted) && !s.deathmatch}
+    <!-- One short note per find, in its colour, and the sulphite card's; what stays unused on them, once for both. -->
+    {@const cols = [...finds.map((f) => s.offered.indexOf(f.category)), ...(sulphiteNoted ? [s.offered.indexOf(sulphiteNoted)] : [])]}
+    {@const two = cols.length > 1}
     {@const team = coop && !!me && livesOf(s, me) > 0}
-    {@const held = team ? (itemsHeld ? teamUnused('a find') : '') : mine && !coop ? unused(inventoryOf(s, active.id), 'a find') : ''}
+    {@const on = sulphiteNoted ? (finds.length ? 'a find or a rush' : 'it') : 'a find'}
+    {@const held = team ? (itemsHeld ? teamUnused(on) : '') : mine && !coop ? unused(inventoryOf(s, active.id), on) : ''}
     <!-- Wide screens: each note under its own card (its column), so what a find
          gives is read where it is chosen; phones: one under the other. -->
     <div class="find-notes" data-cursor="notes">
@@ -1163,16 +1185,21 @@
           data-find={f.kind}
           id="{uid}-note-{f.kind}"
           style:--col={s.offered.indexOf(f.category) + 1}
-          data-side={sideOf(
-            s.offered.indexOf(f.category),
-            finds.map((g) => s.offered.indexOf(g.category)),
-          )}
+          data-side={sideOf(s.offered.indexOf(f.category), cols)}
         >
           {#if team}<strong>{FIND_TEXT[f.kind].tag}.</strong> {teamFindNote(f.kind, itemsHeld && !two)}{:else if mine && !coop}<strong
               >{FIND_TEXT[f.kind].tag}.</strong
             > {findNote(f.kind, inventoryOf(s, active.id), !two)}{:else}{FIND_TEXT[f.kind].others}{/if}
         </p>
       {/each}
+      {#if sulphiteNoted}
+        {@const rush = rushOf(s)}
+        {@const text = rushText(rush?.step ?? 3, rush?.length ?? 7)}
+        {@const i = s.offered.indexOf(sulphiteNoted)}
+        <p class="note find-note" data-find="sulphite" id="{uid}-note-sulphite" style:--col={i + 1} data-side={sideOf(i, cols)}>
+          {#if mine && !coop}<strong>{text.tag}.</strong> {text.note}{two ? '' : held}{:else}{text.others}{/if}
+        </p>
+      {/if}
       {#if two && held}<p class="note muted">{held.trim()}</p>{/if}
     </div>
   {/if}
@@ -1697,6 +1724,10 @@
     /* (The way out's, likewise: its gilt's kindle, the swell and the lamp's
        breath, which goes on for as long as the card lies there.) */
     .sharp .card.out :global(.engraving > :is(.window, .glow, .lines, .lamp, .gilt)) {
+      will-change: filter, opacity;
+    }
+    /* (The Sulphite card's glow, likewise, breathing for as long as it lies there.) */
+    .sharp .card.sulphite :global(.engraving > .glow) {
       will-change: filter, opacity;
     }
     /* (A duel's ring, likewise, for as long as the menace plays.) */
@@ -2337,6 +2368,48 @@
     --f-glow: rgba(255, 120, 40, 0.2);
     --f-glyph: linear-gradient(180deg, #fbf3e6 0%, #c8b8a0 45%, #4a3a2a 100%);
   }
+  /* The Sulphite rush's card (a prototype; lib/sulphite): the charged ore's
+     sulphur, a lemon yellow well apart from a plain card's gold and the way
+     out's lamplight (ΔE2000 21 and 15); the window lit from below, and the
+     emblem too, bright at its foot, as a find's are. Its glow breathes
+     slowly, a charge held; its bolts' light is its charge's
+     (SulphiteCharge), so the travelling glint a motif gets is left out. */
+  .card.sulphite {
+    --ink: #e4e252;
+    --warm: #6f740e;
+    --f: #eeec7e;
+    --f-hi: #fbfad8;
+    --f-border: #9a9c2c;
+    --f-pulse: rgba(232, 230, 70, 0.4);
+    --f-glow: rgba(220, 220, 60, 0.26);
+    --f-glyph: linear-gradient(0deg, #fdfce0 0%, #e2dc58 30%, #8f8a22 68%, #3e3c0c 100%);
+  }
+  .card.sulphite :global(.engraving:not(.front) > .glint) {
+    display: none;
+  }
+  .card.sulphite :global(.engraving:not(.front) > .glow) {
+    animation: sulphite-breathe 4.6s ease-in-out infinite;
+  }
+  @keyframes -global-sulphite-breathe {
+    0%,
+    100% {
+      opacity: 0.13;
+    }
+    45% {
+      opacity: 0.26;
+    }
+    60% {
+      opacity: 0.21;
+    }
+  }
+  :global(html[data-saver]) .card.sulphite :global(.engraving > .glow) {
+    animation: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .card.sulphite :global(.engraving > .glow) {
+      animation: none;
+    }
+  }
   .card.special .glyph {
     background: var(--f-glyph);
   }
@@ -2474,6 +2547,10 @@
   }
   .find-note[data-find='dynamite'] {
     color: #eebf96;
+  }
+  /* The sulphite card's ink (.card.sulphite), lightened as the finds' are for their notes. */
+  .find-note[data-find='sulphite'] {
+    color: #efeda0;
   }
   .find-note strong {
     font-weight: 600;

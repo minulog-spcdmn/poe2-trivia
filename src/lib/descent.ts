@@ -1182,9 +1182,10 @@ let target = 0;
  * A jump of more than JUMP depths (leaving a run, a rejoin deep down, a new
  * run after one) doesn't walk the scene through every stratum between: it
  * cross-fades straight there over FADE seconds, from `from` (the scene as it
- * was shown), `fadeT` of the way.
+ * was shown), `fadeT` of the way. (A Sulphite rush's step, up to five
+ * depths at once, still sinks through them: delve.ts RushTuning.step.)
  */
-const JUMP = 3;
+const JUMP = 5;
 const FADE = 1.6;
 /**
  * How fast the shown depth eases, against the usual, while the scene
@@ -1400,7 +1401,7 @@ export const ZONE_SPEED: readonly (readonly [number, number])[] = [
  * a second) and how far the dark has drawn in (0 to 1); and how far it has
  * swung sideways (screen heights, see swing) and the dark drawn in as it does.
  */
-export const sinking = { sink: 0, speed: 0, breath: 0, slide: 0, slideBreath: 0 };
+export const sinking = { sink: 0, speed: 0, breath: 0, slide: 0, slideBreath: 0, tunnel: 0 };
 /** How a plunge moves: how far along it is (0 to 1) `x` of the way through, its slope, and how far the dark draws in. */
 type Curve = { at: (x: number) => number; slope: (x: number) => number; breath: (x: number) => number };
 let asked: { ms: number; by: number; curve: Curve } | null = null;
@@ -1417,15 +1418,29 @@ function resetSink() {
   sinking.breath = 0;
   sinking.slide = 0;
   sinking.slideBreath = 0;
+  sinking.tunnel = 0;
   sinkFrom = 0;
   plungeAt = -Infinity;
+  cruise = 0;
+  cruiseTo = 0;
+  tunnelTo = 0;
   swingAsked = 0;
   swingAt = -Infinity;
 }
 
-/** Sinks the scene a little further (a new depth's cards were dealt); `zone`: into a new zone, much further, with its sound. */
-export function plunge(zone = false) {
-  asked = zone ? { ms: ZONE_PLUNGE_MS, by: ZONE_PLUNGE_SINK, curve: ZONE_CURVE } : { ms: PLUNGE_MS, by: PLUNGE_SINK, curve: EASED };
+/**
+ * Sinks the scene a little further (a new depth's cards were dealt); `zone`:
+ * into a new zone, much further, with its sound. `o`: a Sulphite rush's
+ * (a prototype, lib/rushScene.ts), as far and as long as it says, eased as
+ * a depth's plunge is, or braking (`brake`: at full speed from the start,
+ * slowing to rest, as the rush's last step comes to a stop).
+ */
+export function plunge(zone = false, o?: { ms: number; by: number; brake?: boolean }) {
+  asked = o
+    ? { ms: o.ms, by: o.by, curve: o.brake ? BRAKE : EASED }
+    : zone
+      ? { ms: ZONE_PLUNGE_MS, by: ZONE_PLUNGE_SINK, curve: ZONE_CURVE }
+      : { ms: PLUNGE_MS, by: PLUNGE_SINK, curve: EASED };
 }
 
 /** Whether the scene is plunging into a new zone, or about to (asked for: the backdrop steps the depth before the plunge). */
@@ -1460,6 +1475,24 @@ const easeSlope = (x: number) => {
 /** A depth's plunge: eased, and the dark drawn in most half way. */
 const EASED: Curve = { at: ease, slope: easeSlope, breath: (x) => Math.sin(Math.PI * x) ** 2 };
 curve = EASED;
+/**
+ * A Sulphite rush's last step (see plunge): a surge to full speed over its
+ * first BRAKE_PEAK, then braking evenly to a stop (not gliding to rest as a
+ * depth's plunge does: it lands), the dark drawn in with the speed.
+ */
+const BRAKE_PEAK = 0.2;
+const brakeSpeed = (x: number) => (x < BRAKE_PEAK ? x / BRAKE_PEAK : (1 - x) / (1 - BRAKE_PEAK));
+const BRAKE: Curve = {
+  at: (x) => {
+    const m = BRAKE_PEAK;
+    const t = Math.min(1, Math.max(0, x));
+    return t < m ? (t * t) / m : m + (2 * (t - m - (t * t - m * m) / 2)) / (1 - m);
+  },
+  slope: (x) => 2 * brakeSpeed(Math.min(1, Math.max(0, x))),
+  breath: (x) => brakeSpeed(Math.min(1, Math.max(0, x))),
+};
+/** How far along a rush's last step is (0 to 1) `x` of the way through it: what moves with it (its depth counted down, Game.svelte). */
+export const rushBrakeAt = (x: number) => BRAKE.at(x);
 
 /**
  * The plunge into a new zone (ZONE_SPEED): its speed eased from one point
@@ -1494,11 +1527,74 @@ const ZONE_CURVE: Curve = (() => {
 /** How far along the plunge into a new zone is (0 to 1) `x` of the way through it: what the scene has sunk, for what moves with it. */
 export const zoneSunk = (x: number) => ZONE_CURVE.at(x);
 
+// ---- the cruise ---------------------------------------------------------------
+
+/**
+ * A Sulphite rush (a prototype, lib/rushScene.ts) carries the run down
+ * without stopping between its questions: for as long as it runs, the scene
+ * keeps sinking at `cruise` screens a second, on top of any plunge (the
+ * walls, the smoke and the embers going up past you all the while), and the
+ * dark draws in from the edges by `tunnel` (0 to 1) as the view narrows with
+ * the speed. Both eased (CRUISE_EASE s), so the scene gathers speed and
+ * brakes rather than jumps. Never while holding still, nor resting (the
+ * battery saver: it would draw the scene every frame of the rush).
+ */
+const CRUISE_EASE = 0.7;
+let cruise = 0;
+let cruiseTo = 0;
+let tunnelTo = 0;
+let cruiseAt = -Infinity;
+
+/** Sets how fast the scene keeps sinking (screens a second) and how far the dark draws in (0 to 1); 0, 0: it comes to rest. */
+export function setCruise(speed: number, tunnel: number) {
+  cruiseTo = Math.max(0, speed);
+  tunnelTo = Math.min(1, Math.max(0, tunnel));
+}
+
+/** Steps the cruise by the time since the last step, eased; returns how far it sank meanwhile (screens). */
+function stepCruise(now: number, allowed: boolean): number {
+  const dt = cruiseAt === -Infinity ? 0 : Math.min(0.1, Math.max(0, now - cruiseAt) / 1000);
+  cruiseAt = now;
+  if (!allowed) {
+    cruise = 0;
+    sinking.tunnel = 0;
+    return 0;
+  }
+  const k = 1 - Math.exp(-dt / CRUISE_EASE);
+  cruise += (cruiseTo - cruise) * k;
+  sinking.tunnel += (tunnelTo - sinking.tunnel) * k;
+  // (Landing exactly on rest, so a cruise over stops asking for frames.)
+  if (cruiseTo === 0 && cruise < 0.002) cruise = 0;
+  if (tunnelTo === 0 && sinking.tunnel < 0.002) sinking.tunnel = 0;
+  return cruise * dt;
+}
+
+/** Whether the cruise is under way or easing (the scene drawn every frame meanwhile), where it may run. */
+const cruising = () => cruise > 0 || cruiseTo > 0 || sinking.tunnel > 0 || tunnelTo > 0;
+
 /**
  * Steps the plunge to `now` (ms): starts one asked for (unless `allowed` is
- * false, when it is dropped) and moves `sinking`. Returns whether it is moving.
+ * false, when it is dropped) and moves `sinking`, with the cruise (unless
+ * `cruiseAllowed` is false). Returns whether it is moving.
  */
-export function stepPlunge(now: number, allowed: boolean): boolean {
+export function stepPlunge(now: number, allowed: boolean, cruiseAllowed = allowed): boolean {
+  // (Resting or holding still, the cruise stays at rest and asks for no frames: see stepCruise.)
+  const free = allowed && cruiseAllowed;
+  const was = cruise > 0 || sinking.tunnel > 0;
+  const by = stepCruise(now, free);
+  if (by > 0) {
+    // (Under a plunge, carried along with where it started from; at rest, the scene itself.)
+    if (plungeAt === -Infinity) sinking.sink = (sinking.sink + by) % 256;
+    else sinkFrom += by;
+  }
+  const plunging = stepOwnPlunge(now, allowed);
+  if (!plunging) sinking.speed = cruise;
+  else sinking.speed += cruise;
+  return plunging || was || (free && cruising());
+}
+
+/** The plunge's own step (see stepPlunge). */
+function stepOwnPlunge(now: number, allowed: boolean): boolean {
   if (asked) {
     if (allowed) {
       sinkFrom = sinking.sink;

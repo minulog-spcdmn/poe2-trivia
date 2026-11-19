@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { accentAt, dealtDeeper, milestoneAt, plunge, setDescent, type Dealt } from './lib/descent';
+  import { accentAt, dealtDeeper, plunge, setDescent, type Dealt } from './lib/descent';
   import { zoneAt } from './lib/zoneSigils';
   import { pageScroll } from './lib/pageScroll';
-  import { isGroupRun, shownDepth } from './lib/delve';
+  import { dealIn, isGroupRun, rushEnded, rushOf, shownDepth, zoneEntered } from './lib/delve';
+  import { RUSH_HALT_S, RUSH_LAND_S, RUSH_LAST_PLUNGE, RUSH_PLUNGE, rushIgnite, rushLand, rushRide, rushStep, rushZonePlunge } from './lib/rushScene';
   import { dealing, followDeal, shownRound } from './lib/dealing.svelte';
   import { arrival, beginArrival, endArrival } from './lib/zoneArrival.svelte';
   import { T as ZONE_T } from './lib/zoneTitleTiming';
@@ -212,19 +213,70 @@
   // (DelveState.dealAt).
   let lastDealt: Dealt | undefined;
   $effect(() => {
-    if (!gs?.delve || screen !== 'game' || gs.phase !== 'choosing') return;
+    // (A Sulphite rush has no cards between its questions: each of them deeper sinks it as it is asked, its
+    // steps two depths, so a zone's first may be stepped over: zoneEntered, from the depth dealt before.)
+    if (!gs?.delve || screen !== 'game' || (gs.phase !== 'choosing' && !(gs.phase === 'question' && gs.question?.rush))) return;
     const now = { run: gs.delve.startedAt, depth: gs.round };
     if (dealtDeeper(lastDealt, now)) {
-      const zone = !!milestoneAt(now.depth);
-      plunge(zone);
+      const from = lastDealt!.depth;
+      const zone = zoneEntered(from, now.depth) !== null;
+      const s = gs;
+      // A Sulphite rush (a prototype, lib/rushScene.ts): each step down its own plunge, a zone on the way
+      // for as long as the rush holds its next question (RushTuning.zone); its last, braking to rest.
+      const rushing = s.phase === 'question' && !!s.question?.rush;
+      const hold = rushing && zone ? untrack(() => dealIn(s, session.hostNow())) : 0;
+      // (Held as long as an offer's arrival, the zone's own plunge with its sound whole; held shorter, the rush's own, the sound cut with it.)
+      const short = rushing && zone && hold < ZONE_T.FULL;
+      if (rushing) plunge(zone, zone ? (short ? rushZonePlunge(hold) : undefined) : RUSH_PLUNGE);
+      else if (!zone && rushEnded(s)) plunge(false, RUSH_LAST_PLUNGE);
+      else plunge(zone);
       sfx('plunge');
       if (zone) {
-        sfx('stratum');
-        const s = gs;
-        untrack(() => beginArrival(s, session.hostNow(), { best: session.spectating ? null : session.bestAtStart, group: isGroupRun(s) }));
+        const stop = sfx('stratum');
+        // (Cut short with the rush's own hold, as the zone card's sounds are: nothing of it rings on over the question.)
+        if (short && stop) setTimeout(stop, Math.max(0, hold - 60));
+        untrack(() => beginArrival(s, session.hostNow(), { best: session.spectating ? null : session.bestAtStart, group: isGroupRun(s), from }));
       }
     }
     lastDealt = now;
+  });
+  // A Sulphite rush (a prototype, lib/rushScene.ts) is a ride: on from its
+  // first question to its last answer's reveal, read from the state (so a
+  // reload or the run's end stops it), gathering speed as it goes.
+  const ride = $derived.by(() => {
+    if (!gs?.delve || screen !== 'game') return null;
+    const r = rushOf(gs);
+    if (r?.on) return (r.length - r.on.left) / r.length;
+    return gs.phase === 'reveal' && gs.question?.rush && r?.done ? 1 : null;
+  });
+  $effect(() => {
+    const k = ride;
+    untrack(() => rushRide(k !== null, k ?? 0));
+  });
+  // Its beats, as seen happening (not on a reload): the sulphite catching as
+  // its card is taken, a surge with each step down and a falter with each
+  // miss, and its end, landing where it took the run.
+  let rushSeen: { run: number; phase: string; round: number; rush: boolean } | null = null;
+  $effect(() => {
+    const s = gs;
+    if (!s?.delve || screen !== 'game') {
+      rushSeen = null;
+      return;
+    }
+    const prev = rushSeen;
+    const now = { run: s.delve.startedAt, phase: s.phase, round: s.round, rush: !!s.question?.rush };
+    rushSeen = now;
+    if (!prev || prev.run !== now.run || prev.phase === now.phase) return;
+    untrack(() => {
+      if (prev.phase === 'choosing' && now.phase === 'question' && now.rush) rushIgnite();
+      else if (prev.phase === 'question' && now.phase === 'reveal' && now.rush && s.reveal && !s.reveal.correct && rushOf(s)?.on) rushStep(false);
+      else if (prev.phase === 'reveal' && prev.rush && now.phase === 'question' && now.rush && now.round > prev.round) rushStep(true);
+      else if (prev.phase === 'reveal' && prev.rush && now.phase === 'choosing') {
+        const end = rushEnded(s);
+        // (Into a new zone, its arrival is the end's moment: the ride eases to rest under the plunge.)
+        if (end && zoneEntered(end.last, s.round) === null) rushLand(end.to > end.last ? RUSH_LAND_S : RUSH_HALT_S);
+      }
+    });
   });
   // A zone's card belongs to the game it came in: leaving it, the card goes.
   $effect(() => {

@@ -288,10 +288,10 @@ export type ZoneTitle = {
  * The card for depth `d`, which opens a zone (lib/delve.ts opensZone).
  * `deeper`: alone, past your best (its meta line says so).
  */
-export function zoneTitleAt(d: number, deeper = false): ZoneTitle {
+export function zoneTitleAt(d: number, deeper = false, opened = d): ZoneTitle {
   const name = stratumName(stratumOf(d));
   const subtitle = subtitleAt(d);
-  const news = opensZone(d) ? zoneNews(d) : [];
+  const news = opensZone(opened) ? zoneNews(opened) : [];
   const said = [
     `Depth ${shownDepth(d)}: ${name}.`,
     deeper ? 'Deeper than ever.' : '',

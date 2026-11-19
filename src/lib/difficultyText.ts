@@ -232,6 +232,21 @@ export const FIND_TEXT: Record<FindKind, { name: string; tag: string; others: st
   dynamite: { name: 'Dynamite Cache', tag: 'Answer right for dynamite', others: `A right answer wins dynamite. ${noteLine(does('dynamite'), 'dynamite')}` },
 };
 
+/**
+ * The sulphite card's note, under it as a find's is (the Sulphite rush, a
+ * prototype): what taking it starts and what each right answer in it
+ * gives, from the run's tuning (RushTuning.length and .step).
+ */
+export function rushText(step: number, length: number) {
+  const depths = step === 1 ? 'one depth' : `${words(step)} depths`;
+  const questions = length === 1 ? 'one question' : `${words(length)} questions`;
+  return {
+    tag: `A rush of ${questions} from it`,
+    note: `Each right answer takes you ${depths} down.`,
+    others: `A rush of ${questions} from it, each right answer ${depths} down.`,
+  };
+}
+
 /** "Your flare can't be used on it": what the player holds that won't go off on a find's question (`on`: "it", or "a find"). */
 export function unused(inv: Inventory, on = 'it'): string {
   const held = [inv.flares ? (inv.flares > 1 ? 'flares' : 'flare') : '', inv.dynamite ? 'dynamite' : ''].filter(Boolean);

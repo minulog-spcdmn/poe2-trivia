@@ -9,7 +9,7 @@
 // team votes for a card, everyone standing answers the one question, and a
 // teammate with lives to spare can bring back one who perished.
 
-import type { DifficultyRules, Dig, GameState, Player, Preset, Question } from './game.ts';
+import type { DifficultyRules, Dig, GameState, Player, Preset, Question, Rush } from './game.ts';
 import { veilSpan, type VeilPlan } from './patches.ts';
 
 export const DELVE_LIVES = 3;
@@ -525,6 +525,211 @@ export function digRunsOn(s: GameState): boolean {
   return takers.some((id) => wardRoom(s, id));
 }
 
+// ---- the Sulphite rush (prototype, behind ?rush) ----------------------------
+
+/**
+ * A prototype, on only for a run alone begun on a page whose URL has `?rush`
+ * (the host's: Engine.setRush). Every run finds one sulphite card in the
+ * Mines, on one offer at a depth from RUSH_FROM to RUSH_TO, each as likely
+ * (the owner, 18 Nov 2026: "one guaranteed from 3 to 9"; never on the first
+ * questions, and never back once passed by, so it stays special). After it
+ * the next come by entropy, as evasion does in Path of Exile (the owner, 19
+ * Nov 2026: "it should be an entropy system or something like that", after
+ * a run to depth 100 found no second one by chance): a hidden gauge
+ * (Rush.entropy) starts at a random level as the first card turns up and
+ * fills by RushTuning.chance with every depth played (a depth's first offer,
+ * never a depth a rush rode down); full, the next offer that can hold a card
+ * holds one, and the gauge keeps what it had over. None comes on the first
+ * offer after a rush. Taking one starts a rush: the next questions all come from its category, one after another,
+ * with no offer between them, RushTuning.length of them, wherever it was
+ * taken. Each right answer takes the run RushTuning.step depths deeper; a miss
+ * costs a life and one of the questions, the rush going on at the same
+ * depth. Each of its questions is asked under the rules and clock of
+ * RushTuning.deeper depths further down (rushRules), as a find's is. A zone
+ * stepped into on the way arrives as on an offer: the next question waits
+ * for the plunge (DelveState.dealAt, dealIn), and a find certain on a depth
+ * the rush passed (firstFindAt) comes on the first offer after it
+ * (Rush.owed). It ends after its last question, or with the player perished.
+ * Flares and dynamite don't work on its questions (itemsWorkOn), and its
+ * category is locked out once, at the pick. Read from the run's state
+ * (rushOf), so an older save or an odd value reads as no rush.
+ */
+export interface RushTuning {
+  /** Questions a rush asks. */
+  length: number;
+  /** The pause after a rush answer, as a share of the usual (AUTO_NEXT_MS). */
+  pace: number;
+  /** How many depths further down each rush question's rules and clock come from. */
+  deeper: number;
+  /** Depths a right answer in a rush takes the run down. */
+  step: number;
+  /**
+   * Milliseconds a step into a new zone in the middle of a rush holds its
+   * next question for the plunge into it (DelveState.dealAt): by default
+   * ZONE_DESCENT_MS, the full arrival, as on an offer (the owner, 18 Nov
+   * 2026: shorter, its sound cut off and the question came too fast).
+   * Under FULL (zoneTitleTiming.ts), the compact card and a plunge of the
+   * rush's own. A rush's last step arrives in full.
+   */
+  zone: number;
+  /** The share of the entropy gauge (Rush.entropy) each depth played fills, once the run's first sulphite card has turned up: 0.05 a card every 20 depths. */
+  chance: number;
+}
+
+/**
+ * The depths the run's first sulphite card turns up between, each as
+ * likely: internal 4 to 10 (shown 3 to 9, the Mines from their 4th depth),
+ * never the run's first questions.
+ */
+export const RUSH_FROM = 4;
+export const RUSH_TO = 10;
+
+// (Seven questions at three depths, 21 at most: the owner, 19 Nov 2026, "one sulphite taking you 30 is too much",
+// then "length 7 feels right"; the pause after each answer 1.4 s, "the automatic next question should come a bit faster".)
+export const RUSH_DEFAULTS: RushTuning = { length: 7, pace: 0.35, deeper: 10, step: 3, zone: 7000, chance: 0.05 };
+
+/**
+ * The entropy gauge (Rush.entropy) counts in thousandths, whole numbers so
+ * twenty fills of 0.05 make it full exactly; it starts below ENTROPY_START
+ * (at random) as the run's first card turns up, so the second comes 11 to
+ * 20 depths played after it, and from there one every 20.
+ */
+export const ENTROPY_FULL = 1000;
+const ENTROPY_START = 500;
+
+/**
+ * Milliseconds from a rush's last answer moving on to the first offer after
+ * it, where the step it ended on stays in the same zone: the ride brakes and
+ * lands at the depth it reached, and says how far it came (Game.svelte,
+ * lib/rushScene.ts), before the cards are dealt (DelveState.dealAt). Into a
+ * new zone, its arrival (ZONE_DESCENT_MS) is the end's moment instead.
+ */
+export const RUSH_END_MS = 3400;
+/** Ms into the end's moment the ride lands, its last step down braked to rest (lib/rushScene.ts): the depth it reached shows from there. */
+export const RUSH_LAND_MS = 1900;
+
+const rushLength = (v: unknown, or: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(1, Math.min(50, Math.round(v))) : or);
+const rushPace = (v: unknown, or: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0.05, Math.min(1, v)) : or);
+const rushDeeper = (v: unknown, or: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(30, Math.round(v))) : or);
+const rushStepN = (v: unknown, or: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(1, Math.min(5, Math.round(v))) : or);
+// (2400 ms the least a zone's card is shown in at all, 7000 ZONE_DESCENT_MS, the full arrival.)
+const rushChance = (v: unknown, or: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : or);
+const rushZoneMs = (v: unknown, or: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(2400, Math.min(7000, Math.round(v))) : or);
+
+/**
+ * The rush's tuning from a page's query (`location.search`): null without
+ * `rush`; otherwise `rushLength`, `rushPace`, `rushDeeper`, `rushStep`,
+ * `rushZone` (ms) and `rushChance` (0 to 1), each its default when missing or odd.
+ */
+export function rushTuning(search: string): RushTuning | null {
+  const q = new URLSearchParams(search);
+  if (!q.has('rush')) return null;
+  const num = (k: string) => (q.get(k) === null || q.get(k) === '' ? undefined : Number(q.get(k)));
+  return {
+    length: rushLength(num('rushLength'), RUSH_DEFAULTS.length),
+    pace: rushPace(num('rushPace'), RUSH_DEFAULTS.pace),
+    deeper: rushDeeper(num('rushDeeper'), RUSH_DEFAULTS.deeper),
+    step: rushStepN(num('rushStep'), RUSH_DEFAULTS.step),
+    zone: rushZoneMs(num('rushZone'), RUSH_DEFAULTS.zone),
+    chance: rushChance(num('rushChance'), RUSH_DEFAULTS.chance),
+  };
+}
+
+/** The run's rush, as far as it reads sane, or null (none, a run together, older saves, outside Delve). */
+export function rushOf(s: GameState): Rush | null {
+  const r = s.delve?.rush;
+  if (!r || typeof r !== 'object' || isGroupRun(s)) return null;
+  const out: Rush = {
+    length: rushLength(r.length, RUSH_DEFAULTS.length),
+    pace: rushPace(r.pace, RUSH_DEFAULTS.pace),
+    deeper: rushDeeper(r.deeper, RUSH_DEFAULTS.deeper),
+    step: rushStepN(r.step, RUSH_DEFAULTS.step),
+    zone: rushZoneMs(r.zone, RUSH_DEFAULTS.zone),
+    chance: rushChance(r.chance, RUSH_DEFAULTS.chance),
+  };
+  if (typeof r.card === 'string' && s.phase === 'choosing' && s.offered.includes(r.card)) out.card = r.card;
+  const on = r.on;
+  if (on && typeof on === 'object' && typeof on.category === 'string' && Number.isFinite(on.left) && on.left > 0)
+    out.on = { category: on.category, left: Math.floor(on.left), from: Number.isFinite(on.from) ? Math.floor(on.from) : s.round };
+  if (Array.isArray(r.owed)) {
+    const owed = r.owed.filter((k): k is FindKind => FINDS.some((f) => f.kind === k));
+    if (owed.length) out.owed = owed;
+  }
+  const done = r.done;
+  if (done && typeof done === 'object' && [done.from, done.last, done.to].every(Number.isFinite))
+    out.done = { from: Math.floor(done.from), last: Math.floor(done.last), to: Math.floor(done.to), ...(Number.isFinite(done.at) ? { at: done.at } : {}) };
+  if (r.spent || out.on || out.done) out.spent = true;
+  if (typeof r.entropy === 'number' && Number.isFinite(r.entropy)) out.entropy = Math.max(0, Math.floor(r.entropy));
+  return out;
+}
+
+/** A rush's tuning alone (to build its state afresh from). */
+export const rushTuningOf = (r: RushTuning): RushTuning => ({ length: r.length, pace: r.pace, deeper: r.deeper, step: r.step, zone: r.zone, chance: r.chance });
+
+/** What a run's rush keeps across its own rebuilds, once its first card has turned up: its tuning and the entropy gauge. */
+export const rushKept = (r: Rush) => ({ ...rushTuningOf(r), spent: true as const, ...(r.entropy !== undefined ? { entropy: r.entropy } : {}) });
+
+/**
+ * The entropy gauge after a depth played (Rush.entropy): filled by its
+ * chance, unless already full (a card due, waiting for an offer that can
+ * hold it). `start` sets it, below ENTROPY_START, where an older save never did.
+ */
+export const entropyFilled = (r: Rush, start: () => number) => {
+  const e = r.entropy ?? Math.floor(start() * ENTROPY_START);
+  return e >= ENTROPY_FULL ? e : e + Math.round(r.chance * ENTROPY_FULL);
+};
+
+/** The entropy gauge as a sulphite card is dealt: the run's first sets it at random (below ENTROPY_START); a later one empties it, keeping what it had over. */
+export const entropyDealt = (r: Rush, start: () => number) => (r.spent ? Math.max(0, (r.entropy ?? 0) - ENTROPY_FULL) : Math.floor(start() * ENTROPY_START));
+
+/**
+ * The rush just ended, while the first offer after it is up (or on its
+ * way): where it was taken, where its last question was asked and where it
+ * left the run (Rush.done); else null.
+ */
+export const rushEnded = (s: GameState) => (s.phase === 'choosing' ? (rushOf(s)?.done ?? null) : null);
+
+/** Depths a right answer in the run's rush takes it down (RushTuning.step). */
+export const rushStep = (s: GameState) => rushOf(s)?.step ?? RUSH_DEFAULTS.step;
+
+/** The card on offer carrying sulphite, or null. */
+export const sulphiteCard = (s: GameState) => rushOf(s)?.card ?? null;
+
+/** The rush under way, or null. */
+export const rushOn = (s: GameState) => rushOf(s)?.on ?? null;
+
+/**
+ * The chance the run's offer at depth `d`, a depth's first, holds a
+ * sulphite card. Until the run's first has turned up (Rush.spent), from
+ * RUSH_FROM to RUSH_TO, one in as many depths as are left to RUSH_TO, so
+ * each of them is as likely to be the one and RUSH_TO is certain (past it
+ * too, where an offer there couldn't hold it); after it, certain once the
+ * entropy gauge is full, else none. 0 with no rush to be had, and on the
+ * first offer after a rush (Rush.done): a card due waits.
+ */
+export function sulphiteOdds(s: GameState, d: number): number {
+  const r = rushOf(s);
+  if (!r || r.on || r.done || d < RUSH_FROM) return 0;
+  if (!r.spent) return d < RUSH_TO ? 1 / (RUSH_TO - d + 1) : 1;
+  return (r.entropy ?? 0) >= ENTROPY_FULL ? 1 : 0;
+}
+
+/** The depth a rush question at depth `d` takes its rules and clock from: `deeper` further down. */
+export const rushDepth = (d: number, deeper: number) => depthOf(d) + Math.max(0, deeper);
+
+/** The rules of a rush question at depth `d`: those of `deeper` further down, the art mix and lockout the depth's (as a find's, findRules). */
+export function rushRules(d: number, deeper: number): DifficultyRules {
+  return { ...delveRules(rushDepth(d, deeper)), artChance: delveCurve('artChance', d), lockout: delveLockout(d) };
+}
+
+/**
+ * The finds certain on a depth a rush passed without an offer there
+ * (firstFindAt): those first found deeper than `from` (the depth it was
+ * taken at, whose offer it was on) down to `to` (where the first offer
+ * after it is dealt), in the order they turn up.
+ */
+export const firstFindsPassed = (from: number, to: number): FindKind[] => FINDS_IN_ORDER.filter((f) => f.from > from && f.from <= to).map((f) => f.kind);
+
 /** The shallowest depth with any find: the Dynamite Cache's, 11 (shown 10). */
 export const FINDS_FROM = FINDS_IN_ORDER[0]?.from ?? Infinity;
 
@@ -659,7 +864,7 @@ export const DELVE_FUSE_MS = 1800;
  * walls thicker and its darkness one nothing keeps back: its risk is taken
  * as it is.
  */
-export const itemsWorkOn = (q: Pick<Question, 'find'>) => !q.find;
+export const itemsWorkOn = (q: Pick<Question, 'find' | 'rush'>) => !q.find && !q.rush;
 
 /**
  * Milliseconds left on a question's clock at `now` (host clock), holding
@@ -683,9 +888,15 @@ export function heldAhead(h: Question['held'], now: number): number {
 /** How much of a clock the host's reload held still had been used when it stopped (ms). */
 export const pausedUsed = (p: NonNullable<Question['paused']>) => Math.max(0, p.at - p.clockAt);
 
-/** Seconds a Delve question at depth `d` starts with: a vein strike's light, a find's, or the depth's. */
-export const delveQuestionTimer = (d: number, q: { find?: FindKind; light?: number }) =>
-  typeof q.light === 'number' && q.light > 0 ? q.light : q.find ? findTimer(q.find, d) : delveTimer(d);
+/** Seconds a Delve question at depth `d` starts with: a vein strike's light, a find's, a Sulphite rush's (deeper down's), or the depth's. */
+export const delveQuestionTimer = (d: number, q: { find?: FindKind; light?: number; rushDeeper?: number }) =>
+  typeof q.light === 'number' && q.light > 0
+    ? q.light
+    : q.find
+      ? findTimer(q.find, d)
+      : typeof q.rushDeeper === 'number'
+        ? delveTimer(rushDepth(d, q.rushDeeper))
+        : delveTimer(d);
 
 const CAPS: Inventory = { wards: DELVE_MAX_WARDS, flares: DELVE_MAX_FLARES, dynamite: DELVE_MAX_DYNAMITE };
 
@@ -726,6 +937,17 @@ export const delveDepth = (s: GameState) => (s.delve ? s.round : 0);
 /** Whether internal depth `d` opens a new zone: the first of every ten past the first ten (named by lib/descent.ts milestoneAt). */
 export const opensZone = (d: number) => d > 10 && d % 10 === 1;
 
+/** The zone internal depth `d` lies in: 0 for the Mines (1 to 10), 1 from the Fissure (11 to 20), and so on. */
+export const zoneOf = (d: number) => Math.floor((depthOf(d) - 1) / 10);
+
+/**
+ * The first depth of the zone a run going down from `from` to `to` (more
+ * than a depth at a time, in a Sulphite rush) steps into, or null when it
+ * stays in the zone it was in: the zone whose arrival plays (its plunge,
+ * its title card, its cards or question waiting for it to land, dealAt).
+ */
+export const zoneEntered = (from: number, to: number): number | null => (to > from && zoneOf(to) !== zoneOf(from) ? zoneOf(to) * 10 + 1 : null);
+
 /**
  * How long the run takes to go down into a new zone: the scene plunges for
  * as long as the zone's sound rings (lib/descent.ts plunge), and the depth's
@@ -734,11 +956,13 @@ export const opensZone = (d: number) => d > 10 && d % 10 === 1;
 export const ZONE_DESCENT_MS = 7000;
 
 /**
- * Milliseconds until the cards on offer are dealt, at host-clock time `now`:
- * above 0 only while the run goes down into a new zone (dealAt). Till then
- * nothing is picked, and a vote doesn't close.
+ * Milliseconds until the cards on offer are dealt (a Sulphite rush's next
+ * question shown), at host-clock time `now`: above 0 only while the run goes
+ * down into a new zone (dealAt). Till then nothing is picked, a vote doesn't
+ * close, and a rush question's clock doesn't start.
  */
-export const dealIn = (s: GameState, now: number) => (s.phase === 'choosing' && s.delve?.dealAt ? Math.max(0, s.delve.dealAt - now) : 0);
+export const dealIn = (s: GameState, now: number) =>
+  (s.phase === 'choosing' || (s.phase === 'question' && !!s.question?.rush)) && s.delve?.dealAt ? Math.max(0, s.delve.dealAt - now) : 0;
 
 /**
  * How much sooner than the deal a player's pick is still taken: a guest's
@@ -989,7 +1213,7 @@ export function blastProblem(s: GameState, by: string | null): string | null {
   const q = s.question;
   if (!s.delve || s.phase !== 'question' || !q) return 'There is no open question.';
   if (q.deadline === null) return 'Not yet.';
-  if (!itemsWorkOn(q)) return "Dynamite can’t be used on a find.";
+  if (!itemsWorkOn(q)) return q.rush ? "Dynamite can’t be used in a rush." : "Dynamite can’t be used on a find.";
   if (blastsLeft(s) === 0) return 'No more blasts on these cards.';
   if (isGroupRun(s)) {
     if (by === null) return holdersOf(s, 'dynamite').length ? null : 'Nobody has dynamite.';

@@ -3,7 +3,7 @@
   import { session, engine } from '../lib/session.svelte';
   import { glare } from '../lib/glare';
   import { inFrame, onceFontsIn } from '../lib/inFrame';
-  import { AUTO_NEXT_MS, answerDrawn, autoNextLeft, clockMs, clockRuns, drawnAs, isFake, questionTopic } from '../lib/game';
+  import { answerDrawn, autoNextLeft, clockMs, clockRuns, drawnAs, isFake, questionTopic, revealPauseMs, rushPace } from '../lib/game';
   import { shown } from '../lib/media.svelte';
   import { FINALE_MS, materialize, warmBurns, type BurnParams } from '../lib/materialize';
   import { frontier } from '../lib/frontier';
@@ -337,12 +337,16 @@
   let unstampedAt = 0;
   const revealAt = $derived(reveal ? (reveal.at ?? (unstampedAt ||= untrack(() => session.hostNow()))) : 0);
   let autoLeft = $state(1);
+  // A Sulphite rush (a prototype) moves on sooner, and by itself on this device too, while its next question follows.
+  const pause = $derived(revealPauseMs(s));
+  const autoMoves = $derived((session.mode !== 'local' && !session.hereOnly) || rushPace(s) !== null);
   $effect(() => {
     const at = revealAt;
-    if (!at || session.mode === 'local' || session.hereOnly) return;
+    const ms = pause;
+    if (!at || !autoMoves) return;
     let frame = 0;
     const tick = () => {
-      autoLeft = autoNextLeft(at, session.hostNow()) / AUTO_NEXT_MS;
+      autoLeft = autoNextLeft(at, session.hostNow(), ms) / ms;
       if (autoLeft > 0) frame = requestAnimationFrame(tick);
     };
     untrack(tick);
@@ -1244,7 +1248,7 @@
         onclick={next}
       >
         {nextLabel}
-        {#if session.mode !== 'local' && !session.hereOnly}
+        {#if autoMoves}
           <span class="auto" style:transform="scaleX({autoLeft})"></span>
         {/if}
       </button>

@@ -654,6 +654,48 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'layer-sub-3', gain: -30, rate: 0.7, delay: 120, hp: 20, lp: 700, send: 0.5 },
     ],
   },
+  // The Sulphite rush (a prototype, lib/rushScene.ts), composed from the
+  // game's own layers and not yet heard by ear. The sulphite catching as its
+  // card is taken: a sparkler's hiss and a spray of sparks over a strike,
+  // the air rushing past and the ground giving way under it.
+  rushIgnite: {
+    soften: 4.5,
+    varyPitch: 0.02,
+    varyGain: 1,
+    layers: [
+      { file: 'click-5', gain: -28, rate: 1.35, delay: 0, hp: 700, lp: 9000, send: 0.3 },
+      { file: 'burn-sparkler', gain: -25, rate: 1.05, delay: 20, hp: 900, lp: 12000, send: 0.3 },
+      { file: 'fill-sparks', gain: -27, rate: 0.9, delay: 90, hp: 1200, lp: 11000, send: 0.35 },
+      { file: 'layer-air-4', gain: -28, rate: 0.75, delay: 60, hp: 150, lp: 4000, send: 0.6 },
+      { file: 'layer-sub-2', gain: -24, rate: 0.62, delay: 110, hp: 20, lp: 900, send: 0.5 },
+    ],
+  },
+  // Each step down in a rush, over the plunge's own breath and thud: a short
+  // crackle of the sulphite burning, kept low, as it comes every question.
+  rushSurge: {
+    soften: 4,
+    varyPitch: 0.05,
+    varyGain: 1.5,
+    layers: [
+      { file: 'fill-sparks', gain: -35, rate: 1.1, delay: 0, hp: 1500, lp: 10000, send: 0.35 },
+      { file: 'burn-crackle', gain: -38, rate: 1.05, delay: 40, hp: 400, lp: 9000, send: 0.4 },
+    ],
+  },
+  // The rush ends: the crawler brakes and lands at the depth it reached, a
+  // heavy thud and a slam off the hall, stones settling, iron groaning, the
+  // last of the sulphite crackling out.
+  rushLand: {
+    soften: 5,
+    varyPitch: 0.02,
+    varyGain: 0.5,
+    layers: [
+      { file: 'layer-sub-2', gain: -17, rate: 0.66, delay: 0, hp: 20, lp: 900, send: 0.45 },
+      { file: 'start-7', gain: -27, rate: 0.68, delay: 0, hp: 60, lp: 2600, send: 0.5 },
+      { file: 'layer-metal-2', gain: -38, rate: 0.55, delay: 30, hp: 250, lp: 3000, send: 0.7 },
+      { file: 'vein-crumble-1', gain: -31, rate: 0.9, delay: 120, hp: 120, lp: 6000, send: 0.45 },
+      { file: 'burn-crackle', gain: -35, rate: 0.85, delay: 260, hp: 300, lp: 8000, send: 0.5 },
+    ],
+  },
   // A Dynamite Cache missed: its blast takes something from the pack. The
   // blast's own layers, lighter and closer (a smaller charge): the crack and
   // its thud, a few chips landing and a short crackle, with the ward's high

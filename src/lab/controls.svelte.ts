@@ -35,6 +35,7 @@ import {
   tileVeilSize,
   veilSeconds,
   ZONE_DESCENT_MS,
+  RUSH_DEFAULTS,
   type FindKind,
   type Inventory,
   type ItemKind,
@@ -340,9 +341,10 @@ export function dealCards() {
  * Deals exactly these cards, in this order, each with its find or none,
  * replaying the deal (the card bench, cards.html): any finds on any cards,
  * past the game's own two of different kinds (session.labFinds). The way out
- * among them deals as a dig's, one strike in.
+ * among them deals as a dig's, one strike in. `sulphite`: the card among
+ * them carrying sulphite (the Sulphite rush, a prototype: delve.ts rushOf).
  */
-export function dealThese(cards: { category: string; kind: FindKind | null }[]) {
+export function dealThese(cards: { category: string; kind: FindKind | null }[], sulphite: string | null = null) {
   // A category once only: the cards are known by it.
   cards = cards.filter((c, i) => cards.findIndex((d) => d.category === c.category) === i);
   const finds = cards.flatMap(({ category, kind }) => (kind ? [{ category, kind }] : []));
@@ -355,6 +357,8 @@ export function dealThese(cards: { category: string; kind: FindKind | null }[]) 
     s.delve.finds = finds;
     delete s.delve.dig;
     if (s.offered.includes(WAY_OUT)) s.delve.dig = { strikes: 1, haul: [s.players[s.turn]?.id ?? ''], light: 6, struck: [] };
+    if (sulphite && s.offered.includes(sulphite)) s.delve.rush = { ...RUSH_DEFAULTS, card: sulphite };
+    else delete s.delve.rush;
   });
 }
 

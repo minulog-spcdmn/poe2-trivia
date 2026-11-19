@@ -1207,7 +1207,27 @@ function introSigil(title: Element) {
  * game screen going away after the victory screen came in must not wipe the
  * victory's gold, and the victory keeps it over a deathmatch still ending.
  */
-let moodOwner: 'deathmatch' | 'victory' | null = null;
+let moodOwner: 'deathmatch' | 'victory' | 'rush' | null = null;
+
+/**
+ * Delve alone, a Sulphite rush under way (a prototype, lib/rushScene.ts):
+ * the scene takes a touch of the sulphite's light (`color`), and the embers
+ * burn in it, hotter and more of them as the rush gathers speed (`k`, 0 to
+ * 1); off (`k` 0, or `on` false), they go back to the zone's own. Never over
+ * a victory's gold.
+ */
+export function rushMood(on: boolean, color: Vec3, k = 1) {
+  if (moodOwner === 'victory' || moodOwner === 'deathmatch') return;
+  if (!on) {
+    if (moodOwner === 'rush') calmScene();
+    return;
+  }
+  moodOwner = 'rush';
+  setMood(color, 0.08 + 0.1 * k);
+  backdropEmbers.tint(color);
+  backdropEmbers.stoke(0.25 + 0.35 * k);
+  backdropEmbers.swarm(0.3 + 0.5 * k);
+}
 
 function calmScene() {
   moodOwner = null;
