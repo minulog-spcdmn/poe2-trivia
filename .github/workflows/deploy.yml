@@ -279,7 +279,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
-      # The index.html this deploy puts up, for the deploy job's check that
+      # The index.html this deploy puts up, for the live-check job's check that
       # the live site serves it.
       - uses: actions/upload-artifact@v4
         with:
@@ -353,8 +353,6 @@ jobs:
     permissions:
       pages: write
       id-token: write
-      # For the live check's script alone.
-      contents: read
     environment:
       name: github-pages
       url: ${{ steps.again.outputs.page_url || steps.deployment.outputs.page_url }}
@@ -444,28 +442,37 @@ jobs:
               exit 1
             fi
           done
-      # Whichever try put it up, poe2.quest must now serve this deploy's
-      # index.html, and every script, style and file it names must answer
-      # 200 (scripts/live-check.mjs, tried for about six minutes while the
-      # CDN catches up). A failed run is the alarm: GitHub mails the owner.
-      # Compared with the build, not with main's SHA: a second try goes up
-      # under a spare commit's name.
-      - name: Download the deployed index.html
-        if: ${{ steps.deployment.outcome == 'success' || steps.again.outcome == 'success' }}
-        uses: actions/download-artifact@v4
+
+  # Whichever try put it up, poe2.quest must now serve this deploy's
+  # index.html, and every script, style and file it names must answer 200
+  # (scripts/live-check.mjs, tried for about six minutes while the CDN catches
+  # up). A failed run is the alarm: GitHub mails the owner. Compared with the
+  # build, not with main's SHA: a second try goes up under a spare commit's
+  # name. A job of its own, so a failed check leaves the github-pages
+  # deployment a success (scripts/live-dailies.mjs reads the newest that went
+  # up), "Re-run failed jobs" checks again rather than deploying again, and
+  # the script runs without the deploy's tokens.
+  live-check:
+    needs: deploy
+    if: ${{ !cancelled() && needs.deploy.result == 'success' }}
+    runs-on: ubuntu-latest
+    # Its tries take about six minutes, but each waits up to a minute on a
+    # site that hangs: this keeps the next run from waiting on it long.
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
         with:
           name: deployed-index
           path: ${{ runner.temp }}/deployed
-      - if: ${{ steps.deployment.outcome == 'success' || steps.again.outcome == 'success' }}
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
           sparse-checkout: scripts/live-check.mjs
           sparse-checkout-cone-mode: false
-      - if: ${{ steps.deployment.outcome == 'success' || steps.again.outcome == 'success' }}
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
       - name: Check that the live site serves this deploy
-        if: ${{ steps.deployment.outcome == 'success' || steps.again.outcome == 'success' }}
         run: node scripts/live-check.mjs deploy --built "$RUNNER_TEMP/deployed/index.html"

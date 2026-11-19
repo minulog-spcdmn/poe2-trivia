@@ -4,12 +4,14 @@
 // the site.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { CERT_DAYS, DAILY_TRIES, DEPLOY_TRIES, SIGNAL_HOST, SITE, certProblem, checkSignal, checkSite, main, namesOf } from '../scripts/live-check.mjs';
 import { OWN_SIGNAL_HOST } from '../src/lib/signalHost.ts';
 
 const index = (main = 'main-AAAA1111', style = 'main-BBBB2222') => `<!doctype html><html><head>
 <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
 <link rel="canonical" href="https://poe2.quest/" />
+<!-- <link rel="preload" as="image" href="./gone.png"> -->
 <meta property="og:image" content="https://poe2.quest/og.jpg?v=7" />
 <script type="module" crossorigin src="./assets/${main}.js"></script>
 <link rel="modulepreload" crossorigin href="./assets/core-CCCC3333.js">
@@ -21,8 +23,14 @@ const index = (main = 'main-AAAA1111', style = 'main-BBBB2222') => `<!doctype ht
 const FILES = ['./assets/cinzel-DDDD4444.woff2', './assets/core-CCCC3333.js', './assets/main-AAAA1111.js', './assets/main-BBBB2222.css', './favicon.svg'];
 const PEER_ID = '3f0e1d6a-5b2c-4c8e-9a71-0d2b6e4f8a10';
 
-type Answer = { status?: number; body?: string; error?: string };
-/** A fetch that answers from a table by path (the page itself as '/'), and records what was asked. */
+type Answer = { status?: number; body?: string; error?: string; errors?: string[]; bodyError?: string };
+/**
+ * A fetch that answers from a table by path (the page itself as '/'), and
+ * records what was asked. An error is thrown as Node's fetch throws it: "fetch
+ * failed", the reason in its cause; `errors`, one for each of a host's
+ * addresses, in an AggregateError with no message. A body error breaks off
+ * reading the body.
+ */
 function site(table: Record<string, Answer | (() => Answer)>) {
   const asked: { url: URL; init?: RequestInit }[] = [];
   const get = (async (input: string | URL, init?: RequestInit) => {
@@ -31,8 +39,10 @@ function site(table: Record<string, Answer | (() => Answer)>) {
     const key = url.host === SIGNAL_HOST ? 'signal' : url.pathname;
     const row = table[key] ?? { status: 404 };
     const a = typeof row === 'function' ? row() : row;
-    if (a.error) throw new TypeError(a.error);
-    return new Response(init?.method === 'HEAD' ? null : (a.body ?? ''), { status: a.status ?? 200 });
+    if (a.error) throw new TypeError('fetch failed', { cause: new Error(a.error) });
+    if (a.errors) throw new TypeError('fetch failed', { cause: new AggregateError(a.errors.map((m) => new Error(m))) });
+    const broken = a.bodyError ? new ReadableStream({ start: (c) => c.error(new TypeError(a.bodyError)) }) : null;
+    return new Response(init?.method === 'HEAD' ? null : (broken ?? a.body ?? ''), { status: a.status ?? 200 });
   }) as typeof fetch;
   return { get, asked };
 }
@@ -48,6 +58,12 @@ test('namesOf: entries are the module scripts and stylesheets; files are all the
   assert.deepEqual(n.files, FILES);
 });
 
+test('checkSite: the game’s own index.html passes for the game’s page', async () => {
+  // Its root and entry are what tell the game's page from any other: renamed, every check would fail.
+  const own = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.deepEqual(await checkSite(site(healthy(own)).get), []);
+});
+
 test('checkSite: the page past the caches, every file it names asked for', async () => {
   const { get, asked } = site(healthy());
   assert.deepEqual(await checkSite(get, index()), []);
@@ -59,10 +75,11 @@ test('checkSite: the page past the caches, every file it names asked for', async
 });
 
 test('checkSite: a page with other entries than the build is the one before', async () => {
-  const { get } = site(healthy(index('main-OLD00000')));
+  const { get, asked } = site(healthy(index('main-OLD00000')));
   const problems = await checkSite(get, index());
   assert.equal(problems.length, 1);
   assert.match(problems[0], /isn't the index\.html just deployed/);
+  assert.equal(asked.length, 1, 'the deploy before’s files go unasked');
   // Once a day there's no build to hold it to.
   assert.deepEqual(await checkSite(site(healthy(index('main-OLD00000'))).get), []);
 });
@@ -70,14 +87,20 @@ test('checkSite: a page with other entries than the build is the one before', as
 test('checkSite: a file that’s missing or doesn’t answer, the page down or not the game', async () => {
   const missing = healthy();
   missing['/assets/core-CCCC3333.js'] = { status: 404 };
-  missing['/favicon.svg'] = { error: 'fetch failed' };
+  missing['/favicon.svg'] = { error: 'read ECONNRESET' };
   const p = await checkSite(site(missing).get, index());
   assert.equal(p.length, 2);
   assert.match(p.join('\n'), /core-CCCC3333\.js answered 404/);
-  assert.match(p.join('\n'), /favicon\.svg answered fetch failed/);
+  assert.match(p.join('\n'), /favicon\.svg didn't answer: fetch failed \(read ECONNRESET\)/);
   assert.match((await checkSite(site({ '/': { status: 503 } }).get))[0], /answered 503/);
-  assert.match((await checkSite(site({ '/': { error: 'getaddrinfo ENOTFOUND' } }).get))[0], /didn't answer: getaddrinfo/);
-  assert.match((await checkSite(site({ '/': { body: '<html>Site not found</html>' } }).get))[0], /names no entry/);
+  assert.match((await checkSite(site({ '/': { error: 'getaddrinfo ENOTFOUND poe2.quest' } }).get))[0], /didn't answer: fetch failed \(getaddrinfo ENOTFOUND/);
+  const refused = await checkSite(site({ '/': { errors: ['connect ECONNREFUSED 2606:50c0::153:443', 'connect ECONNREFUSED 185.199.108.153:443'] } }).get);
+  assert.match(refused[0], /didn't answer: fetch failed \(connect ECONNREFUSED 2606/);
+  // Cut off halfway through the page: a problem to try again, not a crash.
+  assert.match((await checkSite(site({ '/': { bodyError: 'terminated' } }).get))[0], /didn't answer: terminated/);
+  assert.match((await checkSite(site({ '/': { body: '<html>Site not found</html>' } }).get))[0], /isn't the game's index\.html/);
+  // A parked domain's page with a script of its own isn't the game either.
+  assert.match((await checkSite(site({ '/': { body: '<html><script src="/park.js"></script></html>' } }).get))[0], /isn't the game's index\.html/);
 });
 
 test('certProblem: fails under the days allowed', () => {
@@ -98,7 +121,7 @@ test('checkSignal: a peer id passes, sent from the page’s origin; a 429 is up;
   assert.match(busy.note ?? '', /429/);
   assert.match((await checkSignal(site({ signal: { status: 403 } }).get)).problem ?? '', /answered 403/);
   assert.match((await checkSignal(site({ signal: { body: 'hello' } }).get)).problem ?? '', /not with a peer id/);
-  assert.match((await checkSignal(site({ signal: { error: 'fetch failed' } }).get)).problem ?? '', /didn't answer/);
+  assert.match((await checkSignal(site({ signal: { error: 'connect ETIMEDOUT' } }).get)).problem ?? '', /didn't answer: fetch failed \(connect ETIMEDOUT\)/);
 });
 
 test('the matchmaking host is the game’s own', () => {
@@ -120,6 +143,9 @@ test('main deploy: passes once the CDN catches up; fails after its tries', async
   assert.equal(await main(['deploy', '--built', 'dist/index.html'], {}, stale), 1);
   assert.equal(lines.filter((l) => l.startsWith('Try ')).length, DEPLOY_TRIES - 1);
   assert.ok(lines.some((l) => l.startsWith('::error::') && l.includes("isn't the index.html just deployed")));
+
+  const lost = { ...quiet, fetch: site(healthy()).get, readFile: async () => Promise.reject(new Error('ENOENT: no such file')) };
+  assert.equal(await main(['deploy', '--built', 'dist/index.html'], {}, lost), 1);
 });
 
 test('main daily: all well passes; a short certificate fails; a refused option fails', async () => {

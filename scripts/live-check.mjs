@@ -2,7 +2,7 @@
 // Is the live site up? Two checks with no Claude in them, where a failed run
 // is the alarm (GitHub mails the owner):
 //
-// - `deploy`, the last step of the deploy job in .github/workflows/deploy.yml:
+// - `deploy`, the live-check job after each deploy in .github/workflows/deploy.yml:
 //   poe2.quest serves the index.html that deploy just put up (its hashed entry
 //   scripts and styles are the built ones), and every script, style and file
 //   it names answers 200. Tried again for a few minutes while the CDN catches
@@ -32,7 +32,7 @@ import { fileURLToPath } from 'node:url';
 export const SITE = 'https://poe2.quest/';
 /** The page's origin, the only one besides local ones the matchmaking server answers (signal/worker.js LIVE). */
 export const ORIGIN = 'https://poe2.quest';
-/** src/lib/signalHost.ts OWN_SIGNAL_HOST, kept here so the deploy job needs only this file (tests/liveCheck.test.ts holds the two together). */
+/** src/lib/signalHost.ts OWN_SIGNAL_HOST, kept here so the deploy's live-check job needs only this file (tests/liveCheck.test.ts holds the two together). */
 export const SIGNAL_HOST = 'poe2-signal.poe2quest.workers.dev';
 /** The fewest days a certificate may have left before the daily check fails. */
 export const CERT_DAYS = 14;
@@ -44,6 +44,21 @@ export const DAILY_TRIES = 4;
 export const DAILY_WAIT = 60_000;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * What an error says, with its cause: Node's fetch says only "fetch failed"
+ * and keeps the reason (a DNS miss, a refused connection, a bad certificate)
+ * there; for a host with several addresses, in an AggregateError with no
+ * message of its own, the reason in its first error.
+ * @param {unknown} e
+ */
+function why(e) {
+  if (!(e instanceof Error)) return String(e);
+  /** @param {unknown} c @returns {string} */
+  const say = (c) => (!(c instanceof Error) ? '' : (c instanceof AggregateError && say(c.errors[0])) || c.message || String(/** @type {{ code?: unknown }} */ (c).code ?? ''));
+  const cause = say(e.cause);
+  return cause && cause !== e.message ? `${e.message} (${cause})` : e.message || String(e);
+}
 
 /** What a tag's attribute holds, or undefined. @param {string} tag @param {string} name */
 function attr(tag, name) {
@@ -57,13 +72,14 @@ const own = (ref) => !!ref && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(ref);
 /**
  * The files an index.html names: `entries`, its module scripts and
  * stylesheets (their names carry the build's hash), and `files`, every file
- * on the site its scripts, links and images name, entries among them.
+ * on the site its scripts, links and images name, entries among them. A tag
+ * in a comment names nothing.
  * @param {string} html
  */
 export function namesOf(html) {
   /** @type {Set<string>} */ const entries = new Set();
   /** @type {Set<string>} */ const files = new Set();
-  for (const [tag, name] of html.matchAll(/<(script|link|img|source)\b[^>]*>/gi)) {
+  for (const [tag, name] of html.replace(/<!--[\s\S]*?-->/g, '').matchAll(/<(script|link|img|source)\b[^>]*>/gi)) {
     const kind = name.toLowerCase();
     const ref = attr(tag, kind === 'link' ? 'href' : 'src');
     if (!own(ref)) continue;
@@ -81,42 +97,44 @@ async function page(get) {
   return get(url, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' }, signal: AbortSignal.timeout(30_000) });
 }
 
-/** One file's status, or the error that kept it from answering. @param {typeof fetch} get @param {string} ref */
-async function statusOf(get, ref) {
+/** What's wrong with one file, if anything. @param {typeof fetch} get @param {string} ref @returns {Promise<string | null>} */
+async function fileProblem(get, ref) {
   const url = new URL(ref, SITE);
   try {
     let r = await get(url, { method: 'HEAD', signal: AbortSignal.timeout(30_000) });
     if (r.status === 405) r = await get(url, { signal: AbortSignal.timeout(30_000) });
-    return r.status;
+    return r.status === 200 ? null : `${url} answered ${r.status}.`;
   } catch (e) {
-    return /** @type {Error} */ (e).message || String(e);
+    return `${url} didn't answer: ${why(e)}`;
   }
 }
 
+/** The game's page holds its root, `<div id="app">`. */
+const APP = /<div\b[^>]*\sid\s*=\s*["']?app["'\s>]/i;
+
 /**
  * The site's page and the files it names: what's wrong, if anything. With
- * `built` (the deployed index.html), its entries must be the page's.
+ * `built` (the deployed index.html), its entries must be the page's; a page
+ * that isn't goes no further, since its files are the deploy before's.
  * @param {typeof fetch} get @param {string} [built]
  * @returns {Promise<string[]>}
  */
 export async function checkSite(get, built) {
-  let r;
+  let html;
   try {
-    r = await page(get);
+    const r = await page(get);
+    if (r.status !== 200) return [`${SITE} answered ${r.status}.`];
+    html = await r.text();
   } catch (e) {
-    return [`${SITE} didn't answer: ${/** @type {Error} */ (e).message || e}`];
+    return [`${SITE} didn't answer: ${why(e)}`];
   }
-  if (r.status !== 200) return [`${SITE} answered ${r.status}.`];
-  const live = namesOf(await r.text());
-  if (!live.entries.length) return [`${SITE} names no entry script or style: not the game's index.html.`];
-  /** @type {string[]} */ const problems = [];
+  const live = namesOf(html);
+  if (!live.entries.length || !APP.test(html)) return [`${SITE} isn't the game's index.html: it names no entry script or style, or has no #app.`];
   if (built !== undefined) {
     const want = namesOf(built).entries;
-    if (want.join(' ') !== live.entries.join(' ')) problems.push(`${SITE} isn't the index.html just deployed: it names ${live.entries.join(', ')}, the build ${want.join(', ')}.`);
+    if (want.join(' ') !== live.entries.join(' ')) return [`${SITE} isn't the index.html just deployed: it names ${live.entries.join(', ')}, the build ${want.join(', ')}.`];
   }
-  const statuses = await Promise.all(live.files.map((f) => statusOf(get, f)));
-  live.files.forEach((f, n) => statuses[n] !== 200 && problems.push(`${new URL(f, SITE)} answered ${statuses[n]}.`));
-  return problems;
+  return (await Promise.all(live.files.map((f) => fileProblem(get, f)))).filter((p) => p !== null);
 }
 
 /** When the certificate a host serves runs out. @param {string} host @returns {Promise<Date>} */
@@ -124,7 +142,8 @@ export function certEnd(host) {
   return new Promise((resolve, reject) => {
     const socket = tls.connect({ host, port: 443, servername: host, timeout: 30_000 }, () => {
       const end = new Date(socket.getPeerCertificate().valid_to);
-      socket.end();
+      // Nothing more to say: closed at once, rather than kept open (with the process) until the host hangs up.
+      socket.destroy();
       if (Number.isNaN(end.getTime())) reject(new Error(`${host} sent no certificate end date`));
       else resolve(end);
     });
@@ -154,7 +173,7 @@ export async function checkSignal(get) {
     const id = (await r.text()).trim();
     return UUID.test(id) ? { problem: null } : { problem: `${url} answered 200 but not with a peer id.` };
   } catch (e) {
-    return { problem: `${url} didn't answer: ${/** @type {Error} */ (e).message || e}` };
+    return { problem: `${url} didn't answer: ${why(e)}` };
   }
 }
 
@@ -197,24 +216,30 @@ export async function main(argv, env, deps = {}) {
   /** @type {string[]} */ const notes = [];
   let result;
   if (mode === 'deploy') {
-    const built = await read(/** @type {string} */ (builtAt));
+    let built;
+    try {
+      built = await read(/** @type {string} */ (builtAt));
+    } catch (e) {
+      log(`::error::Couldn't read the deployed index.html (${builtAt}): ${why(e)}`);
+      return 1;
+    }
     result = await retrying(() => checkSite(get, built), DEPLOY_TRIES, DEPLOY_WAIT, sleep, log);
   } else {
     const ownEnd = deps.certEnd ?? certEnd;
     result = await retrying(
       async () => {
+        // The three asked at once: none waits on another.
+        const [site, cert, signal] = await Promise.all([
+          checkSite(get),
+          ownEnd(new URL(SITE).host).then(
+            (end) => certProblem(end, now()),
+            (e) => `Couldn't read the TLS certificate: ${why(e)}`,
+          ),
+          checkSignal(get),
+        ]);
         notes.length = 0;
-        const problems = await checkSite(get);
-        try {
-          const p = certProblem(await ownEnd(new URL(SITE).host), now());
-          if (p) problems.push(p);
-        } catch (e) {
-          problems.push(`Couldn't read the TLS certificate: ${/** @type {Error} */ (e).message || e}`);
-        }
-        const signal = await checkSignal(get);
-        if (signal.problem) problems.push(signal.problem);
         if (signal.note) notes.push(signal.note);
-        return problems;
+        return [...site, ...(cert ? [cert] : []), ...(signal.problem ? [signal.problem] : [])];
       },
       DAILY_TRIES,
       DAILY_WAIT,

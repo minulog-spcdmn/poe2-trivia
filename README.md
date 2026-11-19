@@ -487,8 +487,8 @@ Daily health can’t see a site that’s down: a day with nothing counted fires
 nothing. `scripts/live-check.mjs` can, with no Claude in it; a failed run is
 the alarm, and GitHub emails the owner.
 
-- After each deploy, the deploy job’s last step checks that poe2.quest serves
-  the `index.html` just deployed (its hashed entry scripts and styles are the
+- After each deploy, the deploy workflow’s `live-check` job checks that
+  poe2.quest serves the `index.html` just deployed (its hashed entry scripts and styles are the
   build’s) and that every file it names answers 200. It tries for about six
   minutes while the CDN catches up, whichever try put the site up.
 - Once a day, `.github/workflows/live-check.yml` checks that poe2.quest and its

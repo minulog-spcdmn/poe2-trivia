@@ -6,8 +6,8 @@ run-name: "Live check: ${{ github.event_name == 'schedule' && 'daily' || 'run by
 # matchmaking server hands out a peer id (GET /peerjs/id: a random UUID,
 # nothing allocated, one count of its per-address limit). It reads no item
 # tally (/tally has a day's read budget) and asks GoatCounter nothing.
-# scripts/live-check.mjs does it all; the deploy job runs the same script
-# after each deploy (deploy.yml).
+# scripts/live-check.mjs does it all; deploy.yml's live-check job runs the
+# same script after each deploy.
 #
 # Daily health can't see this: a day with nothing counted fires nothing. A
 # failed run is the alarm: GitHub mails the owner. It stays out of
