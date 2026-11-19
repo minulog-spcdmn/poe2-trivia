@@ -11,6 +11,7 @@ import {
   RUSH_DEFAULTS,
   RUSH_FROM,
   RUSH_TO,
+  ZONE_DESCENT_MS,
   dynamiteOf,
   findOn,
   flaresOf,
@@ -25,6 +26,7 @@ import {
   type RushTuning,
 } from '../src/lib/delve.ts';
 import { ANSWER_GRACE_MS, AUTO_NEXT_MS, revealPauseMs, type GameState } from '../src/lib/game.ts';
+import { PICK_IN_MS, drawHoldUntil } from '../src/lib/delveSession.ts';
 import { right, room, wrong, wrongs } from './helpers.ts';
 
 /** A run of `n` players p0 (the host) to p(n-1), the rush tuned by `tuning` (null: an engine without it), on a clock the test moves. */
@@ -266,6 +268,48 @@ test("together, the team's vote for the sulphite card starts the rush; anyone ri
   assert.equal(h.s.round, h.from + step * (length - 2));
   assert.equal(rushOf(h.s)!.on, undefined);
   assert.equal(rushOf(h.s)!.done!.to, h.s.round);
+});
+
+test("together, the votes for the sulphite card stay on it through its draw; the rush's later questions open none", () => {
+  const h = rushTogether();
+  // The rush's first question is the card's: the cards stay up for the draw, the votes on them.
+  assert.deepEqual(h.s.delve!.votes, { p0: h.card, p1: h.card });
+  h.pickAs('p0', right(h.s.question!));
+  h.next();
+  assert.equal(h.s.question!.rush, true);
+  assert.deepEqual(h.s.offered, []);
+  assert.deepEqual(h.s.delve!.votes, {});
+  assert.equal(h.s.delve!.voteFrom, null);
+});
+
+test("together, a rush's step into a new zone holds its next question for the plunge, as alone", () => {
+  // From depth 9 a right answer goes 3 down, to 12: the zone from 11 is entered on the way.
+  const h = rushTogether();
+  h.edit((c) => (c.round = 9));
+  h.pickAs('p0', right(h.s.question!));
+  const prev = h.s;
+  h.next();
+  assert.equal(h.s.round, 12);
+  assert.equal(h.s.phase, 'question');
+  const at = h.s.delve!.dealAt!;
+  assert.equal(at, h.clock.now + RUSH_DEFAULTS.zone);
+  // Every screen holds its clock until the plunge has landed (Session, drawHoldUntil).
+  assert.equal(drawHoldUntil(prev, h.s), at + PICK_IN_MS);
+  const q = h.clockIn();
+  assert.ok(q.deadline! > at);
+});
+
+test('together, the first offer after a rush that ended across a zone waits for its arrival, and holds no sulphite card', () => {
+  const h = rushTogether({ tuning: { ...RUSH_DEFAULTS, length: 1 } });
+  h.edit((c) => (c.round = 9));
+  h.pickAs('p1', right(h.s.question!));
+  h.next();
+  assert.equal(h.s.phase, 'choosing');
+  assert.equal(h.s.round, 12);
+  assert.deepEqual(rushOf(h.s)!.done, { from: 5, last: 9, to: 12, at: h.clock.now });
+  assert.equal(h.s.delve!.dealAt, h.clock.now + ZONE_DESCENT_MS);
+  assert.equal(sulphiteCard(h.s), null);
+  assert.deepEqual(h.s.delve!.votes, {});
 });
 
 test('together, a player perishing in a rush leaves it going for the others; everyone perishing ends the run', () => {

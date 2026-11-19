@@ -2927,15 +2927,16 @@ export class Engine {
       // (The rush's own hold, shorter than an offer's: RushTuning.zone.)
       if (zoneEntered(from, s.round) !== null) dm.dealAt = this.now() + (rushOf(s)?.zone ?? ZONE_DESCENT_MS);
       else delete dm.dealAt;
+      // Co-op, as a new offer has it (beginTurn): no vote, and the seat the screens lean on the first standing.
+      // (Not on the rush's first, from the card: the votes stay on the cards through its draw, as any pick's do.)
+      if (isGroupRun(s)) {
+        dm.votes = {};
+        dm.voteFrom = null;
+        if (this.now() >= dm.graceUntil) dm.excused = [];
+        s.turn = Math.max(0, s.players.findIndex((p) => livesOf(s, p.id) > 0));
+      }
     }
     s.reveal = null;
-    if (isGroupRun(s)) {
-      // Co-op, as an offer has it: no vote open, and the seat the screens lean on the first standing (beginTurn).
-      dm.votes = {};
-      dm.voteFrom = null;
-      if (this.now() >= dm.graceUntil) dm.excused = [];
-      s.turn = Math.max(0, s.players.findIndex((p) => livesOf(s, p.id) > 0));
-    }
     dm.asked = [category];
     s.question = this.makeQuestion(s, category, { rushDeeper: rushOf(s)?.deeper ?? 0 });
     s.question.rush = true;
