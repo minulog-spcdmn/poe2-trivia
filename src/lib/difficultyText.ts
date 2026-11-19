@@ -233,9 +233,9 @@ export const FIND_TEXT: Record<FindKind, { name: string; tag: string; others: st
 };
 
 /**
- * The sulphite card's note, under it as a find's is (the Sulphite rush, a
- * prototype): what taking it starts and what each right answer in it
- * gives, from the run's tuning (RushTuning.length and .step).
+ * The sulphite card's note, under it as a find's is (the Sulphite rush):
+ * what taking it starts and what each right answer in it gives, from the
+ * run's tuning (RushTuning.length and .step).
  */
 export function rushText(step: number, length: number) {
   const depths = step === 1 ? 'one depth' : `${words(step)} depths`;

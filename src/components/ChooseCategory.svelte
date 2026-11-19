@@ -23,7 +23,7 @@
   import { activeRules, difficultyOf } from '../lib/game';
   import { FIND_TEXT, deathmatchText, digNote, findNote, lockoutText, namesOf, rushText, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
   import { WAY_OUT_CARD as out } from '../lib/wayOut/lantern';
-  import { digOf, expectedVoters, fossilOffer, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, rushOf, standingIds, sulphiteCard, voteClosesAt, type FindKind } from '../lib/delve';
+  import { RUSH_DEFAULTS, digOf, expectedVoters, fossilOffer, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, rushOf, standingIds, sulphiteCard, voteClosesAt, type FindKind } from '../lib/delve';
   import type { CardFossil, FossilTier } from '../lib/fossils';
   import { amberLight } from '../lib/fossilAmber';
   import { sfx } from '../lib/sound';
@@ -328,6 +328,8 @@
       if (frame && kind) onCards(() => findPicked(frame, card, others, kind));
       else if (frame && isWayOut(category)) onCards(() => outPicked(frame, card, others));
       else if (frame && fossilTierAt(category)) onCards(() => fossilPicked(frame, card, others, fossilTierAt(category)!));
+      // The sulphite card drawn: its own moment, as when a player alone takes it (pick).
+      else if (frame && sulphite === category) onCards(() => sulphitePicked(frame, card, others));
       else if (frame) onCards(() => cardPicked(frame, card, others, false));
       sfx(kind === 'azurite' ? 'veinStrike' : 'draw', { from: { from: card } });
     };
@@ -472,6 +474,18 @@
     ...(fossilNote === 'full' ? [fossilCol] : []),
     ...(auraNote ? [auraCol] : []),
   ]);
+  /**
+   * How crowded the notes under the cards are (a short line under them, or
+   * two notes: the rows slimmer for them, in the CSS below), as dealt, and
+   * held as it was once the cards close: the notes go with the pick, but
+   * the cards stay up while its moment (together, the draw) plays on them,
+   * and their rows don't change size under it.
+   */
+  let crowdDealt = { short: false, two: false };
+  const crowd = $derived.by(() => {
+    if (s.phase === 'choosing') crowdDealt = { short: fossilNote === 'line' || sulphiteLine, two: noteCols.length >= 2 };
+    return crowdDealt;
+  });
   /** The notes can stand beside the cards (CSS, on a phone on its side): a dig's two, or up to two of the others'. */
   const beside = $derived(!!dig || (noteCols.length > 0 && noteCols.length <= 2 && !s.deathmatch));
   const uid = $props.id();
@@ -1199,8 +1213,8 @@
   class:coop
   class:delve={!!s.delve}
   class:beside={beside}
-  class:short-line={fossilNote === 'line' || sulphiteLine}
-  class:two-notes={noteCols.length >= 2}
+  class:short-line={crowd.short}
+  class:two-notes={crowd.two}
   class:duel={!!s.deathmatch}
   class:sharp
   style:--n={s.offered.length}
@@ -1447,20 +1461,21 @@
             > {findNote(f.kind, inventoryOf(s, active.id), !two)}{:else}{FIND_TEXT[f.kind].others}{/if}
         </p>
       {/each}
-      {#if sulphiteNoted && sulphiteLine}
-        {@const rush = rushOf(s)}
-        <!-- Beside two finds' notes, as a fossil's: a short line under them, with what stays unused on the finds and the rush. -->
-        <p class="note muted sulphite-line" id="{uid}-note-sulphite">
-          <strong>Sulphite:</strong>
-          {rushText(rush?.step ?? 3, rush?.length ?? 7).line}{#if held}<span class="held">{held}</span>{/if}
-        </p>
-      {:else if sulphiteNoted}
-        {@const rush = rushOf(s)}
-        {@const text = rushText(rush?.step ?? 3, rush?.length ?? 7)}
-        {@const i = s.offered.indexOf(sulphiteNoted)}
-        <p class="note find-note" data-find="sulphite" id="{uid}-note-sulphite" style:--col={i + 1} data-side={sideOf(i, noteCols)}>
-          {#if team || (mine && !coop)}<strong>{text.tag}.</strong> {text.note}{two ? '' : held}{:else}{text.others}{/if}
-        </p>
+      {#if sulphiteNoted}
+        {@const rush = rushOf(s) ?? RUSH_DEFAULTS}
+        {@const text = rushText(rush.step, rush.length)}
+        {#if sulphiteLine}
+          <!-- Beside two finds' notes, as a fossil's: a short line under them, with what stays unused on the finds and the rush. -->
+          <p class="note muted sulphite-line" id="{uid}-note-sulphite">
+            <strong>Sulphite:</strong>
+            {text.line}{#if held}<span class="held">{held}</span>{/if}
+          </p>
+        {:else}
+          {@const i = s.offered.indexOf(sulphiteNoted)}
+          <p class="note find-note" data-find="sulphite" id="{uid}-note-sulphite" style:--col={i + 1} data-side={sideOf(i, noteCols)}>
+            {#if team || (mine && !coop)}<strong>{text.tag}.</strong> {text.note}{two ? '' : held}{:else}{text.others}{/if}
+          </p>
+        {/if}
       {/if}
       {#snippet auraLine()}
         {@const aura = auraAt(s.offered[auraCol]!)!}

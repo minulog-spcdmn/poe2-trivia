@@ -535,8 +535,9 @@ export function digRunsOn(s: GameState): boolean {
  * On in every run, alone or together (the owner, 19 Nov 2026, after a run
  * together found none: "make it release ready"); the engine has it once
  * handed its tuning (Engine.setRush, RUSH_DEFAULTS from the session, which
- * off the live game reads it from the page's query: rushTuning). Every run finds one sulphite card in the
- * Mines, on one offer at a depth from RUSH_FROM to RUSH_TO, each as likely
+ * off the live game reads it from the page's query: rushTuning). Every run
+ * finds one sulphite card in the Mines, on one offer at a depth from
+ * RUSH_FROM to RUSH_TO, each as likely
  * (the owner, 18 Nov 2026: "one guaranteed from 3 to 9"; never on the first
  * questions, and never back once passed by, so it stays special). After it
  * the next come by entropy, as evasion does in Path of Exile (the owner, 19

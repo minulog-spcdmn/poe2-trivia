@@ -2824,13 +2824,8 @@ export class Engine {
     delete dm.asked;
     delete dm.missedHere;
     delete dm.dealAt;
-    if (coop) {
-      dm.votes = {};
-      dm.voteFrom = null;
-      if (this.now() >= dm.graceUntil) dm.excused = [];
-      // Whose seat the screens lean on: the first standing, as beginTurn has it (the strike may have felled the last).
-      s.turn = Math.max(0, s.players.findIndex((p) => livesOf(s, p.id) > 0));
-    }
+    // (The seat the screens lean on: the strike may have felled the last.)
+    if (coop) this.clearVote(s);
     return true;
   }
 
@@ -2888,13 +2883,21 @@ export class Engine {
       this.finish(s, []);
       return;
     }
-    const deeper = wrapped && cleared;
+    s.turn = next;
+    this.goOn(s, wrapped && cleared);
+  }
+
+  /**
+   * After a reveal, alone or together: on to the run's next question, a
+   * depth deeper if `deeper` (a Sulphite rush's right answer its step's
+   * depths: rushStep, its last one too) and at the same depth if not. A rush
+   * under way asks its next question straight away (no offer between, and
+   * together no vote); otherwise a new offer.
+   */
+  private goOn(s: GameState, deeper: boolean) {
     const before = s.round;
-    // A Sulphite rush's right answer takes the run its step's depths down (rushStep), its last one too.
     const rushed = s.phase === 'reveal' && !!s.question?.rush;
     if (deeper) s.round += rushed ? rushStep(s) : 1;
-    s.turn = next;
-    // A rush under way asks its next question straight away, deeper or at the same depth (no offer between).
     const rush = rushed ? rushOf(s)?.on : undefined;
     if (rush) {
       s.turnCount++;
@@ -2929,12 +2932,7 @@ export class Engine {
       else delete dm.dealAt;
       // Co-op, as a new offer has it (beginTurn): no vote, and the seat the screens lean on the first standing.
       // (Not on the rush's first, from the card: the votes stay on the cards through its draw, as any pick's do.)
-      if (isGroupRun(s)) {
-        dm.votes = {};
-        dm.voteFrom = null;
-        if (this.now() >= dm.graceUntil) dm.excused = [];
-        s.turn = Math.max(0, s.players.findIndex((p) => livesOf(s, p.id) > 0));
-      }
+      if (isGroupRun(s)) this.clearVote(s);
     }
     s.reveal = null;
     dm.asked = [category];
@@ -2994,6 +2992,20 @@ export class Engine {
   }
 
   // ---- delve co-op --------------------------------------------------------
+
+  /**
+   * Co-op, a new offer (or a Sulphite rush's next question, or a vein's next
+   * strike): no vote yet; past the grace, anyone the reload cut off is just
+   * away; and whose seat the screens lean on, the first standing (nobody's
+   * turn as such).
+   */
+  private clearVote(s: GameState) {
+    const dm = s.delve!;
+    dm.votes = {};
+    dm.voteFrom = null;
+    if (this.now() >= dm.graceUntil) dm.excused = [];
+    s.turn = Math.max(0, s.players.findIndex((p) => livesOf(s, p.id) > 0));
+  }
 
   /** Co-op: a random standing holder of `item` (the engine's roll, so a seeded run is repeatable). */
   private anyHolder(s: GameState, item: 'flares' | 'dynamite'): string {
@@ -3203,25 +3215,15 @@ export class Engine {
   /**
    * Co-op: after a reveal, a new offer for whoever stands (a revived player
    * too), one depth deeper if the team `cleared` the question and at the
-   * same depth if not, or the end of the run.
+   * same depth if not (a Sulphite rush's next question, as alone: goOn), or
+   * the end of the run.
    */
   private advanceCoop(s: GameState, cleared: boolean) {
     if (!standingIds(s).length) {
       this.finish(s, []);
       return;
     }
-    const before = s.round;
-    // A Sulphite rush's question cleared takes the team its step's depths down (rushStep), as alone.
-    const rushed = s.phase === 'reveal' && !!s.question?.rush;
-    if (cleared) s.round += rushed ? rushStep(s) : 1;
-    // A rush under way asks its next question straight away (no vote between).
-    const rush = rushed ? rushOf(s)?.on : undefined;
-    if (rush) {
-      s.turnCount++;
-      this.askRushQuestion(s, rush.category, before);
-      return;
-    }
-    this.beginTurn(s, false, cleared, before);
+    this.goOn(s, cleared);
   }
 
   // ---- turns mode -------------------------------------------------------
@@ -3237,15 +3239,7 @@ export class Engine {
     s.question = null;
     s.reveal = null;
     const coop = !!s.delve && isGroupRun(s);
-    if (coop) {
-      const dm = s.delve!;
-      dm.votes = {};
-      dm.voteFrom = null;
-      // Past the grace, anyone the reload cut off is just away.
-      if (this.now() >= dm.graceUntil) dm.excused = [];
-      // Whose seat the screens lean on: the first standing (nobody's turn as such).
-      s.turn = Math.max(0, s.players.findIndex((p) => livesOf(s, p.id) > 0));
-    }
+    if (coop) this.clearVote(s);
     // In a deathmatch nobody picks their favourite: one random category.
     s.offered = s.deathmatch ? [this.randomCategory(s)] : this.offerCategories(s, s.players[s.turn]);
     if (s.delve) {
