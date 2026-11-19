@@ -6,9 +6,10 @@
 //
 // How they're ranked is in src/lib/itemTallyRank.ts, which the stats
 // page's Items view ranks by too; the filters apply before the rates, so
-// `--first` compares first meetings with first meetings.
+// `--first` compares first meetings with first meetings. `--easiest` lists
+// the items surely missed least first.
 //
-// Usage: npm run item-tally -- [--form n|a] [--first] [--min <answers>] [--v <version>]
+// Usage: npm run item-tally -- [--form n|a] [--first] [--easiest] [--min <answers>] [--v <version>]
 //   [--mode delve|together|turns|race|practice|daily]
 // (--v defaults to this build's, src/lib/itemTallyRank.ts TALLY_VERSION.)
 
@@ -24,11 +25,15 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 /** The options given. */
 export function options(argv) {
   const out = { first: false };
-  const usage = 'options: --form n|a, --first, --min <answers>, --v <version>, --mode delve|together|turns|race|practice|daily.';
+  const usage = 'options: --form n|a, --first, --easiest, --min <answers>, --v <version>, --mode delve|together|turns|race|practice|daily.';
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--first') {
       out.first = true;
+      continue;
+    }
+    if (a === '--easiest') {
+      out.order = 'easiest';
       continue;
     }
     const m = /^--(form|min|v|mode)$/.exec(a);
@@ -58,7 +63,7 @@ async function main() {
   const unknown = rows.filter((x) => !items.has(x.item)).length;
   console.log(`${rows.length} sums kept (of ${ROWS.toLocaleString('en')} at most), ${unknown} of them for ids items.json doesn't have.`);
   const { v, list } = rank(rows, o);
-  const said = [o.form && `form ${o.form}`, o.first && 'first meetings', o.mode, o.min && `${o.min}+ answers`].filter(Boolean);
+  const said = [o.form && `form ${o.form}`, o.first && 'first meetings', o.mode, o.min && `${o.min}+ answers`, o.order === 'easiest' && 'easiest first'].filter(Boolean);
   console.log(`Tally v${v}: ${list.length} items${said.length ? ` (${said.join(', ')})` : ''}.`);
   console.log('answers  missed  expected  score  90% interval  | item (group)');
   for (const s of list) {

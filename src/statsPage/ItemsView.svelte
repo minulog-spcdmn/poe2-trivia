@@ -1,12 +1,13 @@
 <script lang="ts">
   // Items: which items players miss more than the rest asked under the same
-  // rules, from the item tally (tally.ts; lib/itemTallyRank.ts ranks it, as
-  // scripts/item-tally.mjs does), so the ones hardly anyone recognises can
-  // be found. Its answers have no dates, so the period doesn't apply here:
-  // Analytics' dates line says "All answers so far" instead. Read as the view
-  // opens and on Read again (Analytics.svelte); the choices narrow it here.
+  // rules, or less, from the item tally (tally.ts; lib/itemTallyRank.ts ranks
+  // it, as scripts/item-tally.mjs does), so the ones hardly anyone recognises
+  // can be found, and those nearly everyone does. Its answers have no dates,
+  // so the period doesn't apply here: Analytics' dates line says "All
+  // answers so far" instead. Read as the view opens and on Read again
+  // (Analytics.svelte); the choices narrow it here.
   import { onMount } from 'svelte';
-  import { TALLY_ROWS, rank, type RankOptions, type Ranked, type TallyMode, type TallyRow } from '../lib/itemTallyRank';
+  import { TALLY_ROWS, rank, type RankOptions, type RankOrder, type Ranked, type TallyMode, type TallyRow } from '../lib/itemTallyRank';
   import { itemSrcset, itemThumb } from '../lib/ui-paths';
   import { fmt } from './chart';
   import How from './How.svelte';
@@ -24,6 +25,10 @@
       .catch(() => undefined);
   });
 
+  const ORDERS = [
+    { value: 'hardest', name: 'Hardest first' },
+    { value: 'easiest', name: 'Easiest first' },
+  ] as const;
   const FORMS = [
     { value: 'both', name: 'Both' },
     { value: 'n', name: 'Name' },
@@ -48,13 +53,15 @@
   /** The furthest the axis reaches: past it, an interval (or a score) runs off its end. */
   const AXIS_MOST = 5;
 
+  let order = $state<RankOrder>('hardest');
   let form = $state<(typeof FORMS)[number]['value']>('both');
   let mode = $state<(typeof MODES)[number]['value']>('all');
   let first = $state<(typeof FIRSTS)[number]['value']>('off');
   let min = $state(10);
   let all = $state(false);
 
-  const options = $derived<RankOptions>({ form: form === 'both' ? undefined : form, mode: mode === 'all' ? undefined : (mode as TallyMode), first: first === 'on', min });
+  const options = $derived<RankOptions>({ form: form === 'both' ? undefined : form, mode: mode === 'all' ? undefined : (mode as TallyMode), first: first === 'on', min, order });
+  const easiest = $derived(order === 'easiest');
   const ranked = $derived(rows ? rank(rows, options) : null);
   const list = $derived(ranked?.list ?? []);
   const shown = $derived(all ? list : list.slice(0, FIRST_ROWS));
@@ -65,18 +72,19 @@
   const top = $derived(Math.min(AXIS_MOST, Math.max(2, Math.ceil(2 * list.reduce((m, s) => Math.max(m, s.score ?? 0), 0)) / 2)));
   const at = (x: number) => `${(100 * Math.min(1, Math.max(0, x / top))).toFixed(2)}%`;
   const ticks = $derived(Array.from({ length: Math.floor(top) + 1 }, (_, i) => i));
-  /** Whether the item is surely missed more than the rest (its interval clear of 1). */
-  const clear = (s: Ranked) => s.score !== null && s.low > 1;
+  /** Whether the item is surely missed more than the rest (its interval clear above 1), or easiest first, surely less (clear below it). */
+  const clear = (s: Ranked) => s.score !== null && (easiest ? s.high < 1 : s.low > 1);
   const two = (x: number | null) => (x === null ? '–' : x.toFixed(2));
   const interval = (s: Ranked) => (s.score === null ? 'No score: every answer in its contexts was right' : `90% interval ${two(s.low)} to ${Number.isFinite(s.high) ? two(s.high) : 'no end'}`);
 </script>
 
 <div class="stack">
   <p class="what">
-    Every player’s answers, item by item, each held against how often all items are missed under the same rules. The items hardly anyone recognises come first.
+    Every player’s answers, item by item, each held against how often all items are missed under the same rules. {easiest ? 'The items nearly everyone recognises come first.' : 'The items hardly anyone recognises come first.'}
   </p>
 
   <div class="picks">
+    <div class="pick-one"><span class="cap">Order</span><Seg label="Order" options={ORDERS} value={order} onpick={(v) => (order = v)} /></div>
     <div class="pick-one"><span class="cap">Question</span><Seg label="Question form" options={FORMS} value={form} onpick={(v) => (form = v)} /></div>
     <div class="pick-one"><span class="cap">Mode</span><Seg label="Mode" options={MODES} value={mode} onpick={(v) => (mode = v)} /></div>
     <div class="pick-one"><span class="cap">First meetings only</span><Seg label="First meetings only" options={FIRSTS} value={first} onpick={(v) => (first = v)} /></div>
@@ -94,7 +102,10 @@
     <p class="say bad" role="alert">The tally couldn’t be read: {failed} <button type="button" class="again" onclick={onagain}>Try again</button></p>
   {/if}
 
-  <Section title="Most missed first" says="Misses over those the item’s rules would expect: 1 is as missed as the rest, 2 twice as often. The line is the score’s 90% interval, gold where it stands clear of 1.">
+  <Section
+    title={easiest ? 'Least missed first' : 'Most missed first'}
+    says="Misses over those the item’s rules would expect: 1 is as missed as the rest, 2 twice as often. The line is the score’s 90% interval, gold where it stands clear {easiest ? 'below' : 'above'} 1."
+  >
     {#if !rows}
       <p class="say">{reading ? 'Reading the tally…' : ''}&nbsp;</p>
     {:else if !rows.length}
@@ -103,7 +114,7 @@
       <p class="say">No item has {min === 1 ? 'an answer' : `${min} answers or more`} with these choices.</p>
     {:else}
       <div class="scroll-x">
-      <table class="table items" aria-label="Items, most missed first" style:--top={top}>
+      <table class="table items" aria-label={easiest ? 'Items, least missed first' : 'Items, most missed first'} style:--top={top}>
         <thead>
           <tr>
             <th scope="col" class="art-col"><span class="sr">Art</span></th>
@@ -166,7 +177,7 @@
       items={[
         'From the matchmaking server, not GoatCounter: every answer of every player who’s counted, summed per item, question form (Name: naming it from its art; Art: finding its art for its name), the rules it was asked under (Delve alone or together by its band of ten depths, Take turns and Race by difficulty, practice, Today’s unique) and whether it was the player’s first meeting with the item. It keeps no dates, so the period doesn’t apply here.',
         'An item’s expected misses are its answers under each of those rules times how often every item is missed under them, summed: an item asked deep in Delve is held to how often deep questions are missed. Its score is its misses over that; its interval, a 90% Poisson interval on the misses (Byar’s approximation) over the same.',
-        'The list runs by the interval’s low end, so an item with few answers has to be missed far more to come near the top. An item never missed where nothing else was either has no score and goes last.',
+        'Hardest first runs by the interval’s low end, so an item with few answers has to be missed far more to come near the top. Easiest first runs by its high end, so such an item has to be missed far less. An item never missed where nothing else was either has no score and goes last in both.',
         'The choices narrow the answers before the rates are worked out: with first meetings only, an item is held to other first meetings.',
         `The tally keeps ${fmt(TALLY_ROWS)} sums at most; past that no new one is started. Many for ids items.json doesn’t have means someone is sending made-up ones.`,
         'npm run item-tally lists the same in a terminal.',

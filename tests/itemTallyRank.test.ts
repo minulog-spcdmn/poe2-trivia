@@ -62,6 +62,35 @@ test('rank: most surely missed first, by the interval low end', () => {
   assert.ok(few.low < list[0].low);
 });
 
+test('rank: easiest first, the items surely missed least first, by the interval high end', () => {
+  const rows = [
+    // A big context where a fifth of the answers miss.
+    ...Array.from({ length: 20 }, (_, i) => row(`k${i}`, 'd2', 80, 20)),
+    // Never missed over many answers: surely missed less.
+    row('easy', 'd2', 100, 0),
+    // Never missed, but only twice: as low a share, far less sure.
+    row('few', 'd2', 2, 0),
+    // Nothing expected: no score, last either way.
+    row('sure', 'practice', 10, 0),
+  ];
+  const { list } = rank(rows, { order: 'easiest' });
+  assert.equal(list[0].item, 'easy');
+  assert.ok(list[0].high < 1, 'clear below 1');
+  const few = list.find((s) => s.item === 'few')!;
+  assert.equal(few.score, 0);
+  assert.ok(few.high > list[1].high, 'the share alone would put it beside the first');
+  assert.equal(list.at(-1)!.item, 'sure');
+  // The same items and figures as hardest first, the default, in another order.
+  const hardest = rank(rows).list;
+  assert.equal(hardest.at(-1)!.item, 'sure');
+  assert.notEqual(hardest[0].item, 'easy');
+  assert.deepEqual(
+    [...hardest].sort((a, b) => a.item.localeCompare(b.item)),
+    [...list].sort((a, b) => a.item.localeCompare(b.item)),
+  );
+  assert.deepEqual(rank(rows, { order: 'hardest' }).list, hardest);
+});
+
 test('rank: the filters apply before the rates', () => {
   const rows = [
     // First meetings are missed far more: 50% against 10% for the rest.

@@ -13,7 +13,8 @@
 // twice as often). With it, a 90% interval for the score, from a Poisson
 // interval on the observed misses (Byar's approximation of the exact one)
 // over the expected. Sorted by that interval's lower end, the items surely
-// missed most first. The filters apply before the rates, so `first`
+// missed most first; or, easiest first, by its upper end, the items surely
+// missed least first. The filters apply before the rates, so `first`
 // compares first meetings with first meetings.
 
 /** One sum as the Worker keeps it: an item's right and wrong answers in one form, context and first-or-not, under a tally version. */
@@ -44,14 +45,18 @@ export const TALLY_MODES = {
 } as const;
 export type TallyMode = keyof typeof TALLY_MODES;
 
-/** What the ranking is narrowed to: a form, a mode, first meetings only, the fewest answers an item needs, a version (this build's by default). */
+/** What the ranking is narrowed to: a form, a mode, first meetings only, the fewest answers an item needs, a version (this build's by default); and which end comes first (the hardest by default). */
 export interface RankOptions {
   form?: 'n' | 'a';
   mode?: TallyMode;
   first?: boolean;
   min?: number;
   v?: number;
+  order?: RankOrder;
 }
+
+/** Hardest first: by the interval's lower end, highest first. Easiest first: by its upper end, lowest first. */
+export type RankOrder = 'hardest' | 'easiest';
 
 /** An item's answers, misses, the misses expected of it, its score (null where nothing was expected) and the score's 90% interval. */
 export interface Ranked {
@@ -78,7 +83,8 @@ export function poisson(k: number): [number, number] {
 /**
  * Per item, its answers, misses, the misses expected of it, its score and
  * the score's interval, from the rows kept, as the options filter them:
- * sorted by the interval's lower end, most missed first.
+ * sorted by the interval's lower end, most missed first, or (`order`
+ * 'easiest') by its upper end, least missed first.
  */
 export function rank(rows: readonly TallyRow[], o: RankOptions = {}): { v: number; list: Ranked[] } {
   // (This build's, not the newest tallied: a newer build's sums, under rules this one doesn't know, never mix with or hide these.)
@@ -111,7 +117,9 @@ export function rank(rows: readonly TallyRow[], o: RankOptions = {}): { v: numbe
       const [low, high] = poisson(s.miss);
       return { ...s, score: s.miss / s.expected, low: low / s.expected, high: high / s.expected };
     });
-  // (Those with no score last, below any with one, however many answers they have.)
-  list.sort((a, b) => b.low - a.low || Number(a.score === null) - Number(b.score === null) || (b.score ?? 0) - (a.score ?? 0) || b.n - a.n);
+  // (Those with no score last, below any with one, however many answers they have: either way they tell nothing.)
+  const none = (a: Ranked, b: Ranked) => Number(a.score === null) - Number(b.score === null);
+  if (o.order === 'easiest') list.sort((a, b) => none(a, b) || a.high - b.high || (a.score ?? 0) - (b.score ?? 0) || b.n - a.n);
+  else list.sort((a, b) => none(a, b) || b.low - a.low || (b.score ?? 0) - (a.score ?? 0) || b.n - a.n);
   return { v, list };
 }
