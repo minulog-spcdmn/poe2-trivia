@@ -526,11 +526,13 @@ export function digRunsOn(s: GameState): boolean {
   return takers.some((id) => wardRoom(s, id));
 }
 
-// ---- the Sulphite rush (prototype, behind ?rush) ----------------------------
+// ---- the Sulphite rush ------------------------------------------------------
 
 /**
- * A prototype, on only for a run alone begun on a page whose URL has `?rush`
- * (the host's: Engine.setRush). Every run finds one sulphite card in the
+ * On in every run, alone or together (the owner, 19 Nov 2026, after a run
+ * together found none: "make it release ready"); the engine has it once
+ * handed its tuning (Engine.setRush, RUSH_DEFAULTS from the session, which
+ * off the live game reads it from the page's query: rushTuning). Every run finds one sulphite card in the
  * Mines, on one offer at a depth from RUSH_FROM to RUSH_TO, each as likely
  * (the owner, 18 Nov 2026: "one guaranteed from 3 to 9"; never on the first
  * questions, and never back once passed by, so it stays special). After it
@@ -550,7 +552,11 @@ export function digRunsOn(s: GameState): boolean {
  * stepped into on the way arrives as on an offer: the next question waits
  * for the plunge (DelveState.dealAt, dealIn), and a find certain on a depth
  * the rush passed (firstFindAt) comes on the first offer after it
- * (Rush.owed). It ends after its last question, or with the player perished.
+ * (Rush.owed). It ends after its last question, or with nobody standing.
+ * Together, the team votes for its card as for any other, and each of its
+ * questions is the team's as any question is (coopAnswer): the first right
+ * answer takes everyone RushTuning.step depths deeper, a miss costs the one
+ * who made it a life, and nobody right leaves the run at the same depth.
  * Flares and dynamite don't work on its questions (itemsWorkOn), and its
  * category is locked out once, at the pick. Read from the run's state
  * (rushOf), so an older save or an odd value reads as no rush.
@@ -618,13 +624,14 @@ const rushChance = (v: unknown, or: number) => (typeof v === 'number' && Number.
 const rushZoneMs = (v: unknown, or: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(2400, Math.min(7000, Math.round(v))) : or);
 
 /**
- * The rush's tuning from a page's query (`location.search`): null without
- * `rush`; otherwise `rushLength`, `rushPace`, `rushDeeper`, `rushStep`,
- * `rushZone` (ms) and `rushChance` (0 to 1), each its default when missing or odd.
+ * The rush's tuning from a page's query (`location.search`), for trying
+ * it on the beta or the dev server (never the live game, where depth N
+ * means the same in every run): `rushLength`, `rushPace`, `rushDeeper`,
+ * `rushStep`, `rushZone` (ms) and `rushChance` (0 to 1), each its default
+ * (RUSH_DEFAULTS) when missing or odd.
  */
-export function rushTuning(search: string): RushTuning | null {
+export function rushTuning(search: string): RushTuning {
   const q = new URLSearchParams(search);
-  if (!q.has('rush')) return null;
   const num = (k: string) => (q.get(k) === null || q.get(k) === '' ? undefined : Number(q.get(k)));
   return {
     length: rushLength(num('rushLength'), RUSH_DEFAULTS.length),
@@ -636,10 +643,10 @@ export function rushTuning(search: string): RushTuning | null {
   };
 }
 
-/** The run's rush, as far as it reads sane, or null (none, a run together, older saves, outside Delve). */
+/** The run's rush, as far as it reads sane, or null (none: a run begun before it, outside Delve). */
 export function rushOf(s: GameState): Rush | null {
   const r = s.delve?.rush;
-  if (!r || typeof r !== 'object' || isGroupRun(s)) return null;
+  if (!r || typeof r !== 'object') return null;
   const out: Rush = {
     length: rushLength(r.length, RUSH_DEFAULTS.length),
     pace: rushPace(r.pace, RUSH_DEFAULTS.pace),

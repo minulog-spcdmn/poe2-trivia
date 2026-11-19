@@ -368,11 +368,44 @@ the same thing for everyone.
     devices as their union, the earlier find of one both have kept. Older
     builds skip the key. The Codex's Delve page shows the set, and every
     Delve end screen shows how far it is (`recap.ts` setProgress).
+- **The Sulphite rush.** Voltaxic Sulphite is the fuel Niko's crawler burns
+  to travel down the mine. Now and then one of the ordinary cards on offer
+  carries sulphite (never a find's card, a fossil's or a vein's). Taken, it
+  starts a rush: the next seven questions all come from its category, one
+  after another, with no offer between them and a short pause after each
+  (1.4 s). Each right answer takes the run three depths down; a miss costs
+  a life as usual and the rush goes on at the same depth. Its questions
+  are asked under the rules and clock of ten depths deeper, as a find's
+  are. It ends after its seventh question, or with nobody standing. Passed
+  by, the card is gone.
+  - **When:** every run finds its first sulphite card on one offer between
+    depths 3 and 9, each as likely. After it the next come by entropy, as
+    evasion does in Path of Exile: a hidden gauge starts at a random level
+    as the first card turns up and fills by a twentieth with every depth
+    played (not a depth a rush rode down); full, the next offer that can
+    hold a card holds one, and the gauge keeps what it had over. So the
+    second comes 11 to 20 depths played after the first, then one every
+    20. None comes on the first offer after a rush.
+  - **On the way:** a zone stepped into arrives as on an offer (the next
+    question waits for the plunge), and a find certain on a depth the rush
+    passed comes on the first offer after it. Flares and dynamite don't
+    work on its questions; its category is locked out once, at the pick.
+  - **Together:** the team votes for its card as for any other, and each
+    of its questions is the team's: the first right answer takes everyone
+    three depths down, a wrong pick strikes its option and costs that
+    player a life, and nobody right leaves the team at the same depth.
+  - **Tuning:** `RUSH_DEFAULTS` in `src/lib/delve.ts`. On the beta and the
+    dev server the URL can tune it (`rushLength`, `rushPace`, `rushDeeper`,
+    `rushStep`, `rushZone`, `rushChance`); never on the live game, where
+    depth N means the same in every run.
+  - What it comes to (a rough simulation, every sulphite card taken):
+    runs alone end about a fifth deeper; together 0 to 12% deeper, less the
+    bigger the team.
 - **Alone**, you delve until your third life is gone; the depth where it went
   is your result. **Together**, the run goes on while anyone stands, and
   the depth where the last of the team perished is the team's result.
 - Each run starts with the whole item pool, and alone or together it asks
-  one question a depth.
+  one question a depth (in a Sulphite rush, one right answer for three).
 - The clock starts once the art has reached everyone answering (alone the
   player, together everyone standing; the host waits at most 3 s for it)
   and, together, once the draw has played out. Nobody sees the options

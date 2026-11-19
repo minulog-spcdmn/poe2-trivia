@@ -30,7 +30,7 @@ wantDelveBackdrop();
 L.boot();
 mount(App, { target: document.getElementById('app')! });
 
-/** What a bench card carries: a find, or sulphite (the Sulphite rush's card, a prototype). */
+/** What a bench card carries: a find, or sulphite (the Sulphite rush's card). */
 export type BenchKind = FindKind | 'sulphite';
 export type BenchCard = { category: string; kind: BenchKind | null };
 

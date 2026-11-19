@@ -1,4 +1,4 @@
-// The Sulphite card's plate (the Sulphite rush, a prototype: delve.ts
+// The Sulphite card's plate (the Sulphite rush: delve.ts
 // rushOf): the category card that carries sulphite, engraved by the same
 // hand as the finds' (lib/findEngraving), a Variant of its own as the way
 // out's is (lib/wayOut). Voltaxic Sulphite is the charged ore Niko mines to

@@ -654,7 +654,7 @@ export const MOMENTS: Record<Sfx, Moment> = {
       { file: 'layer-sub-3', gain: -30, rate: 0.7, delay: 120, hp: 20, lp: 700, send: 0.5 },
     ],
   },
-  // The Sulphite rush (a prototype, lib/rushScene.ts), composed from the
+  // The Sulphite rush (lib/rushScene.ts), composed from the
   // game's own layers and not yet heard by ear. The sulphite catching as its
   // card is taken: a sparkler's hiss and a spray of sparks over a strike,
   // the air rushing past and the ground giving way under it.

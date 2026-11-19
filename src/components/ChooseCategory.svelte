@@ -103,7 +103,7 @@
   const dig = $derived(s.phase === 'choosing' && s.offered.some(isWayOut) ? digOf(s) : null);
   const haul = $derived(dig?.haul.length ?? 0);
   // (The way out's lantern hangs in its plate, gilded: no emblem stands in its window.)
-  /** Delve: the card on offer carrying sulphite (the Sulphite rush, a prototype), or null. */
+  /** Delve: the card on offer carrying sulphite (the Sulphite rush), or null. */
   const sulphite = $derived(
     s.phase === 'choosing' ? sulphiteCard(s) : s.question?.rush && s.offered.includes(s.question.category) ? s.question.category : null,
   );
@@ -381,7 +381,7 @@
    * the first card's on the left and the other's on the right; one alone on
    * its card's side, the middle card's on the left.
    */
-  /** The sulphite card on this offer, with its note under it as a find's (the Sulphite rush, a prototype), or null. */
+  /** The sulphite card on this offer, with its note under it as a find's (the Sulphite rush), or null. */
   const sulphiteNoted = $derived(s.deathmatch ? null : sulphiteCard(s));
   function sideOf(i: number, all: number[]): 'left' | 'right' {
     if (all.length > 1) return i === Math.min(...all) ? 'left' : 'right';
@@ -459,6 +459,8 @@
    * instead, one line on a small phone.
    */
   const fossilNote = $derived(fossilCol < 0 || dig ? null : finds.length + (sulphiteNoted ? 1 : 0) >= 2 ? 'line' : 'full');
+  /** The sulphite card's note as a short line under the cards, as a fossil's is beside two finds' notes (which take both sides of the cards). */
+  const sulphiteLine = $derived(!!sulphiteNoted && finds.length >= 2);
   /** The aura's card on offer (a try-out: auraAt), while no dig or deathmatch hides the notes. */
   const auraCol = $derived(cardAura.kind && !s.deathmatch && !dig ? s.offered.findIndex((c) => !!auraAt(c)) : -1);
   /** An aura's note (what it is: a look for the avatar, nothing in the run), as a fossil's, beside at most one other. */
@@ -466,7 +468,7 @@
   /** The columns of the notes that stand in the cards' columns (or at their sides): the finds', the sulphite card's, a fossil's and an aura's own. */
   const noteCols = $derived([
     ...finds.map((f) => s.offered.indexOf(f.category)),
-    ...(sulphiteNoted ? [s.offered.indexOf(sulphiteNoted)] : []),
+    ...(sulphiteNoted && !sulphiteLine ? [s.offered.indexOf(sulphiteNoted)] : []),
     ...(fossilNote === 'full' ? [fossilCol] : []),
     ...(auraNote ? [auraCol] : []),
   ]);
@@ -1197,7 +1199,8 @@
   class:coop
   class:delve={!!s.delve}
   class:beside={beside}
-  class:fossil-line={fossilNote === 'line'}
+  class:short-line={fossilNote === 'line' || sulphiteLine}
+  class:two-notes={noteCols.length >= 2}
   class:duel={!!s.deathmatch}
   class:sharp
   style:--n={s.offered.length}
@@ -1444,12 +1447,19 @@
             > {findNote(f.kind, inventoryOf(s, active.id), !two)}{:else}{FIND_TEXT[f.kind].others}{/if}
         </p>
       {/each}
-      {#if sulphiteNoted}
+      {#if sulphiteNoted && sulphiteLine}
+        {@const rush = rushOf(s)}
+        <!-- Beside two finds' notes, as a fossil's: a short line under them, with what stays unused on the finds and the rush. -->
+        <p class="note muted sulphite-line" id="{uid}-note-sulphite">
+          <strong>Sulphite:</strong>
+          {rushText(rush?.step ?? 3, rush?.length ?? 7).line}{#if held}<span class="held">{held}</span>{/if}
+        </p>
+      {:else if sulphiteNoted}
         {@const rush = rushOf(s)}
         {@const text = rushText(rush?.step ?? 3, rush?.length ?? 7)}
         {@const i = s.offered.indexOf(sulphiteNoted)}
         <p class="note find-note" data-find="sulphite" id="{uid}-note-sulphite" style:--col={i + 1} data-side={sideOf(i, noteCols)}>
-          {#if mine && !coop}<strong>{text.tag}.</strong> {text.note}{two ? '' : held}{:else}{text.others}{/if}
+          {#if team || (mine && !coop)}<strong>{text.tag}.</strong> {text.note}{two ? '' : held}{:else}{text.others}{/if}
         </p>
       {/if}
       {#snippet auraLine()}
@@ -1479,7 +1489,7 @@
         </p>
       {/if}
       {#if auraNote && !(fossilNote === 'full' && auraCol < fossilCol)}{@render auraLine()}{/if}
-      {#if two && held && fossilNote !== 'line'}<p class="note muted">{held.trim()}</p>{/if}
+      {#if two && held && fossilNote !== 'line' && !sulphiteLine}<p class="note muted">{held.trim()}</p>{/if}
     </div>
   {/if}
   {#if voteLine}
@@ -2769,7 +2779,7 @@
   .card[data-fossil] .sheen {
     display: none;
   }
-  /* The Sulphite rush's card (a prototype; lib/sulphite): the charged ore's
+  /* The Sulphite rush's card (lib/sulphite): the charged ore's
      sulphur, a lemon yellow well apart from a plain card's gold and the way
      out's lamplight (ΔE2000 21 and 15); the window lit from below, and the
      emblem too, bright at its foot, as a find's are. Its glow breathes
@@ -2989,7 +2999,8 @@
     color: #eebf96;
   }
   /* The sulphite card's ink (.card.sulphite), lightened as the finds' are for their notes. */
-  .find-note[data-find='sulphite'] {
+  .find-note[data-find='sulphite'],
+  .note.sulphite-line strong {
     color: #efeda0;
   }
   /* An aura's (a try-out): its card's colour, kept light (auraInk's note colours, on the note). */
@@ -3834,21 +3845,32 @@
     .find-notes {
       gap: 0.25rem;
     }
-    /* Two finds' notes and the fossil's line under the cards, and what
+    /* Two finds' notes and the fossil's or the sulphite card's line under the cards, and what
        stays unused on the finds: the rows a little closer and slimmer, the
        notes tighter, so all six lines fit a small phone's browser
        (375 x 635) without a scroll. */
-    .choose.delve.fossil-line:not(.coop) .cards {
+    .choose.delve.short-line:not(.coop) .cards {
       gap: 0.3rem;
     }
-    .choose.delve.fossil-line .frame {
+    .choose.delve.short-line .frame {
       padding-block: 8px;
     }
-    .choose.delve.fossil-line .find-notes {
+    .choose.delve.short-line .find-notes {
       gap: 0.1rem;
     }
-    .fossil-line .held {
+    .short-line .held {
       display: block;
+    }
+    /* Together, two notes under the cards (a find's, the sulphite card's, a
+       fossil's) and the team's vote under them: the rows slimmer and the
+       notes tighter, as beside a short line, so they fit a small phone's
+       browser (375 x 635) without a scroll. The rows keep their room for
+       the seals. */
+    .choose.delve.coop.two-notes .frame {
+      padding-block: 8px;
+    }
+    .choose.delve.coop.two-notes .find-notes {
+      gap: 0.1rem;
     }
     /* The team's vote: its line on one line however many it waits for
        (the clock, then whom), and the lock rule under it read as one block

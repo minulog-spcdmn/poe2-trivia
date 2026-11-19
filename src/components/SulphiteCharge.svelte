@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The charge on the Sulphite card's face (the Sulphite rush, a prototype):
+  // The charge on the Sulphite card's face (the Sulphite rush):
   // the bolts engraved on it (lib/sulphite/plate) lit. The plate is still;
   // this is what moves.
   //

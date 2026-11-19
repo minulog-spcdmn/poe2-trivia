@@ -1215,7 +1215,7 @@ function introSigil(title: Element) {
 let moodOwner: 'deathmatch' | 'victory' | 'rush' | null = null;
 
 /**
- * Delve alone, a Sulphite rush under way (a prototype, lib/rushScene.ts):
+ * Delve, a Sulphite rush under way (lib/rushScene.ts):
  * the scene takes a touch of the sulphite's light (`color`), and the embers
  * burn in it, hotter and more of them as the rush gathers speed (`k`, 0 to
  * 1); off (`k` 0, or `on` false), they go back to the zone's own. Never over

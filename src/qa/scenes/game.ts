@@ -6,8 +6,8 @@
 // run's end, the end screen coming in; the host's kick, and a duelist sent to
 // the bench.
 
-import { MAX_PLAYERS, PRESETS, TALL_ART_GROUPS, type GameState, type Knobs, type Settings } from '../../lib/game.ts';
-import { DELVE_IDLE_ROUNDS, WAY_OUT, livesOf, voteClosesAt } from '../../lib/delve.ts';
+import { AUTO_NEXT_MS, MAX_PLAYERS, PRESETS, TALL_ART_GROUPS, type GameState, type Knobs, type Settings } from '../../lib/game.ts';
+import { DELVE_IDLE_ROUNDS, RUSH_DEFAULTS, WAY_OUT, dealIn, livesOf, rushOn, sulphiteCard, voteClosesAt } from '../../lib/delve.ts';
 import { ACHIEVEMENTS } from '../../lib/achievements.ts';
 import { DELVE_FLAMES } from '../../lib/fx/streaks.ts';
 // (A namespace: the code before this change has no ACHIEVEMENT_SOUNDS, and a name it lacks fails the whole screen there.)
@@ -300,6 +300,18 @@ export function gameScenes(): Scene[] {
   const delveSeeded = (seed?: number) => table(['Kalguur'], { mode: 'delve' }, { host: null, seed }).start();
   const delveAlone = () => delveSeeded();
   const delveTogether = (v: Values) => table(seated(v, 3), { mode: 'delve' }).start();
+  /**
+   * A run with the Sulphite rush in it, as every run of the game's has
+   * (Engine.setRush, read as the run starts). Only the rush's scenes: its
+   * card takes the engine's dice, so the other Delve scenes play without it.
+   */
+  const rushRun = (names: string[], o: { host?: null; seed?: number } = {}) => {
+    const t = table(names, { mode: 'delve' }, o);
+    t.engine.setRush(RUSH_DEFAULTS);
+    return t.start();
+  };
+  /** The clock on past a zone's plunge holding a rush question back (dealAt), so it's asked and running. */
+  const pastHold = (t: Table) => t.wait(dealIn(t.s, t.clock.now));
   /** A vein struck once on the first card: dig deeper, or the way out. */
   const digging = (t: Table) => {
     const vein = t.s.offered[0];
@@ -532,6 +544,7 @@ export function gameScenes(): Scene[] {
     delveAloneScene(),
     delveFossilScene(),
     delveAuraCardScene(),
+    delveRushScene(),
     // Delve together's moments, a run of three by default. Finds among the
     // team's cards too, as Delve alone deals them (its notes beside the cards
     // with the vote's line, on a phone's browser on its side), and dynamite in
@@ -692,6 +705,7 @@ export function gameScenes(): Scene[] {
       },
     }),
     togetherFossilScene(),
+    togetherRushScene(),
     // A game starting, from the lobby or Play again on an end screen: the
     // header's line changes with the screen it is for, the old one fading as
     // the new one comes ("Round 1 • First to 10"; Delve alone, on this device,
@@ -1008,6 +1022,93 @@ export function gameScenes(): Scene[] {
     });
   }
 
+  /**
+   * The Sulphite rush in Delve alone (delve.ts, "the Sulphite rush"), played
+   * to (seed 2: its card on the offer at depth 5, a fossil's card beside it).
+   * On the cards: the sulphite card, its note under it; crowded, two finds
+   * beside it or a find and that fossil (a card carries one thing, so three
+   * notes at most, which must fit a small phone's browser, 375 x 635, and a
+   * phone on its side, 844 x 340). Its question partway, the gauge over the
+   * banner, a crystal burnt out for each answered and the one asked burning.
+   * And its end: its last answer, then the ride landing in the zone it's in,
+   * how far it came, and the first offer after it dealt (RUSH_END_MS).
+   */
+  function delveRushScene(): Scene {
+    const run = () => rushRun(['Kalguur'], { host: null, seed: 2 });
+    /** The run at the offer with its sulphite card. */
+    const atCard = () => run().playTo((s) => s.phase === 'choosing' && !!sulphiteCard(s));
+    /** The sulphite card taken, and `n` of its questions answered right, each moved on from. */
+    const rushing = (n: number) => {
+      const t = atCard();
+      t.act({ type: 'pick', category: sulphiteCard(t.s)! }, null);
+      for (let i = 0; i < n && rushOn(t.s); i++) pastHold(t).answer(null, true).wait(AUTO_NEXT_MS * RUSH_DEFAULTS.pace).next();
+      return pastHold(t);
+    };
+    return scene('delve-rush', 'Delve alone', 'A Sulphite rush', [ALONE], atCard, {
+      controls: [
+        moment([
+          ['cards', 'Its card on offer'],
+          ['question', 'A rush question'],
+          ['ended', 'The rush ended'],
+        ]),
+        {
+          kind: 'choice',
+          key: 'beside',
+          label: 'Beside it',
+          default: 'fossil',
+          when: { at: ['cards'] },
+          options: [
+            { value: 'none', label: 'Nothing' },
+            { value: 'fossil', label: 'A fossil, as dealt' },
+            { value: 'finds', label: 'A vein and a flare' },
+            { value: 'both', label: 'A vein and a fossil' },
+          ],
+        },
+        { kind: 'range', key: 'answered', label: 'Answered before it', min: 0, max: RUSH_DEFAULTS.length - 1, default: 3, when: { at: ['question'] } },
+      ],
+      states: [
+        { label: 'The sulphite card on offer, a fossil’s beside it', values: {} },
+        { label: 'The sulphite card alone', values: { beside: 'none' }, listed: false },
+        { label: 'Crowded: a vein and a flare beside the sulphite card', values: { beside: 'finds' }, key: 'game/delve-rush-crowded' },
+        { label: 'Crowded: a vein and a fossil beside it', values: { beside: 'both' } },
+        { label: 'A rush question, three answered: its gauge over the banner', values: { at: 'question' }, key: 'game/delve-rush-question' },
+        { label: 'The rush’s first question', values: { at: 'question', answered: 0 }, listed: false },
+        { label: 'The rush’s last question', values: { at: 'question', answered: RUSH_DEFAULTS.length - 1 }, listed: false },
+        { label: 'The rush’s last answer, the ride landing, then the first offer after it', values: { at: 'ended' }, key: 'game/delve-rush-ended' },
+      ],
+      build: (v = {}) => {
+        const when = v.at ?? 'cards';
+        if (when === 'question') return shown(rushing(Number(v.answered ?? 3)), v);
+        if (when === 'ended') {
+          const t = rushing(RUSH_DEFAULTS.length - 1);
+          const before = t.s;
+          const at = t.clock.now + INTO;
+          const last = t.answer(null, true, INTO + BLOW_AFTER).s;
+          const lastAt = t.clock.now;
+          const pause = AUTO_NEXT_MS * RUSH_DEFAULTS.pace;
+          t.wait(pause).next();
+          return {
+            state: before,
+            act: t.room,
+            at,
+            steps: [{ wait: BLOW_AFTER }, { then: last, at: lastAt }, { wait: pause }, { then: t.s, at: t.clock.now }],
+          } satisfies Built;
+        }
+        const t = atCard();
+        const card = sulphiteCard(t.s)!;
+        const [one, two] = t.s.offered.filter((c) => c !== card);
+        const beside = String(v.beside ?? 'fossil');
+        if (beside === 'none' || beside === 'finds') delete t.s.delve!.fossil;
+        if (beside === 'both') t.s.delve!.fossil = { category: two, tier: 'common' };
+        t.s.delve!.finds = [
+          ...(beside === 'finds' || beside === 'both' ? [{ category: one, kind: 'azurite' as const }] : []),
+          ...(beside === 'finds' ? [{ category: two, kind: 'flare' as const }] : []),
+        ];
+        return shown(t, v);
+      },
+    });
+  }
+
   function delveFossilScene(): Scene {
     const atQuestion = { at: ['question'] };
     return scene('delve-fossil', 'Delve alone', 'A fossil', [ALONE], delveAlone, {
@@ -1162,6 +1263,50 @@ export function gameScenes(): Scene[] {
         const at = t.clock.now + INTO;
         const after = t.answer('Doryani', v.right !== false, INTO + BLOW_AFTER).s;
         return { state: before, act: t.room, at, stored: storedFossils(held), steps: [{ wait: BLOW_AFTER }, { then: after, at: t.clock.now }] } satisfies Built;
+      },
+    });
+  }
+
+  /**
+   * The Sulphite rush together: its card among the team's cards (at depth
+   * 5, Doryani clearing each depth on the way), Doryani's vote on it, its
+   * note speaking to the team to a teammate still standing; and one of its
+   * questions partway, the team's vote taken, Doryani's wrong pick struck
+   * (a life of hers gone) while the others can still clear it.
+   */
+  function togetherRushScene(): Scene {
+    /** The team at the offer with the sulphite card (or 20 depths down, should none come). */
+    const atCard = (v: Values) => {
+      const t = rushRun(seated(v, 3));
+      for (let i = 0; i < 20 && !(t.s.phase === 'choosing' && sulphiteCard(t.s)); i++) voted(t).answer('Doryani', true).wait(1000).next();
+      return t;
+    };
+    const cards = (v: Values) => {
+      const t = atCard(v);
+      const card = sulphiteCard(t.s);
+      return card ? t.act({ type: 'vote', category: card }, 'Doryani') : t;
+    };
+    return scene('delve-together-rush', 'Delve together', 'A Sulphite rush, together', roomSeats, cards, {
+      controls: [
+        moment([
+          ['cards', 'Its card on offer'],
+          ['question', 'A rush question, Doryani’s miss'],
+        ]),
+        players(2, 3),
+      ],
+      states: [
+        { label: 'The sulphite card among the team’s cards, Doryani has voted', values: {} },
+        { label: 'A rush question, two cleared: Doryani’s wrong pick struck', values: { at: 'question' }, key: 'game/delve-together-rush-question' },
+      ],
+      build: (v = {}) => {
+        if ((v.at ?? 'cards') === 'cards') return shown(cards(v), v);
+        const t = atCard(v);
+        const card = sulphiteCard(t.s);
+        if (!card) return shown(t, v);
+        for (const p of t.s.players) t.act({ type: 'vote', category: card }, p.name);
+        if (t.s.phase === 'choosing') t.act({ type: 'expire' }, null);
+        for (let i = 0; i < 2 && rushOn(t.s); i++) pastHold(t).answer('Doryani', true).wait(AUTO_NEXT_MS * RUSH_DEFAULTS.pace).next();
+        return shown(pastHold(t).answer('Doryani', false, 1500), v);
       },
     });
   }

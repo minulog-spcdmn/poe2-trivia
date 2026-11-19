@@ -61,7 +61,7 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, runFossils, livesOf, pausedUsed, rushTuning, standingIds, type CardFind, type FindKind } from './delve';
+import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, runFossils, livesOf, pausedUsed, RUSH_DEFAULTS, rushTuning, standingIds, type CardFind, type FindKind } from './delve';
 import { GameCounts, RoomOff, Steps, countEvent, countFailure, countGameFrames, countStep, counting, hiddenSince, markActive, type Failure, type JoinVia } from './count';
 import { loadLooks } from './looks';
 import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
@@ -94,6 +94,7 @@ import {
   type DelveNotice,
 } from './delveSession';
 import { readLegacy, readStored, removeLegacy, removeStored, storeKey, writeStored } from './storage';
+import { CHANNEL } from './channel';
 import { CursorOutbox, FLUSH_EVERY_MS, POINTER_BURST, POINTER_RATE, PRESSED, TAP, actionOf, cursorKey, cursorsLive, entryAt, entryMs, stampOf, type CursorAt, type CursorEntry } from './cursors';
 import { peerCursors } from './peerCursors.svelte';
 import { whenCalm, whenIdle, type Deadline } from './idle';
@@ -3701,7 +3702,7 @@ class Session {
    * around as hot-seat is: Next moves it on there.
    */
   private scheduleAutoNext(s: GameState) {
-    // A Sulphite rush (a prototype) moves on by itself on this device too, at its own pace, while its next question follows.
+    // A Sulphite rush moves on by itself on this device too, at its own pace, while its next question follows.
     const rushing = rushPace(s) !== null && (this.mode === 'local' || this.mode === 'host');
     const key = s.phase === 'reveal' && ((this.mode === 'host' && !this.hereOnly) || rushing) && s.question ? s.question.askedAt : 0;
     if (key === this.autoNextFor) return;
@@ -4059,8 +4060,8 @@ function writeSaved(saved: Saved | null) {
 export const session = new Session();
 engine.setStartLines((ids) => session.startLinesSeen(ids));
 engine.setFossilsHeld((ids) => session.fossilsHeld(ids));
-// The Sulphite rush, a prototype: on for the runs alone this page starts when its URL has ?rush (tuned by rushLength, rushPace, rushDeeper).
-engine.setRush(typeof location === 'undefined' ? null : rushTuning(location.search));
+// The Sulphite rush, in every run this page starts: as RUSH_DEFAULTS has it, or off the live game as the URL tunes it (delve.ts rushTuning).
+engine.setRush(CHANNEL === 'live' || typeof location === 'undefined' ? RUSH_DEFAULTS : rushTuning(location.search));
 // The screen kept on in a room online, and let go of out of it, whatever moves the session there.
 $effect.root(() => {
   $effect(() => session.stayAwake());

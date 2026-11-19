@@ -567,9 +567,9 @@ export interface Delve {
   /** An Azurite Vein being dug: from its first right strike to the way out or a cave-in (delve.ts, the dig). */
   dig?: Dig;
   /**
-   * The Sulphite rush (a prototype, delve.ts rushOf): its tuning, read as a
-   * run alone started on a page with ?rush, and where it stands. Missing
-   * otherwise, and in older saves.
+   * The Sulphite rush (delve.ts rushOf): its tuning, fixed as the run
+   * started (Engine.setRush), and where it stands. Missing in a run begun
+   * before it (an older save) or by an engine without it (tests, tools).
    */
   rush?: Rush;
   /** The haul a way out just put into the pack: how many wards, when (host clock). Gone at the next pick. */
@@ -629,7 +629,7 @@ export interface Dig {
   struck: string[];
 }
 
-/** The Sulphite rush of a run alone (delve.ts rushOf; read only through it). */
+/** The Sulphite rush of a run, alone or together (delve.ts rushOf; read only through it). */
 export interface Rush {
   /** Questions a rush asks (RushTuning, fixed as the run started). */
   length: number;
@@ -652,7 +652,7 @@ export interface Rush {
   /** Finds certain on a depth the rush passed without an offer (firstFindsPassed): on the first offer after it, room allowing. */
   owed?: FindKind[];
   /**
-   * The rush just ended (the player standing): the depth it was taken at,
+   * The rush just ended (someone standing): the depth it was taken at,
    * the depth its last question was asked at and the depth it left the run
    * at, for its end's moment and the first offer after it; `at`, when that
    * offer was dealt (host clock). Gone at the next pick, or the next offer.
@@ -756,13 +756,12 @@ export function revealPauseMs(s: GameState): number {
 /**
  * A Sulphite rush's pace while the reveal in play is one of its questions'
  * and the run goes on (its next question follows, or its end's moment), or
- * null (the usual pause: a player who perished on it waits for Next).
+ * null (the usual pause: the run ends on it, nobody left standing).
  */
 export function rushPace(s: GameState): number | null {
   if (s.phase !== 'reveal' || !s.question?.rush) return null;
   const rush = rushOf(s);
-  const p = s.players[s.turn];
-  if (!rush || !(rush.on || rush.done) || !p || livesOf(s, p.id) <= 0) return null;
+  if (!rush || !(rush.on || rush.done) || !standingIds(s).length) return null;
   return rush.pace;
 }
 
@@ -1583,10 +1582,10 @@ export class Engine {
     this.seenLines = seen;
   }
 
-  /** The Sulphite rush's tuning for the runs alone this engine starts (delve.ts rushTuning, from the host's URL), or null: none. */
+  /** The Sulphite rush's tuning for the runs this engine starts (the session's: delve.ts RUSH_DEFAULTS), or null: none (tests, tools). */
   private rushTuning: RushTuning | null = null;
 
-  /** Hands over the Sulphite rush's tuning (a prototype: the host's page with ?rush), or null to start runs without it. */
+  /** Hands over the Sulphite rush's tuning, or null to start runs without it. */
   setRush(tuning: RushTuning | null) {
     this.rushTuning = tuning;
   }
@@ -1924,8 +1923,8 @@ export class Engine {
             inventory: {},
             finds: [],
             ...(s.players.length > 1 ? { votes: {}, voteFrom: null, missed: {}, revives: [] } : {}),
-            // The Sulphite rush (a prototype): a run alone, on a host page with ?rush; its tuning kept for the run.
-            ...(s.players.length === 1 && this.rushTuning ? { rush: { ...this.rushTuning } } : {}),
+            // The Sulphite rush, alone or together: its tuning kept for the run.
+            ...(this.rushTuning ? { rush: { ...this.rushTuning } } : {}),
           };
         }
         // The first turn goes to someone who is actually here.
@@ -2076,7 +2075,7 @@ export class Engine {
           blown = this.blowUp(s, active.id);
         }
         // A rush's question: one of its questions used, and whether it ends here.
-        if (s.delve && q.rush) this.settleRush(s, active.id, correct);
+        if (s.delve && q.rush) this.settleRush(s, correct);
         if (!timedOut && chosenId && isFake(chosenId)) s.used.push(chosenId);
         if (s.deathmatch) s.deathmatch.results[active.id] = correct;
         this.note(s, active.id, q.itemId, correct, answerMs(action.ms));
@@ -2905,7 +2904,7 @@ export class Engine {
     this.beginTurn(s, false, deeper, before);
   }
 
-  // ---- the Sulphite rush (a prototype, delve.ts rushOf) ---------------------
+  // ---- the Sulphite rush (delve.ts rushOf) -----------------------------------
 
   /**
    * A rush's question from `category`, at the run's depth under the rules
@@ -2930,6 +2929,13 @@ export class Engine {
       else delete dm.dealAt;
     }
     s.reveal = null;
+    if (isGroupRun(s)) {
+      // Co-op, as an offer has it: no vote open, and the seat the screens lean on the first standing (beginTurn).
+      dm.votes = {};
+      dm.voteFrom = null;
+      if (this.now() >= dm.graceUntil) dm.excused = [];
+      s.turn = Math.max(0, s.players.findIndex((p) => livesOf(s, p.id) > 0));
+    }
     dm.asked = [category];
     s.question = this.makeQuestion(s, category, { rushDeeper: rushOf(s)?.deeper ?? 0 });
     s.question.rush = true;
@@ -2938,30 +2944,31 @@ export class Engine {
   }
 
   /**
-   * A rush's question answered (`correct` or not) by `id`: one of its
-   * questions used. It ends after its last question, or with the player
-   * perished, wherever the run is; the finds certain on depths it passed
-   * (firstFindsPassed) are owed to the first offer after it.
+   * A rush's question settled, cleared (`correct`: alone, a right answer;
+   * together, anyone's) or not: one of its questions used. It ends after its
+   * last question, or with nobody standing, wherever the run is; the finds
+   * certain on depths it passed (firstFindsPassed) are owed to the first
+   * offer after it.
    */
-  private settleRush(s: GameState, id: string, correct: boolean) {
+  private settleRush(s: GameState, correct: boolean) {
     const dm = s.delve!;
     const rush = rushOf(s);
     if (!rush?.on || !dm.rush) return;
     const left = rush.on.left - 1;
     const tuning = rushKept(rush);
-    if (left > 0 && livesOf(s, id) > 0) {
+    const standing = standingIds(s).length > 0;
+    if (left > 0 && standing) {
       dm.rush = { ...tuning, on: { category: rush.on.category, left, from: rush.on.from } };
       return;
     }
     // Where the first offer after it is dealt (advanceDelve: a right answer its step deeper).
     const to = correct ? s.round + rush.step : s.round;
     const owed = firstFindsPassed(rush.on.from, to);
-    const standing = livesOf(s, id) > 0;
     dm.rush = { ...tuning, ...(owed.length && standing ? { owed } : {}), ...(standing ? { done: { from: rush.on.from, last: s.round, to } } : {}) };
   }
 
   /**
-   * A run alone's offer: on a depth's first (`fresh`), by its odds
+   * A run's offer: on a depth's first (`fresh`), by its odds
    * (sulphiteOdds: the run's first certain somewhere from RUSH_FROM to
    * RUSH_TO, more after it by the entropy gauge, which this depth played
    * fills), one of its cards carries sulphite, one without a find if any
@@ -3187,6 +3194,8 @@ export class Engine {
       ...vein,
       hits: all,
     };
+    // A rush's question: one of its questions used, cleared by anyone's right answer, and whether it ends here.
+    if (q.rush) this.settleRush(s, !!winner);
     s.phase = 'reveal';
   }
 
@@ -3200,8 +3209,18 @@ export class Engine {
       this.finish(s, []);
       return;
     }
-    if (cleared) s.round++;
-    this.beginTurn(s, false, cleared);
+    const before = s.round;
+    // A Sulphite rush's question cleared takes the team its step's depths down (rushStep), as alone.
+    const rushed = s.phase === 'reveal' && !!s.question?.rush;
+    if (cleared) s.round += rushed ? rushStep(s) : 1;
+    // A rush under way asks its next question straight away (no vote between).
+    const rush = rushed ? rushOf(s)?.on : undefined;
+    if (rush) {
+      s.turnCount++;
+      this.askRushQuestion(s, rush.category, before);
+      return;
+    }
+    this.beginTurn(s, false, cleared, before);
   }
 
   // ---- turns mode -------------------------------------------------------
@@ -3247,7 +3266,7 @@ export class Engine {
       else if (ended && ended.at === undefined) s.delve.dealAt = this.now() + RUSH_END_MS;
       else delete s.delve.dealAt;
       if (ended && ended.at === undefined) ended.at = this.now();
-      // The Sulphite rush (a prototype): only where the run has one (rolls nothing otherwise).
+      // The Sulphite rush: only where the run has one (rolls nothing otherwise).
       if (s.delve.rush) this.dealSulphite(s, first || deeper);
     }
   }

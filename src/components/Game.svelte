@@ -80,7 +80,7 @@
   const slim = $derived(phone.current && !flat.current);
   const q = $derived(s.phase === 'question' || s.phase === 'reveal' ? s.question : null);
   /**
-   * Delve: a Sulphite rush under way (a prototype, lib/rushScene.ts): its
+   * Delve: a Sulphite rush under way (lib/rushScene.ts): its
    * gauge, a crystal of sulphite for each of its questions, burnt out as each
    * is answered; the one asked burning (at its last reveal, all spent).
    */
@@ -364,7 +364,7 @@
   /** The stage in play: the turn's, or an empty one while its cards are on their way. */
   const stageKey = $derived(held ? `held:${s.turnCount}` : `${s.turnCount}`);
 
-  // Delve: a Sulphite rush just ended (a prototype). Where its last step
+  // Delve: a Sulphite rush just ended. Where its last step
   // stays in the zone, the stage stands over the ride braking and landing
   // (lib/rushScene.ts) with the banner it ended on, its depth counted on to
   // where the rush left the run as the scene comes to rest, and how far the
@@ -650,7 +650,7 @@
        instead of stacking (which briefly doubled the page height). -->
   <div class="turns">
     {#if rush}
-      <!-- A Sulphite rush's gauge (a prototype), over the banner in the room above it, outside the stage, so
+      <!-- A Sulphite rush's gauge, over the banner in the room above it, outside the stage, so
            it stays put as each of its questions crosses to the next: a crystal of sulphite for each question,
            burnt out as it is answered. Its category comes last, so on a narrow screen only that is cut short. -->
       <p class="kicker rush-gauge" transition:fade={{ duration: 300 }} aria-label="Sulphite rush: {rush.length - rush.spent} of {rush.length} left, {rush.category}">
@@ -667,7 +667,7 @@
       <!-- Going, the stage is let go without being made inert, which would repaint it all (lib/leaving.ts). -->
       <div class="stage" style:opacity={STAGE_OPACITY} use:outWithoutInert in:stageIn out:stageOut>
         {#if held && landing && ended}
-          <!-- A Sulphite rush's end (a prototype): the ride lands, the banner it ended on counting on to the depth it reached. -->
+          <!-- A Sulphite rush's end: the ride lands, the banner it ended on counting on to the depth it reached. -->
           <div class="head" data-cursor="banner">
             <p class="kicker rush-spent">Sulphite spent</p>
             <div class="banner" style:--c={bannerColor}>
@@ -883,7 +883,7 @@
     letter-spacing: 0.12em;
     text-transform: uppercase;
   }
-  /* The Sulphite rush (a prototype): its gauge over the banner, outside the
+  /* The Sulphite rush: its gauge over the banner, outside the
      stage (as .head's kicker sits over it: .turns is where the stage's
      top is), and the line its end leaves; in the sulphite's pale yellow
      (lib/rushScene.ts SULPHITE). */

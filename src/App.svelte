@@ -221,7 +221,7 @@
       const from = lastDealt!.depth;
       const zone = zoneEntered(from, now.depth) !== null;
       const s = gs;
-      // A Sulphite rush (a prototype, lib/rushScene.ts): each step down its own plunge, a zone on the way
+      // A Sulphite rush (lib/rushScene.ts): each step down its own plunge, a zone on the way
       // for as long as the rush holds its next question (RushTuning.zone); its last, braking to rest.
       const rushing = s.phase === 'question' && !!s.question?.rush;
       const hold = rushing && zone ? untrack(() => dealIn(s, session.hostNow())) : 0;
@@ -240,7 +240,7 @@
     }
     lastDealt = now;
   });
-  // A Sulphite rush (a prototype, lib/rushScene.ts) is a ride: on from its
+  // A Sulphite rush (lib/rushScene.ts) is a ride: on from its
   // first question to its last answer's reveal, read from the state (so a
   // reload or the run's end stops it), gathering speed as it goes.
   const ride = $derived.by(() => {

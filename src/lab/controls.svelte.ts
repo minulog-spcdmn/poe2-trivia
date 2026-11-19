@@ -342,7 +342,7 @@ export function dealCards() {
  * replaying the deal (the card bench, cards.html): any finds on any cards,
  * past the game's own two of different kinds (session.labFinds). The way out
  * among them deals as a dig's, one strike in. `sulphite`: the card among
- * them carrying sulphite (the Sulphite rush, a prototype: delve.ts rushOf).
+ * them carrying sulphite (the Sulphite rush: delve.ts rushOf).
  */
 export function dealThese(cards: { category: string; kind: FindKind | null }[], sulphite: string | null = null) {
   // A category once only: the cards are known by it.

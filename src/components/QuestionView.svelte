@@ -373,7 +373,7 @@
   let unstampedAt = 0;
   const revealAt = $derived(reveal ? (reveal.at ?? (unstampedAt ||= untrack(() => session.hostNow()))) : 0);
   let autoLeft = $state(1);
-  // A Sulphite rush (a prototype) moves on sooner, and by itself on this device too, while its next question follows.
+  // A Sulphite rush moves on sooner, and by itself on this device too, while its next question follows.
   const pause = $derived(revealPauseMs(s));
   const autoMoves = $derived((session.mode !== 'local' && !session.hereOnly) || rushPace(s) !== null);
   $effect(() => {

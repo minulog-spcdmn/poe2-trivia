@@ -244,6 +244,8 @@ export function rushText(step: number, length: number) {
     tag: `A rush of ${questions} from it`,
     note: `Each right answer takes you ${depths} down.`,
     others: `A rush of ${questions} from it, each right answer ${depths} down.`,
+    /** Beside two finds' notes, after “Sulphite:” (as a fossil's line). */
+    line: `a rush of ${questions} from it.`,
   };
 }
 

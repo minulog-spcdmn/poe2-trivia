@@ -1431,7 +1431,7 @@ function resetSink() {
 /**
  * Sinks the scene a little further (a new depth's cards were dealt); `zone`:
  * into a new zone, much further, with its sound. `o`: a Sulphite rush's
- * (a prototype, lib/rushScene.ts), as far and as long as it says, eased as
+ * (lib/rushScene.ts), as far and as long as it says, eased as
  * a depth's plunge is, or braking (`brake`: at full speed from the start,
  * slowing to rest, as the rush's last step comes to a stop).
  */
@@ -1530,7 +1530,7 @@ export const zoneSunk = (x: number) => ZONE_CURVE.at(x);
 // ---- the cruise ---------------------------------------------------------------
 
 /**
- * A Sulphite rush (a prototype, lib/rushScene.ts) carries the run down
+ * A Sulphite rush (lib/rushScene.ts) carries the run down
  * without stopping between its questions: for as long as it runs, the scene
  * keeps sinking at `cruise` screens a second, on top of any plunge (the
  * walls, the smoke and the embers going up past you all the while), and the

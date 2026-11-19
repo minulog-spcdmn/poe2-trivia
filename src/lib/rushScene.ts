@@ -1,4 +1,4 @@
-// Delve alone: the Sulphite rush's ride (a prototype, behind ?rush; the
+// Delve: the Sulphite rush's ride (the
 // rules in delve.ts, rushOf). In Path of Exile's Delve, Voltaxic Sulphite is
 // the fuel Niko's crawler burns to travel down the mine, and its light keeps
 // the dark back. A rush is that ride. From the pick of its card to its last

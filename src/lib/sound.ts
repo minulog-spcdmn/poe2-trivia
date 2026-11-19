@@ -62,7 +62,7 @@ export type Sfx =
   | 'blast'
   /** Delve: a deeper depth's cards are dealt and the scene sinks. */
   | 'plunge'
-  /** Delve, the Sulphite rush (a prototype): the sulphite catching as its card is taken, */
+  /** Delve, the Sulphite rush: the sulphite catching as its card is taken, */
   | 'rushIgnite'
   /** ...each step down in it, over the plunge, */
   | 'rushSurge'
