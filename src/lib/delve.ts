@@ -33,7 +33,10 @@ export const DELVE_LIVES = 3;
  *
  * 1: the rules Delve opened with. 2 (live 2026-10-12): a miss asks another
  * question at the same depth in place of going deeper, with twins, the
- * Azurite Vein's dig and the finds reordered.
+ * Azurite Vein's dig and the finds reordered. The Sulphite rush (1.0) kept
+ * 2, by the owner's call (19 Nov 2026, "Keep the bests"): it takes runs
+ * deeper (a rough simulation, every card taken: alone about a fifth, a team
+ * 0 to 12%), but passing every sulphite card plays the game as it was.
  */
 export const DELVE_RULESET = 2;
 
