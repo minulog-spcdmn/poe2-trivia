@@ -212,7 +212,8 @@ from where are still on the way (`read.ts` orReading); a read kept by an
 older build (another `READ_V`) is read again. Its Items view (`#items`)
 reads the item tally from the matchmaking server instead, as the view opens
 and on Read again, with no period (the tally keeps no dates), and lists the
-items most missed against their rules first, ranked as `npm run item-tally`
+items most missed against their rules first (or, with its Order, the least
+missed first), ranked as `npm run item-tally`
 ranks them (`src/lib/itemTallyRank.ts`): each item against all answers
 under the same rules in one pool, first meetings and repeats together, as
 a first meeting here may still be an item a player knows well from Path of

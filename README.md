@@ -267,8 +267,9 @@ protocol, one Durable Object holding every peer's socket in memory.
   again after a lost answer counts once.
   `GET /tally` reads them (any page could, which is fine for sums);
   `npm run item-tally` and the stats page's Items view list the items most
-  missed against what their rules would expect (all answers in one pool,
-  or first meetings only).
+  missed against what their rules would expect, or least missed with
+  `--easiest` and the view's Order (all answers in one pool, or first
+  meetings only).
 - Cloudflare's free plan gives a Durable Object 100,000 requests a day, a
   socket's messages counting 20 to one (a peer on ours sends a heartbeat
   every 25 s, not PeerJS's 5), and the account 100,000 Worker requests a

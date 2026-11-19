@@ -2,9 +2,10 @@
   // Items: which items players miss more than the rest asked under the same
   // rules, or less, from the item tally (tally.ts; lib/itemTallyRank.ts ranks
   // it, as scripts/item-tally.mjs does), so the ones hardly anyone recognises
-  // can be found, and those nearly everyone does. Its answers have no dates, so the period doesn't apply here:
-  // Analytics' dates line says "All answers so far" instead. Read as the view
-  // opens and on Read again (Analytics.svelte); the choices narrow it here.
+  // can be found, and those nearly everyone does. Its answers have no dates,
+  // so the period doesn't apply here: Analytics' dates line says "All
+  // answers so far" instead. Read as the view opens and on Read again
+  // (Analytics.svelte); the choices narrow it here.
   import { onMount } from 'svelte';
   import { TALLY_ROWS, rank, type RankOptions, type RankOrder, type Ranked, type TallyMode, type TallyRow } from '../lib/itemTallyRank';
   import { itemSrcset, itemThumb } from '../lib/ui-paths';

@@ -120,6 +120,6 @@ export function rank(rows: readonly TallyRow[], o: RankOptions = {}): { v: numbe
   // (Those with no score last, below any with one, however many answers they have: either way they tell nothing.)
   const none = (a: Ranked, b: Ranked) => Number(a.score === null) - Number(b.score === null);
   if (o.order === 'easiest') list.sort((a, b) => none(a, b) || a.high - b.high || (a.score ?? 0) - (b.score ?? 0) || b.n - a.n);
-  else list.sort((a, b) => b.low - a.low || none(a, b) || (b.score ?? 0) - (a.score ?? 0) || b.n - a.n);
+  else list.sort((a, b) => none(a, b) || b.low - a.low || (b.score ?? 0) - (a.score ?? 0) || b.n - a.n);
   return { v, list };
 }
