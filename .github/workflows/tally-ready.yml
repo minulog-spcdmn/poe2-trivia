@@ -32,10 +32,11 @@ run-name: "Tally ready: ${{ github.event_name == 'schedule' && 'daily check' || 
 # Delve reach the tally (they hadn't by 19 Nov 2026, the day after it went
 # live): scripts/tally-solo.mjs sets the tally's solo Delve answers against
 # the solo runs GoatCounter counted since then (secret GOATCOUNTER_KEY). Any
-# answer opens an issue assigned to the owner saying they arrive; three runs
-# or more and none opens one saying they don't, and the run fails so GitHub
-# mails the owner. Once either issue is open the job stops by itself; remove
-# it from this file then.
+# answer opens an issue assigned to the owner saying they arrive; MIN_RUNS
+# runs or more (the script's) and none opens one saying they don't, and the
+# run fails so GitHub mails the owner. Once either issue is open the job stops
+# by itself; remove it from this file then. A run by hand runs it too, and
+# its issue opens all the same.
 
 on:
   # 06:41 UTC: well after midnight UTC, when the tally's day of reads starts
@@ -51,6 +52,12 @@ on:
 
 permissions:
   contents: read
+
+# One run at a time: two at once (a run by hand beside the daily one) could
+# each find no issue yet and open the same one twice.
+concurrency:
+  group: tally-ready
+  cancel-in-progress: false
 
 jobs:
   check:

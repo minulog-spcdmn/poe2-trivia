@@ -31,14 +31,19 @@ import { appendFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { TALLY_VERSION } from '../src/lib/itemTallyRank.ts';
 import { apiOf, CheckError, KeyRefused } from './daily-health.mjs';
 import { readTally } from './tally-ready.mjs';
 
 /** Runs counted before this (the first evening's, from tabs opened before the deploy) are left out. */
 export const SINCE = '2026-11-19T00:00:00.000Z';
-/** Solo runs started with no answer in the tally for them to be called lost. */
-export const MIN_RUNS = 3;
+/**
+ * Solo runs started with no answer in the tally for them to be called lost.
+ * Well above a handful: a run counts as it starts, so one left before its
+ * first answer counts with none, and a tab opened before the deploy can
+ * still start runs that send nothing. Any answer settles it the other way at
+ * once, so the margin only makes "lost" slower to say.
+ */
+export const MIN_RUNS = 10;
 /** The event path counted once per solo Delve run started (count.ts). */
 export const RUN_PATH = 'size/delve-1p';
 export const TITLE_WORKS = 'Item tally: solo Delve answers arrive';
@@ -54,10 +59,10 @@ export function soloVerdict({ runs, answers }) {
   return 'wait';
 }
 
-/** The answers the tally holds for Delve alone under this build's version. @param {readonly import('../src/lib/itemTallyRank.ts').TallyRow[]} rows */
+/** The answers the tally holds for Delve alone, under any version (any shows they arrive). @param {readonly import('../src/lib/itemTallyRank.ts').TallyRow[]} rows */
 export function soloAnswers(rows) {
   let n = 0;
-  for (const x of rows) if (x.v === TALLY_VERSION && /^d\d+$/.test(x.ctx)) n += x.r + x.w;
+  for (const x of rows) if (/^d\d+$/.test(x.ctx)) n += x.r + x.w;
   return n;
 }
 
@@ -92,8 +97,8 @@ function bodyOf(verdict, { runs, answers }) {
   const lines = [
     `The daily check, the \`solo\` job of .github/workflows/tally-ready.yml, set two numbers side by side.`,
     '',
-    `- Answers in the item tally for Delve alone (version ${TALLY_VERSION}, every depth band): ${fmt(answers)}.`,
-    `- Solo Delve runs started since ${SINCE}, as GoatCounter counted them (the event \`${RUN_PATH}\`, one for each run, a player's several runs each): ${fmt(runs)}.`,
+    `- Answers in the item tally for Delve alone (every version and depth band): ${fmt(answers)}.`,
+    `- Solo Delve runs started since ${SINCE}, as GoatCounter counted them (the event \`${RUN_PATH}\`, one for each run, a player’s several runs each): ${fmt(runs)}.`,
     `- ${per[0].toUpperCase()}${per.slice(1)}.`,
     '',
   ];
@@ -177,7 +182,7 @@ export async function main(env, deps = {}) {
   const text = [
     '## Solo Delve answers',
     '',
-    `- Answers in the tally for Delve alone (version ${TALLY_VERSION}): ${fmt(answers)}.`,
+    `- Answers in the tally for Delve alone (every version): ${fmt(answers)}.`,
     `- Solo Delve runs started since ${SINCE}, each one counted (a player’s several runs each): ${fmt(runs)}.`,
     `- Verdict: ${verdict}. ${next}`,
   ].join('\n');

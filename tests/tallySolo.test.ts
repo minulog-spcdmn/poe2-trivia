@@ -23,7 +23,7 @@ test('soloVerdict: any answer works, enough runs with none are lost, the rest wa
   assert.equal(soloVerdict({ runs: 0, answers: 0 }), 'wait');
 });
 
-test('soloAnswers: Delve alone’s bands only, this version only', () => {
+test('soloAnswers: Delve alone’s bands only, any version', () => {
   const rows = [
     row('d1', 2, 1),
     row('d20', 4, 0),
@@ -33,7 +33,7 @@ test('soloAnswers: Delve alone’s bands only, this version only', () => {
     row('d1x', 7, 7),
     row('xd1', 7, 7),
   ];
-  assert.equal(soloAnswers(rows), 7);
+  assert.equal(soloAnswers(rows), 907);
   assert.equal(soloAnswers([]), 0);
 });
 
@@ -87,7 +87,7 @@ test('main: a solo answer in the tally opens the works issue', async () => {
 });
 
 test('main: runs and no solo answers is lost, with where to look', async () => {
-  const r = await run(json([row('g1', 9, 9)]), hitsOf(5));
+  const r = await run(json([row('g1', 9, 9)]), hitsOf(MIN_RUNS));
   assert.equal(r.code, 0);
   assert.equal(r.outputs.verdict, 'lost');
   assert.equal(r.outputs.title, TITLE_LOST);
