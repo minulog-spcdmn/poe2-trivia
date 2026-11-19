@@ -14,9 +14,10 @@ import { GpuTimer, type GpuDraw } from './gpuTimer';
 import { NOISE, buildPrograms, dropTarget, maxDrawSize, target, whenGpuCaughtUp, wrapProgram, type Build, type Program, type Target } from './gl';
 import { DIALOG_BLUR, DIALOG_DIM } from '../behindDialog';
 import { frameEvent } from '../fpsMeter';
+import { AURA_FNS } from './auras/shaders';
 
-/** Floats per shape instance: five vec4s (see ShapeType). */
-export const SHAPE_FLOATS = 24;
+/** Floats per shape instance: nine vec4s (see ShapeType). */
+export const SHAPE_FLOATS = 36;
 
 /**
  * Procedural shapes. Instance layout:
@@ -27,6 +28,13 @@ export const SHAPE_FLOATS = 24;
  *       picture in uSil (see Silhouette), plus BEHIND_UI when it shines from
  *       behind the UI (see COVER)
  *   s3, s4, s5: per-type parameters (documented in the shader)
+ *   s6: the box it's held in (ShapeSpec's `clip`): its centre from the
+ *       shape's (x, y), half width, half height, in the shape's own px (the
+ *       screen's, but on a plane); a half width under 0 for none
+ *   s7, s8: the plane it lies in (ShapeSpec's `plane`, lib/fx/plane.ts), as
+ *       its own px about its centre fall on screen: s7 a 2 x 2 by columns
+ *       (where its x and its y go), s8.xy how far each foreshortens (the
+ *       divide's terms); (1, 0, 0, 1) and none on the screen's
  */
 export const ShapeType = {
   Ring: 0,
@@ -41,6 +49,8 @@ export const ShapeType = {
   Orbit: 9,
   Fire: 10,
   Burn: 11,
+  /** A player aura's own light (a try-out: auras/shaders.ts). s.x: its slot. */
+  Aura: 12,
 } as const;
 export type ShapeType = (typeof ShapeType)[keyof typeof ShapeType];
 
@@ -67,8 +77,9 @@ export const MAX_HIDES = 8;
 // hides behind the dialog, which on the page is opaque; the dialog's own light
 // (from effects that started inside it) shows over it. Outside it, the
 // composite dims both with the rest of the page. The page's light is soft
-// already, so the page's blur passes it by; the shapes drawn crisp (an aura's
-// orbit, a sigil) blur themselves by uBlur. With no dialog open, what stands
+// already, so the page's blur passes it by; the shapes drawn crisp (an
+// orbit, a sigil) blur themselves by uBlur, and a player aura's light is
+// blurred as a whole (AURA_BLUR). With no dialog open, what stands
 // over the page (a window, a toast: lib/fx/core.ts) hides the page's light
 // the same way, each in its own box, and dims nothing.
 const BEHIND_DIALOG = `
@@ -275,7 +286,7 @@ void main() {
   o = vec4(lit, behindUi * coverLum(lit));
 }`;
 
-const SHAPE_VS = `#version 300 es
+export const SHAPE_VS = `#version 300 es
 layout(location = 0) in vec2 aCorner;
 layout(location = 1) in vec4 s0;
 layout(location = 2) in vec4 s1;
@@ -283,9 +294,12 @@ layout(location = 3) in vec4 s2;
 layout(location = 4) in vec4 s3;
 layout(location = 5) in vec4 s4;
 layout(location = 6) in vec4 s5;
+layout(location = 7) in vec4 s6;
+layout(location = 8) in vec4 s7;
+layout(location = 9) in vec4 s8;
 uniform vec2 uView;
 out vec2 vP;
-out vec2 vWorld; // CSS px
+out vec3 vWorldW; // CSS px, times the divide (see main)
 flat out vec4 vA;
 flat out vec3 vC;
 flat out float vBehind; // page light (see BEHIND_DIALOG)
@@ -295,9 +309,11 @@ flat out vec4 vQ;
 flat out vec4 vR;
 flat out vec4 vS;
 flat out vec2 vHalf;
+flat out vec4 vClip;
 void main() {
   vP = aCorner * s0.zw;
   vHalf = s0.zw;
+  vClip = s6;
   vA = s1;
   vC = s2.rgb;
   vBehind = mod(s2.w, ${BEHIND_PICTURE}.0);
@@ -306,16 +322,21 @@ void main() {
   vQ = s3;
   vR = s4;
   vS = s5;
-  vec2 p = s0.xy + vP;
-  vWorld = p;
+  // Its own px about its centre to the screen's (s7, s8: on a plane, turned
+  // and foreshortened). The divide w goes to the GPU, which undoes it as it
+  // fills: vP is the plane's own px all across the quad, and vWorld, divided
+  // back, the screen's (see vWorldW).
+  float w = 1.0 + dot(s8.xy, vP);
+  vec2 p = s0.xy + mat2(s7.xy, s7.zw) * vP / w;
+  vWorldW = vec3(p * w, w);
   vec2 clip = p / uView * 2.0 - 1.0;
-  gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+  gl_Position = vec4(clip.x * w, -clip.y * w, 0.0, w);
 }`;
 
 const SHAPE_FS = `#version 300 es
 precision highp float;
 in vec2 vP;
-in vec2 vWorld;
+in vec3 vWorldW;
 flat in vec4 vA;
 flat in vec3 vC;
 flat in float vBehind;
@@ -325,8 +346,23 @@ flat in vec4 vQ;
 flat in vec4 vR;
 flat in vec4 vS;
 flat in vec2 vHalf;
+flat in vec4 vClip;
 out vec4 o;
 #define PI 3.14159265
+// Where it's drawn on screen, CSS px: vWorldW divided back, set first thing
+// in main. (On a plane the GPU fills in the plane's px, so a value it fills
+// in the screen's goes through it times the divide, and the divide with it.)
+vec2 vWorld;
+// How much of a shape held in a box (vClip) shows at p (its own px from its centre, vP): all of it
+// well inside, fading out over the last 14 px to none at its edge (cut on a
+// line, smoke or a ring looked trimmed to fit), its corners rounded as a
+// card's are. Without a box, all of it.
+float clipAt(vec2 p) {
+  if (vClip.z < 0.0) return 1.0;
+  float r = min(7.0, min(vClip.z, vClip.w));
+  vec2 q = abs(p - vClip.xy) - vClip.zw + r;
+  return 1.0 - smoothstep(-14.0, 0.0, length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r);
+}
 // A picture the rays shine from behind (see Silhouette): its blurred alpha,
 // its centre and half size (CSS px), how far it's turned (its x scale, -1 to
 // 1) and the part of the texture the picture covers (the rest is margin).
@@ -437,6 +473,7 @@ float outlineGlow(float d, float wd, float flameAmt, float bleed, float up, vec2
 }
 
 void main() {
+  vWorld = vWorldW.xy / vWorldW.z;
   int type = int(vA.x + 0.5);
   float prog = vA.y;
   float time = vA.z;
@@ -768,6 +805,9 @@ void main() {
     // A haze of its light round it.
     col += crimson * exp(-sqrt(r2) / 3.5) * 0.18 * k;
     v = 1.0;
+  } else if (type == 12) {
+    // A player aura: drawn by a program of its own (auraFs), never here.
+    v = 0.0;
   } else {
     // Sigil: the deathmatch's plate (lib/plates/duel.ts) in uSigil, one
     // part to a channel (lib/fx/duelPaint.ts), each drawn in its own way:
@@ -813,11 +853,67 @@ void main() {
     v *= win;
     hot *= win;
   }
-  vec3 lit = (col * v + vec3(1.0, 0.95, 0.85) * hot * max(max(col.r, col.g), col.b)) * (vBehind > 0.5 ? 1.0 - hiddenAt(vWorld) : 1.0) * (1.0 - vUi * coverAt(vWorld));
+  vec3 lit = (col * v + vec3(1.0, 0.95, 0.85) * hot * max(max(col.r, col.g), col.b)) * (vBehind > 0.5 ? 1.0 - hiddenAt(vWorld) : 1.0) * (1.0 - vUi * coverAt(vWorld)) * clipAt(vP);
   o = vec4(lit, vUi * coverLum(lit));
 }`;
 
-const FULL_VS = `#version 300 es
+/**
+ * A player aura's program (ShapeType.Aura): the shapes' shader with the one
+ * aura's light (auras/shaders.ts) in place of every shape's, in its colour
+ * (f.k, the opacity it follows, its fade), hidden as theirs is.
+ */
+function auraFs(light: string): string {
+  const head = SHAPE_FS.slice(0, SHAPE_FS.indexOf('void main() {'));
+  // What every shape ends with, from where it shines behind the picture on.
+  // (Found by its code, never by a comment or its indentation: a build's
+  // shaders ship without either, glslMinify.ts.)
+  const from = SHAPE_FS.indexOf('if (vPicture > 0.5) {');
+  // An aura's glow fades out round, in the ellipse the quad holds: the
+  // shapes' fade, square, drew a soft glow's edge as a rounded box.
+  const box = 'float win = (1.0 - smoothstep(0.72, 1.0, e.x)) * (1.0 - smoothstep(0.72, 1.0, e.y));';
+  if (from < 0 || !SHAPE_FS.includes(box, from)) throw new Error('auraFs: the shapes’ end has changed');
+  const tail = SHAPE_FS.slice(from).replace(box, 'float win = 1.0 - smoothstep(0.72, 1.0, length(e));');
+  return `${head}${light}
+void main() {
+  vWorld = vWorldW.xy / vWorldW.z;
+  int type = ${ShapeType.Aura};
+  vec3 col = vC * auraLight(vP, vA.z, vA.w, vQ, vR, vS.yzw);
+  float v = 1.0;
+  float hot = 0.0;
+${tail}`;
+}
+
+/**
+ * A player aura's shade program (lib/fx/shade.ts): the shapes' shader with
+ * the one aura's shade (auras/shaders.ts) in place of every shape's light.
+ * It is drawn on a canvas of its own under this one, blended normally, so
+ * what it gives is laid over the page, premultiplied: as far as its light is
+ * lit (f.k, the opacity it follows, its fade), fading out round as its light
+ * does, hidden as its light is.
+ */
+export function shadeFs(shade: string): string {
+  const head = SHAPE_FS.slice(0, SHAPE_FS.indexOf('void main() {'));
+  return `${head}${shade}
+uniform float uDim; // how far an open dialog dims the page, 0-1
+void main() {
+  vWorld = vWorldW.xy / vWorldW.z;
+  vec4 c = clamp(auraShade(vP, vA.z, vA.w, vQ, vR, vS.yzw), 0.0, 1.0);
+  float k = clamp(max(max(vC.r, vC.g), vC.b), 0.0, 1.0);
+  float win = 1.0 - smoothstep(0.72, 1.0, length(abs(vP) / vHalf));
+  c *= k * win * (vBehind > 0.5 ? 1.0 - hiddenAt(vWorld) : 1.0) * (1.0 - vUi * coverAt(vWorld)) * clipAt(vP);
+  // Outside an open dialog its colour lies on the dimmed page, and dims with it.
+  if (uDim > 0.0) c.rgb *= 1.0 - ${DIALOG_DIM.toFixed(3)} * uDim * clamp(dialogSdf(vWorld) + 0.5, 0.0, 1.0);
+  // TPDF dither at the 8-bit conversion, never deeper than the level itself
+  // or what is left of it to whole: nothing stays exactly 0, whole stays
+  // whole, and a soft edge's last few levels dither rather than band.
+  float n = hash12(gl_FragCoord.xy) + hash12(gl_FragCoord.xy + 71.3) - 1.0;
+  c.a += n * min(min(c.a, 1.0 - c.a), 1.0 / 255.0);
+  c.rgb += n * min(c.rgb, vec3(1.0 / 255.0));
+  o = c;
+}`;
+}
+
+export const FULL_VS = `#version 300 es
 layout(location = 0) in vec2 aCorner;
 out vec2 vUv;
 void main() {
@@ -879,6 +975,86 @@ uniform sampler2D uSrc;
 out vec4 o;
 void main() {
   o = texture(uSrc, vUv);
+}`;
+
+// AURA_BLUR. Behind an open dialog the page blurs (lib/behindDialog.ts), and
+// a token with it. A player aura is drawn crisp, by a shader of its own that
+// knows nothing of that: left as it was, sharp lines and sharp smoke stood
+// over a blurred token. So while a dialog is up, the page's auras are drawn
+// apart, unhidden, into a target of one texel to the page's own px (the
+// unit of its blur, the stage's zoom to the CSS px: pageBlur), blurred there
+// as far as the page is (across, then down), and only then laid onto the
+// rest, hidden behind the dialog as the page's light is: blurred first and
+// hidden after, so none of it creeps onto the dialog. An aura's shade
+// (lib/fx/shade.ts) goes the same way on its own canvas, dithered last. Every
+// aura gets it, whatever its shader draws; an aura in the dialog itself
+// stays crisp.
+
+/** The most texels to either side a blur pass reads: the page's blur at one texel to its own px, two and a half times over. */
+const BLUR_TAPS = 8;
+
+/**
+ * How far the page's auras are blurred in a target `tw` texels wide, for a
+ * canvas `viewW` CSS px and `w` device px wide, with the page blurred by
+ * `blurCss` (its standard deviation, CSS px): the blur's standard deviation
+ * in texels, or 0 while they're drawn as ever. A target coarser than the
+ * canvas is softened once already as it's filtered up, by about a sixth of a
+ * texel's square; the blur is what the page's has over that. So it comes in
+ * without a step as a dialog fades in: crisp until the page's blur is what
+ * the coarser target gives anyway, then that, then more.
+ */
+export function auraBlur(blurCss: number, tw: number, viewW: number, w: number): number {
+  if (blurCss <= 0) return 0;
+  const perCss = tw / viewW;
+  const soft = tw < w ? 1 / (6 * perCss * perCss) : 0;
+  const left = blurCss * blurCss - soft;
+  return left > 0.01 ? Math.sqrt(left) * perCss : 0;
+}
+
+/** One pass of the auras' blur (AURA_BLUR): a Gaussian along uStep. */
+export const BLUR_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uSrc;
+uniform vec2 uStep;   // one texel along the pass
+uniform float uSigma; // the blur's standard deviation, texels
+out vec4 o;
+void main() {
+  vec4 c = texture(uSrc, vUv);
+  float n = 1.0;
+  float k = 0.5 / max(uSigma * uSigma, 1e-4);
+  for (int i = 1; i <= ${BLUR_TAPS}; i++) {
+    float x = float(i);
+    float w = exp(-x * x * k);
+    c += w * (texture(uSrc, vUv + x * uStep) + texture(uSrc, vUv - x * uStep));
+    n += 2.0 * w;
+  }
+  o = c / n;
+}`;
+
+/**
+ * The blurred auras laid onto the rest (AURA_BLUR), hidden behind what
+ * stands over the page. With uDither it is a shade's, for a canvas of its
+ * own: dithered at the 8-bit conversion as shadeFs does.
+ */
+export const BLUR_OUT_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uSrc;
+uniform vec2 uView;     // CSS px
+uniform float uDither;  // 1 for a shade, else 0
+${NOISE}
+${BEHIND_DIALOG}
+out vec4 o;
+void main() {
+  vec4 c = texture(uSrc, vUv) * (1.0 - hiddenAt(vec2(vUv.x, 1.0 - vUv.y) * uView));
+  if (uDither > 0.5) {
+    c = clamp(c, 0.0, 1.0);
+    float n = hash12(gl_FragCoord.xy) + hash12(gl_FragCoord.xy + 71.3) - 1.0;
+    c.a += n * min(min(c.a, 1.0 - c.a), 1.0 / 255.0);
+    c.rgb += n * min(c.rgb, vec3(1.0 / 255.0));
+  }
+  o = c;
 }`;
 
 const COMPOSITE_FS = `#version 300 es
@@ -988,10 +1164,26 @@ export type HideLight = { box: DOMRect; radius: number; amount: number };
  * An open dialog (lib/behindDialog.ts): how far it dims the page, and its box
  * and corner radius in CSS px; and the boxes the page's light hides behind
  * (the dialog's, or with none open, the windows and toasts over the page:
- * lib/fx/core.ts), the first MAX_HIDES of them drawn.
+ * lib/fx/core.ts), the first MAX_HIDES of them drawn. `zoom` is the stage's
+ * (lib/stage.ts; 1 where not given), which the page's blur grows with.
  */
-export type DialogLight = { amount: number; box: DOMRect | null; radius: number; hides?: readonly HideLight[] };
+export type DialogLight = { amount: number; box: DOMRect | null; radius: number; hides?: readonly HideLight[]; zoom?: number };
+
+/**
+ * How far the page is blurred on screen behind `dialog`: the blur's standard
+ * deviation in the window's CSS px. The page's blur() is in its shell's own
+ * px, which the stage's zoom scales with the rest of it, so on a large
+ * window it is that many times wider; light blurred by the plain amount
+ * stood sharper than the tokens it is on.
+ */
+export function pageBlur(dialog: DialogLight): number {
+  return DIALOG_BLUR * dialog.amount * (dialog.zoom ?? 1);
+}
 const NO_DIALOG: DialogLight = { amount: 0, box: null, radius: 0 };
+
+/** A run of shapes one program draws: the program, the first shape, how many, and whether they're the page's auras set apart for the blur (AURA_BLUR). */
+type ShapeRun = [Program, number, number, boolean];
+const NO_RUNS: ShapeRun[] = [];
 
 /** Whether any of the first `n` particles is smoke (its shape, the eighth of each instance's floats). */
 function hasSmoke(particles: Float32Array, n: number) {
@@ -1244,6 +1436,7 @@ export class FxRenderer {
     dropTarget(gl, this.hdr);
     dropTarget(gl, this.shapesT);
     for (const m of this.mips) dropTarget(gl, m);
+    this.dropVeil();
     this.hdr = target(gl, w, h, this.internal, this.texType);
     // At the same size as the HDR target (phones, 1x screens) the shapes go
     // straight into it: a target of their own would only cost a copy.
@@ -1323,9 +1516,141 @@ export class FxRenderer {
     return left.length > 1;
   }
 
+  /** Each player aura's program (see auraFs) by its slot: null if it failed; being built while absent and in auraBuilding. */
+  private auraProgs = new Map<number, Program | null>();
+  private auraBuilding = new Set<number>();
+  /** Where shapeRuns sets the auras aside. */
+  private auraSpare = new Float32Array(0);
+
+  /**
+   * Of `n` shapes from `from`, puts the player auras after the rest, by
+   * slot, and says what draws each run (its program, first shape, count):
+   * the shapes' program the rest; an aura's own program its run, once that's
+   * built (begun here, the first time its aura shows; till then it's left out).
+   * With `split`, an aura's shapes lit from the page are a run of their own,
+   * marked (the fourth of a run), for the blur behind a dialog (AURA_BLUR).
+   */
+  private shapeRuns(shapes: Float32Array, from: number, n: number, split = false): ShapeRun[] {
+    const F = SHAPE_FLOATS;
+    if (this.auraSpare.length < n * F) this.auraSpare = new Float32Array(n * F);
+    const spare = this.auraSpare;
+    let rest = 0;
+    let auras = 0;
+    for (let i = from; i < from + n; i++) {
+      if (Math.round(shapes[i * F + 4]) === ShapeType.Aura) spare.set(shapes.subarray(i * F, i * F + F), F * auras++);
+      else shapes.copyWithin((from + rest++) * F, i * F, i * F + F);
+    }
+    const runs: ShapeRun[] = rest ? [[this.shapeProg, from, rest, false]] : [];
+    let at = from + rest;
+    const paged = (o: number) => split && Math.round(spare[o + 11]) % BEHIND_PICTURE === 1;
+    while (auras) {
+      // The next slot, and every shape of it (with `split`, of it and of the page, or of it and not).
+      const slot = Math.round(spare[20]);
+      const page = paged(0);
+      const start = at;
+      let kept = 0;
+      for (let j = 0; j < auras; j++) {
+        const o = j * F;
+        if (Math.round(spare[o + 20]) === slot && paged(o) === page) shapes.set(spare.subarray(o, o + F), F * at++);
+        else spare.copyWithin(F * kept++, o, o + F);
+      }
+      auras = kept;
+      const p = this.auraProg(slot);
+      if (p && !this.auraHold?.(slot)) runs.push([p, start, at - start, page]);
+    }
+    return runs;
+  }
+
+  /**
+   * Whether a player aura's light waits, asked by its slot: set by what must
+   * come in with it (its shade, lib/fx/shade.ts, while that one's program is
+   * built for the first time). Held, it's left out as it is while its own
+   * program builds.
+   */
+  auraHold: ((slot: number) => boolean) | null = null;
+
+  /** Whether a player aura's own program is built, so its light can be drawn (asking begins building it, as drawing it does). */
+  auraReady(slot: number): boolean {
+    return !!this.auraProg(slot);
+  }
+
+  /** The auras' blur (AURA_BLUR): its pass and its laying on; null until they're built, or if they failed. */
+  private blurProgs: [Program, Program] | null = null;
+  private blurBegun = false;
+  /** Its two targets, while a dialog is up over an aura. */
+  private veil: [Target, Target] | null = null;
+
+  /** Begins building the blur's programs, once: with the first aura that shows, so they're there long before a dialog opens over one. */
+  private blurBegin() {
+    if (this.blurBegun) return;
+    this.blurBegun = true;
+    const gl = this.gl;
+    buildPrograms(
+      gl,
+      [
+        { vs: FULL_VS, fs: BLUR_FS, label: 'FX program “aura blur”' },
+        { vs: FULL_VS, fs: BLUR_OUT_FS, label: 'FX program “aura blur, laid on”' },
+      ],
+      (progs) => {
+        this.blurProgs = progs ? [wrapProgram(gl, progs[0]), wrapProgram(gl, progs[1])] : null;
+      },
+    );
+  }
+
+  /**
+   * The blur of the page's auras this frame (AURA_BLUR), with the page
+   * blurred by `blurCss`: its targets, its programs and how far it blurs
+   * (texels). Null while they're drawn as ever: no dialog, a blur too slight
+   * yet to tell from none, or no programs for it. The targets are made as
+   * soon as a dialog is there, before its blur is enough to draw through
+   * them: making targets holds the GPU up a moment, which the dialog's
+   * first frame hides and the middle of its fade would show. (Let go once
+   * the dialog is gone or nothing is drawn: drawFrame, clear.)
+   */
+  private veilFor(view: [number, number], blurCss: number, zoom: number): { a: Target; b: Target; sigma: number; pass: Program; out: Program } | null {
+    const gl = this.gl;
+    if (!this.blurProgs || blurCss <= 0) return null;
+    // One texel to the page's own px (the stage's zoom to the CSS px), or the canvas's own where those are larger.
+    const k = Math.min(1, view[0] / (this.width * zoom));
+    const w = Math.max(1, Math.round(this.width * k));
+    const h = Math.max(1, Math.round(this.height * k));
+    if (!this.veil || this.veil[0].w !== w || this.veil[0].h !== h) {
+      this.dropVeil();
+      this.veil = [target(gl, w, h, this.internal, this.texType), target(gl, w, h, this.internal, this.texType)];
+    }
+    const sigma = auraBlur(blurCss, w, view[0], this.width);
+    return sigma > 0 ? { a: this.veil[0], b: this.veil[1], sigma, pass: this.blurProgs[0], out: this.blurProgs[1] } : null;
+  }
+
+  private dropVeil() {
+    if (!this.veil) return;
+    for (const t of this.veil) dropTarget(this.gl, t);
+    this.veil = null;
+  }
+
+  /** A player aura's program, by slot: null until it's built (and begins building it), or if it failed. */
+  private auraProg(slot: number): Program | null {
+    this.blurBegin();
+    const have = this.auraProgs.get(slot);
+    if (have !== undefined || this.auraBuilding.has(slot)) return have ?? null;
+    const light = AURA_FNS[slot - 1];
+    if (!light) {
+      this.auraProgs.set(slot, null);
+      return null;
+    }
+    const gl = this.gl;
+    this.auraBuilding.add(slot);
+    buildPrograms(gl, [{ vs: SHAPE_VS, fs: auraFs(light), label: `FX program “aura ${slot}”` }], (progs) => {
+      this.auraBuilding.delete(slot);
+      this.auraProgs.set(slot, progs ? wrapProgram(gl, progs[0]) : null);
+    });
+    return null;
+  }
+
   /** Clears the visible canvas once, then does nothing until there is something to draw. */
   clear() {
     if (this.cleared) return;
+    this.dropVeil();
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, this.width, this.height);
@@ -1376,8 +1701,7 @@ export class FxRenderer {
     if (!this.hdr) return;
     this.cleared = false;
     const sil = silhouette && this.loadSilhouette(silhouette) ? silhouette : null;
-    const shapeUniforms = () => {
-      const p = this.shapeProg;
+    const shapeUniforms = (p: Program) => {
       gl.uniform2f(p.u('uView'), view[0], view[1]);
       behindDialog(p, true);
       cover(p);
@@ -1400,6 +1724,25 @@ export class FxRenderer {
       gl.uniform2f(p.u('uSilFit'), this.silFit[0], this.silFit[1]);
       gl.activeTexture(gl.TEXTURE0);
     };
+    // `n` shapes from `from` into the target bound, each run by its program
+    // (see shapeRuns), the buffer filled anew for each run (WebGL keeps the
+    // order).
+    // (`raw`: unhidden and unblurred by themselves, for the blur to do both: AURA_BLUR.)
+    const drawRuns = (runs: ShapeRun[], raw = false) => {
+      gl.bindVertexArray(this.shapeVao);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.shapeBuf);
+      for (const [p, at, count] of runs) {
+        gl.useProgram(p.prog);
+        shapeUniforms(p);
+        if (raw) {
+          gl.uniform1i(p.u('uHideN'), 0);
+          gl.uniform1f(p.u('uBlur'), 0);
+        }
+        gl.bufferSubData(gl.ARRAY_BUFFER, 0, shapes, at * SHAPE_FLOATS, count * SHAPE_FLOATS);
+        gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
+      }
+    };
+    const drawShapes = (from: number, n: number) => drawRuns(this.shapeRuns(shapes, from, n));
     // The UI's boxes, on unit 3 (see COVER).
     const cover = (p: Program) => {
       gl.uniform1i(p.u('uCover'), 3);
@@ -1430,7 +1773,7 @@ export class FxRenderer {
         gl.uniform4fv(p.u('uHideBox'), this.hideBoxes);
         gl.uniform2fv(p.u('uHideK'), this.hideK);
       }
-      gl.uniform1f(p.u('uBlur'), DIALOG_BLUR * dialog.amount);
+      gl.uniform1f(p.u('uBlur'), pageBlur(dialog));
     };
 
     gl.disable(gl.DEPTH_TEST);
@@ -1441,7 +1784,10 @@ export class FxRenderer {
     // exactly 0. Each target is cleared whole, then drawn within its share
     // of that area.
     const bloom = this.bloom && this.mips.length > 0;
-    const area = this.litArea(view, dpr, particles, nParticles, shapes, nShapes, bloom ? BLOOM_REACH * 2 ** this.mips.length : 4);
+    // (And as far as the auras' blur behind a dialog carries theirs: AURA_BLUR.)
+    const blurCss = pageBlur(dialog);
+    if (blurCss <= 0) this.dropVeil();
+    const area = this.litArea(view, dpr, particles, nParticles, shapes, nShapes, (bloom ? BLOOM_REACH * 2 ** this.mips.length : 4) + Math.ceil(3 * blurCss * dpr));
     const within = (t: { w: number; h: number }, clear: boolean) => {
       if (!area) return;
       gl.disable(gl.SCISSOR_TEST);
@@ -1459,18 +1805,13 @@ export class FxRenderer {
     if (!this.shapesT) nCrisp = nShapes;
     const nSoft = nShapes - nCrisp;
     if (nSoft > 0 && this.shapesT) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.shapeBuf);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, shapes, 0, nSoft * SHAPE_FLOATS);
       // Shapes first, into their own lower-resolution target...
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.shapesT.fbo);
       gl.viewport(0, 0, this.shapesT.w, this.shapesT.h);
       gl.clear(gl.COLOR_BUFFER_BIT);
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE);
-      gl.useProgram(this.shapeProg.prog);
-      shapeUniforms();
-      gl.bindVertexArray(this.shapeVao);
-      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nSoft);
+      drawShapes(0, nSoft);
       // ...then filtered up into the HDR target, which they fill completely.
       gl.disable(gl.BLEND);
       gl.bindFramebuffer(gl.FRAMEBUFFER, this.hdr.fbo);
@@ -1491,14 +1832,50 @@ export class FxRenderer {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE);
     if (nCrisp > 0) {
-      // Thin-line shapes straight into the full-resolution target.
-      gl.useProgram(this.shapeProg.prog);
-      shapeUniforms();
-      gl.bindVertexArray(this.shapeVao);
-      // (Uploaded after the soft ones were drawn; WebGL keeps the order.)
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.shapeBuf);
-      gl.bufferSubData(gl.ARRAY_BUFFER, 0, shapes, nSoft * SHAPE_FLOATS, nCrisp * SHAPE_FLOATS);
-      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, nCrisp);
+      // Thin-line shapes straight into the full-resolution target: but the
+      // page's auras, behind an open dialog, by way of their blur (AURA_BLUR).
+      const split = blurCss > 0 && !!this.blurProgs;
+      const runs = this.shapeRuns(shapes, nSoft, nCrisp, split);
+      const paged = split ? runs.filter((r) => r[3]) : NO_RUNS;
+      const veil = paged.length ? this.veilFor(view, blurCss, dialog.zoom ?? 1) : null;
+      if (veil) {
+        const { a, b, sigma, pass, out } = veil;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, a.fbo);
+        gl.viewport(0, 0, a.w, a.h);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        drawRuns(paged, true);
+        // Across into the second target, then down into the first again.
+        gl.disable(gl.BLEND);
+        gl.bindVertexArray(this.fullVao);
+        gl.useProgram(pass.prog);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.uniform1i(pass.u('uSrc'), 0);
+        gl.uniform1f(pass.u('uSigma'), sigma);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, b.fbo);
+        within(b, true);
+        gl.bindTexture(gl.TEXTURE_2D, a.tex);
+        gl.uniform2f(pass.u('uStep'), 1 / a.w, 0);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, a.fbo);
+        within(a, true);
+        gl.bindTexture(gl.TEXTURE_2D, b.tex);
+        gl.uniform2f(pass.u('uStep'), 0, 1 / a.h);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        // Then onto the rest, hidden behind the dialog as the page's light is.
+        gl.enable(gl.BLEND);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.hdr.fbo);
+        gl.viewport(0, 0, this.width, this.height);
+        within(this.hdr, false);
+        gl.useProgram(out.prog);
+        gl.bindTexture(gl.TEXTURE_2D, a.tex);
+        gl.uniform1i(out.u('uSrc'), 0);
+        gl.uniform2f(out.u('uView'), view[0], view[1]);
+        gl.uniform1f(out.u('uDither'), 0);
+        behindDialog(out, true);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        gl.disable(gl.SCISSOR_TEST);
+      }
+      drawRuns(veil ? runs.filter((r) => !r[3]) : runs);
     }
     if (nParticles > 0) {
       gl.useProgram(this.particleProg.prog);
@@ -1716,6 +2093,16 @@ export class FxRenderer {
     return this.coverOn;
   }
 
+  /**
+   * The UI's mask as it's set now (see setCover), for the shade to hide
+   * behind as the light does (lib/fx/shade.ts, which draws in a context of
+   * its own): its picture, what it was drawn from, the view it spans and how
+   * far it has moved since. Null while there's none.
+   */
+  get coverMask(): { canvas: HTMLCanvasElement; key: string; view: [number, number]; shift: [number, number] } | null {
+    return this.coverOn && this.coverCanvas ? { canvas: this.coverCanvas, key: this.coverKey, view: this.coverView, shift: this.coverShift } : null;
+  }
+
   /** Moves the mask setCover drew by (dx, dy) CSS px, the UI having moved that far since (a shake), rather than drawing it again. */
   shiftCover(dx: number, dy: number) {
     this.coverShift = [dx, dy];
@@ -1834,6 +2221,7 @@ export class FxRenderer {
     dropTarget(gl, this.hdr);
     dropTarget(gl, this.shapesT);
     for (const m of this.mips) dropTarget(gl, m);
+    this.dropVeil();
     this.timer?.dispose();
     gl.getExtension('WEBGL_lose_context')?.loseContext();
   }

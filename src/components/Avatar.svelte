@@ -10,10 +10,14 @@
   import { onMount, untrack, type Snippet } from 'svelte';
   import { classOf, isPlayerClass, SIGIL_FITS, sigilUrl, SMALL_INK, type PlayerClass } from '../lib/classSigils';
   import { sigilTrial } from '../lib/sigilTrial.svelte';
+  import { playerAura } from '../lib/fx/playerAura';
+  import { trialAura } from '../lib/auraTrial.svelte';
+  import type { AuraKind } from '../lib/auraKinds';
 
   /**
    * wrong: answered wrong, the token face down (the scoreboard). sigil: their class's sigil, worn behind their initial (lib/classSigils.ts).
    * tip: what a tooltip under the token says while a mouse is on it (HoverTip.svelte), edged in their colour; none, no tooltip.
+   * aura: one they earned (lib/fx/playerAura.ts).
    */
   let {
     name,
@@ -23,6 +27,7 @@
     wrong = false,
     sigil,
     tip,
+    aura,
   }: {
     name: string;
     hue: number;
@@ -31,6 +36,7 @@
     wrong?: boolean;
     sigil?: PlayerClass;
     tip?: Snippet;
+    aura?: AuraKind;
   } = $props();
   // Only one this build knows (a newer host's may not be). (On the QA desk,
   // everyone can wear one, by their name.)
@@ -49,6 +55,9 @@
   const creator = $derived(creatorShown(name));
   // Face down, her ring gives way to the wrong verdict's sign.
   const crowned = $derived(creator && !wrong);
+  // An aura burns while they're here (not offline, not greyed out), and not
+  // on her: she wears her own. (On the QA desk, everyone can wear one.)
+  const glow = $derived(creator || dim ? null : (aura ?? trialAura(name)));
 
   /** How long the token takes to turn over (or back up): edge on halfway, where its faces swap. */
   const TURN_MS = 500;
@@ -123,6 +132,7 @@
   bind:this={el}
   use:arcaneAura={{ on: creator, dim: dim || !crowned || turn !== null }}
   {@attach tip && tipHover}
+  use:playerAura={{ kind: glow }}
   >{#if worn && fit}<span
       class="sigil"
       class:gilt={!small}

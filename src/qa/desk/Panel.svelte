@@ -152,6 +152,12 @@
         {#each c.options as o (o.value)}<option value={o.value}>{o.label}</option>{/each}
       </select>
     </label>
+  {:else if c.kind === 'shuffle'}
+    <!-- Each press a new roll; Off goes back to none. -->
+    <div class="control shuffle">
+      <button class:on={!!v[c.key]} onclick={() => onvalue(c.key, 1 + Math.floor(Math.random() * 99998))}>{v[c.key] ? 'Shuffle again' : c.label}</button>
+      {#if v[c.key]}<button onclick={() => onvalue(c.key, 0)}>Off</button>{/if}
+    </div>
   {:else}
     <label class="control toggle">
       <input type="checkbox" checked={!!v[c.key]} onchange={(e) => onvalue(c.key, e.currentTarget.checked)} />

@@ -20,6 +20,7 @@ import { Table } from '../build/play.ts';
 import type { Built, Scene, Seat, Step } from '../scene.ts';
 import { FOSSILS, fossilMask, type FossilId, type FossilTier } from '../../lib/fossils.ts';
 import { serializeFossils, type FossilStore } from '../../lib/fossilStore.ts';
+import { AURA_NAMES, WORN, type AuraKind } from '../../lib/auraKinds.ts';
 import backdrops from '../../data/backdrops.json' with { type: 'json' };
 
 /** Who sits down, in order: any game's players are the first so many. */
@@ -530,6 +531,7 @@ export function gameScenes(): Scene[] {
     ),
     delveAloneScene(),
     delveFossilScene(),
+    delveAuraCardScene(),
     // Delve together's moments, a run of three by default. Finds among the
     // team's cards too, as Delve alone deals them (its notes beside the cards
     // with the vote's line, on a phone's browser on its side), and dynamite in
@@ -975,6 +977,37 @@ export function gameScenes(): Scene[] {
    * and the question that comes in from the next card is plain. Still up, the
    * question as it's asked.
    */
+  /**
+   * A try-out: a card holding an aura a player could earn, in a Delve offer
+   * beside a plain card and a fossil's (lib/auraTrial.svelte.ts's cardAura,
+   * which the frame sets as it starts). The aura burns in the card's window
+   * round its item as it would on a token, the item in the token's place,
+   * from as the card lands face up; it surges as the card is chosen. The
+   * token's size is the aura's: past it, its light runs out over the card.
+   */
+  function delveAuraCardScene(): Scene {
+    const shown5: AuraKind[] = ['chronomancer', 'breach', 'ritual', 'shadow', 'mirror'];
+    return scene('delve-aura-card', 'Delve alone', 'An aura on a card (try-out)', [ALONE], delveAlone, {
+      controls: [
+        { kind: 'choice', key: 'cardaura', label: 'Its aura', default: 'chronomancer', options: WORN.map((a) => ({ value: a, label: AURA_NAMES[a].name })) },
+        // (Its circle where the face's rays begin, 132 px across: cardEngraving's glory.)
+        { kind: 'range', key: 'cardsize', label: 'Its circle', min: 60, max: 180, step: 4, default: 132, unit: 'px' },
+        FOSSIL_CAT,
+        { kind: 'toggle', key: 'fossil', label: 'A fossil’s card beside it', default: true },
+      ],
+      states: shown5.map((a) => ({ label: AURA_NAMES[a].name, values: { cardaura: a } })),
+      build: (v = {}) => {
+        const t = delveAlone();
+        // The chosen category on the middle card, swapped with the card that held it if it was dealt.
+        const cat = String(v.cat ?? 'dealt');
+        if (cat !== 'dealt') t.s.offered = t.s.offered.map((c, i) => (i === 1 ? cat : c === cat ? t.s.offered[1] : c));
+        t.s.delve!.finds = [];
+        if (v.fossil !== false) t.s.delve!.fossil = { category: t.s.offered[2], tier: 'common' };
+        return shown(t, v);
+      },
+    });
+  }
+
   function delveFossilScene(): Scene {
     const atQuestion = { at: ['question'] };
     return scene('delve-fossil', 'Delve alone', 'A fossil', [ALONE], delveAlone, {

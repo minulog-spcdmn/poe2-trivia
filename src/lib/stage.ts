@@ -59,6 +59,12 @@ export function layoutZoomOf(el: Element): number {
   return measuredZoom(el) * (s ? parseFloat(getComputedStyle(s).zoom) || 1 : 1);
 }
 
+/** The stage's zoom as it is set now: 1 where nothing sets it (a page without the app's shell). */
+export function stageZoomNow(): number {
+  const z = parseFloat(document.documentElement.style.getPropertyValue('--stage-zoom'));
+  return z > 0 ? z : 1;
+}
+
 const measured = new WeakMap<Element, { key: string; z: number }>();
 function measuredZoom(el: Element): number {
   const root = el.closest<HTMLElement>(ZOOMED);

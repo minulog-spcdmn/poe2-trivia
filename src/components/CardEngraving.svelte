@@ -102,9 +102,11 @@
   import { engrave } from '../lib/cardEngraving';
   import { knockoutShapes } from '../lib/knockout';
   import { findVariant, fossilSlab, fossilVariant } from '../lib/findEngraving';
+  import { auraVariant } from '../lib/auraEngraving';
   import { leftKey, printing, pull, pulled, type At, type Layer, type Shown } from '../lib/platePrint.svelte';
   import { layoutZoomOf } from '../lib/stage';
   import type { FindKind } from '../lib/delve';
+  import type { AuraKind } from '../lib/auraKinds';
   import type { Variant } from '../lib/cardEngraving';
 
   // `front`: only what stands in front of the emblem (Plate.front), solid, laid over the category's item.
@@ -112,6 +114,8 @@
   // `hold`: how long it lies unseen once it's mounted (ms; a dealt card fades in late): a printed layer's svg isn't drawn so long while its print is pulled.
   // `lit`: a fossil's card (ChooseCategory), a common's or a rare's: its plate engraved as a fossil's (lib/findEngraving,
   // fossilVariant), its lines seen dark against its amber's lamp (FossilAmber lays the amber under them).
+  // `aura`: an aura's card (a try-out, ChooseCategory's auraAt): which aura it holds, its seals the aura's own (lib/auraEngraving;
+  // an aura without seals of its own yet shows the common seal, auraSeals/common.ts).
   let {
     side,
     find = null,
@@ -120,7 +124,8 @@
     print = false,
     hold = 0,
     lit = null,
-  }: { side: 'face' | 'back'; find?: FindKind | null; custom?: Variant; front?: boolean; print?: boolean; hold?: number; lit?: 'common' | 'rare' | null } = $props();
+    aura = null,
+  }: { side: 'face' | 'back'; find?: FindKind | null; custom?: Variant; front?: boolean; print?: boolean; hold?: number; lit?: 'common' | 'rare' | null; aura?: AuraKind | null } = $props();
   let w = $state(0);
   let h = $state(0);
   /** Its exact size: the glint's copy of the motif is drawn at it, as the lines stretch to it (w and h are whole pixels). */
@@ -169,7 +174,7 @@
     };
   }
   // (custom: a card of its own, the way out of a vein: lib/wayOut.)
-  const variant = $derived(custom ?? (find ? findVariant(find) : lit ? fossilVariant(lit) : undefined));
+  const variant = $derived(custom ?? (find ? findVariant(find) : lit ? fossilVariant(lit) : aura ? auraVariant(aura) : undefined));
   const plate = $derived(w && h ? engrave(side, w, h, variant) : null);
   /** The shapes the plate's lines stop short of, one path each (overlapping shapes of one path would cancel out). */
   const knockout = $derived(plate?.knockout ? knockoutShapes(plate.knockout) : []);

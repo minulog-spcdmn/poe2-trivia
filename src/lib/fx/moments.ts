@@ -35,6 +35,7 @@ import {
 import { Shape } from './particles';
 import { budget, follow, followOffset, particle, task } from './core';
 import { showAura } from './aura';
+import { auraFeels } from './playerAura';
 import { light, pulseMood, setMood } from '../lights';
 import { CALM, embers as backdropEmbers } from '../backdropEmbers';
 import { burnsBlue } from './streaks';
@@ -169,6 +170,7 @@ export function cardPicked(card: Element, base: Element, others: Element[], dm: 
 /** Delve together: a vote lands on a card (`pip`, the voter's mark on it): a small glint. */
 export function voteCast(pip: Element) {
   if (!fxActive() || detached(pip)) return;
+  auraFeels(pip, { kind: 'vote' });
   glints(pip, { count: 1, area: 'centre', size: [5, 9], color: C.goldPale, life: [0.35, 0.6] });
   ring(pip, { radius: 22, from: 4, thickness: 2.5, life: 0.4, color: C.gold, breakup: 0.5, fill: 0, intensity: 0.5 });
 }
@@ -482,6 +484,7 @@ export function fillBar(answer: Element, bar: Element, from: number, to: number,
 /** A point lands on a scoreboard entry. */
 export function scored(pill: Element, streak = 1) {
   if (!fxActive()) return;
+  auraFeels(pill, { kind: 'score', streak });
   const hype = Math.min(3, 1 + (streak - 1) * 0.5);
   sparks(pill, { count: Math.round(20 * hype), area: 'edge', colors: [C.gold, C.goldPale, C.ember], speed: [120, 420], life: [0.3, 0.8] });
   ring(pill, { radius: 90, thickness: 7, life: 0.5, color: C.gold, intensity: 0.55 });
@@ -561,6 +564,7 @@ export function doused(row: Element) {
 /** A point is lost (race: a wrong guess). */
 export function lostPoint(pill: Element) {
   if (!fxActive()) return;
+  auraFeels(pill, { kind: 'miss' });
   shards(pill, { count: 10, area: 'centre', speed: [60, 200] });
   outline(pill, { color: C.wrong, width: 8, life: 0.7, intensity: 0.45 });
   sparks(pill, { count: 10, colors: [C.wrong], angle: Math.PI / 2, spread: 2.4, gravity: 700, life: [0.3, 0.6] });
@@ -580,6 +584,7 @@ export type PhialFlow = { phial: Element; upright: boolean };
  */
 export function lifeLost(pill: Element, chamber: Element, left: number, mine: boolean, flow?: PhialFlow) {
   if (!fxActive()) return;
+  auraFeels(pill, { kind: 'hurt', left });
   const last = left === 0;
   const dir = flow && !flow.upright ? { x: 1, y: 0 } : { x: 0, y: -1 };
   const across = { x: -dir.y, y: dir.x };
@@ -1268,6 +1273,7 @@ function coin(x: number, y: number, vx: number, vy: number, o: { life?: [number,
  */
 export function victory(avatar: Element, title: Element, color: string, lost: boolean): Handle {
   if (!fxActive()) return { stop() {} };
+  if (!lost) auraFeels(avatar, { kind: 'win' });
   const pc = hdr(color, 2.4);
   const handles: Handle[] = [];
   // Parts still to come are dropped once the screen is left.
@@ -1414,6 +1420,7 @@ export function glyphLanded(glyph: Element) {
 /** Someone walks into the lobby (through a portal, naturally). */
 export function playerArrived(row: Element) {
   if (!fxActive()) return;
+  auraFeels(row, { kind: 'arrive' });
   const b = boxOf(row);
   const left = { x: b.x - b.w / 2 + 26, y: b.y };
   flash(left, { radius: 40, color: C.portal, intensity: 0.45, life: 0.6 });
@@ -1430,6 +1437,7 @@ export function playerArrived(row: Element) {
  */
 export function creatorArrived(row: Element) {
   if (!fxActive()) return;
+  auraFeels(row, { kind: 'arrive' });
   const face = row.querySelector('.avatar') ?? row;
   const R = Math.max(boxOf(face).w / 2, 12);
   implode(face, { count: 22, radius: R * 4.5, color: C.ruby, life: 0.5 });

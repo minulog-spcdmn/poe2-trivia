@@ -13,7 +13,10 @@ import type { Built, Scene } from './scene.ts';
 import { MAX_SPECTATORS, type GameState, type Spectator } from '../lib/game.ts';
 import { CREATOR } from '../lib/site.ts';
 import { RUBY } from '../lib/palette.ts';
+import { seededRandom } from '../lib/patches.ts';
 import { pid, spectator } from './build/people.ts';
+import { WORN, AURA_NAMES } from '../lib/auraKinds.ts';
+import { CLASSES } from '../lib/classSigils.ts';
 
 const LONG = [
   'Sekhema Asala Kahari',
@@ -34,7 +37,7 @@ const SCRIPTS = ['桜子', 'Ярослава', 'Exile42', 'Ἀθηνᾶ', 'Zoë'
 const WATCHERS = ['Finn', 'Renly', 'Oswin', 'Zelina', 'Dannig', 'Hooded One', 'Tujen', 'Gwennen', 'Navali', 'Einhar', 'Niko', 'Helena', 'Zana', 'Kirac'];
 
 /** The keys these take in a scene's values: a scene's own controls keep clear of them. */
-export const TWEAK_KEYS = ['names', 'sigils', 'joining', 'watching', 'offline'];
+export const TWEAK_KEYS = ['names', 'looks', 'sigils', 'auras', 'joining', 'watching', 'offline'];
 
 /**
  * What can be set in the game `built` holds, each as the scene has it.
@@ -59,8 +62,24 @@ export function tweaksFor(built: Built, seen: string[] = []): Control[] {
         { value: 'creator-last', label: 'The creator last' },
       ],
     },
+    // A room as it might really come: each player's colour shuffled, about half
+    // wearing a class's sigil and half an aura (lib/auraTrial.svelte.ts; the
+    // frame sets those as it starts), the rest none. Each press a new roll.
+    { kind: 'shuffle', key: 'looks', label: 'Shuffle colours, sigils and auras', default: 0 },
     // Every player wears a class's sigil, by their name (lib/classSigils.ts; the frame sets it as it starts).
     { kind: 'toggle', key: 'sigils', label: 'Class sigils on everyone', default: false },
+    // Every player wears an aura they could earn (lib/auraTrial.svelte.ts; the frame sets it as it starts).
+    {
+      kind: 'choice',
+      key: 'auras',
+      label: 'Auras',
+      default: '',
+      options: [
+        { value: '', label: 'None' },
+        { value: 'each', label: 'Everyone, each their own' },
+        ...WORN.map((a) => ({ value: a, label: `Everyone: ${AURA_NAMES[a].name}` })),
+      ],
+    },
   ];
   // Only an online room has spectators, and players who can drop out.
   if (s.hostId === null) return out;
@@ -130,6 +149,7 @@ export function applyTweaks(built: Built, v: Values, seen: string[]): Built {
     }
 
     rename(s, v.names);
+    shuffleLooks(s, Number(v.looks ?? 0));
     return s;
   }
 
@@ -148,6 +168,29 @@ function rename(s: GameState, names: Value | undefined) {
     if (!p) return;
     p.name = CREATOR;
     p.hue = RUBY;
+  }
+}
+
+/**
+ * The players' colours and sigils as the roll `seed` deals them, in place
+ * (0: as they are). Colours stay one each, from those a player can choose;
+ * the creator keeps her ruby. The same roll deals the same in every state.
+ */
+function shuffleLooks(s: GameState, seed: number) {
+  if (!seed) return;
+  const rand = seededRandom(seed);
+  const hues = Array.from({ length: RUBY }, (_, i) => i);
+  for (let i = hues.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [hues[i], hues[j]] = [hues[j], hues[i]];
+  }
+  let next = 0;
+  for (const p of s.players) {
+    const deal = rand();
+    const cls = CLASSES[Math.floor(rand() * CLASSES.length)];
+    if (p.hue === RUBY) continue;
+    if (next < hues.length) p.hue = hues[next++];
+    p.sigil = deal < 0.5 ? cls : undefined;
   }
 }
 

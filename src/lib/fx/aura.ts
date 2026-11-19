@@ -39,6 +39,7 @@ import { ShapeType } from './renderer';
 import { FIRST, SHOW, auraEnvelope, auraForm, nextGap, orbitPoint, type AuraForm } from './orbit';
 import { DIALOG_BLUR, openDialog } from '../behindDialog';
 import { opacityOf } from '../opacity';
+import { stageZoomNow } from '../stage';
 
 const k3 = (c: Vec3, k: number): Vec3 => [c[0] * k, c[1] * k, c[2] * k];
 
@@ -269,10 +270,10 @@ function sparkOpacity(el: Element): number {
   return o > 0.3 ? o : 0;
 }
 
-/** How far the page is blurred where `el` is (CSS px): behind an open dialog, not in it (lib/behindDialog.ts). */
+/** How far the page is blurred on screen where `el` is (CSS px; the stage's zoom widens it: pageBlur in renderer.ts): behind an open dialog, not in it (lib/behindDialog.ts). */
 function blurAt(el: Element): number {
   const { amount, backdrop } = openDialog();
-  return backdrop && !backdrop.contains(el) ? DIALOG_BLUR * amount : 0;
+  return backdrop && !backdrop.contains(el) ? DIALOG_BLUR * amount * stageZoomNow() : 0;
 }
 
 /** An ember drifting up off the top of her avatar, ruby or gold. */

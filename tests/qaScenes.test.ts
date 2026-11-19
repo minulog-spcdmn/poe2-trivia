@@ -65,7 +65,7 @@ test("every control's ends and choices build, its own and any game's, and its de
     for (const k of own) assert.ok(!TWEAK_KEYS.includes(k), `${s.key}'s control ${k} is one every game has`);
     for (const c of controls) {
       assert.deepEqual(valuesOf([c], { [c.key]: c.default }), { [c.key]: c.default }, `${s.key}: ${c.key} starts at ${c.default}, which it can't be`);
-      const tried = c.kind === 'range' ? [c.min, c.max] : c.kind === 'toggle' ? [true, false] : c.options.map((o) => o.value);
+      const tried = c.kind === 'range' ? [c.min, c.max] : c.kind === 'toggle' ? [true, false] : c.kind === 'shuffle' ? [0, 1, 4242] : c.options.map((o) => o.value);
       for (const x of tried) builds(s, { [c.key]: x }, `${c.key}=${x}`);
       // A seat a scene's own choice picks (watching, say) stays in the room whoever else watches or drops out.
       if (c.kind === 'choice' && own.includes(c.key)) for (const x of tried) builds(s, { [c.key]: x, joining: 0, watching: 0, offline: '*' }, `${c.key}=${x}, nobody else`);
