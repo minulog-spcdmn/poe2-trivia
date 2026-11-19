@@ -27,6 +27,15 @@ run-name: "Tally ready: ${{ github.event_name == 'schedule' && 'daily check' || 
 #
 # Run by hand with "Try Claude" to try Claude's step before the floor is
 # met: its answer goes on the run's page and opens no issue.
+#
+# A second job, `solo`, without Claude, settles whether answers from solo
+# Delve reach the tally (they hadn't by 19 Nov 2026, the day after it went
+# live): scripts/tally-solo.mjs sets the tally's solo Delve answers against
+# the solo runs GoatCounter counted since then (secret GOATCOUNTER_KEY). Any
+# answer opens an issue assigned to the owner saying they arrive; three runs
+# or more and none opens one saying they don't, and the run fails so GitHub
+# mails the owner. Once either issue is open the job stops by itself; remove
+# it from this file then.
 
 on:
   # 06:41 UTC: well after midnight UTC, when the tally's day of reads starts
@@ -215,3 +224,69 @@ jobs:
             --title "$TITLE" \
             --assignee "$GITHUB_REPOSITORY_OWNER" \
             --body-file report.md
+
+  solo:
+    name: Solo Delve answers arrive?
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Still needed?
+        id: needed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Only an issue this workflow opened stops it, not one anyone else
+          # titles the same way.
+          opened=0
+          for title in 'Item tally: solo Delve answers arrive' 'Item tally: solo Delve runs send no answers'; do
+            n=$(gh issue list --repo "$GITHUB_REPOSITORY" --state all \
+              --author 'app/github-actions' --search "in:title \"$title\"" \
+              --json title | jq --arg t "$title" '[.[] | select(.title == $t)] | length')
+            opened=$((opened + n))
+          done
+          if [ "$opened" != "0" ]; then
+            echo "Solo Delve was already reported on; nothing left to check."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # No npm ci: the script imports no packages.
+      - uses: actions/setup-node@v4
+        if: steps.needed.outputs.run == 'true'
+        with:
+          node-version: 22
+
+      - name: Count solo answers and runs
+        id: solo
+        if: steps.needed.outputs.run == 'true'
+        env:
+          GOATCOUNTER_KEY: ${{ secrets.GOATCOUNTER_KEY }}
+        run: node --experimental-strip-types --no-warnings scripts/tally-solo.mjs
+
+      - name: Open the issue
+        id: issue
+        if: steps.solo.outputs.verdict == 'works' || steps.solo.outputs.verdict == 'lost'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ steps.solo.outputs.title }}
+          BODY_FILE: ${{ steps.solo.outputs.body }}
+        run: |
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "$TITLE" \
+            --assignee "$GITHUB_REPOSITORY_OWNER" \
+            --body-file "$BODY_FILE"
+
+      # Fails the run, so GitHub mails the owner, for solo runs that send nothing.
+      - name: Fail on lost answers
+        if: steps.solo.outputs.verdict == 'lost'
+        run: |
+          echo "::error::Solo Delve runs send no answers to the item tally. See the issue."
+          exit 1
