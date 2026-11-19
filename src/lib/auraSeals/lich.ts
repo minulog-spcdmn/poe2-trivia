@@ -189,7 +189,10 @@ const lantern: Seal = (p, c, R, room) => {
  * its eight thorns of uneven length set round a small boss, a ring through
  * them, and a web strung between them inside the ring.
  */
-const brooch: Sign = (p, c, r) => {
+/** How far past the sign's radius its longest thorn reaches: its short thorns leave it light, so it is drawn larger. */
+const BROOCH = 1.25;
+const brooch: Sign = (p, c, r0) => {
+  const r = r0 * BROOCH;
   const lens = [1, 0.62, 0.88, 0.55, 0.95, 0.6, 0.8, 0.66];
   let d = ring(c, r * 0.52) + ring(c, r * 0.2);
   lens.forEach((L, i) => {
