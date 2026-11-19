@@ -555,8 +555,10 @@ const CALLOUT_GUESS = (W: number): CalloutShape => ({
  * are the finds you have met, with the depth each first turns up at;
  * `layout` says where the caption is, and either where the finds' headings
  * are beside it or how its callouts are shaped. `seen` is the deepest you
- * have been in any run, alone or together: the stars mark one kind's runs,
- * but the zones you have seen stay charted (and the ouroboros lit) in both.
+ * have been in any run, alone or together: the zones you have seen stay
+ * charted in both, but the stars, the endless stretch and the ouroboros are
+ * the one kind's own, lit only once its runs pass 100 (a run together past
+ * 100 lights nothing on the plate for runs alone).
  */
 export function descentPlate(W: number, H: number, deepest: number | null, met: { kind: FindKind; from: number }[] = [], layout: Layout = {}, lastRun: number | null = null, seen: number | null = null): Plate {
   const caption = layout.caption ?? null;
@@ -567,7 +569,8 @@ export function descentPlate(W: number, H: number, deepest: number | null, met: 
   // The zones you have been to, in any run.
   const been = Math.max(best ?? 0, lastD ?? 0, seen && seen > 0 ? Math.floor(seen) : 0);
   const reached = ZONES.filter((z) => been >= z.from).length;
-  const past = been > 100;
+  // Past 100 in this kind of run: the endless stretch struck in gold, the ouroboros lit and turning.
+  const past = Math.max(best ?? 0, lastD ?? 0) > 100;
   const shapes = Object.fromEntries(FINDS_IN_ORDER.map((x) => [x.kind, layout.callouts?.[x.kind] ?? CALLOUT_GUESS(W)])) as Record<FindKind, CalloutShape>;
   const found = [...met].sort((a, b) => a.from - b.from);
   // The plate is laid out as if every find were met (their lines and depths fitted in), so nothing moves as finds are met; only
