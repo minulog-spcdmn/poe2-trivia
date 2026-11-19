@@ -122,7 +122,9 @@ export type Sfx =
   /** A deal's cards flying in: one smooth swoosh of air for them all, shaped to their slide. */
   | 'deal'
   /** ...and each turning face up: a short, full flap of air as it stands on edge, gone before the next one turns. */
-  | 'dealTurn';
+  | 'dealTurn'
+  /** A try-out (the QA desk's aura cards): the Mirror of Kalandra's card turning face up, to PoE2's own sound of a Mirror dropping. */
+  | 'mirrorDrop';
 
 let muted = (() => {
   return readStored('muted') === '1';

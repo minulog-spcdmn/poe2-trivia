@@ -13,7 +13,7 @@
   import { cubicInOut, cubicOut } from 'svelte/easing';
   import { fade, scale } from 'svelte/transition';
   import { flip } from 'svelte/animate';
-  import { untrack, type Snippet } from 'svelte';
+  import { tick, untrack, type Snippet } from 'svelte';
   import { calm, motion } from '../lib/motion.svelte';
   import { engine, session } from '../lib/session.svelte';
   import { categoryCompanions, categoryIcon, categoryIconTweak, categoryIcons } from '../lib/ui';
@@ -32,6 +32,11 @@
   import { cover, fxActive, fxGroup, onFxChange, type CoverBox, type Handle, type Vec3 } from '../lib/fx/core';
   import { C, embers, emitter, flare, glints, outline, puffs, rays, ring, shards, sparks } from '../lib/fx/effects';
   import { light } from '../lib/lights';
+  import { auraFeels, playerAura } from '../lib/fx/playerAura';
+  import { cardAura } from '../lib/auraTrial.svelte';
+  import { AURA_GLOW, AURA_NAMES, type AuraKind } from '../lib/auraKinds';
+  import { auraLanded, auraTurning } from '../lib/auraDrop';
+  import { auraInk } from '../lib/auraInk';
   import CardEngraving from './CardEngraving.svelte';
   import FossilAmber from './FossilAmber.svelte';
   import SulphiteCharge from './SulphiteCharge.svelte';
@@ -420,6 +425,30 @@
   const seedOf = (cat: string) => [...cat].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) >>> 0, 7) % 100_000;
   /** The tag of the fossil on a card, or null. */
   const fossilAt = (cat: string): string | null => (fossilTierAt(cat) === 'rare' ? 'Rare Fossil' : fossilTierAt(cat) ? 'Fossil' : null);
+  /**
+   * A try-out (lib/auraTrial.svelte.ts's cardAura, on the QA desk only): the
+   * aura a card holds, burning in its window round its item as it would on
+   * a token, the item in the token's place, and held in its face: none of
+   * it falls past the card. Never on a find's, a fossil's or the way out.
+   */
+  /**
+   * An aura's name on its plaque, in lines: a long one (past 13 letters) on
+   * two, split at the space nearest its middle, so the plaque stays between
+   * the face's corner seals and only as wide as its longer line (a browser's
+   * own wrap keeps the box as wide as it was allowed).
+   */
+  const tagLines = (name: string): string[] => {
+    if (name.length <= 13) return [name];
+    let cut = -1;
+    for (let i = 0; i < name.length; i++) if (name[i] === ' ' && (cut < 0 || Math.abs(i - name.length / 2) < Math.abs(cut - name.length / 2))) cut = i;
+    return cut < 0 ? [name] : [name.slice(0, cut), name.slice(cut + 1)];
+  };
+  const auraAt = (cat: string): AuraKind | null =>
+    cardAura.kind && s.offered.indexOf(cat) === cardAura.at && !kindOf(cat) && !fossilTierAt(cat) && !isWayOut(cat) && sulphite !== cat ? cardAura.kind : null;
+  /** The cards that have landed face up in the deal, whose aura burns from then (`revealed`). */
+  let auraUp = $state<boolean[]>([]);
+  /** Whether card i's aura burns: from as it lands face up, or at once without a deal. */
+  const auraLit = (i: number) => !dealing || !!auraUp[i];
   /** The fossil's card on offer as dealt, while no dig or deathmatch hides the notes. */
   const fossilCol = $derived(fossilShown && !s.deathmatch ? s.offered.indexOf(fossilShown.category) : -1);
   /**
@@ -430,11 +459,16 @@
    * instead, one line on a small phone.
    */
   const fossilNote = $derived(fossilCol < 0 || dig ? null : finds.length + (sulphiteNoted ? 1 : 0) >= 2 ? 'line' : 'full');
-  /** The columns of the notes that stand in the cards' columns (or at their sides): the finds', the sulphite card's and a fossil's own. */
+  /** The aura's card on offer (a try-out: auraAt), while no dig or deathmatch hides the notes. */
+  const auraCol = $derived(cardAura.kind && !s.deathmatch && !dig ? s.offered.findIndex((c) => !!auraAt(c)) : -1);
+  /** An aura's note (what it is: a look for the avatar, nothing in the run), as a fossil's, beside at most one other. */
+  const auraNote = $derived(auraCol >= 0 && finds.length + (sulphiteNoted ? 1 : 0) + (fossilNote === 'full' ? 1 : 0) < 2);
+  /** The columns of the notes that stand in the cards' columns (or at their sides): the finds', the sulphite card's, a fossil's and an aura's own. */
   const noteCols = $derived([
     ...finds.map((f) => s.offered.indexOf(f.category)),
     ...(sulphiteNoted ? [s.offered.indexOf(sulphiteNoted)] : []),
     ...(fossilNote === 'full' ? [fossilCol] : []),
+    ...(auraNote ? [auraCol] : []),
   ]);
   /** The notes can stand beside the cards (CSS, on a phone on its side): a dig's two, or up to two of the others'. */
   const beside = $derived(!!dig || (noteCols.length > 0 && noteCols.length <= 2 && !s.deathmatch));
@@ -593,6 +627,27 @@
     flare(at, { size: 42, streak: 370, life: 0.8, color: pale });
     rays(at, { radius: 380, count: 12, life: 1.5, fadeIn: 0.3, spin: 0.03, intensity: tier === 'rare' ? 0.2 : 0.14, color: pale, clear: card });
     light(at, { color: lamp, radius: 440, intensity: tier === 'rare' ? 0.95 : 0.8, decay: 1.3 });
+  }
+
+  // An aura's card's own light (a try-out: auraAt), in the aura's colour
+  // (AURA_GLOW), where a plain card's is fire: its edge lit as it lands, alive
+  // under the pointer, and as it's chosen ringing out from its circle while the other
+  // cards burn away. No flare or light of its own: the aura lights the card,
+  // and surges itself as it's chosen.
+  function auraHover(frame: Element, card: Element, aura: AuraKind): Handle {
+    if (!fxActive()) return { stop() {} };
+    const glow = outline(frame, { color: dim(AURA_GLOW[aura].main, 0.6), width: 12, flame: 0.35, pulse: 0.5, intensity: 0.7, fadeIn: 0.3, base: card });
+    return { stop: () => glow.stop(0.4) };
+  }
+  function auraPicked(card: Element, base: Element, others: Element[], aura: AuraKind) {
+    if (!fxActive()) return;
+    const { main } = AURA_GLOW[aura];
+    for (const o of others) {
+      embers(o, { count: 24, area: 'fill', colors: [C.ember, C.emberDeep, C.ash], rise: [60, 200], life: [0.6, 1.6] });
+      puffs(o, { count: 6, area: 'fill', color: [0.14, 0.09, 0.05] });
+    }
+    outline(card, { color: main, width: 16, flame: 0.4, intensity: 1, life: 1.3, base });
+    ring(card.querySelector('[data-aura]') ?? card, { radius: 290, thickness: 10, life: 0.9, color: main, breakup: 0.3 });
   }
 
   let picked = $state<string | null>(null);
@@ -828,6 +883,9 @@
         if (down && u >= turn + FLIP / 2) {
           down = false;
           card?.classList.remove('down');
+          // An aura's card (a try-out) as its face comes up: lib/auraDrop.ts.
+          const aura = auraAt(s.offered[i]!);
+          if (aura && card && u < turn + FLIP) auraTurning(card, aura);
         }
       },
     };
@@ -841,11 +899,32 @@
     const out = isWayOut(s.offered[i]);
     const fossil = fossilTierAt(s.offered[i]);
     const sul = sulphite === s.offered[i];
+    const aura = auraAt(s.offered[i]);
     const dm = !!s.deathmatch;
     const t = setTimeout(() => {
       const frame = node.querySelector('.frame') ?? node;
       if (dealtAt !== null)
-        onCards(() => (kind ? findRevealed(frame, kind) : out ? outRevealed(frame) : fossil ? fossilRevealed(frame, fossil) : sul ? sulphiteRevealed(frame) : cardRevealed(frame, dm)));
+        onCards(() =>
+          kind
+            ? findRevealed(frame, kind)
+            : out
+              ? outRevealed(frame)
+              : fossil
+                ? fossilRevealed(frame, fossil)
+                : sul
+                  ? sulphiteRevealed(frame)
+                  : aura
+                    ? auraLanded(frame, node.querySelector('[data-aura]'), aura)
+                    : cardRevealed(frame, dm),
+        );
+      // An aura it holds kindles as it lands, and comes as its wearer comes into a lobby.
+      if (auraAt(s.offered[i])) {
+        auraUp[i] = true;
+        tick().then(() => {
+          const seat = node.querySelector('[data-aura]');
+          if (seat) auraFeels(seat, { kind: 'arrive' });
+        });
+      }
       // The pointer may already rest on it, having come while it lay face down.
       if (waiting === i) ignite(i);
     }, (flipAt(i) + FLIP) * 1000);
@@ -875,10 +954,24 @@
     const out = isWayOut(s.offered[i]);
     const fossil = fossilTierAt(s.offered[i]);
     const sul = sulphite === s.offered[i];
+    const aura = auraAt(s.offered[i]);
     if (frame)
       burning = onCards(() =>
-        kind ? findHover(frame, card, kind) : out ? outHover(frame, card) : fossil ? fossilHover(frame, card, fossil) : sul ? sulphiteHover(frame, card) : cardHover(frame, card, !!s.deathmatch),
+        kind
+          ? findHover(frame, card, kind)
+          : out
+            ? outHover(frame, card)
+            : fossil
+              ? fossilHover(frame, card, fossil)
+              : sul
+                ? sulphiteHover(frame, card)
+                : aura
+                  ? auraHover(frame, card, aura)
+                  : cardHover(frame, card, !!s.deathmatch),
       );
+    // An aura's card under the mouse: its aura answers as a token's does when it's clicked.
+    const seat = aura && card?.querySelector('[data-aura]');
+    if (seat) auraFeels(seat, { kind: 'touch' });
   }
   function leave(e: PointerEvent) {
     waiting = null;
@@ -1033,7 +1126,11 @@
     else if (frame && isWayOut(category)) onCards(() => outPicked(frame, cardEls[i], others));
     else if (frame && fossilTierAt(category)) onCards(() => fossilPicked(frame, cardEls[i], others, fossilTierAt(category)!));
     else if (frame && sulphite === category) onCards(() => sulphitePicked(frame, cardEls[i], others));
+    else if (frame && auraAt(category)) onCards(() => auraPicked(frame, cardEls[i], others, auraAt(category)!));
     else if (frame) onCards(() => cardPicked(frame, cardEls[i], others, !!s.deathmatch));
+    // An aura it holds surges as it's chosen, as on a right answer.
+    const seat = auraAt(category) && cardEls[i]?.querySelector('[data-aura]');
+    if (seat) auraFeels(seat, { kind: 'score', streak: 1 });
     sfx(kind === 'azurite' ? 'veinStrike' : 'pick', { from: { from: cardEls[i] } });
     session.dispatch({ type: 'pick', category });
     // Allow a retry if the host rejected the pick.
@@ -1144,10 +1241,11 @@
         data-sfx="none"
         data-fx="none"
         class:dm={!!s.deathmatch}
-        class:special={!!kindOf(cat) || !!fossilAt(cat) || sulphite === cat}
+        class:special={!!kindOf(cat) || !!fossilAt(cat) || sulphite === cat || !!auraAt(cat)}
         class:out={isWayOut(cat)}
         class:sulphite={sulphite === cat}
-        style={isWayOut(cat) ? outInk : undefined}
+        class:aura-card={!!auraAt(cat)}
+        style={isWayOut(cat) ? outInk : auraAt(cat) ? auraInk(auraAt(cat)!) : undefined}
         data-find={kindOf(cat)}
         data-fossil={fossilTierAt(cat) ?? undefined}
         aria-describedby={kindOf(cat) && !s.deathmatch
@@ -1156,7 +1254,9 @@
             ? `${uid}-note-fossil`
             : sulphiteNoted === cat
               ? `${uid}-note-sulphite`
-              : undefined}
+              : auraAt(cat) && auraNote
+                ? `${uid}-note-aura`
+                : undefined}
         class:mine
         class:dim={dimmed}
         class:chosen={chosen === cat || (landed && lit === i)}
@@ -1189,6 +1289,7 @@
                   find={kindOf(cat)}
                   custom={isWayOut(cat) ? out.variant : sulphite === cat ? SULPHITE_PLATE : undefined}
                   lit={fossilTierAt(cat)}
+                  aura={auraAt(cat)}
                   print={printed}
                   hold={unseen(i, 'back')}
                 />
@@ -1209,6 +1310,7 @@
                   find={kindOf(cat)}
                   custom={isWayOut(cat) ? out.variant : sulphite === cat ? SULPHITE_PLATE : undefined}
                   lit={fossilTierAt(cat)}
+                  aura={auraAt(cat)}
                   print={printed}
                   hold={unseen(i, 'face')}
                 />
@@ -1240,7 +1342,10 @@
                 <span class="lit"><span class="glyph" class:fit={!!fits[iconOf(cat)]} style={emblemStyle(cat, heap)} style:--src="url('{maskOf(iconOf(cat))}')" use:fineMask={maskOf(iconOf(cat))} use:inclusion={part ? { url: maskOf(iconOf(cat)), part, rare: fossilTierAt(cat) === 'rare' } : null}></span></span>
               {/snippet}
               <span class="icon" class:none={isWayOut(cat)}>
-                {#if filled}{@render emblem(fossilTierAt(cat) ? 'body' : undefined)}{/if}
+                {#if filled && auraAt(cat)}
+                  <!-- The aura it holds, round the item as on a token (auraAt). -->
+                  <span class="seat" data-aura style:--seat="{cardAura.size}px" use:playerAura={{ kind: auraLit(i) ? auraAt(cat) : null, bare: true, clip: '.frame' }}>{@render emblem()}</span>
+                {:else if filled}{@render emblem(fossilTierAt(cat) ? 'body' : undefined)}{/if}
               </span>
               {#if filled && fossilTierAt(cat)}
                 <!-- A fossil's emblem and the items behind it again, only the light along their edges toward the lamp: screened, where they themselves are multiplied. -->
@@ -1258,6 +1363,8 @@
                   <span class="find-tag" data-zoom>{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span>
                 {:else if fossilAt(cat)}
                   <span class="find-tag" data-zoom>{fossilAt(cat)}</span>
+                {:else if auraAt(cat)}
+                  <span class="find-tag" data-zoom>{#each tagLines(AURA_NAMES[auraAt(cat)!].name) as line, l (l)}{#if l}{' '}{/if}<span class="tag-line">{line}</span>{/each}</span>
                 {:else if isWayOut(cat)}
                   <span class="find-tag out-tag" data-zoom>{out.tag(haul)}</span>
                 {:else if sulphite === cat}
@@ -1266,7 +1373,7 @@
               {/if}
               <span class="title" class:long={cardName(cat).length > 30} use:fitPlate
                 >{#if kindOf(cat)}{@const kind = kindOf(cat)!}<span class="find-tag-row">{dig && kind === 'azurite' ? 'Dig Deeper' : FIND_TEXT[kind].name}</span
-                  >{:else if fossilAt(cat)}<span class="find-tag-row">{fossilAt(cat)}</span>{:else if isWayOut(cat)}<span class="find-tag-row">{out.tag(haul)}</span>{:else if sulphite === cat}<span class="find-tag-row">Sulphite</span>{/if}{cardName(cat)}</span
+                  >{:else if fossilAt(cat)}<span class="find-tag-row">{fossilAt(cat)}</span>{:else if auraAt(cat)}<span class="find-tag-row">{AURA_NAMES[auraAt(cat)!].name}</span>{:else if isWayOut(cat)}<span class="find-tag-row">{out.tag(haul)}</span>{:else if sulphite === cat}<span class="find-tag-row">Sulphite</span>{/if}{cardName(cat)}</span
               >
             </span>
             <span class="pulse" aria-hidden="true" bind:this={pulses[i]}></span>
@@ -1315,7 +1422,7 @@
         </p>
       {/each}
     </div>
-  {:else if (finds.length || sulphiteNoted || fossilNote) && !s.deathmatch}
+  {:else if (finds.length || sulphiteNoted || fossilNote || auraNote) && !s.deathmatch}
     <!-- One short note per find, in its colour, the sulphite card's and a fossil's; what stays unused on the finds and the rush, once for both. -->
     {@const two = finds.length + (sulphiteNoted ? 1 : 0) > 1}
     {@const team = coop && !!me && livesOf(s, me) > 0}
@@ -1345,6 +1452,17 @@
           {#if mine && !coop}<strong>{text.tag}.</strong> {text.note}{two ? '' : held}{:else}{text.others}{/if}
         </p>
       {/if}
+      {#snippet auraLine()}
+        {@const aura = auraAt(s.offered[auraCol]!)!}
+        <!-- As a fossil's: what to do in bold, then what it is (a look, worn round the avatar) and that the run is untouched. -->
+        <p class="note find-note" data-find="aura" id="{uid}-note-aura" style={auraInk(aura)} style:--col={auraCol + 1} data-side={sideOf(auraCol, noteCols)}>
+          {#if coop}<strong>Answer right to win this aura.</strong> Each of you can wear it round your avatar, in every game. The run is unaffected.{:else if mine}<strong
+              >Answer right to win this aura.</strong
+            > You can wear it round your avatar, in every game. Your run is unaffected.{:else}A right answer wins this aura for {active.name}’s avatar. The run is unaffected.{/if}
+        </p>
+      {/snippet}
+      <!-- An aura's note before a fossil's when its card comes first: on a phone the notes stand one under the other, in the cards' order. -->
+      {#if auraNote && fossilNote === 'full' && auraCol < fossilCol}{@render auraLine()}{/if}
       {#if fossilNote === 'full'}
         {@const fossil = fossilShown?.tier === 'rare' ? 'a rare fossil' : 'a fossil'}
         <!-- As a find's: what to do in bold, then what it gives; for those watching, one plain line. -->
@@ -1360,6 +1478,7 @@
           {coop ? 'one for each codex, not the run.' : mine ? 'one for your codex, not your run.' : `one for ${active.name}’s codex, not the run.`}{#if held}<span class="held">{held}</span>{/if}
         </p>
       {/if}
+      {#if auraNote && !(fossilNote === 'full' && auraCol < fossilCol)}{@render auraLine()}{/if}
       {#if two && held && fossilNote !== 'line'}<p class="note muted">{held.trim()}</p>{/if}
     </div>
   {/if}
@@ -1775,7 +1894,36 @@
     align-items: center;
     justify-content: center;
     /* The emblem's warm glow, under its shadow (see .lit). */
-    filter: drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
+    filter: drop-shadow(0 0 12px var(--e-glow, rgba(224, 138, 68, 0.45)));
+  }
+  /* An aura's card (auraAt): the token it burns on, centred where the item
+     stands, the item held in it and overflowing it as it lies. */
+  .seat {
+    position: relative;
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: var(--seat);
+    height: var(--seat);
+    /* (Round, as a token is: what an aura draws by its box, an after-image's rim, follows it.) */
+    border-radius: 50%;
+  }
+  /* Its rim, a line engraved as the face's are, where the glory's rays
+     begin: the circle the aura burns round, as round a token's rim. Within
+     it a well, deepening to its rim, that the item lights from its middle:
+     the window's warm glow left there flat read as a coin laid on the card.
+     (A gradient alone, no dither: a picture beside a gradient on the face
+     costs a repaint each frame it tilts (docs/category-cards.md, rule 3),
+     and this one's levels fall a pixel or two apart, too close to band.) */
+  .seat::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 1px solid color-mix(in srgb, var(--ink) 70%, transparent);
+    background: radial-gradient(circle closest-side, rgba(10, 6, 3, 0.15), rgba(10, 6, 3, 0.5) 70%, rgba(10, 6, 3, 0.72));
+    pointer-events: none;
   }
   /* The emblem's shadow, on a layer of its own so the engraving stays
      crisp: the original card's, tight, just below it, as if lifted off the
@@ -1861,7 +2009,7 @@
   }
   /* (While it kindles only, so that at rest it is just its glow.) */
   .turn:global(.kindling) .icon {
-    filter: brightness(var(--kindle-lum, 1)) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
+    filter: brightness(var(--kindle-lum, 1)) drop-shadow(0 0 12px var(--e-glow, rgba(224, 138, 68, 0.45)));
     opacity: var(--kindle-fade, 1);
   }
   /* (A browser that can't register them would step the numbers, not ease
@@ -1976,15 +2124,15 @@
   @keyframes kindle-plain {
     from {
       opacity: 0.2;
-      filter: brightness(0.4) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
+      filter: brightness(0.4) drop-shadow(0 0 12px var(--e-glow, rgba(224, 138, 68, 0.45)));
     }
     40% {
       opacity: 1;
-      filter: brightness(1.45) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
+      filter: brightness(1.45) drop-shadow(0 0 12px var(--e-glow, rgba(224, 138, 68, 0.45)));
     }
     to {
       opacity: 1;
-      filter: brightness(1) drop-shadow(0 0 12px rgba(224, 138, 68, 0.45));
+      filter: brightness(1) drop-shadow(0 0 12px var(--e-glow, rgba(224, 138, 68, 0.45)));
     }
   }
   .sheen {
@@ -2528,6 +2676,20 @@
     --f-glow: rgba(255, 120, 40, 0.2);
     --f-glyph: linear-gradient(180deg, #fbf3e6 0%, #c8b8a0 45%, #4a3a2a 100%);
   }
+  /* An aura's card (a try-out: auraAt): a plain card in its aura's colour,
+     every gold of it the aura's (auraInk sets them on the card), its face's
+     dark and its back's warm glow tinted toward it. */
+  .card.aura-card .frame {
+    background:
+      radial-gradient(ellipse 120% 90% at 50% 45%, transparent 50%, rgba(0, 0, 0, 0.5)),
+      linear-gradient(170deg, var(--a-face), var(--a-deep) 70%);
+  }
+  .card.aura-card .back {
+    background:
+      radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--warm) 22%, transparent), transparent 90px),
+      radial-gradient(ellipse 120% 90% at 50% 50%, transparent 50%, rgba(0, 0, 0, 0.5)),
+      linear-gradient(170deg, var(--a-face), var(--a-deep) 70%);
+  }
   /* A fossil (lib/fossils.ts): a slab of amber held to the lamp
      (FossilAmber, lib/amber.ts), the whole card, glowing at its heart where
      the lamp is and deepening to dark resin at its edges, as PoE's fossils
@@ -2762,6 +2924,16 @@
       inset 0 0 0 2.5px color-mix(in srgb, var(--f) 55%, transparent),
       0 0 12px var(--f-pulse);
   }
+  /* An aura's name (a try-out): kept between its face's corner seals
+     (lib/auraEngraving.ts, in Sol's and Luna's places), a long one on two
+     lines (tagLines), the plaque as wide as the longer. */
+  .card.aura-card .find-tag {
+    text-align: center;
+    line-height: 1.2;
+  }
+  .tag-line {
+    display: block;
+  }
   .find-tag::before,
   .find-tag::after {
     content: '';
@@ -2819,6 +2991,13 @@
   /* The sulphite card's ink (.card.sulphite), lightened as the finds' are for their notes. */
   .find-note[data-find='sulphite'] {
     color: #efeda0;
+  }
+  /* An aura's (a try-out): its card's colour, kept light (auraInk's note colours, on the note). */
+  .find-note[data-find='aura'] {
+    color: var(--a-note);
+  }
+  .find-note[data-find='aura'] strong {
+    color: var(--a-lead);
   }
   .find-note strong {
     font-weight: 600;
@@ -3038,6 +3217,11 @@
     .glyph {
       width: 74px;
       height: 74px;
+    }
+    /* An aura's circle where a row's glory begins (cardEngraving: 28 px out, a tall card's 66). */
+    .seat {
+      width: calc(var(--seat) * 28 / 66);
+      height: calc(var(--seat) * 28 / 66);
     }
     /* A fossil's emblem a little smaller and lower, to sit inside its drop (findEngraving's rowDrop). */
     .card[data-fossil] .icon {

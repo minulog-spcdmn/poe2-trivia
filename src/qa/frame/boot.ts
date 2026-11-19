@@ -73,9 +73,29 @@ export async function boot(asked: URLSearchParams) {
   const scene = place?.scene;
   // (A place's controls, under any the address sets.)
   const given = { ...place?.values, ...Object.fromEntries([...asked].filter(([k]) => k.startsWith('k.')).map(([k, v]) => [k.slice(2), v])) };
-  const built = scene && buildScene(scene, given).built;
+  const made = scene && buildScene(scene, given);
+  const built = made && made.built;
+  // An aura on a card (scenes/game.ts, a try-out), before the cards are drawn.
+  if (made && made.values.cardaura) {
+    const { cardAura } = await import('../../lib/auraTrial.svelte.ts');
+    cardAura.kind = String(made.values.cardaura) as typeof cardAura.kind;
+    cardAura.size = Number(made.values.cardsize) || 132;
+  }
   // Class sigils on everyone (tweaks.ts), before anything draws an avatar.
   if (given.sigils === true || given.sigils === '1' || given.sigils === 'true') (await import('../../lib/sigilTrial.svelte.ts')).sigilTrial.on = true;
+  // And auras (tweaks.ts): each their own, or everyone the one picked.
+  if (given.auras) {
+    const [{ auraTrial }, { AURAS }] = await Promise.all([import('../../lib/auraTrial.svelte.ts'), import('../../lib/auraKinds.ts')]);
+    const want = String(given.auras);
+    if (want === 'each' || (AURAS as readonly string[]).includes(want)) auraTrial.kind = want as typeof auraTrial.kind;
+    // (With a shuffle, everyone's are dealt by its roll.)
+    if (Number(given.looks) > 0) auraTrial.seed = Number(given.looks);
+  } else if (Number(given.looks) > 0) {
+    // Or a shuffle's: about half, by the roll and their names.
+    const { auraTrial } = await import('../../lib/auraTrial.svelte.ts');
+    auraTrial.kind = 'mix';
+    auraTrial.seed = Number(given.looks);
+  }
   // (A seat past those its room has as built is its last: the grid asks every state for the seat picked on one.)
   const seats = scene && built ? seatsIn(scene, built) : [];
   // Or (&as=<player id>&role=host|client) any player in the room, as the pointers bench sees one scene from two of them.

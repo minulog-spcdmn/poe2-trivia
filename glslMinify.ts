@@ -16,7 +16,7 @@ import { parseSync, type Plugin } from 'vite';
  * inside a comment that isn't a plain name or constant (dropping it must not
  * drop a side effect). tests/glslMinify.test.ts checks every shader file.
  */
-export const GLSL_FILES = /\/src\/lib\/(shaders\/[^/]+|backdrop|fx\/renderer|fx\/gl)\.ts$/;
+export const GLSL_FILES = /\/src\/lib\/(shaders\/[^/]+|backdrop|fx\/renderer|fx\/gl|fx\/auras\/[^/]+\.glsl)\.ts$/;
 const GLSL_HINT = /\b(vec[234]|uniform|void main)\b/;
 
 type Node = { type?: string; start: number; end: number; [k: string]: unknown };

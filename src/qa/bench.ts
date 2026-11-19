@@ -30,6 +30,8 @@ export type Control = (
   | { kind: 'range'; key: string; label: string; min: number; max: number; step?: number; default: number; unit?: string }
   | { kind: 'choice'; key: string; label: string; options: { value: string; label: string }[]; default: string }
   | { kind: 'toggle'; key: string; label: string; default: boolean }
+  // A button that rolls the dice: its value is the roll (a seed), 0 for none.
+  | { kind: 'shuffle'; key: string; label: string; default: 0 }
 ) & { view?: boolean; when?: Record<string, Value[]> };
 
 /** Whether `c` shows with the controls as `v` has them (its `when`). */
@@ -134,6 +136,10 @@ export function valueOf(c: Control, raw: Value | string | null | undefined): Val
   if (c.kind === 'range') {
     const n = Number(raw);
     return Number.isFinite(n) ? Math.max(c.min, Math.min(c.max, n)) : c.default;
+  }
+  if (c.kind === 'shuffle') {
+    const n = Number(raw);
+    return Number.isInteger(n) && n > 0 ? n : 0;
   }
   return c.options.some((o) => o.value === raw) ? String(raw) : c.default;
 }

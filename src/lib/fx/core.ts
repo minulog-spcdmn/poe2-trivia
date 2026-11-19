@@ -16,12 +16,13 @@
 // wait for it, and play once it is.
 
 import { BEHIND_PICTURE, BEHIND_UI, FxRenderer, MAX_HIDES, SHAPE_FLOATS, ShapeType, pictureReady, type DialogLight, type HideLight, type SigilPicture, type Silhouette } from './renderer';
+import { planesFrame, type Plane } from './plane';
 import { webgl2Refused, whenGpuCaughtUp, type Build } from './gl';
 import { ParticlePool, type ParticleSpec } from './particles';
 import { opacityOf } from '../opacity';
 import { dialogBox, openDialog } from '../behindDialog';
 import { cornerOnScreen } from '../corner';
-import { zoomOf } from '../stage';
+import { stageZoomNow, zoomOf } from '../stage';
 import { LAB, readStored, removeStored, writeStored } from '../storage';
 import { STILL } from '../still';
 import { whenIdle } from '../idle';
@@ -31,6 +32,7 @@ import { endlessFxFps, fxCapFps, switchedOff, type Switch } from '../switchedOff
 import { frameEvent, timed } from '../fpsMeter';
 import { GpuBudget, type Layer, type Saved } from './gpuBudget';
 import type { GpuDraw } from './gpuTimer';
+import { attachShade, clearShade, drawShade, shadeGpuMs, shadeHolds } from './shade';
 
 export type Vec3 = readonly [number, number, number];
 export type Point = { x: number; y: number };
@@ -97,6 +99,16 @@ export type ShapeSpec = {
   calm?: boolean;
   /** It shines from behind the UI: the boxes cover() names hide it (see COVER in renderer.ts). */
   behind?: boolean;
+  /** Held in this element's box, as it moves: none of its light falls past it (an aura in a card's window, ChooseCategory.svelte). */
+  clip?: Element;
+  /**
+   * Lying in this plane (lib/fx/plane.ts: a card's face, turned in 3D),
+   * drawn in its own px, turned and foreshortened as it is: its box is the
+   * plane's (its centre where the plane's lands, its side as large as it
+   * shows), what update() shifts it by is in the plane's px, and it's held
+   * in the plane's clip, in place of `clip`.
+   */
+  plane?: Plane;
 };
 
 type LiveShape = ShapeSpec & {
@@ -120,6 +132,8 @@ type LiveShape = ShapeSpec & {
   stopped: boolean;
   /** The anchor's opacity, when followed. */
   opacity: number;
+  /** The box of what it's held in (`clip`), as last measured; null for none. */
+  clipBox: Box | null;
   /** Light from the page, which an open dialog hides (see onPage). */
   page: boolean;
   /** Light of what stands over the page (a toast: overPage), which is the page's again while a dialog is open over both. */
@@ -188,6 +202,8 @@ const markSaver = () => typeof document !== 'undefined' && document.documentElem
 markSaver();
 
 let canvas: HTMLCanvasElement | null = null;
+/** The canvas under it that auras lay their dark on (lib/fx/shade.ts): placed with it, and drawn from the same shapes in the same frame. */
+let shadeCanvas: HTMLCanvasElement | null = null;
 let renderer: FxRenderer | null = null;
 let pool: ParticlePool | null = null;
 /**
@@ -320,6 +336,7 @@ function blank() {
   pool?.clear();
   stopShake();
   renderer?.clear();
+  clearShade();
   show(false);
 }
 
@@ -454,7 +471,7 @@ export function shape(spec: ShapeSpec): ShapeHandle {
     if (i < 0) return NOOP;
     shapes.splice(i, 1);
   }
-  const box = boxOf(spec.at);
+  const box = spec.plane ? spec.plane.box() : boxOf(spec.at);
   const s: LiveShape = {
     ...spec,
     behind: spec.behind || behindNow,
@@ -468,6 +485,7 @@ export function shape(spec: ShapeSpec): ShapeHandle {
     fadeTotal: 0,
     stopped: false,
     opacity: 1,
+    clipBox: spec.plane ? spec.plane.clip() : spec.clip ? boxOf(spec.clip) : null,
     page: onPage(ownerNow ?? spec.at),
     front: !openDialog().backdrop && inFront(ownerNow ?? spec.at),
     owner: ownerNow ?? spec.at,
@@ -884,8 +902,11 @@ function placeCanvas() {
   const at = setInPage ? `${x}px ${y}px` : '';
   if (at === placedAt) return;
   placedAt = at;
-  canvas.style.position = setInPage ? 'absolute' : '';
-  canvas.style.translate = at;
+  // (The shade's canvas with it, so an aura's dark stays under its light.)
+  for (const c of shadeCanvas ? [canvas, shadeCanvas] : [canvas]) {
+    c.style.position = setInPage ? 'absolute' : '';
+    c.style.translate = at;
+  }
 }
 
 /** While the test harness steps effects by hand: its clock (ms); else null. */
@@ -904,8 +925,11 @@ function wake() {
 /** Shapes made of thin lines or tiny points, which need every pixel (sigils, an aura's motes and runes). */
 const isCrisp = (s: LiveShape) => {
   const type = s.f.type ?? s.type;
-  return type === ShapeType.Sigil || type === ShapeType.Orbit;
+  return type === ShapeType.Sigil || type === ShapeType.Orbit || type === ShapeType.Aura;
 };
+
+/** A plane's map about a shape on it (Plane.about), on its way to the shape's floats. */
+const about = new Float32Array(8);
 
 function writeShape(i: number, s: LiveShape, t: number, dialogUp: boolean) {
   const o = i * SHAPE_FLOATS;
@@ -913,8 +937,16 @@ function writeShape(i: number, s: LiveShape, t: number, dialogUp: boolean) {
   const c = f.color ?? s.color;
   let k = f.k * s.opacity;
   if (s.stopped) k *= s.fade / s.fadeTotal;
-  shapeData[o] = s.box.x;
-  shapeData[o + 1] = s.box.y;
+  // Its centre: on a plane, its place in the plane's px (how far update()
+  // shifted it from the plane's centre) and where that lands, with the
+  // plane's map about it (s7, s8); on none, where it is, the map the screen's.
+  let at: Point = s.box;
+  if (s.plane) {
+    at = { x: s.box.x - s.seen.x, y: s.box.y - s.seen.y };
+    s.plane.about(at.x, at.y, about, 0);
+  } else about.set([s.box.x, s.box.y, 1, 0, 0, 1, 0, 0]);
+  shapeData[o] = about[0]!;
+  shapeData[o + 1] = about[1]!;
   shapeData[o + 2] = f.hw;
   shapeData[o + 3] = f.hh;
   shapeData[o + 4] = f.type ?? s.type;
@@ -927,6 +959,15 @@ function writeShape(i: number, s: LiveShape, t: number, dialogUp: boolean) {
   // (A toast's light, made before a dialog opened over it, hides behind the dialog with the page's.)
   shapeData[o + 11] = (s.page || (s.front && dialogUp) ? 1 : 0) + (s.behind ? BEHIND_UI : 0);
   for (let j = 0; j < 12; j++) shapeData[o + 12 + j] = f.q[j] ?? 0;
+  // Its clip from its centre, in its own px.
+  const cb = s.clipBox;
+  shapeData[o + 24] = cb ? cb.x - at.x : 0;
+  shapeData[o + 25] = cb ? cb.y - at.y : 0;
+  shapeData[o + 26] = cb ? cb.w / 2 : -1;
+  shapeData[o + 27] = cb ? cb.h / 2 : -1;
+  for (let j = 0; j < 6; j++) shapeData[o + 28 + j] = about[2 + j]!;
+  shapeData[o + 34] = 0;
+  shapeData[o + 35] = 0;
 }
 
 /** One frame of the effects (timed for the beta's frame meter). */
@@ -950,6 +991,8 @@ function frameUntimed(nowMs: number) {
   // began, which can be a little before wake() read the clock.)
   const rawDt = Math.max(0, nowMs - last) / 1000;
   last = nowMs;
+  // (Planes measured afresh, once each, in this frame: lib/fx/plane.ts.)
+  planesFrame();
 
   // What the effects' draws cost the GPU, for the quality (lib/fx/gpuBudget.ts:
   // weighed by these, the backdrop's, and its frames, see backdropFrame).
@@ -961,7 +1004,11 @@ function frameUntimed(nowMs: number) {
   // (Not timed on touch screens: a phone's GPU draws in tiles, later than its
   // timer sees, and some report next to nothing. There frames alone tell.)
   const draws = coarse?.matches ? null : renderer.gpuDraws();
-  if (draws) for (const d of draws) gpuBudget.gpu('fx', d.ms, d.px, nowMs);
+  if (draws) {
+    // (With what the shade's draws cost in a frame, while an aura has one: lib/fx/shade.ts.)
+    const shadeMs = shadeGpuMs();
+    for (const d of draws) gpuBudget.gpu('fx', d.ms + shadeMs, d.px, nowMs);
+  }
   // (No backdrop to tell the frames, its context lost for good, or none
   // beside the effects at all: the effects' own frames tell instead.)
   if (!backdropPixels) {
@@ -987,7 +1034,10 @@ function frameUntimed(nowMs: number) {
   // with nothing drawn: making the targets anew mid-moment holds frames up.)
   const dropping = resizeDue && gpuBudget.next(nowMs) > quality;
   if (resizeDue && (!busy || (dropping && ((calm && nowMs - resizeDueAt > 3000) || nowMs - resizeDueAt > 8000)))) moveTo(nowMs);
-  if (!busy) show(false);
+  if (!busy) {
+    show(false);
+    clearShade();
+  }
 }
 
 let frameNo = 0;
@@ -1058,12 +1108,14 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
       // Follow the element; once it's gone (the screen moved on), fade out
       // where it was.
       if (s.at.isConnected) {
-        const b = boxOf(s.at);
+        const b = s.plane ? s.plane.box() : boxOf(s.at);
         const [dx, dy, scrolled] = [b.x - s.seen.x, b.y - s.seen.y, scrollNow - s.scrollAt];
         onScreen = Math.abs(dx) + Math.abs(dy) > 0.25;
         inPage = Math.abs(dx) + Math.abs(dy + scrolled) > 0.25;
         follow = scrollFollow(dy, scrolled);
         s.box = b;
+        if (s.plane) s.clipBox = s.plane.clip();
+        else if (s.clip?.isConnected) s.clipBox = boxOf(s.clip);
         s.seen.x = b.x;
         s.seen.y = b.y;
         s.scrollAt = scrollNow;
@@ -1135,10 +1187,15 @@ function simulate(dt: number, nowMs: number, render: boolean): boolean {
   if (nParticles > 0 || nShapes > 0) {
     placeCanvas();
     setCovers(renderer);
-    renderer.draw([viewW, viewH], dpr, pool.instances, nParticles, shapeData, nShapes, nCrisp, dialogNow(), silhouette);
+    const dialog = dialogNow();
+    // The auras' shade from the same shapes, in the same frame (lib/fx/shade.ts;
+    // before the renderer, which puts the shapes in another order as it draws).
+    drawShade(renderer, [viewW, viewH], shapeData, nShapes, dialog);
+    renderer.draw([viewW, viewH], dpr, pool.instances, nParticles, shapeData, nShapes, nCrisp, dialog, silhouette);
     show(true);
   } else {
     renderer.clear();
+    clearShade();
     show(false);
   }
   return busy;
@@ -1157,7 +1214,7 @@ function dialogNow(): DialogLight {
   const hides: HideLight[] = [];
   if (box) {
     hides.push({ box: box.rect, radius: box.radius, amount });
-    return { amount, box: box.rect, radius: box.radius, hides };
+    return { amount, box: box.rect, radius: box.radius, hides, zoom: stageZoomNow() };
   }
   for (const src of windows) {
     if (hides.length >= MAX_HIDES) break;
@@ -1176,7 +1233,9 @@ function dialogNow(): DialogLight {
     if (o > 0) hides.push({ box: r, radius: cornerOnScreen(cornerOf(el), r.width, r.height, zoomOf(el)), amount: o });
   }
   // (A window, with a dialog's backdrop up but no box of it yet, dims nothing either.)
-  return { amount: windowed ? 0 : amount, box: null, radius: 0, hides };
+  // (The page blurs behind a backdrop whose box isn't there yet as far as behind one that is: the stage's zoom with it.)
+  const dims = windowed ? 0 : amount;
+  return { amount: dims, box: null, radius: 0, hides, zoom: dims > 0 ? stageZoomNow() : 1 };
 }
 
 /** What stands over the page (overPage). */
@@ -1498,6 +1557,8 @@ function teardown() {
   covers.clear();
   stopShake();
   hide();
+  // (No light is drawn now: no shade either.)
+  clearShade();
   for (const l of listeners) l();
 }
 
@@ -1593,6 +1654,8 @@ function warm(r: FxRenderer) {
 function setup(c: HTMLCanvasElement, r: FxRenderer) {
   renderer = r;
   if (switchedOff('bloom')) r.bloom = false;
+  // (An aura's light and its shade come in together: lib/fx/shade.ts.)
+  r.auraHold = shadeHolds;
   if (sigilPicture) r.setSigil(sigilPicture);
   pool ??= new ParticlePool(coarse?.matches ? 2000 : 5000);
   ro?.disconnect();
@@ -1665,9 +1728,15 @@ function setHidden(away: boolean) {
   for (const l of awayListeners) l(away);
 }
 
-/** Starts the overlay on `c`. Returns a cleanup function. */
-export function startFx(c: HTMLCanvasElement): () => void {
+/**
+ * Starts the overlay on `c`, with `shade`, the canvas under it, for the dark
+ * an aura lays over the page (lib/fx/shade.ts; without one there's none).
+ * Returns a cleanup function.
+ */
+export function startFx(c: HTMLCanvasElement, shade: HTMLCanvasElement | null = null): () => void {
   canvas = c;
+  shadeCanvas = shade;
+  const stopShade = attachShade(shade);
   placedAt = '';
   hide();
   prepare(c);
@@ -1702,6 +1771,8 @@ export function startFx(c: HTMLCanvasElement): () => void {
     // (Its context is made before its shaders are: let go too, mid-build.)
     const half = !renderer && !!building;
     teardown();
+    stopShade();
+    shadeCanvas = null;
     if (half) c.getContext('webgl2')?.getExtension('WEBGL_lose_context')?.loseContext();
     // (No overlay follows the tab now: nothing counts as away.)
     setHidden(false);

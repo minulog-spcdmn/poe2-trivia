@@ -3,6 +3,7 @@
 // the desk lists it, and its frame draws it.
 
 import type { PieceBench } from '../bench.ts';
+import { auras } from './auras.ts';
 import { avatar } from './avatar.ts';
 import { buttons } from './buttons.ts';
 import { circle } from './circle.ts';
@@ -19,6 +20,6 @@ import { tip } from './tip.ts';
 import { zone } from './zone.ts';
 import { zonesigils } from './zonesigils.ts';
 
-export const PIECES: PieceBench[] = [avatar, sigils, streak, plate, descent, zone, zonesigils, circle, launch, sync, legal, pointers, tip, gpu, buttons];
+export const PIECES: PieceBench[] = [avatar, auras, sigils, streak, plate, descent, zone, zonesigils, circle, launch, sync, legal, pointers, tip, gpu, buttons];
 
 export const pieceByKey = (key: string | null) => PIECES.find((p) => p.key === key);

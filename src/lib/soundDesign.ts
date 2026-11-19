@@ -876,6 +876,19 @@ export const MOMENTS: Record<Sfx, Moment> = {
     varyGain: 1.5,
     layers: [{ file: 'deal-air', gain: -54.4, rate: 1, delay: 0, hp: 20, lp: 20000, send: 0.15, takes: 4 }],
   },
+  // A try-out (the QA desk's aura cards): the Mirror of Kalandra's card
+  // turning face up, to the sound PoE2 plays as a Mirror drops, its
+  // top-tier drop's (Item_Drop_HighTier_Mirror_01, as the game has it): a
+  // bright swell, loudest 0.44 to 0.62 s in, breaking off at 0.75 s and
+  // ringing on to 3.5 s, which the card's light follows (lib/auraDrop.ts).
+  // By ear model (Zwicker, dry) it peaks at 66 phon here, over deathmatch's
+  // 62, the loudest moment; -25 dB would sit with deathmatch.
+  mirrorDrop: {
+    soften: 0,
+    varyPitch: 0,
+    varyGain: 0,
+    layers: [{ file: 'mirror-drop', gain: -22, rate: 1, delay: 0, hp: 20, lp: 20000, send: 0.2 }],
+  },
   dealTurn: {
     soften: 5,
     varyPitch: 0.03,

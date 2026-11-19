@@ -376,6 +376,13 @@ html[data-qa='desk'] #app {
   gap: 0.5rem;
   color: var(--text);
 }
+.bench-panel .control.shuffle {
+  display: flex;
+  gap: 0.4rem;
+}
+.bench-panel .control.shuffle button:first-child {
+  flex: 1;
+}
 .bench-panel .control input[type='checkbox'],
 .bench-panel .control input[type='range'] {
   accent-color: var(--gold);

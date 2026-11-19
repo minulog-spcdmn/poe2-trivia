@@ -184,6 +184,10 @@ How they are layered and filtered is set in src/lib/soundDesign.ts.
                        by Tairblenn, https://freesound.org/s/549897/
   refuse-rattle.mp3    Locked doorknob rattle 3 (a name or room code turned down)
                        by CastIronCarousel, https://freesound.org/s/216875/
+  mirror-drop.mp3      Path of Exile 2's own sound of a Mirror of Kalandra
+                       dropping (Item_Drop_HighTier_Mirror_01, from the game's
+                       ItemDrops.bank), (c) Grinding Gear Games, not CC0:
+                       a QA desk try-out, not cleared for the live game
   deal-air-1.mp3 to -4, deal-flap-1.mp3 to -4  no recording: noise
                        shaped to the deal's cards flying in and turning,
                        made for the game
