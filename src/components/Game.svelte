@@ -552,15 +552,36 @@
    * a line goes as it came: fading, or (`slide`) closing its room as it does.
    */
   const handedOver = $derived(revivable.length === 0 && revivedLines.length > 0);
+
+  /**
+   * A phone on its side (lib/layout.ts `flat`), a question up: it fills the
+   * screen's height (QuestionView's --room), with no room under it for a
+   * line. So the line stands in the task line's place over the question
+   * ("Name this item" is done with by the time it comes, as a phone upright
+   * says the outcome there at the reveal), the task line kept unseen under
+   * it for its height: nothing moves. One line at a time there, the latest
+   * (who brought whom back over the hint or your own fall), and each fades
+   * in its place rather than opening room.
+   */
+  const inTask = $derived(flat.current && !held && s.phase !== 'choosing' && !drawing);
+  const oneLine = $derived(inTask && revivedLines.length > 0);
+  function lineIn(node: HTMLElement) {
+    return inTask ? fade(node, calm({ duration: 400 })) : slideFade(node, calm({ duration: 400 }));
+  }
+
   function answered(node: HTMLElement, { slide }: { slide?: boolean } = {}) {
+    if (inTask) return fade(node, { duration: 180 });
     if (!handedOver) return slide ? slideFade(node, calm({ duration: 400 })) : fade(node);
     // Pinned where it stands (in a flex column, an absolute box left to itself goes to the column's top).
     const { offsetTop: top, offsetLeft: left, offsetWidth: width } = node;
     Object.assign(node.style, { position: 'absolute', top: `${top}px`, left: `${left}px`, width: `${width}px`, margin: '0' });
     return calm({ duration: 180, css: (t: number) => `opacity: ${t}` });
   }
+  function lineOut(node: HTMLElement) {
+    return inTask ? fade(node, { duration: 180 }) : slide(node, { duration: 250 });
+  }
   function answer(node: HTMLElement) {
-    const crossing = handedOver && !!node.parentElement?.previousElementSibling?.matches('p.delve-line');
+    const crossing = inTask || (handedOver && !!node.parentElement?.previousElementSibling?.matches('p.delve-line'));
     return crossing ? calm({ delay: 120, duration: 250, css: (t: number) => `opacity: ${t}` }) : slide(node, { duration: 250 });
   }
 </script>
@@ -585,7 +606,7 @@
   <div class="turns">
     {#key stageKey}
       <!-- Going, the stage is let go without being made inert, which would repaint it all (lib/leaving.ts). -->
-      <div class="stage" style:opacity={STAGE_OPACITY} use:outWithoutInert in:stageIn out:stageOut>
+      <div class="stage" class:in-task={inTask} style:opacity={STAGE_OPACITY} use:outWithoutInert in:stageIn out:stageOut>
         {#if held}
           <!-- Going down into a new zone: nothing yet but the scene plunging. -->
         {:else}
@@ -632,11 +653,11 @@
             {/if}
           </div>
 
-          {#if myFall !== null}
-            <p class="delve-line muted" in:slideFade={calm({ duration: 400 })} out:answered={{ slide: true }}>
+          {#if myFall !== null && !oneLine}
+            <p class="delve-line muted" in:lineIn out:answered={{ slide: true }}>
               You perished and are now watching.{#if canBeRevived}{' '}A teammate can give you a life between questions.{/if}
             </p>
-          {:else if revivable.length && (s.phase === 'choosing' || s.phase === 'reveal')}
+          {:else if revivable.length && (s.phase === 'choosing' || s.phase === 'reveal') && !oneLine}
             <p class="delve-line revive-hint" in:fade out:answered>
               {revivable.length === 1
                 ? `Use the heart on ${revivable[0].name}’s entry to revive them with one of your lives.`
@@ -646,8 +667,8 @@
           {#if group}
             <!-- Who brought whom back, read out as it happens. -->
             <div class="revived" aria-live="polite">
-              {#each revivedLines as line (line.key)}
-                <p class="delve-line revive-hint" in:answer out:slide={{ duration: 250 }}>{line.text}</p>
+              {#each oneLine ? revivedLines.slice(-1) : revivedLines as line (line.key)}
+                <p class="delve-line revive-hint" in:answer out:lineOut>{line.text}</p>
               {/each}
             </div>
           {/if}
@@ -843,6 +864,62 @@
   /* Two revives at once read as a pair. */
   .revived .delve-line + .delve-line {
     margin-top: 0.3rem;
+  }
+  /* A phone on its side, a question up (inTask): the line in the task
+     line's row, over the question (the turn's body, the grid's second row),
+     clear of the clock at its end; the task line under it unseen, there for
+     its height, back as the line goes. A line coming and one going share
+     the row. */
+  .stage.in-task {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .in-task > .head {
+    grid-row: 1;
+  }
+  .in-task > .turn-body,
+  .in-task > .delve-line,
+  .in-task > .revived {
+    grid-row: 2;
+    grid-column: 1;
+  }
+  .in-task > .delve-line,
+  .in-task > .revived {
+    align-self: start;
+    position: relative;
+    z-index: 2;
+  }
+  .in-task > .revived {
+    display: grid;
+  }
+  .in-task > .revived > .delve-line {
+    grid-area: 1 / 1;
+  }
+  .in-task .delve-line,
+  .in-task .revived .delve-line + .delve-line {
+    margin: 0;
+    padding-inline: 44px;
+    /* The task line's height (QuestionView, a phone on its side). */
+    line-height: calc(1.05rem * 1.3);
+  }
+  .in-task :global(.task-text) {
+    transition: opacity 0.25s;
+  }
+  .in-task:has(> .delve-line, > .revived > .delve-line) :global(.task-text) {
+    visibility: hidden;
+    opacity: 0;
+    transition:
+      opacity 0.25s,
+      visibility 0s 0.25s;
+  }
+  /* What befell the team on the question (QuestionView's news, in the same
+     row) over your own fall, for as long as it's said. */
+  .in-task:has(:global(.news > p)) > .delve-line {
+    opacity: 0;
+    transition: opacity 0.25s;
+  }
+  .in-task > .delve-line {
+    transition: opacity 0.25s;
   }
   .banner {
     display: flex;

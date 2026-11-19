@@ -250,6 +250,17 @@
       : '',
   );
   const flareLine = $derived(coop && !reveal && q.flared && q.flaredBy ? flareText(q.flaredBy, nameOf, me) : '');
+  /**
+   * A phone on its side: the question fills the screen's height and the row
+   * under the answers has room for one line (two short ones), the hint or a
+   * miss. So what befell the team stands in the task line's place, on one
+   * line (the clock at its end, where a flare's six seconds show): "Name
+   * this item" has been read by the time it comes. The line it takes the
+   * place of stays, unseen (.kept), so nothing moves. It fades rather than
+   * slides there: in its place it has no room to open.
+   */
+  const newsInTask = $derived(flat.current && !!(perishedLine || flareLine));
+  const newsLine = (node: Element) => (flat.current ? fade(node, { duration: 250 }) : slide(node, { duration: 250 }));
   // Guests only learn the answer (and the items behind the options) at the reveal.
   const item = $derived(q.itemId ? engine.byId.get(q.itemId) : undefined);
   /** The answer as its picture drew it (Grand Spectrum's Emerald…): its art, base and tooltip. */
@@ -1279,18 +1290,24 @@
   {/if}
 {/snippet}
 
+<!-- Delve together: what befell the team on this question, read out as it
+     comes: a line each over the line under the answers, or on a phone on its
+     side, on one line in the task line's place (see .task). -->
+{#snippet news()}
+  <div class="news" aria-live="polite">
+    {#if perishedLine}<p class="spectate out" transition:newsLine>{perishedLine}</p>{/if}
+    {#if flareLine}
+      <p class="spectate flare-line" transition:newsLine><span class="found-glyph" aria-hidden="true"><ItemGlyph kind="flare" /></span>{flareLine}</p>
+    {/if}
+  </div>
+{/snippet}
+
 <!-- What there is to know while the question is open, under the answers. -->
 {#snippet openHint()}
   <!-- One block: the footer row's first item, which takes the room Detonate leaves. -->
   <div data-cursor="hint">
-    {#if coop}
-      <!-- What befell the team on this question, over the line below: read out as it comes. -->
-      <div class="news" aria-live="polite">
-        {#if perishedLine}<p class="spectate out" transition:slide={{ duration: 250 }}>{perishedLine}</p>{/if}
-        {#if flareLine}
-          <p class="spectate flare-line" transition:slide={{ duration: 250 }}><span class="found-glyph" aria-hidden="true"><ItemGlyph kind="flare" /></span>{flareLine}</p>
-        {/if}
-      </div>
+    {#if coop && !flat.current}
+      {@render news()}
     {/if}
     {#if coop && myStruck && me}
       {@const others = waitingIds(s).filter((id) => id !== me)}
@@ -1343,7 +1360,7 @@
        under it stay where they were and the art's circle keeps its size, so
        nothing on the screen moves, or has to be drawn again, for it. -->
   <div class="task" data-cursor="task" class:snug class:timed={!!timer && clocked}>
-    <p class="task-text" class:kept={!!reveal && upright.current}>
+    <p class="task-text" class:kept={(!!reveal && upright.current) || newsInTask}>
       <!-- Said to whoever can't answer as what is going on, and so it holds through the reveal. -->
       {#if !race && !coop && !session.myTurn}
         {active.name} <span class="muted">{q.mode === 'art' ? 'picks the art that matches the name' : 'names this item'}</span>
@@ -1358,6 +1375,7 @@
     {#if reveal && upright.current}
       <p class="task-text outcome" data-cursor="outcome" in:fly={{ y: 10, duration: 400, delay: 250 }}>{@render outcome()}</p>
     {/if}
+    {#if coop && flat.current}{@render news()}{/if}
     <!-- Mounted once for the whole question, so a branch changing never
          restarts it; at the reveal it stays, stopped and dimmed, saying how
          much time was left. -->
@@ -3622,6 +3640,23 @@
     }
     .task .clock :global(.timer span) {
       font-size: 0.85rem;
+    }
+    /* What befell the team, in the task line's place (newsInTask): one line,
+       a teammate's fall and a flare side by side, clear of the clock. */
+    .task .news {
+      grid-area: 1 / 1;
+      align-self: center;
+      line-height: 1.2;
+    }
+    .task.timed .news {
+      padding-inline: 44px;
+    }
+    .task .news > p {
+      display: inline;
+      padding: 0;
+    }
+    .task .news > p + p {
+      margin-left: 0.35em;
     }
     .stage {
       grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);

@@ -464,6 +464,7 @@ export function gameScenes(): Scene[] {
           ['miss', 'Kalguur misses'],
           ['fallen', 'Una perishes'],
           ['perish', 'Una perishes, from her seat'],
+          ['news', 'Una perishes, the question open'],
           ['votes', 'The votes coming in'],
         ]),
         players(2, 3),
@@ -507,6 +508,7 @@ export function gameScenes(): Scene[] {
         { label: 'Kalguur brings her back with his second life', values: { at: 'fallen', gives: true }, listed: false },
         { label: 'Una perishes, from her seat: her line slides in', values: { at: 'perish' }, key: 'game/delve-together-perish', listed: false },
         { label: 'Kalguur brings her back: the line slides out', values: { at: 'perish', gives: true }, listed: false },
+        { label: 'Una perishes, the question still open: the news over Kalguur’s miss', values: { at: 'news' }, key: 'game/delve-together-news', listed: false },
         { label: 'The votes coming in one at a time', values: { at: 'votes' }, key: 'game/delve-together-votes', listed: false },
       ],
       build: (v = {}) => {
@@ -570,6 +572,7 @@ export function gameScenes(): Scene[] {
         const t = delveTogether({ ...v, players: Math.max(3, Number(v.players ?? 3)) });
         const una = 'Una of the Vaal';
         const perish = when === 'perish';
+        const news = when === 'news';
         for (let depth = 1; depth <= 3; depth++) {
           for (const p of t.s.players) if (livesOf(t.s, p.id) > 0) t.act({ type: 'vote', category: t.s.offered[0] }, p.name);
           if (t.s.phase === 'choosing') t.act({ type: 'expire' }, null);
@@ -577,7 +580,10 @@ export function gameScenes(): Scene[] {
           t.answer(una, false);
           // (Another wrong pick than hers: a pick struck out can't be made again.)
           const struck = new Set((t.q.struck ?? []).map((x) => x.index));
-          if (depth === 1) t.answer('Kalguur', t.q.options.findIndex((o, i) => o !== t.q.itemId && !struck.has(i)));
+          if (depth === 1 || (news && depth === 3)) t.answer('Kalguur', t.q.options.findIndex((o, i) => o !== t.q.itemId && !struck.has(i)));
+          // Her last life gone and Kalguur's miss on the same question, Doryani still
+          // answering: what befell the team over his own line, the most that row says.
+          if (news && depth === 3) return { state: t.s, act: t.room, at: t.clock.now } satisfies Built;
           if (depth < 3) t.answer('Doryani', true).wait(1000).next();
         }
         if (!perish) {
