@@ -839,13 +839,20 @@ export const MOMENTS: Record<Sfx, Moment> = {
   // top-tier drop's (Item_Drop_HighTier_Mirror_01, as the game has it): a
   // bright swell, loudest 0.44 to 0.62 s in, breaking off at 0.75 s and
   // ringing on to 3.5 s, which the card's light follows (lib/auraDrop.ts).
-  // By ear model (Zwicker, dry) it peaks at 66 phon here, over deathmatch's
-  // 62, the loudest moment; -25 dB would sit with deathmatch.
+  // On it, the chime every player's loot filter rings for a Mirror or a
+  // Divine (NeverSink's filter: PlayAlertSound 6, the game's AlertSound_06),
+  // with it as the game rings it, its height at 0.25 s.
+  // By ear model (Zwicker, dry) the drop alone peaks at 66 phon here, the
+  // chime at 64, the two together at 68.5, over deathmatch's 62, the loudest
+  // moment; both at -25 dB would make it 65.
   mirrorDrop: {
     soften: 0,
     varyPitch: 0,
     varyGain: 0,
-    layers: [{ file: 'mirror-drop', gain: -22, rate: 1, delay: 0, hp: 20, lp: 20000, send: 0.2 }],
+    layers: [
+      { file: 'mirror-drop', gain: -22, rate: 1, delay: 0, hp: 20, lp: 20000, send: 0.2 },
+      { file: 'mirror-tink', gain: -22, rate: 1, delay: 0, hp: 20, lp: 20000, send: 0.2 },
+    ],
   },
   dealTurn: {
     soften: 5,

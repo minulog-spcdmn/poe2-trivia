@@ -1,74 +1,38 @@
 // The Lich aura's seal and sign (lib/auraEngraving: the seal in Sol's place
 // on the face and at the back's heart, the sign in Luna's place).
 //
-// The game gives the Lich no emblem of her own: her ascendancy's skill icons
-// are painted scenes, and her Crystalline Phylactery has no picture. So both
-// come from her ascendancy's illustration: what she carries, and who she is.
+// poe2db shows no emblem for the Lich: her ascendancy's skill icons are
+// painted scenes, and her Crystalline Phylactery has no picture of its own.
+// So both come from her ascendancy's illustration: the seal from what she
+// carries, the sign from what she wears.
 //
 // The seal is her lantern (the owner's pick), hanging from her hand in the
 // art, leaning as she holds it out: its cap with its roof and thorned brim,
-// its cage, its base with its thorned brim, knop and long spike, its lengths
-// and widths and its lean measured off the art. Its light, the brightest
-// thing in the art, shines between the bars of its cage, each a sliver of
-// bright ink. Its brims fill the ring; its crown and loop break out above,
-// its spike below, and its chain, as far as there is room, runs on toward
-// her hand. It is drawn apart from the Twilight Order's lantern (an upright
-// golden orb with lancet windows): hers leans, is barred and thorned, and
-// hangs on a chain. Her figure, tried first, read at the seal's size only
-// as a filled bowl.
+// its cage, its base with its thorned brim, knop and long spike. It is
+// rebuilt, not traced: its lengths, its widths along its length and its
+// lean are measured off the art, and where the art's brims bristle with
+// thorns, each here keeps one a side, as far out as theirs. Its light, the
+// brightest thing in the art, shines between the bars of its cage, each a
+// sliver of bright ink. Its brims fill the ring; its crown and loop break
+// out above, its spike below, and its chain, as far as there is room, runs
+// on toward her hand. It is drawn apart from the Twilight Order's lantern
+// (an upright golden orb with lancet windows): hers leans, is barred and
+// thorned, and hangs on a chain. Her figure, tried first, read at the
+// seal's size only as a filled bowl.
 //
-// The sign is her hood, and her eyes glowing in its shadow, as the game's
-// own portrait of the Lich (the ascendancy's icon) shows her: the hood
-// placed off her head in the illustration, its opening turned up as she
-// looks up, her eyes where hers are. Not a skull, which is the Abyss's.
-// Her bone staff (read as a dog's bone at the sign's size), her brooch (a
-// star in a ring, as the common sign is) and her clawed hand (a third hand,
-// after the Breach's and the Keepers') were tried or weighed before it.
+// The sign is her brooch (the owner's pick), the thorned star on her robe in
+// the art: eight thorns of uneven length round a small boss,
+// a ring through them and a web strung between them. Its thorns tie it to
+// the lantern's, and its uneven points keep it apart from Divine's sign, a
+// web star as even as a pentagram. Tried before it: her bone staff (read as
+// a dog's bone at the sign's size), her hood with glowing eyes (read as a
+// ghost, a bell or an egg), her Crystalline Phylactery (the owner passed on
+// it), her clawed hand from the Lich passive's icon (too spindly at the
+// sign's size, and a third hand after the Breach's and the Keepers') and the
+// aura's braided cord (a squiggle).
 
 import { angleOf, at, f, lerp, line, pt, ring, type Pt } from '../arcane.ts';
-import { disc, dist, LIGHT, poly, ringCuts, type AuraSeal, type Clear, type Seal, type Sign } from './kit.ts';
-
-// ---- shading (as the Breach's: strokes running with the light on the side turned from it) ----
-
-/** Where the line `o` across `n`, running along `u`, lies inside the outline `ps`: its spans, as distances along `u`. */
-function spans(outlines: Pt[][], n: Pt, u: Pt, o: number): [number, number][] {
-  const ts: number[] = [];
-  for (const ps of outlines)
-    ps.forEach((a, i) => {
-      const b = ps[(i + 1) % ps.length];
-      const [na, nb] = [a[0] * n[0] + a[1] * n[1], b[0] * n[0] + b[1] * n[1]];
-      if (na <= o === nb <= o) return;
-      const s = (o - na) / (nb - na);
-      ts.push(a[0] * u[0] + a[1] * u[1] + s * (b[0] * u[0] + b[1] * u[1] - (a[0] * u[0] + a[1] * u[1])));
-    });
-  ts.sort((x, y) => x - y);
-  const out: [number, number][] = [];
-  for (let i = 0; i + 1 < ts.length; i += 2) out.push([ts[i], ts[i + 1]]);
-  return out;
-}
-/** The spans of `a` left once `b`'s are taken out. */
-function without(a: [number, number][], b: [number, number][]): [number, number][] {
-  let out = a;
-  for (const [b0, b1] of b) out = out.flatMap(([a0, a1]): [number, number][] => (b1 <= a0 || b0 >= a1 ? [[a0, a1]] : [...(b0 > a0 ? [[a0, b0] as [number, number]] : []), ...(b1 < a1 ? [[b1, a1] as [number, number]] : [])]));
-  return out;
-}
-/** The side of an outline turned from the light, shaded: strokes running with the light, `gap` apart, as deep into it as `depth`, stopping `pad` short of its edges and of its `holes`. */
-function shading(ps: Pt[], depth: number, gap: number, pad: number, holes: Pt[][] = []) {
-  const lit = ps.map(([x, y]): Pt => [x + LIGHT[0] * depth, y + LIGHT[1] * depth]);
-  const u: Pt = [-LIGHT[0], -LIGHT[1]];
-  const n: Pt = [-u[1], u[0]];
-  const across = ps.map((q) => q[0] * n[0] + q[1] * n[1]);
-  const [lo, hi] = [Math.min(...across), Math.max(...across)];
-  let d = '';
-  for (let o = lo + gap / 2; o < hi; o += gap) {
-    const on = (t: number): Pt => [n[0] * o + u[0] * t, n[1] * o + u[1] * t];
-    for (const [t0, t1] of without(spans([ps, ...holes], n, u, o), spans([lit], n, u, o))) {
-      if (t1 - t0 < pad * 3) continue;
-      d += line(on(t0 + pad), on(t1 - pad));
-    }
-  }
-  return d;
-}
+import { disc, dist, poly, ringCuts, type AuraSeal, type Clear, type Seal, type Sign } from './kit.ts';
 
 /** A right half's points mirrored to the left. */
 const mirror = (half: Pt[]) => half.map(([x, y]): Pt => [-x, y]);
@@ -220,62 +184,24 @@ const lantern: Seal = (p, c, R, room) => {
   p.knockout += disc(c, R + 1.4) + clearOf(cap) + clearOf(base) + disc(loop.c, loop.r + 0.8) + (end === s0 ? '' : poly(strap));
 };
 
-// ---- the hood -------------------------------------------------------------------
-
-// Her hood, placed off her head in the art (the illustration at 4x, its
-// crop from 650, 440): its outline from the left shoulder up over its peak
-// and down over her right shoulder, cut straight across below them; the
-// opening where her face is, turned up as she looks up; the cloak's two
-// front edges falling from it; and her eyes, which glow.
-const HOOD: Pt[] = [
-  [170, 425], [196, 380], [240, 336], [258, 250], [268, 170], [285, 95], [310, 40], [356, 12], [428, -4],
-  [494, 10], [535, 35], [568, 85], [595, 150], [615, 220], [645, 290], [700, 350], [745, 386], [762, 425],
-];
-const FRONT: [Pt, Pt][] = [
-  [[350, 292], [334, 424]],
-  [[446, 286], [496, 412]],
-];
-const OPENING: Pt[] = [
-  [390, 312], [334, 280], [300, 210], [290, 140], [302, 76], [336, 40], [400, 24], [460, 30],
-  [494, 68], [500, 130], [490, 200], [458, 264], [424, 300],
-];
-const EYES: Pt[] = [[335, 115], [450, 95]];
-/** Where its middle lies on the art, and how far from it its furthest point lies. */
-const HOOD_AT: Pt = [460, 215];
-const HOOD_EXTENT = 368;
-/** How far past the sign's reach its furthest point goes, and each eye's radius, in the sign's reach. */
-const HOOD_FIT = 1.12;
-const EYE_R = 0.06;
-
-/** The cloth's strokes' gap, in the sign's reach. */
-const CLOTH_GAP = 0.085;
-
 /**
- * The Lich's sign: her hood, and in its shadow her eyes. Its outline, its
- * opening and the cloak's front edges; the cloth hatched close, and closer
- * on the side turned from the light; the opening left dark, the darkest
- * thing in it, and her two eyes glowing out of it, bright.
+ * The Lich's sign: her brooch, from her robe in the art. A thorned star,
+ * its eight thorns of uneven length set round a small boss, a ring through
+ * them, and a web strung between them inside the ring.
  */
-const hood: Sign = (p, c, r) => {
-  const k = (r * HOOD_FIT) / HOOD_EXTENT;
-  const S = ([x, y]: Pt): Pt => [c[0] + (x - HOOD_AT[0]) * k, c[1] + (y - HOOD_AT[1]) * k];
-  const out = HOOD.map(S);
-  const opening = OPENING.map(S);
-  p.add(poly(out) + poly(opening) + FRONT.map(([a, b]) => line(S(a), S(b))).join(''), 'sign');
-  // The cloth: strokes running with the light across all of it but the opening.
-  const u: Pt = [-LIGHT[0], -LIGHT[1]];
-  const n: Pt = [-u[1], u[0]];
-  const across = out.map((q) => q[0] * n[0] + q[1] * n[1]);
-  const pad = r * 0.04;
-  let cloth = '';
-  for (let o = Math.min(...across) + (r * CLOTH_GAP) / 2; o < Math.max(...across); o += r * CLOTH_GAP)
-    for (const [t0, t1] of spans([out, opening], n, u, o)) {
-      if (t1 - t0 < pad * 3) continue;
-      const on = (t: number): Pt => [n[0] * o + u[0] * t, n[1] * o + u[1] * t];
-      cloth += line(on(t0 + pad), on(t1 - pad));
-    }
-  p.add(cloth + shading(out, r * 0.18, r * CLOTH_GAP, pad, [opening]), 'hatch');
-  p.add(EYES.map((e) => disc(S(e), r * EYE_R)).join(''), 'fill');
+const brooch: Sign = (p, c, r) => {
+  const lens = [1, 0.62, 0.88, 0.55, 0.95, 0.6, 0.8, 0.66];
+  let d = ring(c, r * 0.52) + ring(c, r * 0.2);
+  lens.forEach((L, i) => {
+    const a = i * 45 + 8;
+    // Each thorn grows from the boss's edge, the long ones broader at the root.
+    const root = at(c, a, r * 0.2);
+    const hw = r * (i % 2 ? 0.05 : 0.08);
+    d += `M${pt(at(root, a - 90, hw))}L${pt(at(c, a, r * L))}L${pt(at(root, a + 90, hw))}`;
+    // The web: a strand sagging toward the boss to the next thorn.
+    d += `M${pt(at(c, a, r * 0.36))}Q${pt(at(c, a + 22.5, r * 0.3))} ${pt(at(c, a + 45, r * 0.36))}`;
+  });
+  p.add(d, 'sign');
 };
 
-export const seals: AuraSeal = { seal: lantern, sign: hood };
+export const seals: AuraSeal = { seal: lantern, sign: brooch };

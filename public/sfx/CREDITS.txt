@@ -188,6 +188,11 @@ How they are layered and filtered is set in src/lib/soundDesign.ts.
                        dropping (Item_Drop_HighTier_Mirror_01, from the game's
                        ItemDrops.bank), (c) Grinding Gear Games, not CC0:
                        a QA desk try-out, not cleared for the live game
+  mirror-tink.mp3      Path of Exile 2's own alert sound 6 (AlertSound_06,
+                       from the game's Four_ItemFilter.bank), the chime
+                       NeverSink's loot filter plays for a Mirror or a
+                       Divine Orb, layered on mirror-drop.mp3; (c) Grinding
+                       Gear Games, not CC0: as mirror-drop.mp3
   deal-air-1.mp3 to -4, deal-flap-1.mp3 to -4  no recording: noise
                        shaped to the deal's cards flying in and turning,
                        made for the game

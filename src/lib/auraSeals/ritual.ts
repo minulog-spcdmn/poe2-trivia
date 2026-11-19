@@ -1,7 +1,7 @@
 // The Ritual aura's seal and sign (lib/auraEngraving: the seal in Sol's
 // place on the face and at the back's heart, the sign in Luna's place).
 
-import { at, line, pt, ring, transform, type Pt } from '../arcane.ts';
+import { arc, at, line, pt, ring, transform, type Pt } from '../arcane.ts';
 import { MARKS } from '../alchemy.ts';
 import { disc, sealRing, type Seal, type Sign, type AuraSeal } from './kit.ts';
 
@@ -42,39 +42,55 @@ const ritual: Seal = (p, c, R) => {
 /**
  * The Ritual's sign: the rune the game marks a Ritual altar with on the
  * minimap (the owner's pick), traced off its icon's pixels (64 px): the
- * middles of its lines, joined where a line runs on through a crossing. A
- * ring broken at its crown by a small circle; inside it an M, two posts and
- * their slants, a diamond with an eye at its heart, crossed by an X; a V
- * under it, and a bud on a short stem at its foot. In the icon's pixels, y
- * down.
+ * middles of its lines, taken from the icon stood upright (it leans a
+ * degree) and averaged with its mirror image, since the rune is symmetric
+ * and a 64 px icon blurs each side differently; then straightened where a
+ * line runs straight. Its ring and the small circle at its crown are fitted
+ * circles; the ring keeps the icon's own gaps, open at the upper left and at
+ * the foot, and meeting the small circle at the right. Inside: an M, two
+ * posts and their slants, crossed by two chevrons; a diamond with an eye at
+ * its heart; a V under it, and a bud on a short stem at its foot. In the
+ * icon's pixels, y down.
  */
 const RUNE = [
-  '33.5,42.8 35.3,41.8 37.5,37 39.8,33.7',
-  '33.2,50.8 33.3,47 33.3,43 32.5,41.5 30.5,40.3 27.3,34.3',
-  '25.7,54.5 21,52.3 19.5,51 19.3,50.2 19.8,48.7 19.7,41.3 20.5,33.2 20.2,30 20,19.2 20.7,17.8 20.5,16',
-  '32,27.3 33.7,27.3 35,26.2',
-  '31.8,27.5 31.2,29.2 29.3,30.3',
-  '45.7,15.8 45.2,17.5 43.3,18.7 41.2,23.3 39.5,25.3 38,27.7 35.3,33.5 33.3,34.7',
-  '45.2,17.5 45.8,18.8 45.5,22.8 46,28.8 46.3,31.8 46.8,35.2 46.8,47.2 48.5,49.5',
-  '33.8,27.5 34.5,28.7 34.3,30 33,31 32.7,33.8',
-  '28,28 30.2,26.5 31.3,26.3 32.7,25.2 35.2,26 38,27.7 43.3,31.3 46.2,32',
-  '31.3,54.5 31.2,52 29.5,50.5 29.8,49.3 31.3,47.5 33.5,47.2 35.3,47.7 36.5,49.3 36.5,51 35.2,52.2 34.7,54.8',
-  '21,17.8 22,18.2 23.2,19.7 26.3,25.8 27.7,28',
-  '33,51 31.3,52',
-  '27.8,28.8 29.2,30.3 30,31.5 30.3,32.8 32.5,34',
-  '38.5,10.3 37.3,8 35.7,6.3 32.5,5.2 30.7,5.5 28.5,7 27.5,8.3 27,11.3 27.5,13.2 29,15.2 30.7,16.3 33.3,16.7 35.7,16.2 37.2,15 38.2,13.3 38.5,10.7',
-  '46,28.8 43.5,28.2 39.2,25.3 32.8,21.5 26.7,25.8 22.7,29.3 20.3,30',
-  '33.3,51 35,52.2',
-  '38.7,10.5 41.3,10.5 48.8,14.5 53.3,20 55.3,25.2 56.2,31 56,37.3 54.3,42.3 52.3,45.7 48.7,49.5 46.5,51.5 41.2,54.3',
-  '32.5,41.3 33,40.8 33.2,34.8',
-  '17.3,14.8 13.3,20 11.5,23.5 10.3,28.3 10,33.2 10.7,37.3 13.5,44.7 17.7,49.7 19.2,50',
-  '32.8,31 31.5,30.5',
-  '30.2,31.5 31.3,30.5',
-  '27.7,28.8 22.8,32.5 20.5,33.2',
+  '28.1,28.5 30.8,33.2 33.25,34.5 35.7,33.2 38.4,28.5',
+  '33.25,42.4 33.25,34.6',
+  '20.4,29.4 22.8,28.8 26.6,26',
+  '46.1,29.4 43.7,28.8 39.9,26',
+  '31.5,29.1 32.1,27.7 33.25,27.4 34.4,27.7 35,29.1',
+  '31.3,52.1 29.8,50.9 30,49.1 31.5,47.5 33.25,47.1 35,47.5 36.5,49.1 36.7,50.9 35.2,52.1',
+  '31.6,54.7 31.3,52.2',
+  '34.9,54.7 35.2,52.2',
+  '19.8,48.4 19.6,39.8 20.2,32.7',
+  '46.7,48.4 46.9,39.8 46.3,32.7',
+  '21,17.6 20.8,16.4',
+  '45.5,17.6 45.7,16.4',
+  '26.7,26 28,28.1',
+  '39.8,26 38.5,28.1',
+  '28.1,28.1 31.5,25.7 33.25,25.2 35,25.7 38.4,28.1',
+  '33.25,42.7 33.25,47',
+  '33.25,31 33.25,34.4',
+  '20.3,32.6 23,31.9 27.9,28.5',
+  '46.2,32.6 43.5,31.9 38.6,28.5',
+  '26.6,25.7 22.6,18.5 21.1,17.7',
+  '39.9,25.7 43.9,18.5 45.4,17.7',
+  '27,34.2 31.3,41.7 33.25,42.6 35.2,41.7 39.5,34.2',
+  '20.9,17.7 20.3,19.5 20.3,29.3',
+  '45.6,17.7 46.2,19.5 46.2,29.3',
+  '31.5,29.3 31.8,30.2 33.25,30.9 34.7,30.2 35,29.3',
+  '20.2,32.5 20.3,29.5',
+  '46.3,32.5 46.2,29.5',
+  '26.8,25.7 31.2,22.5 33.25,21.7 35.3,22.5 39.7,25.7',
+  '31.4,52.1 33.25,51 35.1,52.1',
+  '33.25,51 33.25,47.2',
 ];
+/** The ring: its middle and radius, and the arcs it is drawn in (degrees clockwise from the top). */
+const RUNE_RING = { c: [33.28, 32.3] as Pt, r: 23.19, arcs: [[13.8, 162], [204, 317.4]] };
+/** The small circle at the rune's crown. */
+const RUNE_CROWN = { c: [33.19, 11.08] as Pt, r: 5.69 };
 /** Where the rune's middle lies in its icon, and how far from it its furthest point lies. */
-const RUNE_AT: Pt = [33.2, 30.4];
-const RUNE_R = 25.2;
+const RUNE_AT: Pt = [33.28, 30.4];
+const RUNE_R = 25.01;
 /** How far past the sign's reach the rune's furthest point goes. */
 const RUNE_FIT = 1.08;
 
@@ -83,7 +99,8 @@ const altarRune: Sign = (p, c, r) => {
   const k = (r * RUNE_FIT) / RUNE_R;
   const S = ([x, y]: Pt): Pt => [c[0] + (x - RUNE_AT[0]) * k, c[1] + (y - RUNE_AT[1]) * k];
   const run = (s: string) => s.split(' ').map((q, i) => (i ? 'L' : 'M') + pt(S(q.split(',').map(Number) as Pt))).join('');
-  p.add(RUNE.map(run).join(''), 'sign');
+  const rim = RUNE_RING.arcs.map(([a0, a1]) => arc(S(RUNE_RING.c), RUNE_RING.r * k, a0, a1)).join('');
+  p.add(RUNE.map(run).join('') + rim + ring(S(RUNE_CROWN.c), RUNE_CROWN.r * k), 'sign');
 };
 
 export const seals: AuraSeal = { seal: ritual, sign: altarRune };
