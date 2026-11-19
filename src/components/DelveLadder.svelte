@@ -27,7 +27,8 @@
   // yours under it. A small legend left of the ouroboros says which is
   // which, and whose runs they are: alone (solo) or together (co-op,
   // `together`). The zones are charted as deep as you have been in any run,
-  // alone or together (`seen`), since you have seen them. Each find you
+  // alone or together (`seen`), since you have seen them; the ouroboros
+  // lights and turns only for the runs the stars mark. Each find you
   // have met (`met`) is tied to its heading by a fine gold line from the wall
   // where it first turns up, that depth written in the middle of it: to its
   // heading in the finds list (`finds`) when that stands beside the plate,
