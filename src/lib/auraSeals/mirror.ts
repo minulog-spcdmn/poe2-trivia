@@ -1,7 +1,7 @@
 // The Mirror of Kalandra aura's seal and sign (lib/auraEngraving: the seal in Sol's
 // place on the face and at the back's heart, the sign in Luna's place).
 
-import { at, lerp, line, ring, type Pt } from '../arcane.ts';
+import { at, lerp, line, pt, ring, type Pt } from '../arcane.ts';
 import { poly, disc, dist, cutLine, ringCuts, sealRing, fourStar, engraveStar, LIGHT, type Clear, type Seal, type Sign, type AuraSeal } from './kit.ts';
 
 /**
@@ -79,11 +79,14 @@ const mirror: Seal = (p, c, R, room) => {
 
 // The Mirror of Kalandra itself, traced off the game's icon (108 px; the
 // owner's pick for the sign): its outline, frame, wings and the pendant
-// under it from the icon's transparency; the glass, an oval fitted to where
+// under it from the icon's transparency (the pendant's finials simplified
+// to the points they end in, which a 108 px icon blurs round); the glass, an oval fitted to where
 // the gold rim begins along rays from its middle; the three stones on its
 // rim (red, blue, green) and the two bosses on its wings, found by their
-// round rims (x, y, radius). In the icon's pixels, y down.
-const MIRROR_OUTLINE = '59.5,1.1 54.9,2.7 50.7,6.6 45.3,7.1 41.7,8.1 34.4,11.3 29,10 26.8,10.2 24.3,11.3 21.6,13.6 20.4,16 20,19.2 20.8,24.1 16.2,32 12.7,41.5 11.4,41.8 6.7,38.8 3.6,35.7 2.6,35.9 2.1,36.8 2.4,40.8 4.1,48.9 6.4,53.5 9.1,57.1 9.1,65 11.6,70 15,72.6 18.8,73.8 22.4,74 26.4,73.2 32.5,77.7 42.5,82.5 43.9,84.5 43.7,87.5 45.2,89.3 44.9,92.8 43.9,95.5 45.4,98.9 46.5,99.5 48,98.2 49.7,95 49.1,93.1 51.3,93 54.6,95.8 57.3,95.3 56.1,97.6 56.1,99.1 57.4,101.8 59.1,103.3 59.9,102.8 61.8,99.7 61.8,95.8 63.1,94.2 62.8,92.1 65,92.8 68.5,91.5 68.2,93.9 70,97 70.7,97.5 71.8,96.8 73.2,93.4 72.2,90.2 72.1,88 73.4,86.2 73.2,83.4 74.4,81.6 81.8,76.6 85.4,73.3 92.8,72.9 96.5,69.9 97.9,67.2 98.5,63.9 98.3,61.3 101.8,54.5 102.8,46.7 102.6,45.3 101.7,45 97.7,48.3 96,48.9 95.2,48.4 92.8,39.1 89.3,30.9 90,28.4 89.8,24.1 87.5,20.5 85.1,19 80.6,18.6 74.8,13.5 67.8,9.4 65.7,5.3 63.7,3';
+// round rims (x, y, radius); the ribs of its wings, the longer ridges of
+// their filigree, where the metal is brighter than round it. In the icon's
+// pixels, y down.
+const MIRROR_OUTLINE = '59.5,1.1 54.9,2.7 50.7,6.6 45.3,7.1 41.7,8.1 34.4,11.3 29,10 26.8,10.2 24.3,11.3 21.6,13.6 20.4,16 20,19.2 20.8,24.1 16.2,32 12.7,41.5 11.4,41.8 6.7,38.8 3.6,35.7 2.6,35.9 2.1,36.8 2.4,40.8 4.1,48.9 6.4,53.5 9.1,57.1 9.1,65 11.6,70 15,72.6 18.8,73.8 22.4,74 26.4,73.2 32.5,77.7 43.9,84.5 45.2,89.3 46.2,99 49.1,93.1 51.3,93 54.6,95.8 57.3,95.3 59.1,103.3 62.8,92.1 68.5,91.5 70.9,97.6 73.2,83.4 81.8,76.6 85.4,73.3 92.8,72.9 96.5,69.9 97.9,67.2 98.5,63.9 98.3,61.3 101.8,54.5 102.8,46.7 102.6,45.3 101.7,45 97.7,48.3 96,48.9 95.2,48.4 92.8,39.1 89.3,30.9 90,28.4 89.8,24.1 87.5,20.5 85.1,19 80.6,18.6 74.8,13.5 67.8,9.4 65.7,5.3 63.7,3';
 const GLASS = '48.2,72 42,70.5 36.2,68 30.9,64.8 26.3,61 22.6,56.4 19.7,51.6 17.9,46.4 17.2,41 17.6,35.6 19,30.6 21.6,25.8 25,21.5 29.4,17.8 34.4,14.9 40.1,12.8 46.2,11.6 52.4,11.3 58.8,12 64.9,13.5 70.7,16 76,19.2 80.6,23 84.4,27.6 87.2,32.4 89,37.6 89.7,43 89.4,48.4 87.9,53.4 85.4,58.2 81.9,62.5 77.6,66.2 72.4,69.1 66.8,71.2 60.8,72.4 54.4,72.7';
 const STONES: [number, number, number][] = [[31.3, 16.9, 7.4], [63.1, 9.1, 7.0], [83.4, 26.6, 7.4]];
 const BOSSES: [number, number, number][] = [[22.4, 62.4, 8.5], [88.6, 63.3, 7.6]];
@@ -92,12 +95,22 @@ const MIRROR_AT: Pt = [51.5, 52.2];
 const MIRROR_R = 51.7;
 /** How far past the sign's reach its furthest point goes. */
 const MIRROR_FIT = 1.12;
-/** The frame's shading on the side turned from the light, in the sign's reach: its depth, the gap between its strokes, and how far they stop short of the edges. */
-const FRAME_SHADE = 0.2;
-const FRAME_GAP = 0.1;
-const FRAME_PAD = 0.05;
+/** The tone of the glass and of the gold, in the sign's reach: the gap between strokes (the glass, brightest, closest), and how far they stop short of the edges. */
+const GLASS_GAP = 0.075;
+const GOLD_GAP = 0.15;
+const TONE_PAD = 0.04;
+const WING_RIBS = [
+  '14.8,43.6 10.9,42.5 7.5,40.1',
+  '4.2,43.7 7.1,45 8.2,48.6 7.5,49.9',
+  '94.1,51.9 96.4,49.9 100.8,47.9',
+  '100.8,47.9 101.5,49.1 100.9,52.5 97.4,59.5',
+  '9.8,46.4 13,50.8 13.4,52.8 14.6,53.4',
+  '11.9,55 9.2,51',
+  '91,51.4 91.6,50.1 91.5,44.7',
+];
 
 const points = (s: string) => s.split(' ').map((q) => q.split(',').map(Number) as Pt);
+
 const round = (c: Pt, r: number): Pt[] => Array.from({ length: 18 }, (_, i) => at(c, i * 20, r));
 
 /** Where the line `o` across `n`, running along `u`, lies inside the outlines `shape` (holes and all): its spans, as distances along `u`. */
@@ -116,20 +129,8 @@ function spans(shape: Pt[][], n: Pt, u: Pt, o: number): [number, number][] {
   return out;
 }
 
-/** The spans of `a` left once `b`'s are taken out. */
-function without(a: [number, number][], b: [number, number][]): [number, number][] {
-  let out = a;
-  for (const [b0, b1] of b) out = out.flatMap(([a0, a1]): [number, number][] => (b1 <= a0 || b0 >= a1 ? [[a0, a1]] : [...(b0 > a0 ? [[a0, b0] as [number, number]] : []), ...(b1 < a1 ? [[b1, a1] as [number, number]] : [])]));
-  return out;
-}
-
-/**
- * The side of a shape (outlines with holes) turned from the light, shaded:
- * strokes running with the light, `gap` apart, as deep into it as `depth`,
- * stopping `pad` short of its edges (as the Breach Ring's band is shaded).
- */
-function shading(shape: Pt[][], depth: number, gap: number, pad: number) {
-  const lit = shape.map((ps) => ps.map(([x, y]): Pt => [x + LIGHT[0] * depth, y + LIGHT[1] * depth]));
+/** A shape (outlines with holes) laid in tone: strokes running with the light, `gap` apart, stopping `pad` short of its edges. */
+function tone(shape: Pt[][], gap: number, pad: number) {
   const u: Pt = [-LIGHT[0], -LIGHT[1]];
   const n: Pt = [-u[1], u[0]];
   const across = shape.flat().map((q) => q[0] * n[0] + q[1] * n[1]);
@@ -137,32 +138,31 @@ function shading(shape: Pt[][], depth: number, gap: number, pad: number) {
   let d = '';
   for (let o = lo + gap / 2; o < hi; o += gap) {
     const at2 = (t: number): Pt => [n[0] * o + u[0] * t, n[1] * o + u[1] * t];
-    for (const [t0, t1] of without(spans(shape, n, u, o), spans(lit, n, u, o))) {
-      if (t1 - t0 < pad * 3) continue;
-      d += line(at2(t0 + pad), at2(t1 - pad));
-    }
+    for (const [t0, t1] of spans(shape, n, u, o)) if (t1 - t0 > pad * 3) d += line(at2(t0 + pad), at2(t1 - pad));
   }
   return d;
 }
 
 /**
- * The Mirror of Kalandra: its outline; the glass left bright inside its oval;
- * the frame shaded on its side from the light, as far as the stones and
- * bosses, which stand clear of it; each stone a jewel in its setting, each
- * boss a ring round its knob.
+ * The Mirror of Kalandra: its outline and the glass's oval; the glass, its
+ * brightest mass, laid in close strokes, and its gold (frame, wings, bosses
+ * and pendant) in wider ones, so it reads as metal round the light; the
+ * wings' ribs in fine lines; each stone a cut jewel, solid in its setting.
  */
 const mirrorSign: Sign = (p, c, r) => {
   const k = (r * MIRROR_FIT) / MIRROR_R;
   const S = ([x, y]: Pt): Pt => [c[0] + (x - MIRROR_AT[0]) * k, c[1] + (y - MIRROR_AT[1]) * k];
+  const run = (s: string) => points(s).map((q, i) => (i ? 'L' : 'M') + pt(S(q))).join('');
   const outline = points(MIRROR_OUTLINE).map(S);
   const glass = points(GLASS).map(S);
   const stones = STONES.map(([x, y, s]) => ({ c: S([x, y]), r: s * k }));
   const bosses = BOSSES.map(([x, y, s]) => ({ c: S([x, y]), r: s * k }));
   p.add(poly(outline) + poly(glass), 'sign');
-  const studs = [...stones, ...bosses];
-  p.add(shading([outline, glass, ...studs.map((o) => round(o.c, o.r + 0.25))], r * FRAME_SHADE, r * FRAME_GAP, r * FRAME_PAD), 'hatch');
-  p.add(studs.map((o) => ring(o.c, o.r)).join(''), 'thin');
-  p.add(stones.map((o) => disc(o.c, o.r * 0.5)).join('') + bosses.map((o) => disc(o.c, o.r * 0.28)).join(''), 'fill');
+  p.add(tone([glass], r * GLASS_GAP, r * TONE_PAD), 'hatch');
+  p.add(tone([outline, glass, ...stones.map((o) => round(o.c, o.r + 0.2))], r * GOLD_GAP, r * TONE_PAD), 'hair');
+  p.add(WING_RIBS.map(run).join(''), 'hair');
+  p.add([...stones, ...bosses].map((o) => ring(o.c, o.r)).join(''), 'thin');
+  p.add(stones.map((o) => disc(o.c, o.r * 0.72)).join(''), 'fill');
 };
 
 export const seals: AuraSeal = { seal: mirror, sign: mirrorSign };

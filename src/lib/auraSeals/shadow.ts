@@ -50,24 +50,26 @@ const shadow: Seal = (p, c, R, room) => {
   p.knockout += disc(c, R + 1.4);
 };
 
-// The Shadow's dagger, traced off the game's dagger icon (67 px; the owner's
-// pick for the sign, as the Shadow fights with daggers and the aura's cut
-// is his blade's): its outline from the icon's light, joined across the
-// dark lines that part its blade, guard and grip; and the dark it holds,
-// the fuller down the blade, the slot in the guard and the gaps in the
-// grip's wrapping. In the icon's own pose, point down and left. In the
-// icon's pixels, y down.
+/**
+ * The Shadow's sign: the dagger, traced off the game's dagger icon (67 px;
+ * the owner's pick, as the Shadow fights with daggers): its outline from the
+ * icon's light, joined across the dark lines that part its blade, guard and
+ * grip; and the dark it holds, the fuller down the blade, the slot in the
+ * guard and the gaps in the grip's wrapping, cut into it as grooves (the
+ * icon's dark stays the plate's dark). In the icon's own pose, point down
+ * and left. In the icon's pixels, y down.
+ */
 const DAGGER_OUTLINE = '61,6.4 59.5,6 56.2,6.2 54.5,6.9 53.5,8.4 53.6,10.9 53.2,11.7 50.8,12.5 42,21.4 40.3,23.9 39,23.7 33,18 31.4,18 31,21.4 33.8,24 34.8,26.3 34.6,27.2 34,27.8 32.3,27.7 31.2,28.3 16.4,44 6.3,60.8 6.3,61.8 22.4,52.8 38.7,37.6 39.1,36.8 38.8,36.3 35.1,35.6 34.1,35 33.7,31.9 34.2,30.9 35.3,30.7 38.5,32.4 43.9,33.9 46.4,36.8 49.8,36.5 50.1,35.8 49.7,34.6 45.2,30.2 43.7,28 42.5,27.4 42.2,26 42.8,25.4 43.9,25.2 45.2,26.8 46.5,26.6 49.3,23.3 52.5,20.7 53.7,18.5 56.3,16.8 56.5,15.6 54.3,15.6 53.6,14.4 54.1,13.4 55.8,12.6 56,10.5 56.5,9.8 58.6,9.2 60,9.6 60.3,11 59.2,13.6 60,14 60.8,13.7 61.7,11.4 61.4,7.5';
 const DAGGER_DARK = ['34.4,36.1 33.5,35.2 16.1,52.2 14.5,54.2 14.4,55.2 20.5,52.8 21.8,51.8 30.3,43.1', '54.3,16.3 53.2,16.2 50,17.9 49.6,19.7 47.3,22 46.1,22.2 44.4,21.6 44.3,22 45.5,23.4 44.9,24.7 45.3,25.3 45.7,25.4 47.3,24 48.5,23.5 50.3,20.7 53.2,18.3', '38.5,27.2 38.4,29.1 39.1,30.6 42.9,31.2 42.6,30.2 39.6,27.2', '30.6,30.9 29.3,31.7 24.1,37.7 24.9,37.6 28.4,35.5', '35,28.1 33.4,28.6 33.6,30.5 35.6,30.2', '41.6,23.8 40.1,24.8 41.6,26.2 42.4,24.9', '53.9,12.3 52.3,12.8 52.4,13.6 52.8,14.1 54.3,12.8'];
 /** Where the dagger's middle lies in its icon, and how far from it its furthest point lies. */
 const DAGGER_AT: Pt = [33.6, 34.1];
 const DAGGER_R = 38.9;
-/** How far past the sign's reach its furthest point goes. */
-const DAGGER_FIT = 1.12;
+/** How far past the sign's reach its furthest point goes: a long, thin shape lying across the corner, so further than a round sign's. */
+const DAGGER_FIT = 1.25;
 /** The shading on the side turned from the light, in the sign's reach: its depth, the gap between its strokes, and how far they stop short of the edges. */
-const DAGGER_SHADE = 0.12;
-const DAGGER_GAP = 0.09;
-const DAGGER_PAD = 0.04;
+const DAGGER_SHADE = 0.16;
+const DAGGER_GAP = 0.08;
+const DAGGER_PAD = 0.025;
 
 const points = (s: string) => s.split(' ').map((q) => q.split(',').map(Number) as Pt);
 /** Where the line `o` across `n`, running along `u`, lies inside the outlines `shape` (holes and all): its spans, as distances along `u`. */
@@ -115,7 +117,7 @@ function shading(shape: Pt[][], depth: number, gap: number, pad: number) {
   return d;
 }
 
-/** The Shadow's dagger: its outline, the dark it holds cut solid, its side from the light shaded. */
+/** The Shadow's dagger: its outline, the dark it holds cut in as grooves, its side from the light shaded. */
 const daggerSign: Sign = (p, c, r) => {
   const k = (r * DAGGER_FIT) / DAGGER_R;
   const S = ([x, y]: Pt): Pt => [c[0] + (x - DAGGER_AT[0]) * k, c[1] + (y - DAGGER_AT[1]) * k];
@@ -123,7 +125,7 @@ const daggerSign: Sign = (p, c, r) => {
   const dark = DAGGER_DARK.map((s) => points(s).map(S));
   p.add(poly(outline), 'sign');
   p.add(shading([outline, ...dark], r * DAGGER_SHADE, r * DAGGER_GAP, r * DAGGER_PAD), 'hatch');
-  p.add(dark.map(poly).join(''), 'fill');
+  p.add(dark.map(poly).join(''), 'thin');
 };
 
 export const seals: AuraSeal = { seal: shadow, sign: daggerSign };
