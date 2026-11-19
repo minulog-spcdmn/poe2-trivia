@@ -305,13 +305,16 @@ test('the plate does not move as finds are met: only their lines and depths come
     }
 });
 
-test('the zones are charted as deep as any run went, alone or together; the stars still mark only the one kind', () => {
-  // Deeper together (216) than alone (24, last 11): playing alone, every zone stays named and the ouroboros lit.
+test('the zones are charted as deep as any run went, alone or together; the stars and the ouroboros mark only the one kind', () => {
+  // Deeper together (216) than alone (24, last 11): playing alone, every zone stays named, but the ouroboros lies dull and
+  // still, since no run alone has passed 100; seen together, it is lit.
   const p = descentPlate(281, 420, 24, met, {}, 11, 216);
   const own = descentPlate(281, 420, 24, met, {}, 11);
+  const coop = descentPlate(281, 420, 216, met, {}, 11, 216);
   assert.equal(p.names.length, 10);
   assert.equal(p.uncharted, null);
-  assert.ok(p.endless.lit);
+  assert.ok(!p.endless.lit);
+  assert.ok(coop.endless.lit);
   assert.ok(own.names.length < 10 && !own.endless.lit);
   // The stars are this kind's own: the gold one at 24, the red one at 11.
   assert.equal(p.star.num?.text, own.star.num?.text);
