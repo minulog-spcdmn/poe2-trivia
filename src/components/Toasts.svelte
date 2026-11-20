@@ -10,6 +10,7 @@
   import { heraldNotice, twinkle } from '../lib/fx/moments';
   import { lightOf, overPage } from '../lib/fx/core';
   import Avatar from './Avatar.svelte';
+  import { shownAura } from '../lib/auraKinds';
   import PlayerName from './PlayerName.svelte';
   import AchievementSeal from './AchievementSeal.svelte';
   import { pinnedOut } from '../lib/stage';
@@ -144,7 +145,7 @@
           {#if t.seal}
             <AchievementSeal sign={t.seal.sign} tier={t.seal.tier} earned size={36} />
           {:else if t.who}
-            <Avatar name={t.who.name} hue={t.who.hue ?? 0} sigil={t.who.sigil} size={28} dim={t.who.hue === undefined} />
+            <Avatar name={t.who.name} hue={t.who.hue ?? 0} sigil={t.who.sigil} aura={shownAura(t.who.aura, t.who.sigil)} size={28} dim={t.who.hue === undefined} />
             {#if t.kind !== 'info'}<span class="gem badge">{@render glyph(t.kind)}</span>{/if}
           {:else}
             <span class="gem">{@render glyph(t.kind)}</span>

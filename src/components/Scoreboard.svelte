@@ -8,6 +8,7 @@
   import { session } from '../lib/session.svelte';
   import { playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
+  import { shownAura } from '../lib/auraKinds';
   import PlayerName from './PlayerName.svelte';
   import You from './You.svelte';
   import Phial from './Phial.svelte';
@@ -959,7 +960,7 @@
              their token while a mouse is on it (only there: the finds beside it have tooltips of their own).
              Never on show, so the strip ranks nobody as the team plays; with none yet, nothing to tell. -->
         {#snippet right()}<b>{p.score}</b> {p.score === 1 ? 'right answer' : 'right answers'}{/snippet}
-        <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={32} dim={!p.connected} wrong={out} tip={coop && p.score > 0 ? right : undefined} />
+        <Avatar name={p.name} hue={p.hue} sigil={p.sigil} aura={shownAura(p.aura, p.sigil)} size={32} dim={!p.connected} wrong={out} tip={coop && p.score > 0 ? right : undefined} />
         <div class="info">
           <span class="name-row">
             <span class="name cut-name">

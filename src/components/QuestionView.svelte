@@ -13,6 +13,7 @@
   import { itemImage } from '../lib/ui';
   import { sfx } from '../lib/sound';
   import Avatar from './Avatar.svelte';
+  import { shownAura } from '../lib/auraKinds';
   import ArtImage, { type Within } from './ArtImage.svelte';
   import { backdropShadow } from '../lib/backdropShadow';
   import { questionCircle } from './gameCircles.svelte';
@@ -1154,7 +1155,7 @@
   {#if ps.length}
     <span class="who-picked">
       {#each faces as p (p.id)}
-        <span in:scale={{ start: 0.3, duration: 300 }} title={p.name}><Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={22} /></span>
+        <span in:scale={{ start: 0.3, duration: 300 }} title={p.name}><Avatar name={p.name} hue={p.hue} sigil={p.sigil} aura={shownAura(p.aura, p.sigil)} size={22} /></span>
       {/each}
       {#if ps.length > faces.length}
         <span class="more" in:scale={{ start: 0.3, duration: 300 }} title={ps.slice(faces.length).map((p) => p.name).join(', ')}>+{ps.length - faces.length}</span>

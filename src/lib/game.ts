@@ -4,6 +4,7 @@
 import { cleanName, isHeldName, nameProblem, nameSkeleton } from './names.ts';
 import { RUBY, isChoosableHue } from './palette.ts';
 import { isPlayerClass, type PlayerClass } from './classSigils.ts';
+import { isWornAura, type AuraKind } from './auraKinds.ts';
 import type { Looks } from './looks.ts';
 import {
   DELVE_MAX_LOCKOUT,
@@ -698,6 +699,8 @@ export interface Player {
   local?: true;
   /** The class sigil they wear on their avatar (lib/sigils.ts), if any. */
   sigil?: PlayerClass;
+  /** The player aura they wear (lib/auraStore.ts), if any: shown as lib/auraKinds.ts shownAura says. */
+  aura?: AuraKind;
   /** The colour they'd like (lib/colour.ts), if any: their `hue` once it's theirs to have (settleHue). */
   colour?: number;
 }
@@ -1063,7 +1066,7 @@ export interface Recap {
   /** Delve: each item a find gave, oldest first, and what became of it. */
   items?: RecapItem[];
   /** Everyone the recap names, as they were when it named them: a player removed before the end is still told by name. */
-  people?: Record<string, { name: string; hue: number; sigil?: PlayerClass }>;
+  people?: Record<string, { name: string; hue: number; sigil?: PlayerClass; aura?: AuraKind }>;
 }
 
 export interface RecapTally {
@@ -1128,6 +1131,8 @@ export interface Spectator {
   stay?: true;
   /** The class sigil they wear, kept for when they take a seat. */
   sigil?: PlayerClass;
+  /** The aura they wear, likewise. */
+  aura?: AuraKind;
   /** The colour they'd like, kept for when they take a seat. */
   colour?: number;
 }
@@ -1199,7 +1204,7 @@ export type Action =
    * `owner`: the host checked the owner key's signature for the held name (session.svelte.ts). `sigil`: the class sigil they wear.
    * `local`: the host adds a player at its own screen (Player.local), in a Turns lobby.
    */
-  | { type: 'join'; playerId: string; name: string; returning?: boolean; watch?: boolean; owner?: true; sigil?: PlayerClass; colour?: number; local?: true }
+  | { type: 'join'; playerId: string; name: string; returning?: boolean; watch?: boolean; owner?: true; sigil?: PlayerClass; aura?: AuraKind; colour?: number; local?: true }
   /** Host: its own player plays under the held name (the host holds the owner key). */
   | { type: 'owner'; playerId: string }
   | { type: 'rename'; playerId: string; name: string }
@@ -1225,6 +1230,8 @@ export type Action =
   | { type: 'watch'; watch: boolean }
   /** The class sigil the sender wears now (none: taken off); on this device (from null), `playerId`'s. */
   | { type: 'sigil'; sigil?: PlayerClass; playerId?: string }
+  /** The player aura the sender wears now (none: taken off), likewise. */
+  | { type: 'aura'; aura?: AuraKind; playerId?: string }
   /** The colour the sender would like now (none: any); on this device (from null), `playerId`'s. */
   | { type: 'colour'; colour?: number; playerId?: string }
   /** Host only (Delve): the art has reached the player answering, so their clock starts at `at` (host clock). */
@@ -1299,7 +1306,7 @@ export function createGame(hostId: string | null, settings: Settings = DEFAULT_S
 function fillSeats(s: GameState) {
   const watching: Spectator[] = [];
   for (const o of s.spectators ?? []) {
-    if (!o.stay && s.players.length < MAX_PLAYERS) seat(s, o.id, o.name, { sigil: o.sigil, colour: o.colour });
+    if (!o.stay && s.players.length < MAX_PLAYERS) seat(s, o.id, o.name, { sigil: o.sigil, aura: o.aura, colour: o.colour });
     else watching.push(o);
   }
   s.spectators = watching;
@@ -1383,7 +1390,7 @@ function settleHue(s: GameState, p: Player) {
 }
 
 /** Adds a player with the first free avatar colour (or their reserved one). */
-function seat(s: GameState, id: string, name: string, o: { local?: boolean; sigil?: PlayerClass; colour?: number } = {}) {
+function seat(s: GameState, id: string, name: string, o: { local?: boolean; sigil?: PlayerClass; aura?: AuraKind; colour?: number } = {}) {
   const p: Player = {
     id,
     name,
@@ -1393,6 +1400,7 @@ function seat(s: GameState, id: string, name: string, o: { local?: boolean; sigi
     hue: -1,
     ...(o.local ? { local: true as const } : {}),
     ...(o.sigil ? { sigil: o.sigil } : {}),
+    ...(o.aura ? { aura: o.aura } : {}),
     ...(o.colour !== undefined ? { colour: o.colour } : {}),
   };
   p.hue = freeHue(s);
@@ -1696,18 +1704,21 @@ export class Engine {
           if (action.owner && isHeldName(name)) s.owner = { id: action.playerId };
         };
         const sigil = isPlayerClass(action.sigil) ? action.sigil : undefined;
+        const aura = isWornAura(action.aura) ? action.aura : undefined;
         const colour = isChoosableHue(action.colour) ? action.colour : undefined;
-        const looks = { ...(sigil ? { sigil } : {}), ...(colour !== undefined ? { colour } : {}) };
+        const looks = { ...(sigil ? { sigil } : {}), ...(aura ? { aura } : {}), ...(colour !== undefined ? { colour } : {}) };
         /**
          * The one they wear now and the colour they'd like, coming back too:
-         * they may have changed meanwhile. Mid-game the sigil stays as the
+         * they may have changed meanwhile. Mid-game the sigil and the aura stay as the
          * game began (as the 'sigil' action's does; the session sends it again
          * back in the lobby); the colour waits for the next.
          */
-        const wear = (o: { sigil?: PlayerClass; colour?: number }) => {
+        const wear = (o: { sigil?: PlayerClass; aura?: AuraKind; colour?: number }) => {
           if (s.phase === 'lobby') {
             if (sigil) o.sigil = sigil;
             else delete o.sigil;
+            if (aura) o.aura = aura;
+            else delete o.aura;
           }
           if (colour !== undefined) o.colour = colour;
           else delete o.colour;
@@ -2196,7 +2207,7 @@ export class Engine {
         if (idx < 0 || !action.watch) break;
         if (s.phase !== 'lobby') throw new ActionError('You can step aside to watch in the lobby.');
         const [p] = s.players.splice(idx, 1);
-        s.spectators.push({ id: p.id, name: p.name, stay: true, ...(p.sigil ? { sigil: p.sigil } : {}) });
+        s.spectators.push({ id: p.id, name: p.name, stay: true, ...(p.sigil ? { sigil: p.sigil } : {}), ...(p.aura ? { aura: p.aura } : {}) });
         // Their seat goes to whoever was waiting for one, which makes room to watch.
         fillSeats(s);
         placeLocals(s);
@@ -2212,6 +2223,16 @@ export class Engine {
         if (!o) break;
         if (isPlayerClass(action.sigil)) o.sigil = action.sigil;
         else delete o.sigil;
+        break;
+      }
+      case 'aura': {
+        // Likewise worn as the game began until it is back in the lobby.
+        if (s.phase !== 'lobby') break;
+        const id = from ?? action.playerId;
+        const o = s.players.find((p) => p.id === id) ?? s.spectators.find((w) => w.id === id);
+        if (!o) break;
+        if (isWornAura(action.aura)) o.aura = action.aura;
+        else delete o.aura;
         break;
       }
       case 'colour': {
@@ -2706,7 +2727,7 @@ export class Engine {
   /** Keeps a player's name and colour for the recap, as they are now. */
   private person(s: GameState, id: string) {
     const p = s.players.find((x) => x.id === id);
-    if (s.recap && p) (s.recap.people ??= {})[id] = { name: p.name, hue: p.hue, ...(p.sigil ? { sigil: p.sigil } : {}) };
+    if (s.recap && p) (s.recap.people ??= {})[id] = { name: p.name, hue: p.hue, ...(p.sigil ? { sigil: p.sigil } : {}), ...(p.aura ? { aura: p.aura } : {}) };
   }
 
   /**

@@ -793,6 +793,21 @@ room to see (it comes with their join). Unlocked stays unlocked, also when the
 codex is erased; then achievements earned afresh unlock more only once
 they're worth more sigils than are unlocked already. Kept in this browser (`src/lib/sigils.ts`).
 
+**Player auras:** an aura found is owned for good, with when it was found
+(and where, a mode and a depth, when that's known); one owned can be worn,
+and everyone in the room sees it burn round the player's avatar (it comes
+with their join and changes in the lobby, as a sigil does; mid-game the one
+worn as it began stays). The four class auras are found only while their
+class's sigil is worn (Chronomancer with the Sorceress, Slayer with the
+Gladiator, Shadow with the Assassin, Acolyte of Chayula with the Monk;
+`findableWith` in `src/lib/auraKinds.ts`), but once owned show with any
+sigil, as the others do; `shownAura` there decides what is shown, for
+everything sent and drawn. Erasing the codex keeps them, as it keeps the sigils. Paired
+devices take in each other's, every aura either owns at the earlier find and
+the one put on latest worn, and the passkey backup keeps them with the rest.
+Auras a build doesn't know (a newer one's) are kept through all of it, and
+worn count as none. Kept in this browser (`src/lib/auraStore.ts`).
+
 ## Multiplayer
 
 - **Online (peer-to-peer):** the host creates a room and shares the 6-character

@@ -8,6 +8,7 @@ import type { Presence, Standing } from './presence.ts';
 import { parseKey, parseSealed, type KeyMsg, type SealedMsg } from './seal.ts';
 import { isChallenge, isOwnerProof, type OwnerProof } from './ownerKey.ts';
 import { isPlayerClass, type PlayerClass } from './classSigils.ts';
+import { isWornAura, type AuraKind } from './auraKinds.ts';
 import { isChoosableHue } from './palette.ts';
 import { cleanSeen } from './delveStart.ts';
 import { isFossilMask } from './fossils.ts';
@@ -21,7 +22,8 @@ import type { Place } from './prepArt.ts';
  *   and a right answer gives each taker one drawn then (Reveal fossil,
  *   Delve fossils); a question blasted away says its tier (Blast was
  *   fossil); the hello says which fossils the guest holds (fossils), for
- *   the host's deal.
+ *   the host's deal. The hello says which player aura the guest wears
+ *   (aura, lib/auraStore.ts), and an aura action changes it, as a sigil's.
  * - 34: the owner (seated under the held name, GameState owner) can close
  *   the room (close), everyone told so (closed's owner); the owner comes in
  *   past a lock, a kick and a full room.
@@ -111,7 +113,7 @@ export type ClientMsg =
    * `lines`: the Delve start lines its device has shown, most recent first (delveStartSeen.ts), for the host's pick of a run's line.
    * `fossils`: the Delve fossils its device holds, as a mask (fossils.ts fossilMask), for the host's deal.
    */
-  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean; owner?: OwnerProof; sigil?: PlayerClass; colour?: number; lines?: number[]; fossils?: number }
+  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean; owner?: OwnerProof; sigil?: PlayerClass; aura?: AuraKind; colour?: number; lines?: number[]; fossils?: number }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number }
   /** Where this player's pointer is (cursors.ts), or null when it left the page; when it was sent, on its clock (cursors.ts STAMP). */
@@ -223,6 +225,8 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         ...(raw.owner !== undefined ? { owner: raw.owner } : {}),
         // (One this build doesn't know, a newer one's, is left out: they come in without it.)
         ...(isPlayerClass(raw.sigil) ? { sigil: raw.sigil } : {}),
+        // (Likewise an aura it doesn't know, or has benched.)
+        ...(isWornAura(raw.aura) ? { aura: raw.aura } : {}),
         ...(isChoosableHue(raw.colour) ? { colour: raw.colour } : {}),
         // Lines this build's pool doesn't have (a newer one's) are left out the same way.
         ...(Array.isArray(raw.lines) ? { lines: cleanSeen(raw.lines) } : {}),
@@ -271,6 +275,9 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         // The class sigil they wear now: only ever the sender's own (one this build doesn't know counts as none).
         case 'sigil':
           return { t: 'action', action: isPlayerClass(a.sigil) ? { type: 'sigil', sigil: a.sigil } : { type: 'sigil' } };
+        // The aura they wear now, likewise (one this build doesn't know, or has benched, counts as none).
+        case 'aura':
+          return { t: 'action', action: isWornAura(a.aura) ? { type: 'aura', aura: a.aura } : { type: 'aura' } };
         // The colour they'd like now: only ever the sender's own (ruby, or one out of range, counts as none).
         case 'colour':
           return { t: 'action', action: isChoosableHue(a.colour) ? { type: 'colour', colour: a.colour } : { type: 'colour' } };

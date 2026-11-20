@@ -34,7 +34,7 @@
   import { light } from '../lib/lights';
   import { auraFeels, playerAura } from '../lib/fx/playerAura';
   import { cardAura } from '../lib/auraTrial.svelte';
-  import { AURA_GLOW, AURA_NAMES, type AuraKind } from '../lib/auraKinds';
+  import { AURA_GLOW, AURA_NAMES, shownAura, type AuraKind } from '../lib/auraKinds';
   import { auraLanded, auraTurning } from '../lib/auraDrop';
   import { auraInk } from '../lib/auraInk';
   import CardEngraving from './CardEngraving.svelte';
@@ -1415,7 +1415,7 @@
                 in:scale={{ start: 0.3, duration: motion.still ? 0 : 300 }}
                 out:scale={{ start: 0.3, duration: motion.still ? 0 : 200 }}
                 animate:flip={{ duration: motion.still ? 0 : 250 }}
-                ><Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={22} /></span
+                ><Avatar name={p.name} hue={p.hue} sigil={p.sigil} aura={shownAura(p.aura, p.sigil)} size={22} /></span
               >
             {/each}
             {#if voters.length > faces.length}

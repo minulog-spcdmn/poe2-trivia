@@ -8,6 +8,7 @@
   import { engine, session } from '../lib/session.svelte';
   import { categoryGlyph, itemSrcset, itemThumb, playerColor } from '../lib/ui';
   import Avatar from './Avatar.svelte';
+  import { shownAura } from '../lib/auraKinds';
   import PlayerName from './PlayerName.svelte';
   import You from './You.svelte';
   import { endCircle, endHollow } from './gameCircles.svelte';
@@ -877,7 +878,7 @@
     {#if 'avatar' in ic && personOf(ic.avatar)}
       {@const p = personOf(ic.avatar)!}
       <!-- Its rim reaches 3 px round it: inside that, the size of the thumbs and the medallions. -->
-      <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={ICON - 4} />
+      <Avatar name={p.name} hue={p.hue} sigil={p.sigil} aura={shownAura(p.aura, p.sigil)} size={ICON - 4} />
     {:else if 'item' in ic}
       <button class="mini" tabindex="-1" onclick={() => inspect(ic.item)}><img src={itemThumb(ic.item, 128)} alt="" /></button>
     {:else if !('avatar' in ic)}
@@ -982,7 +983,7 @@
     <!-- (Named as its tooltip names it, so a screen reader doesn't say it twice.) -->
     <button class="thumb" onclick={() => inspect(id)} title={itemName(id)} aria-label={itemName(id)}>
       <span class="art"><img src={itemThumb(id, 128)} srcset={itemSrcset(id)} alt="" /></span>
-      {#if by}<span class="badge"><Avatar name={by.name} hue={by.hue} sigil={by.sigil} size={20} /></span>{/if}
+      {#if by}<span class="badge"><Avatar name={by.name} hue={by.hue} sigil={by.sigil} aura={shownAura(by.aura, by.sigil)} size={20} /></span>{/if}
     </button>
   </li>
 {/snippet}
@@ -1063,7 +1064,7 @@
   {@const gone = !local && !x.p.connected}
   {@const mark = markFor(x.p)}
   <span class="rank">{x.rank}</span>
-  <Avatar name={x.p.name} hue={x.p.hue} sigil={x.p.sigil} size={28} dim={gone} />
+  <Avatar name={x.p.name} hue={x.p.hue} sigil={x.p.sigil} aura={shownAura(x.p.aura, x.p.sigil)} size={28} dim={gone} />
   <span class="name cut-name"><span class="cut"><PlayerName name={x.p.name} /></span>{#if you}<em class="you"><You /></em>{/if}</span>
   {#if mark && !pin}<StandingMark {mark} />{/if}
   <span class="pts">{score(x.p.score)}</span>
@@ -1099,13 +1100,13 @@
                 {@const p = s.players.find((x) => x.id === f.id)}
                 {#if p}
                   <span class="face" class:you={f.id === me} style:left="calc(50% + {f.x}px)" style:top="calc(50% + {f.y}px)">
-                    <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={ring.size} />
+                    <Avatar name={p.name} hue={p.hue} sigil={p.sigil} aura={shownAura(p.aura, p.sigil)} size={ring.size} />
                   </span>
                 {/if}
               {/each}
             {:else}
               {@const p = solo ? (s.players[0] ?? winner) : winner}
-              <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={avatarSize} />
+              <Avatar name={p.name} hue={p.hue} sigil={p.sigil} aura={shownAura(p.aura, p.sigil)} size={avatarSize} />
             {/if}
           </div>
           <div class="words">
@@ -1129,7 +1130,7 @@
           <h3>Your game</h3>
           {#if mine.place}
             {@const p = s.players.find((x) => x.id === me)}
-            <p class="place">{#if p}<Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={30} />{/if}<span>{@render say(mine.place)}</span></p>
+            <p class="place">{#if p}<Avatar name={p.name} hue={p.hue} sigil={p.sigil} aura={shownAura(p.aura, p.sigil)} size={30} />{/if}<span>{@render say(mine.place)}</span></p>
           {/if}
           {#if mine.game}<p>{@render say(mine.game)}</p>{/if}
           {#if mine.missed.length}
@@ -1258,7 +1259,7 @@
               {@const p = s.players.find((x) => x.id === d.id)}
               {#if p}
                 <li class:you={d.id === me} class:gone={!p.connected} data-dim={!p.connected || undefined} data-cursor="row:{s.players.indexOf(p)}" in:settle|global={{ delay: 450 + i * 60, y: 10 }}>
-                  <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={plateAvatar} dim={!p.connected} />
+                  <Avatar name={p.name} hue={p.hue} sigil={p.sigil} aura={shownAura(p.aura, p.sigil)} size={plateAvatar} dim={!p.connected} />
                   <span class="who-col">
                     <span class="name cut-name"><span class="cut"><PlayerName name={p.name} /></span>{#if d.id === me}<em class="you"><You /></em>{/if}</span>
                     <span class="dep">Depth <b class="n">{shownDepth(d.depth)}</b></span>

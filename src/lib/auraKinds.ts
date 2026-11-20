@@ -1,7 +1,10 @@
 // The auras players could earn (a try-out: lib/fx/playerAura.ts draws them,
 // each from its own files in lib/fx/auras/), named apart from the effects so
 // the QA desk's bench can list them without loading the effects. `slot` is
-// the aura's number in the effects shader (lib/fx/auras/shaders.ts).
+// the aura's number in the effects shader (lib/fx/auras/shaders.ts). Those a
+// player owns and the one worn are kept in lib/auraStore.ts.
+
+import type { PlayerClass } from './classSigils.ts';
 
 export const AURAS = [
   'breach',
@@ -30,6 +33,37 @@ export type AuraKind = (typeof AURAS)[number];
 export const BENCHED: readonly AuraKind[] = ['lich', 'blacksun'];
 /** The auras that can be worn now. */
 export const WORN = AURAS.filter((a) => !BENCHED.includes(a));
+
+/** Whether `v` is an aura this build knows. */
+export const isAuraKind = (v: unknown): v is AuraKind => typeof v === 'string' && (AURAS as readonly string[]).includes(v);
+/** Whether `v` is an aura this build knows and lets be worn (none benched). */
+export const isWornAura = (v: unknown): v is AuraKind => isAuraKind(v) && !BENCHED.includes(v);
+
+/** The class auras, each with the class sigil it goes with (lib/classSigils.ts): found only while that sigil is worn (findableWith). */
+export const CLASS_AURAS: Partial<Record<AuraKind, PlayerClass>> = {
+  chronomancer: 'sorceress',
+  slayer: 'gladiator',
+  shadow: 'assassin',
+  chayula: 'monk',
+};
+
+/** Whether a player wearing the class sigil `sigil` (none: undefined or null) can find `aura`: any aura but a class one, and that only with its own sigil. */
+export const findableWith = (aura: AuraKind, sigil: PlayerClass | null | undefined): boolean => {
+  const cls = CLASS_AURAS[aura];
+  return !cls || cls === sigil;
+};
+
+/**
+ * The aura shown on a player who wears `aura` and the class sigil `sigil`:
+ * none for one this build doesn't know (a newer one's) or has benched. A
+ * class aura once owned shows with any sigil, or none, as every other does
+ * (the owner's call; only finding one asks for its sigil, findableWith).
+ * Everything sent and drawn goes through here (lib/session.svelte.ts, the
+ * avatars), so a rule tying the two together would be one line here.
+ */
+export function shownAura(aura: unknown, _sigil: unknown): AuraKind | undefined {
+  return isWornAura(aura) ? aura : undefined;
+}
 
 /** Its number in the effects shader: 1 for the first. */
 export const auraSlot = (k: AuraKind) => AURAS.indexOf(k) + 1;

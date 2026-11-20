@@ -100,6 +100,8 @@ import { peerCursors } from './peerCursors.svelte';
 import { whenCalm, whenIdle, type Deadline } from './idle';
 import { frameEvent } from './fpsMeter';
 import { SIGILS_KEY, loadSigils } from './sigils';
+import { AURAS_KEY, loadAuras, wornAura as auraWorn } from './auraStore';
+import { shownAura, type AuraKind } from './auraKinds';
 import { COLOUR_KEY, loadColour } from './colour';
 import type { PlayerClass } from './classSigils';
 import { helloRefusal, noPrivate, parseSaved, privateFrom, rememberSecret, soloHotSeat, takesState, tooFast, type HostPrivate, type Saved } from './sessionRules';
@@ -171,6 +173,11 @@ export { CODE_LENGTH, CODE_PATTERN } from './roomCode.ts';
 const wornSigil = (): { sigil?: PlayerClass } => {
   const worn = loadSigils().worn;
   return worn ? { sigil: worn } : {};
+};
+/** The player aura this player wears (lib/auraStore.ts), as others are to see it (shownAura), read likewise. */
+const wornAura = (): { aura?: AuraKind } => {
+  const aura = shownAura(auraWorn(loadAuras()), loadSigils().worn);
+  return aura ? { aura } : {};
 };
 /** The colour this player would like (lib/colour.ts), for their join, read likewise. */
 const likedColour = (): { colour?: number } => {
@@ -371,6 +378,8 @@ interface Guest {
   tab: string | null;
   /** The class sigil its hello says it wears. */
   sigil?: PlayerClass;
+  /** The aura its hello says it wears. */
+  aura?: AuraKind;
   /** The colour its hello says it would like. */
   colour?: number;
   /** The Delve start lines its hello says its device has shown, most recent first, kept up as runs start (delveStartSeen.ts). */
@@ -773,7 +782,7 @@ class Session {
   seatLocal(name: string): boolean {
     const playerId = newPlayerId();
     const first = !this.state?.players.length;
-    this.dispatch({ type: 'join', playerId, name, ...(this.mode === 'host' ? { local: true as const } : {}), ...(first ? { ...wornSigil(), ...likedColour() } : {}) });
+    this.dispatch({ type: 'join', playerId, name, ...(this.mode === 'host' ? { local: true as const } : {}), ...(first ? { ...wornSigil(), ...wornAura(), ...likedColour() } : {}) });
     const seated = !!this.state?.players.some((p) => p.id === playerId);
     if (seated && first) this.localSelf = playerId;
     return seated;
@@ -781,18 +790,23 @@ class Session {
 
   /**
    * The class sigil this browser wears changed (lib/sigils.ts, here or in
-   * another tab): the game under way shows it on this player at once.
+   * another tab), or the aura (lib/auraStore.ts): the game under way shows
+   * them on this player at once. Both, so a rule tying the aura shown to
+   * the sigil (shownAura) would follow either.
    */
   wearSigil() {
     // (Not mid-game: the game keeps the one each player came in with, and
     // this is called again once it's back in the lobby, onNewState.)
     const s = this.state;
     if (s?.phase !== 'lobby') return;
-    const { sigil } = wornSigil();
     const id = this.mode === 'local' ? this.localSelf : this.myPlayerId;
     const me = id && [...s.players, ...(s.spectators ?? [])].find((o) => o.id === id);
-    if (!me || me.sigil === sigil) return;
-    this.dispatch({ type: 'sigil', ...(this.mode === 'local' ? { playerId: me.id } : {}), ...(sigil ? { sigil } : {}) });
+    if (!me) return;
+    const { sigil } = wornSigil();
+    const { aura } = wornAura();
+    const whose = this.mode === 'local' ? { playerId: me.id } : {};
+    if (me.sigil !== sigil) this.dispatch({ type: 'sigil', ...whose, ...(sigil ? { sigil } : {}) });
+    if (me.aura !== aura) this.dispatch({ type: 'aura', ...whose, ...(aura ? { aura } : {}) });
   }
 
   /** Likewise the colour this browser would like (lib/colour.ts): at once in the lobby, mid-game from the next one. */
@@ -966,9 +980,11 @@ class Session {
         // one of them may have been answering holds its clock still from the
         // host's last moment before the reload until it can start again.
         if (s.delve) s = engine.apply(s, { type: 'resumed', ...lastAlive() }, null);
-        // The host's own sigil and colour as they are now, if the room was saved in its lobby: they may have changed since.
+        // The host's own sigil, aura and colour as they are now, if the room was saved in its lobby: they may have changed since.
         const { sigil } = wornSigil();
+        const { aura } = wornAura();
         s = engine.apply(s, { type: 'sigil', ...(sigil ? { sigil } : {}) }, me);
+        s = engine.apply(s, { type: 'aura', ...(aura ? { aura } : {}) }, me);
         s = engine.apply(s, { type: 'colour', ...likedColour() }, me);
         this.setState(s);
       } else {
@@ -1106,7 +1122,7 @@ class Session {
     // (A shared link's Delve is used up by this room, as by a game on this device.)
     this.delveLink = false;
     try {
-      return engine.apply(s, { type: 'join', playerId: me, name: this.joinName, ...wornSigil(), ...likedColour() }, me);
+      return engine.apply(s, { type: 'join', playerId: me, name: this.joinName, ...wornSigil(), ...wornAura(), ...likedColour() }, me);
     } catch (err) {
       this.fail(err instanceof ActionError ? err.message : 'Could not create the room.', 'Room not opened', failure ? { failure } : {});
       return null;
@@ -1237,6 +1253,7 @@ class Session {
           guest.tab = msg.tab ?? null;
           guest.laneWanted = !!msg.lane;
           guest.sigil = msg.sigil;
+          guest.aura = msg.aura;
           guest.colour = msg.colour;
           guest.lines = msg.lines;
           guest.fossils = msg.fossils;
@@ -1289,7 +1306,7 @@ class Session {
         this.setState(engine.apply(this.state, { type: 'remove', playerId: id }, null));
       } else {
         this.setState(engine.apply(this.state, { type: 'connection', playerId: id, connected: false }, null));
-        this.flash(p.name, 'warn', { title: 'Player disconnected', who: { name: p.name, hue: p.hue, sigil: p.sigil } });
+        this.flash(p.name, 'warn', { title: 'Player disconnected', who: { name: p.name, hue: p.hue, sigil: p.sigil, aura: p.aura } });
       }
     });
   }
@@ -1400,7 +1417,7 @@ class Session {
         throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
       next = engine.apply(
         this.state!,
-        { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}), ...(owner ? { owner: true as const } : {}), ...(guest.sigil ? { sigil: guest.sigil } : {}), ...(guest.colour !== undefined ? { colour: guest.colour } : {}) },
+        { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}), ...(owner ? { owner: true as const } : {}), ...(guest.sigil ? { sigil: guest.sigil } : {}), ...(guest.aura ? { aura: guest.aura } : {}), ...(guest.colour !== undefined ? { colour: guest.colour } : {}) },
         playerId,
       );
     } catch (err) {
@@ -1428,7 +1445,7 @@ class Session {
     const watcher = next.spectators?.find((o) => o.id === playerId);
     // The creator's first arrival has a notice of its own (see onNewState).
     if (this.heralded === playerId) return;
-    if (player) this.flash(player.name, 'info', { title: 'Player joined', who: { name: player.name, hue: player.hue, sigil: player.sigil } });
+    if (player) this.flash(player.name, 'info', { title: 'Player joined', who: { name: player.name, hue: player.hue, sigil: player.sigil, aura: player.aura } });
     else if (watcher) this.flash(watcher.name, 'info', { title: 'Spectator joined', who: { name: watcher.name } });
   }
 
@@ -2612,7 +2629,7 @@ class Session {
     const secret = await this.helloSecret;
     const owner = isHeldName(cleanName(this.joinName)) ? await this.signHello(conn) : null;
     if (secret && this.hostConn === conn && conn.open)
-      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}), ...wornSigil(), ...likedColour(), lines: seenLines(), ...fossilsHello() });
+      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}), ...wornSigil(), ...wornAura(), ...likedColour(), lines: seenLines(), ...fossilsHello() });
     this.watchOwnPresence();
   }
 
@@ -2794,7 +2811,7 @@ class Session {
       }
     }
     this.dispatch({ type: 'remove', playerId });
-    if (player) this.flash(player.name, 'info', { title: 'Player removed', who: { name: player.name, hue: player.hue, sigil: player.sigil } });
+    if (player) this.flash(player.name, 'info', { title: 'Player removed', who: { name: player.name, hue: player.hue, sigil: player.sigil, aura: player.aura } });
     else if (name) this.flash(name, 'info', { title: 'Spectator removed', who: { name } });
   }
 
@@ -3746,7 +3763,7 @@ class Session {
       const p = cur.players[cur.turn];
       try {
         this.setState(engine.apply(cur, { type: 'skip' }, null));
-        if (p) this.flash(p.name, 'warn', { title: 'Turn skipped', who: { name: p.name, hue: p.hue, sigil: p.sigil } });
+        if (p) this.flash(p.name, 'warn', { title: 'Turn skipped', who: { name: p.name, hue: p.hue, sigil: p.sigil, aura: p.aura } });
       } catch {
         /* the turn moved on anyway */
       }
@@ -4076,8 +4093,8 @@ if (typeof window !== 'undefined') {
   });
   window.addEventListener('storage', (e) => {
     if (e.key === LEFT_KEY && e.newValue) session.stillHere();
-    // A sigil picked in another tab is worn in the game in this one too.
-    if (e.key === SIGILS_KEY) session.wearSigil();
+    // A sigil or an aura picked in another tab is worn in the game in this one too.
+    if (e.key === SIGILS_KEY || e.key === AURAS_KEY) session.wearSigil();
     if (e.key === COLOUR_KEY) session.likeColour();
   });
   // Art that wouldn't load (offline) is tried again once the browser is back online.

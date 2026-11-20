@@ -4,12 +4,13 @@
 //   apart and read with their own (the codex, the Delve records, practice);
 // - the rest, which is the same wherever it was made and is taken into this
 //   device's own: the achievements, the best run of wins, the class sigils
-//   and the one worn, Delve's fossils, today's unique, whether a game has been started
+//   and the one worn, the auras owned and the one worn, Delve's fossils, today's unique, whether a game has been started
 //   (lib/started.ts), the name and colour the player chose last
 //   (lib/sync/chosen.ts), and the backup's secret (lib/backup/kept.ts).
 
 import { absorbAchievements, absorbWins, ownAchievementsRaw, ownWinsRaw } from '../achievements.ts';
 import { ownCodexRaw, ownPracticeRaw, parseCodex, parsePractice } from '../codex.ts';
+import { absorbAuras, ownAurasRaw } from '../auraStore.ts';
 import { absorbDaily, absorbDays, ownDaysRaw, utcDay } from '../daily.ts';
 import { clock } from '../clock.ts';
 import { ownRecordsRaw, parseRecords } from '../delveRecord.ts';
@@ -94,6 +95,8 @@ const TAKEN: Record<string, { own: () => string | null; take: (raw: string) => b
   achievements: { own: ownAchievementsRaw, take: absorbAchievements, name: 'achievements' },
   wins: { own: ownWinsRaw, take: absorbWins, name: 'achievements.wins' },
   sigils: { own: ownSigilsRaw, take: absorbSigils, name: 'sigils' },
+  // The auras: every one either device owns, at the earlier find, those this build doesn't know too; the one put on latest is worn (lib/auraStore.ts).
+  auras: { own: ownAurasRaw, take: absorbAuras, name: 'auras' },
   // Delve's fossils: every one either device found, at the earlier find (lib/fossilStore.ts). A build without them leaves this out.
   fossils: { own: ownFossilsRaw, take: absorbFossils, name: 'fossils' },
   // Today's unique: the days answered, which make the run (lib/daily.ts); and an older build's record, taken in as its days, never sent.
