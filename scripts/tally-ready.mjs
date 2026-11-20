@@ -8,10 +8,15 @@
 //
 // Items are ranked as the stats page's Items view ranks them by default
 // (src/lib/itemTallyRank.ts rank(): this build's tally version, every mode,
-// first meetings and repeats together). Each of items.json's items is then
+// first meetings and repeats together), but without the sums for ids
+// items.json doesn't have (below), and the summary lists the first of
+// Hardest first so ranked (TOP). For the floor, each of items.json's items is
 // clearly above the cut (CUT: its score's 90% interval wholly above it),
 // clearly below (wholly below) or undecided (the interval holds the cut, or
-// no answers yet). Sums for ids items.json doesn't have are left out and
+// no answers yet): how settled the tally is as a whole. Not which items to
+// list: where most answers miss, even an item nobody recognises can stay
+// under the cut, as players guess right one time in as many as there are
+// options. Sums for ids items.json doesn't have are left out and
 // counted: anyone can send the tally ids, so nothing of theirs reaches
 // Claude's prompt or the issue, only items.json's names and the numbers.
 //
@@ -43,8 +48,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const CUT = 1.5;
 /** Claude is asked once at most this share of items.json's items is undecided. */
 export const FLOOR = 0.25;
-/** The most items listed clearly above the cut. */
-export const LISTED = 60;
+/** The items listed: the first of Hardest first, as the Items view ranks them but without ids items.json doesn't have. */
+export const TOP = 20;
 
 /** @type {Record<keyof typeof TALLY_MODES, string>} */
 const MODE_NAMES = { delve: 'Delve alone', together: 'Delve together', turns: 'Take turns', race: 'Race', practice: 'practice', daily: 'daily' };
@@ -73,8 +78,8 @@ function sides(items, list) {
 /**
  * The tally's sums against items.json's items: how many answers, from
  * which modes and depths, how many items sit clearly on each side of the
- * cut, per group too, the items clearly above it, and whether the floor for
- * asking Claude is met, with all of it as Markdown.
+ * cut, per group too, the first TOP of Hardest first, and whether the floor
+ * for asking Claude is met, with all of it as Markdown.
  * @param {readonly TallyRow[]} rows @param {readonly Item[]} items @param {Date} [now]
  */
 export function summarize(rows, items, now = new Date()) {
@@ -83,7 +88,11 @@ export function summarize(rows, items, now = new Date()) {
   const unknown = rows.length - known.length;
   const { v, list } = rank(known);
   const all = sides(items, list);
-  const first = sides(items, rank(known, { first: true }).list);
+  const firstList = rank(known, { first: true }).list;
+  const first = sides(items, firstList);
+  // (Those with a score: the rest have nothing to rank by.)
+  const top = list.filter((s) => s.score !== null).slice(0, TOP);
+  const firstTop = new Set(firstList.filter((s) => s.score !== null).slice(0, TOP).map((s) => s.item));
 
   const counted = known.filter((x) => x.v === v);
   const answers = counted.reduce((n, x) => n + x.r + x.w, 0);
@@ -109,7 +118,6 @@ export function summarize(rows, items, now = new Date()) {
     g[sideOf(scored.get(i.id))]++;
     groups.set(i.group, g);
   }
-  const above = list.filter((s) => sideOf(s) === 'above');
   const most = Math.floor(FLOOR * items.length);
   const ask = answers > 0 && all.undecided <= most;
 
@@ -131,18 +139,22 @@ export function summarize(rows, items, now = new Date()) {
     '| --- | ---: | ---: | ---: | ---: |',
     ...[...groups].sort((a, b) => a[0].localeCompare(b[0])).map(([name, g]) => `| ${cell(name)} | ${g.items} | ${g.above} | ${g.below} | ${g.undecided} |`),
     '',
-    above.length
-      ? `Clearly above ${CUT}, surely missed most first${above.length > LISTED ? ` (the first ${LISTED} of ${fmt(above.length)})` : ''}:`
-      : `No item is clearly above ${CUT} yet.`,
-    ...(above.length
+    top.length
+      ? `The first ${top.length} of Hardest first (as the Items view ranks them, without ids items.json doesn't have), by their 90% intervals' low ends; "clear" where one lies wholly above 1 (surely missed more than the rest):`
+      : 'No item has a score yet.',
+    ...(top.length
       ? [
           '',
-          '| Item | Group | Answers | Missed | Score | 90% interval |',
-          '| --- | --- | ---: | ---: | ---: | --- |',
-          ...above.slice(0, LISTED).map((s) => {
+          '| Item | Group | Answers | Missed | Score | 90% interval | Clear |',
+          '| --- | --- | ---: | ---: | ---: | --- | --- |',
+          ...top.map((s) => {
             const i = /** @type {Item} */ (byId.get(s.item));
-            return `| ${cell(i.name)} | ${cell(i.group)} | ${fmt(s.n)} | ${fmt(s.miss)} | ${fixed(/** @type {number} */ (s.score))} | ${fixed(s.low)} to ${fixed(s.high)} |`;
+            return `| ${cell(i.name)} | ${cell(i.group)} | ${fmt(s.n)} | ${fmt(s.miss)} | ${fixed(/** @type {number} */ (s.score))} | ${fixed(s.low)} to ${fixed(s.high)} | ${s.low > 1 ? 'clear' : ''} |`;
           }),
+          '',
+          firstTop.size
+            ? `First meetings only: ${fmt(top.filter((s) => firstTop.has(s.item)).length)} of these ${top.length} are among its first ${firstTop.size} too.`
+            : 'First meetings only: no item has a score yet.',
         ]
       : []),
   ].join('\n');

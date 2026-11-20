@@ -1,13 +1,14 @@
 // The daily check whether the item tally holds enough answers to act on
 // (scripts/tally-ready.mjs, .github/workflows/tally-ready.yml): each item
 // clearly above the cut, clearly below or undecided, the floor for asking
-// Claude, and what a day the tally can't be read does.
+// Claude, the first of Hardest first it lists, and what a day the tally
+// can't be read does.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { CUT, FLOOR, main, readTally, summarize } from '../scripts/tally-ready.mjs';
+import { FLOOR, TOP, main, readTally, summarize } from '../scripts/tally-ready.mjs';
 import { TALLY_VERSION, type TallyRow } from '../src/lib/itemTallyRank.ts';
 
 const ITEMS = [...'abcdefghij'].map((id, n) => ({ id, name: `Item ${id.toUpperCase()}`, group: n < 6 ? 'Rings' : 'Relics' }));
@@ -25,7 +26,13 @@ test('summarize: with enough answers each item lands on a side, and the floor is
   assert.equal(s.answers, 2000);
   assert.equal(s.ask, true);
   // Expected of a: its 200 answers at depths 1-10's rate, 520 missed in 2,000.
-  assert.match(s.text, /\| Item A \| Rings \| 200 \| 160 \| 3\.08 \|/);
+  assert.match(s.text, /\| Item A \| Rings \| 200 \| 160 \| 3\.08 \| [\d.]+ to [\d.]+ \| clear \|/);
+  assert.match(s.text, /The first 10 of Hardest first \(as the Items view ranks them, without ids items\.json doesn't have\)/);
+  // (Nobody met an item first here, so that list has nothing to compare.)
+  assert.match(s.text, /First meetings only: no item has a score yet\./);
+  // With some met first, the share is of those it has, however few.
+  const met = summarize([...dense(), row('a', 'd1', 1, 3, { first: 1 }), row('b', 'd1', 3, 1, { first: 1 })], ITEMS, AT);
+  assert.match(met.text, /First meetings only: 2 of these 10 are among its first 2 too\./);
   assert.match(s.text, /clearly above: 1\n/);
   assert.match(s.text, /Delve alone by depth: 1-10: 2,000\./);
   assert.match(s.text, /\| Relics \| 4 \| 0 \| 4 \| 0 \|/);
@@ -39,7 +46,9 @@ test('summarize: few answers leave items undecided, and below the floor Claude i
   assert.ok(s.undecided > Math.floor(FLOOR * ITEMS.length));
   assert.equal(s.ask, false);
   assert.match(s.text, /4 with no answers yet/);
-  assert.match(s.text, new RegExp(`No item is clearly above ${CUT} yet\\.`));
+  // Listed all the same, first of Hardest first, none of them clear yet.
+  assert.match(s.text, /The first 6 of Hardest first/);
+  assert.doesNotMatch(s.text, /\| clear \|/);
   assert.match(s.text, /: not met\./);
 });
 
@@ -47,6 +56,38 @@ test('summarize: no answers at all never asks', () => {
   const s = summarize([], ITEMS, AT);
   assert.equal(s.answers, 0);
   assert.equal(s.ask, false);
+  assert.match(s.text, /No item has a score yet\./);
+});
+
+test('summarize: the list is the first of Hardest first, clearly above the cut or not', () => {
+  // Where half the answers miss, item a missed three times in four: surely missed more, yet not surely 1.5 times as often.
+  const rows = ITEMS.map((i) => (i.id === 'a' ? row('a', 'd1', 50, 150) : row(i.id, 'd1', 100, 100)));
+  const s = summarize(rows, ITEMS, AT);
+  assert.equal(s.above, 0);
+  assert.match(s.text, /\| Item A \| Rings \| 200 \| 150 \| 1\.43 \| [\d.]+ to [\d.]+ \| clear \|\n\| Item [B-J] /);
+  // Never more than TOP, whatever the items.
+  const many = Array.from({ length: TOP + 5 }, (_, n) => ({ id: `m${n}`, name: `Many ${n}`, group: 'Rings' }));
+  const listed = summarize(
+    many.map((i, n) => row(i.id, 'd1', 10, n)),
+    many,
+    AT,
+  ).text.match(/^\| Many /gm);
+  assert.equal(listed?.length, TOP);
+});
+
+test('the prompt and the README name as many of Hardest first as the script lists', async () => {
+  const workflow = await readFile(new URL('../.github/workflows/tally-ready.yml', import.meta.url), 'utf8');
+  const prompt = workflow.slice(workflow.indexOf("<<'PROMPT'"), workflow.lastIndexOf('PROMPT'));
+  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+  const section = readme.slice(readme.indexOf('### Item tally readiness'), readme.indexOf('\n---', readme.indexOf('### Item tally readiness')));
+  for (const [name, text] of [
+    ['the prompt', prompt],
+    ['the README', section],
+  ]) {
+    const counts = [...text.matchAll(/\bfirst (\d+)\b/g)].map((m) => Number(m[1]));
+    assert.ok(counts.length, `${name} names the first so many`);
+    assert.deepEqual(counts, counts.map(() => TOP), `${name} says the first ${counts.join(', ')}, the script lists ${TOP}`);
+  }
 });
 
 test('summarize: ids items.json lacks and other versions stay out of the counts and the text', () => {
