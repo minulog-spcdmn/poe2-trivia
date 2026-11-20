@@ -3,8 +3,8 @@ run-name: "IndexNow: ${{ github.event_name == 'workflow_dispatch' && 'run by han
 
 # After a deploy that changed what search engines read (index.html or the
 # sitemap), tell the engines that take IndexNow (Bing, and so DuckDuckGo,
-# Yahoo and Ecosia; Yandex, Seznam, Naver, Yep) that https://poe2.quest/ is
-# new, so they read it again within days instead of whenever their crawler
+# Yahoo and Ecosia; Yandex, Seznam, Naver, Yep, Amazon) that
+# https://poe2.quest/ is new, so they read it again within days instead of whenever their crawler
 # comes by. They pass every ping on to each other. Google doesn't take part.
 #
 # "Changed" is since main's last deploy that went through, not since the
@@ -15,8 +15,9 @@ run-name: "IndexNow: ${{ github.event_name == 'workflow_dispatch' && 'run by han
 # No account: the key is public by design, and the file of its name in
 # public/ (the key alone) proves the site sends it. A new key is only a new
 # file there and KEY below. Pinging an unchanged page too often gets a 429,
-# so other deploys send nothing. A failed ping fails the run, and GitHub
-# mails the owner.
+# so other deploys send nothing. Only a ping IndexNow refuses (the key or the
+# URL, which needs fixing) fails the run, and GitHub mails the owner; its own
+# trouble (429, a 5xx, no answer) is retried, then left as a warning.
 
 on:
   workflow_run:
@@ -70,12 +71,20 @@ jobs:
         run: |
           # The engines fetch the key from the site, so check the site has it, not the repo.
           # Pages can take a moment past the deploy to serve a new file.
-          for try in 1 2 3 4 5 6; do
+          for try in $(seq 12); do
             served=$(curl -sf "https://poe2.quest/$KEY.txt?try=$try") && [ "$served" = "$KEY" ] && break
-            [ "$try" = 6 ] && { echo "::error::https://poe2.quest/$KEY.txt doesn't serve the key"; exit 1; }
+            [ "$try" = 12 ] && { echo "::error::https://poe2.quest/$KEY.txt doesn't serve the key"; exit 1; }
             sleep 10
           done
-          # 200: taken. 202: taken, the key still to be checked. 4xx: the key or the URL refused.
-          curl --fail-with-body -sS -w '\nHTTP %{http_code}\n' -X POST https://api.indexnow.org/indexnow \
-            -H 'Content-Type: application/json; charset=utf-8' \
-            -d "{\"host\":\"poe2.quest\",\"key\":\"$KEY\",\"keyLocation\":\"https://poe2.quest/$KEY.txt\",\"urlList\":[\"https://poe2.quest/\"]}"
+          # curl retries a 429, a 5xx and a timeout by itself.
+          code=$(curl -sS -o answer.txt -w '%{http_code}' --retry 3 --retry-delay 20 --max-time 30 \
+            -X POST https://api.indexnow.org/indexnow -H 'Content-Type: application/json; charset=utf-8' \
+            -d "{\"host\":\"poe2.quest\",\"key\":\"$KEY\",\"keyLocation\":\"https://poe2.quest/$KEY.txt\",\"urlList\":[\"https://poe2.quest/\"]}") || code=000
+          cat answer.txt 2>/dev/null; echo "HTTP $code"
+          case "$code" in
+            # Taken; 202 with the key still to be checked.
+            200|202) ;;
+            # Refused: a bad request, the key not matching, or the URL not the key's host.
+            400|403|422) echo "::error::IndexNow refused the ping (HTTP $code)"; exit 1 ;;
+            *) echo "::warning::IndexNow didn't take the ping (HTTP $code); run this workflow by hand to try again" ;;
+          esac
