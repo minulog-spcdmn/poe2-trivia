@@ -8,8 +8,9 @@
   // auraSign) in its card's ink (lib/auraInk.ts); not found, in stone grey.
   // The token showing it is SigilPicker's, with the sigil worn: `worn` says
   // which to show there. `strip`: the seventeen in one row, named on hover
-  // (the settings page, as its sigils are).
-  import { onMount } from 'svelte';
+  // (the settings page, as its sigils are); `head` then stands beside the
+  // line, where the sigils' token stands over it, rather than in a row of its own.
+  import { onMount, type Snippet } from 'svelte';
   import { AURA_HINTS, AURA_NAMES, WORN, type AuraKind } from '../lib/auraKinds';
   import { AURAS_KEY, loadAuras, owns, wearAura, wornAura } from '../lib/auraStore';
   import { auraInk } from '../lib/auraInk';
@@ -18,7 +19,7 @@
   import { session } from '../lib/session.svelte';
 
   /** worn: the aura worn, for the token beside it. found: how many of WORN are owned, for a count beside it. */
-  let { strip = false, worn = $bindable(null), found = $bindable(0) }: { strip?: boolean; worn?: AuraKind | null; found?: number } = $props();
+  let { strip = false, head, worn = $bindable(null), found = $bindable(0) }: { strip?: boolean; head?: Snippet; worn?: AuraKind | null; found?: number } = $props();
 
   let auras = $state.raw(loadAuras());
   onMount(() => onStoredElsewhere({ [AURAS_KEY]: () => (auras = loadAuras()) }));
@@ -58,19 +59,22 @@
 </script>
 
 <div class="auras" class:strip>
-  <p class="line">
-    {#if ask}
-      {name(ask)}, not found yet. {AURA_HINTS[ask]}
-    {:else if !found}
-      None found yet: each turns up as a rare card in play, and is worn as it’s found. Pick one to see how.
-    {:else if worn}
-      Wearing {name(worn)}. Pick it again to take it off.
-    {:else if found === WORN.length}
-      Every aura found: pick one to wear it.
-    {:else}
-      {found === 1 ? 'One' : found} found: pick one to wear it.
-    {/if}
-  </p>
+  <div class="lead" class:headed={!!head}>
+    {#if strip && head}{@render head()}{/if}
+    <p class="line">
+      {#if ask}
+        {name(ask)}, not found yet. {AURA_HINTS[ask]}
+      {:else if !found}
+        None found yet: each turns up as a rare card in play, and is worn as it’s found. Pick one to see how.
+      {:else if worn}
+        Wearing {name(worn)}. Pick it again to take it off.
+      {:else if found === WORN.length}
+        Every aura found: pick one to wear it.
+      {:else}
+        {found === 1 ? 'One' : found} found: pick one to wear it.
+      {/if}
+    </p>
+  </div>
 
   <ul class="kinds">
     {#each WORN as k (k)}
@@ -194,7 +198,7 @@
     line-height: 1.15;
     letter-spacing: 0.03em;
     text-align: center;
-    overflow-wrap: anywhere;
+    overflow-wrap: normal;
     color: var(--note-hi);
   }
   .have .name {
@@ -209,14 +213,26 @@
     color: #b59a63;
   }
 
-  /* In a row: the line on the left, as wide as the sigils' token and line over it, the seventeen beside it, named on hover. */
+  /* In a row: the head and the line beside it on the left, in the columns of
+     the sigils' token and its line over them (the token's width, 64px, and
+     their gap), the seventeen beside them, named on hover. The line keeps
+     three lines' room, which the longest (Chronomancer's hint, the name
+     before it) takes beside the head. */
   .strip {
     flex-direction: row;
     align-items: center;
     gap: 1.4rem;
   }
-  .strip .line {
+  .strip .lead {
     flex: 0 0 330px;
+  }
+  .strip .lead.headed {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr);
+    align-items: center;
+    column-gap: 1rem;
+  }
+  .strip .line {
     min-height: calc(3 * 1.35em);
     display: flex;
     align-items: center;

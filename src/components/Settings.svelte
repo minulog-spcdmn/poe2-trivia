@@ -413,11 +413,15 @@
           <span class="count">{unlocked} / {CLASSES.length}</span>
         </header>
         <SigilPicker achievements={earned} bind:unlocked strip={roomy.current} hue={kept ?? colour ?? 0} {aura} />
-        <header class="aura-head">
-          <h2>Auras</h2>
-          <span class="count">{found} / {WORN.length}</span>
-        </header>
-        <AuraPicker strip={roomy.current} bind:worn={aura} bind:found />
+        <!-- In a row, their heading stands beside their line, under the sigils' token. -->
+        {#snippet auraHead()}
+          <header class="aura-head" class:folded={roomy.current}>
+            <h2>Auras</h2>
+            <span class="count">{found} / {WORN.length}</span>
+          </header>
+        {/snippet}
+        {#if !roomy.current}{@render auraHead()}{/if}
+        <AuraPicker strip={roomy.current} head={auraHead} bind:worn={aura} bind:found />
       </section>
     {/if}
   </div>
@@ -939,6 +943,15 @@
   .sigil-row .aura-head {
     margin-top: 0.9rem;
   }
+  .sigil-row :global(.auras.strip) {
+    margin-top: 0.6rem;
+  }
+  /* Beside the auras' line, in the row, under the token: the heading over its count. */
+  .sigil-row .aura-head.folded {
+    flex-direction: column;
+    gap: 0;
+    margin: 0;
+  }
   .count {
     font-family: var(--font-cinzel);
     font-size: 0.85rem;
@@ -1069,25 +1082,28 @@
       --len: 140px;
     }
   }
-  /* A short window, a 13-inch laptop's: the lobby's tighter rhythm (its rows and sections closer), so the page and its
-     sigils stay in the window before anything gets smaller. */
+  /* A short window, a 13-inch laptop's: the lobby's tighter rhythm (its rows, 0.35rem, and sections closer), so the
+     page, its sigils and auras stay in the window before anything gets smaller. */
   @media (min-width: 1100px) and (max-height: 760px) {
     .settings:not(.over) .col.side {
       gap: 0.9rem;
     }
     .settings:not(.over) .row {
-      padding: 0.5rem 0;
+      padding: 0.35rem 0;
     }
     .settings:not(.over) .sync-row {
       margin-top: 0.35rem;
       padding-bottom: 0;
     }
     .settings:not(.over) .name-row {
-      padding-top: 0.5rem;
+      padding-top: 0.35rem;
     }
     .settings:not(.over) .sigil-row {
-      margin-top: 0.75rem;
-      padding-top: 0.45rem;
+      margin-top: 0.6rem;
+      padding-top: 0.4rem;
+    }
+    .settings:not(.over) .sigil-row :global(.auras.strip) {
+      margin-top: 0.4rem;
     }
   }
   /* Desktop: the lobby's stage, straight on the backdrop, the columns in the middle of the window's height. */

@@ -2,7 +2,8 @@
   // The aura picker bench's view (./aurapicker.ts): the class sigils' picker
   // and the auras' under it, as on the achievements page, the auras as the
   // controls set them, stored in the frame's own storage first and drawn
-  // afresh once they are.
+  // afresh once they are. In a row, their heading and count beside their
+  // line, as the settings set them.
   import AuraPicker from '../../components/AuraPicker.svelte';
   import SigilPicker from '../../components/SigilPicker.svelte';
   import type { PieceProps } from '../bench.ts';
@@ -22,15 +23,23 @@
     stored = `${v.found}:${v.worn}`;
   });
   let aura = $state<AuraKind | null>(null);
+  let found = $state(0);
   const strip = $derived(!!v.strip);
 </script>
 
 <div class="page" class:strip>
   {#key stored}{#if stored}
       <SigilPicker achievements={0} {strip} {aura} />
-      <AuraPicker {strip} bind:worn={aura} />
+      <AuraPicker {strip} head={strip ? head : undefined} bind:worn={aura} bind:found />
     {/if}{/key}
 </div>
+
+{#snippet head()}
+  <header class="head">
+    <h2>Auras</h2>
+    <span class="count">{found} / {WORN.length}</span>
+  </header>
+{/snippet}
 
 <style>
   .page {
@@ -41,5 +50,24 @@
   }
   .page.strip {
     width: min(1100px, 100%);
+  }
+  /* (The settings' own heading, Settings.svelte .aura-head.folded.) */
+  .head {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .head h2 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-weight: 400;
+    font-size: 1.12rem;
+    letter-spacing: 0.02em;
+    color: var(--gold);
+  }
+  .head .count {
+    font-family: var(--font-cinzel);
+    font-size: 0.85rem;
+    color: var(--muted);
   }
 </style>
