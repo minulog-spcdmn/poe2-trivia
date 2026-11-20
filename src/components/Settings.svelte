@@ -160,6 +160,14 @@
    * one there. Otherwise they take the picker's own grid (and the page may scroll).
    */
   const roomy = new MediaQuery('(min-width: 1100px) and (hover: hover)');
+  /**
+   * Roomy but short (a 13-inch laptop's 725): no height for the auras' own
+   * row under the twelve, measured (the page ran 35 px past with every gap
+   * at the lobby's), so they share the twelve's row, switched by the two headings.
+   */
+  const short = new MediaQuery('(max-height: 760px)');
+  const shared = $derived(roomy.current && short.current);
+  let pane = $state<'sigils' | 'auras'>('sigils');
 
   // ---- keys ----
 
@@ -408,20 +416,34 @@
     <!-- Under both columns, the width of the page: the twelve in a row, and the auras under them, worn on the same token. -->
     {#if !over}
       <section class="block sigil-row" in:fly|global={calm({ y: 20, duration: 500, delay: 110 })}>
-        <header>
-          <h2>Class sigils</h2>
-          <span class="count">{unlocked} / {CLASSES.length}</span>
-        </header>
-        <SigilPicker achievements={earned} bind:unlocked strip={roomy.current} hue={kept ?? colour ?? 0} {aura} />
-        <!-- In a row, their heading stands beside their line, under the sigils' token. -->
-        {#snippet auraHead()}
-          <header class="aura-head" class:folded={roomy.current}>
-            <h2>Auras</h2>
-            <span class="count">{found} / {WORN.length}</span>
+        {#if shared}
+          <!-- A short window: the two headings switch the row between them, the token beside either. -->
+          <header class="switch">
+            <h2><button aria-pressed={pane === 'sigils'} onclick={() => (pane = 'sigils')}>Class sigils <span class="count">{unlocked} / {CLASSES.length}</span></button></h2>
+            <h2><button aria-pressed={pane === 'auras'} onclick={() => (pane = 'auras')}>Auras <span class="count">{found} / {WORN.length}</span></button></h2>
           </header>
-        {/snippet}
-        {#if !roomy.current}{@render auraHead()}{/if}
-        <AuraPicker strip={roomy.current} head={auraHead} bind:worn={aura} bind:found />
+        {:else}
+          <header>
+            <h2>Class sigils</h2>
+            <span class="count">{unlocked} / {CLASSES.length}</span>
+          </header>
+        {/if}
+        <div class="pickers" class:shared>
+          <SigilPicker achievements={earned} bind:unlocked strip={roomy.current} hue={kept ?? colour ?? 0} {aura} token={shared && pane === 'auras'} />
+          <!-- In a row, their heading stands beside their line, under the sigils' token; sharing its row, the token stands there. -->
+          {#snippet auraHead()}
+            {#if !shared}
+              <header class="aura-head" class:folded={roomy.current}>
+                <h2>Auras</h2>
+                <span class="count">{found} / {WORN.length}</span>
+              </header>
+            {/if}
+          {/snippet}
+          {#if !roomy.current}{@render auraHead()}{/if}
+          <div class="aura-pane" class:away={shared && pane === 'sigils'} inert={shared && pane === 'sigils'}>
+            <AuraPicker strip={roomy.current} head={auraHead} bind:worn={aura} bind:found />
+          </div>
+        </div>
       </section>
     {/if}
   </div>
@@ -946,6 +968,45 @@
   .sigil-row :global(.auras.strip) {
     margin-top: 0.6rem;
   }
+  /* Sharing a row: both in the one place, the one not shown kept unseen. */
+  .pickers.shared {
+    display: grid;
+    align-items: center;
+  }
+  .pickers.shared > :global(*) {
+    grid-area: 1 / 1;
+  }
+  .pickers.shared :global(.auras.strip) {
+    margin-top: 0;
+  }
+  .aura-pane.away {
+    visibility: hidden;
+  }
+  /* The two headings as the switch: the one shown in gold, the other a step down until hovered. */
+  .sigil-row .switch {
+    justify-content: flex-start;
+    gap: 1.6rem;
+  }
+  .switch button {
+    padding: 0;
+    background: none;
+    border: 0;
+    font: inherit;
+    letter-spacing: inherit;
+    color: var(--note-hi);
+    cursor: pointer;
+    transition: color 0.2s;
+  }
+  .switch button:hover {
+    color: var(--gold-hi);
+  }
+  .switch button[aria-pressed='true'] {
+    color: var(--gold);
+    cursor: default;
+  }
+  .switch .count {
+    margin-left: 0.35rem;
+  }
   /* Beside the auras' line, in the row, under the token: the heading over its count. */
   .sigil-row .aura-head.folded {
     flex-direction: column;
@@ -1101,9 +1162,6 @@
     .settings:not(.over) .sigil-row {
       margin-top: 0.6rem;
       padding-top: 0.4rem;
-    }
-    .settings:not(.over) .sigil-row :global(.auras.strip) {
-      margin-top: 0.4rem;
     }
   }
   /* Desktop: the lobby's stage, straight on the backdrop, the columns in the middle of the window's height. */

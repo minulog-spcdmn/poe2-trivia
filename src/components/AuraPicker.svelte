@@ -9,7 +9,9 @@
   // The token showing it is SigilPicker's, with the sigil worn: `worn` says
   // which to show there. `strip`: the seventeen in one row, named on hover
   // (the settings page, as its sigils are); `head` then stands beside the
-  // line, where the sigils' token stands over it, rather than in a row of its own.
+  // line, where the sigils' token stands over it, rather than in a row of its
+  // own; an empty one leaves that place to the token itself (a short window's
+  // settings, where the seventeen take the twelve's row on a switch).
   import { onMount, type Snippet } from 'svelte';
   import { AURA_HINTS, AURA_NAMES, WORN, type AuraKind } from '../lib/auraKinds';
   import { AURAS_KEY, loadAuras, owns, wearAura, wornAura } from '../lib/auraStore';
@@ -232,6 +234,9 @@
     align-items: center;
     column-gap: 1rem;
   }
+  .strip .lead.headed .line {
+    grid-column: 2;
+  }
   .strip .line {
     min-height: calc(3 * 1.35em);
     display: flex;
@@ -269,8 +274,14 @@
     }
   }
   @media (max-width: 560px) {
+    /* Three to a row, the tiles closer and their sides narrower, so the
+       longest single word (Chronomancer) has its tile's width at 375. */
     .auras:not(.strip) .kinds {
       grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 0.35rem;
+    }
+    .auras:not(.strip) .kind {
+      padding-inline: 0.15rem;
     }
     /* The longest line on how one's found takes three at a phone's width. */
     .auras:not(.strip) .line {
