@@ -1,0 +1,8 @@
+# Every crawler may read the whole site. The beta and the legal pages keep
+# themselves out of search with their own noindex, which a crawler only sees
+# if it may fetch them. Without this file GitHub Pages sometimes answers
+# /robots.txt with a 503, and a crawler takes that as "keep out" for a while.
+User-agent: *
+Allow: /
+
+Sitemap: https://poe2.quest/sitemap.xml
