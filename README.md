@@ -543,6 +543,28 @@ another job, on its own machine, takes only its changes to the reading and
 its tests and opens the pull request (the workflow’s header says how). By
 hand: `node scripts/items-watch.mjs report.md`.
 
+### Search engines
+
+What crawlers read, none of it shown to a player whose browser runs the game:
+`public/robots.txt` (everything allowed, and where the sitemap is),
+`public/sitemap.xml` (the game’s page; the beta, the stats and the legal pages
+are noindex), and in `index.html` a JSON-LD block (the site’s name, the one
+Google shows above a result, and the game) and a `<noscript>` describing the
+game, the only text in the page for a crawler that doesn’t run it. The item
+count in them is `{{items}}` in `index.html`, filled in from
+`src/data/items.json` by the build (`itemCount.ts`), so a data refresh needs
+no edit; the other numbers (achievements, room size, lives) are typed in, and
+`tests/indexCounts.test.ts` fails when the game’s change.
+
+`.github/workflows/indexnow.yml` tells the engines that take IndexNow (Bing,
+and so DuckDuckGo, Yahoo and Ecosia; Yandex, Seznam, Naver, Yep, Amazon) when
+a deploy of `main` changed `index.html` or the sitemap since the last one that
+went through, so they read the page again within days. No account: the key is
+public by design, proved by the file of its name in `public/`. Google takes no
+part; it reads the sitemap from `robots.txt`. A ping IndexNow refuses fails
+the run, and GitHub emails the owner; its own trouble only warns. By hand: run
+the workflow from the Actions tab.
+
 ---
 
 Fan project. Not affiliated with Grinding Gear Games. Item data and art from
