@@ -32,6 +32,8 @@
   import { backup, bringBack, checkBackup, forgetBackup, keepSafe } from '../lib/backup/backup.svelte';
   import { gpuNotice, openGpuNotice, shownFix } from '../lib/gpuNotice.svelte';
   import SigilPicker from './SigilPicker.svelte';
+  import AuraPicker from './AuraPicker.svelte';
+  import { WORN, type AuraKind } from '../lib/auraKinds';
 
   let { over = false }: { over?: boolean } = $props();
 
@@ -149,6 +151,9 @@
   let earned = $state(achievementsIn(loadAchievements()));
   onMount(() => onStoredElsewhere({ [ACHIEVEMENTS_KEY]: () => (earned = achievementsIn(loadAchievements())) }));
   let unlocked = $state(0);
+  /** The aura worn (AuraPicker), shown on the sigils' token, and how many are found. */
+  let aura = $state<AuraKind | null>(null);
+  let found = $state(0);
   /**
    * Wide enough for the twelve in a row beside the avatar, each still its
    * full size, and only with a pointer that hovers, which is what names each
@@ -400,14 +405,19 @@
       <section class="col block keys panel" use:backdropShadow={{ fill: 'linear' }} in:fly={enter(30, 200)}>{@render keys()}</section>
     {/if}
 
-    <!-- Under both columns, the width of the page: the twelve in a row. -->
+    <!-- Under both columns, the width of the page: the twelve in a row, and the auras under them, worn on the same token. -->
     {#if !over}
       <section class="block sigil-row" in:fly|global={calm({ y: 20, duration: 500, delay: 110 })}>
         <header>
           <h2>Class sigils</h2>
           <span class="count">{unlocked} / {CLASSES.length}</span>
         </header>
-        <SigilPicker achievements={earned} bind:unlocked strip={roomy.current} hue={kept ?? colour ?? 0} />
+        <SigilPicker achievements={earned} bind:unlocked strip={roomy.current} hue={kept ?? colour ?? 0} {aura} />
+        <header class="aura-head">
+          <h2>Auras</h2>
+          <span class="count">{found} / {WORN.length}</span>
+        </header>
+        <AuraPicker strip={roomy.current} bind:worn={aura} bind:found />
       </section>
     {/if}
   </div>
@@ -925,6 +935,9 @@
   }
   .sigil-row header {
     margin-bottom: 0.25rem;
+  }
+  .sigil-row .aura-head {
+    margin-top: 0.9rem;
   }
   .count {
     font-family: var(--font-cinzel);
