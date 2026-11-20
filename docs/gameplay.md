@@ -368,6 +368,113 @@ the same thing for everyone.
     devices as their union, the earlier find of one both have kept. Older
     builds skip the key. The Codex's Delve page shows the set, and every
     Delve end screen shows how far it is (`recap.ts` setProgress).
+- **Auras.** Now and then an ordinary card on offer holds a player aura
+  (`src/lib/auraDeal.ts`): never a find's card, a fossil's, the sulphite
+  card or a way out, at most one an offer, never in a dig, and only on an
+  offer with a card free for it. Only auras the taker lacks are offered.
+  Its question is the depth's own (no harder, no shorter clock) and its
+  category is locked out like any pick, except as noted below. Answer it
+  right and the aura is yours for good (`src/lib/auraStore.ts`, with the
+  mode and depth) and worn at once: the engine puts it on your token in
+  the game's state as it gives it, so every screen in the room draws it
+  from that answer on, and your device keeps it on for the next lobby; a
+  miss costs a life as usual and the aura is gone. Dynamite blasting its question loses the
+  aura with the card, and the new question is never one. A flare works on
+  it as on any ordinary question.
+  - **The deal:** every offer rolls, rarest tier first and within a tier
+    in the order below. Each aura whose condition holds (for a taker who
+    lacks it) is rolled at its chance; the first hit is the card. There is
+    no gap between finds, no cap a run, and an offer after a miss rolls
+    as any other. The rolls have their own random source, so nothing else
+    in a run draws differently for them. Depths are the ones players see.
+
+    | Tier | Aura | When | Chance |
+    |---|---|---|---|
+    | Mirror | Mirror of Kalandra | any offer | 0.004242% |
+    | Deep | Abyss | depths 50 to 59 or 80 to 89 | 0.2924% |
+    | Deep | Acolyte of Chayula (Monk) | past depth 50 | 0.1502% |
+    | Rare | Ritual | a zone's first offer, the zone before it (from 10 to 19 on; never the Mines) cleared without a miss | 0.5494% |
+    | Rare | Divinity | 10 right in a row, from depth 20 | 0.2917% |
+    | Rare | Corruption | depths 40 to 49 | 0.2009% |
+    | Rare | Twilight Order | on the last life, past depth 30, at least 5 depths after coming onto it | 0.07586% |
+    | Rare | Shadow (Assassin) | from depth 40; its question's art grey | 0.06139% |
+    | Uncommon | Breach | after 2 right answers in a row, each within 2 s | 100% |
+    | Uncommon | Expedition | after you pressed Detonate this run | 0.2556% |
+    | Uncommon | Herald of Ice | depths 20 to 29 | 0.4236% |
+    | Uncommon | Delirium | from depth 14; its question's picture mirrored | 0.5391% |
+    | Uncommon | Chronomancer (Sorceress) | right after a right answer with under 1 s left | 8.853% |
+    | Uncommon | Slayer (Gladiator) | at the depth of the best of your last 10 runs, so the next right answer beats it | 16.77% |
+    | Common | Runic Seals (Bound Djinn) | as the streak reaches exactly 3, once a streak | 30% |
+    | Common | Precursor Engine | a card on offer is the tablets' (Flasks, Charms, Jewels, Relics & Tablets); the aura sits on it and its question is a tablet | 19.94% |
+    | Common | Azmeri Spirits | a run together of 3 or more players | 0.7321% |
+
+    The Lich and Delve are benched, and not dealt.
+  - **Class auras** (the sigil in brackets) are only offered to, and only
+    found by, a player wearing that sigil.
+  - **What counts:** a miss for Ritual is any wrong answer or time-out,
+    one a ward took too; the zone before must have had an offer dealt in
+    it (a rush that rode past a whole zone doesn't count it). Breach's
+    times are the answers' as the recap holds them (from the art reaching
+    the player). Slayer's runs are the last 10 ended under this ruleset,
+    alone and together, and need at least one. Twilight Order's last life
+    begins with the loss that left one, a teammate bringing you back, or a
+    life you gave one. Together a wrong answer on a question then blasted
+    away is a miss of the zone's too.
+  - **Together:** a card is offered if anyone standing meets its condition
+    and lacks it (a class aura: wearing its sigil); the streak, the
+    answer times and Ritual's misses are the team's (a question cleared with
+    nobody missing on its offer), Detonate, Slayer's runs and the last life
+    each player's own. Azmeri Spirits counts the players seated. On the
+    team's right answer everyone standing who lacks it and could find it
+    keeps it. The host learns what each guest owns and their Slayer best
+    from the hello (`auras`, a mask; `slayer`, a depth), and keeps them for
+    a guest whose link drops.
+  - Noted in the run for its end screen: the auras it gave (`auras`) and
+    the aura cards missed (`aurasMissed`), as the fossils are. The QA
+    desk's `game/delve-aura` shows a card the deal put there, and its
+    question; `game/delve-aura-card` tries out how any aura's card looks.
+  - **In Take turns:** only online Take turns at Merciless or Eternal deals
+    aura cards, and only those games count for them (`countedTurns` in
+    `src/lib/auraDeal.ts`). Race, Custom, Cruel and a game on one device
+    (hot-seat, or a room that couldn't go online) deal none, nor does a
+    deathmatch (its one card is drawn, not chosen). The card is one of the
+    categories offered to the player on turn, an ordinary card, one an
+    offer at most, only an aura that player lacks (a class aura only with
+    its sigil), its question the room's own difficulty but forced as in
+    Delve. A player at the host's screen is never dealt one: no device of
+    theirs would keep it. Right, it is theirs for good (mode `turns`) and
+    worn at once; missed, wrong or out of time, it is gone. The rolls are
+    Delve's way (rarest tier first, each aura whose condition holds at its
+    chance, the first hit the card), from the same random source of their
+    own; the conditions read the player on turn's own answers in this game
+    unless said:
+
+    | Tier | Aura | When | Chance |
+    |---|---|---|---|
+    | Mirror | Mirror of Kalandra | any offer | 0.004242% |
+    | Rare | Shadow (Assassin) | Eternal only; its question's art grey | 0.06139% |
+    | Rare | Divinity | 10 right in a row, the streak carried across counted games | 0.57% |
+    | Uncommon | Breach | after 2 right answers in a row, each within 2 s | 100% |
+    | Uncommon | Delirium | Eternal only; its question's picture mirrored | 0.5391% |
+    | Uncommon | Chronomancer (Sorceress) | right after a right answer with under 1 s left; only with a timer | 36.42% |
+    | Uncommon | Slayer (Gladiator) | your score one right answer from the target, a target of 10 or more | 4.778% |
+    | Common | Runic Seals (Bound Djinn) | as your streak this game reaches exactly 3, once a streak | 30% |
+    | Common | Precursor Engine | the tablets' card is on your offer; the aura sits on it and its question is a tablet | 19.94% |
+    | Common | Azmeri Spirits | a game of 3 or more players | 0.7321% |
+
+    Expedition, Herald of Ice, Ritual, Corruption, Twilight Order, Abyss
+    and Acolyte of Chayula are Delve's only. Divinity's streak is carried
+    by each device in a key of its own (`aura-streak`, `src/lib/auraStore.ts`
+    loadAuraStreak; never synced, since a run of one device's answers
+    can't be joined to another's): a right answer in a counted game adds
+    one, a miss there ends it, and any other game, and Delve, leave it as
+    it is. A deathmatch's answers count too, as the game's own. The host
+    learns each guest's from the hello (`divine`) with what they own
+    (`auras`), keeps both for a guest whose link drops, and the game's
+    state carries each player's as it goes (`turnAuras`, with the card,
+    what it gave and what was missed); each device keeps its own from
+    there. The QA desk's `game/turns-aura` shows a card on offer, its
+    forced questions, and one won worn at once.
 - **The Sulphite rush.** Voltaxic Sulphite is the fuel Niko's crawler burns
   to travel down the mine. Now and then one of the ordinary cards on offer
   carries sulphite (never a find's card, a fossil's or a vein's). Taken, it
@@ -792,6 +899,21 @@ One unlocked is worn on their avatar behind their initial, for everyone in the
 room to see (it comes with their join). Unlocked stays unlocked, also when the
 codex is erased; then achievements earned afresh unlock more only once
 they're worth more sigils than are unlocked already. Kept in this browser (`src/lib/sigils.ts`).
+
+**Player auras:** an aura found is owned for good, with when it was found
+(and where, a mode and a depth, when that's known); one owned can be worn,
+and everyone in the room sees it burn round the player's avatar (it comes
+with their join and changes in the lobby, as a sigil does; mid-game the one
+worn as it began stays, but for one the game itself gives, worn at once). The four class auras are found only while their
+class's sigil is worn (Chronomancer with the Sorceress, Slayer with the
+Gladiator, Shadow with the Assassin, Acolyte of Chayula with the Monk;
+`findableWith` in `src/lib/auraKinds.ts`), but once owned show with any
+sigil, as the others do; `shownAura` there decides what is shown, for
+everything sent and drawn. Erasing the codex keeps them, as it keeps the sigils. Paired
+devices take in each other's, every aura either owns at the earlier find and
+the one put on latest worn, and the passkey backup keeps them with the rest.
+Auras a build doesn't know (a newer one's) are kept through all of it, and
+worn count as none. Kept in this browser (`src/lib/auraStore.ts`).
 
 ## Multiplayer
 

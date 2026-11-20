@@ -15,6 +15,7 @@
   import { sfx } from '../lib/sound';
   import { inviteUrl } from '../lib/site';
   import Avatar from './Avatar.svelte';
+  import { shownAura } from '../lib/auraKinds';
   import KickButton from './KickButton.svelte';
   import OnlookerMark from './OnlookerMark.svelte';
   import WatchEye from './WatchEye.svelte';
@@ -778,7 +779,7 @@
               data-dim={notReady(mark) || undefined}
               style:--c={playerColor(p.hue)}
             >
-              <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={32} dim={greyed(mark)} />
+              <Avatar name={p.name} hue={p.hue} sigil={p.sigil} aura={shownAura(p.aura, p.sigil)} size={32} dim={greyed(mark)} />
               <span class="name cut-name" title={p.name}><span class="cut" use:fadeCut><PlayerName name={p.name} /></span>{#if !local && p.id === session.myPlayerId && s.players.length > 1}<em><You /></em>{/if}</span>
               {#if mark}<span class="mark-room" transition:markRoom><StandingMark {mark} /></span>{/if}
               <!-- The host's chip carries a hanging banner, the party's standard, where the others have their ×. -->

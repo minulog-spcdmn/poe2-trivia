@@ -10,6 +10,7 @@
   import ChooseCategory from './ChooseCategory.svelte';
   import QuestionView from './QuestionView.svelte';
   import Avatar from './Avatar.svelte';
+  import { shownAura } from '../lib/auraKinds';
   import PlayerName from './PlayerName.svelte';
   import TimerRing from './TimerRing.svelte';
   import { backSound, fireAmbience, sfx } from '../lib/sound';
@@ -788,7 +789,7 @@
             {#if p}
               {#if i > 0}<span class="vs">vs</span>{/if}
               <span class="face" in:fly={{ y: 20, duration: 500, delay: 300 + i * 150 }}>
-                <Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={faceSize} />
+                <Avatar name={p.name} hue={p.hue} sigil={p.sigil} aura={shownAura(p.aura, p.sigil)} size={faceSize} />
                 <b><PlayerName name={p.name} /></b>
               </span>
             {/if}

@@ -20,10 +20,10 @@
   import { MAX_H, MAX_W, PAD, WEIGHT, fits, fitStyle, maskOf, measure } from '../lib/iconFit.svelte';
   import { fineMask } from '../lib/fineMask';
   import { inclusion } from '../lib/inclusion';
-  import { activeRules, difficultyOf } from '../lib/game';
+  import { activeRules, difficultyOf, type CardAura } from '../lib/game';
   import { FIND_TEXT, deathmatchText, digNote, findNote, lockoutText, namesOf, rushText, teamFindNote, teamUnused, unused } from '../lib/difficultyText';
   import { WAY_OUT_CARD as out } from '../lib/wayOut/lantern';
-  import { RUSH_DEFAULTS, digOf, expectedVoters, fossilOffer, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, rushOf, standingIds, sulphiteCard, voteClosesAt, type FindKind } from '../lib/delve';
+  import { RUSH_DEFAULTS, auraOffer, digOf, expectedVoters, fossilOffer, holdersOf, inventoryOf, isGroupRun, isIdle, isWayOut, livesOf, rushOf, standingIds, sulphiteCard, voteClosesAt, type FindKind } from '../lib/delve';
   import type { CardFossil, FossilTier } from '../lib/fossils';
   import { amberLight } from '../lib/fossilAmber';
   import { sfx } from '../lib/sound';
@@ -34,7 +34,7 @@
   import { light } from '../lib/lights';
   import { auraFeels, playerAura } from '../lib/fx/playerAura';
   import { cardAura } from '../lib/auraTrial.svelte';
-  import { AURA_GLOW, AURA_NAMES, type AuraKind } from '../lib/auraKinds';
+  import { AURA_GLOW, AURA_NAMES, shownAura, type AuraKind } from '../lib/auraKinds';
   import { auraLanded, auraTurning } from '../lib/auraDrop';
   import { auraInk } from '../lib/auraInk';
   import CardEngraving from './CardEngraving.svelte';
@@ -428,10 +428,24 @@
   /** The tag of the fossil on a card, or null. */
   const fossilAt = (cat: string): string | null => (fossilTierAt(cat) === 'rare' ? 'Rare Fossil' : fossilTierAt(cat) ? 'Fossil' : null);
   /**
-   * A try-out (lib/auraTrial.svelte.ts's cardAura, on the QA desk only): the
-   * aura a card holds, burning in its window round its item as it would on
-   * a token, the item in the token's place, and held in its face: none of
-   * it falls past the card. Never on a find's, a fossil's or the way out.
+   * Delve and online Take turns: the aura on a card (lib/auraDeal.ts), as dealt, kept like the
+   * fossil while the chosen card's moment plays (and taken from the
+   * question in play when the cards closed before this screen saw them).
+   */
+  let auraShown = $state.raw<CardAura | null>(null);
+  $effect.pre(() => {
+    if (s.phase === 'choosing') auraShown = auraOffer(s);
+    else if (s.question?.aura) {
+      const dealt = { category: s.question.category, kind: s.question.aura };
+      untrack(() => (auraShown ??= dealt));
+    }
+  });
+  /**
+   * The aura a card holds: the deal's (auraShown), or else a try-out's
+   * (lib/auraTrial.svelte.ts's cardAura, on the QA desk only), burning in
+   * its window round its item as it would on a token, the item in the
+   * token's place, and held in its face: none of it falls past the card.
+   * Never on a find's, a fossil's, the sulphite card or the way out.
    */
   /**
    * An aura's name on its plaque, in lines: a long one (past 13 letters) on
@@ -446,7 +460,13 @@
     return cut < 0 ? [name] : [name.slice(0, cut), name.slice(cut + 1)];
   };
   const auraAt = (cat: string): AuraKind | null =>
-    cardAura.kind && s.offered.indexOf(cat) === cardAura.at && !kindOf(cat) && !fossilTierAt(cat) && !isWayOut(cat) && sulphite !== cat ? cardAura.kind : null;
+    auraShown
+      ? auraShown.category === cat
+        ? auraShown.kind
+        : null
+      : cardAura.kind && s.offered.indexOf(cat) === cardAura.at && !kindOf(cat) && !fossilTierAt(cat) && !isWayOut(cat) && sulphite !== cat
+        ? cardAura.kind
+        : null;
   /** The cards that have landed face up in the deal, whose aura burns from then (`revealed`). */
   let auraUp = $state<boolean[]>([]);
   /** Whether card i's aura burns: from as it lands face up, or at once without a deal. */
@@ -463,8 +483,8 @@
   const fossilNote = $derived(fossilCol < 0 || dig ? null : finds.length + (sulphiteNoted ? 1 : 0) >= 2 ? 'line' : 'full');
   /** The sulphite card's note as a short line under the cards, as a fossil's is beside two finds' notes (which take both sides of the cards). */
   const sulphiteLine = $derived(!!sulphiteNoted && finds.length >= 2);
-  /** The aura's card on offer (a try-out: auraAt), while no dig or deathmatch hides the notes. */
-  const auraCol = $derived(cardAura.kind && !s.deathmatch && !dig ? s.offered.findIndex((c) => !!auraAt(c)) : -1);
+  /** The aura's card on offer (auraAt), while no dig or deathmatch hides the notes. */
+  const auraCol = $derived((auraShown || cardAura.kind) && !s.deathmatch && !dig ? s.offered.findIndex((c) => !!auraAt(c)) : -1);
   /** An aura's note (what it is: a look for the avatar, nothing in the run), as a fossil's, beside at most one other. */
   const auraNote = $derived(auraCol >= 0 && finds.length + (sulphiteNoted ? 1 : 0) + (fossilNote === 'full' ? 1 : 0) < 2);
   /** The columns of the notes that stand in the cards' columns (or at their sides): the finds', the sulphite card's, a fossil's and an aura's own. */
@@ -645,7 +665,7 @@
     light(at, { color: lamp, radius: 440, intensity: tier === 'rare' ? 0.95 : 0.8, decay: 1.3 });
   }
 
-  // An aura's card's own light (a try-out: auraAt), in the aura's colour
+  // An aura's card's own light (auraAt), in the aura's colour
   // (AURA_GLOW), where a plain card's is fire: its edge lit as it lands, alive
   // under the pointer, and as it's chosen ringing out from its circle while the other
   // cards burn away. No flare or light of its own: the aura lights the card,
@@ -899,7 +919,7 @@
         if (down && u >= turn + FLIP / 2) {
           down = false;
           card?.classList.remove('down');
-          // An aura's card (a try-out) as its face comes up: lib/auraDrop.ts.
+          // An aura's card as its face comes up: lib/auraDrop.ts.
           const aura = auraAt(s.offered[i]!);
           if (aura && card && u < turn + FLIP) auraTurning(card, aura);
         }
@@ -1415,7 +1435,7 @@
                 in:scale={{ start: 0.3, duration: motion.still ? 0 : 300 }}
                 out:scale={{ start: 0.3, duration: motion.still ? 0 : 200 }}
                 animate:flip={{ duration: motion.still ? 0 : 250 }}
-                ><Avatar name={p.name} hue={p.hue} sigil={p.sigil} size={22} /></span
+                ><Avatar name={p.name} hue={p.hue} sigil={p.sigil} aura={shownAura(p.aura, p.sigil)} size={22} /></span
               >
             {/each}
             {#if voters.length > faces.length}
@@ -1479,11 +1499,12 @@
       {/if}
       {#snippet auraLine()}
         {@const aura = auraAt(s.offered[auraCol]!)!}
-        <!-- As a fossil's: what to do in bold, then what it is (a look, worn round the avatar) and that the run is untouched. -->
+        {@const untouched = s.delve ? (mine ? 'Your run is unaffected.' : 'The run is unaffected.') : 'It scores as any other card.'}
+        <!-- As a fossil's: what to do in bold, then what it is (a look, worn round the avatar) and that the run is untouched (in Take turns, that it scores as any card). -->
         <p class="note find-note" data-find="aura" id="{uid}-note-aura" style={auraInk(aura)} style:--col={auraCol + 1} data-side={sideOf(auraCol, noteCols)}>
           {#if coop}<strong>Answer right to win this aura.</strong> Each of you can wear it round your avatar, in every game. The run is unaffected.{:else if mine}<strong
               >Answer right to win this aura.</strong
-            > You can wear it round your avatar, in every game. Your run is unaffected.{:else}A right answer wins this aura for {active.name}’s avatar. The run is unaffected.{/if}
+            > You can wear it round your avatar, in every game. {untouched}{:else}A right answer wins this aura for {active.name}’s avatar. {untouched}{/if}
         </p>
       {/snippet}
       <!-- An aura's note before a fossil's when its card comes first: on a phone the notes stand one under the other, in the cards' order. -->
@@ -2701,7 +2722,7 @@
     --f-glow: rgba(255, 120, 40, 0.2);
     --f-glyph: linear-gradient(180deg, #fbf3e6 0%, #c8b8a0 45%, #4a3a2a 100%);
   }
-  /* An aura's card (a try-out: auraAt): a plain card in its aura's colour,
+  /* An aura's card (auraAt): a plain card in its aura's colour,
      every gold of it the aura's (auraInk sets them on the card), its face's
      dark and its back's warm glow tinted toward it. */
   .card.aura-card .frame {
@@ -2949,7 +2970,7 @@
       inset 0 0 0 2.5px color-mix(in srgb, var(--f) 55%, transparent),
       0 0 12px var(--f-pulse);
   }
-  /* An aura's name (a try-out): kept between its face's corner seals
+  /* An aura's name: kept between its face's corner seals
      (lib/auraEngraving.ts, in Sol's and Luna's places), a long one on two
      lines (tagLines), the plaque as wide as the longer. */
   .card.aura-card .find-tag {
@@ -3018,7 +3039,7 @@
   .note.sulphite-line strong {
     color: #efeda0;
   }
-  /* An aura's (a try-out): its card's colour, kept light (auraInk's note colours, on the note). */
+  /* An aura's: its card's colour, kept light (auraInk's note colours, on the note). */
   .find-note[data-find='aura'] {
     color: var(--a-note);
   }

@@ -61,10 +61,10 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, runFossils, livesOf, pausedUsed, RUSH_DEFAULTS, rushTuning, standingIds, type CardFind, type FindKind } from './delve';
+import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, runAuras, runFossils, livesOf, pausedUsed, RUSH_DEFAULTS, rushTuning, standingIds, type CardFind, type FindKind } from './delve';
 import { GameCounts, RoomOff, Steps, countEvent, countFailure, countGameFrames, countStep, counting, hiddenSince, markActive, type Failure, type JoinVia } from './count';
 import { loadLooks } from './looks';
-import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
+import { bestOf, loadRecords, recentBest, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
 import { keeping } from './keptCopy';
 import {
@@ -100,6 +100,10 @@ import { peerCursors } from './peerCursors.svelte';
 import { whenCalm, whenIdle, type Deadline } from './idle';
 import { frameEvent } from './fpsMeter';
 import { SIGILS_KEY, loadSigils } from './sigils';
+import { AURAS_KEY, keepRunAuras, loadAuraStreak, loadAuras, ownedAuras, saveAuraStreak, wornAura as auraWorn } from './auraStore';
+import { carriedStreak, turnsGiven } from './turnsAuras';
+import { auraMask, shownAura, type AuraKind } from './auraKinds';
+import type { AuraHeld } from './game';
 import { COLOUR_KEY, loadColour } from './colour';
 import type { PlayerClass } from './classSigils';
 import { helloRefusal, noPrivate, parseSaved, privateFrom, rememberSecret, soloHotSeat, takesState, tooFast, type HostPrivate, type Saved } from './sessionRules';
@@ -171,6 +175,11 @@ export { CODE_LENGTH, CODE_PATTERN } from './roomCode.ts';
 const wornSigil = (): { sigil?: PlayerClass } => {
   const worn = loadSigils().worn;
   return worn ? { sigil: worn } : {};
+};
+/** The player aura this player wears (lib/auraStore.ts), as others are to see it (shownAura), read likewise. */
+const wornAura = (): { aura?: AuraKind } => {
+  const aura = shownAura(auraWorn(loadAuras()), loadSigils().worn);
+  return aura ? { aura } : {};
 };
 /** The colour this player would like (lib/colour.ts), for their join, read likewise. */
 const likedColour = (): { colour?: number } => {
@@ -371,12 +380,19 @@ interface Guest {
   tab: string | null;
   /** The class sigil its hello says it wears. */
   sigil?: PlayerClass;
+  /** The aura its hello says it wears. */
+  aura?: AuraKind;
   /** The colour its hello says it would like. */
   colour?: number;
   /** The Delve start lines its hello says its device has shown, most recent first, kept up as runs start (delveStartSeen.ts). */
   lines?: number[];
   /** The Delve fossils its hello says its device holds (a mask, fossils.ts), kept up as runs give it more. */
   fossils?: number;
+  /** The player auras its hello says its device owns (a mask, auraKinds.ts auraMask), kept up as runs give it more, and the deepest of its last Delve runs (Slayer's, delveRecord.ts recentBest). */
+  auras?: number;
+  slayer?: number;
+  /** Divinity's streak its hello says its device carries (Take turns, auraStore.ts loadAuraStreak), kept up as counted games go. */
+  divine?: number;
   /** Its hello, under the held name, waits on the owner key's signature being checked. */
   checking?: boolean;
   /** This link's hello carried the owner key's signature, checked (handleHello): only such a link may close the room. */
@@ -432,6 +448,18 @@ interface AheadArt extends Ahead {
 /** What a hello says of this device's Delve fossils, for the host's deal: which it holds. */
 function fossilsHello(): { fossils: number } {
   return { fossils: heldMask(loadFossils()) };
+}
+
+/** What this device knows for the aura deal (Engine.setAurasHeld): the auras it owns, and the deepest of its last Delve runs. */
+function ownAuraHeld(): AuraHeld {
+  const best = recentBest(loadRecords());
+  return { owned: auraMask(ownedAuras(loadAuras())), ...(best !== undefined ? { best } : {}), streak: loadAuraStreak() };
+}
+
+/** What a hello says of it, for the host's aura deal (auraDeal.ts). */
+function aurasHello(): { auras: number; slayer?: number; divine: number } {
+  const { owned, best, streak } = ownAuraHeld();
+  return { auras: owned, ...(best !== undefined ? { slayer: best } : {}), divine: streak ?? 0 };
 }
 
 class Session {
@@ -773,7 +801,7 @@ class Session {
   seatLocal(name: string): boolean {
     const playerId = newPlayerId();
     const first = !this.state?.players.length;
-    this.dispatch({ type: 'join', playerId, name, ...(this.mode === 'host' ? { local: true as const } : {}), ...(first ? { ...wornSigil(), ...likedColour() } : {}) });
+    this.dispatch({ type: 'join', playerId, name, ...(this.mode === 'host' ? { local: true as const } : {}), ...(first ? { ...wornSigil(), ...wornAura(), ...likedColour() } : {}) });
     const seated = !!this.state?.players.some((p) => p.id === playerId);
     if (seated && first) this.localSelf = playerId;
     return seated;
@@ -781,18 +809,24 @@ class Session {
 
   /**
    * The class sigil this browser wears changed (lib/sigils.ts, here or in
-   * another tab): the game under way shows it on this player at once.
+   * another tab), or the aura (lib/auraStore.ts): the game under way shows
+   * them on this player at once. Both, so a rule tying the aura shown to
+   * the sigil (shownAura) would follow either.
    */
   wearSigil() {
-    // (Not mid-game: the game keeps the one each player came in with, and
+    // (Not mid-game: the game keeps the one each player came in with, but
+    // for one it gave them, which it wears itself (Engine.giveAura), and
     // this is called again once it's back in the lobby, onNewState.)
     const s = this.state;
     if (s?.phase !== 'lobby') return;
-    const { sigil } = wornSigil();
     const id = this.mode === 'local' ? this.localSelf : this.myPlayerId;
     const me = id && [...s.players, ...(s.spectators ?? [])].find((o) => o.id === id);
-    if (!me || me.sigil === sigil) return;
-    this.dispatch({ type: 'sigil', ...(this.mode === 'local' ? { playerId: me.id } : {}), ...(sigil ? { sigil } : {}) });
+    if (!me) return;
+    const { sigil } = wornSigil();
+    const { aura } = wornAura();
+    const whose = this.mode === 'local' ? { playerId: me.id } : {};
+    if (me.sigil !== sigil) this.dispatch({ type: 'sigil', ...whose, ...(sigil ? { sigil } : {}) });
+    if (me.aura !== aura) this.dispatch({ type: 'aura', ...whose, ...(aura ? { aura } : {}) });
   }
 
   /** Likewise the colour this browser would like (lib/colour.ts): at once in the lobby, mid-game from the next one. */
@@ -966,9 +1000,11 @@ class Session {
         // one of them may have been answering holds its clock still from the
         // host's last moment before the reload until it can start again.
         if (s.delve) s = engine.apply(s, { type: 'resumed', ...lastAlive() }, null);
-        // The host's own sigil and colour as they are now, if the room was saved in its lobby: they may have changed since.
+        // The host's own sigil, aura and colour as they are now, if the room was saved in its lobby: they may have changed since.
         const { sigil } = wornSigil();
+        const { aura } = wornAura();
         s = engine.apply(s, { type: 'sigil', ...(sigil ? { sigil } : {}) }, me);
+        s = engine.apply(s, { type: 'aura', ...(aura ? { aura } : {}) }, me);
         s = engine.apply(s, { type: 'colour', ...likedColour() }, me);
         this.setState(s);
       } else {
@@ -1106,7 +1142,7 @@ class Session {
     // (A shared link's Delve is used up by this room, as by a game on this device.)
     this.delveLink = false;
     try {
-      return engine.apply(s, { type: 'join', playerId: me, name: this.joinName, ...wornSigil(), ...likedColour() }, me);
+      return engine.apply(s, { type: 'join', playerId: me, name: this.joinName, ...wornSigil(), ...wornAura(), ...likedColour() }, me);
     } catch (err) {
       this.fail(err instanceof ActionError ? err.message : 'Could not create the room.', 'Room not opened', failure ? { failure } : {});
       return null;
@@ -1237,9 +1273,13 @@ class Session {
           guest.tab = msg.tab ?? null;
           guest.laneWanted = !!msg.lane;
           guest.sigil = msg.sigil;
+          guest.aura = msg.aura;
           guest.colour = msg.colour;
           guest.lines = msg.lines;
           guest.fossils = msg.fossils;
+          guest.auras = msg.auras;
+          guest.slayer = msg.slayer;
+          guest.divine = msg.divine;
           clearTimeout(helloTimer);
           this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch, !!msg.seal, msg.owner);
         } else if (msg.t === 'pong') {
@@ -1289,7 +1329,7 @@ class Session {
         this.setState(engine.apply(this.state, { type: 'remove', playerId: id }, null));
       } else {
         this.setState(engine.apply(this.state, { type: 'connection', playerId: id, connected: false }, null));
-        this.flash(p.name, 'warn', { title: 'Player disconnected', who: { name: p.name, hue: p.hue, sigil: p.sigil } });
+        this.flash(p.name, 'warn', { title: 'Player disconnected', who: { name: p.name, hue: p.hue, sigil: p.sigil, aura: p.aura } });
       }
     });
   }
@@ -1400,7 +1440,7 @@ class Session {
         throw new ActionError('Someone with a name like that was removed from this room. Pick another name.');
       next = engine.apply(
         this.state!,
-        { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}), ...(owner ? { owner: true as const } : {}), ...(guest.sigil ? { sigil: guest.sigil } : {}), ...(guest.colour !== undefined ? { colour: guest.colour } : {}) },
+        { type: 'join', playerId, name, returning: !!known, ...(watch ? { watch } : {}), ...(owner ? { owner: true as const } : {}), ...(guest.sigil ? { sigil: guest.sigil } : {}), ...(guest.aura ? { aura: guest.aura } : {}), ...(guest.colour !== undefined ? { colour: guest.colour } : {}) },
         playerId,
       );
     } catch (err) {
@@ -1428,7 +1468,7 @@ class Session {
     const watcher = next.spectators?.find((o) => o.id === playerId);
     // The creator's first arrival has a notice of its own (see onNewState).
     if (this.heralded === playerId) return;
-    if (player) this.flash(player.name, 'info', { title: 'Player joined', who: { name: player.name, hue: player.hue, sigil: player.sigil } });
+    if (player) this.flash(player.name, 'info', { title: 'Player joined', who: { name: player.name, hue: player.hue, sigil: player.sigil, aura: player.aura } });
     else if (watcher) this.flash(watcher.name, 'info', { title: 'Spectator joined', who: { name: watcher.name } });
   }
 
@@ -2612,7 +2652,7 @@ class Session {
     const secret = await this.helloSecret;
     const owner = isHeldName(cleanName(this.joinName)) ? await this.signHello(conn) : null;
     if (secret && this.hostConn === conn && conn.open)
-      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}), ...wornSigil(), ...likedColour(), lines: seenLines(), ...fossilsHello() });
+      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}), ...wornSigil(), ...wornAura(), ...likedColour(), lines: seenLines(), ...fossilsHello(), ...aurasHello() });
     this.watchOwnPresence();
   }
 
@@ -2794,7 +2834,7 @@ class Session {
       }
     }
     this.dispatch({ type: 'remove', playerId });
-    if (player) this.flash(player.name, 'info', { title: 'Player removed', who: { name: player.name, hue: player.hue, sigil: player.sigil } });
+    if (player) this.flash(player.name, 'info', { title: 'Player removed', who: { name: player.name, hue: player.hue, sigil: player.sigil, aura: player.aura } });
     else if (name) this.flash(name, 'info', { title: 'Spectator removed', who: { name } });
   }
 
@@ -3009,6 +3049,29 @@ class Session {
   /** Host: the fossils each guest's device holds by player id (fossilsHeld), kept past a dropped link. */
   private guestFossils = new Map<string, number>();
 
+  /**
+   * What the aura deal knows of each of `ids`' devices (Engine.setAurasHeld):
+   * a guest's as its hello said and games since gave, this device's for anyone playing at it.
+   * Online (Take turns deals only so): a guest whose hello said what it owns, and the host's
+   * own player in a room online; never one at the host's screen, nor anyone on one device.
+   */
+  aurasHeld(ids: string[]): AuraHeld[] {
+    for (const g of this.guests.values())
+      if (g.playerId && g.auras !== undefined)
+        this.guestAuras.set(g.playerId, { owned: g.auras, ...(g.slayer !== undefined ? { best: g.slayer } : {}), streak: g.divine ?? 0, online: true });
+    const players = this.state?.players ?? [];
+    const own = (id: string) => this.mode === 'local' || id === this.myPlayerId || !!players.find((p) => p.id === id)?.local;
+    const online = this.mode === 'host' && !this.roomless;
+    let mine: AuraHeld | null = null;
+    return ids.map((id) => {
+      if (!own(id)) return this.guestAuras.get(id) ?? { owned: 0 };
+      mine ??= ownAuraHeld();
+      return online && id === this.myPlayerId ? { ...mine, online: true as const } : mine;
+    });
+  }
+  /** Host: what the aura deal knows of each guest's device by player id (aurasHeld), kept past a dropped link. */
+  private guestAuras = new Map<string, AuraHeld>();
+
   /** The grayscale a question's art is prepared with: the rules', or as rolled for it in Delve (the lab may force one). */
   private grayscaleOf(s: GameState): Grayscale {
     return this.labGrayscale ?? grayscaleFor(s);
@@ -3039,6 +3102,27 @@ class Session {
         for (const g of this.guests.values()) if (g.playerId === to) g.fossils = (g.fossils ?? 0) | fossilMask([id]);
         const was = this.guestFossils.get(to);
         if (was !== undefined) this.guestFossils.set(to, was | fossilMask([id]));
+      }
+    }
+    // Likewise an aura (auraDeal.ts).
+    const found = next.reveal?.aura;
+    if (this.isHost && found && prev?.reveal?.aura !== found) {
+      const bit = auraMask([found.kind]);
+      for (const to of found.to) {
+        for (const g of this.guests.values()) if (g.playerId === to) g.auras = (g.auras ?? 0) | bit;
+        const was = this.guestAuras.get(to);
+        if (was) this.guestAuras.set(to, { ...was, owned: was.owned | bit });
+      }
+    }
+    // Divinity's streak a guest carries, as the counted Take turns game in play has it now (for the next game's deal; one whose link dropped too).
+    if (this.isHost && next.turnAuras && next.turnAuras !== prev?.turnAuras) {
+      for (const g of this.guests.values()) {
+        const n = g.playerId ? carriedStreak(next, g.playerId) : null;
+        if (n !== null) g.divine = n;
+      }
+      for (const [id, was] of this.guestAuras) {
+        const n = carriedStreak(next, id);
+        if (n !== null && n !== was.streak) this.guestAuras.set(id, { ...was, streak: n });
       }
     }
     // The art's workers are ready before the first question wants them (media.svelte.ts; once is enough).
@@ -3187,6 +3271,32 @@ class Session {
     if (counting && completedBy(kept)) countEvent('fossil/complete');
   }
 
+  /**
+   * The auras a game gave this device's player (auraDeal.ts: a Delve run's,
+   * or a Take turns game's) are theirs for good (auraStore.ts gainAura, with
+   * the mode and depth), and one new to them is worn at once: the game's
+   * state wears it on their token already (Engine.giveAura), and the store
+   * keeps it on for the next lobby (wearSigil). On one device, whoever
+   * played. Read from the game's state as it comes, as the fossils are, so a
+   * dropped link or a reload never loses one; one owned already is left as
+   * it is, so a reload never puts it back on over another worn since.
+   * Likewise Divinity's streak this device carries (auraStore.ts
+   * saveAuraStreak), as a counted Take turns game has it for this device's
+   * player: what it holds, not a step, so reading it again changes nothing.
+   */
+  private noteAura(prev: GameState | null, next: GameState) {
+    const me = this.myPlayerId;
+    const carried = me && this.mode !== 'local' ? carriedStreak(next, me) : null;
+    if (carried !== null) saveAuraStreak(carried);
+    const delve = !!next.delve;
+    const given = delve ? runAuras(next) : turnsGiven(next);
+    if (!given.length) return;
+    const was = prev && (delve ? runAuras(prev) : turnsGiven(prev));
+    const same = delve ? prev?.delve?.startedAt === next.delve?.startedAt : prev?.startedAt === next.startedAt;
+    if (prev && same && was!.length === given.length) return;
+    if (keepRunAuras(given, me, this.mode === 'local', delve ? 'delve' : 'turns').length) this.wearSigil();
+  }
+
   private gameCounts = new GameCounts();
   private steps = new Steps();
   /**
@@ -3221,6 +3331,7 @@ class Session {
     countGameFrames(next);
     this.noteRun(prev, next);
     this.noteFossil(prev, next);
+    this.noteAura(prev, next);
     this.onNewState(prev, next);
     this.noteEncounter(prev, next);
     this.noteMoments(prev, next);
@@ -3746,7 +3857,7 @@ class Session {
       const p = cur.players[cur.turn];
       try {
         this.setState(engine.apply(cur, { type: 'skip' }, null));
-        if (p) this.flash(p.name, 'warn', { title: 'Turn skipped', who: { name: p.name, hue: p.hue, sigil: p.sigil } });
+        if (p) this.flash(p.name, 'warn', { title: 'Turn skipped', who: { name: p.name, hue: p.hue, sigil: p.sigil, aura: p.aura } });
       } catch {
         /* the turn moved on anyway */
       }
@@ -4060,6 +4171,7 @@ function writeSaved(saved: Saved | null) {
 export const session = new Session();
 engine.setStartLines((ids) => session.startLinesSeen(ids));
 engine.setFossilsHeld((ids) => session.fossilsHeld(ids));
+engine.setAurasHeld((ids) => session.aurasHeld(ids));
 // The Sulphite rush, in every run this page starts: as RUSH_DEFAULTS has it, or off the live game as the URL tunes it (delve.ts rushTuning).
 engine.setRush(CHANNEL === 'live' || typeof location === 'undefined' ? RUSH_DEFAULTS : rushTuning(location.search));
 // The screen kept on in a room online, and let go of out of it, whatever moves the session there.
@@ -4076,8 +4188,8 @@ if (typeof window !== 'undefined') {
   });
   window.addEventListener('storage', (e) => {
     if (e.key === LEFT_KEY && e.newValue) session.stillHere();
-    // A sigil picked in another tab is worn in the game in this one too.
-    if (e.key === SIGILS_KEY) session.wearSigil();
+    // A sigil or an aura picked in another tab is worn in the game in this one too.
+    if (e.key === SIGILS_KEY || e.key === AURAS_KEY) session.wearSigil();
     if (e.key === COLOUR_KEY) session.likeColour();
   });
   // Art that wouldn't load (offline) is tried again once the browser is back online.

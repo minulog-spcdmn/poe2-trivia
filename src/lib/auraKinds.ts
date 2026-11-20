@@ -1,7 +1,10 @@
 // The auras players could earn (a try-out: lib/fx/playerAura.ts draws them,
 // each from its own files in lib/fx/auras/), named apart from the effects so
 // the QA desk's bench can list them without loading the effects. `slot` is
-// the aura's number in the effects shader (lib/fx/auras/shaders.ts).
+// the aura's number in the effects shader (lib/fx/auras/shaders.ts). Those a
+// player owns and the one worn are kept in lib/auraStore.ts.
+
+import type { PlayerClass } from './classSigils.ts';
 
 export const AURAS = [
   'breach',
@@ -31,8 +34,83 @@ export const BENCHED: readonly AuraKind[] = ['lich', 'blacksun'];
 /** The auras that can be worn now. */
 export const WORN = AURAS.filter((a) => !BENCHED.includes(a));
 
+/** Whether `v` is an aura this build knows. */
+export const isAuraKind = (v: unknown): v is AuraKind => typeof v === 'string' && (AURAS as readonly string[]).includes(v);
+/** Whether `v` is an aura this build knows and lets be worn (none benched). */
+export const isWornAura = (v: unknown): v is AuraKind => isAuraKind(v) && !BENCHED.includes(v);
+
+/** The class auras, each with the class sigil it goes with (lib/classSigils.ts): found only while that sigil is worn (findableWith). */
+export const CLASS_AURAS: Partial<Record<AuraKind, PlayerClass>> = {
+  chronomancer: 'sorceress',
+  slayer: 'gladiator',
+  shadow: 'assassin',
+  chayula: 'monk',
+};
+
+/** Whether a player wearing the class sigil `sigil` (none: undefined or null) can find `aura`: any aura but a class one, and that only with its own sigil. */
+export const findableWith = (aura: AuraKind, sigil: PlayerClass | null | undefined): boolean => {
+  const cls = CLASS_AURAS[aura];
+  return !cls || cls === sigil;
+};
+
+/**
+ * The aura shown on a player who wears `aura` and the class sigil `sigil`:
+ * none for one this build doesn't know (a newer one's) or has benched. A
+ * class aura once owned shows with any sigil, or none, as every other does
+ * (the owner's call; only finding one asks for its sigil, findableWith).
+ * Everything sent and drawn goes through here (lib/session.svelte.ts, the
+ * avatars), so a rule tying the two together would be one line here.
+ */
+export function shownAura(aura: unknown, _sigil: unknown): AuraKind | undefined {
+  return isWornAura(aura) ? aura : undefined;
+}
+
+/**
+ * How each aura that can be worn is found, in the player's words, shown on
+ * one not found yet (components/AuraPicker.svelte): each a line that reads
+ * alone. What decides a find is the game's, so a change there changes its
+ * line here. A class aura's names its sigil (CLASS_AURAS).
+ */
+export const AURA_HINTS: Partial<Record<AuraKind, string>> = {
+  azmeri: 'Found in a game with 3 or more players.',
+  runeseal: 'Found by getting 3 right in a row.',
+  tower: 'Found on a tablet question.',
+  breach: 'Found by getting 2 right in a row, each within 2 seconds.',
+  expedition: 'Found after Detonating in a Delve run.',
+  ice: 'Found in the Frozen Hollow, depths 20 to 29.',
+  delirium: 'Found in Delve from depth 14, or in Eternal.',
+  chronomancer: 'Found on a right answer with under 1 second left, wearing the Sorceress sigil.',
+  slayer: 'Found on match point, or at your recent best Delve depth, wearing the Gladiator sigil.',
+  ritual: 'Found by clearing a Delve zone without a miss.',
+  divine: 'Found by getting 10 right in a row, in Delve from depth 20 or across online games.',
+  corrupted: 'Found in the Vaal Outpost, depths 40 to 49.',
+  twilight: 'Found deep in Delve, after surviving 5 depths on your last life.',
+  shadow: 'Found in Delve from depth 40, or in Eternal, wearing the Assassin sigil.',
+  abyss: 'Found in the Abyssal Depths or the Abyssal City.',
+  chayula: 'Found past depth 50, wearing the Monk sigil.',
+  mirror: 'Found on any card, very rarely.',
+};
+
 /** Its number in the effects shader: 1 for the first. */
 export const auraSlot = (k: AuraKind) => AURAS.indexOf(k) + 1;
+
+/**
+ * A set of auras as one number, a bit each in AURAS' order (the hello's
+ * `auras`, which a Delve host deals by: lib/auraDeal.ts). AURAS only ever
+ * grows at its end (the shader's slots go by it too), so a bit means the
+ * same aura to every build.
+ */
+export const auraMask = (kinds: Iterable<AuraKind>) => {
+  let m = 0;
+  for (const k of kinds) if (isAuraKind(k)) m |= 1 << AURAS.indexOf(k);
+  return m;
+};
+/** Every aura this build knows, as a mask. */
+export const ALL_AURAS = (1 << AURAS.length) - 1;
+/** Whether mask `m` holds `kind`. */
+export const holdsAura = (m: number, kind: AuraKind) => (m & (1 << AURAS.indexOf(kind))) !== 0;
+/** A mask as it arrives (a hello's), down to the auras this build knows; null for one that doesn't read as a mask at all. A newer build's further auras are left out, the ones known kept. */
+export const cleanAuraMask = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 0x7fffffff ? v & ALL_AURAS : null);
 
 /**
  * Each aura's own light for what's lit about it (an aura's card's edge as

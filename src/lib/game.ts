@@ -4,6 +4,22 @@
 import { cleanName, isHeldName, nameProblem, nameSkeleton } from './names.ts';
 import { RUBY, isChoosableHue } from './palette.ts';
 import { isPlayerClass, type PlayerClass } from './classSigils.ts';
+import { auraMask, isAuraKind, isWornAura, type AuraKind } from './auraKinds.ts';
+import {
+  BREACH_MS,
+  CLOSE_MS,
+  RITUAL_FROM_ZONE,
+  SEALS_STREAK,
+  TABLETS,
+  auraForcing,
+  canTake,
+  carryStreak,
+  countedTurns,
+  dealAura,
+  dealTurnsAura,
+  type AuraTaker,
+} from './auraDeal.ts';
+import { carriedStreak, dealtTo, turnsAuras, turnsGiven } from './turnsAuras.ts';
 import type { Looks } from './looks.ts';
 import {
   DELVE_MAX_LOCKOUT,
@@ -54,6 +70,11 @@ import {
   findOn,
   fossilOn,
   runFossils,
+  auraOn,
+  runAuras,
+  sulphiteCard,
+  zoneOf,
+  shownDepth,
   livesOf,
   standingIds,
   WAY_OUT,
@@ -546,6 +567,19 @@ export interface Delve {
   /** The fossil cards this run picked and missed (answered wrong or out of time), oldest first (missing for none). */
   fossilsMissed?: MissedFossil[];
   /**
+   * The aura on one of the cards on offer (auraDeal.ts; delve.ts
+   * auraOffer): its card and which aura. Never on a find's card, a
+   * fossil's, the sulphite card or a way out, at most one an offer, never
+   * in a dig. Missing for none, and in older saves.
+   */
+  aura?: CardAura;
+  /** The auras this run gave, oldest first (missing for none, and in older saves). */
+  auras?: RunAura[];
+  /** The aura cards this run picked and missed (answered wrong or out of time), oldest first (missing for none). */
+  aurasMissed?: MissedAura[];
+  /** What the aura deal goes by that the rest of the run doesn't keep (auraDeal.ts AuraSigns). Missing for nothing yet, and in older saves. */
+  auraFacts?: AuraFacts;
+  /**
    * Co-op: this depth's votes, by player: the card each voted for (public).
    * Kept through the question it chose, cleared when the next vote opens.
    */
@@ -608,6 +642,82 @@ export interface RunFossil {
   depth: number;
   at: number;
   to: string[];
+}
+
+/** An aura on a card on offer in Delve (auraDeal.ts): its card, and which aura. */
+export interface CardAura {
+  category: string;
+  kind: AuraKind;
+}
+
+/** An aura a Delve run gave: which, at which depth and when (host clock), and to whom (together, everyone standing who could take it). */
+export interface RunAura {
+  kind: AuraKind;
+  depth: number;
+  at: number;
+  to: string[];
+}
+
+/** An aura card a Delve run picked and missed: at which depth, which aura, and who could have taken it (alone the answerer; together everyone in it who could). */
+export interface MissedAura {
+  kind: AuraKind;
+  depth: number;
+  to: string[];
+}
+
+/**
+ * What the aura deal (auraDeal.ts) goes by that a Delve run doesn't keep
+ * otherwise. Alone the player's, together the team's: `quick`, right
+ * answers in a row each within BREACH_MS; `close`, the last answer right
+ * with under CLOSE_MS on its clock; `seals`, Runic Seals rolled at this
+ * streak of 3; `missed`, the zones (delve.ts zoneOf) with a miss in them (a
+ * wrong answer or a time-out, a ward's taken too); `zone`, the zone of the
+ * last offer dealt; `detonated`, who set off dynamite (Detonate).
+ */
+export interface AuraFacts {
+  quick?: number;
+  close?: true;
+  seals?: true;
+  missed?: number[];
+  zone?: number;
+  detonated?: string[];
+}
+
+/** What the aura deal knows of a player's device (Engine.setAurasHeld): the auras it owns, as a mask (auraKinds.ts auraMask), and the deepest of its last Delve runs (delveRecord.ts recentBest, the engine's depth), if any. */
+export interface AuraHeld {
+  owned: number;
+  best?: number;
+  /** Take turns: Divinity's streak its device carries, right answers in a row across counted games (auraStore.ts loadAuraStreak). */
+  streak?: number;
+  /**
+   * Take turns: they play online on a device of their own (a guest whose
+   * hello said what it owns, or the host's own player in a room online).
+   * Take turns deals auras only to such: never on one device, nor to a
+   * player at the host's screen (Player.local), whose finds no device of
+   * theirs would keep.
+   */
+  online?: true;
+}
+
+/**
+ * Online Take turns at Merciless or Eternal (auraDeal.ts countedTurns): the
+ * aura deal's, for the game in play or just over. Missing in every other
+ * game, and in older saves. `streak` names those it deals to (online, on a
+ * device of their own: AuraHeld online), with Divinity's streak each
+ * carries (what they came in with, and this game's answers since); `quick`,
+ * `close` and `seals` are each one's as Delve's AuraFacts are the run's.
+ */
+export interface TurnsAuras {
+  /** The aura on a card of the offer on turn (one of `offered`), and which. */
+  card?: CardAura;
+  /** The auras this game gave, oldest first: which, when (host clock), and to whom. */
+  given?: { kind: AuraKind; at: number; to: string[] }[];
+  /** The aura cards this game picked and missed (answered wrong or out of time), oldest first. */
+  missed?: { kind: AuraKind; to: string[] }[];
+  streak: Record<string, number>;
+  quick?: Record<string, number>;
+  close?: string[];
+  seals?: string[];
 }
 
 /** A fossil card a Delve run picked and missed: at which depth, its tier, and who could have taken one (alone the answerer; together everyone in it who could). */
@@ -698,6 +808,8 @@ export interface Player {
   local?: true;
   /** The class sigil they wear on their avatar (lib/sigils.ts), if any. */
   sigil?: PlayerClass;
+  /** The player aura they wear (lib/auraStore.ts), if any: shown as lib/auraKinds.ts shownAura says. */
+  aura?: AuraKind;
   /** The colour they'd like (lib/colour.ts), if any: their `hue` once it's theirs to have (settleHue). */
   colour?: number;
 }
@@ -884,6 +996,13 @@ export interface Question {
    */
   fossil?: FossilTier;
   /**
+   * Delve: asked from an aura's card (auraDeal.ts), the depth's own
+   * question (Delirium's picture mirrored, Shadow's art grey, Precursor
+   * Engine's a tablet: auraForcing), and its aura; a right answer gives it.
+   * Kept through a reask; never on a question a blast asked.
+   */
+  aura?: AuraKind;
+  /**
    * Delve, an Azurite Vein's: which strike of the dig it is (delve.ts, the
    * dig), asked from veinDeeper(strike) further down. Missing: strike 1.
    */
@@ -951,7 +1070,7 @@ export interface Blast {
    * screen counts its item as seen in the codex, and a player who struck an
    * option on it as having missed it, at that cost.
    */
-  was: { at: number; itemId: string; mode: QuestionMode; struck?: Pick<Struck, 'by' | 'index' | 'lives' | 'wards'>[]; fossil?: FossilTier };
+  was: { at: number; itemId: string; mode: QuestionMode; struck?: Pick<Struck, 'by' | 'index' | 'lives' | 'wards'>[]; fossil?: FossilTier; aura?: AuraKind };
 }
 
 /** A wrong answer in co-op Delve (see Question.struck). */
@@ -995,6 +1114,12 @@ export interface Reveal {
    * who could take one. Missing when it gave none.
    */
   fossil?: { tier: FossilTier; given: { id: FossilId; to: string }[] };
+  /**
+   * Delve: the aura this right answer to an aura's card gave, and to whom
+   * (Engine.giveAura): alone the answerer, together everyone standing who
+   * lacked it and could find it. Missing when it gave none.
+   */
+  aura?: { kind: AuraKind; to: string[] };
   /**
    * Delve co-op, with `gained`: who took the item. The winner, if they had
    * room for it; otherwise the first standing teammate in seat order who had.
@@ -1063,7 +1188,7 @@ export interface Recap {
   /** Delve: each item a find gave, oldest first, and what became of it. */
   items?: RecapItem[];
   /** Everyone the recap names, as they were when it named them: a player removed before the end is still told by name. */
-  people?: Record<string, { name: string; hue: number; sigil?: PlayerClass }>;
+  people?: Record<string, { name: string; hue: number; sigil?: PlayerClass; aura?: AuraKind }>;
 }
 
 export interface RecapTally {
@@ -1128,6 +1253,8 @@ export interface Spectator {
   stay?: true;
   /** The class sigil they wear, kept for when they take a seat. */
   sigil?: PlayerClass;
+  /** The aura they wear, likewise. */
+  aura?: AuraKind;
   /** The colour they'd like, kept for when they take a seat. */
   colour?: number;
 }
@@ -1171,6 +1298,8 @@ export interface GameState {
   recentCategories: string[];
   /** The Delve run in progress (or just over); null otherwise, missing in older saves. */
   delve?: Delve | null;
+  /** Online Take turns at Merciless or Eternal: its aura deal's (TurnsAuras). Missing otherwise, and in older saves. */
+  turnAuras?: TurnsAuras;
   /**
    * How many art questions each player is behind the difficulty's share
    * (negative: ahead), by player id; race mode keeps one for the room under
@@ -1199,7 +1328,7 @@ export type Action =
    * `owner`: the host checked the owner key's signature for the held name (session.svelte.ts). `sigil`: the class sigil they wear.
    * `local`: the host adds a player at its own screen (Player.local), in a Turns lobby.
    */
-  | { type: 'join'; playerId: string; name: string; returning?: boolean; watch?: boolean; owner?: true; sigil?: PlayerClass; colour?: number; local?: true }
+  | { type: 'join'; playerId: string; name: string; returning?: boolean; watch?: boolean; owner?: true; sigil?: PlayerClass; aura?: AuraKind; colour?: number; local?: true }
   /** Host: its own player plays under the held name (the host holds the owner key). */
   | { type: 'owner'; playerId: string }
   | { type: 'rename'; playerId: string; name: string }
@@ -1225,6 +1354,8 @@ export type Action =
   | { type: 'watch'; watch: boolean }
   /** The class sigil the sender wears now (none: taken off); on this device (from null), `playerId`'s. */
   | { type: 'sigil'; sigil?: PlayerClass; playerId?: string }
+  /** The player aura the sender wears now (none: taken off), likewise. */
+  | { type: 'aura'; aura?: AuraKind; playerId?: string }
   /** The colour the sender would like now (none: any); on this device (from null), `playerId`'s. */
   | { type: 'colour'; colour?: number; playerId?: string }
   /** Host only (Delve): the art has reached the player answering, so their clock starts at `at` (host clock). */
@@ -1299,7 +1430,7 @@ export function createGame(hostId: string | null, settings: Settings = DEFAULT_S
 function fillSeats(s: GameState) {
   const watching: Spectator[] = [];
   for (const o of s.spectators ?? []) {
-    if (!o.stay && s.players.length < MAX_PLAYERS) seat(s, o.id, o.name, { sigil: o.sigil, colour: o.colour });
+    if (!o.stay && s.players.length < MAX_PLAYERS) seat(s, o.id, o.name, { sigil: o.sigil, aura: o.aura, colour: o.colour });
     else watching.push(o);
   }
   s.spectators = watching;
@@ -1383,7 +1514,7 @@ function settleHue(s: GameState, p: Player) {
 }
 
 /** Adds a player with the first free avatar colour (or their reserved one). */
-function seat(s: GameState, id: string, name: string, o: { local?: boolean; sigil?: PlayerClass; colour?: number } = {}) {
+function seat(s: GameState, id: string, name: string, o: { local?: boolean; sigil?: PlayerClass; aura?: AuraKind; colour?: number } = {}) {
   const p: Player = {
     id,
     name,
@@ -1393,6 +1524,7 @@ function seat(s: GameState, id: string, name: string, o: { local?: boolean; sigi
     hue: -1,
     ...(o.local ? { local: true as const } : {}),
     ...(o.sigil ? { sigil: o.sigil } : {}),
+    ...(o.aura ? { aura: o.aura } : {}),
     ...(o.colour !== undefined ? { colour: o.colour } : {}),
   };
   p.hue = freeHue(s);
@@ -1528,6 +1660,12 @@ export class Engine {
   private seenLines: ((ids: string[]) => number[][]) | null = null;
   /** The fossils each player's device holds, as masks (see setFossilsHeld). */
   private heldFossils: ((ids: string[]) => number[]) | null = null;
+  /** What the aura deal knows of each player's device (see setAurasHeld); null: no auras dealt. */
+  private heldAuras: ((ids: string[]) => AuraHeld[]) | null = null;
+  /** The aura deal's own random source (auraDeal.ts): no other draw of the game comes from it, nor it from theirs. */
+  private auraRng: Rng;
+  /** The category the tablets are in (Precursor Engine's card), if any. */
+  private readonly tablets: string | null;
 
   /**
    * `fakes`: made-up names for items, by item name (src/data/fakes.json).
@@ -1540,10 +1678,12 @@ export class Engine {
    * `mayAsk`: which items may be an answer (Today's unique keeps the days'
    * recent answers out); any may still be a decoy. When none of a
    * category's fit, one that doesn't is asked all the same.
+   * `auraRng`: the aura deal's own random source (auraDeal.ts), so the
+   * rest of every deal draws as it would without auras.
    */
   constructor(
     items: Item[],
-    opts: { rng?: Rng; now?: () => number; fakes?: Record<string, string[]>; looks?: Looks | null; twins?: boolean; autoClock?: boolean; mayAsk?: (id: string) => boolean } = {},
+    opts: { rng?: Rng; auraRng?: Rng; now?: () => number; fakes?: Record<string, string[]>; looks?: Looks | null; twins?: boolean; autoClock?: boolean; mayAsk?: (id: string) => boolean } = {},
   ) {
     this.items = items;
     this.byId = new Map(items.map((it) => [it.id, it]));
@@ -1556,6 +1696,8 @@ export class Engine {
     }
     this.categories = [...this.byCategory.keys()].sort();
     this.rng = opts.rng ?? Math.random;
+    this.auraRng = opts.auraRng ?? Math.random;
+    this.tablets = items.find((it) => it.group === TABLETS)?.category ?? null;
     this.now = opts.now ?? Date.now;
     this.looks = opts.looks ?? null;
     this.autoClock = !!opts.autoClock;
@@ -1599,6 +1741,228 @@ export class Engine {
    */
   setFossilsHeld(held: ((ids: string[]) => number[]) | null) {
     this.heldFossils = held;
+  }
+
+  /**
+   * Hands over where to ask what each player's device knows for the aura
+   * deal (auraDeal.ts): the auras it owns and the deepest of its last Delve
+   * runs (Slayer's), the host's own for anyone playing at it, a guest's as
+   * its hello said. Without it (tests, tools, the bot) no aura is dealt, as
+   * no rush is without setRush. Those a run gave are counted from the run.
+   */
+  setAurasHeld(held: ((ids: string[]) => AuraHeld[]) | null) {
+    this.heldAuras = held;
+  }
+
+  /** Each of `ids` as the aura deal sees them on this offer (auraDeal.ts AuraTaker). */
+  private auraTakers(s: GameState, ids: string[]): AuraTaker[] {
+    const held = this.heldAuras?.(ids) ?? [];
+    const facts = s.delve?.auraFacts;
+    return ids.map((id, i) => {
+      // (Take turns: what the game gave them.)
+      const run = [...runAuras(s), ...turnsGiven(s)].filter((a) => a.to.includes(id));
+      const lives = livesOf(s, id);
+      const best = held[i]?.best;
+      return {
+        owned: (held[i]?.owned ?? 0) | auraMask(run.map((a) => a.kind)),
+        sigil: s.players.find((p) => p.id === id)?.sigil ?? null,
+        detonated: !!facts?.detonated?.includes(id),
+        ...(best !== undefined ? { best: shownDepth(best) } : {}),
+        lives,
+        ...(lives === 1 ? { lastLife: shownDepth(this.lastLifeAt(s, id)) } : {}),
+      };
+    });
+  }
+
+  /** The depth `id` came onto the life they're on: their latest loss, a teammate bringing them back, or a life they gave one, whichever came last. */
+  private lastLifeAt(s: GameState, id: string): number {
+    const lost = s.delve?.losses[id]?.at(-1) ?? 0;
+    const passed = (s.delve?.revives ?? []).filter((r) => r.to === id || r.by === id).at(-1)?.depth ?? 0;
+    return Math.max(lost, passed);
+  }
+
+  /**
+   * Which card on offer holds an aura, if any (auraDeal.ts dealAura): one
+   * that holds nothing else (a find, a fossil, the sulphite card, a way
+   * out), drawn, or for Precursor Engine the tablets' card. `takers`: alone
+   * the player on turn, together everyone standing. Never in a dig or a
+   * deathmatch, nor with no free card; all from the aura deal's own random
+   * source.
+   */
+  private rollAura(s: GameState, takers: string[]): CardAura | undefined {
+    const dm = s.delve;
+    if (!dm || !this.heldAuras || !takers.length || digOf(s) || s.deathmatch) return undefined;
+    const facts = (dm.auraFacts ??= {});
+    const zone = zoneOf(s.round);
+    const watched = facts.zone;
+    facts.zone = zone;
+    const coop = isGroupRun(s);
+    const streak = coop ? (dm.teamStreak ?? 0) : (s.players[s.turn]?.streak ?? 0);
+    if (streak !== SEALS_STREAK) delete facts.seals;
+    const sulphite = sulphiteCard(s);
+    const taken = new Set([...(dm.finds ?? []).map((f) => f.category), ...(dm.fossil ? [dm.fossil.category] : []), ...(sulphite ? [sulphite] : [])]);
+    const free = s.offered.filter((c) => !taken.has(c) && !isWayOut(c));
+    if (!free.length) return undefined;
+    // Ritual: the zone's first offer, the last one dealt in the zone before it (from the Fissure), which was cleared without a miss.
+    const before = zone - 1;
+    const ritual = before >= RITUAL_FROM_ZONE && watched === before && !facts.missed?.includes(before);
+    const signs = {
+      depth: shownDepth(s.round),
+      streak,
+      quick: facts.quick ?? 0,
+      close: !!facts.close,
+      sealsRolled: !!facts.seals,
+      ritual,
+      players: coop ? s.players.length : 1,
+      tablets: !!this.tablets && free.includes(this.tablets),
+    };
+    const { kind, rolled } = dealAura(signs, this.auraTakers(s, takers), this.auraRng);
+    if (rolled.includes('runeseal')) facts.seals = true;
+    if (!kind) return undefined;
+    const category = kind === 'tower' ? this.tablets! : free[Math.min(free.length - 1, Math.floor(this.auraRng() * free.length))];
+    return { category, kind };
+  }
+
+  /**
+   * A right answer to an aura's card (`q`): each of `takers` (alone the
+   * answerer, together everyone standing) who lacks it and could find it
+   * (a class aura only with its sigil) is given it. Says what it gave, for
+   * the reveal.
+   */
+  private giveAura(s: GameState, q: Question, takers: string[]): Reveal['aura'] {
+    const kind = q.aura;
+    const turns = turnsAuras(s);
+    if ((!s.delve && !turns) || !kind) return undefined;
+    const ts = this.auraTakers(s, takers);
+    const to = takers.filter((id, i) => canTake(kind, ts[i]) && (!!s.delve || dealtTo(s, id)));
+    if (!to.length) return undefined;
+    if (s.delve) (s.delve.auras ??= []).push({ kind, depth: s.round, at: this.now(), to });
+    else (turns!.given ??= []).push({ kind, at: this.now(), to });
+    // Worn at once, by the deal's own act (not the lobby's aura action): every screen draws it from now on.
+    for (const p of s.players) if (to.includes(p.id)) p.aura = kind;
+    return { kind, to };
+  }
+
+  /** An aura's card (`q`) missed: noted for the end screen, with those of `ids` who could have taken it. */
+  private missAura(s: GameState, q: Question, ids: string[]) {
+    const kind = q.aura;
+    const turns = turnsAuras(s);
+    if ((!s.delve && !turns) || !kind) return;
+    const ts = this.auraTakers(s, ids);
+    const to = ids.filter((id, i) => canTake(kind, ts[i]) && (!!s.delve || dealtTo(s, id)));
+    if (s.delve) (s.delve.aurasMissed ??= []).push({ kind, depth: s.round, to });
+    else (turns!.missed ??= []).push({ kind, to });
+  }
+
+  /**
+   * As a counted Take turns game starts (auraDeal.ts countedTurns, where
+   * auras are dealt: setAurasHeld), its aura deal: those it deals to, each
+   * online on a device of their own (AuraHeld online; never one at the
+   * host's screen), with Divinity's streak they carry. None otherwise.
+   */
+  private openTurnsAuras(s: GameState) {
+    delete s.turnAuras;
+    // (A game on one device, hostId null, never: whatever the hook says.)
+    if (!this.heldAuras || !countedTurns(s.settings) || s.hostId === null) return;
+    const ids = s.players.map((p) => p.id);
+    const held = this.heldAuras(ids);
+    const streak: Record<string, number> = {};
+    ids.forEach((id, i) => {
+      const h = held[i];
+      if (!h?.online || s.players[i].local) return;
+      const n = h.streak;
+      streak[id] = typeof n === 'number' && Number.isInteger(n) && n >= 0 ? n : 0;
+    });
+    if (Object.keys(streak).length) s.turnAuras = { streak };
+  }
+
+  /**
+   * Which card of a Take turns offer holds an aura, if any (auraDeal.ts
+   * dealTurnsAura): for the player on turn, if the game deals to them, on a
+   * card drawn, or for Precursor Engine the tablets'. Never in a
+   * deathmatch; all from the aura deal's own random source.
+   */
+  private rollTurnsAura(s: GameState): CardAura | undefined {
+    const t = turnsAuras(s);
+    const p = s.players[s.turn];
+    if (!t || !p || s.deathmatch || !dealtTo(s, p.id) || !s.offered.length) return undefined;
+    const streak = p.streak ?? 0;
+    // Runic Seals is rolled once a streak: at 3 only once.
+    if (streak !== SEALS_STREAK && t.seals?.includes(p.id)) {
+      t.seals = t.seals.filter((id) => id !== p.id);
+      if (!t.seals.length) delete t.seals;
+    }
+    const [taker] = this.auraTakers(s, [p.id]);
+    const signs = {
+      eternal: s.settings.difficulty === 'eternal',
+      streak,
+      carried: carriedStreak(s, p.id) ?? 0,
+      quick: t.quick?.[p.id] ?? 0,
+      close: !!t.close?.includes(p.id),
+      timer: s.settings.timer > 0,
+      sealsRolled: !!t.seals?.includes(p.id),
+      score: p.score,
+      target: s.settings.targetScore,
+      players: s.players.length,
+      tablets: !!this.tablets && s.offered.includes(this.tablets),
+    };
+    const { kind, rolled } = dealTurnsAura(signs, taker, this.auraRng);
+    if (rolled.includes('runeseal') && !t.seals?.includes(p.id)) (t.seals ??= []).push(p.id);
+    if (!kind) return undefined;
+    const category = kind === 'tower' ? this.tablets! : s.offered[Math.min(s.offered.length - 1, Math.floor(this.auraRng() * s.offered.length))];
+    return { category, kind };
+  }
+
+  /**
+   * After a reveal in a counted Take turns game, for the player who
+   * answered (if it deals to them): Divinity's carried streak (one more
+   * right, or none on a miss), their right answers in a row within
+   * BREACH_MS, and whether it was right with under CLOSE_MS left.
+   */
+  private noteTurnsAura(s: GameState, r: Reveal, sent: number | undefined) {
+    const t = turnsAuras(s);
+    const q = s.question;
+    const id = s.players[s.turn]?.id;
+    if (!t || !q || !id || !dealtTo(s, id)) return;
+    t.streak[id] = carryStreak(carriedStreak(s, id) ?? 0, r.correct);
+    const now = this.now();
+    const ms = r.correct ? heldMs(sent, now - q.askedAt, now - (q.clockAt ?? q.askedAt)) : undefined;
+    const quick = { ...t.quick };
+    if (ms !== undefined && ms <= BREACH_MS) quick[id] = (quick[id] ?? 0) + 1;
+    else delete quick[id];
+    if (Object.keys(quick).length) t.quick = quick;
+    else delete t.quick;
+    const close = (t.close ?? []).filter((c) => c !== id);
+    if (r.correct && q.deadline !== null && q.deadline - now < CLOSE_MS) close.push(id);
+    if (close.length) t.close = close;
+    else delete t.close;
+  }
+
+  /**
+   * After a reveal in Delve, what the aura deal goes by (AuraFacts): the
+   * right answers in a row within BREACH_MS (the answer's time as the recap
+   * holds it: Engine.note), whether it was right with under CLOSE_MS left,
+   * and a miss in this zone. Together, the team's: a question cleared with
+   * nobody missing on its offer keeps it going, as the team's streak does.
+   * Only where auras are dealt (setAurasHeld).
+   */
+  private noteAuraFacts(s: GameState, r: Reveal, sent: number | undefined) {
+    const dm = s.delve;
+    const q = s.question;
+    if (!dm || !q || !this.heldAuras || s.deathmatch) return;
+    const facts = (dm.auraFacts ??= {});
+    const now = this.now();
+    const clean = r.correct && (isGroupRun(s) ? (r.teamStreak ?? 0) > 0 : true);
+    const ms = clean ? heldMs(sent, now - q.askedAt, now - (q.clockAt ?? q.askedAt)) : undefined;
+    if (ms !== undefined && ms <= BREACH_MS) facts.quick = (facts.quick ?? 0) + 1;
+    else delete facts.quick;
+    if (r.correct && q.deadline !== null && q.deadline - now < CLOSE_MS) facts.close = true;
+    else delete facts.close;
+    // (Together a wrong answer on a question blasted away since is the offer's too: missedHere.)
+    if (!r.correct || r.hits?.length || dm.missedHere) {
+      const zone = zoneOf(s.round);
+      if (!facts.missed?.includes(zone)) (facts.missed ??= []).push(zone);
+    }
   }
 
   /** What the fossil deal knows of each of `ids`: what they hold (the run's gifts with it), and how many the run gave them. */
@@ -1696,18 +2060,21 @@ export class Engine {
           if (action.owner && isHeldName(name)) s.owner = { id: action.playerId };
         };
         const sigil = isPlayerClass(action.sigil) ? action.sigil : undefined;
+        const aura = isWornAura(action.aura) ? action.aura : undefined;
         const colour = isChoosableHue(action.colour) ? action.colour : undefined;
-        const looks = { ...(sigil ? { sigil } : {}), ...(colour !== undefined ? { colour } : {}) };
+        const looks = { ...(sigil ? { sigil } : {}), ...(aura ? { aura } : {}), ...(colour !== undefined ? { colour } : {}) };
         /**
          * The one they wear now and the colour they'd like, coming back too:
-         * they may have changed meanwhile. Mid-game the sigil stays as the
+         * they may have changed meanwhile. Mid-game the sigil and the aura stay as the
          * game began (as the 'sigil' action's does; the session sends it again
          * back in the lobby); the colour waits for the next.
          */
-        const wear = (o: { sigil?: PlayerClass; colour?: number }) => {
+        const wear = (o: { sigil?: PlayerClass; aura?: AuraKind; colour?: number }) => {
           if (s.phase === 'lobby') {
             if (sigil) o.sigil = sigil;
             else delete o.sigil;
+            if (aura) o.aura = aura;
+            else delete o.aura;
           }
           if (colour !== undefined) o.colour = colour;
           else delete o.colour;
@@ -1906,6 +2273,8 @@ export class Engine {
         s.artLean = {};
         s.delve = null;
         s.startedAt = this.now();
+        // Online Take turns at Merciless or Eternal: its aura deal, for those on a device of their own (auraDeal.ts countedTurns).
+        this.openTurnsAuras(s);
         s.recap = { answers: {}, misses: [] };
         if (s.settings.mode === 'delve') {
           // Every run draws from the whole pool, so one run's depth means the same as another's.
@@ -2037,6 +2406,7 @@ export class Engine {
         }
         let gained: ItemKind | undefined;
         let fossil: Reveal['fossil'];
+        let aura: Reveal['aura'];
         let warded = false;
         let caveIn: Pick<Reveal, 'caveIn' | 'lost'> = {};
         let blown: ItemKind | null = null;
@@ -2059,8 +2429,10 @@ export class Engine {
             if (reward) gained = this.gain(s, active.id, reward);
           }
           fossil = this.giveFossil(s, q, [active.id]);
+          aura = this.giveAura(s, q, [active.id]);
         } else if (s.delve) {
           this.missFossil(s, q, [active.id]);
+          this.missAura(s, q, [active.id]);
           const buried = this.caveInDig(s);
           if (buried) vein.buried = buried;
           // An Azurite Vein caves in for two losses, each taken by a ward if
@@ -2074,6 +2446,8 @@ export class Engine {
           // A Dynamite Cache's blast takes one thing from their pack too.
           blown = this.blowUp(s, active.id);
         }
+        // Take turns: an aura's card missed (wrong or out of time) is gone.
+        if (!correct && !s.delve) this.missAura(s, q, [active.id]);
         // A rush's question: one of its questions used, and whether it ends here.
         if (s.delve && q.rush) this.settleRush(s, correct);
         if (!timedOut && chosenId && isFake(chosenId)) s.used.push(chosenId);
@@ -2095,6 +2469,7 @@ export class Engine {
           winnerId: correct ? active.id : null,
           ...(gained ? { gained } : {}),
           ...(fossil ? { fossil } : {}),
+          ...(aura ? { aura } : {}),
           ...(warded ? { warded } : {}),
           ...caveIn,
           ...(blown ? { blown } : {}),
@@ -2151,10 +2526,11 @@ export class Engine {
         this.tallyMode(s, voided.mode, -1);
         // Delve: no clock yet, or one paused by the host's reload whose art
         // won't load again (what its wrong answers cost stands).
-        s.question = this.makeQuestion(s, voided.category, voided);
-        // One a blast asked stays one (never a find's, see blast); a fossil's stays its fossil's.
+        s.question = this.makeQuestion(s, voided.category, voided, auraForcing(voided.aura));
+        // One a blast asked stays one (never a find's, see blast); a fossil's stays its fossil's, an aura's its aura's.
         if (voided.blast) s.question.blast = voided.blast;
         if (voided.fossil) s.question.fossil = voided.fossil;
+        if (voided.aura) s.question.aura = voided.aura;
         // One a rush asked stays one (no item works on it; its rules kept, through makeQuestion).
         if (voided.rush) s.question.rush = true;
         s.used.push(s.question.itemId);
@@ -2178,6 +2554,7 @@ export class Engine {
         Object.assign(s, fresh);
         delete s.startedAt;
         delete s.recap;
+        delete s.turnAuras;
         if (!fresh.aside) delete s.aside;
         if (action.play) return this.apply(s, { type: 'start' }, from);
         break;
@@ -2196,7 +2573,7 @@ export class Engine {
         if (idx < 0 || !action.watch) break;
         if (s.phase !== 'lobby') throw new ActionError('You can step aside to watch in the lobby.');
         const [p] = s.players.splice(idx, 1);
-        s.spectators.push({ id: p.id, name: p.name, stay: true, ...(p.sigil ? { sigil: p.sigil } : {}) });
+        s.spectators.push({ id: p.id, name: p.name, stay: true, ...(p.sigil ? { sigil: p.sigil } : {}), ...(p.aura ? { aura: p.aura } : {}) });
         // Their seat goes to whoever was waiting for one, which makes room to watch.
         fillSeats(s);
         placeLocals(s);
@@ -2212,6 +2589,16 @@ export class Engine {
         if (!o) break;
         if (isPlayerClass(action.sigil)) o.sigil = action.sigil;
         else delete o.sigil;
+        break;
+      }
+      case 'aura': {
+        // Likewise worn as the game began until it is back in the lobby.
+        if (s.phase !== 'lobby') break;
+        const id = from ?? action.playerId;
+        const o = s.players.find((p) => p.id === id) ?? s.spectators.find((w) => w.id === id);
+        if (!o) break;
+        if (isWornAura(action.aura)) o.aura = action.aura;
+        else delete o.aura;
         break;
       }
       case 'colour': {
@@ -2312,6 +2699,8 @@ export class Engine {
     if (s.reveal && !prev.reveal) {
       s.reveal.at = this.now();
       countStreaks(s, s.reveal);
+      this.noteAuraFacts(s, s.reveal, action.type === 'answer' ? answerMs(action.ms) : undefined);
+      this.noteTurnsAura(s, s.reveal, action.type === 'answer' ? answerMs(action.ms) : undefined);
     }
     // Without a session to wait for the art, a question's clock starts as it is asked.
     const q = s.question;
@@ -2464,6 +2853,7 @@ export class Engine {
   private takePick(s: GameState, active: Player | null, category: string) {
     let kind: Pick<Question, 'find' | 'strike' | 'light'> = {};
     let fossil: FossilTier | null = null;
+    let aura: AuraKind | null = null;
     if (s.delve) {
       delete s.delve.banked;
       // Whatever was picked, a way out's draw (closeVote) is over: left set, it would hold every later vote.
@@ -2499,11 +2889,16 @@ export class Engine {
       if (find) kind = dig && find === 'azurite' ? { find, strike: dig.strikes + 1, light: dig.light } : { find };
       // A fossil's card asks the depth's own question (fossils.ts); a right answer gives one of its tier.
       fossil = fossilOn(s, category);
-    } else if (active && !s.deathmatch) {
-      active.recent = lastPicks([...active.recent, category], rulesFor(s.settings).lockout);
+      // An aura's card asks the depth's own question, as its aura has it (auraDeal.ts auraForcing); a right answer gives the aura.
+      aura = auraOn(s, category);
+    } else {
+      if (active && !s.deathmatch) active.recent = lastPicks([...active.recent, category], rulesFor(s.settings).lockout);
+      // Take turns: an aura's card asks the room's own question, as its aura has it (auraDeal.ts auraForcing).
+      aura = auraOn(s, category);
     }
-    s.question = this.makeQuestion(s, category, kind);
+    s.question = this.makeQuestion(s, category, kind, auraForcing(aura ?? undefined));
     if (fossil) s.question.fossil = fossil;
+    if (aura) s.question.aura = aura;
     s.used.push(s.question.itemId);
     s.phase = 'question';
   }
@@ -2576,6 +2971,11 @@ export class Engine {
     const was = s.question!;
     const cards = unaskedCards(s);
     if (!cards.length || !this.spend(s, stick, 'dynamite', 'blast')) return;
+    // Set off by hand (Detonate): Expedition's sign (auraDeal.ts), where auras are dealt.
+    if (by && this.heldAuras) {
+      const facts = (dm.auraFacts ??= {});
+      if (!facts.detonated?.includes(by)) (facts.detonated ??= []).push(by);
+    }
     const votes = Object.values(dm.votes ?? {});
     const backing = (c: string) => votes.filter((v) => v === c).length;
     // Drawn, then (the sort is stable) those with the most votes to the front.
@@ -2593,7 +2993,7 @@ export class Engine {
       ...(by ? { by } : {}),
       stick,
       side,
-      was: { at: was.askedAt, itemId: was.itemId, mode: was.mode, ...(struck.length ? { struck } : {}), ...(was.fossil ? { fossil: was.fossil } : {}) },
+      was: { at: was.askedAt, itemId: was.itemId, mode: was.mode, ...(struck.length ? { struck } : {}), ...(was.fossil ? { fossil: was.fossil } : {}), ...(was.aura ? { aura: was.aura } : {}) },
     };
     s.used.push(s.question.itemId);
   }
@@ -2706,7 +3106,7 @@ export class Engine {
   /** Keeps a player's name and colour for the recap, as they are now. */
   private person(s: GameState, id: string) {
     const p = s.players.find((x) => x.id === id);
-    if (s.recap && p) (s.recap.people ??= {})[id] = { name: p.name, hue: p.hue, ...(p.sigil ? { sigil: p.sigil } : {}) };
+    if (s.recap && p) (s.recap.people ??= {})[id] = { name: p.name, hue: p.hue, ...(p.sigil ? { sigil: p.sigil } : {}), ...(p.aura ? { aura: p.aura } : {}) };
   }
 
   /**
@@ -2821,6 +3221,7 @@ export class Engine {
     dm.finds = [{ category: next, kind: 'azurite' }];
     delete dm.find;
     delete dm.fossil;
+    delete dm.aura;
     delete dm.asked;
     delete dm.missedHere;
     delete dm.dealAt;
@@ -3144,6 +3545,7 @@ export class Engine {
     let gained: ItemKind | undefined;
     let gainedBy: string | undefined;
     let fossil: Reveal['fossil'];
+    let aura: Reveal['aura'];
     let banked = 0;
     if (winner) {
       const p = s.players.find((p) => p.id === winner.id);
@@ -3164,6 +3566,8 @@ export class Engine {
       // into the dig's haul, in hand, the same way.
       // A fossil's card gives everyone standing who can take one their own.
       fossil = this.giveFossil(s, q, standingIds(s));
+      // An aura's card gives everyone standing who lacks it and could find it.
+      aura = this.giveAura(s, q, standingIds(s));
       if (q.find === 'azurite') {
         const by = this.strikeRight(s, q, [winner.id, ...standingIds(s).filter((id) => id !== winner.id)]);
         if (by) {
@@ -3190,6 +3594,7 @@ export class Engine {
     ];
     // Nobody got it: the vein caves in on the whole haul, and a fossil's card is missed by all who could have taken one.
     if (!winner) this.missFossil(s, q, [...new Set([...standingIds(s), ...all.map((h) => h.playerId)])]);
+    if (!winner) this.missAura(s, q, [...new Set([...standingIds(s), ...all.map((h) => h.playerId)])]);
     const buried = winner ? 0 : this.caveInDig(s);
     const vein: Pick<Reveal, 'strike' | 'dug' | 'buried' | 'banked'> =
       q.find === 'azurite' ? { strike: q.strike ?? 1, ...(gained ? { dug: true as const } : {}), ...(buried ? { buried } : {}), ...(banked ? { banked } : {}) } : {};
@@ -3203,6 +3608,7 @@ export class Engine {
       winnerId: winner?.id ?? null,
       ...(gained ? { gained, gainedBy } : {}),
       ...(fossil ? { fossil } : {}),
+      ...(aura ? { aura } : {}),
       ...(q.find && cavesIn(q.find) && all.length ? { caveIn: true } : {}),
       ...vein,
       hits: all,
@@ -3263,6 +3669,15 @@ export class Engine {
       if (ended && ended.at === undefined) ended.at = this.now();
       // The Sulphite rush: only where the run has one (rolls nothing otherwise).
       if (s.delve.rush) this.dealSulphite(s, first || deeper);
+      // An aura last, on a card nothing else holds, from its own random source (auraDeal.ts): only where auras are dealt.
+      const aura = this.rollAura(s, takers);
+      if (aura) s.delve.aura = aura;
+      else delete s.delve.aura;
+    } else if (s.turnAuras) {
+      // Take turns: an aura for the player on turn, from the same random source, last on the offer.
+      const aura = this.rollTurnsAura(s);
+      if (aura) s.turnAuras.card = aura;
+      else delete s.turnAuras.card;
     }
   }
 
@@ -3279,10 +3694,12 @@ export class Engine {
       s.delve.finds = [];
       delete s.delve.find;
       delete s.delve.fossil;
+      delete s.delve.aura;
       if (s.delve.voteFrom !== undefined) s.delve.voteFrom = null;
       delete s.delve.asked;
       delete s.delve.dealAt;
     }
+    if (s.turnAuras) delete s.turnAuras.card;
     s.phase = 'over';
     s.winners = winners;
     s.question = null;
@@ -3630,7 +4047,12 @@ export class Engine {
    * down (delve.ts findRules), and so does a Sulphite rush's (`rushDeeper`,
    * rushRules).
    */
-  makeQuestion(s: GameState, category: string, kind: Pick<Question, 'find' | 'strike' | 'light' | 'rushDeeper'> = {}): Question {
+  makeQuestion(
+    s: GameState,
+    category: string,
+    kind: Pick<Question, 'find' | 'strike' | 'light' | 'rushDeeper'> = {},
+    force: { mirror?: true; gray?: true; group?: string } = {},
+  ): Question {
     const special: Pick<Question, 'find' | 'strike' | 'light' | 'rushDeeper'> =
       s.delve && kind.find
         ? {
@@ -3676,7 +4098,8 @@ export class Engine {
     // where twins told apart by their colours could meet (whether they may
     // depends on it), else after the rest as before there were any.
     const grayFirst = !!rules.grayChance && this.twins.some((t) => t.colour && t.depth <= twinReach(rules));
-    const grayRoll = grayFirst ? this.rng() < rules.grayChance! : undefined;
+    // (An aura's card may ask for grey art: auraDeal.ts auraForcing. Set here, so twins told apart by colour still never meet.)
+    const grayRoll = grayFirst ? this.rng() < rules.grayChance! || !!force.gray : force.gray ? true : undefined;
     // Twins that may not meet yet, as a name or a picture question ("find the
     // art" may be in grayscale where the art to name isn't): all but one of
     // each set sit out, so they don't count.
@@ -3709,7 +4132,10 @@ export class Engine {
     }
     const list = candidates.length ? candidates : unused.length ? unused : inCat;
     const askable = list.filter((it) => this.mayAsk(it.id));
-    const answer = this.weightedPick(askable.length ? askable : list);
+    // An aura's card may ask from one group (auraDeal.ts auraForcing: a tablet), from the category's own if none of it is left to ask.
+    const from = askable.length ? askable : list;
+    const forced = force.group ? [from, inCat].map((l) => l.filter((it) => it.group === force.group)).find((l) => l.length) : undefined;
+    const answer = this.weightedPick(forced ?? from);
     // Fewer for a rare group's item (RARE_MAX_OPTIONS), and its made-up names to match.
     const count = optionsFor(answer, rules.options);
     const need = count - 1;
@@ -3790,8 +4216,9 @@ export class Engine {
     const labels = options.map((id) => (mode === 'name' ? (fakeNames.get(id) ?? this.byId.get(id)!.name) : null));
     const prompt = mode === 'art' ? answer.name : null;
     // Each picture flips on its own roll, so a flipped option says nothing about the answer.
-    const mirrored = Array.from({ length: mode === 'art' ? options.length : 1 }, () => rules.mirror > 0 && this.rng() < rules.mirror);
-    const gray = rules.grayChance ? { gray: grayRoll ?? this.rng() < rules.grayChance } : {};
+    // (An aura's card may ask for every picture flipped: auraDeal.ts auraForcing.)
+    const mirrored = Array.from({ length: mode === 'art' ? options.length : 1 }, () => (rules.mirror > 0 && this.rng() < rules.mirror) || !!force.mirror);
+    const gray = rules.grayChance || force.gray ? { gray: grayRoll ?? this.rng() < rules.grayChance! } : {};
     const tall = mode === 'art' && options.every((id) => TALL_ART_GROUPS.has(this.byId.get(id)!.group)) ? { tall: true } : {};
     // Each picture's art, as drawn for the look-alikes or rolled now (only
     // items drawn more than one way roll, so a game without one asks what it

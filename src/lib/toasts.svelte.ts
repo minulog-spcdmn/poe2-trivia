@@ -7,6 +7,7 @@
 
 import type { Sign, Tier } from './achievements.ts';
 import type { PlayerClass } from './classSigils.ts';
+import type { AuraKind } from './auraKinds.ts';
 
 /** info: news about the room. warn: something went wrong for someone else. error: it went wrong for you. */
 export type ToastKind = 'info' | 'warn' | 'error';
@@ -17,6 +18,8 @@ export interface ToastWho {
   hue?: number;
   /** The class sigil their avatar wears. */
   sigil?: PlayerClass;
+  /** The aura they wear (shown as lib/auraKinds.ts shownAura says). */
+  aura?: AuraKind;
 }
 
 export interface ToastOptions {

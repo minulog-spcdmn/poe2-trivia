@@ -1,5 +1,5 @@
-// An aura's card turning up in the deal (a try-out: ChooseCategory's
-// auraAt, the QA desk's game/delve-aura-card): what's heard and seen as its
+// An aura's card turning up in the deal (ChooseCategory's auraAt: Delve's
+// deal, lib/auraDeal.ts, or the QA desk's try-out, game/delve-aura-card): what's heard and seen as its
 // face comes up, and as it lands. ChooseCategory calls these two; what they
 // play is this file's.
 //

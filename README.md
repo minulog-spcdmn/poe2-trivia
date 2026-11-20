@@ -30,7 +30,7 @@ logins (see "Relay").
   (from the game itself, which an iPhone's home-screen game needs), or the
   code is typed in. Whenever two of
   them are on the site at once they keep the codex, Delve runs, fossils, achievements,
-  sigils and the daily answers the same. Progress only goes up: what each
+  sigils, auras and the daily answers the same. Progress only goes up: what each
   device counted is kept apart on the others and added up, never counted
   twice. A device already synced that scans a new one's code brings it into
   the group (`src/lib/sync/`).

@@ -178,6 +178,8 @@ export interface RunOpts {
   /** Whether the game starts (true by default). */
   start?: boolean;
   autoClock?: boolean;
+  /** The aura deal's own random source (Engine's auraRng), Math.random by default. */
+  auraRng?: () => number;
 }
 
 /**
@@ -188,7 +190,7 @@ export interface RunOpts {
 export function room(o: RunOpts = {}) {
   let rng = seeded(o.seed ?? 1);
   const clock = { now: 1_000_000 };
-  const engine = new Engine(items, { rng: () => rng(), now: () => clock.now, fakes, autoClock: o.autoClock });
+  const engine = new Engine(items, { rng: () => rng(), now: () => clock.now, fakes, autoClock: o.autoClock, ...(o.auraRng ? { auraRng: o.auraRng } : {}) });
   const host = o.host === undefined ? 'p0' : o.host;
   const names =
     typeof o.players === 'number' || o.players === undefined ? Array.from({ length: o.players ?? 1 }, (_, i) => `Delver ${'ABCDEFGHIJKL'[i]}`) : o.players;

@@ -115,7 +115,10 @@ the game (`fossil/seen`, a fossil card dealt, once an offer; `fossil/common`
 and `fossil/rare`, one taken, once a right answer however many took one;
 `fossil/missed`, a fossil card's question missed; `fossil/passed`, a fossil
 card passed up for a find on the same offer) and `fossil/complete` from the
-device whose player just found the last of the 25, `share/delve` (Share run tapped), the
+device whose player just found the last of the 25, the auras of Delve and of
+online Take turns at Merciless or Eternal from the device running the game (`aura/seen`, an aura card dealt, once an offer;
+`aura/won`, one won, once a right answer however many took it, never which;
+`aura/missed`, an aura card's question missed), `share/delve` (Share run tapped), the
 Daily's answers, links opened, joins, failures (`error/script`, with where
 it came from when the build's tables can tell, `error/script/<module>:<function>`
 (`src/lib/errorWhere.ts`, `whereMaps.ts`), and
