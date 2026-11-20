@@ -519,6 +519,23 @@ opens an issue for the owner, and the check then stops until `TALLY_VERSION`
 changes. Days below that floor cost nothing. The same summary by hand:
 `node --experimental-strip-types scripts/tally-ready.mjs`.
 
+### New-items watch
+
+`.github/workflows/items-watch.yml` reads poe2db’s two list pages, the
+uniques and the lineage gems, and holds them against `src/data/items.json`
+(`scripts/items-watch.mjs`, no Claude): items new with the game’s art, which
+a refresh can take; items GGG has announced, which a refresh can’t take
+until the patch is out (poe2db lists them with the announcement’s picture),
+whether new or already in the game; and items gone from poe2db. When what it
+finds differs from the last issue it opened, it opens an issue for the
+owner, or updates the open one; when the lists and the game agree again, it
+closes it. The refresh stays the owner’s to start. It runs once a day,
+every 6 hours from December 4 to 14 and every hour from December 10 to 14,
+around PoE2 1.0’s launch, and stops after December 31. A page it can’t read
+(its layout changed, which breaks `npm run fetch-data` too) fails the run.
+Both read the list pages through `scripts/poe2db-lists.mjs`. By hand:
+`node scripts/items-watch.mjs report.md`.
+
 ---
 
 Fan project. Not affiliated with Grinding Gear Games. Item data and art from

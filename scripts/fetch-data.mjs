@@ -31,7 +31,6 @@ import { mkdir, writeFile, readdir, unlink, access, readFile } from 'node:fs/pro
 import { webpSize } from './webp-size.mjs';
 import {
   collectStats,
-  decode as decodeText,
   fetchRetry,
   hashId,
   ownBox,
@@ -41,11 +40,11 @@ import {
   writeStats,
 } from './fetch-stats.mjs';
 import { artPlan, changedItems, firstSeen, itemIdsText, reconcile, refreshArgs, summaryLines, withoutTooltip } from './refresh-plan.mjs';
+import { GEM_SOURCE, SOURCE, gemEntries, uniqueEntries } from './poe2db-lists.mjs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const SOURCE = 'https://poe2db.tw/us/Unique_item';
 const IMG_DIR = path.join(ROOT, 'art-source', 'items');
 const SITE_DIR = path.join(ROOT, 'public', 'items');
 /** The smaller copies' folders under SITE_DIR (THUMBS in scripts/upscale-art.py, ITEM_THUMBS in src/lib/ui-paths.ts). */
@@ -86,25 +85,8 @@ const CATEGORY_RULES = [
   ['Currency/PrecursorTablets', 'Tablets', 'Flasks, Charms, Jewels, Relics & Tablets'],
 ];
 
-const GEM_SOURCE = 'https://poe2db.tw/us/Lineage_Supports';
 const GEM_CATEGORY = 'Lineage Gems';
 const GEM_COLOURS = { gem_red: 'Strength', gem_green: 'Dexterity', gem_blue: 'Intelligence' };
-const GEM_ENTRY = new RegExp(
-  '<a class="(gem_\\w+)"[^>]*href="/us/[^"]+"><img loading="lazy" src="(https://cdn\\.poe2db\\.tw/image/Art/2DItems/Gems/[^"]+)"[^>]*/></a></div>' +
-    '<div class="flex-grow-1 ms-2"><div><a class="gem_\\w+"[^>]*>([^<]+)</a>',
-  'g',
-);
-
-// The list leaves some items' pictures out: those come from the item's own page.
-const ENTRY = new RegExp(
-  '<div class="flex-shrink-0">(?:<a[^>]*><img loading="lazy" src="(https://cdn\\.poe2db\\.tw/image/Art/2DItems/[^"]+)"[^>]*/></a>)?</div>' +
-    '<div class="flex-grow-1 ms-2"><div><a class="UniqueItem"[^>]*href="/us/([^"]+)">' +
-    '<span class="uniqueName">([^<]+)</span>\\s*<span class="uniqueTypeLine">([^<]*)</span>',
-  'g',
-);
-
-// As fetch-stats decodes the item pages' names (pageBoxes), so the two match.
-const decode = (s) => decodeText(s).trim();
 
 const ART = 'https://cdn.poe2db.tw/image/Art/2DItems/';
 
@@ -119,20 +101,8 @@ const exists = (p) => access(p).then(() => true, () => false);
 async function main() {
   const args = refreshArgs(process.argv.slice(2));
   console.log(`Fetching ${SOURCE}`);
-  const html = await (await fetchRetry(SOURCE)).text();
-
-  // Only the regular sections; "Cultivated Uniques" repeats items with mutated mods.
-  const cut = html.indexOf('<div id="CultivatedUniques"');
-  const body = cut > 0 ? html.slice(0, cut) : html;
-
-  const entries = [];
-  const seen = new Set();
-  for (const [, img, slug, rawName, rawBase] of body.matchAll(ENTRY)) {
-    const name = decode(rawName);
-    if (seen.has(name)) continue;
-    seen.add(name);
-    entries.push({ name, base: decode(rawBase), slug, img });
-  }
+  const entries = uniqueEntries(await (await fetchRetry(SOURCE)).text());
+  const seen = new Set(entries.map((e) => e.name));
   if (entries.length < 100) throw new Error(`Only ${entries.length} items parsed; page layout changed?`);
 
   // Each unique's own page: its picture where the list leaves it out, and
@@ -172,8 +142,7 @@ async function main() {
   console.log(`Fetching ${GEM_SOURCE}`);
   const gemHtml = await (await fetchRetry(GEM_SOURCE)).text();
   let gems = 0;
-  for (const [, colour, img, rawName] of gemHtml.matchAll(GEM_ENTRY)) {
-    const name = decode(rawName);
+  for (const { colour, img, name } of gemEntries(gemHtml)) {
     if (seen.has(name)) continue;
     seen.add(name);
     const attr = GEM_COLOURS[colour] ?? 'Lineage';

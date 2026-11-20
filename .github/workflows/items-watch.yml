@@ -1,0 +1,125 @@
+name: Items watch
+run-name: "Items watch: ${{ github.event_name == 'schedule' && 'scheduled check' || 'run by hand' }}"
+
+# Has poe2db listed items the game doesn't have yet, or stopped listing ones
+# it has? scripts/items-watch.mjs reads poe2db's two list pages (two
+# requests; no Claude, no item pages) and holds them against
+# src/data/items.json. When what it finds differs from the last issue it
+# opened, it opens an issue assigned to the owner, which GitHub sends to
+# them: a refresh (README, "Refreshing item data") stays the owner's to
+# start. A page whose layout changed fails the run, so GitHub mails the
+# owner: the refresh couldn't read it either.
+#
+# More often the nearer PoE2 1.0's launch (December 11, 2026): poe2db adds a
+# patch's items within hours of its release.
+# - once a day (09:17 UTC) until December 31;
+# - every 6 hours from December 4 to 14;
+# - every hour from December 10 to 14.
+# From January 1 the runs stop by themselves. The crons are named again in
+# the "Due?" step: change them together.
+
+on:
+  schedule:
+    - cron: '17 9 * * *'
+    - cron: '17 3,15,21 * * *'
+    - cron: '47 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run at a time: GitHub starts scheduled runs late, and two at once
+# could each find no issue yet and open the same one twice.
+concurrency:
+  group: items-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: Hold poe2db against the items
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Due?
+        id: due
+        env:
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          day=$(date -u +%Y%m%d)
+          due=false
+          if [ "$EVENT" = workflow_dispatch ]; then
+            due=true
+          elif [ "$day" -le 20261231 ]; then
+            case "$SCHEDULE" in
+              '17 9 * * *') due=true ;;
+              '17 3,15,21 * * *') [ "$day" -ge 20261204 ] && [ "$day" -le 20261214 ] && due=true ;;
+              '47 * * * *') [ "$day" -ge 20261210 ] && [ "$day" -le 20261214 ] && due=true ;;
+            esac
+          fi
+          echo "due=$due" >> "$GITHUB_OUTPUT"
+          [ "$due" = true ] || echo "Not due on $day for '$SCHEDULE'."
+
+      - uses: actions/checkout@v4
+        if: steps.due.outputs.due == 'true'
+        with:
+          persist-credentials: false
+
+      # No npm ci: the script imports no packages.
+      - uses: actions/setup-node@v4
+        if: steps.due.outputs.due == 'true'
+        with:
+          node-version: 22
+
+      - name: Read poe2db
+        id: watch
+        if: steps.due.outputs.due == 'true'
+        run: node scripts/items-watch.mjs "$RUNNER_TEMP/report.md"
+
+      # The last issue this workflow opened, open or closed, holds the
+      # fingerprint of what it said (updated with each comment): the same
+      # again says nothing; a closed one stays closed, the owner has seen it.
+      - name: Open or update the issue
+        if: steps.watch.outputs.found == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FINGERPRINT: ${{ steps.watch.outputs.fingerprint }}
+        run: |
+          report="$RUNNER_TEMP/report.md"
+          printf '\n<!-- items-watch: %s -->\n' "$FINGERPRINT" >> "$report"
+          last=$(gh issue list --repo "$GITHUB_REPOSITORY" --state all \
+            --author 'app/github-actions' --search 'in:title "Items on poe2db"' \
+            --limit 1 --json number,state,body)
+          number=$(jq -r '.[0].number // empty' <<<"$last")
+          state=$(jq -r '.[0].state // empty' <<<"$last")
+          had=$(jq -r '.[0].body // ""' <<<"$last" | sed -n 's/.*<!-- items-watch: \([0-9a-f]*\) -->.*/\1/p' | tail -n 1)
+          if [ -n "$number" ] && [ "$had" = "$FINGERPRINT" ]; then
+            echo "Nothing new since issue #$number."
+          elif [ "$state" = OPEN ]; then
+            gh issue edit "$number" --repo "$GITHUB_REPOSITORY" --body-file "$report"
+            { echo "What poe2db lists changed; the issue now says:"; echo; cat "$report"; } > "$RUNNER_TEMP/comment.md"
+            gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body-file "$RUNNER_TEMP/comment.md"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "Items on poe2db: $(date -u +%Y-%m-%d)" \
+              --assignee "$GITHUB_REPOSITORY_OWNER" \
+              --body-file "$report"
+          fi
+
+      # Nothing to say any more (a refresh took what was new): the open
+      # issue, if there is one, is closed as done.
+      - name: Close the issue
+        if: steps.watch.outputs.found == 'false' && steps.watch.outputs.fingerprint != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --author 'app/github-actions' --search 'in:title "Items on poe2db"' \
+            --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue close "$number" --repo "$GITHUB_REPOSITORY" --reason completed \
+              --comment "poe2db's lists and src/data/items.json agree now."
+          fi
