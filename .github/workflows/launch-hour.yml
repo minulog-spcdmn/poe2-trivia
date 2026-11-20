@@ -99,7 +99,7 @@ jobs:
           - https://pathofexile2.com/fullrelease, GGG's own page for the 1.0 release;
           - GGG's announcements: https://www.pathofexile.com/forum/view-forum/news and https://www.pathofexile.com/news (the newest posts first; look for "launch", "release times", "pre-download", "timeline", "what to expect");
           - Path of Exile 2's Steam page and its news (https://store.steampowered.com/app/2694490/ and https://store.steampowered.com/news/app/2694490), where the store's release date or a countdown may show the time;
-          - GGG's official accounts: Path of Exile on X (@pathofexile), on YouTube and Twitch (a reveal livestream or its VOD may say it), on Instagram and Facebook, and posts by GGG staff on the forum;
+          - GGG's official accounts: Path of Exile on X (@pathofexile), on YouTube and Twitch (a reveal livestream or its VOD may say it), on Instagram and Facebook, and posts by GGG staff on the forum. X, Instagram and Facebook won't show their pages without a login, and a video can't be watched, so find those through search: the posts' indexed text, a video's title and description, and news that quotes them (then check the quote against the post);
           - the console stores (PlayStation Store, Xbox), whose pre-load or unlock time may be listed.
 
           What counts:
@@ -131,7 +131,8 @@ jobs:
           answer="$RUNNER_TEMP/answer.md"
           # From its first line with words on it.
           sed -i '/[^[:space:]]/,$!d' "$answer"
-          first=$(head -n 1 "$answer" | tr -d '[:space:]')
+          # (Its word alone, though Claude sets it in bold or as a heading.)
+          first=$(head -n 1 "$answer" | tr -d '[:space:]*_#`:')
           # What Claude checked and found, on the run's page.
           { echo "### Claude's search"; echo; head -c 20000 "$answer"; } >> "$GITHUB_STEP_SUMMARY"
           case "$first" in
@@ -145,7 +146,7 @@ jobs:
               end="LAUNCH_REPORT_$(openssl rand -hex 16)"
               {
                 echo "report<<$end"
-                tail -n +2 "$answer" | head -c 6000
+                tail -n +2 "$answer" | head -c 20000
                 echo
                 echo "$end"
               } >> "$GITHUB_OUTPUT"
