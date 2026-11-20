@@ -1499,11 +1499,12 @@
       {/if}
       {#snippet auraLine()}
         {@const aura = auraAt(s.offered[auraCol]!)!}
-        <!-- As a fossil's: what to do in bold, then what it is (a look, worn round the avatar) and that the run is untouched. -->
+        {@const untouched = s.delve ? (mine ? 'Your run is unaffected.' : 'The run is unaffected.') : 'It scores as any other card.'}
+        <!-- As a fossil's: what to do in bold, then what it is (a look, worn round the avatar) and that the run is untouched (in Take turns, that it scores as any card). -->
         <p class="note find-note" data-find="aura" id="{uid}-note-aura" style={auraInk(aura)} style:--col={auraCol + 1} data-side={sideOf(auraCol, noteCols)}>
           {#if coop}<strong>Answer right to win this aura.</strong> Each of you can wear it round your avatar, in every game. The run is unaffected.{:else if mine}<strong
               >Answer right to win this aura.</strong
-            > You can wear it round your avatar, in every game. Your run is unaffected.{:else}A right answer wins this aura for {active.name}’s avatar. The run is unaffected.{/if}
+            > You can wear it round your avatar, in every game. {untouched}{:else}A right answer wins this aura for {active.name}’s avatar. {untouched}{/if}
         </p>
       {/snippet}
       <!-- An aura's note before a fossil's when its card comes first: on a phone the notes stand one under the other, in the cards' order. -->
