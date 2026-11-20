@@ -1,7 +1,7 @@
 name: Launch hour
-run-name: "Launch hour: ${{ github.event_name == 'schedule' && 'daily check' || 'run by hand' }}"
+run-name: "Launch hour: ${{ github.event_name == 'schedule' && 'scheduled check' || 'run by hand' }}"
 
-# Once a day until PoE2 1.0 launches: has GGG named the hour of the launch
+# Three times a day until PoE2 1.0 launches: has GGG named the launch's hour
 # (so far only the day, December 11, 2026 in Pacific time)? The start page's
 # countdown (src/lib/launch.ts, LAUNCH_AT) needs it for its last two days.
 # When GGG has named it, or moved the day, the run opens an issue assigned to
@@ -20,14 +20,21 @@ run-name: "Launch hour: ${{ github.event_name == 'schedule' && 'daily check' || 
 # issue from it.
 
 on:
-  # 09:07 UTC, off the hour when GitHub's scheduled runs bunch up. GGG posts
-  # in New Zealand's daytime, so a post is seen within about a day.
+  # 01:07, 09:07 and 17:07 UTC, off the hour when GitHub's scheduled runs
+  # bunch up. GGG posts in New Zealand's daytime, so a post is seen within
+  # about eight hours, plus however late GitHub starts the run.
   schedule:
-    - cron: '7 9 * * *'
+    - cron: '7 1,9,17 * * *'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+# One run at a time: GitHub starts scheduled runs hours late, so two could
+# meet, each find no issue yet and open the same one twice.
+concurrency:
+  group: launch-hour
+  cancel-in-progress: false
 
 jobs:
   check:

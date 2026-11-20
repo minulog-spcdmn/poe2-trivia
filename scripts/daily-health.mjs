@@ -23,6 +23,11 @@
 //        GOATCOUNTER_KEY=<key> node --experimental-strip-types scripts/daily-health.mjs --backtest 60
 // --backtest <days>: each of the last <days> days against the 7 before it,
 // from one read, with a line for each day that would have mailed.
+// --last-24h: the midday check, the 24 hours to the start of this hour (on
+// the account's clock) against the same hours of the 7 days before, cut
+// from GoatCounter's hours (lastHoursOf), so a fault shows half a day before
+// the night's check sees its whole day. With --backtest, each of the last
+// <days> such 24 hours.
 // Exits 1 when a check fires (not with --backtest), each fired line also an
 // ::error:: annotation, so the run's page says why; 2 when GoatCounter
 // refuses the key or the check breaks (a bug, or answers of a new shape),
@@ -37,7 +42,7 @@ import { COUNTER_ORIGIN } from '../src/lib/counter.ts';
 import { accountZone, passing, pathCounts } from '../src/statsPage/hits.ts';
 import { healthOf, troubleOf } from '../src/statsPage/insights.ts';
 import { DEVICE_NAMES, countedSpan, countsOf, daysBetween, firstCounted } from '../src/statsPage/model.ts';
-import { addDays, dayIn, midnight } from '../src/statsPage/zone.ts';
+import { addDays, dayIn, hourStarts, midnight } from '../src/statsPage/zone.ts';
 
 /** The days each day is held against. */
 export const BEFORE = 7;
@@ -129,6 +134,62 @@ export function windowsOf(zone, at, days = 1) {
   return { today, checked, span };
 }
 
+/** When the hour on the clock in `zone` that `at` is in began (zone.ts hourStarts: the doubled hour from when it first shows). */
+export function hourStart(zone, at) {
+  const s = hourStarts(zone, dayIn(zone, at));
+  let h = 23;
+  while (h > 0 && s[h] > at.getTime()) h--;
+  return new Date(s[h]);
+}
+
+/**
+ * The midday check's windows at `at` in `zone`: each from one day's hour on
+ * the clock to the next day's, the last ending at the start of the hour it
+ * is (whole hours only, as GoatCounter gives them), so each window holds
+ * the same hours as the one after it, 23 or 25 of them across a clock
+ * change. As many as the last `days` and the 7 before the first of them
+ * need, and one more (as windowsOf reads one more day, so firstCounted
+ * tells whether they were all counted). Each is named as the day of its
+ * last hour (`labels`, oldest first), so the day-by-day checks take them as
+ * they are. `bounds` (ms): where each window starts and, last, where the
+ * last one ends. `span`: what to read for them all, from the midnight
+ * before the first to just before the end.
+ */
+export function hourWindowsOf(zone, at, days = 1) {
+  const end = hourStart(zone, at);
+  const endDay = dayIn(zone, end);
+  const hour = hourStarts(zone, endDay).lastIndexOf(end.getTime());
+  const count = days + BEFORE + 1;
+  const bounds = Array.from({ length: count + 1 }, (_, i) => hourStarts(zone, addDays(endDay, i - count))[hour]);
+  const labels = bounds.slice(1).map((b) => dayIn(zone, new Date(b - 1)));
+  const span = { start: midnight(zone, addDays(endDay, -count)), end: new Date(end.getTime() - 1) };
+  return { bounds, labels, checked: labels.slice(-days), span };
+}
+
+/**
+ * `paths` cut into the windows `bounds` and `labels` give (hourWindowsOf)
+ * instead of days: each hour of a path goes to the window it began in
+ * (zone.ts hourStarts); an hour outside them all is left out. Without hours
+ * they can't be cut: GoatCounter answering in a shape the check doesn't
+ * know, so the check broken, not a day it couldn't read.
+ */
+export function lastHoursOf(paths, zone, bounds, labels) {
+  return paths.map((p) => {
+    if (!p.hours) throw new Error(`GoatCounter gave no hours (${p.path}), so the last 24 hours can't be cut from its days.`);
+    const days = Object.fromEntries(labels.map((l) => [l, 0]));
+    for (const [day, cells] of Object.entries(p.hours)) {
+      const starts = hourStarts(zone, day);
+      cells.forEach((n, h) => {
+        if (!n || starts[h] < bounds[0] || starts[h] >= bounds[labels.length]) return;
+        let i = 0;
+        while (starts[h] >= bounds[i + 1]) i++;
+        days[labels[i]] += n;
+      });
+    }
+    return { path: p.path, event: p.event, count: Object.values(days).reduce((a, b) => a + b, 0), days };
+  });
+}
+
 /**
  * `day` against the 7 before it, as the overview holds the period against
  * the one before (troubleOf, healthOf), only where those 7 were all counted
@@ -170,6 +231,8 @@ export async function main(argv, env, deps = {}) {
     log('Daily health check is off: no GOATCOUNTER_KEY (set it as a repository secret to turn it on).');
     return 0;
   }
+  const lastDay = argv.includes('--last-24h');
+  const name = lastDay ? 'Midday health check' : 'Daily health check';
   const at = argv.indexOf('--backtest');
   const backtest = at >= 0 ? Number(argv[at + 1]) : null;
   if (backtest !== null && !(Number.isInteger(backtest) && backtest >= 1 && backtest <= MOST_DAYS)) {
@@ -179,25 +242,36 @@ export async function main(argv, env, deps = {}) {
   const api = apiOf(key, { fetch: deps.fetch, sleep: deps.sleep, now });
   try {
     const zone = await accountZone(api.get);
-    const { checked, span } = windowsOf(zone, new Date(now()), backtest ?? 1);
-    const { paths, complete } = await pathCounts(api.get, span, zone, () => new CheckError("GoatCounter's list of paths didn't add up."), now);
-    if (!complete) log('(More paths than GoatCounter gave in 10 pages: some were left out.)');
-    const results = checked.map((day) => ({ day, check: checkDay(paths, day, zone) }));
+    const hourly = lastDay ? hourWindowsOf(zone, new Date(now()), backtest ?? 1) : null;
+    const { checked, span } = hourly ?? windowsOf(zone, new Date(now()), backtest ?? 1);
+    const read = await pathCounts(api.get, span, zone, () => new CheckError("GoatCounter's list of paths didn't add up."), now);
+    if (!read.complete) log('(More paths than GoatCounter gave in 10 pages: some were left out.)');
+    // (Cut into windows, the paths keep no hours: each window is a day of its own to the checks.)
+    const paths = hourly ? lastHoursOf(read.paths, zone, hourly.bounds, hourly.labels) : read.paths;
+    const results = checked.map((day) => ({ day, check: checkDay(paths, day, hourly ? undefined : zone) }));
+    // What a checked day is called: the midday check's, the 24 hours to the hour its window ends, on the day it ends.
+    const clock = new Intl.DateTimeFormat('en-GB', { timeZone: zone, hourCycle: 'h23', hour: '2-digit', minute: '2-digit' });
+    const named = (day) => {
+      if (!hourly) return day;
+      const to = new Date(hourly.bounds[hourly.labels.indexOf(day) + 1]);
+      return `the 24 hours to ${clock.format(to)} on ${dayIn(zone, to)}`;
+    };
+    const against = hourly ? `the ${BEFORE} days before at the same hours` : `the ${BEFORE} days before`;
 
     if (backtest === null) {
       const { day, check } = results[0];
       if (!check) {
-        log(`Daily health check: ${day} not checked, counting began too late to hold it against the ${BEFORE} days before.`);
+        log(`${name}: ${named(day)} not checked, counting began too late to hold it against the ${BEFORE} days before.`);
         return 0;
       }
       const fired = firedOf(check);
       if (!fired.length) {
-        log(`Daily health check: ${day} as usual against the ${BEFORE} days before (${zone}).`);
+        log(`${name}: ${named(day)} as usual against ${against} (${zone}).`);
         return 0;
       }
-      log(`Daily health check: ${day} went worse than the ${BEFORE} days before (${zone}), beyond chance. See stats.html.`);
+      log(`${name}: ${named(day)} went worse than ${against} (${zone}), beyond chance. See stats.html.`);
       for (const line of fired) log(`- ${line}`);
-      for (const line of fired) log(annotation('error', `${day}: ${line}`));
+      for (const line of fired) log(annotation('error', `${named(day)}: ${line}`));
       return 1;
     }
 
@@ -211,23 +285,23 @@ export async function main(argv, env, deps = {}) {
       const fired = firedOf(check);
       if (!fired.length) continue;
       mailed++;
-      log(`${day}: ${fired.join('; ')}`);
+      log(`${named(day)}: ${fired.join('; ')}`);
     }
     const of = results.length - skipped;
-    log(`Backtest (${zone}): ${mailed} of ${of} days would have mailed${skipped ? ` (${skipped} before counting allowed a check)` : ''}; ${api.calls} requests.`);
+    log(`Backtest${hourly ? ' of the midday check' : ''} (${zone}): ${mailed} of ${of} ${hourly ? 'checks' : 'days'} would have mailed${skipped ? ` (${skipped} before counting allowed a check)` : ''}; ${api.calls} requests.`);
     return 0;
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
     if (e instanceof KeyRefused) {
-      log(annotation('error', `Daily health check: the GoatCounter key was refused. ${why}`));
+      log(annotation('error', `${name}: the GoatCounter key was refused. ${why}`));
       return 2;
     }
     // (GoatCounter not read today is no reason to mail; anything else is the check itself broken, a bug or answers of a new shape, and would warn every day unseen.)
     if (e instanceof CheckError) {
-      log(annotation('warning', `Daily health check couldn't run today: ${why}`));
+      log(annotation('warning', `${name} couldn't run today: ${why}`));
       return 0;
     }
-    log(annotation('error', `Daily health check broke: ${why}`));
+    log(annotation('error', `${name} broke: ${why}`));
     return 2;
   }
 }
