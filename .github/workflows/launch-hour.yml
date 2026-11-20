@@ -266,7 +266,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPORT: ${{ needs.check.outputs.report }}
         run: |
-          printf '%s\n' "$REPORT" > report.md
+          # An invisible space after each @, so a handle Claude quotes (GGG's
+          # @pathofexile on X) doesn't mention a GitHub user of that name.
+          printf '%s\n' "$REPORT" | sed 's/@/@\xE2\x80\x8B/g' > report.md
           gh issue create --repo "$GITHUB_REPOSITORY" \
             --title "PoE2 1.0 launch hour is out" \
             --assignee "$GITHUB_REPOSITORY_OWNER" \
