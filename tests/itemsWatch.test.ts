@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { announcedEntries, gemEntries, GEM_SOURCE, SOURCE, uniqueEntries } from '../scripts/poe2db-lists.mjs';
-import { compare, fingerprintOf, LEAST_GEMS, LEAST_UNIQUES, main, reportOf } from '../scripts/items-watch.mjs';
+import { compare, fingerprintOf, ITEM_PAGES, LEAST_GEMS, LEAST_UNIQUES, main, pageReads, reportOf } from '../scripts/items-watch.mjs';
 
 // poe2db's list pages as the refresh (scripts/fetch-data.mjs) and the
 // new-items watch (scripts/items-watch.mjs) read them
@@ -107,20 +107,37 @@ test('nothing to say when the lists and the game agree, and the same finding has
   assert.notEqual(fingerprintOf(a), fingerprintOf({ ...none, added: a.added, reworked: a.gone }));
 });
 
-/** Pages with enough items to pass the layout checks, and `extra` uniques. */
-const pages = (extra = '') => ({
-  [SOURCE]: Array.from({ length: LEAST_UNIQUES }, (_, i) => newUnique(`Unique ${i}`, 'Ring')).join('') + extra,
-  [GEM_SOURCE]: Array.from({ length: LEAST_GEMS }, (_, i) => newGem(`Gem ${i}`)).join(''),
+/** An item's own page as poe2db shows it: its box, with its name and picture (fetch-stats.mjs pageBoxes). */
+const itemPage = (name: string) =>
+  `<div class="newItemPopup UniquePopup"><div class="itemName">\n<span class="lc">${name}</span></div><div class="itemName typeLine">\n<span class="lc">Ring</span></div>` +
+  `<div class="itemboximage">\n<img loading="lazy" decoding="async" src="${ART}/Rings/Uniques/x.webp" /></div></div>`;
+
+test("an item's own page reads where it shows the item's box with its name and picture", () => {
+  assert.ok(pageReads(itemPage('Andvarius'), 'Andvarius'));
+  assert.ok(!pageReads(itemPage('Andvarius'), 'Ingenuity'));
+  assert.ok(!pageReads('<div class="itemCard">Andvarius</div>', 'Andvarius'));
 });
+
+/** Pages with enough items to pass the layout checks, and `extra` uniques; each unique's own page as `item` draws it. */
+const pages = (extra = '', item: (name: string) => string = itemPage) => {
+  const site: Record<string, string> = {
+    [SOURCE]: Array.from({ length: LEAST_UNIQUES }, (_, i) => newUnique(`Unique ${i}`, 'Ring')).join('') + extra,
+    [GEM_SOURCE]: Array.from({ length: LEAST_GEMS }, (_, i) => newGem(`Gem ${i}`)).join(''),
+  };
+  for (let i = 0; i < LEAST_UNIQUES; i++) site[`https://poe2db.tw/us/Unique_${i}`] = item(`Unique ${i}`);
+  return site;
+};
 const known = [...Array.from({ length: LEAST_UNIQUES }, (_, i) => `Unique ${i}`), ...Array.from({ length: LEAST_GEMS }, (_, i) => `Gem ${i}`)].map((name) => ({ name }));
 
 const run = async (site: Record<string, string> | null, items = known) => {
   const lines: string[] = [];
   const out: string[] = [];
+  const asked: string[] = [];
   const written: Record<string, string> = {};
   const code = await main(['report.md'], {}, {
     get: async (url) => {
-      if (!site) throw new Error('poe2db.tw: 503 Service Unavailable');
+      asked.push(url);
+      if (!site?.[url]) throw new Error('poe2db.tw: 503 Service Unavailable');
       return site[url];
     },
     items,
@@ -128,12 +145,13 @@ const run = async (site: Record<string, string> | null, items = known) => {
     output: (line) => void out.push(line),
     log: (line) => void lines.push(line),
   });
-  return { code, lines, out, written };
+  return { code, lines, out, asked, written };
 };
 
-test('a quiet day writes no report and says found=false, with its fingerprint', async () => {
+test('a quiet day writes no report and says found=false, with its fingerprint, from the two lists and one item page', async () => {
   const r = await run(pages());
   assert.equal(r.code, 0);
+  assert.deepEqual(r.asked, [SOURCE, GEM_SOURCE, 'https://poe2db.tw/us/Unique_0']);
   assert.deepEqual(r.written, {});
   assert.equal(r.out.length, 2);
   assert.match(r.out[0], /^fingerprint=[0-9a-f]{12}$/);
@@ -154,9 +172,34 @@ test("poe2db not answering passes with a warning: a day it couldn't read", async
   assert.match(r.lines[0], /^::warning::The new-items watch couldn't read poe2db: .*503/);
 });
 
-test('pages too thin to read fail the run: their layout changed, which the refresh can no more read', async () => {
-  const r = await run({ [SOURCE]: '<html>nothing</html>', [GEM_SOURCE]: '' });
-  assert.equal(r.code, 2);
-  assert.match(r.lines.at(-1)!, /^::error::The new-items watch can't read poe2db's lists \(only 0 uniques read/);
-  assert.deepEqual(r.out, []);
+test('lists too thin to read hand the watch to Claude: broken, with why, and no failed run to mail', async () => {
+  const r = await run({ [SOURCE]: '<html>nothing</html>', [GEM_SOURCE]: '<html></html>' });
+  assert.equal(r.code, 0);
+  assert.deepEqual(r.out, ['broken=true', `why=poe2db's layout changed: only 0 uniques read from ${SOURCE}`, 'found=false']);
+  assert.match(r.lines.at(-1)!, /^::warning::The new-items watch can't read poe2db .*Claude is asked to mend it\.$/);
+});
+
+test('item pages that no longer show the item are a changed layout too, after a few tried', async () => {
+  const r = await run(pages('', () => '<div class="itemCard">changed</div>'));
+  assert.equal(r.code, 0);
+  assert.equal(r.asked.length, 2 + ITEM_PAGES);
+  assert.equal(r.out[0], 'broken=true');
+  assert.match(r.out[1], /^why=poe2db's layout changed: no item's own page showed its name and picture \(Unique 0, Unique 1, Unique 2\)$/);
+});
+
+test('one item page that reads is enough', async () => {
+  const site = pages();
+  site['https://poe2db.tw/us/Unique_0'] = '<div class="itemCard">odd one</div>';
+  const r = await run(site);
+  assert.equal(r.asked.length, 4);
+  assert.match(r.out[0], /^fingerprint=/);
+});
+
+test("an item page poe2db doesn't answer is a day it couldn't read, not a changed layout", async () => {
+  const site = pages();
+  delete site['https://poe2db.tw/us/Unique_0'];
+  const r = await run(site);
+  assert.equal(r.code, 0);
+  assert.deepEqual(r.out, ['found=false']);
+  assert.match(r.lines[0], /^::warning::The new-items watch couldn't read poe2db/);
 });

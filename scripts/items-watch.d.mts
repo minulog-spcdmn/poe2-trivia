@@ -16,7 +16,9 @@ export type Deps = {
 
 export const LEAST_UNIQUES: number;
 export const LEAST_GEMS: number;
+export const ITEM_PAGES: number;
 export class LayoutChanged extends Error {}
+export function pageReads(html: string, name: string): boolean;
 export function compare(items: { name: string }[], uniques: UniqueEntry[], gems: GemEntry[], announced: AnnouncedEntry[]): Found;
 export function fingerprintOf(c: Found): string;
 export function reportOf(c: Found): string;

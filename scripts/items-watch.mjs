@@ -13,19 +13,23 @@
 // The workflow opens an issue from the report, and only when what it finds
 // differs from the last issue's (its fingerprint, hidden in the issue).
 //
+// It reads a few item pages too, as the refresh does (fetch-stats.mjs
+// pageBoxes), so a change to their layout shows before a patch needs them.
+//
 // Usage: node scripts/items-watch.mjs <report file>
 // Writes the report there when there's anything to say (nothing otherwise),
 // and `fingerprint` and `found` (true or false) to GITHUB_OUTPUT when it's
-// set. Exits 0 when it read the pages, found anything or not; 0 too, with a
-// ::warning::, when poe2db didn't answer (a day it couldn't read); 2 with
-// an ::error:: when the pages hold too few items to be read (their layout
-// changed, which breaks the refresh too: GitHub mails the failed run).
+// set. When poe2db's pages can't be read (their layout changed, which breaks
+// the refresh too) or the watch itself breaks, `broken=true` and `why`
+// instead, and the workflow has Claude mend the reading: no failed run, no
+// mail. Exits 0 but on wrong usage; poe2db not answering is a ::warning::,
+// a day it couldn't read.
 
 import { createHash } from 'node:crypto';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fetchRetry } from './fetch-stats.mjs';
+import { fetchRetry, pageBoxes } from './fetch-stats.mjs';
 import { GEM_SOURCE, SOURCE, announcedEntries, gemEntries, uniqueEntries } from './poe2db-lists.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -35,8 +39,14 @@ const DATA_FILE = path.join(ROOT, 'src', 'data', 'items.json');
 export const LEAST_UNIQUES = 100;
 export const LEAST_GEMS = 20;
 
+/** Item pages read to check theirs (each a request): the first ones the list pictures, any one read passing. */
+export const ITEM_PAGES = 3;
+
 /** The page's layout changed: the check can't read it, and neither can a refresh. */
 export class LayoutChanged extends Error {}
+
+/** Whether an item's own page shows its box, its name and picture there, as the refresh reads it (pageBoxes). */
+export const pageReads = (html, name) => pageBoxes(html).some((b) => b.name === name && b.art);
 
 /**
  * What poe2db's lists hold against the game's items (`items`, items.json):
@@ -111,20 +121,37 @@ export async function main(argv, env, deps = {}) {
     log('Usage: node scripts/items-watch.mjs <report file>');
     return 2;
   }
-  let pages;
-  try {
-    pages = [await get(SOURCE), await get(GEM_SOURCE)];
-  } catch (e) {
-    log(`::warning::The new-items watch couldn't read poe2db: ${e instanceof Error ? e.message : String(e)}`);
+  /** A page, or null when poe2db didn't answer (said, as a day it couldn't read). */
+  const read = async (url) => {
+    try {
+      return await get(url);
+    } catch (e) {
+      log(`::warning::The new-items watch couldn't read poe2db: ${e instanceof Error ? e.message : String(e)}`);
+      return null;
+    }
+  };
+  const html = await read(SOURCE);
+  const gemHtml = html === null ? null : await read(GEM_SOURCE);
+  if (html === null || gemHtml === null) {
     output('found=false');
     return 0;
   }
   try {
-    const [html, gemHtml] = pages;
     const uniques = uniqueEntries(html);
     const gems = gemEntries(gemHtml);
     if (uniques.length < LEAST_UNIQUES) throw new LayoutChanged(`only ${uniques.length} uniques read from ${SOURCE}`);
     if (gems.length < LEAST_GEMS) throw new LayoutChanged(`only ${gems.length} lineage gems read from ${GEM_SOURCE}`);
+    const tried = [];
+    for (const e of uniques.filter((u) => u.img).slice(0, ITEM_PAGES)) {
+      const page = await read(`https://poe2db.tw/us/${e.slug}`);
+      if (page === null) {
+        output('found=false');
+        return 0;
+      }
+      tried.push(e.name);
+      if (pageReads(page, e.name)) break;
+      if (tried.length === ITEM_PAGES) throw new LayoutChanged(`no item's own page showed its name and picture (${tried.join(', ')})`);
+    }
     const c = compare(items, uniques, gems, announcedEntries(html));
     const report = reportOf(c);
     const fingerprint = fingerprintOf(c);
@@ -135,10 +162,13 @@ export async function main(argv, env, deps = {}) {
     output(`found=${report ? 'true' : 'false'}`);
     return 0;
   } catch (e) {
-    const why = e instanceof Error ? e.message : String(e);
-    if (e instanceof LayoutChanged) log(`::error::The new-items watch can't read poe2db's lists (${why}): their layout changed, so npm run fetch-data can't either. Fix scripts/poe2db-lists.mjs.`);
-    else log(`::error::The new-items watch broke: ${why}`);
-    return 2;
+    // (Not a failed run: the workflow hands it to Claude, who mends the reading.)
+    const why = e instanceof LayoutChanged ? `poe2db's layout changed: ${e.message}` : `the watch broke: ${e instanceof Error ? e.stack ?? e.message : String(e)}`;
+    log(`::warning::The new-items watch can't read poe2db (${why.split('\n')[0]}); Claude is asked to mend it.`);
+    output('broken=true');
+    output(`why=${why.replace(/\s+/g, ' ').slice(0, 1000)}`);
+    output('found=false');
+    return 0;
   }
 }
 

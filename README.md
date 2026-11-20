@@ -531,10 +531,13 @@ finds differs from the last issue it opened, it opens an issue for the
 owner, or updates the open one; when the lists and the game agree again, it
 closes it. The refresh stays the owner’s to start. It runs once a day,
 every 6 hours from December 4 to 14 and every hour from December 10 to 14,
-around PoE2 1.0’s launch, and stops after December 31. A page it can’t read
-(its layout changed, which breaks `npm run fetch-data` too) fails the run.
-Both read the list pages through `scripts/poe2db-lists.mjs`. By hand:
-`node scripts/items-watch.mjs report.md`.
+around PoE2 1.0’s launch, and stops after December 31. Both read the list
+pages through `scripts/poe2db-lists.mjs`, and the watch reads a few item
+pages too, as the refresh does. When poe2db’s layout changes, which breaks
+`npm run fetch-data` too, nobody is mailed: Claude, on the API credit
+(`scripts/claude-in-ci.sh`), mends the reading and ships it as a pull
+request with auto-merge, at most once a day; what it can’t mend becomes an
+issue for the owner. By hand: `node scripts/items-watch.mjs report.md`.
 
 ---
 

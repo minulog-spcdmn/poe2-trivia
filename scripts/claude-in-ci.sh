@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs `claude -p` in a GitHub Actions job (launch-hour.yml,
-# health-responder.yml) on the Claude API, paid from the owner's Console
-# organization, its monthly API credit first. It signs in by workload identity
+# health-responder.yml, tally-ready.yml, items-watch.yml) on the Claude API,
+# paid from the owner's Console organization, its monthly API credit first. It signs in by workload identity
 # federation: GitHub gives the job a short-lived identity token, the CLI trades
 # it for a short-lived Claude token, and no API key is stored anywhere.
 #
