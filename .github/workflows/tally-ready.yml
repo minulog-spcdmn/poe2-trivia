@@ -149,8 +149,9 @@ jobs:
           cat "$RUNNER_TEMP/summary.md" >> "$RUNNER_TEMP/prompt.md"
           bash scripts/claude-in-ci.sh "$RUNNER_TEMP/prompt.md" "$RUNNER_TEMP/answer.md" \
             --model claude-opus-5-5 \
+            --effort xhigh \
             --max-turns 3 \
-            --max-budget-usd 1 \
+            --max-budget-usd 3 \
             --permission-mode default \
             --strict-mcp-config \
             --tools ''
