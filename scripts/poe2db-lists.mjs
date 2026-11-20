@@ -14,9 +14,10 @@ export const GEM_SOURCE = 'https://poe2db.tw/us/Lineage_Supports';
 /** A picture under Art/2DItems/ in an <img> with any other attributes; its URL the group. */
 const img = (under) => `<img[^>]*?\\ssrc="(https://cdn\\.poe2db\\.tw/image/Art/2DItems/${under}[^"]+)"[^>]*>`;
 
-// The list leaves some items' pictures out: those come from the item's own page.
+// The list leaves some items' pictures out, or shows one that isn't the
+// game's art: those come from the item's own page (`img` undefined).
 const ENTRY = new RegExp(
-  `<div class="flex-shrink-0">(?:<a[^>]*>${img('')}</a>)?</div>` +
+  `<div class="flex-shrink-0">(?:<a[^>]*>(?:${img('')}|<img[^>]*>)</a>)?</div>` +
     '<div class="flex-grow-1 ms-2"><div><a class="UniqueItem"[^>]*href="(?:/us/)?([^"]+)">' +
     '<span class="uniqueName">([^<]+)</span>\\s*<span class="uniqueTypeLine">([^<]*)</span>',
   'g',
@@ -49,9 +50,17 @@ export function uniqueEntries(html) {
   return entries;
 }
 
-/** The lineage support gems on their list page, in its order: `colour` its class (gem_red, gem_green, gem_blue). */
+/** The lineage support gems on their list page, each once by name (the page lists each twice), in its order: `colour` its class (gem_red, gem_green, gem_blue). */
 export function gemEntries(html) {
-  return [...html.matchAll(GEM_ENTRY)].map(([, colour, img, rawName]) => ({ name: decode(rawName), colour, img }));
+  const seen = new Set();
+  const out = [];
+  for (const [, colour, img, rawName] of html.matchAll(GEM_ENTRY)) {
+    const name = decode(rawName);
+    if (seen.has(name)) continue;
+    seen.add(name);
+    out.push({ name, colour, img });
+  }
+  return out;
 }
 
 // An item GGG has announced but the game files don't have yet (1.0's, in

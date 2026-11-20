@@ -22,8 +22,11 @@
 // set. When poe2db's pages can't be read (their layout changed, which breaks
 // the refresh too) or the watch itself breaks, `broken=true` and `why`
 // instead, and the workflow has Claude mend the reading: no failed run, no
-// mail. Exits 0 but on wrong usage; poe2db not answering is a ::warning::,
-// a day it couldn't read.
+// mail. A page that answers 401, 403, 404 or 410 counts as that too: moved,
+// or poe2db turning the runner away, which only shows by trying (Claude says
+// so in an issue when it can't fetch the pages either). Exits 0 but on wrong
+// usage; poe2db not answering (no answer, a 5xx, a 429, past fetchRetry's
+// tries) is a ::warning::, a day it couldn't read.
 
 import { createHash } from 'node:crypto';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
@@ -44,6 +47,23 @@ export const ITEM_PAGES = 3;
 
 /** The page's layout changed: the check can't read it, and neither can a refresh. */
 export class LayoutChanged extends Error {}
+
+/** A page that's gone or turned the reader away (`status`): asked again, it says the same. */
+export class Refused extends Error {
+  constructor(url, status) {
+    super(`${url} answered ${status}`);
+    this.status = status;
+  }
+}
+const REFUSED = new Set([401, 403, 404, 410]);
+
+/** A page's text: once for an answer that won't change (Refused), else as fetchRetry asks, again and again. */
+export async function getPage(url, fetch = globalThis.fetch) {
+  const res = await fetch(url, { headers: { 'user-agent': 'poe2-trivia data fetcher', referer: 'https://poe2db.tw/' } }).catch(() => null);
+  if (res && REFUSED.has(res.status)) throw new Refused(url, res.status);
+  if (res?.ok) return res.text();
+  return (await fetchRetry(url)).text();
+}
 
 /** Whether an item's own page shows its box, its name and picture there, as the refresh reads it (pageBoxes). */
 export const pageReads = (html, name) => pageBoxes(html).some((b) => b.name === name && b.art);
@@ -112,7 +132,7 @@ export function reportOf(c) {
 /** Reads the pages and compares; the exit code. `deps`: fetch (as fetchRetry's), items, where the report goes and where lines go, for the tests. */
 export async function main(argv, env, deps = {}) {
   const log = deps.log ?? ((line) => console.log(line));
-  const get = deps.get ?? (async (url) => (await fetchRetry(url)).text());
+  const get = deps.get ?? getPage;
   const items = deps.items ?? JSON.parse(readFileSync(DATA_FILE, 'utf8'));
   const write = deps.write ?? ((file, text) => writeFileSync(file, text));
   const output = deps.output ?? ((line) => env.GITHUB_OUTPUT && appendFileSync(env.GITHUB_OUTPUT, `${line}\n`));
@@ -121,37 +141,40 @@ export async function main(argv, env, deps = {}) {
     log('Usage: node scripts/items-watch.mjs <report file>');
     return 2;
   }
-  /** A page, or null when poe2db didn't answer (said, as a day it couldn't read). */
+  /** Poe2db didn't answer: a day it couldn't read, said. */
+  class Unread extends Error {}
+  /** A page; a Refused one (gone, or turned away) thrown as it is, as the layout's changing. */
   const read = async (url) => {
     try {
       return await get(url);
     } catch (e) {
-      log(`::warning::The new-items watch couldn't read poe2db: ${e instanceof Error ? e.message : String(e)}`);
-      return null;
+      if (e instanceof Refused) throw e;
+      throw new Unread(e instanceof Error ? e.message : String(e));
     }
   };
-  const html = await read(SOURCE);
-  const gemHtml = html === null ? null : await read(GEM_SOURCE);
-  if (html === null || gemHtml === null) {
-    output('found=false');
-    return 0;
-  }
   try {
+    const html = await read(SOURCE);
+    const gemHtml = await read(GEM_SOURCE);
     const uniques = uniqueEntries(html);
     const gems = gemEntries(gemHtml);
     if (uniques.length < LEAST_UNIQUES) throw new LayoutChanged(`only ${uniques.length} uniques read from ${SOURCE}`);
     if (gems.length < LEAST_GEMS) throw new LayoutChanged(`only ${gems.length} lineage gems read from ${GEM_SOURCE}`);
+    // Those the list pictures first, as they're sure to have one on their page too.
     const tried = [];
-    for (const e of uniques.filter((u) => u.img).slice(0, ITEM_PAGES)) {
-      const page = await read(`https://poe2db.tw/us/${e.slug}`);
-      if (page === null) {
-        output('found=false');
-        return 0;
-      }
+    let reads = false;
+    for (const e of [...uniques.filter((u) => u.img), ...uniques.filter((u) => !u.img)].slice(0, ITEM_PAGES)) {
       tried.push(e.name);
-      if (pageReads(page, e.name)) break;
-      if (tried.length === ITEM_PAGES) throw new LayoutChanged(`no item's own page showed its name and picture (${tried.join(', ')})`);
+      let page;
+      try {
+        page = await read(`https://poe2db.tw/us/${e.slug}`);
+      } catch (err) {
+        // (One item's page gone is one that doesn't read; the next may.)
+        if (err instanceof Refused) continue;
+        throw err;
+      }
+      if ((reads = pageReads(page, e.name))) break;
     }
+    if (!reads) throw new LayoutChanged(`no item's own page showed its name and picture (${tried.join(', ')})`);
     const c = compare(items, uniques, gems, announcedEntries(html));
     const report = reportOf(c);
     const fingerprint = fingerprintOf(c);
@@ -162,8 +185,18 @@ export async function main(argv, env, deps = {}) {
     output(`found=${report ? 'true' : 'false'}`);
     return 0;
   } catch (e) {
+    if (e instanceof Unread) {
+      log(`::warning::The new-items watch couldn't read poe2db: ${e.message}`);
+      output('found=false');
+      return 0;
+    }
     // (Not a failed run: the workflow hands it to Claude, who mends the reading.)
-    const why = e instanceof LayoutChanged ? `poe2db's layout changed: ${e.message}` : `the watch broke: ${e instanceof Error ? e.stack ?? e.message : String(e)}`;
+    const why =
+      e instanceof LayoutChanged
+        ? `poe2db's layout changed: ${e.message}`
+        : e instanceof Refused
+          ? `poe2db moved the page or turned the watch away: ${e.message}`
+          : `the watch broke: ${e instanceof Error ? e.stack ?? e.message : String(e)}`;
     log(`::warning::The new-items watch can't read poe2db (${why.split('\n')[0]}); Claude is asked to mend it.`);
     output('broken=true');
     output(`why=${why.replace(/\s+/g, ' ').slice(0, 1000)}`);

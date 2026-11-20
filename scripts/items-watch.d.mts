@@ -18,6 +18,11 @@ export const LEAST_UNIQUES: number;
 export const LEAST_GEMS: number;
 export const ITEM_PAGES: number;
 export class LayoutChanged extends Error {}
+export class Refused extends Error {
+  constructor(url: string, status: number);
+  status: number;
+}
+export function getPage(url: string, fetch?: typeof globalThis.fetch): Promise<string>;
 export function pageReads(html: string, name: string): boolean;
 export function compare(items: { name: string }[], uniques: UniqueEntry[], gems: GemEntry[], announced: AnnouncedEntry[]): Found;
 export function fingerprintOf(c: Found): string;

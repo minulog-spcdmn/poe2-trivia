@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { announcedEntries, gemEntries, GEM_SOURCE, SOURCE, uniqueEntries } from '../scripts/poe2db-lists.mjs';
-import { compare, fingerprintOf, ITEM_PAGES, LEAST_GEMS, LEAST_UNIQUES, main, pageReads, reportOf } from '../scripts/items-watch.mjs';
+import { compare, fingerprintOf, getPage, ITEM_PAGES, LEAST_GEMS, LEAST_UNIQUES, main, pageReads, Refused, reportOf } from '../scripts/items-watch.mjs';
 
 // poe2db's list pages as the refresh (scripts/fetch-data.mjs) and the
 // new-items watch (scripts/items-watch.mjs) read them
@@ -59,8 +59,13 @@ test('the uniques are read in either markup, a picture left out as undefined, ea
   assert.deepEqual(announcedEntries(html), [{ name: 'Keelhaul', base: 'Linen Belt' }]);
 });
 
-test('the lineage gems are read in either markup, with their colour and art', () => {
-  const gems = gemEntries(oldGem("Atalui's Bloodletting") + newGem("Dreamer's Knell"));
+test("a unique whose list picture isn't the game's art is read without it, its art then from its own page", () => {
+  const entries = uniqueEntries(newUnique('Andvarius', 'Gold Ring', 'https://web.poecdn.com/protected/image/x.png?key=k'));
+  assert.deepEqual(entries.map((e) => [e.name, e.img]), [['Andvarius', undefined]]);
+});
+
+test('the lineage gems are read in either markup, with their colour and art, each once (the page lists each twice)', () => {
+  const gems = gemEntries(oldGem("Atalui's Bloodletting") + newGem("Dreamer's Knell") + oldGem("Atalui's Bloodletting", 'gem_green'));
   assert.deepEqual(
     gems.map((g) => [g.name, g.colour]),
     [
@@ -129,7 +134,7 @@ const pages = (extra = '', item: (name: string) => string = itemPage) => {
 };
 const known = [...Array.from({ length: LEAST_UNIQUES }, (_, i) => `Unique ${i}`), ...Array.from({ length: LEAST_GEMS }, (_, i) => `Gem ${i}`)].map((name) => ({ name }));
 
-const run = async (site: Record<string, string> | null, items = known) => {
+const run = async (site: Record<string, string> | null, items = known, refused: Record<string, number> = {}) => {
   const lines: string[] = [];
   const out: string[] = [];
   const asked: string[] = [];
@@ -137,6 +142,7 @@ const run = async (site: Record<string, string> | null, items = known) => {
   const code = await main(['report.md'], {}, {
     get: async (url) => {
       asked.push(url);
+      if (refused[url]) throw new Refused(url, refused[url]);
       if (!site?.[url]) throw new Error('poe2db.tw: 503 Service Unavailable');
       return site[url];
     },
@@ -202,4 +208,43 @@ test("an item page poe2db doesn't answer is a day it couldn't read, not a change
   assert.equal(r.code, 0);
   assert.deepEqual(r.out, ['found=false']);
   assert.match(r.lines[0], /^::warning::The new-items watch couldn't read poe2db/);
+});
+
+test('a list page that answers 403 or 404 is broken, not a day it couldn\'t read: moved, or poe2db turning the runner away', async () => {
+  for (const status of [403, 404]) {
+    const r = await run(pages(), known, { [SOURCE]: status });
+    assert.equal(r.code, 0);
+    assert.deepEqual(r.out, ['broken=true', `why=poe2db moved the page or turned the watch away: ${SOURCE} answered ${status}`, 'found=false']);
+  }
+});
+
+test("an item page that's gone is one that doesn't read: the next is tried, and all of them gone is broken", async () => {
+  const one = await run(pages(), known, { 'https://poe2db.tw/us/Unique_0': 404 });
+  assert.match(one.out[0], /^fingerprint=/);
+  const all = await run(pages(), known, Object.fromEntries(Array.from({ length: ITEM_PAGES }, (_, i) => [`https://poe2db.tw/us/Unique_${i}`, 404])));
+  assert.equal(all.out[0], 'broken=true');
+  assert.match(all.out[1], /no item's own page showed its name and picture \(Unique 0, Unique 1, Unique 2\)/);
+});
+
+test('the item pages are checked even where the list pictures none, and with fewer than ITEM_PAGES to try', async () => {
+  const bare = Array.from({ length: LEAST_UNIQUES }, (_, i) => bareUnique(`Unique ${i}`, 'Ring')).join('');
+  const site = { ...pages(), [SOURCE]: bare };
+  const r = await run(site);
+  assert.match(r.out[0], /^fingerprint=/);
+  assert.ok(r.asked.includes('https://poe2db.tw/us/Unique_0'));
+  // No list pictures, and the item pages changed: broken.
+  const broken = await run({ ...pages('', () => '<div class="itemCard">changed</div>'), [SOURCE]: bare });
+  assert.equal(broken.out[0], 'broken=true');
+});
+
+test('a page that answers 404 is asked once, not again and again', async () => {
+  const calls: string[] = [];
+  const fake = (async (url: string) => {
+    calls.push(url);
+    return new Response('', { status: 404 });
+  }) as unknown as typeof globalThis.fetch;
+  await assert.rejects(getPage('https://poe2db.tw/us/Gone', fake), (e: unknown) => e instanceof Refused && e.status === 404);
+  assert.equal(calls.length, 1);
+  const ok = (async () => new Response('page')) as unknown as typeof globalThis.fetch;
+  assert.equal(await getPage('https://poe2db.tw/us/Here', ok), 'page');
 });
