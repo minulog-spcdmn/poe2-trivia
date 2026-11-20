@@ -135,6 +135,6 @@ env -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL \
     status=$?
     # A run that fails before Claude starts (sign-in, billing, a flag) says
     # why on stdout, which is the answer file: put it on the run's page.
-    echo "::error::claude -p failed ($status): $(head -c 500 "$answer_file" | tr '\n' ' ')"
+    echo "::error::claude -p failed ($status): $(head -c 500 "$answer_file" | tr -c '[:print:]' ' ')"
     exit "$status"
   }
