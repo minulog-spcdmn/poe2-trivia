@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BEFORE, CheckError, apiOf, checkDay, firedOf, main, windowsOf } from '../scripts/daily-health.mjs';
+import { BEFORE, CheckError, apiOf, checkDay, firedOf, hourStart, hourWindowsOf, lastHoursOf, main, windowsOf } from '../scripts/daily-health.mjs';
 import { passing, pathCounts } from '../src/statsPage/hits.ts';
 import { addDays, dayIn } from '../src/statsPage/zone.ts';
 
@@ -56,11 +56,11 @@ function goat(plan: Plan = {}) {
   return { fetch, asked };
 }
 
-const run = async (argv: string[], plan: Plan = {}, env: Record<string, string> = { GOATCOUNTER_KEY: KEY }) => {
+const run = async (argv: string[], plan: Plan = {}, env: Record<string, string> = { GOATCOUNTER_KEY: KEY }, at = AT) => {
   const site = goat(plan);
   const lines: string[] = [];
   const slept: number[] = [];
-  const code = await main(argv, env, { fetch: site.fetch, now: () => AT, sleep: async (ms) => void slept.push(ms), log: (l) => lines.push(l) });
+  const code = await main(argv, env, { fetch: site.fetch, now: () => at, sleep: async (ms) => void slept.push(ms), log: (l) => lines.push(l) });
   return { code, lines, slept, asked: site.asked };
 };
 
@@ -257,4 +257,77 @@ test('a checked day holds against the 7 whole days before it, and says nothing w
   assert.equal(c?.day, YESTERDAY);
   assert.deepEqual(firedOf(c), []);
   assert.equal(checkDay(paths, addDays(YESTERDAY, -BEFORE), ZONE), null);
+});
+
+// The midday check (--last-24h): the 24 hours to the start of this hour.
+// The pretend GoatCounter's hourly counts all fall in each day's 12:00 to
+// 13:00 in Berlin.
+/** 13:30 in Berlin on Nov 6: the window ends at 13:00, so it holds Nov 6's 12:00 hour. */
+const MIDDAY = Date.parse('2026-11-06T12:30:00Z');
+const TODAY = '2026-11-06';
+
+test('the midday check reads from the midnight before its first window to the start of this hour, its windows named as the days they end on', () => {
+  const w = hourWindowsOf(ZONE, new Date(MIDDAY));
+  assert.equal(new Date(w.end).toISOString(), '2026-11-06T12:00:00.000Z');
+  assert.deepEqual(w.checked, [TODAY]);
+  assert.equal(w.labels.length, BEFORE + 2);
+  assert.equal(w.labels[0], addDays(TODAY, -BEFORE - 1));
+  // The oldest window starts at 13:00 on Oct 28, so Oct 28 is read whole.
+  assert.equal(w.span.start.toISOString(), '2026-10-27T23:00:00.000Z');
+  assert.equal(w.span.end.toISOString(), '2026-11-06T11:59:59.999Z');
+  assert.equal(hourWindowsOf(ZONE, new Date(MIDDAY), 20).labels.length, 20 + BEFORE + 1);
+  // An hour on Kolkata's clock begins at half past, in UTC.
+  assert.equal(hourStart('Asia/Kolkata', new Date('2026-11-06T12:20:00Z')).toISOString(), '2026-11-06T11:30:00.000Z');
+});
+
+test('a quiet 24 hours passes, saying which', async () => {
+  const r = await run(['--last-24h'], { hourly: true }, undefined, MIDDAY);
+  assert.equal(r.code, 0);
+  assert.deepEqual(r.lines, [`Midday health check: the 24 hours to 13:00 on ${TODAY} as usual against the 7 days before at the same hours (${ZONE}).`]);
+});
+
+test("a fault in this morning's hours fails the midday run, before the night's check could see it", async () => {
+  const r = await run(['--last-24h'], { hourly: true, on: { 'error/chunk': { [TODAY]: 40 } } }, undefined, MIDDAY);
+  assert.equal(r.code, 1);
+  // The words the health responder reads as an alert.
+  assert.match(r.lines[0], /^Midday health check: the 24 hours to 13:00 on 2026-11-06 went worse than the 7 days before at the same hours/);
+  assert.deepEqual(r.lines.filter((l) => l.startsWith('::')), [`::error::the 24 hours to 13:00 on ${TODAY}: parts of the game that didn't load: 40, against 1.0 usual for as many visits`]);
+  assert.ok(!r.lines.join('\n').includes(KEY));
+});
+
+test('a window ends where this hour starts: the hour now is left for the next check', async () => {
+  // 12:30 in Berlin: the window is 12:00 to 12:00, so it holds Nov 5's 12:00 hour and not Nov 6's.
+  const noon = Date.parse('2026-11-06T11:30:00Z');
+  assert.equal((await run(['--last-24h'], { hourly: true, on: { 'error/chunk': { [TODAY]: 40 } } }, undefined, noon)).code, 0);
+  const r = await run(['--last-24h'], { hourly: true, on: { 'error/chunk': { [YESTERDAY]: 40 } } }, undefined, noon);
+  assert.equal(r.code, 1);
+  assert.match(r.lines[0], /the 24 hours to 12:00 on 2026-11-06 went worse/);
+});
+
+test("without GoatCounter's hours the midday check can't cut its window: a warning, and the run passes", async () => {
+  const r = await run(['--last-24h'], {}, undefined, MIDDAY);
+  assert.equal(r.code, 0);
+  assert.match(r.lines.at(-1)!, /^::warning::Midday health check couldn't run today: GoatCounter gave no hours/);
+});
+
+test('a backtest of the midday check names each 24 hours that would have mailed', async () => {
+  const spike = addDays(TODAY, -10);
+  const r = await run(['--last-24h', '--backtest', '30'], { hourly: true, on: { 'error/chunk': { [spike]: 40 } } }, undefined, MIDDAY);
+  assert.equal(r.code, 0);
+  assert.deepEqual(r.lines, [
+    `the 24 hours to 13:00 on ${spike}: parts of the game that didn't load: 40, against 1.0 usual for as many visits`,
+    `Backtest of the midday check (${ZONE}): 1 of 30 checks would have mailed; 2 requests.`,
+  ]);
+});
+
+test('24 hours across the night the clocks go back hold 24 hours, not the day on the clock', () => {
+  // Oct 25 2026 in Berlin has 25 hours. The 24 to its next midnight start at 01:00, so its 00:00 hour is in the window before.
+  // An hour's count each, the doubled 02:00 cell holding both of its hours.
+  const hours = Array.from({ length: 24 }, (_, h) => (h === 2 ? 2 : 1));
+  const path = { path: '/', event: false, count: 25, days: { '2026-10-25': 25 }, hours: { '2026-10-25': hours } };
+  const end = Date.parse('2026-10-25T23:00:00Z');
+  const [cut] = lastHoursOf([path], ZONE, end, ['2026-10-24', '2026-10-25']);
+  assert.deepEqual(cut.days, { '2026-10-24': 1, '2026-10-25': 24 });
+  assert.equal(cut.count, 25);
+  assert.throws(() => lastHoursOf([{ ...path, hours: undefined }], ZONE, end, ['2026-10-25']), CheckError);
 });

@@ -466,10 +466,12 @@ live. It has its own rooms, saves and invite links (`VITE_CHANNEL=beta`).
 
 ### Daily health check
 
-`.github/workflows/daily-health.yml` runs `scripts/daily-health.mjs` once a
-day: stats.html’s own checks (`healthOf`, `troubleOf`) on yesterday against
-the 7 days before. A check that fires fails the run, and GitHub emails the
-owner.
+`.github/workflows/daily-health.yml` runs `scripts/daily-health.mjs` twice a
+day: stats.html’s own checks (`healthOf`, `troubleOf`) after midnight on
+yesterday against the 7 days before, and at midday (`--last-24h`) on the 24
+hours to then against the same hours of the 7 days before, cut from
+GoatCounter’s hours, so a fault in the morning shows half a day sooner. A
+check that fires fails the run, and GitHub emails the owner.
 
 It needs the read-only GoatCounter key as the Actions secret
 `GOATCOUNTER_KEY`. Switch it on with `gh secret set GOATCOUNTER_KEY` (it asks
@@ -480,7 +482,8 @@ broke; a day GoatCounter can’t be read passes with a warning. Its checks are t
 mails when stats.html would warn: in a dry run over the 13 days that could be
 checked (6 Nov 2026), once, on 5 Nov, when joining failures rose with the
 matchmaking server’s first day. A dry run over past days: `GOATCOUNTER_KEY=...
-node --experimental-strip-types scripts/daily-health.mjs --backtest 60`.
+node --experimental-strip-types scripts/daily-health.mjs --backtest 60` (add
+`--last-24h` for the midday check’s).
 
 ### Live site check
 
