@@ -53,7 +53,6 @@ const TRIES = 4;
 const LONGEST_WAIT_MS = 5 * 60_000;
 /** The most days a backtest goes back (model.ts daysBetween stops at 1000). */
 const MOST_DAYS = 365;
-const DAY_MS = 24 * 3_600_000;
 
 /** Why it couldn't check: never with the key or an address in it. */
 export class CheckError extends Error {}
@@ -144,41 +143,47 @@ export function hourStart(zone, at) {
 }
 
 /**
- * The midday check's windows at `at` in `zone`: 24 hours each, the last
- * ending at the start of the hour it is (`end`, ms; whole hours only, as
- * GoatCounter gives them), as many as the last `days` and the 7 before the
- * first of them need, and one more (as windowsOf reads one more day, so
- * firstCounted tells whether they were all counted). Each is named as a
- * day (`labels`, oldest first; the last one the day it ends on), so the
- * day-by-day checks take them as they are. `span`: what to read for them
- * all, from the midnight before the first to just before `end`.
+ * The midday check's windows at `at` in `zone`: each from one day's hour on
+ * the clock to the next day's, the last ending at the start of the hour it
+ * is (whole hours only, as GoatCounter gives them), so each window holds
+ * the same hours as the one after it, 23 or 25 of them across a clock
+ * change. As many as the last `days` and the 7 before the first of them
+ * need, and one more (as windowsOf reads one more day, so firstCounted
+ * tells whether they were all counted). Each is named as the day of its
+ * last hour (`labels`, oldest first), so the day-by-day checks take them as
+ * they are. `bounds` (ms): where each window starts and, last, where the
+ * last one ends. `span`: what to read for them all, from the midnight
+ * before the first to just before the end.
  */
 export function hourWindowsOf(zone, at, days = 1) {
-  const end = hourStart(zone, at).getTime();
+  const end = hourStart(zone, at);
+  const endDay = dayIn(zone, end);
+  const hour = hourStarts(zone, endDay).lastIndexOf(end.getTime());
   const count = days + BEFORE + 1;
-  const last = dayIn(zone, new Date(end - 1));
-  const labels = daysBetween(addDays(last, -(count - 1)), last);
-  const span = { start: midnight(zone, dayIn(zone, new Date(end - count * DAY_MS))), end: new Date(end - 1) };
-  return { end, labels, checked: labels.slice(-days), span };
+  const bounds = Array.from({ length: count + 1 }, (_, i) => hourStarts(zone, addDays(endDay, i - count))[hour]);
+  const labels = bounds.slice(1).map((b) => dayIn(zone, new Date(b - 1)));
+  const span = { start: midnight(zone, addDays(endDay, -count)), end: new Date(end.getTime() - 1) };
+  return { bounds, labels, checked: labels.slice(-days), span };
 }
 
 /**
- * `paths` cut into 24-hour windows instead of days: the last of `labels`
- * the 24 hours to `end` (ms), each one before it the 24 hours before that.
- * Each hour of a path goes to the window it began in (zone.ts hourStarts);
- * an hour outside them all is left out. Without hours they can't be cut: a
- * CheckError, as a day GoatCounter couldn't be read.
+ * `paths` cut into the windows `bounds` and `labels` give (hourWindowsOf)
+ * instead of days: each hour of a path goes to the window it began in
+ * (zone.ts hourStarts); an hour outside them all is left out. Without hours
+ * they can't be cut: GoatCounter answering in a shape the check doesn't
+ * know, so the check broken, not a day it couldn't read.
  */
-export function lastHoursOf(paths, zone, end, labels) {
+export function lastHoursOf(paths, zone, bounds, labels) {
   return paths.map((p) => {
-    if (!p.hours) throw new CheckError(`GoatCounter gave no hours (${p.path}), so the last 24 hours can't be cut from its days.`);
+    if (!p.hours) throw new Error(`GoatCounter gave no hours (${p.path}), so the last 24 hours can't be cut from its days.`);
     const days = Object.fromEntries(labels.map((l) => [l, 0]));
     for (const [day, cells] of Object.entries(p.hours)) {
       const starts = hourStarts(zone, day);
       cells.forEach((n, h) => {
-        if (!n || starts[h] >= end) return;
-        const back = Math.floor((end - 1 - starts[h]) / DAY_MS);
-        if (back < labels.length) days[labels[labels.length - 1 - back]] += n;
+        if (!n || starts[h] < bounds[0] || starts[h] >= bounds[labels.length]) return;
+        let i = 0;
+        while (starts[h] >= bounds[i + 1]) i++;
+        days[labels[i]] += n;
       });
     }
     return { path: p.path, event: p.event, count: Object.values(days).reduce((a, b) => a + b, 0), days };
@@ -242,11 +247,15 @@ export async function main(argv, env, deps = {}) {
     const read = await pathCounts(api.get, span, zone, () => new CheckError("GoatCounter's list of paths didn't add up."), now);
     if (!read.complete) log('(More paths than GoatCounter gave in 10 pages: some were left out.)');
     // (Cut into windows, the paths keep no hours: each window is a day of its own to the checks.)
-    const paths = hourly ? lastHoursOf(read.paths, zone, hourly.end, hourly.labels) : read.paths;
+    const paths = hourly ? lastHoursOf(read.paths, zone, hourly.bounds, hourly.labels) : read.paths;
     const results = checked.map((day) => ({ day, check: checkDay(paths, day, hourly ? undefined : zone) }));
-    // What a checked day is called: the midday check's, the 24 hours to the hour its window ends.
+    // What a checked day is called: the midday check's, the 24 hours to the hour its window ends, on the day it ends.
     const clock = new Intl.DateTimeFormat('en-GB', { timeZone: zone, hourCycle: 'h23', hour: '2-digit', minute: '2-digit' });
-    const named = (day) => (hourly ? `the 24 hours to ${clock.format(new Date(hourly.end - (checked.length - 1 - checked.indexOf(day)) * DAY_MS))} on ${day}` : day);
+    const named = (day) => {
+      if (!hourly) return day;
+      const to = new Date(hourly.bounds[hourly.labels.indexOf(day) + 1]);
+      return `the 24 hours to ${clock.format(to)} on ${dayIn(zone, to)}`;
+    };
     const against = hourly ? `the ${BEFORE} days before at the same hours` : `the ${BEFORE} days before`;
 
     if (backtest === null) {

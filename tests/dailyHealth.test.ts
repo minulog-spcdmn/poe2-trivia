@@ -268,7 +268,8 @@ const TODAY = '2026-11-06';
 
 test('the midday check reads from the midnight before its first window to the start of this hour, its windows named as the days they end on', () => {
   const w = hourWindowsOf(ZONE, new Date(MIDDAY));
-  assert.equal(new Date(w.end).toISOString(), '2026-11-06T12:00:00.000Z');
+  assert.equal(new Date(w.bounds.at(-1)!).toISOString(), '2026-11-06T12:00:00.000Z');
+  assert.equal(w.bounds.length, w.labels.length + 1);
   assert.deepEqual(w.checked, [TODAY]);
   assert.equal(w.labels.length, BEFORE + 2);
   assert.equal(w.labels[0], addDays(TODAY, -BEFORE - 1));
@@ -304,10 +305,24 @@ test('a window ends where this hour starts: the hour now is left for the next ch
   assert.match(r.lines[0], /the 24 hours to 12:00 on 2026-11-06 went worse/);
 });
 
-test("without GoatCounter's hours the midday check can't cut its window: a warning, and the run passes", async () => {
+test("without GoatCounter's hours the midday check can't cut its window: an answer of a new shape, so the check broken, not a quiet pass every day", async () => {
   const r = await run(['--last-24h'], {}, undefined, MIDDAY);
-  assert.equal(r.code, 0);
-  assert.match(r.lines.at(-1)!, /^::warning::Midday health check couldn't run today: GoatCounter gave no hours/);
+  assert.equal(r.code, 2);
+  assert.match(r.lines.at(-1)!, /^::error::Midday health check broke: GoatCounter gave no hours/);
+});
+
+test('each window ends at the same hour on the clock, a day across a clock change holding 23 or 25 hours', () => {
+  // Nov 6 13:00 in Berlin; Oct 25, when the clocks went back, is among the windows before.
+  const w = hourWindowsOf(ZONE, new Date(MIDDAY), 20);
+  const clock = new Intl.DateTimeFormat('en-GB', { timeZone: ZONE, hourCycle: 'h23', hour: '2-digit', minute: '2-digit' });
+  assert.ok(w.bounds.every((b) => clock.format(new Date(b)) === '13:00'));
+  const long = w.labels.indexOf('2026-10-25');
+  assert.equal(w.bounds[long + 1] - w.bounds[long], 25 * 3_600_000);
+  assert.ok(w.labels.every((l, i) => i === 0 || l === addDays(w.labels[i - 1], 1)));
+  // Ending at midnight, each window is named as the day it holds.
+  const night = hourWindowsOf(ZONE, new Date('2026-11-05T23:30:00Z'));
+  assert.equal(night.checked[0], YESTERDAY);
+  assert.equal(new Date(night.bounds.at(-2)!).toISOString(), '2026-11-04T23:00:00.000Z');
 });
 
 test('a backtest of the midday check names each 24 hours that would have mailed', async () => {
@@ -320,14 +335,16 @@ test('a backtest of the midday check names each 24 hours that would have mailed'
   ]);
 });
 
-test('24 hours across the night the clocks go back hold 24 hours, not the day on the clock', () => {
-  // Oct 25 2026 in Berlin has 25 hours. The 24 to its next midnight start at 01:00, so its 00:00 hour is in the window before.
+test('a window across the night the clocks go back holds all of its 25 hours, each hour where it began', () => {
+  // Oct 25 2026 in Berlin has 25 hours: the window to Oct 26's midnight holds them all, and Oct 24's evening is the window before.
   // An hour's count each, the doubled 02:00 cell holding both of its hours.
-  const hours = Array.from({ length: 24 }, (_, h) => (h === 2 ? 2 : 1));
-  const path = { path: '/', event: false, count: 25, days: { '2026-10-25': 25 }, hours: { '2026-10-25': hours } };
-  const end = Date.parse('2026-10-25T23:00:00Z');
-  const [cut] = lastHoursOf([path], ZONE, end, ['2026-10-24', '2026-10-25']);
-  assert.deepEqual(cut.days, { '2026-10-24': 1, '2026-10-25': 24 });
-  assert.equal(cut.count, 25);
-  assert.throws(() => lastHoursOf([{ ...path, hours: undefined }], ZONE, end, ['2026-10-25']), CheckError);
+  const hours = { '2026-10-24': Array.from({ length: 24 }, (_, h) => (h === 23 ? 1 : 0)), '2026-10-25': Array.from({ length: 24 }, (_, h) => (h === 2 ? 2 : 1)) };
+  const path = { path: '/', event: false, count: 26, days: { '2026-10-24': 1, '2026-10-25': 25 }, hours };
+  const w = hourWindowsOf(ZONE, new Date('2026-10-25T23:30:00Z'));
+  assert.deepEqual(w.checked, ['2026-10-25']);
+  const [cut] = lastHoursOf([path], ZONE, w.bounds, w.labels);
+  assert.equal(cut.days['2026-10-25'], 25);
+  assert.equal(cut.days['2026-10-24'], 1);
+  assert.equal(cut.count, 26);
+  assert.throws(() => lastHoursOf([{ ...path, hours: undefined }], ZONE, w.bounds, w.labels), /gave no hours/);
 });

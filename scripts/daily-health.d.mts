@@ -16,8 +16,8 @@ export class KeyRefused extends CheckError {}
 export function apiOf(key: string, deps?: Deps): Api;
 export function windowsOf(zone: string, at: Date, days?: number): { today: string; checked: string[]; span: Span };
 export function hourStart(zone: string, at: Date): Date;
-export function hourWindowsOf(zone: string, at: Date, days?: number): { end: number; labels: string[]; checked: string[]; span: Span };
-export function lastHoursOf(paths: PathCount[], zone: string, end: number, labels: string[]): PathCount[];
+export function hourWindowsOf(zone: string, at: Date, days?: number): { bounds: number[]; labels: string[]; checked: string[]; span: Span };
+export function lastHoursOf(paths: PathCount[], zone: string, bounds: number[], labels: string[]): PathCount[];
 export function checkDay(paths: PathCount[], day: string, zone?: string): Check | null;
 export function firedOf(c: Check | null): string[];
 export function main(argv: string[], env: Record<string, string | undefined>, deps?: Deps & { log?: (line: string) => void }): Promise<number>;
