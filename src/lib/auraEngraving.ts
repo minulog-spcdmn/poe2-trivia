@@ -17,7 +17,7 @@
 // plain card's; its back holds the seal.
 
 import { at, type Hole, type Pt } from './arcane.ts';
-import type { BackLayout, Plate, Variant } from './cardEngraving.ts';
+import { Plate, type BackLayout, type Stroke, type Variant } from './cardEngraving.ts';
 import type { AuraKind } from './auraKinds.ts';
 import { common } from './auraSeals/common.ts';
 import type { AuraSeal } from './auraSeals/kit.ts';
@@ -130,6 +130,27 @@ function intoDisc(c: Pt, a: number, h: Hole): number | null {
   if (disc2 < 0) return null;
   const t = -b - Math.sqrt(disc2);
   return t > 0 ? t : null;
+}
+
+/** How far a sign drawn alone (auraSign) reaches from its middle, as in Luna's place on a card 218 wide; its box is twice SIGN_BOX across. */
+export const SIGN_R = 11;
+export const SIGN_BOX = 13;
+const signs = new Map<AuraKind, Stroke[]>();
+
+/**
+ * An aura's sign alone (the aura picker's, components/AuraPicker.svelte),
+ * at its card's own size so its strokes keep their weights: its strokes
+ * about [SIGN_BOX, SIGN_BOX], in a box 2 SIGN_BOX across. Kept once drawn.
+ */
+export function auraSign(kind: AuraKind): Stroke[] {
+  let s = signs.get(kind);
+  if (!s) {
+    const p = new Plate();
+    (AURA_SEALS[kind] ?? common).sign(p, [SIGN_BOX, SIGN_BOX], SIGN_R);
+    s = p.out;
+    signs.set(kind, s);
+  }
+  return s;
 }
 
 const variants = new Map<AuraKind, Variant>();

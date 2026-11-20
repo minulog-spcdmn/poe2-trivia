@@ -9,6 +9,8 @@
   import { circleOf } from './circles';
   import AchievementSeal from './AchievementSeal.svelte';
   import SigilPicker from './SigilPicker.svelte';
+  import AuraPicker from './AuraPicker.svelte';
+  import { WORN, type AuraKind } from '../lib/auraKinds';
   import { achievementsIn } from '../lib/sigils';
   import { CLASSES } from '../lib/classSigils';
 
@@ -40,6 +42,9 @@
   /** Achievements this build knows, each worth a class sigil; and the sigils unlocked (SigilPicker says). */
   const sigilsEarned = $derived(achievementsIn(store));
   let unlocked = $state(0);
+  /** The aura worn (AuraPicker), shown on the sigils' token, and how many are found. */
+  let aura = $state<AuraKind | null>(null);
+  let found = $state(0);
   /** The earned share as an arc around the medallion (its circle's circumference is 100). */
   const share = $derived(earned.length / ACHIEVEMENTS.length);
 </script>
@@ -78,7 +83,13 @@
       <span class="col-label">{unlocked} / {CLASSES.length}</span>
     </header>
     <p class="hint">Your first achievement unlocks a class’s sigil, and every third after it another, to wear on your avatar behind your initial.</p>
-    <SigilPicker achievements={sigilsEarned} bind:unlocked />
+    <SigilPicker achievements={sigilsEarned} bind:unlocked {aura} />
+    <!-- The auras in the same panel, worn on the sigils' token. -->
+    <header class="aura-head">
+      <h2 id="feats-auras">Auras</h2>
+      <span class="col-label">{found} / {WORN.length}</span>
+    </header>
+    <AuraPicker bind:worn={aura} bind:found />
   </section>
   {#each groups as g (g.key)}
     {@const done = g.rows.filter((r) => r.earned !== null).length}
@@ -213,6 +224,9 @@
     letter-spacing: 0.06em;
     color: #d8a26a;
     white-space: nowrap;
+  }
+  .panel .aura-head {
+    margin-top: 1.4rem;
   }
   .hint {
     margin: 0 0 0.9rem;

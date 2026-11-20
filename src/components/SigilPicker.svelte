@@ -11,7 +11,10 @@
   // (CodexAchievements) and in the settings.
   // Unlocking is for good, so a locked class picked asks once more first.
   // `strip`: the twelve in one row beside the avatar, named on hover (the
-  // settings page, which has the width but not the height).
+  // settings page, which has the width but not the height). `aura`: the
+  // aura worn (AuraPicker, beside it), shown on the same token. `token`: the
+  // token alone, the rest kept in place unseen (a short window's settings,
+  // where the auras take the twelve's row beside it on a switch).
   import { onMount } from 'svelte';
   import { CLASSES, className, sigilUrl, type PlayerClass } from '../lib/classSigils';
   import { SIGILS_KEY, achievementsToNext, loadSigils, sigilsToUnlock, unlockSigil, wearSigil } from '../lib/sigils';
@@ -21,15 +24,18 @@
   import { sfx } from '../lib/sound';
   import { COLOUR_KEY, loadColour } from '../lib/colour';
   import { reservedHueOf } from '../lib/game';
+  import { shownAura, type AuraKind } from '../lib/auraKinds';
   import Avatar from './Avatar.svelte';
 
-  /** achievements: how many this player has earned (lib/sigils.ts says what they're worth). unlocked: how many they have unlocked, for a count beside it. hue: the avatar's colour. */
+  /** achievements: how many this player has earned (lib/sigils.ts says what they're worth). unlocked: how many they have unlocked, for a count beside it. hue: the avatar's colour. aura: the aura worn, on the avatar too. */
   let {
     achievements,
     unlocked = $bindable(0),
     strip = false,
     hue,
-  }: { achievements: number; unlocked?: number; strip?: boolean; hue?: number } = $props();
+    aura = null,
+    token = false,
+  }: { achievements: number; unlocked?: number; strip?: boolean; hue?: number; aura?: AuraKind | null; token?: boolean } = $props();
   const name = savedName() || NAMELESS;
   // The colour picked (lib/colour.ts), or the one kept for the name, unless
   // the page that has it says (the settings, as it's picked there).
@@ -76,9 +82,9 @@
   }
 </script>
 
-<div class="sigils" class:strip class:asking={!!ask}>
+<div class="sigils" class:strip class:asking={!!ask} class:token>
   <div class="you">
-    <Avatar {name} hue={hue ?? picked} size={64} sigil={shown} />
+    <Avatar {name} hue={hue ?? picked} size={64} sigil={shown} aura={shownAura(aura, shown)} />
     <p class="line">
       {#if ask && strip}
         Unlock the {className(ask)}’s sigil for good?
@@ -97,13 +103,13 @@
       {/if}
     </p>
     <!-- Kept in place while hidden, so the line never moves when it shows. -->
-    <div class="acts" class:off={!ask} inert={!ask}>
+    <div class="acts" class:off={!ask} inert={!ask || token}>
       <button class="btn small ghost" onclick={() => (asking = null)}>Not yet</button>
       <button class="btn small primary" data-sfx="none" onclick={unlock}>Unlock</button>
     </div>
   </div>
 
-  <ul class="classes">
+  <ul class="classes" inert={token}>
     {#each CLASSES as c (c)}
       {@const have = sigils.unlocked.includes(c)}
       <li>
@@ -285,6 +291,9 @@
   }
   .strip .class {
     position: relative;
+  }
+  .token :is(.line, .acts, .classes) {
+    visibility: hidden;
   }
 
   @media (max-width: 900px) {

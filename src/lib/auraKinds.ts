@@ -65,6 +65,32 @@ export function shownAura(aura: unknown, _sigil: unknown): AuraKind | undefined 
   return isWornAura(aura) ? aura : undefined;
 }
 
+/**
+ * How each aura that can be worn is found, in the player's words, shown on
+ * one not found yet (components/AuraPicker.svelte): each a line that reads
+ * alone. What decides a find is the game's, so a change there changes its
+ * line here. A class aura's names its sigil (CLASS_AURAS).
+ */
+export const AURA_HINTS: Partial<Record<AuraKind, string>> = {
+  azmeri: 'Found in a game with 3 or more players.',
+  runeseal: 'Found by getting 3 right in a row.',
+  tower: 'Found on a tablet question.',
+  breach: 'Found by getting 2 right in a row, each within 2 seconds.',
+  expedition: 'Found after Detonating in a Delve run.',
+  ice: 'Found in the Frozen Hollow, depths 20 to 29.',
+  delirium: 'Found in Delve from depth 14, or in Eternal.',
+  chronomancer: 'Found on a right answer with under 1 second left, wearing the Sorceress sigil.',
+  slayer: 'Found on the deciding answer, wearing the Gladiator sigil.',
+  ritual: 'Found by clearing a Delve zone without a miss.',
+  divine: 'Found by getting 10 right in a row.',
+  corrupted: 'Found in the Vaal Outpost, depths 40 to 49.',
+  twilight: 'Found deep in Delve, on your last life.',
+  shadow: 'Found in Delve from depth 40, or in Eternal, wearing the Assassin sigil.',
+  abyss: 'Found in the Abyssal Depths or the Abyssal City.',
+  chayula: 'Found past depth 50, wearing the Monk sigil.',
+  mirror: 'Found on any card, very rarely.',
+};
+
 /** Its number in the effects shader: 1 for the first. */
 export const auraSlot = (k: AuraKind) => AURAS.indexOf(k) + 1;
 

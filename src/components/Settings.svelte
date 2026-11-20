@@ -32,6 +32,8 @@
   import { backup, bringBack, checkBackup, forgetBackup, keepSafe } from '../lib/backup/backup.svelte';
   import { gpuNotice, openGpuNotice, shownFix } from '../lib/gpuNotice.svelte';
   import SigilPicker from './SigilPicker.svelte';
+  import AuraPicker from './AuraPicker.svelte';
+  import { WORN, type AuraKind } from '../lib/auraKinds';
 
   let { over = false }: { over?: boolean } = $props();
 
@@ -149,12 +151,23 @@
   let earned = $state(achievementsIn(loadAchievements()));
   onMount(() => onStoredElsewhere({ [ACHIEVEMENTS_KEY]: () => (earned = achievementsIn(loadAchievements())) }));
   let unlocked = $state(0);
+  /** The aura worn (AuraPicker), shown on the sigils' token, and how many are found. */
+  let aura = $state<AuraKind | null>(null);
+  let found = $state(0);
   /**
    * Wide enough for the twelve in a row beside the avatar, each still its
    * full size, and only with a pointer that hovers, which is what names each
    * one there. Otherwise they take the picker's own grid (and the page may scroll).
    */
   const roomy = new MediaQuery('(min-width: 1100px) and (hover: hover)');
+  /**
+   * Roomy but short (a 13-inch laptop's 725): no height for the auras' own
+   * row under the twelve, measured (the page ran 35 px past with every gap
+   * at the lobby's), so they share the twelve's row, switched by the two headings.
+   */
+  const short = new MediaQuery('(max-height: 760px)');
+  const shared = $derived(roomy.current && short.current);
+  let pane = $state<'sigils' | 'auras'>('sigils');
 
   // ---- keys ----
 
@@ -400,14 +413,37 @@
       <section class="col block keys panel" use:backdropShadow={{ fill: 'linear' }} in:fly={enter(30, 200)}>{@render keys()}</section>
     {/if}
 
-    <!-- Under both columns, the width of the page: the twelve in a row. -->
+    <!-- Under both columns, the width of the page: the twelve in a row, and the auras under them, worn on the same token. -->
     {#if !over}
       <section class="block sigil-row" in:fly|global={calm({ y: 20, duration: 500, delay: 110 })}>
-        <header>
-          <h2>Class sigils</h2>
-          <span class="count">{unlocked} / {CLASSES.length}</span>
-        </header>
-        <SigilPicker achievements={earned} bind:unlocked strip={roomy.current} hue={kept ?? colour ?? 0} />
+        {#if shared}
+          <!-- A short window: the two headings switch the row between them, the token beside either. -->
+          <header class="switch">
+            <h2><button aria-pressed={pane === 'sigils'} onclick={() => (pane = 'sigils')}>Class sigils <span class="count">{unlocked} / {CLASSES.length}</span></button></h2>
+            <h2><button aria-pressed={pane === 'auras'} onclick={() => (pane = 'auras')}>Auras <span class="count">{found} / {WORN.length}</span></button></h2>
+          </header>
+        {:else}
+          <header>
+            <h2>Class sigils</h2>
+            <span class="count">{unlocked} / {CLASSES.length}</span>
+          </header>
+        {/if}
+        <div class="pickers" class:shared>
+          <SigilPicker achievements={earned} bind:unlocked strip={roomy.current} hue={kept ?? colour ?? 0} {aura} token={shared && pane === 'auras'} />
+          <!-- In a row, their heading stands beside their line, under the sigils' token; sharing its row, the token stands there. -->
+          {#snippet auraHead()}
+            {#if !shared}
+              <header class="aura-head" class:folded={roomy.current}>
+                <h2>Auras</h2>
+                <span class="count">{found} / {WORN.length}</span>
+              </header>
+            {/if}
+          {/snippet}
+          {#if !roomy.current}{@render auraHead()}{/if}
+          <div class="aura-pane" class:away={shared && pane === 'sigils'} inert={shared && pane === 'sigils'}>
+            <AuraPicker strip={roomy.current} head={auraHead} bind:worn={aura} bind:found />
+          </div>
+        </div>
       </section>
     {/if}
   </div>
@@ -926,6 +962,57 @@
   .sigil-row header {
     margin-bottom: 0.25rem;
   }
+  .sigil-row .aura-head {
+    margin-top: 0.9rem;
+  }
+  .sigil-row :global(.auras.strip) {
+    margin-top: 0.6rem;
+  }
+  /* Sharing a row: both in the one place, the one not shown kept unseen. */
+  .pickers.shared {
+    display: grid;
+    align-items: center;
+  }
+  .pickers.shared > :global(*) {
+    grid-area: 1 / 1;
+  }
+  .pickers.shared :global(.auras.strip) {
+    margin-top: 0;
+  }
+  .aura-pane.away {
+    visibility: hidden;
+  }
+  /* The two headings as the switch: the one shown in gold, the other a step down until hovered. */
+  .sigil-row .switch {
+    justify-content: flex-start;
+    gap: 1.6rem;
+  }
+  .switch button {
+    padding: 0;
+    background: none;
+    border: 0;
+    font: inherit;
+    letter-spacing: inherit;
+    color: var(--note-hi);
+    cursor: pointer;
+    transition: color 0.2s;
+  }
+  .switch button:hover {
+    color: var(--gold-hi);
+  }
+  .switch button[aria-pressed='true'] {
+    color: var(--gold);
+    cursor: default;
+  }
+  .switch .count {
+    margin-left: 0.35rem;
+  }
+  /* Beside the auras' line, in the row, under the token: the heading over its count. */
+  .sigil-row .aura-head.folded {
+    flex-direction: column;
+    gap: 0;
+    margin: 0;
+  }
   .count {
     font-family: var(--font-cinzel);
     font-size: 0.85rem;
@@ -1056,25 +1143,25 @@
       --len: 140px;
     }
   }
-  /* A short window, a 13-inch laptop's: the lobby's tighter rhythm (its rows and sections closer), so the page and its
-     sigils stay in the window before anything gets smaller. */
+  /* A short window, a 13-inch laptop's: the lobby's tighter rhythm (its rows, 0.35rem, and sections closer), so the
+     page, its sigils and auras stay in the window before anything gets smaller. */
   @media (min-width: 1100px) and (max-height: 760px) {
     .settings:not(.over) .col.side {
       gap: 0.9rem;
     }
     .settings:not(.over) .row {
-      padding: 0.5rem 0;
+      padding: 0.35rem 0;
     }
     .settings:not(.over) .sync-row {
       margin-top: 0.35rem;
       padding-bottom: 0;
     }
     .settings:not(.over) .name-row {
-      padding-top: 0.5rem;
+      padding-top: 0.35rem;
     }
     .settings:not(.over) .sigil-row {
-      margin-top: 0.75rem;
-      padding-top: 0.45rem;
+      margin-top: 0.6rem;
+      padding-top: 0.4rem;
     }
   }
   /* Desktop: the lobby's stage, straight on the backdrop, the columns in the middle of the window's height. */
