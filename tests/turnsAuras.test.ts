@@ -373,6 +373,24 @@ test('no card in a deathmatch: its one card is drawn, not chosen', () => {
   assert.equal(h.dealt(), null);
 });
 
+test('a turn skipped, or its player removed: the card goes with the turn, missed by nobody; the next offer is dealt afresh', () => {
+  const h = game({ players: ['Ash', 'Brea'], streak: () => 5 });
+  const me = h.on();
+  h.pick(h.plant('mirror'));
+  h.act({ type: 'skip' });
+  assert.deepEqual(turnsMissed(h.s), []);
+  assert.equal(carriedStreak(h.s, me), 5, 'no answer, no change');
+  assert.notEqual(h.on(), me);
+  // The player on turn removed while a card is on their offer: the next player's offer is dealt for them.
+  const r = game({ players: ['Ash', 'Brea', 'Cal'], owned: (id) => (id === 'p1' ? onlyLacks('mirror') : ALL_AURAS) });
+  r.edit((c) => (c.turn = c.players.findIndex((p) => p.id === 'p1')));
+  r.plant('mirror');
+  r.act({ type: 'remove', playerId: 'p1' });
+  assert.ok(!r.s.players.some((p) => p.id === 'p1'));
+  assert.equal(r.s.phase, 'choosing');
+  assert.equal(r.dealt(), null, 'they own them all: nothing for them');
+});
+
 // ---- Divinity's streak, carried ---------------------------------------------------
 
 test('Divinity: the streak carried in, with this game’s right answers, deals it at 10', () => {
