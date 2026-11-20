@@ -14,6 +14,7 @@ import { backdropsErrors, formatBackdrops, type Backdrops } from './src/lib/back
 import { PROFILE_NAMES } from './src/lib/emberProfiles.ts';
 import { preloadedWith } from './src/lib/retriedPages.ts';
 import { glslMinify } from './glslMinify.ts';
+import { itemCount } from './itemCount.ts';
 import { keyframesFirst } from './keyframesFirst.ts';
 import { polyfillsFirst, polyfillsScript, readableRegexes } from './polyfillsFirst.ts';
 import { peerjsProbe } from './peerjsProbe.ts';
@@ -365,7 +366,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     // Relative base so the build works on any GitHub Pages sub-path.
     base: './',
-    plugins: [svelte(), glslMinify(), peerjsProbe(), polyfillsFirst(), csp(env), errorsFirst(), readableRegexes(), betaPages(env), preloadFonts(), fontinNotice(), keyframesFirst(), backdropSave(), devHub(env), weaveTile(), whereMaps(), qaServer(process.cwd())],
+    plugins: [svelte(), glslMinify(), itemCount(), peerjsProbe(), polyfillsFirst(), csp(env), errorsFirst(), readableRegexes(), betaPages(env), preloadFonts(), fontinNotice(), keyframesFirst(), backdropSave(), devHub(env), weaveTile(), whereMaps(), qaServer(process.cwd())],
     css: { postcss: { plugins: [hoverOnlyWhereHoverable, themedCursors, stillMark] } },
     // Not the scripts' builds, runs and profiles, nor other worktrees: walking them held up a cold start (unwatched.ts).
     // From this checkout down, where the config is (the QA desk's "before" server loads its own from elsewhere).

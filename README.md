@@ -526,10 +526,11 @@ What crawlers read, none of it shown to a player whose browser runs the game:
 `public/sitemap.xml` (the game’s page; the beta, the stats and the legal pages
 are noindex), and in `index.html` a JSON-LD block (the site’s name, the one
 Google shows above a result, and the game) and a `<noscript>` describing the
-game, the only text in the page for a crawler that doesn’t run it. Their
-numbers (items, achievements, room size, lives) are typed in;
-`tests/indexCounts.test.ts` fails when the game’s change, after a data
-refresh, say.
+game, the only text in the page for a crawler that doesn’t run it. The item
+count in them is `{{items}}` in `index.html`, filled in from
+`src/data/items.json` by the build (`itemCount.ts`), so a data refresh needs
+no edit; the other numbers (achievements, room size, lives) are typed in, and
+`tests/indexCounts.test.ts` fails when the game’s change.
 
 `.github/workflows/indexnow.yml` tells the engines that take IndexNow (Bing,
 and so DuckDuckGo, Yahoo and Ecosia; Yandex, Seznam, Naver, Yep, Amazon) when

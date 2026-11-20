@@ -1,7 +1,8 @@
 // index.html's numbers (the description, the JSON-LD and the noscript a
-// crawler reads) are typed in by hand. Held to the game's own here, so a data
-// refresh that changes one (npm run fetch-data after a patch adds uniques)
-// fails until the page says the new number.
+// crawler reads). The item count, which a data refresh changes (npm run
+// fetch-data after a patch adds uniques), is filled in as the page is built
+// (itemCount.ts); the rest change only with the code, and are typed in, held
+// to the game's own here.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,6 +11,7 @@ import { items } from './helpers.ts';
 import { ACHIEVEMENTS } from '../src/lib/achievements.ts';
 import { DELVE_LIVES } from '../src/lib/delve.ts';
 import { MAX_PLAYERS } from '../src/lib/game.ts';
+import { fillItemCount, ITEM_COUNT_MARK } from '../itemCount.ts';
 
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen'];
@@ -17,10 +19,13 @@ const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'e
 /** Every number the pattern's first group catches, as a number (digits or a word). */
 const all = (re: RegExp) => [...html.matchAll(re)].map((m) => (/^\d+$/.test(m[1]) ? Number(m[1]) : WORDS.indexOf(m[1].toLowerCase())));
 
-test('index.html counts the items the game has', () => {
-  const said = all(/(\d+) uniques and lineage gems/g);
+test('index.html counts the items the game has, filled in as it’s built', () => {
+  assert.doesNotMatch(html, /\d+ uniques and lineage gems/, `write the count as ${ITEM_COUNT_MARK}, for the build to fill in (itemCount.ts)`);
+  const built = fillItemCount(html, items.length);
+  const said = [...built.matchAll(/(\d+) uniques and lineage gems/g)].map((m) => Number(m[1]));
   assert.ok(said.length >= 3, 'the description, the JSON-LD and the noscript each say how many');
   for (const n of said) assert.equal(n, items.length);
+  assert.ok(!built.includes(ITEM_COUNT_MARK));
 });
 
 test('index.html counts the achievements the game has', () => {
