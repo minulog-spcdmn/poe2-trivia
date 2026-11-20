@@ -61,10 +61,10 @@ import { toasts, type ToastKind, type ToastOptions } from './toasts.svelte';
 import { creatorArrival } from './herald';
 import { RUBY } from './palette';
 import { CREATOR_TITLE } from './site';
-import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, runFossils, livesOf, pausedUsed, RUSH_DEFAULTS, rushTuning, standingIds, type CardFind, type FindKind } from './delve';
+import { DELVE_FUSE_MS, LOOKALIKES_ASKED_FROM, awaitingReturn, clockLeft, dealIn, digOf, fuseDue, fuseLeft, findOffers, isGroupRun, runAuras, runFossils, livesOf, pausedUsed, RUSH_DEFAULTS, rushTuning, standingIds, type CardFind, type FindKind } from './delve';
 import { GameCounts, RoomOff, Steps, countEvent, countFailure, countGameFrames, countStep, counting, hiddenSince, markActive, type Failure, type JoinVia } from './count';
 import { loadLooks } from './looks';
-import { bestOf, loadRecords, recordLeft, recordRun, runEvent } from './delveRecord';
+import { bestOf, loadRecords, recentBest, recordLeft, recordRun, runEvent } from './delveRecord';
 import { LEFT_KEY, forgiveLeaving, noteLeaving } from './versus';
 import { keeping } from './keptCopy';
 import {
@@ -100,8 +100,9 @@ import { peerCursors } from './peerCursors.svelte';
 import { whenCalm, whenIdle, type Deadline } from './idle';
 import { frameEvent } from './fpsMeter';
 import { SIGILS_KEY, loadSigils } from './sigils';
-import { AURAS_KEY, loadAuras, wornAura as auraWorn } from './auraStore';
-import { shownAura, type AuraKind } from './auraKinds';
+import { AURAS_KEY, keepRunAuras, loadAuras, ownedAuras, wornAura as auraWorn } from './auraStore';
+import { auraMask, shownAura, type AuraKind } from './auraKinds';
+import type { AuraHeld } from './game';
 import { COLOUR_KEY, loadColour } from './colour';
 import type { PlayerClass } from './classSigils';
 import { helloRefusal, noPrivate, parseSaved, privateFrom, rememberSecret, soloHotSeat, takesState, tooFast, type HostPrivate, type Saved } from './sessionRules';
@@ -386,6 +387,9 @@ interface Guest {
   lines?: number[];
   /** The Delve fossils its hello says its device holds (a mask, fossils.ts), kept up as runs give it more. */
   fossils?: number;
+  /** The player auras its hello says its device owns (a mask, auraKinds.ts auraMask), kept up as runs give it more, and the deepest of its last Delve runs (Slayer's, delveRecord.ts recentBest). */
+  auras?: number;
+  slayer?: number;
   /** Its hello, under the held name, waits on the owner key's signature being checked. */
   checking?: boolean;
   /** This link's hello carried the owner key's signature, checked (handleHello): only such a link may close the room. */
@@ -441,6 +445,18 @@ interface AheadArt extends Ahead {
 /** What a hello says of this device's Delve fossils, for the host's deal: which it holds. */
 function fossilsHello(): { fossils: number } {
   return { fossils: heldMask(loadFossils()) };
+}
+
+/** What this device knows for the aura deal (Engine.setAurasHeld): the auras it owns, and the deepest of its last Delve runs. */
+function ownAuraHeld(): AuraHeld {
+  const best = recentBest(loadRecords());
+  return { owned: auraMask(ownedAuras(loadAuras())), ...(best !== undefined ? { best } : {}) };
+}
+
+/** What a hello says of it, for the host's aura deal (auraDeal.ts). */
+function aurasHello(): { auras: number; slayer?: number } {
+  const { owned, best } = ownAuraHeld();
+  return { auras: owned, ...(best !== undefined ? { slayer: best } : {}) };
 }
 
 class Session {
@@ -1257,6 +1273,8 @@ class Session {
           guest.colour = msg.colour;
           guest.lines = msg.lines;
           guest.fossils = msg.fossils;
+          guest.auras = msg.auras;
+          guest.slayer = msg.slayer;
           clearTimeout(helloTimer);
           this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch, !!msg.seal, msg.owner);
         } else if (msg.t === 'pong') {
@@ -2629,7 +2647,7 @@ class Session {
     const secret = await this.helloSecret;
     const owner = isHeldName(cleanName(this.joinName)) ? await this.signHello(conn) : null;
     if (secret && this.hostConn === conn && conn.open)
-      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}), ...wornSigil(), ...wornAura(), ...likedColour(), lines: seenLines(), ...fossilsHello() });
+      conn.send({ t: 'hello', secret, name: this.joinName, v: PROTOCOL_VERSION, tab: myTab, ...(this.watchOnly ? { watch: true } : {}), ...(lane ? { lane: true } : {}), seal: true, ...(owner ? { owner } : {}), ...wornSigil(), ...wornAura(), ...likedColour(), lines: seenLines(), ...fossilsHello(), ...aurasHello() });
     this.watchOwnPresence();
   }
 
@@ -3026,6 +3044,20 @@ class Session {
   /** Host: the fossils each guest's device holds by player id (fossilsHeld), kept past a dropped link. */
   private guestFossils = new Map<string, number>();
 
+  /**
+   * Delve: what the aura deal knows of each of `ids`' devices (Engine.setAurasHeld):
+   * a guest's as its hello said and runs since gave, this device's for anyone playing at it.
+   */
+  aurasHeld(ids: string[]): AuraHeld[] {
+    for (const g of this.guests.values()) if (g.playerId && g.auras !== undefined) this.guestAuras.set(g.playerId, { owned: g.auras, ...(g.slayer !== undefined ? { best: g.slayer } : {}) });
+    const players = this.state?.players ?? [];
+    const own = (id: string) => this.mode === 'local' || id === this.myPlayerId || !!players.find((p) => p.id === id)?.local;
+    let mine: AuraHeld | null = null;
+    return ids.map((id) => (own(id) ? (mine ??= ownAuraHeld()) : (this.guestAuras.get(id) ?? { owned: 0 })));
+  }
+  /** Host: what the aura deal knows of each guest's device by player id (aurasHeld), kept past a dropped link. */
+  private guestAuras = new Map<string, AuraHeld>();
+
   /** The grayscale a question's art is prepared with: the rules', or as rolled for it in Delve (the lab may force one). */
   private grayscaleOf(s: GameState): Grayscale {
     return this.labGrayscale ?? grayscaleFor(s);
@@ -3056,6 +3088,16 @@ class Session {
         for (const g of this.guests.values()) if (g.playerId === to) g.fossils = (g.fossils ?? 0) | fossilMask([id]);
         const was = this.guestFossils.get(to);
         if (was !== undefined) this.guestFossils.set(to, was | fossilMask([id]));
+      }
+    }
+    // Likewise an aura (auraDeal.ts).
+    const found = next.reveal?.aura;
+    if (this.isHost && found && prev?.reveal?.aura !== found) {
+      const bit = auraMask([found.kind]);
+      for (const to of found.to) {
+        for (const g of this.guests.values()) if (g.playerId === to) g.auras = (g.auras ?? 0) | bit;
+        const was = this.guestAuras.get(to);
+        if (was) this.guestAuras.set(to, { ...was, owned: was.owned | bit });
       }
     }
     // The art's workers are ready before the first question wants them (media.svelte.ts; once is enough).
@@ -3204,6 +3246,22 @@ class Session {
     if (counting && completedBy(kept)) countEvent('fossil/complete');
   }
 
+  /**
+   * The auras a run gave this device's player (auraDeal.ts) are theirs for
+   * good (auraStore.ts gainAura, with the mode and depth), and one new to
+   * them is worn at once, for the room to see from the lobby on (wearSigil;
+   * a game keeps the one each came in with). On one device, whoever played.
+   * Read from the run's state as it comes, as the fossils are, so a dropped
+   * link or a reload never loses one; one owned already is left as it is,
+   * so a reload never puts it back on over another worn since.
+   */
+  private noteAura(prev: GameState | null, next: GameState) {
+    const given = runAuras(next);
+    if (!given.length) return;
+    if (prev && prev.delve?.startedAt === next.delve?.startedAt && runAuras(prev).length === given.length) return;
+    if (keepRunAuras(given, this.myPlayerId, this.mode === 'local').length) this.wearSigil();
+  }
+
   private gameCounts = new GameCounts();
   private steps = new Steps();
   /**
@@ -3238,6 +3296,7 @@ class Session {
     countGameFrames(next);
     this.noteRun(prev, next);
     this.noteFossil(prev, next);
+    this.noteAura(prev, next);
     this.onNewState(prev, next);
     this.noteEncounter(prev, next);
     this.noteMoments(prev, next);
@@ -4077,6 +4136,7 @@ function writeSaved(saved: Saved | null) {
 export const session = new Session();
 engine.setStartLines((ids) => session.startLinesSeen(ids));
 engine.setFossilsHeld((ids) => session.fossilsHeld(ids));
+engine.setAurasHeld((ids) => session.aurasHeld(ids));
 // The Sulphite rush, in every run this page starts: as RUSH_DEFAULTS has it, or off the live game as the URL tunes it (delve.ts rushTuning).
 engine.setRush(CHANNEL === 'live' || typeof location === 'undefined' ? RUSH_DEFAULTS : rushTuning(location.search));
 // The screen kept on in a room online, and let go of out of it, whatever moves the session there.

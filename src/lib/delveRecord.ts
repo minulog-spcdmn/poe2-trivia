@@ -411,6 +411,19 @@ export function climbOf(r: DelveRecords, solo: boolean, ruleset = DELVE_RULESET)
   return r.climbs[bestKey(ruleset, solo)] ?? [];
 }
 
+/** How many of the latest runs Slayer's best is taken from (recentBest). */
+export const RECENT_RUNS = 10;
+
+/**
+ * The deepest of the latest RECENT_RUNS counted runs (ended, under this
+ * ruleset), alone and together alike: the depth a run at it beats with its
+ * next right answer (Slayer, lib/auraDeal.ts). Undefined with none.
+ */
+export function recentBest(r: DelveRecords, ruleset = DELVE_RULESET): number | undefined {
+  const runs = r.runs.filter((run) => counts(run) && run.ruleset === ruleset).slice(-RECENT_RUNS);
+  return runs.length ? Math.max(...runs.map((run) => run.depth)) : undefined;
+}
+
 /**
  * The deepest end alone or together under a ruleset (this one by default):
  * the best's, or (if the best was lost, records written by a broken build)

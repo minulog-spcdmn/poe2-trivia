@@ -19,7 +19,7 @@
 // onCountToggle below reads it instead.
 
 import { CHANNEL, type Channel } from './channel.ts';
-import { findOffers, fossilOffer, missedFossils, nobodyStands, shownDepth, teamDepth } from './delve.ts';
+import { auraOffer, findOffers, fossilOffer, missedAuras, missedFossils, nobodyStands, shownDepth, teamDepth } from './delve.ts';
 import type { GameState } from './game.ts';
 import { COUNTER_ORIGIN } from './counter.ts';
 import { isoWeek } from './isoWeek.ts';
@@ -741,12 +741,29 @@ export function fossilEvents(prev: GameState | null, next: GameState): string[] 
   return [];
 }
 
-/** gameEvents for one device's games, a Delve run's end counted once whatever becomes of who stands after; its fossils (fossilEvents) beside them. */
+/**
+ * Delve's auras (auraDeal.ts), on the device that runs the game, as the
+ * fossils are counted: an aura card dealt ("aura/seen", once an offer), one
+ * won ("aura/won": a right answer that gave it, once however many took
+ * it), and an aura card's question missed ("aura/missed": answered wrong or
+ * run out of time). How often one turns up, and how often one taken is won.
+ */
+export function auraEvents(prev: GameState | null, next: GameState): string[] {
+  if (!prev?.delve || !next.delve) return [];
+  if (next.phase === 'choosing' && auraOffer(next) && (prev.phase !== 'choosing' || prev.round !== next.round || prev.offered.join() !== next.offered.join()))
+    return ['aura/seen'];
+  const revealed = next.phase === 'reveal' && next.reveal && (prev.phase !== 'reveal' || prev.question?.askedAt !== next.question?.askedAt);
+  if (revealed && next.reveal!.aura) return ['aura/won'];
+  if (missedAuras(next).length > missedAuras(prev).length) return ['aura/missed'];
+  return [];
+}
+
+/** gameEvents for one device's games, a Delve run's end counted once whatever becomes of who stands after; its fossils and auras (fossilEvents, auraEvents) beside them. */
 export class GameCounts {
   private ended: number | null = null;
 
   events(prev: GameState | null, next: GameState): string[] {
-    return [...fossilEvents(prev, next), ...this.ends(prev, next)];
+    return [...fossilEvents(prev, next), ...auraEvents(prev, next), ...this.ends(prev, next)];
   }
 
   private ends(prev: GameState | null, next: GameState): string[] {

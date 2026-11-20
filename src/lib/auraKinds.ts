@@ -69,6 +69,24 @@ export function shownAura(aura: unknown, _sigil: unknown): AuraKind | undefined 
 export const auraSlot = (k: AuraKind) => AURAS.indexOf(k) + 1;
 
 /**
+ * A set of auras as one number, a bit each in AURAS' order (the hello's
+ * `auras`, which a Delve host deals by: lib/auraDeal.ts). AURAS only ever
+ * grows at its end (the shader's slots go by it too), so a bit means the
+ * same aura to every build.
+ */
+export const auraMask = (kinds: Iterable<AuraKind>) => {
+  let m = 0;
+  for (const k of kinds) if (isAuraKind(k)) m |= 1 << AURAS.indexOf(k);
+  return m;
+};
+/** Every aura this build knows, as a mask. */
+export const ALL_AURAS = (1 << AURAS.length) - 1;
+/** Whether mask `m` holds `kind`. */
+export const holdsAura = (m: number, kind: AuraKind) => (m & (1 << AURAS.indexOf(kind))) !== 0;
+/** A mask as it arrives (a hello's), down to the auras this build knows; null for one that doesn't read as a mask at all. A newer build's further auras are left out, the ones known kept. */
+export const cleanAuraMask = (v: unknown): number | null => (typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 0x7fffffff ? v & ALL_AURAS : null);
+
+/**
  * Each aura's own light for what's lit about it (an aura's card's edge as
  * it's hovered and chosen, ChooseCategory.svelte): its main colour and its
  * palest, in the effects' HDR (lib/fx/effects.ts's C).

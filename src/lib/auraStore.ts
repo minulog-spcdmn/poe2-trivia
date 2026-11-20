@@ -153,6 +153,25 @@ export const gainAura = (kind: AuraKind, found: FoundAura) => change((s) => gain
 /** Wears `kind`, one owned (null: none). */
 export const wearAura = (kind: AuraKind | null) => change((s) => wear(s, kind));
 
+/**
+ * The auras a Delve run gave (`given`, as its state has them: delve.ts
+ * runAuras) kept on this device: those given to `me` (on one device,
+ * `local`, all of them), each owned from then with where it was found, and
+ * one new to the player worn at once. One owned already is left as it is
+ * (a reload, a rejoin), so it never goes back on over another worn since.
+ * Says which were new.
+ */
+export function keepRunAuras(given: readonly { kind: AuraKind; depth: number; at: number; to: readonly string[] }[], me: string | null, local: boolean): AuraKind[] {
+  const kept: AuraKind[] = [];
+  for (const a of given) {
+    if (!local && (me === null || !a.to.includes(me))) continue;
+    if (owns(loadAuras(), a.kind) || !gainAura(a.kind, { at: a.at, mode: 'delve', depth: a.depth })) continue;
+    wearAura(a.kind);
+    kept.push(a.kind);
+  }
+  return kept;
+}
+
 /** This device's auras as stored, for sync to pass on (lib/sync/shared.ts); null for none. */
 export const ownAurasRaw = () => tryReadStored(NAME) ?? null;
 

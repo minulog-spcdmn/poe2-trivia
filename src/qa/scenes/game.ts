@@ -21,6 +21,7 @@ import type { Built, Scene, Seat, Step } from '../scene.ts';
 import { FOSSILS, fossilMask, type FossilId, type FossilTier } from '../../lib/fossils.ts';
 import { serializeFossils, type FossilStore } from '../../lib/fossilStore.ts';
 import { AURA_NAMES, WORN, type AuraKind } from '../../lib/auraKinds.ts';
+import { AURA_DROPS, TABLETS } from '../../lib/auraDeal.ts';
 import backdrops from '../../data/backdrops.json' with { type: 'json' };
 
 /** Who sits down, in order: any game's players are the first so many. */
@@ -544,6 +545,7 @@ export function gameScenes(): Scene[] {
     delveAloneScene(),
     delveFossilScene(),
     delveAuraCardScene(),
+    delveAuraScene(),
     delveRushScene(),
     // Delve together's moments, a run of three by default. Finds among the
     // team's cards too, as Delve alone deals them (its notes beside the cards
@@ -1017,6 +1019,42 @@ export function gameScenes(): Scene[] {
         if (cat !== 'dealt') t.s.offered = t.s.offered.map((c, i) => (i === 1 ? cat : c === cat ? t.s.offered[1] : c));
         t.s.delve!.finds = [];
         if (v.fossil !== false) t.s.delve!.fossil = { category: t.s.offered[2], tier: 'common' };
+        return shown(t, v);
+      },
+    });
+  }
+
+  /**
+   * An aura on a card in a run (lib/auraDeal.ts), as the deal puts it there
+   * (the run's state, not the try-out above): on the middle card, or for
+   * Precursor Engine on the tablets' card. Its question is the depth's own,
+   * but Delirium's picture mirrored, Shadow's art grey and Precursor
+   * Engine's a tablet (auraForcing), asked by picking the card here.
+   */
+  function delveAuraScene(): Scene {
+    return scene('delve-aura', 'Delve alone', 'An aura on a card', [ALONE], delveAlone, {
+      controls: [
+        moment([
+          ['cards', 'The cards'],
+          ['question', 'Its question'],
+        ]),
+        { kind: 'choice', key: 'kind', label: 'Its aura', default: 'breach', options: AURA_DROPS.map((d) => ({ value: d.kind, label: AURA_NAMES[d.kind].name })) },
+      ],
+      states: [
+        { label: 'Breach, the cards', values: { kind: 'breach' } },
+        { label: 'Delirium’s question, mirrored', values: { kind: 'delirium', at: 'question' } },
+        { label: 'Shadow’s question, grey', values: { kind: 'shadow', at: 'question' } },
+        { label: 'Precursor Engine’s question, a tablet', values: { kind: 'tower', at: 'question' } },
+      ],
+      build: (v = {}) => {
+        const t = delveAlone();
+        const kind = (AURA_DROPS.some((d) => d.kind === v.kind) ? v.kind : 'breach') as AuraKind;
+        const tablets = t.engine.items.find((it) => it.group === TABLETS)!.category;
+        // Its card the middle one, or the tablets' there (swapped with the card that held it, if it was dealt).
+        if (kind === 'tower') t.s.offered = t.s.offered.map((c, i) => (i === 1 ? tablets : c === tablets ? t.s.offered[1] : c));
+        t.s.delve!.finds = [];
+        t.s.delve!.aura = { category: t.s.offered[1], kind };
+        if (v.at === 'question') t.pick(1);
         return shown(t, v);
       },
     });

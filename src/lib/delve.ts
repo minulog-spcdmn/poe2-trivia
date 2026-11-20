@@ -9,8 +9,9 @@
 // team votes for a card, everyone standing answers the one question, and a
 // teammate with lives to spare can bring back one who perished.
 
-import type { DifficultyRules, Dig, GameState, MissedFossil, Player, Preset, Question, RunFossil, Rush } from './game.ts';
+import type { CardAura, DifficultyRules, Dig, GameState, MissedAura, MissedFossil, Player, Preset, Question, RunAura, RunFossil, Rush } from './game.ts';
 import { isFossilId, isFossilTier, type CardFossil, type FossilId, type FossilTier } from './fossils.ts';
+import { isWornAura, type AuraKind } from './auraKinds.ts';
 import { veilSpan, type VeilPlan } from './patches.ts';
 
 export const DELVE_LIVES = 3;
@@ -1091,6 +1092,46 @@ export function missedFossils(s: GameState): MissedFossil[] {
 
 /** The fossils `id` was given this run, oldest first. */
 export const fossilsOf = (s: GameState, id: string): FossilId[] => runFossils(s).filter((f) => f.to.includes(id)).map((f) => f.id);
+
+// ---- auras (auraDeal.ts) -------------------------------------------------------
+
+/**
+ * The aura on a card on offer, as far as it reads sane (none outside a vote
+ * or a pick, on a card holding anything else or not on offer, in a dig or
+ * in older saves).
+ */
+export function auraOffer(s: GameState): CardAura | null {
+  const a = s.delve?.aura;
+  if (!a || s.phase !== 'choosing' || typeof a !== 'object' || !isWornAura(a.kind) || typeof a.category !== 'string') return null;
+  if (!s.offered.includes(a.category) || isWayOut(a.category) || digOf(s) || findOffers(s).some((o) => o.category === a.category)) return null;
+  if (fossilOffer(s)?.category === a.category || sulphiteCard(s) === a.category) return null;
+  return { category: a.category, kind: a.kind };
+}
+
+/** The aura on a card on offer, or null for any other card. */
+export const auraOn = (s: GameState, category: string): AuraKind | null => {
+  const a = auraOffer(s);
+  return a?.category === category ? a.kind : null;
+};
+
+const isIds = (v: unknown): v is string[] => Array.isArray(v) && v.every((id) => typeof id === 'string');
+
+/** The auras the run gave so far, oldest first, as far as they read sane (none outside Delve and in older saves). */
+export function runAuras(s: GameState): RunAura[] {
+  const all = s.delve?.auras;
+  if (!Array.isArray(all)) return [];
+  return all.filter((a): a is RunAura => !!a && typeof a === 'object' && isWornAura(a.kind) && isIds(a.to) && Number.isFinite(a.depth) && Number.isFinite(a.at));
+}
+
+/** The aura cards the run picked and missed so far, oldest first, as far as they read sane (none outside Delve and in older saves). */
+export function missedAuras(s: GameState): MissedAura[] {
+  const all = s.delve?.aurasMissed;
+  if (!Array.isArray(all)) return [];
+  return all.filter((a): a is MissedAura => !!a && typeof a === 'object' && isWornAura(a.kind) && isIds(a.to) && Number.isFinite(a.depth));
+}
+
+/** The auras `id` was given this run, oldest first. */
+export const aurasOf = (s: GameState, id: string): AuraKind[] => runAuras(s).filter((a) => a.to.includes(id)).map((a) => a.kind);
 
 /**
  * Seconds the question in play started with: a find's or the depth's (a
