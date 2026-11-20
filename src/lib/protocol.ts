@@ -28,7 +28,10 @@ import type { Place } from './prepArt.ts';
  *   aura), its question carries it (Question aura) and a right answer
  *   gives it (Reveal aura, Delve auras); a question blasted away says it
  *   (Blast was aura); the hello says which auras the guest owns (auras, a
- *   mask) and their Slayer best (slayer), for the host's deal. All
+ *   mask) and their Slayer best (slayer), for the host's deal. Take turns'
+ *   auras (auraDeal.ts, online at Merciless or Eternal): its card (GameState
+ *   turnAuras), and the hello says Divinity's streak the guest's device
+ *   carries across those games (divine). All
  *   optional: a build without them reads none.
  * - 34: the owner (seated under the held name, GameState owner) can close
  *   the room (close), everyone told so (closed's owner); the owner comes in
@@ -119,9 +122,10 @@ export type ClientMsg =
    * `lines`: the Delve start lines its device has shown, most recent first (delveStartSeen.ts), for the host's pick of a run's line.
    * `fossils`: the Delve fossils its device holds, as a mask (fossils.ts fossilMask), for the host's deal.
    * `auras`: the player auras its device owns, as a mask (auraKinds.ts auraMask), and `slayer` the deepest of its
-   * last Delve runs (delveRecord.ts recentBest, the engine's depth), for the host's aura deal (auraDeal.ts).
+   * last Delve runs (delveRecord.ts recentBest, the engine's depth), for the host's aura deal (auraDeal.ts);
+   * `divine` Divinity's streak its device carries across counted Take turns games (auraStore.ts loadAuraStreak).
    */
-  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean; owner?: OwnerProof; sigil?: PlayerClass; aura?: AuraKind; colour?: number; lines?: number[]; fossils?: number; auras?: number; slayer?: number }
+  | { t: 'hello'; secret: string; name: string; v: number; tab?: string; watch?: boolean; lane?: boolean; seal?: boolean; owner?: OwnerProof; sigil?: PlayerClass; aura?: AuraKind; colour?: number; lines?: number[]; fossils?: number; auras?: number; slayer?: number; divine?: number }
   | { t: 'action'; action: Action }
   | { t: 'pong'; n: number }
   /** Where this player's pointer is (cursors.ts), or null when it left the page; when it was sent, on its clock (cursors.ts STAMP). */
@@ -243,6 +247,8 @@ export function parseClientMsg(raw: unknown): ClientMsg | null {
         // The auras its device owns, those this build knows (a newer one's further ones left out), and its Slayer best (the engine's depth).
         ...(cleanAuraMask(raw.auras) !== null ? { auras: cleanAuraMask(raw.auras)! } : {}),
         ...(isInt(raw.slayer, 1, 999) ? { slayer: raw.slayer } : {}),
+        // Divinity's streak its device carries across counted Take turns games (auraStore.ts loadAuraStreak).
+        ...(isInt(raw.divine, 0, 1_000_000) ? { divine: raw.divine } : {}),
       };
     case 'pong':
       return isInt(raw.n, 0, Number.MAX_SAFE_INTEGER) ? { t: 'pong', n: raw.n } : null;

@@ -5,7 +5,21 @@ import { cleanName, isHeldName, nameProblem, nameSkeleton } from './names.ts';
 import { RUBY, isChoosableHue } from './palette.ts';
 import { isPlayerClass, type PlayerClass } from './classSigils.ts';
 import { auraMask, isAuraKind, isWornAura, type AuraKind } from './auraKinds.ts';
-import { BREACH_MS, CLOSE_MS, RITUAL_FROM_ZONE, SEALS_STREAK, TABLETS, auraForcing, canTake, dealAura, type AuraTaker } from './auraDeal.ts';
+import {
+  BREACH_MS,
+  CLOSE_MS,
+  RITUAL_FROM_ZONE,
+  SEALS_STREAK,
+  TABLETS,
+  auraForcing,
+  canTake,
+  carryStreak,
+  countedTurns,
+  dealAura,
+  dealTurnsAura,
+  type AuraTaker,
+} from './auraDeal.ts';
+import { carriedStreak, dealtTo, turnsAuras, turnsGiven } from './turnsAuras.ts';
 import type { Looks } from './looks.ts';
 import {
   DELVE_MAX_LOCKOUT,
@@ -673,6 +687,37 @@ export interface AuraFacts {
 export interface AuraHeld {
   owned: number;
   best?: number;
+  /** Take turns: Divinity's streak its device carries, right answers in a row across counted games (auraStore.ts loadAuraStreak). */
+  streak?: number;
+  /**
+   * Take turns: they play online on a device of their own (a guest whose
+   * hello said what it owns, or the host's own player in a room online).
+   * Take turns deals auras only to such: never on one device, nor to a
+   * player at the host's screen (Player.local), whose finds no device of
+   * theirs would keep.
+   */
+  online?: true;
+}
+
+/**
+ * Online Take turns at Merciless or Eternal (auraDeal.ts countedTurns): the
+ * aura deal's, for the game in play or just over. Missing in every other
+ * game, and in older saves. `streak` names those it deals to (online, on a
+ * device of their own: AuraHeld online), with Divinity's streak each
+ * carries (what they came in with, and this game's answers since); `quick`,
+ * `close` and `seals` are each one's as Delve's AuraFacts are the run's.
+ */
+export interface TurnsAuras {
+  /** The aura on a card of the offer on turn (one of `offered`), and which. */
+  card?: CardAura;
+  /** The auras this game gave, oldest first: which, when (host clock), and to whom. */
+  given?: { kind: AuraKind; at: number; to: string[] }[];
+  /** The aura cards this game picked and missed (answered wrong or out of time), oldest first. */
+  missed?: { kind: AuraKind; to: string[] }[];
+  streak: Record<string, number>;
+  quick?: Record<string, number>;
+  close?: string[];
+  seals?: string[];
 }
 
 /** A fossil card a Delve run picked and missed: at which depth, its tier, and who could have taken one (alone the answerer; together everyone in it who could). */
@@ -1253,6 +1298,8 @@ export interface GameState {
   recentCategories: string[];
   /** The Delve run in progress (or just over); null otherwise, missing in older saves. */
   delve?: Delve | null;
+  /** Online Take turns at Merciless or Eternal: its aura deal's (TurnsAuras). Missing otherwise, and in older saves. */
+  turnAuras?: TurnsAuras;
   /**
    * How many art questions each player is behind the difficulty's share
    * (negative: ahead), by player id; race mode keeps one for the room under
@@ -1712,7 +1759,8 @@ export class Engine {
     const held = this.heldAuras?.(ids) ?? [];
     const facts = s.delve?.auraFacts;
     return ids.map((id, i) => {
-      const run = runAuras(s).filter((a) => a.to.includes(id));
+      // (Take turns: what the game gave them.)
+      const run = [...runAuras(s), ...turnsGiven(s)].filter((a) => a.to.includes(id));
       const lives = livesOf(s, id);
       const best = held[i]?.best;
       return {
@@ -1783,20 +1831,111 @@ export class Engine {
    */
   private giveAura(s: GameState, q: Question, takers: string[]): Reveal['aura'] {
     const kind = q.aura;
-    if (!s.delve || !kind) return undefined;
+    const turns = turnsAuras(s);
+    if ((!s.delve && !turns) || !kind) return undefined;
     const ts = this.auraTakers(s, takers);
-    const to = takers.filter((_, i) => canTake(kind, ts[i]));
+    const to = takers.filter((id, i) => canTake(kind, ts[i]) && (!!s.delve || dealtTo(s, id)));
     if (!to.length) return undefined;
-    (s.delve.auras ??= []).push({ kind, depth: s.round, at: this.now(), to });
+    if (s.delve) (s.delve.auras ??= []).push({ kind, depth: s.round, at: this.now(), to });
+    else (turns!.given ??= []).push({ kind, at: this.now(), to });
+    // Worn at once, by the deal's own act (not the lobby's aura action): every screen draws it from now on.
+    for (const p of s.players) if (to.includes(p.id)) p.aura = kind;
     return { kind, to };
   }
 
   /** An aura's card (`q`) missed: noted for the end screen, with those of `ids` who could have taken it. */
   private missAura(s: GameState, q: Question, ids: string[]) {
     const kind = q.aura;
-    if (!s.delve || !kind) return;
+    const turns = turnsAuras(s);
+    if ((!s.delve && !turns) || !kind) return;
     const ts = this.auraTakers(s, ids);
-    (s.delve.aurasMissed ??= []).push({ kind, depth: s.round, to: ids.filter((_, i) => canTake(kind, ts[i])) });
+    const to = ids.filter((id, i) => canTake(kind, ts[i]) && (!!s.delve || dealtTo(s, id)));
+    if (s.delve) (s.delve.aurasMissed ??= []).push({ kind, depth: s.round, to });
+    else (turns!.missed ??= []).push({ kind, to });
+  }
+
+  /**
+   * As a counted Take turns game starts (auraDeal.ts countedTurns, where
+   * auras are dealt: setAurasHeld), its aura deal: those it deals to, each
+   * online on a device of their own (AuraHeld online; never one at the
+   * host's screen), with Divinity's streak they carry. None otherwise.
+   */
+  private openTurnsAuras(s: GameState) {
+    delete s.turnAuras;
+    // (A game on one device, hostId null, never: whatever the hook says.)
+    if (!this.heldAuras || !countedTurns(s.settings) || s.hostId === null) return;
+    const ids = s.players.map((p) => p.id);
+    const held = this.heldAuras(ids);
+    const streak: Record<string, number> = {};
+    ids.forEach((id, i) => {
+      const h = held[i];
+      if (!h?.online || s.players[i].local) return;
+      const n = h.streak;
+      streak[id] = typeof n === 'number' && Number.isInteger(n) && n >= 0 ? n : 0;
+    });
+    if (Object.keys(streak).length) s.turnAuras = { streak };
+  }
+
+  /**
+   * Which card of a Take turns offer holds an aura, if any (auraDeal.ts
+   * dealTurnsAura): for the player on turn, if the game deals to them, on a
+   * card drawn, or for Precursor Engine the tablets'. Never in a
+   * deathmatch; all from the aura deal's own random source.
+   */
+  private rollTurnsAura(s: GameState): CardAura | undefined {
+    const t = turnsAuras(s);
+    const p = s.players[s.turn];
+    if (!t || !p || s.deathmatch || !dealtTo(s, p.id) || !s.offered.length) return undefined;
+    const streak = p.streak ?? 0;
+    // Runic Seals is rolled once a streak: at 3 only once.
+    if (streak !== SEALS_STREAK && t.seals?.includes(p.id)) {
+      t.seals = t.seals.filter((id) => id !== p.id);
+      if (!t.seals.length) delete t.seals;
+    }
+    const [taker] = this.auraTakers(s, [p.id]);
+    const signs = {
+      eternal: s.settings.difficulty === 'eternal',
+      streak,
+      carried: carriedStreak(s, p.id) ?? 0,
+      quick: t.quick?.[p.id] ?? 0,
+      close: !!t.close?.includes(p.id),
+      timer: s.settings.timer > 0,
+      sealsRolled: !!t.seals?.includes(p.id),
+      score: p.score,
+      target: s.settings.targetScore,
+      players: s.players.length,
+      tablets: !!this.tablets && s.offered.includes(this.tablets),
+    };
+    const { kind, rolled } = dealTurnsAura(signs, taker, this.auraRng);
+    if (rolled.includes('runeseal') && !t.seals?.includes(p.id)) (t.seals ??= []).push(p.id);
+    if (!kind) return undefined;
+    const category = kind === 'tower' ? this.tablets! : s.offered[Math.min(s.offered.length - 1, Math.floor(this.auraRng() * s.offered.length))];
+    return { category, kind };
+  }
+
+  /**
+   * After a reveal in a counted Take turns game, for the player who
+   * answered (if it deals to them): Divinity's carried streak (one more
+   * right, or none on a miss), their right answers in a row within
+   * BREACH_MS, and whether it was right with under CLOSE_MS left.
+   */
+  private noteTurnsAura(s: GameState, r: Reveal, sent: number | undefined) {
+    const t = turnsAuras(s);
+    const q = s.question;
+    const id = s.players[s.turn]?.id;
+    if (!t || !q || !id || !dealtTo(s, id)) return;
+    t.streak[id] = carryStreak(carriedStreak(s, id) ?? 0, r.correct);
+    const now = this.now();
+    const ms = r.correct ? heldMs(sent, now - q.askedAt, now - (q.clockAt ?? q.askedAt)) : undefined;
+    const quick = { ...t.quick };
+    if (ms !== undefined && ms <= BREACH_MS) quick[id] = (quick[id] ?? 0) + 1;
+    else delete quick[id];
+    if (Object.keys(quick).length) t.quick = quick;
+    else delete t.quick;
+    const close = (t.close ?? []).filter((c) => c !== id);
+    if (r.correct && q.deadline !== null && q.deadline - now < CLOSE_MS) close.push(id);
+    if (close.length) t.close = close;
+    else delete t.close;
   }
 
   /**
@@ -2134,6 +2273,8 @@ export class Engine {
         s.artLean = {};
         s.delve = null;
         s.startedAt = this.now();
+        // Online Take turns at Merciless or Eternal: its aura deal, for those on a device of their own (auraDeal.ts countedTurns).
+        this.openTurnsAuras(s);
         s.recap = { answers: {}, misses: [] };
         if (s.settings.mode === 'delve') {
           // Every run draws from the whole pool, so one run's depth means the same as another's.
@@ -2305,6 +2446,8 @@ export class Engine {
           // A Dynamite Cache's blast takes one thing from their pack too.
           blown = this.blowUp(s, active.id);
         }
+        // Take turns: an aura's card missed (wrong or out of time) is gone.
+        if (!correct && !s.delve) this.missAura(s, q, [active.id]);
         // A rush's question: one of its questions used, and whether it ends here.
         if (s.delve && q.rush) this.settleRush(s, correct);
         if (!timedOut && chosenId && isFake(chosenId)) s.used.push(chosenId);
@@ -2411,6 +2554,7 @@ export class Engine {
         Object.assign(s, fresh);
         delete s.startedAt;
         delete s.recap;
+        delete s.turnAuras;
         if (!fresh.aside) delete s.aside;
         if (action.play) return this.apply(s, { type: 'start' }, from);
         break;
@@ -2556,6 +2700,7 @@ export class Engine {
       s.reveal.at = this.now();
       countStreaks(s, s.reveal);
       this.noteAuraFacts(s, s.reveal, action.type === 'answer' ? answerMs(action.ms) : undefined);
+      this.noteTurnsAura(s, s.reveal, action.type === 'answer' ? answerMs(action.ms) : undefined);
     }
     // Without a session to wait for the art, a question's clock starts as it is asked.
     const q = s.question;
@@ -2746,8 +2891,10 @@ export class Engine {
       fossil = fossilOn(s, category);
       // An aura's card asks the depth's own question, as its aura has it (auraDeal.ts auraForcing); a right answer gives the aura.
       aura = auraOn(s, category);
-    } else if (active && !s.deathmatch) {
-      active.recent = lastPicks([...active.recent, category], rulesFor(s.settings).lockout);
+    } else {
+      if (active && !s.deathmatch) active.recent = lastPicks([...active.recent, category], rulesFor(s.settings).lockout);
+      // Take turns: an aura's card asks the room's own question, as its aura has it (auraDeal.ts auraForcing).
+      aura = auraOn(s, category);
     }
     s.question = this.makeQuestion(s, category, kind, auraForcing(aura ?? undefined));
     if (fossil) s.question.fossil = fossil;
@@ -3526,6 +3673,11 @@ export class Engine {
       const aura = this.rollAura(s, takers);
       if (aura) s.delve.aura = aura;
       else delete s.delve.aura;
+    } else if (s.turnAuras) {
+      // Take turns: an aura for the player on turn, from the same random source, last on the offer.
+      const aura = this.rollTurnsAura(s);
+      if (aura) s.turnAuras.card = aura;
+      else delete s.turnAuras.card;
     }
   }
 
@@ -3547,6 +3699,7 @@ export class Engine {
       delete s.delve.asked;
       delete s.delve.dealAt;
     }
+    if (s.turnAuras) delete s.turnAuras.card;
     s.phase = 'over';
     s.winners = winners;
     s.question = null;

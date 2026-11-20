@@ -183,9 +183,112 @@ export function dealAura(g: AuraSigns, takers: readonly AuraTaker[], rand: () =>
   return { kind: null, rolled };
 }
 
-/** How Delve shows the question of a card holding `kind`: the depth's own, but Delirium's picture mirrored, Shadow's art grey, Precursor Engine's a tablet. */
+/** How the question of a card holding `kind` is shown: the depth's own (Take turns: the room's), but Delirium's picture mirrored, Shadow's art grey, Precursor Engine's a tablet. */
 export const auraForcing = (kind: AuraKind | undefined): { mirror?: true; gray?: true; group?: string } =>
   kind === 'delirium' ? { mirror: true } : kind === 'shadow' ? { gray: true } : kind === 'tower' ? { group: TABLETS } : {};
 
 /** The group of items Precursor Engine's question asks from (game.ts RARE_GROUPS has it rare). */
 export const TABLETS = 'Tablets';
+
+// ---- Take turns ------------------------------------------------------------------
+
+// Online Take turns at Merciless or Eternal deals aura cards too (counted
+// games: countedTurns), to the player on turn: an ordinary card of their
+// offer, one an offer at most, rolled as Delve's are (rarest tier first, the
+// first hit the card) from the same random source of the engine's, with
+// their own conditions and chances. Race, Custom, Cruel and a game on one
+// device deal none; nor does a deathmatch (its one card is drawn, not chosen).
+
+/** The difficulties whose online Take turns games deal auras and carry Divinity's streak. */
+export const COUNTED_DIFFICULTIES = ['merciless', 'eternal'] as const;
+
+/** Whether a game of these settings is one Take turns deals auras in (online aside, which the engine is told: AuraHeld online). */
+export const countedTurns = (settings: { mode: string; difficulty: string }) =>
+  settings.mode === 'turns' && (COUNTED_DIFFICULTIES as readonly string[]).includes(settings.difficulty);
+
+/**
+ * Every aura Take turns deals, in the order an offer rolls them: rarest tier
+ * first, within a tier as the owner listed them for Take turns (Shadow before
+ * Divinity, unlike Delve's), at Take turns' own chances.
+ */
+export const TURNS_AURA_DROPS: readonly AuraDrop[] = [
+  { kind: 'mirror', tier: 'mirror', chance: 0.00004242 },
+  { kind: 'shadow', tier: 'rare', chance: 0.0006139 },
+  { kind: 'divine', tier: 'rare', chance: 0.0057 },
+  { kind: 'breach', tier: 'uncommon', chance: 1 },
+  { kind: 'delirium', tier: 'uncommon', chance: 0.005391 },
+  { kind: 'chronomancer', tier: 'uncommon', chance: 0.3642 },
+  { kind: 'slayer', tier: 'uncommon', chance: 0.04778 },
+  { kind: 'runeseal', tier: 'common', chance: 0.3 },
+  { kind: 'tower', tier: 'common', chance: 0.1994 },
+  { kind: 'azmeri', tier: 'common', chance: 0.007321 },
+];
+
+/** Slayer in Take turns: only with a target of at least this many. */
+export const SLAYER_TARGET = 10;
+
+/** What a Take turns game says of the player on turn as their offer is dealt. */
+export interface TurnsSigns {
+  /** The room plays at Eternal (Shadow and Delirium deal only there). */
+  eternal: boolean;
+  /** Their right answers in a row this game (Runic Seals). */
+  streak: number;
+  /** Divinity: their right answers in a row across counted games (carried on their device, with this game's). */
+  carried: number;
+  /** Their right answers in a row each within BREACH_MS. */
+  quick: number;
+  /** Their last answer was right with under CLOSE_MS on its clock. */
+  close: boolean;
+  /** The room plays with a timer (Chronomancer only then). */
+  timer: boolean;
+  /** Runic Seals was rolled already at this streak. */
+  sealsRolled: boolean;
+  /** Their score, and the room's target. */
+  score: number;
+  target: number;
+  /** Players seated in the game. */
+  players: number;
+  /** The tablets' card is on their offer (Precursor Engine sits on it). */
+  tablets: boolean;
+}
+
+/** Whether `kind`'s condition holds on this Take turns offer (whether they could take it aside: canTake). */
+export function turnsAuraHolds(kind: AuraKind, g: TurnsSigns): boolean {
+  switch (kind) {
+    case 'mirror':
+      return true;
+    case 'shadow':
+    case 'delirium':
+      return g.eternal;
+    case 'divine':
+      return g.carried >= DIVINE_STREAK;
+    case 'breach':
+      return g.quick >= BREACH_IN_A_ROW;
+    case 'chronomancer':
+      return g.timer && g.close;
+    case 'slayer':
+      return g.target >= SLAYER_TARGET && g.score === g.target - 1;
+    case 'runeseal':
+      return g.streak === SEALS_STREAK && !g.sealsRolled;
+    case 'tower':
+      return g.tablets;
+    case 'azmeri':
+      return g.players >= AZMERI_PLAYERS;
+    default:
+      return false;
+  }
+}
+
+/** The aura a Take turns offer deals to `t`, the player on turn, if any: as dealAura, by TURNS_AURA_DROPS and turnsAuraHolds. */
+export function dealTurnsAura(g: TurnsSigns, t: Pick<AuraTaker, 'owned' | 'sigil'>, rand: () => number): { kind: AuraKind | null; rolled: AuraKind[] } {
+  const rolled: AuraKind[] = [];
+  for (const { kind, chance } of TURNS_AURA_DROPS) {
+    if (!canTake(kind, t) || !turnsAuraHolds(kind, g)) continue;
+    rolled.push(kind);
+    if (rand() < chance) return { kind, rolled };
+  }
+  return { kind: null, rolled };
+}
+
+/** Divinity's carried streak after an answer in a counted game: one more right, or back to none on a miss. */
+export const carryStreak = (was: number, correct: boolean) => (correct ? was + 1 : 0);

@@ -21,7 +21,7 @@ import type { Built, Scene, Seat, Step } from '../scene.ts';
 import { FOSSILS, fossilMask, type FossilId, type FossilTier } from '../../lib/fossils.ts';
 import { serializeFossils, type FossilStore } from '../../lib/fossilStore.ts';
 import { AURA_NAMES, WORN, type AuraKind } from '../../lib/auraKinds.ts';
-import { AURA_DROPS, TABLETS } from '../../lib/auraDeal.ts';
+import { AURA_DROPS, TABLETS, TURNS_AURA_DROPS } from '../../lib/auraDeal.ts';
 import backdrops from '../../data/backdrops.json' with { type: 'json' };
 
 /** Who sits down, in order: any game's players are the first so many. */
@@ -445,6 +445,7 @@ export function gameScenes(): Scene[] {
         .playTo((s) => s.phase === 'choosing' && s.players[s.turn].id === pid('Rog'))
         .pick(),
     ),
+    turnsAuraScene(),
     // A race's moments. A miss as it happens is seen from Kalguur's seat: his
     // own (the line under the answers saying it fades in), or a sixth on one
     // answer while he still answers (past five, its faces give way to four and
@@ -1055,6 +1056,52 @@ export function gameScenes(): Scene[] {
         t.s.delve!.finds = [];
         t.s.delve!.aura = { category: t.s.offered[1], kind };
         if (v.at === 'question') t.pick(1);
+        return shown(t, v);
+      },
+    });
+  }
+
+  /**
+   * An aura on a card in online Take turns (lib/auraDeal.ts, "Take turns"),
+   * as the deal puts it there: on Doryani's offer (his turn, seen from his
+   * seat), the middle card, or for Precursor Engine the tablets'. The game at
+   * Merciless, or Eternal for Shadow's and Delirium's (only there dealt). Its
+   * question is the room's own, but Delirium's picture mirrored, Shadow's art
+   * grey and Precursor Engine's a tablet; answered right, the aura is worn on
+   * his token at once, on every screen.
+   */
+  function turnsAuraScene(): Scene {
+    const dealt = (v: Values) => {
+      const kind = (TURNS_AURA_DROPS.some((d) => d.kind === v.kind) ? v.kind : 'breach') as AuraKind;
+      const eternal = kind === 'shadow' || kind === 'delirium';
+      const t = table(seated(v, 3), { difficulty: eternal ? 'eternal' : 'merciless' }).start();
+      const tablets = t.engine.items.find((it) => it.group === TABLETS)!.category;
+      // Its card the middle one, or the tablets' there (swapped with the card that held it, if it was dealt).
+      if (kind === 'tower') t.s.offered = t.s.offered.map((c, i) => (i === 1 ? tablets : c === tablets ? t.s.offered[1] : c));
+      // Everyone online on a device of their own (the session's hook, which the scenes' engine has none of).
+      t.s.turnAuras = { streak: Object.fromEntries(t.s.players.map((p) => [p.id, 0])), card: { category: t.s.offered[1], kind } };
+      return t;
+    };
+    return scene('turns-aura', 'Take turns', 'An aura on a card', turnsSeats, () => dealt({}), {
+      controls: [
+        moment([
+          ['cards', 'The cards'],
+          ['question', 'Its question'],
+          ['right', 'Answered right'],
+        ]),
+        { kind: 'choice', key: 'kind', label: 'Its aura', default: 'breach', options: TURNS_AURA_DROPS.map((d) => ({ value: d.kind, label: AURA_NAMES[d.kind].name })) },
+      ],
+      states: [
+        { label: 'Breach, the cards', values: { kind: 'breach' } },
+        { label: 'Delirium’s question, mirrored', values: { kind: 'delirium', at: 'question' } },
+        { label: 'Shadow’s question, grey', values: { kind: 'shadow', at: 'question' } },
+        { label: 'Precursor Engine’s question, a tablet', values: { kind: 'tower', at: 'question' } },
+        { label: 'Won: worn on his token at once', values: { kind: 'breach', at: 'right' } },
+      ],
+      build: (v = {}) => {
+        const t = dealt(v);
+        if (v.at === 'question' || v.at === 'right') t.pick(1);
+        if (v.at === 'right') t.answer(t.turn, true);
         return shown(t, v);
       },
     });

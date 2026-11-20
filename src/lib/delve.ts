@@ -1096,12 +1096,12 @@ export const fossilsOf = (s: GameState, id: string): FossilId[] => runFossils(s)
 // ---- auras (auraDeal.ts) -------------------------------------------------------
 
 /**
- * The aura on a card on offer, as far as it reads sane (none outside a vote
- * or a pick, on a card holding anything else or not on offer, in a dig or
- * in older saves).
+ * The aura on a card on offer, Delve's or Take turns' (GameState turnAuras),
+ * as far as it reads sane (none outside a vote or a pick, on a card holding
+ * anything else or not on offer, in a dig or in older saves).
  */
 export function auraOffer(s: GameState): CardAura | null {
-  const a = s.delve?.aura;
+  const a = s.delve ? s.delve.aura : s.turnAuras?.card;
   if (!a || s.phase !== 'choosing' || typeof a !== 'object' || !isWornAura(a.kind) || typeof a.category !== 'string') return null;
   if (!s.offered.includes(a.category) || isWayOut(a.category) || digOf(s) || findOffers(s).some((o) => o.category === a.category)) return null;
   if (fossilOffer(s)?.category === a.category || sulphiteCard(s) === a.category) return null;

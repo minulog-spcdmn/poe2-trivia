@@ -19,6 +19,7 @@
 // onCountToggle below reads it instead.
 
 import { CHANNEL, type Channel } from './channel.ts';
+import { turnsMissed } from './turnsAuras.ts';
 import { auraOffer, findOffers, fossilOffer, missedAuras, missedFossils, nobodyStands, shownDepth, teamDepth } from './delve.ts';
 import type { GameState } from './game.ts';
 import { COUNTER_ORIGIN } from './counter.ts';
@@ -742,19 +743,23 @@ export function fossilEvents(prev: GameState | null, next: GameState): string[] 
 }
 
 /**
- * Delve's auras (auraDeal.ts), on the device that runs the game, as the
- * fossils are counted: an aura card dealt ("aura/seen", once an offer), one
- * won ("aura/won": a right answer that gave it, once however many took
- * it), and an aura card's question missed ("aura/missed": answered wrong or
- * run out of time). How often one turns up, and how often one taken is won.
+ * The auras of Delve and of online Take turns at Merciless or Eternal
+ * (auraDeal.ts), on the device that runs the game, as the fossils are
+ * counted: an aura card dealt ("aura/seen", once an offer), one won
+ * ("aura/won": a right answer that gave it, once however many took it),
+ * and an aura card's question missed ("aura/missed": answered wrong or run
+ * out of time). How often one turns up, and how often one taken is won.
+ * No other game deals any, so none is counted there.
  */
 export function auraEvents(prev: GameState | null, next: GameState): string[] {
-  if (!prev?.delve || !next.delve) return [];
-  if (next.phase === 'choosing' && auraOffer(next) && (prev.phase !== 'choosing' || prev.round !== next.round || prev.offered.join() !== next.offered.join()))
-    return ['aura/seen'];
+  const delve = !!prev?.delve && !!next.delve;
+  if (!prev || (!delve && !(next.turnAuras && !next.delve))) return [];
+  const missed = (s: GameState) => (delve ? missedAuras(s).length : turnsMissed(s).length);
+  const turn = (s: GameState) => [s.round, s.turnCount, s.offered.join()].join('|');
+  if (next.phase === 'choosing' && auraOffer(next) && (prev.phase !== 'choosing' || turn(prev) !== turn(next))) return ['aura/seen'];
   const revealed = next.phase === 'reveal' && next.reveal && (prev.phase !== 'reveal' || prev.question?.askedAt !== next.question?.askedAt);
   if (revealed && next.reveal!.aura) return ['aura/won'];
-  if (missedAuras(next).length > missedAuras(prev).length) return ['aura/missed'];
+  if (missed(next) > missed(prev)) return ['aura/missed'];
   return [];
 }
 

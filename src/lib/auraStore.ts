@@ -154,22 +154,59 @@ export const gainAura = (kind: AuraKind, found: FoundAura) => change((s) => gain
 export const wearAura = (kind: AuraKind | null) => change((s) => wear(s, kind));
 
 /**
- * The auras a Delve run gave (`given`, as its state has them: delve.ts
- * runAuras) kept on this device: those given to `me` (on one device,
- * `local`, all of them), each owned from then with where it was found, and
+ * The auras a game gave (`given`, as its state has them: delve.ts runAuras,
+ * a Delve run's, or turnsAuras.ts turnsGiven, a Take turns game's, `mode`)
+ * kept on this device: those given to `me` (on one device, `local`, all of
+ * them), each owned from then with where it was found (Delve's depth), and
  * one new to the player worn at once. One owned already is left as it is
  * (a reload, a rejoin), so it never goes back on over another worn since.
  * Says which were new.
  */
-export function keepRunAuras(given: readonly { kind: AuraKind; depth: number; at: number; to: readonly string[] }[], me: string | null, local: boolean): AuraKind[] {
+export function keepRunAuras(
+  given: readonly { kind: AuraKind; depth?: number; at: number; to: readonly string[] }[],
+  me: string | null,
+  local: boolean,
+  mode: 'delve' | 'turns' = 'delve',
+): AuraKind[] {
   const kept: AuraKind[] = [];
   for (const a of given) {
     if (!local && (me === null || !a.to.includes(me))) continue;
-    if (owns(loadAuras(), a.kind) || !gainAura(a.kind, { at: a.at, mode: 'delve', depth: a.depth })) continue;
+    if (owns(loadAuras(), a.kind) || !gainAura(a.kind, { at: a.at, mode, ...(a.depth !== undefined ? { depth: a.depth } : {}) })) continue;
     wearAura(a.kind);
     kept.push(a.kind);
   }
   return kept;
+}
+
+// ---- Divinity's streak in Take turns ----------------------------------------------
+
+/**
+ * Divinity's streak this device carries across online Take turns games at
+ * Merciless or Eternal (auraDeal.ts countedTurns): its player's right
+ * answers in a row there, a miss in one ending it; any other game, and
+ * Delve, leave it as it is. A key of its own, never synced: it is a run of
+ * this device's answers, which another device's run can't be joined to (a
+ * paired phone taking the longer would carry on a streak the other broke).
+ * Older builds don't read it; none stored reads as 0.
+ */
+const STREAK_NAME = 'aura-streak';
+
+/** The most it holds: far more than any game gets to, so a damaged entry reads as a number all the same. */
+const MAX_STREAK = 1_000_000;
+
+/** A stored streak, cleaned up: 0 for none, or one that doesn't read as one. */
+export function parseAuraStreak(raw: string | null): number {
+  const n = raw === null || !/^\d{1,7}$/.test(raw) ? 0 : Number(raw);
+  return n <= MAX_STREAK ? n : 0;
+}
+
+/** Divinity's streak this device carries. */
+export const loadAuraStreak = () => parseAuraStreak(tryReadStored(STREAK_NAME) ?? null);
+
+/** Keeps `n` as Divinity's streak this device carries, if it changed. Whether it's stored so. */
+export function saveAuraStreak(n: number): boolean {
+  if (!Number.isInteger(n) || n < 0 || n > MAX_STREAK) return false;
+  return loadAuraStreak() === n || writeStored(STREAK_NAME, String(n));
 }
 
 /** This device's auras as stored, for sync to pass on (lib/sync/shared.ts); null for none. */

@@ -100,7 +100,8 @@ import { peerCursors } from './peerCursors.svelte';
 import { whenCalm, whenIdle, type Deadline } from './idle';
 import { frameEvent } from './fpsMeter';
 import { SIGILS_KEY, loadSigils } from './sigils';
-import { AURAS_KEY, keepRunAuras, loadAuras, ownedAuras, wornAura as auraWorn } from './auraStore';
+import { AURAS_KEY, keepRunAuras, loadAuraStreak, loadAuras, ownedAuras, saveAuraStreak, wornAura as auraWorn } from './auraStore';
+import { carriedStreak, turnsGiven } from './turnsAuras';
 import { auraMask, shownAura, type AuraKind } from './auraKinds';
 import type { AuraHeld } from './game';
 import { COLOUR_KEY, loadColour } from './colour';
@@ -390,6 +391,8 @@ interface Guest {
   /** The player auras its hello says its device owns (a mask, auraKinds.ts auraMask), kept up as runs give it more, and the deepest of its last Delve runs (Slayer's, delveRecord.ts recentBest). */
   auras?: number;
   slayer?: number;
+  /** Divinity's streak its hello says its device carries (Take turns, auraStore.ts loadAuraStreak), kept up as counted games go. */
+  divine?: number;
   /** Its hello, under the held name, waits on the owner key's signature being checked. */
   checking?: boolean;
   /** This link's hello carried the owner key's signature, checked (handleHello): only such a link may close the room. */
@@ -450,13 +453,13 @@ function fossilsHello(): { fossils: number } {
 /** What this device knows for the aura deal (Engine.setAurasHeld): the auras it owns, and the deepest of its last Delve runs. */
 function ownAuraHeld(): AuraHeld {
   const best = recentBest(loadRecords());
-  return { owned: auraMask(ownedAuras(loadAuras())), ...(best !== undefined ? { best } : {}) };
+  return { owned: auraMask(ownedAuras(loadAuras())), ...(best !== undefined ? { best } : {}), streak: loadAuraStreak() };
 }
 
 /** What a hello says of it, for the host's aura deal (auraDeal.ts). */
-function aurasHello(): { auras: number; slayer?: number } {
-  const { owned, best } = ownAuraHeld();
-  return { auras: owned, ...(best !== undefined ? { slayer: best } : {}) };
+function aurasHello(): { auras: number; slayer?: number; divine: number } {
+  const { owned, best, streak } = ownAuraHeld();
+  return { auras: owned, ...(best !== undefined ? { slayer: best } : {}), divine: streak ?? 0 };
 }
 
 class Session {
@@ -811,7 +814,8 @@ class Session {
    * the sigil (shownAura) would follow either.
    */
   wearSigil() {
-    // (Not mid-game: the game keeps the one each player came in with, and
+    // (Not mid-game: the game keeps the one each player came in with, but
+    // for one it gave them, which it wears itself (Engine.giveAura), and
     // this is called again once it's back in the lobby, onNewState.)
     const s = this.state;
     if (s?.phase !== 'lobby') return;
@@ -1275,6 +1279,7 @@ class Session {
           guest.fossils = msg.fossils;
           guest.auras = msg.auras;
           guest.slayer = msg.slayer;
+          guest.divine = msg.divine;
           clearTimeout(helloTimer);
           this.handleHello(conn, guest, msg.secret, msg.name, msg.v, !!msg.watch, !!msg.seal, msg.owner);
         } else if (msg.t === 'pong') {
@@ -3045,15 +3050,24 @@ class Session {
   private guestFossils = new Map<string, number>();
 
   /**
-   * Delve: what the aura deal knows of each of `ids`' devices (Engine.setAurasHeld):
-   * a guest's as its hello said and runs since gave, this device's for anyone playing at it.
+   * What the aura deal knows of each of `ids`' devices (Engine.setAurasHeld):
+   * a guest's as its hello said and games since gave, this device's for anyone playing at it.
+   * Online (Take turns deals only so): a guest whose hello said what it owns, and the host's
+   * own player in a room online; never one at the host's screen, nor anyone on one device.
    */
   aurasHeld(ids: string[]): AuraHeld[] {
-    for (const g of this.guests.values()) if (g.playerId && g.auras !== undefined) this.guestAuras.set(g.playerId, { owned: g.auras, ...(g.slayer !== undefined ? { best: g.slayer } : {}) });
+    for (const g of this.guests.values())
+      if (g.playerId && g.auras !== undefined)
+        this.guestAuras.set(g.playerId, { owned: g.auras, ...(g.slayer !== undefined ? { best: g.slayer } : {}), streak: g.divine ?? 0, online: true });
     const players = this.state?.players ?? [];
     const own = (id: string) => this.mode === 'local' || id === this.myPlayerId || !!players.find((p) => p.id === id)?.local;
+    const online = this.mode === 'host' && !this.roomless;
     let mine: AuraHeld | null = null;
-    return ids.map((id) => (own(id) ? (mine ??= ownAuraHeld()) : (this.guestAuras.get(id) ?? { owned: 0 })));
+    return ids.map((id) => {
+      if (!own(id)) return this.guestAuras.get(id) ?? { owned: 0 };
+      mine ??= ownAuraHeld();
+      return online && id === this.myPlayerId ? { ...mine, online: true as const } : mine;
+    });
   }
   /** Host: what the aura deal knows of each guest's device by player id (aurasHeld), kept past a dropped link. */
   private guestAuras = new Map<string, AuraHeld>();
@@ -3098,6 +3112,17 @@ class Session {
         for (const g of this.guests.values()) if (g.playerId === to) g.auras = (g.auras ?? 0) | bit;
         const was = this.guestAuras.get(to);
         if (was) this.guestAuras.set(to, { ...was, owned: was.owned | bit });
+      }
+    }
+    // Divinity's streak a guest carries, as the counted Take turns game in play has it now (for the next game's deal; one whose link dropped too).
+    if (this.isHost && next.turnAuras && next.turnAuras !== prev?.turnAuras) {
+      for (const g of this.guests.values()) {
+        const n = g.playerId ? carriedStreak(next, g.playerId) : null;
+        if (n !== null) g.divine = n;
+      }
+      for (const [id, was] of this.guestAuras) {
+        const n = carriedStreak(next, id);
+        if (n !== null && n !== was.streak) this.guestAuras.set(id, { ...was, streak: n });
       }
     }
     // The art's workers are ready before the first question wants them (media.svelte.ts; once is enough).
@@ -3247,19 +3272,29 @@ class Session {
   }
 
   /**
-   * The auras a run gave this device's player (auraDeal.ts) are theirs for
-   * good (auraStore.ts gainAura, with the mode and depth), and one new to
-   * them is worn at once, for the room to see from the lobby on (wearSigil;
-   * a game keeps the one each came in with). On one device, whoever played.
-   * Read from the run's state as it comes, as the fossils are, so a dropped
-   * link or a reload never loses one; one owned already is left as it is,
-   * so a reload never puts it back on over another worn since.
+   * The auras a game gave this device's player (auraDeal.ts: a Delve run's,
+   * or a Take turns game's) are theirs for good (auraStore.ts gainAura, with
+   * the mode and depth), and one new to them is worn at once: the game's
+   * state wears it on their token already (Engine.giveAura), and the store
+   * keeps it on for the next lobby (wearSigil). On one device, whoever
+   * played. Read from the game's state as it comes, as the fossils are, so a
+   * dropped link or a reload never loses one; one owned already is left as
+   * it is, so a reload never puts it back on over another worn since.
+   * Likewise Divinity's streak this device carries (auraStore.ts
+   * saveAuraStreak), as a counted Take turns game has it for this device's
+   * player: what it holds, not a step, so reading it again changes nothing.
    */
   private noteAura(prev: GameState | null, next: GameState) {
-    const given = runAuras(next);
+    const me = this.myPlayerId;
+    const carried = me && this.mode !== 'local' ? carriedStreak(next, me) : null;
+    if (carried !== null) saveAuraStreak(carried);
+    const delve = !!next.delve;
+    const given = delve ? runAuras(next) : turnsGiven(next);
     if (!given.length) return;
-    if (prev && prev.delve?.startedAt === next.delve?.startedAt && runAuras(prev).length === given.length) return;
-    if (keepRunAuras(given, this.myPlayerId, this.mode === 'local').length) this.wearSigil();
+    const was = prev && (delve ? runAuras(prev) : turnsGiven(prev));
+    const same = delve ? prev?.delve?.startedAt === next.delve?.startedAt : prev?.startedAt === next.startedAt;
+    if (prev && same && was!.length === given.length) return;
+    if (keepRunAuras(given, me, this.mode === 'local', delve ? 'delve' : 'turns').length) this.wearSigil();
   }
 
   private gameCounts = new GameCounts();

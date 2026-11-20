@@ -428,7 +428,7 @@
   /** The tag of the fossil on a card, or null. */
   const fossilAt = (cat: string): string | null => (fossilTierAt(cat) === 'rare' ? 'Rare Fossil' : fossilTierAt(cat) ? 'Fossil' : null);
   /**
-   * Delve: the aura on a card (lib/auraDeal.ts), as dealt, kept like the
+   * Delve and online Take turns: the aura on a card (lib/auraDeal.ts), as dealt, kept like the
    * fossil while the chosen card's moment plays (and taken from the
    * question in play when the cards closed before this screen saw them).
    */

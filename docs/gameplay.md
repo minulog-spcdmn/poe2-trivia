@@ -375,9 +375,10 @@ the same thing for everyone.
   Its question is the depth's own (no harder, no shorter clock) and its
   category is locked out like any pick, except as noted below. Answer it
   right and the aura is yours for good (`src/lib/auraStore.ts`, with the
-  mode and depth) and worn at once, round your avatar from the next lobby
-  on (a game keeps the one each came in with); a miss costs a life as
-  usual and the aura is gone. Dynamite blasting its question loses the
+  mode and depth) and worn at once: the engine puts it on your token in
+  the game's state as it gives it, so every screen in the room draws it
+  from that answer on, and your device keeps it on for the next lobby; a
+  miss costs a life as usual and the aura is gone. Dynamite blasting its question loses the
   aura with the card, and the new question is never one. A flare works on
   it as on any ordinary question.
   - **The deal:** every offer rolls, rarest tier first and within a tier
@@ -432,6 +433,48 @@ the same thing for everyone.
     the aura cards missed (`aurasMissed`), as the fossils are. The QA
     desk's `game/delve-aura` shows a card the deal put there, and its
     question; `game/delve-aura-card` tries out how any aura's card looks.
+  - **In Take turns:** only online Take turns at Merciless or Eternal deals
+    aura cards, and only those games count for them (`countedTurns` in
+    `src/lib/auraDeal.ts`). Race, Custom, Cruel and a game on one device
+    (hot-seat, or a room that couldn't go online) deal none, nor does a
+    deathmatch (its one card is drawn, not chosen). The card is one of the
+    categories offered to the player on turn, an ordinary card, one an
+    offer at most, only an aura that player lacks (a class aura only with
+    its sigil), its question the room's own difficulty but forced as in
+    Delve. A player at the host's screen is never dealt one: no device of
+    theirs would keep it. Right, it is theirs for good (mode `turns`) and
+    worn at once; missed, wrong or out of time, it is gone. The rolls are
+    Delve's way (rarest tier first, each aura whose condition holds at its
+    chance, the first hit the card), from the same random source of their
+    own; the conditions read the player on turn's own answers in this game
+    unless said:
+
+    | Tier | Aura | When | Chance |
+    |---|---|---|---|
+    | Mirror | Mirror of Kalandra | any offer | 0.004242% |
+    | Rare | Shadow (Assassin) | Eternal only; its question's art grey | 0.06139% |
+    | Rare | Divinity | 10 right in a row, the streak carried across counted games | 0.57% |
+    | Uncommon | Breach | after 2 right answers in a row, each within 2 s | 100% |
+    | Uncommon | Delirium | Eternal only; its question's picture mirrored | 0.5391% |
+    | Uncommon | Chronomancer (Sorceress) | right after a right answer with under 1 s left; only with a timer | 36.42% |
+    | Uncommon | Slayer (Gladiator) | your score one right answer from the target, a target of 10 or more | 4.778% |
+    | Common | Runic Seals (Bound Djinn) | as your streak this game reaches exactly 3, once a streak | 30% |
+    | Common | Precursor Engine | the tablets' card is on your offer; the aura sits on it and its question is a tablet | 19.94% |
+    | Common | Azmeri Spirits | a game of 3 or more players | 0.7321% |
+
+    Expedition, Herald of Ice, Ritual, Corruption, Twilight Order, Abyss
+    and Acolyte of Chayula are Delve's only. Divinity's streak is carried
+    by each device in a key of its own (`aura-streak`, `src/lib/auraStore.ts`
+    loadAuraStreak; never synced, since a run of one device's answers
+    can't be joined to another's): a right answer in a counted game adds
+    one, a miss there ends it, and any other game, and Delve, leave it as
+    it is. A deathmatch's answers count too, as the game's own. The host
+    learns each guest's from the hello (`divine`) with what they own
+    (`auras`), keeps both for a guest whose link drops, and the game's
+    state carries each player's as it goes (`turnAuras`, with the card,
+    what it gave and what was missed); each device keeps its own from
+    there. The QA desk's `game/turns-aura` shows a card on offer, its
+    forced questions, and one won worn at once.
 - **The Sulphite rush.** Voltaxic Sulphite is the fuel Niko's crawler burns
   to travel down the mine. Now and then one of the ordinary cards on offer
   carries sulphite (never a find's card, a fossil's or a vein's). Taken, it
@@ -861,7 +904,7 @@ they're worth more sigils than are unlocked already. Kept in this browser (`src/
 (and where, a mode and a depth, when that's known); one owned can be worn,
 and everyone in the room sees it burn round the player's avatar (it comes
 with their join and changes in the lobby, as a sigil does; mid-game the one
-worn as it began stays). The four class auras are found only while their
+worn as it began stays, but for one the game itself gives, worn at once). The four class auras are found only while their
 class's sigil is worn (Chronomancer with the Sorceress, Slayer with the
 Gladiator, Shadow with the Assassin, Acolyte of Chayula with the Monk;
 `findableWith` in `src/lib/auraKinds.ts`), but once owned show with any
