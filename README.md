@@ -524,6 +524,30 @@ an issue for the owner, and the check then stops until `TALLY_VERSION`
 changes. Days below that floor cost nothing. The same summary by hand:
 `node --experimental-strip-types scripts/tally-ready.mjs`.
 
+### New-items watch
+
+`.github/workflows/items-watch.yml` reads poe2db’s two list pages, the
+uniques and the lineage gems, and holds them against `src/data/items.json`
+(`scripts/items-watch.mjs`, no Claude): items new with the game’s art, which
+a refresh can take; items GGG has announced, which a refresh can’t take
+until the patch is out (poe2db lists them with the announcement’s picture),
+whether new or already in the game; and items gone from poe2db. When what it
+finds differs from the last issue it opened, it opens an issue for the
+owner, or updates the open one; when the lists and the game agree again, it
+closes it. The refresh stays the owner’s to start. It runs once a day,
+every 6 hours from December 4 to 14 and every hour from December 10 to 14,
+around PoE2 1.0’s launch, and stops after December 31. Both read the list
+pages through `scripts/poe2db-lists.mjs`, and the watch reads a few item
+pages too, as the refresh does. When poe2db’s layout changes, which breaks
+`npm run fetch-data` too (or a page moves, or poe2db turns the runner
+away), nobody is mailed: Claude, on the API credit (`scripts/claude-in-ci.sh`),
+mends the reading, at most once a day, and it lands as a pull request with
+auto-merge; what Claude can’t mend becomes an issue for the owner. Claude
+reads pages anyone at poe2db can write, so it holds no GitHub credentials:
+another job, on its own machine, takes only its changes to the reading and
+its tests and opens the pull request (the workflow’s header says how). By
+hand: `node scripts/items-watch.mjs report.md`.
+
 ### Search engines
 
 What crawlers read, none of it shown to a player whose browser runs the game:
