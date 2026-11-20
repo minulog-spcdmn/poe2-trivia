@@ -4,24 +4,115 @@
 // surely missed most first.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TALLY_ROWS, TALLY_VERSION, poisson, rank, type TallyRow } from '../src/lib/itemTallyRank.ts';
+import { TALLY_ROWS, TALLY_VERSION, interval, rank, scoreOf, sortRanked, type Asked, type TallyRow } from '../src/lib/itemTallyRank.ts';
 
 const row = (item: string, ctx: string, r: number, w: number, more: Partial<TallyRow> = {}): TallyRow => ({ v: 1, item, form: 'n', ctx, first: 0, r, w, ...more });
 const close = (a: number, b: number, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} is not ${b}`);
 
-test('poisson: no misses has nothing below, and the interval holds the count', () => {
-  const [low0, high0] = poisson(0);
-  assert.equal(low0, 0);
-  // Byar's upper end for 0 at 90% two-sided: about 3.0 (the exact one, 2.996).
-  close(high0, 3, 0.1);
-  for (const k of [1, 5, 20, 200]) {
-    const [low, high] = poisson(k);
-    assert.ok(low >= 0 && low < k && high > k, `${k}: ${low} to ${high}`);
+/** Wilson's interval for a share with its continuity correction, at 90%: the closed form the one-context interval must match. */
+function wilson(w: number, n: number): [number, number] {
+  const z = 1.645;
+  const f = w / n;
+  const low = w === 0 ? 0 : (2 * w + z * z - 1 - z * Math.sqrt(z * z - 2 - 1 / n + 4 * w * (1 - f) + 4 * f)) / (2 * (n + z * z));
+  const high = w === n ? 1 : (2 * w + z * z + 1 + z * Math.sqrt(z * z + 2 - 1 / n + 4 * w * (1 - f) - 4 * f)) / (2 * (n + z * z));
+  return [low, high];
+}
+
+test('interval: under one set of rules, Wilson’s interval for the miss share over the rate', () => {
+  for (const [w, n, p] of [
+    [3, 3, 0.5],
+    [7, 20, 0.4],
+    [15, 30, 0.54],
+    [0, 12, 0.3],
+    [40, 50, 0.6],
+    [1, 1, 0.5],
+  ]) {
+    const [low, high] = interval([{ n, p }], w);
+    const [l, h] = wilson(w, n);
+    close(low, l / p, 1e-6);
+    close(high, h / p, 1e-6);
   }
-  // 10 observed: the exact 90% interval is 5.43 to 16.96.
-  const [l, h] = poisson(10);
-  close(l, 5.43, 0.05);
-  close(h, 16.96, 0.05);
+});
+
+test('interval: no misses has nothing below, every answer missed reaches the most any score can', () => {
+  assert.equal(interval([{ n: 10, p: 0.5 }], 0)[0], 0);
+  // Missed every time: up to the score that misses every answer, 1 over the lowest rate, and no further.
+  const asked = [
+    { n: 4, p: 0.5 },
+    { n: 6, p: 0.25 },
+  ];
+  assert.equal(interval(asked, 10)[1], 4);
+  // A context nobody missed in moves nothing; with none other, nothing can be said.
+  assert.deepEqual(interval([{ n: 7, p: 0 }, ...asked], 3), interval(asked, 3));
+  assert.deepEqual(interval([{ n: 7, p: 0 }], 0), [0, Infinity]);
+});
+
+test('interval: three misses of three where half miss is not yet clearly above 1, and a half-missed item is surer than a Poisson interval said', () => {
+  assert.ok(interval([{ n: 3, p: 0.5 }], 3)[0] < 1);
+  // 150 of 200 missed where half are: Byar's Poisson interval put it at 1.30 to 1.72.
+  const [low, high] = interval([{ n: 200, p: 0.5 }], 150);
+  assert.ok(low > 1.38 && high < 1.6, `${low} to ${high}`);
+});
+
+test('interval: over several contexts, the ends a fine scan of every score finds', () => {
+  // (A seeded mix of contexts and misses; the scan checks every score a hundredth apart.)
+  let seed = 7;
+  const rnd = () => (seed = (seed * 48271) % 2147483647) / 2147483647;
+  for (let t = 0; t < 200; t++) {
+    const asked: Asked[] = Array.from({ length: 1 + Math.floor(rnd() * 4) }, () => ({ n: 1 + Math.floor(rnd() * 40), p: 0.05 + rnd() * 0.9 }));
+    const n = asked.reduce((a, x) => a + x.n, 0);
+    const w = Math.floor(rnd() * (n + 1));
+    const top = 1 / Math.min(...asked.map((a) => a.p));
+    const fits = (s: number) => {
+      let m = 0;
+      let v = 0;
+      for (const a of asked) {
+        const q = Math.min(1, s * a.p);
+        m += a.n * q;
+        v += a.n * q * (1 - q);
+      }
+      return m + 1.645 * Math.sqrt(v) >= w - 0.5 && m - 1.645 * Math.sqrt(v) <= w + 0.5;
+    };
+    const fit: number[] = [];
+    for (let s = 0; s <= top; s += 0.01) if (fits(s)) fit.push(s);
+    const [low, high] = interval(asked, w);
+    close(low, fit[0], 0.011);
+    close(high, Math.min(top, fit.at(-1)! + 0.01), 0.011);
+  }
+});
+
+test('scoreOf: misses over expected, unless some answers would be missed more often than every time', () => {
+  // No context past all its answers: the plain ratio, to the last digit.
+  const plain = [
+    { n: 10, p: 0.1 },
+    { n: 10, p: 0.5 },
+  ];
+  assert.equal(scoreOf(plain, 6), 6 / (10 * 0.1 + 10 * 0.5));
+  // 38 of 40 missed, half where a fifth miss and half where seven in ten do: misses over expected, 2.11,
+  // would miss the second half 1.48 times over. At 4.5 those are all missed and the first half's 18 make up the rest.
+  const capped = [
+    { n: 20, p: 0.2 },
+    { n: 20, p: 0.7 },
+  ];
+  close(scoreOf(capped, 38)!, 4.5, 1e-9);
+  // Every answer missed: the score that misses them all.
+  close(scoreOf(capped, 40)!, 5, 1e-9);
+  // Nothing expected: no score.
+  assert.equal(scoreOf([{ n: 5, p: 0 }], 0), null);
+});
+
+test('scoreOf: always within its interval', () => {
+  let seed = 11;
+  const rnd = () => (seed = (seed * 48271) % 2147483647) / 2147483647;
+  for (let t = 0; t < 500; t++) {
+    const asked: Asked[] = Array.from({ length: 1 + Math.floor(rnd() * 4) }, () => ({ n: 1 + Math.floor(rnd() * 40), p: 0.02 + rnd() * 0.96 }));
+    const n = asked.reduce((a, x) => a + x.n, 0);
+    // Misses leaning high, where answers pass their cap.
+    const w = Math.min(n, Math.floor(rnd() ** 0.3 * (n + 1)));
+    const s = scoreOf(asked, w)!;
+    const [low, high] = interval(asked, w);
+    assert.ok(low <= s + 1e-9 && s <= high + 1e-9, `${JSON.stringify(asked)} ${w}: ${s} outside ${low} to ${high}`);
+  }
 });
 
 test('rank: an item is held to its own contexts, its expected misses summed over them', () => {
@@ -39,9 +130,16 @@ test('rank: an item is held to its own contexts, its expected misses summed over
   assert.equal(a.miss, 6);
   close(a.expected, 10 * 0.1 + 10 * 0.5);
   close(a.score!, 1);
-  const [low, high] = poisson(6);
-  close(a.low, low / 6);
-  close(a.high, high / 6);
+  const [low, high] = interval(
+    [
+      { n: 10, p: 0.1 },
+      { n: 10, p: 0.5 },
+    ],
+    6,
+  );
+  close(a.low, low);
+  close(a.high, high);
+  assert.ok(a.low < 1 && a.high > 1);
   // Deep or shallow, each item missed exactly as its context's rate: all score 1.
   for (const s of list) close(s.score!, 1);
 });
@@ -89,6 +187,9 @@ test('rank: easiest first, the items surely missed least first, by the interval 
     [...list].sort((a, b) => a.item.localeCompare(b.item)),
   );
   assert.deepEqual(rank(rows, { order: 'hardest' }).list, hardest);
+  // The Items view ranks once and re-sorts for its order: the same list either way.
+  assert.deepEqual(sortRanked([...hardest], 'easiest'), list);
+  assert.deepEqual(sortRanked([...list]), hardest);
 });
 
 test('rank: the filters apply before the rates', () => {
@@ -190,6 +291,8 @@ test('the demo’s made-up tally: most items, deeper bands missed more, a few ob
   assert.ok(missed('d1') < missed('d5') && missed('d5') < missed('d10'));
   const { list } = rank(rows, { min: 10 });
   assert.ok(list.filter((s) => s.low > 2).length >= 3, 'a handful clearly obscure');
+  // Each score within its own interval, those missed past their contexts' rates too.
+  for (const s of rank(rows).list) if (s.score !== null) assert.ok(s.low <= s.score + 1e-9 && s.score <= s.high + 1e-9, `${s.item}: ${s.score} outside ${s.low} to ${s.high}`);
 });
 
 test('rank: a tally at its cap of rows ranks as any other', () => {

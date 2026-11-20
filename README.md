@@ -512,10 +512,15 @@ holds enough answers to tell which items players miss far more than the
 rest, for a balance change that keeps them out of Delve’s shallow depths.
 `scripts/tally-ready.mjs` reads the tally and sorts every item as clearly
 above a score of 1.5, clearly below or undecided (ranked as the Items view
-ranks them); its summary is on each run’s page. Once at most a quarter of the
-items are undecided, Claude weighs the summary on the API credit
-(`scripts/claude-in-ci.sh`, no tools) and answers ready or not yet; ready
-opens an issue for the owner, and the check then stops until `TALLY_VERSION`
+ranks them, without the sums for ids items.json doesn’t have), which says
+how settled the tally is, and lists the first 20 of Hardest first so
+ranked, which says which items stand out: where most
+answers miss, even an item nobody recognises can stay under 1.5, as players
+guess right one time in as many as there are options. Its summary is on
+each run’s page. Once at most a quarter of the items are undecided, Claude
+weighs the summary on the API credit (`scripts/claude-in-ci.sh`, no tools)
+and answers ready or not yet, by whether those 20 are settled; ready opens
+an issue for the owner, and the check then stops until `TALLY_VERSION`
 changes. Days below that floor cost nothing. The same summary by hand:
 `node --experimental-strip-types scripts/tally-ready.mjs`.
 

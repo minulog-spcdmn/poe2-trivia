@@ -124,22 +124,24 @@ jobs:
 
           How the numbers below are made:
           - Every answer from every mode is counted, right or wrong, under the rules it was asked under: the mode, its difficulty, and in Delve the depth, in bands of ten.
-          - Each item's misses are set against the misses expected of it: its answers under each set of rules times every item's miss rate under those rules. Its score is misses over expected: 1 is missed as often as the rest, 2 twice as often. First meetings and repeats count together.
-          - Each score has a 90% interval. An item is clearly above the cut when its interval lies wholly above it, clearly below when wholly below, and undecided otherwise, or when it has no answers yet.
-          - The "first meetings only" line counts the same way but only answers given when the player met the item in this game for the first time. Players also know items from Path of Exile 2 itself, so the two views can differ.
+          - Each item's misses are set against the misses expected of it: its answers under each set of rules times every item's miss rate under those rules. Its score is misses over expected: 1 is missed as often as the rest, 2 twice as often. Where that would have some rules' answers missed more often than every time, the score is the one at which those are all missed and the rest make up its other misses. First meetings and repeats count together.
+          - Each score has a 90% interval. The table lists the first 20 of Hardest first, ranked as the stats page ranks them but without ids that aren't the game's items: by the interval's low end, so an item with few answers has to be missed far more to come near the top. "clear" marks an interval wholly above 1: surely missed more than the rest, though not surely among the hardest.
+          - The counts against the cut of 1.5 (clearly above it when the interval lies wholly above, clearly below when wholly below, undecided otherwise or with no answers yet) show how settled the tally is as a whole, and they decide when you are asked. They don't pick the items: a player who doesn't know an item still guesses right one time in as many as there are options, so where most answers miss, even an item nobody recognises can score under 1.5. Few or no items clearly above it doesn't mean nothing stands out.
+          - The "first meetings only" lines count the same way but only answers given when the player met the item in this game for the first time; the last line says how many of the first 20 are among the first 20 of those too (or among all of them with a score, if fewer). Players also know items from Path of Exile 2 itself, so the two views can differ.
 
-          The data is ready when the list of items clearly above the cut is unlikely to change much with more answers. Weigh:
-          - How many items are still undecided, and how many of those score at or above the cut without being clearly above it.
-          - Whether undecided items gather in a few groups, small groups above all: a group whose items are mostly undecided can't be judged yet.
+          The data is ready when the first 20 are unlikely to change much with more answers. Weigh:
+          - How many answers the first 20 have and how wide their intervals are: an item there on two or three answers can drop out with the next few.
+          - How many of the first 20 are clear.
+          - How settled the tally is as a whole, and whether undecided items gather in a few groups, small groups above all: a group whose items are mostly undecided can't be judged yet.
           - Whether enough of the answers come from Delve's shallow depths (1-10, 11-20), where the change would act.
-          - The first-meetings view as a second opinion, not a requirement.
-          - The intervals treat every answer as independent, but the same players answer the same items again, so the true uncertainty is wider: an item clearly above on few answers is weaker evidence than it looks.
+          - The first-meetings line as a second opinion, not a requirement.
+          - The intervals treat every answer as independent, but the same players answer the same items again, and in a room several players answer one question, so the true uncertainty is wider: an item near the top on few answers is weaker evidence than it looks.
 
           The summary below is all you have. Do not guess at numbers it does not give.
 
           Your last message is read by a script. Its first line must be exactly one of these words, alone:
           - NOT_YET: not enough yet. On the next line, say in one sentence what is short.
-          - READY: enough to act on. After that line, write a short report for the owner in plain words, at most 250 words: why the data is enough, which items stand out most (a few by name with their scores), and what calls for care (groups still undecided, a thin first-meetings view). Propose no change to the game: the owner decides that.
+          - READY: enough to act on. After that line, write a short report for the owner in plain words, at most 250 words: why the data is enough, which items stand out most (a few by name with their scores), and what calls for care (items near the top on few answers, groups still undecided, a thin first-meetings view). Propose no change to the game: the owner decides that.
 
           The summary:
 

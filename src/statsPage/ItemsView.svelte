@@ -7,7 +7,7 @@
   // answers so far" instead. Read as the view opens and on Read again
   // (Analytics.svelte); the choices narrow it here.
   import { onMount } from 'svelte';
-  import { TALLY_ROWS, rank, type RankOptions, type RankOrder, type Ranked, type TallyMode, type TallyRow } from '../lib/itemTallyRank';
+  import { TALLY_ROWS, rank, sortRanked, type RankOptions, type RankOrder, type Ranked, type TallyMode, type TallyRow } from '../lib/itemTallyRank';
   import { itemSrcset, itemThumb } from '../lib/ui-paths';
   import { fmt } from './chart';
   import How from './How.svelte';
@@ -57,13 +57,14 @@
   let form = $state<(typeof FORMS)[number]['value']>('both');
   let mode = $state<(typeof MODES)[number]['value']>('all');
   let first = $state<(typeof FIRSTS)[number]['value']>('off');
-  let min = $state(10);
+  let min = $state(1);
   let all = $state(false);
 
-  const options = $derived<RankOptions>({ form: form === 'both' ? undefined : form, mode: mode === 'all' ? undefined : (mode as TallyMode), first: first === 'on', min, order });
+  // (The order left out: rank works out every item's interval, and a change of order only sorts the same list again.)
+  const options = $derived<RankOptions>({ form: form === 'both' ? undefined : form, mode: mode === 'all' ? undefined : (mode as TallyMode), first: first === 'on', min });
   const easiest = $derived(order === 'easiest');
   const ranked = $derived(rows ? rank(rows, options) : null);
-  const list = $derived(ranked?.list ?? []);
+  const list = $derived(ranked ? (easiest ? sortRanked([...ranked.list], 'easiest') : ranked.list) : []);
   const shown = $derived(all ? list : list.slice(0, FIRST_ROWS));
   /** Sums for ids items.json doesn't have: a table filling with them is someone making them up. */
   const unknown = $derived(rows && items ? rows.filter((x) => !items!.has(x.item)).length : null);
@@ -176,7 +177,7 @@
     <How
       items={[
         'From the matchmaking server, not GoatCounter: every answer of every player who’s counted, summed per item, question form (Name: naming it from its art; Art: finding its art for its name), the rules it was asked under (Delve alone or together by its band of ten depths, Take turns and Race by difficulty, practice, Today’s unique) and whether it was the player’s first meeting with the item. It keeps no dates, so the period doesn’t apply here.',
-        'An item’s expected misses are its answers under each of those rules times how often every item is missed under them, summed: an item asked deep in Delve is held to how often deep questions are missed. Its score is its misses over that; its interval, a 90% Poisson interval on the misses (Byar’s approximation) over the same.',
+        'An item’s expected misses are its answers under each of those rules times how often every item is missed under them, summed: an item asked deep in Delve is held to how often deep questions are missed. Its score is its misses over that, unless that would have it missed more often than every time under some rules; then it is the score at which those answers are all missed and the rest make up its other misses. Its 90% interval holds the scores under which its misses are no surprise, each answer missed at the score times its rules’ rate, never more than all of them (under one set of rules, Wilson’s interval with its continuity correction), so the score always lies within it.',
         'Hardest first runs by the interval’s low end, so an item with few answers has to be missed far more to come near the top. Easiest first runs by its high end, so such an item has to be missed far less. An item never missed where nothing else was either has no score and goes last in both.',
         'The choices narrow the answers before the rates are worked out: with first meetings only, an item is held to other first meetings.',
         `The tally keeps ${fmt(TALLY_ROWS)} sums at most; past that no new one is started. Many for ids items.json doesn’t have means someone is sending made-up ones.`,
