@@ -63,14 +63,21 @@ test('counts held while unseen go out once the page is seen, when not opted out'
   assert.match(sent[0], /p=play%2Frace/);
 });
 
-test('nothing is sent while the browser sends Global Privacy Control', () => {
+test("a browser sending Global Privacy Control is counted all the same (the owner's call; the privacy page's switch is how to object)", async () => {
   show();
   const nav = globalThis.navigator as unknown as { globalPrivacyControl?: boolean };
   nav.globalPrivacyControl = true;
-  countEvent('play/race');
-  later();
-  delete nav.globalPrivacyControl;
-  assert.equal(sent.length, 0);
+  try {
+    // A page loaded with the signal on (the query makes it a module of its own), as `counting` is settled then.
+    const withSignal = '../src/lib/count.ts?signal';
+    const { countEvent: count } = (await import(withSignal)) as typeof import('../src/lib/count.ts');
+    count('play/race');
+    later();
+    assert.equal(sent.length, 1);
+    assert.match(sent[0], /p=play%2Frace/);
+  } finally {
+    delete nav.globalPrivacyControl;
+  }
 });
 
 test('nothing is sent while opted out, and counting resumes once taken back', () => {

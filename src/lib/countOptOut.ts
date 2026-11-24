@@ -1,9 +1,11 @@
 // The visitor counts' opt-out: a flag in this browser's storage that keeps
-// count.ts from sending anything, as does a browser sending Global Privacy
-// Control. Set by the privacy page's "Stop counting" (datenschutz.html,
-// src/legal/countToggle.ts) and by opening poe2.quest/#toggle-goatcounter
-// (count.ts onCountToggle). Its own module so the privacy page needn't load
-// the game to read or set it.
+// count.ts from sending anything. Set by the privacy page's "Stop counting"
+// (datenschutz.html, src/legal/countToggle.ts) and by opening
+// poe2.quest/#toggle-goatcounter (count.ts onCountToggle). Its own module so
+// the privacy page needn't load the game to read or set it. A browser sending
+// Global Privacy Control is counted all the same (the owner's call, 24 Nov
+// 2026): this switch is how to object, and the privacy page promises nothing
+// about the signal.
 
 import { readKey, removeKey, writeKey } from './storage.ts';
 
@@ -29,12 +31,8 @@ export function setCountOptedOut(out: boolean): boolean {
   return !countOptedOut();
 }
 
-/** The browser sends Global Privacy Control: the visitor asked every site not to track them. */
-export const privacySignal = (nav: Navigator | undefined = typeof navigator === 'undefined' ? undefined : navigator): boolean =>
-  (nav as (Navigator & { globalPrivacyControl?: boolean }) | undefined)?.globalPrivacyControl === true;
-
 /** Whether nothing may be counted from this browser. */
-export const notCounted = () => countOptedOut() || privacySignal();
+export const notCounted = () => countOptedOut();
 
 export type Lang = 'de' | 'en';
 
@@ -42,7 +40,6 @@ const TEXT = {
   de: {
     counted: 'Ihre Besuche werden gezählt.',
     notCounted: 'Ihre Besuche werden nicht mehr gezählt.',
-    signal: 'Ihre Besuche werden nicht gezählt: Ihr Browser sendet das Signal „Global Privacy Control“.',
     stop: 'Zählung abschalten',
     start: 'Zählung wieder einschalten',
     failed: 'Ihr Browser erlaubt dieser Seite nicht, etwas zu speichern. Die Zählung lässt sich hier daher nicht abschalten.',
@@ -50,16 +47,14 @@ const TEXT = {
   en: {
     counted: 'Your visits are counted.',
     notCounted: 'Your visits are no longer counted.',
-    signal: 'Your visits are not counted: your browser sends Global Privacy Control.',
     stop: 'Stop counting',
     start: 'Count again',
     failed: "Your browser doesn’t let this page save anything, so counting can’t be switched off here.",
   },
 };
 
-/** What the privacy page's switch says: its state, and its button's label (none when the browser's signal settles it). */
-export function switchText(lang: Lang, s: { out: boolean; signal: boolean; failed: boolean }): { state: string; button: string | null } {
+/** What the privacy page's switch says: its state, and its button's label. */
+export function switchText(lang: Lang, s: { out: boolean; failed: boolean }): { state: string; button: string } {
   const t = TEXT[lang];
-  if (s.signal) return { state: t.signal, button: null };
   return { state: s.failed ? t.failed : s.out ? t.notCounted : t.counted, button: s.out ? t.start : t.stop };
 }

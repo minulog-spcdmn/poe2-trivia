@@ -40,30 +40,19 @@ test('without storage nobody is taken for opted out, and setting it says it fail
   }
 });
 
-test('Global Privacy Control counts as asking not to be counted', async () => {
-  const { privacySignal } = await import('../src/lib/countOptOut.ts');
-  assert.equal(privacySignal({ globalPrivacyControl: true } as unknown as Navigator), true);
-  assert.equal(privacySignal({ globalPrivacyControl: false } as unknown as Navigator), false);
-  assert.equal(privacySignal({} as Navigator), false);
-  assert.equal(privacySignal(undefined), false);
-});
-
 test("the privacy page's switch says where it stands, in both languages", async () => {
   const { switchText } = await import('../src/lib/countOptOut.ts');
   for (const lang of ['de', 'en'] as const) {
-    const on = switchText(lang, { out: false, signal: false, failed: false });
-    const off = switchText(lang, { out: true, signal: false, failed: false });
-    const failed = switchText(lang, { out: false, signal: false, failed: true });
-    const signal = switchText(lang, { out: false, signal: true, failed: false });
+    const on = switchText(lang, { out: false, failed: false });
+    const off = switchText(lang, { out: true, failed: false });
+    const failed = switchText(lang, { out: false, failed: true });
     assert.notEqual(on.state, off.state);
     assert.ok(on.button && off.button && on.button !== off.button);
     assert.notEqual(failed.state, on.state);
     assert.equal(failed.button, on.button);
-    // The browser's signal settles it: nothing to press.
-    assert.equal(signal.button, null);
   }
-  assert.equal(switchText('de', { out: false, signal: false, failed: false }).button, 'Zählung abschalten');
-  assert.equal(switchText('en', { out: true, signal: false, failed: false }).button, 'Count again');
+  assert.equal(switchText('de', { out: false, failed: false }).button, 'Zählung abschalten');
+  assert.equal(switchText('en', { out: true, failed: false }).button, 'Count again');
 });
 
 test("only an iOS home-screen app opens the privacy page over the game", async () => {
