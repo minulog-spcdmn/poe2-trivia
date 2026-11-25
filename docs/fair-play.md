@@ -107,7 +107,11 @@ open it again to count it again. It works typed after the address of a page
 already open too, says which way it went, and keeps the choice in
 localStorage (`poe2trivia-shared.noCount`, `src/lib/countOptOut.ts`, the
 flag the privacy page's switch sets too). GoatCounter's own count.js isn't
-used, so this is the game's version of its toggle.
+used, so this is the game's version of its toggle. A browser sending Global
+Privacy Control is counted like any other from 2026-11-25, about 10:30 UTC
+(#462, the owner's call); before, it never was. From that day the counts
+and the item tally take in the browsers that send it (Brave by default), so
+a trend across the day compares two groups of browsers.
 Game events count each time (`ns`, no session): `play/<mode>`,
 `size/<mode>-<n>p`, `screen/<mode>` (some at the host's screen) and
 `end/<mode>` from the device running the game (`-online`/`-hotseat` until
