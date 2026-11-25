@@ -30,6 +30,8 @@
 // again. Busy or failing, GoatCounter's answer becomes a 503, and the page
 // sends the batch again with its next (twice more at most).
 
+import { V4, V4_CODES, V6, V6_CODES } from './botRanges.js';
+
 /**
  * @typedef {{
  *   COUNT_WRITES: { limit(o: { key: string }): Promise<{ success: boolean }> },
@@ -108,11 +110,80 @@ export function counted(body) {
   return /** @type {Counted[]} */ (h.filter(ok));
 }
 
+/** A base64 string's bytes. */
+const bytes = (/** @type {string} */ b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+/** The cloud and hosting providers' ranges (botRanges.js), read once as the Worker starts: each range's first and last address in words, and its provider's code. */
+const v4 = new Uint32Array(bytes(V4).buffer);
+const v4Codes = bytes(V4_CODES);
+const v6 = new Uint32Array(bytes(V6).buffer);
+const v6Codes = bytes(V6_CODES);
+
+/** An address as 32-bit words (one for IPv4, four for IPv6, highest first), or null when it isn't one. @param {string} ip @returns {number[] | null} */
+export function words(ip) {
+  const four = (/** @type {string} */ a) => {
+    const p = a.split('.');
+    if (p.length !== 4 || !p.every((x) => /^\d{1,3}$/.test(x) && Number(x) < 256)) return null;
+    return p.map(Number);
+  };
+  if (!ip.includes(':')) {
+    const p = four(ip);
+    return p && [((p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3]) >>> 0];
+  }
+  let groups = ip.toLowerCase().split('::');
+  if (groups.length > 2) return null;
+  const side = (/** @type {string} */ g) => (g ? g.split(':') : []);
+  let left = side(groups[0]);
+  let right = side(groups[1] ?? '');
+  // (An IPv4 address at its end, as in ::ffff:1.2.3.4: two groups.)
+  const tail = (right.length ? right : left).at(-1);
+  if (tail?.includes('.')) {
+    const p = four(tail);
+    if (!p) return null;
+    const g = [((p[0] << 8) | p[1]).toString(16), ((p[2] << 8) | p[3]).toString(16)];
+    if (right.length) right = [...right.slice(0, -1), ...g];
+    else left = [...left.slice(0, -1), ...g];
+  }
+  const all = groups.length === 2 ? [...left, ...Array(8 - left.length - right.length).fill('0'), ...right] : left;
+  if (all.length !== 8 || !all.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return null;
+  const n = all.map((g) => parseInt(g, 16));
+  return [0, 2, 4, 6].map((i) => ((n[i] << 16) | n[i + 1]) >>> 0);
+}
+
 /**
- * A count as GoatCounter's API takes it, with the address and browser string it came from.
- * @param {Counted} c @param {string} ip @param {string} userAgent
+ * The bot GoatCounter's /count would call a count from this address (isbot's
+ * IPRange: a cloud or hosting provider's, botRanges.js), its code, or 0. Its
+ * API, which the counts go to from here, checks a count's browser string
+ * only; told this, it keeps the count as the bot it is, as /count does.
+ * @param {string} ip
  */
-export function goatHit(c, ip, userAgent) {
+export function botOf(ip) {
+  const w = words(ip);
+  if (!w) return 0;
+  const [ranges, codes] = w.length === 1 ? [v4, v4Codes] : [v6, v6Codes];
+  const k = w.length;
+  /** How range i's bound (0 its first, 1 its last) compares with the address. */
+  const cmp = (/** @type {number} */ i, /** @type {number} */ end) => {
+    const at = (2 * i + end) * k;
+    for (let j = 0; j < k; j++) if (ranges[at + j] !== w[j]) return ranges[at + j] < w[j] ? -1 : 1;
+    return 0;
+  };
+  // The last range that starts at the address or before it.
+  let lo = 0;
+  let hi = codes.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (cmp(mid, 0) <= 0) (found = mid), (lo = mid + 1);
+    else hi = mid - 1;
+  }
+  return found >= 0 && cmp(found, 1) >= 0 ? codes[found] : 0;
+}
+
+/**
+ * A count as GoatCounter's API takes it, with the address and browser string it came from, and the bot that address is, if it is one (botOf).
+ * @param {Counted} c @param {string} ip @param {string} userAgent @param {number} [bot]
+ */
+export function goatHit(c, ip, userAgent, bot = 0) {
   return {
     path: c.p,
     title: c.t ?? '',
@@ -123,6 +194,7 @@ export function goatHit(c, ip, userAgent) {
     user_agent: userAgent,
     // (A session of its own, used once: counted each time, as `ns` is from the page.)
     ...(c.ns === 'true' ? { session: crypto.randomUUID() } : {}),
+    ...(bot ? { bot } : {}),
   };
 }
 
@@ -145,12 +217,13 @@ async function counts(request, url, env, headers) {
   // Nothing left once the counts off in shape are left out: taken, GoatCounter not asked.
   if (!batch.length) return new Response(null, { status: 204, headers });
   const userAgent = request.headers.get('User-Agent') ?? '';
+  const bot = botOf(ip);
   /** @type {Response | null} */
   const r = await fetch(COUNTER_API, {
     method: 'POST',
     // (The visitor's address as the one asking too, so GoatCounter's limit on its API counts them, not every Worker it hears from: ASKER.)
     headers: { Authorization: `Bearer ${env.GOATCOUNTER_KEY}`, 'Content-Type': 'application/json', ...(ip ? { [ASKER]: ip } : {}) },
-    body: JSON.stringify({ hits: batch.map((c) => goatHit(c, ip, userAgent)) }),
+    body: JSON.stringify({ hits: batch.map((c) => goatHit(c, ip, userAgent, bot)) }),
   }).catch(() => null);
   // Taken (202, or any 2xx), or some turned down as they are (400, its errors by index; the rest taken): sending them again would count those twice.
   if (r && (r.ok || r.status === 400)) return new Response(null, { status: 204, headers });

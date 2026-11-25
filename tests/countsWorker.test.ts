@@ -3,14 +3,17 @@
 // GoatCounter's key, within its rate limit, each batch checked whole, then
 // sent on to GoatCounter's counting API with the address and browser string
 // the page came from (the address as the one asking too), an event counted
-// each time under a session of its own. What GoatCounter's
+// each time under a session of its own, and a count from a cloud or hosting
+// provider's address marked as the bot GoatCounter's /count would call it
+// (botOf). What GoatCounter's
 // answer becomes for the page. What the page sends: countRelay.test.ts and
 // countRoute.test.ts. GoatCounter's own counting is not run here: what its
 // API does with a session, an address and a browser string was read from its
 // source (handlers/api.go count, memstore.go session), not tried.
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ASKER, COUNTER_API, MAX_COUNTED, MAX_COUNTS, answer, counted } from '../counts/worker.js';
+import { ASKER, COUNTER_API, MAX_COUNTED, MAX_COUNTS, answer, botOf, counted, words } from '../counts/worker.js';
+import { ISBOT, V4_CODES, V6_CODES } from '../counts/botRanges.js';
 import { COUNTER_ORIGIN } from '../src/lib/counter.ts';
 import { MAX_RELAYED, hitOf, relayBody } from '../src/lib/countRelay.ts';
 
@@ -45,12 +48,12 @@ const event = hitOf(url({ p: 'error/script/lib/codex.ts:loadCodex', t: 'error/sc
 const step = hitOf(url({ p: 'reach/played', t: 'reach/played', e: 'true' }));
 const app = hitOf(url({ p: 'visit/app', t: 'visit/app', e: 'true' }));
 
-const at = (e: object, body: string, origin = 'https://poe2.quest', method = 'POST') =>
+const at = (e: object, body: string, origin = 'https://poe2.quest', method = 'POST', ip = '203.0.113.7') =>
   answer(
     new Request('https://x/counts', {
       method,
       ...(method === 'POST' ? { body } : {}),
-      headers: { Origin: origin, 'Content-Type': 'text/plain', 'CF-Connecting-IP': '203.0.113.7', 'User-Agent': 'Mozilla/5.0 (test)' },
+      headers: { Origin: origin, 'Content-Type': 'text/plain', 'CF-Connecting-IP': ip, 'User-Agent': 'Mozilla/5.0 (test)' },
     }),
     e as never,
   );
@@ -80,6 +83,48 @@ test("a page's counts go on to GoatCounter with the address and browser string t
   assert.notEqual(a.session, b.session, 'each event a session of its own');
   assert.deepEqual({ ...a, session: '' }, { path: event.p, title: event.t, event: true, ...from, session: '' });
   assert.deepEqual(Object.keys(calls[0].body), ['hits'], "GoatCounter's own filter (its ignored addresses) left as it is");
+});
+
+test("a count from a cloud or hosting provider's address goes as the bot GoatCounter's /count calls it; one from a home's as none", async () => {
+  const calls = goat();
+  await at(env(), relayBody([visit, step]), 'https://poe2.quest', 'POST', '3.5.0.1');
+  assert.deepEqual(
+    calls[0].body.hits.map((h) => h.bot),
+    [8, 8],
+    'AWS',
+  );
+  await at(env(), relayBody([visit]));
+  assert.equal(calls[1].body.hits[0].bot, undefined, 'a documentation address, no provider’s');
+});
+
+test("an address's provider, as isbot's ranges have it, its first and last address and the one past them", () => {
+  const cases: [string, number][] = [
+    ['3.5.0.1', 8],
+    ['5.9.1.1', 12],
+    ['1.178.1.0', 8],
+    ['1.178.1.255', 8],
+    ['1.178.2.0', 0],
+    ['203.0.113.7', 0],
+    ['8.8.8.8', 0],
+    ['2600:1f00:1000::1', 8],
+    ['2600:1f00:0fff:ffff:ffff:ffff:ffff:ffff', 0],
+    ['2603:1020:1404:4a2c:c5c:7fd0:a6a3:a450', 13],
+    ['2001:db8::1', 0],
+    // (An IPv4 address within IPv6 is none of the IPv6 ranges, as with isbot.)
+    ['::ffff:3.5.0.1', 0],
+    ['not an address', 0],
+    ['1.2.3', 0],
+    ['1:2:3:4:5:6:7:8:9', 0],
+    ['', 0],
+  ];
+  for (const [ip, bot] of cases) assert.equal(botOf(ip), bot, ip);
+  assert.deepEqual(words('::ffff:1.2.3.4'), [0, 0, 0xffff, 0x01020304]);
+  assert.deepEqual(words('10.0.0.1'), [0x0a000001]);
+  assert.equal(words('1.2.3.256'), null);
+  // isbot's codes for its providers (BotRangeAWS 8 to BotRangeOVH 17), at the version GoatCounter's go.mod names.
+  const codes = new Set([...atob(V4_CODES), ...atob(V6_CODES)].map((c) => c.charCodeAt(0)));
+  assert.ok([...codes].every((c) => c >= 8 && c <= 17), [...codes].join());
+  assert.equal(ISBOT, 'v1.1.0');
 });
 
 test('nothing goes on without the key, from anywhere but the live page, or but a batch to send', async () => {

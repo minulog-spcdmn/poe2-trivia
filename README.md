@@ -417,6 +417,11 @@ players their counts, never their games:
   has them from a page that reaches it), an event counted each time under a
   session of its own, and keeps nothing. An address may send 60 batches a
   minute.
+- GoatCounter's API checks a count's browser string only, where its own
+  `/count` also calls one from a cloud or hosting provider's address a bot.
+  So the Worker marks those itself, from the same ranges
+  (`counts/botRanges.js`, made by `node scripts/bot-ranges.mjs` from the
+  isbot version GoatCounter's `go.mod` names; run it again when that moves).
 - If the Worker answers 404 (no key) or can't be reached (a batch turned down
   three times), the load sends its counts straight again, those that never
   left first.
