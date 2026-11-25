@@ -2,8 +2,10 @@
 // no cookies, no IP addresses stored, and nothing kept in the browser but
 // its opt-out (countOptOut.ts), set only on asking: on the privacy page, or
 // by opening poe2.quest/#toggle-goatcounter. Nothing counts from a browser
-// that opted out or sends Global Privacy Control. Only the game's own page
-// at poe2.quest counts; the beta, the dev server and the dev pages never do.
+// that opted out; Global Privacy Control alone doesn't stop it (the owner's
+// call, 24 Nov 2026: the privacy page's switch is how to object). Only the
+// game's own page at poe2.quest counts; the beta, the dev server and the dev
+// pages never do.
 // datenschutz.html says what is sent, and vite.config.ts's CSP lets it
 // through.
 //
@@ -28,7 +30,7 @@ import { nobodyStands, shownDepth, teamDepth } from './delve.ts';
 import type { GameState } from './game.ts';
 import { COUNTER_ORIGIN } from './counter.ts';
 import { isoWeek } from './isoWeek.ts';
-import { countOptedOut, notCounted, privacySignal, setCountOptedOut } from './countOptOut.ts';
+import { countOptedOut, notCounted, setCountOptedOut } from './countOptOut.ts';
 import { SITE_URL } from './site.ts';
 import { fetchWhereTable, ownFrames, whereOf, type ErrorPlace, type WhereTable } from './errorWhere.ts';
 import { GameFrames, SOFTWARE, deviceOf, framesEvent, visitEvent, type BrowserSays, type StateMoment } from './stutter.ts';
@@ -63,15 +65,15 @@ export function flipSkip(store: SkipStore): Toggled {
 /** The page counts where it is: the live game's own page, no robot. Settled as it loads (its address changes only in its query and hash after). */
 const countsHere = typeof location !== 'undefined' && typeof navigator !== 'undefined' && countsOn(location, CHANNEL, !!navigator.webdriver);
 
-/** Whether this page counts: where it counts, in a browser that hasn't opted out or sent Global Privacy Control. A toggle changes it. */
-export let counting = countsHere && !browserSkip.skipped() && !privacySignal();
+/** Whether this page counts: where it counts, in a browser that hasn't opted out. A toggle changes it. */
+export let counting = countsHere && !browserSkip.skipped();
 
 /** Takes a toggle hash from the address, if there is one where it means something, and flips the opt-out. */
 function takeToggle(): Toggled | null {
   if (!countsHere || !isToggleHash(location.hash)) return null;
   history.replaceState(history.state, '', location.pathname + location.search);
   const out = flipSkip(browserSkip);
-  counting = !browserSkip.skipped() && !privacySignal();
+  counting = !browserSkip.skipped();
   return out;
 }
 
@@ -318,7 +320,7 @@ const firstVisit = (p: Played | null, now: number) => !p || now - p.first < VISI
  * for its steps (countStep): a newcomer's reload is still their first visit.
  */
 export function countVisit(save: () => Played | null, campaign: string | null, idle: (f: () => void) => void = (f) => f()) {
-  // Nothing read from the save where nothing may be counted (Global Privacy Control too), as the privacy page says.
+  // Nothing read from the save where nothing may be counted, as the privacy page says.
   if (!counting || toggledOnLoad || notCounted()) return;
   readPlayed = save;
   const back = cameBack();

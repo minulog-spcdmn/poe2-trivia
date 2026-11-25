@@ -77,7 +77,7 @@ third-party service.
 
 The visitor counts' opt-out is one flag in the browser
 (`src/lib/countOptOut.ts`, shared by every channel) that `src/lib/count.ts`
-checks before every count, as it does Global Privacy Control, and the item
+checks before every count, and the item
 tally (`src/lib/itemTally.ts`) before every batch. The privacy
 page's switch sets it (`src/legal/countToggle.ts`), and so does opening
 poe2.quest/#toggle-goatcounter. An iPhone's home-screen app keeps storage
