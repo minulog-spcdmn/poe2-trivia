@@ -411,7 +411,8 @@ players their counts, never their games:
 - If it didn't get there, it and the load's later counts go to the Worker in
   batches, a few seconds' worth each and at once as the page is hidden or
   left, and a visit that went this way sends `visit/blocked` with it. A count
-  goes round only if it never left, so none counts twice.
+  goes round only if its own request failed, so it counts twice only where
+  that request got there after all, its answer lost.
 - The Worker checks each count's shape and sends it on to GoatCounter's
   counting API with the player's address and browser string (as GoatCounter
   has them from a page that reaches it), an event counted each time under a
@@ -434,11 +435,14 @@ To set it up:
    `npx --yes wrangler@4.158.0 deploy`, then
    `npx wrangler secret put GOATCOUNTER_KEY`, pasting the key.
 
-Without the key the Worker answers 404, and a blocked page's counts are lost,
-as before. Like the relay, it's deployed by hand, from `main` once a change to
-it is merged. To turn it off: delete the secret (pages go straight again at
-once), or empty `COUNTS_ORIGIN` in `src/lib/counter.ts` (pages loaded after
-the deploy).
+Without the key the Worker answers 404, and a page sends its counts straight
+again (a blocked page's are lost, as before). Put the Worker live before the
+pages that use it, key or none: with no Worker there, a page hears only that
+the network failed, and drops what it sent round, the visit among them. It
+isn't deployed by Workers Builds: `npx wrangler deploy` in `counts/` puts a
+change to it live. To turn it off: delete the secret (pages go straight
+again at once), or empty `COUNTS_ORIGIN` in `src/lib/counter.ts` (pages
+loaded after the deploy).
 
 ## Deploying
 
