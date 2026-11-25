@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 import { hostname, userInfo } from 'node:os';
 import { channelOf } from './src/lib/channel.ts';
-import { COUNTER_ORIGIN } from './src/lib/counter.ts';
+import { COUNTER_ORIGIN, COUNTS_ORIGIN } from './src/lib/counter.ts';
 import { RELAY_URL } from './src/lib/relayUrl.ts';
 import { OWN_SIGNAL_HOST } from './src/lib/signalHost.ts';
 import type { AtRule, Node, Rule } from 'postcss';
@@ -47,8 +47,8 @@ function csp(env: Record<string, string>): Plugin {
     // The counts (lib/count.ts) go out as a beacon, or an image where a beacon can't.
     `img-src 'self' data: blob: ${COUNTER_ORIGIN}`,
     "font-src 'self'",
-    // And the relay's logins (lib/relay.ts), once its Worker is there.
-    `connect-src 'self' ${signalling} ${COUNTER_ORIGIN}${RELAY_URL ? ` ${new URL(RELAY_URL).origin}` : ''}`,
+    // And the relay's logins (lib/relay.ts), once its Worker is there; and the counts round a blocker (lib/countRelay.ts).
+    `connect-src 'self' ${signalling} ${COUNTER_ORIGIN}${RELAY_URL ? ` ${new URL(RELAY_URL).origin}` : ''}${COUNTS_ORIGIN ? ` ${COUNTS_ORIGIN}` : ''}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",

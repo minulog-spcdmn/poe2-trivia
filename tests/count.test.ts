@@ -41,7 +41,8 @@ import {
 } from '../src/lib/count.ts';
 import { LEGACY_VERSION_TEXT, PROTOCOL_VERSION, isVersionRefusal, parseHostMsg, versionProblem } from '../src/lib/protocol.ts';
 import { DEFAULT_SETTINGS, createGame, type GameState, type Player } from '../src/lib/game.ts';
-import { COUNTER_ORIGIN } from '../src/lib/counter.ts';
+import { COUNTER_ORIGIN, COUNTS_ORIGIN } from '../src/lib/counter.ts';
+import { COUNTS_URL } from '../src/lib/countRelay.ts';
 import { playedIn } from '../src/lib/lastPlayed.ts';
 import { isoWeek, isoWeekOfDay, weekMonday } from '../src/lib/isoWeek.ts';
 import { emptyCodex } from '../src/lib/codex.ts';
@@ -88,11 +89,15 @@ test('outside a browser nothing is counted, and nothing throws', () => {
   });
 });
 
-test('the CSP lets the counts out', () => {
+test('the CSP lets the counts out, those round a blocker too', () => {
   const config = readFileSync(new URL('../vite.config.ts', import.meta.url), 'utf8');
   assert.match(config, /connect-src[^\n]*\$\{COUNTER_ORIGIN\}/);
   assert.match(config, /img-src[^\n]*\$\{COUNTER_ORIGIN\}/);
   assert.ok(COUNTER_ORIGIN.startsWith('https://'));
+  // (Or the page's own policy turns every batch away, unseen.)
+  assert.match(config, /connect-src[^\n]*\$\{COUNTS_ORIGIN\}/);
+  assert.equal(new URL(COUNTS_URL).origin, COUNTS_ORIGIN);
+  assert.ok(COUNTS_ORIGIN.startsWith('https://'));
 });
 
 test('a referrer is another site without its query; this site, which may carry a room code, is none', () => {

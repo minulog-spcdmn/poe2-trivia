@@ -82,7 +82,7 @@ Object.assign(globalThis, { window, location: new URL('https://poe2.quest/') });
 Object.defineProperty(globalThis, 'document', { value: loadedOn, configurable: true, writable: true });
 // At the live game's address the session's steps are counted (count.ts): their beacons go nowhere.
 Object.defineProperty(globalThis.navigator, 'sendBeacon', { value: () => true, configurable: true, writable: true });
-// GoatCounter's address reached (countRelay.ts reaches), so the counts go straight, as beacons; never the network.
+// GoatCounter reached (countRelay.ts arrives), so the counts go straight; never the network.
 Object.assign(globalThis, { fetch: async () => new Response(null) });
 const { keepAwake } = await import('../src/lib/wakeLock.ts');
 const { session } = await import('../src/lib/session.svelte.ts');

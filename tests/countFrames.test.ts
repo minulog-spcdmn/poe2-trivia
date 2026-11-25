@@ -23,8 +23,8 @@ const doc = {
   removeEventListener: () => {},
 };
 set('location', { hostname: 'poe2.quest', pathname: '/', href: 'https://poe2.quest/', origin: 'https://poe2.quest', hash: '', search: '' });
-// GoatCounter's address reached (countRelay.ts reaches), so the counts go straight, as beacons; never the network.
-set('fetch', async () => new Response(null));
+// GoatCounter reached: the load's first count goes as a request that says so (countRelay.ts arrives), noted with the beacons, and the rest straight after it. Never the network.
+set('fetch', async (url: string) => (url.includes('/count?') && sent.push(url), new Response(null)));
 set('navigator', {
   webdriver: false,
   userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1',
@@ -77,7 +77,7 @@ test('nothing is measured in the lobby', () => {
   assert.equal(pending, null, 'no frames asked for');
 });
 
-test("a game's frames count once, as it ends, under the device's class", () => {
+test("a game's frames count once, as it ends, under the device's class", async () => {
   countGameFrames(game('choosing'));
   frames(16, 300);
   countGameFrames(game('question'));
@@ -88,6 +88,8 @@ test("a game's frames count once, as it ends, under the device's class", () => {
   countGameFrames(game('over'));
   assert.equal(pending, null, 'and no longer once it is decided');
   mock.timers.tick(3_000);
+  // (The first's answer in: GoatCounter reached, the rest straight after it, countRelay.ts arrives.)
+  await new Promise((r) => setImmediate(r));
   // (The queue's next, a gap after.)
   mock.timers.tick(1_000);
   // The first game this page counts goes once more, as its visit's.

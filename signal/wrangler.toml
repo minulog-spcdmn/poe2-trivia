@@ -79,24 +79,3 @@ namespace_id = "1004"
   [ratelimits.simple]
   limit = 30
   period = 60
-
-# Of those, the visitor counts passed on to GoatCounter (worker.js, "visitor
-# counts passed on"), from a page whose blocker keeps GoatCounter's address
-# from it: a page sends a batch a few seconds after a count at most, and as
-# it's hidden or left, so sixty a minute is a household's or a school's few
-# such pages. Asked before the address's own limit, as the tally's is.
-[[ratelimits]]
-name = "COUNT_WRITES"
-namespace_id = "1005"
-
-  [ratelimits.simple]
-  limit = 60
-  period = 60
-
-# The key GoatCounter takes those counts under: a secret, not here (the repo
-# is public), set on the Worker as GOATCOUNTER_KEY (Workers & Pages,
-# poe2-signal, Settings, Variables and Secrets; or `npx wrangler secret put
-# GOATCOUNTER_KEY` in signal/), an API key made at
-# poe2quest.goatcounter.com, under its API settings, allowed only to record
-# pageviews. Without it, /counts answers 404, and a blocked page's counts
-# are lost, as before.

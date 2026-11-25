@@ -36,7 +36,7 @@ let answering: { cloud: Says; own: Says } = { cloud: true, own: true };
 /** The servers asked, in order. */
 const asked: string[] = [];
 globalThis.fetch = ((url: string, init?: RequestInit) => {
-  // (The session's counts look for GoatCounter's address as their first goes, countRelay.ts reaches: reached, and no server's ask.)
+  // (The session's first count goes as a request that says whether it got there, countRelay.ts arrives: there, and no server's ask.)
   if (String(url).startsWith(COUNTER_ORIGIN)) return Promise.resolve(new Response(null));
   const server = new URL(url).host === OWN_SIGNAL_HOST ? 'own' : 'cloud';
   asked.push(server);

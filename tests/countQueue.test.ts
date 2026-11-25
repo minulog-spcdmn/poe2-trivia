@@ -13,8 +13,8 @@ const sent: string[] = [];
 const listeners = new Map<string, ((e: unknown) => void)[]>();
 const set = (name: string, value: unknown) => Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
 set('location', { hostname: 'poe2.quest', pathname: '/', href: 'https://poe2.quest/', origin: 'https://poe2.quest', hash: '', search: '' });
-// GoatCounter's address reached (countRelay.ts reaches), so the counts go straight, as beacons; never the network.
-set('fetch', async () => new Response(null));
+// GoatCounter reached: the load's first count goes as a request that says so (countRelay.ts arrives), noted with the beacons, and the rest straight after it. Never the network.
+set('fetch', async (url: string) => (url.includes('/count?') && sent.push(url), new Response(null)));
 set('navigator', { webdriver: false, userAgent: 'test', sendBeacon: (url: string) => (sent.push(url), true) });
 set('document', {
   visibilityState: 'visible',

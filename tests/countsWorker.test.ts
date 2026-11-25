@@ -1,16 +1,16 @@
-// The visitor counts the matchmaking server passes on to GoatCounter
-// (signal/worker.js, "visitor counts passed on", its /counts path): for the
-// live game's page only, with GoatCounter's key, within the rate limits (its
-// own asked first), each batch checked whole, then sent on to GoatCounter's
-// counting API with the address and browser string the page came from, an
-// event counted each time under a session of its own. What GoatCounter's
+// The visitor counts the game's own counts server passes on to GoatCounter
+// (counts/worker.js, its /counts path): for the live game's page only, with
+// GoatCounter's key, within its rate limit, each batch checked whole, then
+// sent on to GoatCounter's counting API with the address and browser string
+// the page came from (the address as the one asking too), an event counted
+// each time under a session of its own. What GoatCounter's
 // answer becomes for the page. What the page sends: countRelay.test.ts and
 // countRoute.test.ts. GoatCounter's own counting is not run here: what its
 // API does with a session, an address and a browser string was read from its
 // source (handlers/api.go count, memstore.go session), not tried.
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { COUNTER_API, MAX_COUNTED, MAX_COUNTS, answer, counted } from '../signal/worker.js';
+import { ASKER, COUNTER_API, MAX_COUNTED, MAX_COUNTS, answer, counted } from '../counts/worker.js';
 import { COUNTER_ORIGIN } from '../src/lib/counter.ts';
 import { MAX_RELAYED, hitOf, relayBody } from '../src/lib/countRelay.ts';
 
@@ -28,19 +28,12 @@ function goat(status: number | null = 202) {
   return calls;
 }
 
-/** The Worker's bindings: the rate limits as given, each asking noted, and GoatCounter's key unless `key` is ''. */
-function env(key = 'test-key', limited = false, countsLimited = false) {
+/** The Worker's bindings: its rate limit as given, each asking noted (by whom), and GoatCounter's key unless `key` is ''. */
+function env(key = 'test-key', limited = false) {
   const asked: string[] = [];
-  const never = { idFromName: (n: string) => n, get: () => ({ fetch: async () => new Response(null, { status: 500 }) }) };
   return {
     asked,
-    PER_ADDRESS: { limit: async () => (asked.push('PER_ADDRESS'), { success: !limited }) },
-    KEEP_WRITES: { limit: async () => ({ success: true }) },
-    TALLY_WRITES: { limit: async () => ({ success: true }) },
-    COUNT_WRITES: { limit: async () => (asked.push('COUNT_WRITES'), { success: !countsLimited }) },
-    SIGNAL: never,
-    KEEP: never,
-    TALLY: never,
+    COUNT_WRITES: { limit: async (o: { key: string }) => (asked.push(o.key), { success: !limited }) },
     ...(key ? { GOATCOUNTER_KEY: key } : {}),
   };
 }
@@ -74,10 +67,11 @@ test("a page's counts go on to GoatCounter with the address and browser string t
   const r = await at(e, relayBody([visit, event, event, step]));
   assert.equal(r.status, 204);
   assert.equal(r.headers.get('Access-Control-Allow-Origin'), 'https://poe2.quest');
-  assert.deepEqual(e.asked, ['COUNT_WRITES', 'PER_ADDRESS']);
+  assert.deepEqual(e.asked, ['203.0.113.7'], 'its own limit, the address’s');
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, COUNTER_API);
   assert.equal(new Headers(calls[0].init.headers).get('Authorization'), 'Bearer test-key');
+  assert.equal(new Headers(calls[0].init.headers).get(ASKER), '203.0.113.7', 'the visitor as the one asking');
   const [v, a, b, s] = calls[0].body.hits;
   const from = { ip: '203.0.113.7', user_agent: 'Mozilla/5.0 (test)' };
   assert.deepEqual(v, { path: '/', title: 'PoE2.Quest', event: false, ref: 'https://www.reddit.com', query: '?utm_campaign=reddit-oct', ...from });
@@ -163,13 +157,9 @@ test('every name the page counts under passes, error places from a package and a
   assert.deepEqual(counted(new TextEncoder().encode(relayBody([visit, app, ...hits]))), [visit, app, ...hits]);
 });
 
-test('an address past its share is told to wait, the counts’ own limit asked first', async () => {
+test('an address past its share is told to wait, GoatCounter not asked', async () => {
   const calls = goat();
-  const few = env('test-key', false, true);
-  assert.equal((await at(few, relayBody([visit]))).status, 429);
-  assert.deepEqual(few.asked, ['COUNT_WRITES'], 'the address’s allowance left alone');
-  const busy = env('test-key', true);
-  assert.equal((await at(busy, relayBody([visit]))).status, 429);
+  assert.equal((await at(env('test-key', true), relayBody([visit]))).status, 429);
   assert.equal(calls.length, 0);
 });
 

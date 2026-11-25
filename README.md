@@ -270,24 +270,6 @@ protocol, one Durable Object holding every peer's socket in memory.
   missed against what their rules would expect, or least missed with
   `--easiest` and the view's Order (all answers in one pool, or first
   meetings only).
-- It passes on the visitor counts of a page whose blocker keeps GoatCounter's
-  address from it (`POST /counts`; `lib/countRelay.ts`): EasyPrivacy, which
-  uBlock Origin and Brave use, blocks all of `goatcounter.com` from another
-  site, and every beacon to another site. A page finds out with its load's
-  first count (a HEAD to GoatCounter's `/count` with an empty path, which
-  counts nothing: HEAD isn't routed there, and a count without a path is
-  turned down), sends straight as before if it gets there,
-  and otherwise sends that load's counts here in batches, a few seconds'
-  worth each and as it is hidden or left, and its visit sends
-  `visit/blocked`. The Worker checks each count's shape and sends it on to
-  GoatCounter's counting API with the player's address and browser string
-  (as GoatCounter has them from a page that reaches it), an event counted
-  each time under a session of its own; nothing is kept. An address may
-  send 60 batches a minute, held to that before matchmaking's limit is
-  touched. GoatCounter takes them under an API key allowed only to record
-  pageviews, the secret `GOATCOUNTER_KEY` (`signal/wrangler.toml` says where
-  to set it); without it `/counts` answers 404 and blocked pages go
-  uncounted, as before.
 - Cloudflare's free plan gives a Durable Object 100,000 requests a day, a
   socket's messages counting 20 to one (a peer on ours sends a heartbeat
   every 25 s, not PeerJS's 5), and the account 100,000 Worker requests a
@@ -412,6 +394,46 @@ origin main`, `git worktree add --detach <dir> origin/main`, and `git -C <dir>
 log -1` shows the merge; then `npx --yes wrangler@4.158.0 deploy` in
 `<dir>/relay`), checks it live as before, and closes the issue. A session
 that ends first leaves the issue for the next.
+
+### Counts round a blocker
+
+The visitor counts (`lib/count.ts`) go from the page to GoatCounter, and
+EasyPrivacy, which uBlock Origin and Brave use, blocks all of
+`goatcounter.com` from another site and every beacon to another site: a page
+with a blocker would count nothing. Its counts go round it, through a Worker
+of their own (`counts/worker.js`, at `poe2-counts.poe2quest.workers.dev`),
+apart from the matchmaking server, so a list that names its address costs
+players their counts, never their games:
+
+- A page load's first count goes as a request that says whether it got there
+  (`lib/countRelay.ts`, `arrives`; the rest go as beacons, which never say),
+  and those counted meanwhile wait for its answer, 3 s at most.
+- If it didn't get there, it and the load's later counts go to the Worker in
+  batches, a few seconds' worth each and at once as the page is hidden or
+  left, and a visit that went this way sends `visit/blocked` with it. A count
+  goes round only if it never left, so none counts twice.
+- The Worker checks each count's shape and sends it on to GoatCounter's
+  counting API with the player's address and browser string (as GoatCounter
+  has them from a page that reaches it), an event counted each time under a
+  session of its own, and keeps nothing. An address may send 60 batches a
+  minute.
+- If the Worker answers 404 (no key) or can't be reached (a batch turned down
+  three times), the load sends its counts straight again, those that never
+  left first.
+
+To set it up:
+
+1. At poe2quest.goatcounter.com, under its API settings, make an API key
+   allowed only to record pageviews.
+2. In `counts/` (not the project's root, as for the relay):
+   `npx --yes wrangler@4.158.0 deploy`, then
+   `npx wrangler secret put GOATCOUNTER_KEY`, pasting the key.
+
+Without the key the Worker answers 404, and a blocked page's counts are lost,
+as before. Like the relay, it's deployed by hand, from `main` once a change to
+it is merged. To turn it off: delete the secret (pages go straight again at
+once), or empty `COUNTS_ORIGIN` in `src/lib/counter.ts` (pages loaded after
+the deploy).
 
 ## Deploying
 

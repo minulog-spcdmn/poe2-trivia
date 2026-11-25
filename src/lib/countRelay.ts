@@ -1,22 +1,22 @@
-// The visitor counts' way round a blocker (count.ts): a page that finds
-// GoatCounter's address blocked (an ad or tracking blocker keeps it from the
-// page) sends its counts to the matchmaking server instead, which passes them
-// on to GoatCounter with the player's address and browser string, keeping
-// nothing (signal/worker.js, "visitor counts passed on"). Each count as the
-// page would have sent it to GoatCounter itself (its own parameters), held and
-// sent in batches: GATHER_MS after the first that waits, once MAX_RELAYED
-// wait, and at once as the page is hidden or left. A batch turned down by the
-// network or a busy server goes again with the next send, as it was, twice
-// more at most (RETRIES); a server without the path (an older one, or one
-// without GoatCounter's key: 404) is let go of, and nothing more goes there
-// from this page. Asked again as each batch goes: nothing goes once the
-// privacy page has been used to opt out.
+// The visitor counts' way round a blocker (count.ts): a page whose first count
+// didn't reach GoatCounter (an ad or tracking blocker keeps its address from
+// the page) sends its counts to a server of the game's own instead, which
+// passes them on to GoatCounter with the player's address and browser string,
+// keeping nothing (counts/worker.js). Each count as the page would have sent
+// it to GoatCounter itself (its own parameters), held and sent in batches:
+// GATHER_MS after the first that waits, once MAX_RELAYED wait, and at once as
+// the page is hidden or left. A batch turned down by the network or a busy
+// server goes again with the next send, as it was, twice more at most
+// (RETRIES). The relay gives up on a server without the path (an older one,
+// one without GoatCounter's key, 404) or a batch turned down that often, and
+// hands back what never left (`gone`): the page sends it straight again.
+// Asked again as each batch goes: nothing goes once the privacy page has been
+// used to opt out.
 
-import { COUNTER_ORIGIN } from './counter.ts';
-import { OWN_SIGNAL_HOST } from './signalHost.ts';
+import { COUNTS_ORIGIN } from './counter.ts';
 
-/** Where the counts go round a blocker: the matchmaking server's own host (vite.config.ts lets the page reach it). */
-export const COUNTS_URL = OWN_SIGNAL_HOST ? `https://${OWN_SIGNAL_HOST}/counts` : '';
+/** Where the counts go round a blocker (vite.config.ts lets the page reach it). */
+export const COUNTS_URL = COUNTS_ORIGIN ? `${COUNTS_ORIGIN}/counts` : '';
 /** The most counts one batch carries (and the Worker takes: MAX_COUNTED). */
 export const MAX_RELAYED = 40;
 /** How long a count waits for others to go with it (ms): a game's start sends several within a second or two. */
@@ -50,20 +50,29 @@ export interface Clock {
 }
 const pageClock: Clock = { set: (f, ms) => setTimeout(f, ms), clear: (t) => clearTimeout(t as ReturnType<typeof setTimeout>) };
 
-/** Counts held until they go round the blocker: `allowed` asked again as each batch goes, `post` sending one. */
+/** A batch on its way: its counts, and how many times it went. */
+type Batch = { hits: Hit[]; tries: number };
+
+/**
+ * Counts held until they go round the blocker: `allowed` asked again as each
+ * batch goes, `post` sending one, `gone` told when the relay gives up, with
+ * the counts that never left (the page sends those straight).
+ */
 export class Relay {
   private held: Hit[] = [];
-  private turnedDown: { body: string; tries: number }[] = [];
+  private turnedDown: Batch[] = [];
   private timer: unknown = null;
-  /** The server hasn't the path (404): nothing more goes. */
+  /** Given up: nothing more goes. */
   private off = false;
   private allowed: () => boolean;
   private post: (body: string) => Promise<Posted>;
   private clock: Clock;
-  constructor(allowed: () => boolean, post: (body: string) => Promise<Posted>, clock: Clock = pageClock) {
+  private gone: (back: Hit[]) => void;
+  constructor(allowed: () => boolean, post: (body: string) => Promise<Posted>, clock: Clock = pageClock, gone: (back: Hit[]) => void = () => {}) {
     this.allowed = allowed;
     this.post = post;
     this.clock = clock;
+    this.gone = gone;
   }
 
   /** A count: held, sent with those that come within GATHER_MS, or at once once MAX_RELAYED wait. */
@@ -84,18 +93,30 @@ export class Relay {
     this.turnedDown = [];
     if (this.off || !this.allowed()) return;
     for (const b of old) this.go(b);
-    for (let i = 0; i < fresh.length; i += MAX_RELAYED) this.go({ body: relayBody(fresh.slice(i, i + MAX_RELAYED)), tries: 0 });
+    for (let i = 0; i < fresh.length; i += MAX_RELAYED) this.go({ hits: fresh.slice(i, i + MAX_RELAYED), tries: 0 });
   }
 
-  private go(b: { body: string; tries: number }) {
-    void this.post(b.body).then((status) => {
-      if (status === 404) {
-        this.off = true;
-        return this.drop();
-      }
+  private go(b: Batch) {
+    void this.post(relayBody(b.hits)).then((status) => {
+      if (this.off) return;
+      // No such path: this batch never got past the server, nor did what waits.
+      if (status === 404) return this.giveUp([...b.hits, ...this.held]);
+      // Taken, or turned down as it is (400, 413): going again changes nothing.
+      if (!again(status)) return;
       // Kept to go with the next send, unchanged (never by itself: a busy server isn't asked again at once).
-      if (again(status) && b.tries < RETRIES && !this.off && this.allowed()) this.turnedDown.push({ ...b, tries: b.tries + 1 });
+      if (b.tries < RETRIES) {
+        if (this.allowed()) this.turnedDown.push({ ...b, tries: b.tries + 1 });
+        return;
+      }
+      // Turned down too often: let go of it (it may have got there, its answer lost), and of the way round.
+      this.giveUp([...this.held]);
     });
+  }
+
+  private giveUp(back: Hit[]) {
+    this.off = true;
+    this.drop();
+    this.gone(this.allowed() ? back : []);
   }
 
   private drop() {
@@ -123,17 +144,14 @@ export async function postCounts(body: string): Promise<Posted> {
 }
 
 /**
- * Whether this page reaches GoatCounter's address, asked at its counts'
- * own address (/count, as a blocker's rules see it) with nothing in it: a
- * count with no path is turned down (its hit.go Validate), and HEAD isn't
- * even routed there (only GET and POST are, its handlers/backend.go), so it
- * counts nothing and carries nothing of the page's. Its answer is opaque
- * (no-cors); any answer at all is reaching it. A blocker turning it away
- * fails it, as it would a count, which a beacon never says.
+ * Sends a count to GoatCounter as a request that says whether it got there:
+ * false when it never left (a blocker turning GoatCounter's address away, or
+ * the network failing it), true on any answer at all. Its answer is opaque
+ * (no-cors), and a GET has no body, so it outlives a page closing without
+ * using up the browser's room for those (keepalive). A beacon never says.
  */
-export function reaches(): Promise<boolean> {
-  const url = `${COUNTER_ORIGIN}/count?${new URLSearchParams({ p: '', rnd: Math.random().toString(36).slice(2) })}`;
-  return fetch(url, { method: 'HEAD', mode: 'no-cors', credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer' }).then(
+export function arrives(url: string): Promise<boolean> {
+  return fetch(url, { mode: 'no-cors', keepalive: true, credentials: 'omit', cache: 'no-store' }).then(
     () => true,
     () => false,
   );

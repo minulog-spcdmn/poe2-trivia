@@ -22,8 +22,8 @@ const doc = {
   removeEventListener: () => {},
 };
 set('location', { hostname: 'poe2.quest', pathname: '/', href: 'https://poe2.quest/', origin: 'https://poe2.quest', hash: '', search: '' });
-// GoatCounter's address reached (countRelay.ts reaches), so the counts go straight, as beacons; never the network.
-set('fetch', async () => new Response(null));
+// GoatCounter reached: the load's first count goes as a request that says so (countRelay.ts arrives), noted with the beacons, and the rest straight after it. Never the network.
+set('fetch', async (url: string) => (url.includes('/count?') && sent.push(url), new Response(null)));
 set('navigator', {
   webdriver: false,
   userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
@@ -64,7 +64,7 @@ const { countGameFrames } = await import('../src/lib/count.ts');
 const paths = () => sent.map((u) => new URL(u).searchParams.get('p'));
 const game = (phase: GameState['phase']): GameState => ({ ...createGame('p0', { ...DEFAULT_SETTINGS, mode: 'turns' }), phase });
 
-test("a computer's game switched away from counts as a whole, as it ends", () => {
+test("a computer's game switched away from counts as a whole, as it ends", async () => {
   countGameFrames(game('choosing'));
   // A hitch as the game began, then 22 s smooth: switched away from there, it would read "some/begin".
   t += 400;
@@ -76,6 +76,8 @@ test("a computer's game switched away from counts as a whole, as it ends", () =>
   frames(16, 4000);
   countGameFrames(game('over'));
   mock.timers.tick(3_000);
+  // (The first's answer in: GoatCounter reached, the rest straight after it, countRelay.ts arrives.)
+  await new Promise((r) => setImmediate(r));
   // (The queue's next, a gap after.)
   mock.timers.tick(1_000);
   assert.deepEqual(paths(), ['frames2/desktop-chrome/smooth', 'frames2/desktop-chrome/visit/smooth'], "the whole game, once, and as its visit's first");

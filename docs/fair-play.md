@@ -113,12 +113,12 @@ Privacy Control is counted like any other from 2026-11-25, about 10:30 UTC
 and the item tally take in the browsers that send it (Brave by default), so
 a trend across the day compares two groups of browsers.
 A browser whose blocker keeps GoatCounter's address from the page (EasyPrivacy
-blocks all of `goatcounter.com` from another site) sends its counts through
-the matchmaking server instead (`src/lib/countRelay.ts`; README, "Matchmaking
-server"), and its visit sends `visit/blocked`, once a visitor like the visit:
-visits less `visit/blocked` are what GoatCounter would have counted without
-it. That needs the Worker's secret `GOATCOUNTER_KEY`; until it is set, those
-browsers go uncounted, as before.
+blocks all of `goatcounter.com` from another site) sends its counts through a
+Worker of their own instead (`src/lib/countRelay.ts`; README, "Counts round a
+blocker"), and a visit that went that way sends `visit/blocked`: visits less
+`visit/blocked` are what GoatCounter got straight. That needs the Worker
+deployed with its secret `GOATCOUNTER_KEY`; until then, those browsers go
+uncounted, as before.
 Game events count each time (`ns`, no session): `play/<mode>`,
 `size/<mode>-<n>p`, `screen/<mode>` (some at the host's screen) and
 `end/<mode>` from the device running the game (`-online`/`-hotseat` until
