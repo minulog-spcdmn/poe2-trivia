@@ -23,6 +23,8 @@ const doc = {
   removeEventListener: () => {},
 };
 set('location', { hostname: 'poe2.quest', pathname: '/', href: 'https://poe2.quest/', origin: 'https://poe2.quest', hash: '', search: '' });
+// GoatCounter's address reached (countRelay.ts reaches), so the counts go straight, as beacons; never the network.
+set('fetch', async () => new Response(null));
 set('navigator', {
   webdriver: false,
   userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Mobile/15E148 Safari/604.1',

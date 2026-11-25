@@ -532,6 +532,7 @@ function env(allowed = Infinity) {
     // (Nor the item tally: tests/itemTallyWorker.test.ts.)
     TALLY: { idFromName: (name: string) => name, get: () => ({ fetch: async () => new Response(null, { status: 500 }) }) },
     TALLY_WRITES: { limit: async () => ({ success: true }) },
+    COUNT_WRITES: { limit: async () => ({ success: true }) },
   };
 }
 const socket = (query: string, origin = 'https://poe2.quest', more: Record<string, string> = {}) =>

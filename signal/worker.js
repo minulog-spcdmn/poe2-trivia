@@ -38,7 +38,8 @@
 // answers went, per item and the rules each was asked under (`/tally`,
 // Tally below): the sums, and for a day each batch's random id with when
 // it came (so a batch sent again is added once); nothing of who answered or
-// from where.
+// from where. And it passes on the visitor counts of a page whose blocker
+// keeps GoatCounter's address from it (`/counts`, below), keeping nothing.
 
 import ITEM_IDS from './itemIds.json' with { type: 'json' };
 
@@ -113,6 +114,8 @@ const LOCAL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|[\w-]+\.localhost|10\
  *   PER_ADDRESS: { limit(o: { key: string }): Promise<{ success: boolean }> },
  *   KEEP_WRITES: { limit(o: { key: string }): Promise<{ success: boolean }> },
  *   TALLY_WRITES: { limit(o: { key: string }): Promise<{ success: boolean }> },
+ *   COUNT_WRITES: { limit(o: { key: string }): Promise<{ success: boolean }> },
+ *   GOATCOUNTER_KEY?: string,
  * }} Env
  */
 
@@ -1011,13 +1014,142 @@ async function tally(request, url, env, headers) {
   return new Response(null, { status: r.status, headers });
 }
 
+// ---- visitor counts passed on ---------------------------------------------------
+//
+// The game's visitor counts (src/lib/count.ts) go from the page to GoatCounter
+// itself, unless the page found GoatCounter's address blocked (an ad or
+// tracking blocker keeps it from the page): then they come here, in batches
+// (src/lib/countRelay.ts), and go on to GoatCounter's counting API
+// (www.goatcounter.com/api, POST /api/v0/count) with the player's address and
+// browser string, as GoatCounter has them from a page that reaches it: what it
+// works out the country, browser and system from, and tells one visitor's
+// counts by for eight hours. Nothing of them is kept here.
+//
+// - POST /counts: `{"h":[{"p":"/","t":"PoE2.Quest","r":"https://www.reddit.com"},{"p":"play/race","t":"play/race","e":"true","ns":"true"}]}`
+//   (as text/plain, so a page's request needs no preflight): each count in
+//   GoatCounter's own parameters, as the page would have sent it there, and
+//   only in the shapes the page gives them (`counted`); anything off refuses
+//   the batch whole. An event counted each time (`ns`) goes with a session
+//   of its own (GoatCounter's API has no `ns`: a session never seen before
+//   counts as a visitor's first, as `ns` does), the rest with none, so
+//   GoatCounter tells their visitor by address and browser, as from the page.
+//
+// Only from the live game's page (the only one that counts), within a limit
+// of its own an address (COUNT_WRITES, wrangler.toml), asked before the
+// address's own. GoatCounter takes them under the Worker's secret
+// GOATCOUNTER_KEY, an API key allowed only to record counts; without it the
+// path answers as an older Worker does (404), and a page stops sending here.
+// Busy or failing, GoatCounter's answer becomes a 503, and the page sends
+// the batch again with its next (twice more at most).
+
+/** Where the counts go on: GoatCounter's counting API for the site (src/lib/counter.ts COUNTER_ORIGIN, held equal by tests/countsWorker.test.ts). */
+export const COUNTER_API = 'https://poe2quest.goatcounter.com/api/v0/count';
+/** The longest batch (bytes) and the most counts in it: a page sends forty at most (src/lib/countRelay.ts MAX_RELAYED). */
+export const MAX_COUNTS = 16 * 1024;
+export const MAX_COUNTED = 40;
+/** A count's path: the start page ("/"), or an event's name ("play/race", "error/script/lib/codex.ts:loadCodex", "cohort/2026-W43"). */
+const COUNT_PATH = /^(?:\/|[\w-]+(?:\/[\w.:-]+)*)$/;
+/** A referrer as the page sends it (count.ts referrerOf): a site's or an app's origin alone. */
+const COUNT_REF = /^[a-z][a-z0-9+.-]*:\/\/[^\s/?#]+$/i;
+/** A tagged link's campaign, as the page sends it (count.ts campaignOf). */
+const COUNT_CAMPAIGN = /^\?utm_campaign=[\w-]{1,40}$/;
+/** Text with no control characters in it. */
+const PLAIN = /^[^\u0000-\u001f\u007f]*$/;
+
+/**
+ * One count, in GoatCounter's own parameters (its /count's): `p` its path, `t` its title, `r` the referrer, `q` the campaign, `e` an event, `ns` counted each time.
+ * @typedef {{ p: string, t?: string, r?: string, q?: string, e?: 'true', ns?: 'true' }} Counted
+ */
+
+/**
+ * A batch of counts as sent, or null when anything in its shape is off.
+ * @param {Uint8Array} body @returns {Counted[] | null}
+ */
+export function counted(body) {
+  /** @type {unknown} */
+  let m;
+  try {
+    m = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(body));
+  } catch {
+    return null;
+  }
+  if (typeof m !== 'object' || m === null || Array.isArray(m) || Object.keys(m).length !== 1) return null;
+  const { h } = /** @type {{ h?: unknown }} */ (m);
+  if (!Array.isArray(h) || h.length < 1 || h.length > MAX_COUNTED) return null;
+  /** @type {Record<string, (v: string) => boolean>} */
+  const shapes = {
+    p: (v) => v.length <= 200 && COUNT_PATH.test(v),
+    t: (v) => v.length <= 200 && PLAIN.test(v),
+    r: (v) => v.length <= 300 && COUNT_REF.test(v),
+    q: (v) => COUNT_CAMPAIGN.test(v),
+    e: (v) => v === 'true',
+    ns: (v) => v === 'true',
+  };
+  for (const x of h) {
+    if (typeof x !== 'object' || x === null || Array.isArray(x) || typeof x.p !== 'string') return null;
+    for (const [k, v] of Object.entries(x)) if (!(k in shapes) || typeof v !== 'string' || !shapes[k](v)) return null;
+  }
+  return /** @type {Counted[]} */ (h);
+}
+
+/**
+ * A count as GoatCounter's API takes it, with the address and browser string it came from.
+ * @param {Counted} c @param {string} ip @param {string} userAgent
+ */
+export function goatHit(c, ip, userAgent) {
+  return {
+    path: c.p,
+    title: c.t ?? '',
+    event: c.e === 'true',
+    ...(c.r ? { ref: c.r } : {}),
+    ...(c.q ? { query: c.q } : {}),
+    ip,
+    user_agent: userAgent,
+    // (A session of its own, used once: counted each time, as `ns` is from the page.)
+    ...(c.ns === 'true' ? { session: crypto.randomUUID() } : {}),
+  };
+}
+
+/**
+ * A batch of counts passed on to GoatCounter; null for any other path.
+ * @param {Request} request @param {URL} url @param {Env} env @param {Record<string, string>} headers
+ */
+async function counts(request, url, env, headers) {
+  if (url.pathname !== '/counts') return null;
+  // (Without the key, or from anywhere but the live game's page, as if it weren't here: the page stops sending.)
+  if (!env.GOATCOUNTER_KEY || request.method !== 'POST' || request.headers.get('Origin') !== LIVE) return new Response(null, { status: 404, headers });
+  if (Number(request.headers.get('Content-Length') ?? 0) > MAX_COUNTS) return new Response(null, { status: 413, headers });
+  const ip = request.headers.get('CF-Connecting-IP') ?? '';
+  const key = addressKey(ip);
+  // Its own limit first: a batch it turns away leaves the address's matchmaking allowance alone.
+  for (const limit of [env.COUNT_WRITES, env.PER_ADDRESS])
+    if (!(await limit.limit({ key })).success) return new Response(null, { status: 429, headers: { ...headers, 'Retry-After': '60' } });
+  const body = await upTo(request.body, MAX_COUNTS);
+  if (!body) return new Response(null, { status: 413, headers });
+  const batch = counted(body);
+  if (!batch) return new Response(null, { status: 400, headers });
+  const userAgent = request.headers.get('User-Agent') ?? '';
+  /** @type {Response | null} */
+  const r = await fetch(COUNTER_API, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.GOATCOUNTER_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hits: batch.map((c) => goatHit(c, ip, userAgent)) }),
+  }).catch(() => null);
+  // Taken (202), or some turned down as they are (400, its errors by index; the rest taken): sending them again would count those twice.
+  if (r && (r.status === 202 || r.status === 400)) return new Response(null, { status: 204, headers });
+  // A key GoatCounter refuses (401, 403) is as none.
+  if (r && (r.status === 401 || r.status === 403)) return new Response(null, { status: 404, headers });
+  // Busy, failing, or out of reach: the page sends the batch again with its next.
+  return new Response(null, { status: 503, headers });
+}
+
 /** @param {Request} request @param {Env} env */
 export async function answer(request, env) {
   const origin = request.headers.get('Origin') ?? '';
   if (origin !== LIVE && !LOCAL.test(origin)) return new Response(null, { status: 403 });
   const headers = { 'Access-Control-Allow-Origin': origin, Vary: 'Origin', 'Cache-Control': 'no-store' };
   const url = new URL(request.url);
-  const kept = (await keep(request, url, env, headers)) ?? (await tally(request, url, env, headers));
+  const kept = (await keep(request, url, env, headers)) ?? (await tally(request, url, env, headers)) ?? (await counts(request, url, env, headers));
   if (kept) return kept;
   const socket = url.pathname === '/peerjs' && request.headers.get('Upgrade')?.toLowerCase() === 'websocket';
   const newId = url.pathname === '/peerjs/id' && request.method === 'GET';

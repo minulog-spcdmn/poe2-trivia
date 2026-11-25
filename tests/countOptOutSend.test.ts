@@ -14,6 +14,8 @@ let visibility = 'hidden';
 const listeners: (() => void)[] = [];
 const set = (name: string, value: unknown) => Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
 set('location', { hostname: 'poe2.quest', pathname: '/', href: 'https://poe2.quest/' });
+// GoatCounter's address reached (countRelay.ts reaches), so the counts go straight, as beacons; never the network.
+set('fetch', async () => new Response(null));
 set('navigator', { webdriver: false, sendBeacon: (url: string) => (sent.push(url), true) });
 set('document', {
   get visibilityState() {

@@ -7,7 +7,9 @@
 // game's own page at poe2.quest counts; the beta, the dev server and the dev
 // pages never do.
 // datenschutz.html says what is sent, and vite.config.ts's CSP lets it
-// through.
+// through. Where GoatCounter's address is blocked (an ad or tracking
+// blocker), the counts go to it through the matchmaking server instead
+// (countRelay.ts; `route` below), and the visit says so ("visit/blocked").
 //
 // A game's frames are counted on each device that shows it (countGameFrames,
 // lib/stutter.ts): measured only while a game is under way and the page is
@@ -31,6 +33,7 @@ import type { GameState } from './game.ts';
 import { COUNTER_ORIGIN } from './counter.ts';
 import { isoWeek } from './isoWeek.ts';
 import { countOptedOut, notCounted, setCountOptedOut } from './countOptOut.ts';
+import { COUNTS_URL, Relay, hitOf, postCounts, reaches } from './countRelay.ts';
 import { SITE_URL } from './site.ts';
 import { fetchWhereTable, ownFrames, whereOf, type ErrorPlace, type WhereTable } from './errorWhere.ts';
 import { GameFrames, SOFTWARE, deviceOf, framesEvent, visitEvent, type BrowserSays, type StateMoment } from './stutter.ts';
@@ -105,6 +108,46 @@ function beacon(url: string) {
 }
 
 /**
+ * How this page load's counts reach GoatCounter: straight (beacon), or,
+ * where its address is blocked (an ad or tracking blocker keeps it from the
+ * page), through the matchmaking server (countRelay.ts), which passes them
+ * on. Found out with the load's first count (reaches); until then counts go
+ * straight and are kept (`early`), to go round as well if they didn't get
+ * there, and once it's known they all go the one way. A load never mixes
+ * the two: GoatCounter tells a visitor's counts by the address and browser
+ * they came with, and the server may see another address than GoatCounter
+ * would (one over IPv6, the other IPv4).
+ */
+let route: 'straight' | 'relay' | null = null;
+const early: string[] = [];
+let relay: Relay | null = null;
+/** This load counted its visit (countVisit): one whose counts go round a blocker says so ("visit/blocked"), once a visitor like the visit. */
+let arrived = false;
+
+/** A count's way out (the queue's): straight, round a blocker, or straight while that's found out. */
+function out(url: string) {
+  if (route === 'relay') return relay?.add(hitOf(url));
+  if (route === null) {
+    if (!early.length) void findRoute(url);
+    early.push(url);
+  }
+  beacon(url);
+}
+
+/** Whether the count at `url`, the load's first, could reach GoatCounter: the way this load's counts go from then on. */
+async function findRoute(url: string) {
+  const straight = !COUNTS_URL || (await reaches(url));
+  route = straight ? 'straight' : 'relay';
+  const sent = early.splice(0);
+  if (straight) return;
+  const r = (relay = new Relay(() => counting && !notCounted(), postCounts));
+  for (const u of sent) r.add(hitOf(u));
+  if (arrived) countReach('visit/blocked');
+  // (A page already hidden or left sends them now: it may not be back.)
+  if (document.visibilityState === 'hidden') r.send();
+}
+
+/**
  * GoatCounter takes at most four counts a second from one address, and turns
  * the rest away unseen (a beacon never hears). So counts go out one at a
  * time, GAP_MS apart, the first after a random wait (JITTER_MS): a game's
@@ -125,11 +168,11 @@ function drain() {
   const url = queue.shift();
   if (atHead) atHead--;
   // Not if the privacy page was used to opt out meanwhile.
-  if (url && !notCounted()) beacon(url);
+  if (url && !notCounted()) out(url);
   if (queue.length) drainTimer = setTimeout(drain, GAP_MS);
 }
 function release(url: string, now: boolean, head = false) {
-  if (now && !queue.length && !drainTimer) return beacon(url);
+  if (now && !queue.length && !drainTimer) return out(url);
   if (now) {
     queue.unshift(url);
     atHead++;
@@ -146,7 +189,9 @@ function leaving(hidden: boolean) {
   drainTimer = null;
   atHead = 0;
   const left = queue.splice(0);
-  if (!notCounted()) for (const url of left) beacon(url);
+  if (!notCounted()) for (const url of left) out(url);
+  // (Those going round a blocker too, held for others to go with them.)
+  relay?.send();
 }
 // (Where it counts at all, not only where it counts on loading: #toggle-goatcounter can switch counting on later.)
 // Hidden too: a phone often drops a tab switched away from without a pagehide.
@@ -325,6 +370,7 @@ export function countVisit(save: () => Played | null, campaign: string | null, i
   readPlayed = save;
   const back = cameBack();
   if (!back) {
+    arrived = true;
     const r = referrerOf(document.referrer, location.href);
     send({ p: '/', t: document.title, ...(r ? { r } : {}), ...(campaign ? { q: `?utm_campaign=${campaign}` } : {}) }, true);
   }

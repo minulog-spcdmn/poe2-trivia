@@ -270,6 +270,23 @@ protocol, one Durable Object holding every peer's socket in memory.
   missed against what their rules would expect, or least missed with
   `--easiest` and the view's Order (all answers in one pool, or first
   meetings only).
+- It passes on the visitor counts of a page whose blocker keeps GoatCounter's
+  address from it (`POST /counts`; `lib/countRelay.ts`): EasyPrivacy, which
+  uBlock Origin and Brave use, blocks all of `goatcounter.com` from another
+  site, and every beacon to another site. A page finds out with its load's
+  first count (a HEAD to that count's address, which GoatCounter doesn't
+  route, so it counts nothing), sends straight as before if it gets there,
+  and otherwise sends that load's counts here in batches, a few seconds'
+  worth each and as it is hidden or left, and its visit sends
+  `visit/blocked`. The Worker checks each count's shape and sends it on to
+  GoatCounter's counting API with the player's address and browser string
+  (as GoatCounter has them from a page that reaches it), an event counted
+  each time under a session of its own; nothing is kept. An address may
+  send 60 batches a minute, held to that before matchmaking's limit is
+  touched. GoatCounter takes them under an API key allowed only to record
+  pageviews, the secret `GOATCOUNTER_KEY` (`signal/wrangler.toml` says where
+  to set it); without it `/counts` answers 404 and blocked pages go
+  uncounted, as before.
 - Cloudflare's free plan gives a Durable Object 100,000 requests a day, a
   socket's messages counting 20 to one (a peer on ours sends a heartbeat
   every 25 s, not PeerJS's 5), and the account 100,000 Worker requests a
