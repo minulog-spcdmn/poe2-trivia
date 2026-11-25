@@ -27,6 +27,8 @@ class Beacon {
   }
 }
 Object.assign(globalThis, { Image: Beacon, addEventListener() {}, removeEventListener() {} });
+// GoatCounter's address reached (countRelay.ts reaches), so the counts go straight, as beacons; never the network.
+Object.assign(globalThis, { fetch: async () => new Response(null) });
 Object.defineProperty(globalThis, 'document', { value: Object.assign(new EventTarget(), { referrer: '', visibilityState: 'visible' }), configurable: true, writable: true });
 mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
 const { session } = await import('../src/lib/session.svelte.ts');

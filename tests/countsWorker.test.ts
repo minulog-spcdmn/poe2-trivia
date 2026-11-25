@@ -123,15 +123,20 @@ test('a count off in any way is left out alone, the rest of its batch sent on', 
     { ...visit, r: 'https://www.reddit.com/r/secret-thread' },
     { ...visit, q: '?room=ABCD' },
     { ...visit, t: 'line\nbreak' },
+    // (Keys every object has from its prototype are none of a count's either.)
+    { ...step, constructor: 'x' },
+    { ...step, toString: 'x' },
   ];
-  for (const x of off) {
+  // (`__proto__` as JSON text: an object literal makes no key of it.)
+  const bodies = [...off.map((x) => JSON.stringify({ h: [x, step] })), `{"h":[{"p":"reach/played","__proto__":"x"},${JSON.stringify(step)}]}`];
+  for (const body of bodies) {
     const calls = goat();
-    const r = await at(env(), JSON.stringify({ h: [x, step] }));
-    assert.equal(r.status, 204, JSON.stringify(x));
+    const r = await at(env(), body);
+    assert.equal(r.status, 204, body);
     assert.deepEqual(
       calls[0].body.hits.map((h) => h.path),
       ['reach/played'],
-      JSON.stringify(x),
+      body,
     );
   }
   const calls = goat();
@@ -171,6 +176,9 @@ test('an address past its share is told to wait, the counts’ own limit asked f
 test("GoatCounter's answer, as the page hears it: taken, sent again later, or the path gone", async () => {
   const cases: [number | null, number][] = [
     [202, 204],
+    // (Taken all the same, however GoatCounter says so: sent again, they would count twice.)
+    [200, 204],
+    [204, 204],
     // Some turned down as they are (the rest taken): sending them again would count those twice.
     [400, 204],
     [429, 503],

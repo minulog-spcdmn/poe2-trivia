@@ -17,6 +17,8 @@ Object.assign(globalThis, { localStorage: memoryStorage(), sessionStorage: memor
 Object.assign(globalThis, { window: new EventTarget(), location: new URL('https://poe2.quest/') });
 // What the page does on the side as rooms open and close (count.ts's beacon, listeners on the page) goes nowhere.
 Object.assign(globalThis, { Image: class { src = ''; }, addEventListener() {}, removeEventListener() {} });
+// GoatCounter's address reached (countRelay.ts reaches), so the counts go straight, as beacons; never the network.
+Object.assign(globalThis, { fetch: async () => new Response(null) });
 Object.defineProperty(globalThis, 'document', { value: Object.assign(new EventTarget(), { referrer: '', visibilityState: 'visible' }), configurable: true, writable: true });
 mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
 const { session } = await import('../src/lib/session.svelte.ts');

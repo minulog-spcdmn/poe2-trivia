@@ -27,6 +27,7 @@ const { PEER_PREFIX, alsoOn, chooseServer, keepFresh, newPeer, pageServer, peerJ
 const { ProbeDesk, answerProbes, probeRoom, slotId } = await import('../src/lib/rooms.ts');
 const { ping, pingAnswer } = await import('../src/lib/probeDesk.ts');
 const { OWN_SIGNAL_HOST } = await import('../src/lib/signalHost.ts');
+const { COUNTER_ORIGIN } = await import('../src/lib/counter.ts');
 type RoomInfo = import('../src/lib/roomInfo.ts').RoomInfo;
 
 /** What each server says to a page's look (lib/peer.ts), never the network: yes, no, never a word, or as a function says each time. */
@@ -35,6 +36,8 @@ let answering: { cloud: Says; own: Says } = { cloud: true, own: true };
 /** The servers asked, in order. */
 const asked: string[] = [];
 globalThis.fetch = ((url: string, init?: RequestInit) => {
+  // (The session's counts look for GoatCounter's address as their first goes, countRelay.ts reaches: reached, and no server's ask.)
+  if (String(url).startsWith(COUNTER_ORIGIN)) return Promise.resolve(new Response(null));
   const server = new URL(url).host === OWN_SIGNAL_HOST ? 'own' : 'cloud';
   asked.push(server);
   const says = answering[server];

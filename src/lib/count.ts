@@ -123,13 +123,20 @@ const early: string[] = [];
 let relay: Relay | null = null;
 /** This load counted its visit (countVisit): one whose counts go round a blocker says so ("visit/blocked"), once a visitor like the visit. */
 let arrived = false;
+/** The page was put away (leaving: hidden or left) and not seen since. */
+let away = false;
 
 /** A count's way out (the queue's): straight, round a blocker, or straight while that's found out. */
 function out(url: string) {
-  if (route === 'relay') return relay?.add(hitOf(url));
+  if (route === 'relay') {
+    relay?.add(hitOf(url));
+    // (One counted with the page put away, after leaving sent what waited, goes now, as a beacon would: the page may not be back. Those counted in the same moment go together.)
+    if (away) queueMicrotask(() => relay?.send());
+    return;
+  }
   if (route === null) {
-    if (!early.length) void findRoute();
     early.push(url);
+    if (early.length === 1) void findRoute();
   }
   beacon(url);
 }
@@ -143,8 +150,8 @@ async function findRoute() {
   const r = (relay = new Relay(() => counting && !notCounted(), postCounts));
   for (const u of sent) r.add(hitOf(u));
   if (arrived) countReach('visit/blocked');
-  // (A page already hidden or left sends them now: it may not be back.)
-  if (document.visibilityState === 'hidden') r.send();
+  // (A page already hidden or left sends them now, the visit's mark from the queue with them: it may not be back.)
+  if (away) flush();
 }
 
 /**
@@ -182,9 +189,8 @@ function release(url: string, now: boolean, head = false) {
 }
 /** What's counted as the page is hidden (`hidden`) or left, ahead of the queue going (a game's frames, countGameFrames). */
 const onLeaving: ((hidden: boolean) => void)[] = [];
-/** Sends what's counted as the page goes and all that waits. */
-function leaving(hidden: boolean) {
-  for (const f of onLeaving) f(hidden);
+/** Sends all that waits at once. */
+function flush() {
   if (drainTimer) clearTimeout(drainTimer);
   drainTimer = null;
   atHead = 0;
@@ -193,12 +199,23 @@ function leaving(hidden: boolean) {
   // (Those going round a blocker too, held for others to go with them.)
   relay?.send();
 }
+/** Sends what's counted as the page goes and all that waits. */
+function leaving(hidden: boolean) {
+  for (const f of onLeaving) f(hidden);
+  flush();
+  away = true;
+}
 // (Where it counts at all, not only where it counts on loading: #toggle-goatcounter can switch counting on later.)
 // Hidden too: a phone often drops a tab switched away from without a pagehide.
 if (countsHere && typeof addEventListener !== 'undefined') {
   addEventListener('pagehide', () => leaving(false));
+  // (Shown again: from the back-forward cache, which may come without a visibilitychange, as its pagehide may. Not the first load's own pageshow, which comes as it finishes loading, hidden still if it was put away first.)
+  addEventListener('pageshow', () => {
+    if (document.visibilityState !== 'hidden') away = false;
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') leaving(true);
+    else away = false;
   });
 }
 

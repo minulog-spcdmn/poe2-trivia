@@ -1056,6 +1056,15 @@ const COUNT_REF = /^[a-z][a-z0-9+.-]*:\/\/[^\s/?#]+$/i;
 const COUNT_CAMPAIGN = /^\?utm_campaign=[\w-]{1,40}$/;
 /** Text with no control characters in it. */
 const PLAIN = /^[^\u0000-\u001f\u007f]*$/;
+/** @type {Record<string, (v: string) => boolean>} Each of a count's parameters, and what it may be. */
+const COUNT_SHAPES = {
+  p: (v) => v.length <= 200 && COUNT_PATH.test(v),
+  t: (v) => v.length <= 200 && PLAIN.test(v),
+  r: (v) => v.length <= 300 && COUNT_REF.test(v),
+  q: (v) => COUNT_CAMPAIGN.test(v),
+  e: (v) => v === 'true',
+  ns: (v) => v === 'true',
+};
 
 /**
  * One count, in GoatCounter's own parameters (its /count's): `p` its path, `t` its title, `r` the referrer, `q` the campaign, `e` an event, `ns` counted each time.
@@ -1079,22 +1088,14 @@ export function counted(body) {
   if (typeof m !== 'object' || m === null || Array.isArray(m) || Object.keys(m).length !== 1) return null;
   const { h } = /** @type {{ h?: unknown }} */ (m);
   if (!Array.isArray(h) || h.length < 1 || h.length > MAX_COUNTED) return null;
-  /** @type {Record<string, (v: string) => boolean>} */
-  const shapes = {
-    p: (v) => v.length <= 200 && COUNT_PATH.test(v),
-    t: (v) => v.length <= 200 && PLAIN.test(v),
-    r: (v) => v.length <= 300 && COUNT_REF.test(v),
-    q: (v) => COUNT_CAMPAIGN.test(v),
-    e: (v) => v === 'true',
-    ns: (v) => v === 'true',
-  };
   /** @param {unknown} x */
   const ok = (x) =>
     typeof x === 'object' &&
     x !== null &&
     !Array.isArray(x) &&
     typeof (/** @type {{ p?: unknown }} */ (x).p) === 'string' &&
-    Object.entries(x).every(([k, v]) => k in shapes && typeof v === 'string' && shapes[k](v));
+    // (The shapes' own keys only: `constructor` or `__proto__`, every object's from its prototype, are none of a count's.)
+    Object.entries(x).every(([k, v]) => Object.hasOwn(COUNT_SHAPES, k) && typeof v === 'string' && COUNT_SHAPES[k](v));
   return /** @type {Counted[]} */ (h.filter(ok));
 }
 
@@ -1143,8 +1144,8 @@ async function counts(request, url, env, headers) {
     headers: { Authorization: `Bearer ${env.GOATCOUNTER_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ hits: batch.map((c) => goatHit(c, ip, userAgent)) }),
   }).catch(() => null);
-  // Taken (202), or some turned down as they are (400, its errors by index; the rest taken): sending them again would count those twice.
-  if (r && (r.status === 202 || r.status === 400)) return new Response(null, { status: 204, headers });
+  // Taken (202, or any 2xx), or some turned down as they are (400, its errors by index; the rest taken): sending them again would count those twice.
+  if (r && (r.ok || r.status === 400)) return new Response(null, { status: 204, headers });
   // A key GoatCounter refuses (401, 403) is as none.
   if (r && (r.status === 401 || r.status === 403)) return new Response(null, { status: 404, headers });
   // Busy, failing, or out of reach: the page sends the batch again with its next.
