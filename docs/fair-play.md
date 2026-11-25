@@ -105,7 +105,8 @@ game's own page only. To keep a browser out of them (the owner's, without a
 fixed IP to exclude in GoatCounter), open `poe2.quest/#toggle-goatcounter`;
 open it again to count it again. It works typed after the address of a page
 already open too, says which way it went, and keeps the choice in
-localStorage (`poe2trivia.skipCount`). GoatCounter's own count.js isn't
+localStorage (`poe2trivia-shared.noCount`, `src/lib/countOptOut.ts`, the
+flag the privacy page's switch sets too). GoatCounter's own count.js isn't
 used, so this is the game's version of its toggle.
 Game events count each time (`ns`, no session): `play/<mode>`,
 `size/<mode>-<n>p`, `screen/<mode>` (some at the host's screen) and
