@@ -391,9 +391,18 @@ Unlike the matchmaking server, the relay stays deployed by hand. The session
 that changes it opens an issue with its PR (“Deploy the relay after #N”),
 deploys it once the PR merges, from `main` itself, fetched first (`git fetch
 origin main`, `git worktree add --detach <dir> origin/main`, and `git -C <dir>
-log -1` shows the merge; then `npx --yes wrangler@4.158.0 deploy` in
-`<dir>/relay`), checks it live as before, and closes the issue. A session
-that ends first leaves the issue for the next.
+log -1` shows the merge; then `npx --yes wrangler@4.158.0 deploy --config
+<dir>/relay/wrangler.toml`), checks that `npx --yes wrangler@4.158.0 versions
+secret list --config <dir>/relay/wrangler.toml` still lists `ANALYTICS_TOKEN`,
+`TURN_KEY_API_TOKEN` and `TURN_KEY_ID` (if not, `wrangler rollback` to the
+version before, which has them), checks it live as before, and closes the
+issue. A session that ends first leaves the issue for the next.
+
+Never run `wrangler deploy` in the project's root. With no config there,
+wrangler sets up the whole site as a Worker named after `package.json`,
+`poe2-trivia`, the relay's own name, and replaces the relay with it, its
+secrets gone. It happened once (25 Nov 2026); a rollback to the relay's
+version brought it back, then `wrangler triggers deploy` its schedule.
 
 ### Counts round a blocker
 
@@ -431,16 +440,18 @@ To set it up:
 
 1. At poe2quest.goatcounter.com, under its API settings, make an API key
    allowed only to record pageviews.
-2. In `counts/` (not the project's root, as for the relay):
-   `npx --yes wrangler@4.158.0 deploy`, then
-   `npx wrangler secret put GOATCOUNTER_KEY`, pasting the key.
+2. From the project's root, naming the Worker's config (so the folder it's
+   run in can't matter): `npx --yes wrangler@4.158.0 deploy --config
+   counts/wrangler.toml`, then `npx --yes wrangler@4.158.0 secret put
+   GOATCOUNTER_KEY --config counts/wrangler.toml`, pasting the key when it
+   asks (the key is the secret's value; its name stays `GOATCOUNTER_KEY`).
 
 Without the key the Worker answers 404, and a page sends its counts straight
 again (a blocked page's are lost, as before). Put the Worker live before the
 pages that use it, key or none: with no Worker there, a page hears only that
 the network failed, and drops what it sent round, the visit among them. It
-isn't deployed by Workers Builds: `npx wrangler deploy` in `counts/` puts a
-change to it live. To turn it off: delete the secret (pages go straight
+isn't deployed by Workers Builds: the deploy in step 2 puts a change to it
+live. To turn it off: delete the secret (pages go straight
 again at once), or empty `COUNTS_ORIGIN` in `src/lib/counter.ts` (pages
 loaded after the deploy).
 
