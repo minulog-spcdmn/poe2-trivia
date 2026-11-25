@@ -128,15 +128,15 @@ let arrived = false;
 function out(url: string) {
   if (route === 'relay') return relay?.add(hitOf(url));
   if (route === null) {
-    if (!early.length) void findRoute(url);
+    if (!early.length) void findRoute();
     early.push(url);
   }
   beacon(url);
 }
 
-/** Whether the count at `url`, the load's first, could reach GoatCounter: the way this load's counts go from then on. */
-async function findRoute(url: string) {
-  const straight = !COUNTS_URL || (await reaches(url));
+/** Whether this load's counts could reach GoatCounter, asked as its first goes: the way they go from then on. */
+async function findRoute() {
+  const straight = !COUNTS_URL || (await reaches());
   route = straight ? 'straight' : 'relay';
   const sent = early.splice(0);
   if (straight) return;

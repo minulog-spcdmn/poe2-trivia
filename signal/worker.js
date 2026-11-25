@@ -1028,8 +1028,9 @@ async function tally(request, url, env, headers) {
 // - POST /counts: `{"h":[{"p":"/","t":"PoE2.Quest","r":"https://www.reddit.com"},{"p":"play/race","t":"play/race","e":"true","ns":"true"}]}`
 //   (as text/plain, so a page's request needs no preflight): each count in
 //   GoatCounter's own parameters, as the page would have sent it there, and
-//   only in the shapes the page gives them (`counted`); anything off refuses
-//   the batch whole. An event counted each time (`ns`) goes with a session
+//   only in the shapes the page gives them (`counted`): a count off in any
+//   way is left out alone, a batch off in its own shape refused whole. An
+//   event counted each time (`ns`) goes with a session
 //   of its own (GoatCounter's API has no `ns`: a session never seen before
 //   counts as a visitor's first, as `ns` does), the rest with none, so
 //   GoatCounter tells their visitor by address and browser, as from the page.
@@ -1047,8 +1048,8 @@ export const COUNTER_API = 'https://poe2quest.goatcounter.com/api/v0/count';
 /** The longest batch (bytes) and the most counts in it: a page sends forty at most (src/lib/countRelay.ts MAX_RELAYED). */
 export const MAX_COUNTS = 16 * 1024;
 export const MAX_COUNTED = 40;
-/** A count's path: the start page ("/"), or an event's name ("play/race", "error/script/lib/codex.ts:loadCodex", "cohort/2026-W43"). */
-const COUNT_PATH = /^(?:\/|[\w-]+(?:\/[\w.:-]+)*)$/;
+/** A count's path: the start page ("/"), or an event's name ("play/race", "cohort/2026-W43", "error/script/lib/codex.ts:loadCodex", "error/script/node_modules/@scope/pkg": src/lib/errorWhere.ts LABEL). */
+const COUNT_PATH = /^(?:\/|[\w-]+(?:\/[\w@$.:-]+)*)$/;
 /** A referrer as the page sends it (count.ts referrerOf): a site's or an app's origin alone. */
 const COUNT_REF = /^[a-z][a-z0-9+.-]*:\/\/[^\s/?#]+$/i;
 /** A tagged link's campaign, as the page sends it (count.ts campaignOf). */
@@ -1062,7 +1063,9 @@ const PLAIN = /^[^\u0000-\u001f\u007f]*$/;
  */
 
 /**
- * A batch of counts as sent, or null when anything in its shape is off.
+ * A batch of counts as sent, or null when the batch's own shape is off; a
+ * count off in any way left out alone (an event named past what's foreseen
+ * here costs only itself).
  * @param {Uint8Array} body @returns {Counted[] | null}
  */
 export function counted(body) {
@@ -1085,11 +1088,14 @@ export function counted(body) {
     e: (v) => v === 'true',
     ns: (v) => v === 'true',
   };
-  for (const x of h) {
-    if (typeof x !== 'object' || x === null || Array.isArray(x) || typeof x.p !== 'string') return null;
-    for (const [k, v] of Object.entries(x)) if (!(k in shapes) || typeof v !== 'string' || !shapes[k](v)) return null;
-  }
-  return /** @type {Counted[]} */ (h);
+  /** @param {unknown} x */
+  const ok = (x) =>
+    typeof x === 'object' &&
+    x !== null &&
+    !Array.isArray(x) &&
+    typeof (/** @type {{ p?: unknown }} */ (x).p) === 'string' &&
+    Object.entries(x).every(([k, v]) => k in shapes && typeof v === 'string' && shapes[k](v));
+  return /** @type {Counted[]} */ (h.filter(ok));
 }
 
 /**
@@ -1128,6 +1134,8 @@ async function counts(request, url, env, headers) {
   if (!body) return new Response(null, { status: 413, headers });
   const batch = counted(body);
   if (!batch) return new Response(null, { status: 400, headers });
+  // Nothing left once the counts off in shape are left out: taken, GoatCounter not asked.
+  if (!batch.length) return new Response(null, { status: 204, headers });
   const userAgent = request.headers.get('User-Agent') ?? '';
   /** @type {Response | null} */
   const r = await fetch(COUNTER_API, {

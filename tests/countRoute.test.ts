@@ -14,6 +14,7 @@ Math.random = () => 0.75;
 
 const beacons: string[] = [];
 const posts: { url: string; h: Record<string, string>[] }[] = [];
+const heads: string[] = [];
 const listeners = new Map<string, ((e: unknown) => void)[]>();
 /** Whether a blocker turns GoatCounter's address away. */
 let blocked = true;
@@ -22,6 +23,7 @@ set('location', { hostname: 'poe2.quest', pathname: '/', href: 'https://poe2.que
 // GoatCounter's address checked with a HEAD (countRelay.ts reaches), failed by the blocker; the batches to the matchmaking server taken. Never the network.
 set('fetch', async (url: string, init: RequestInit) => {
   if (init.method === 'HEAD') {
+    heads.push(url);
     if (blocked) throw new TypeError('Failed to fetch');
     return new Response(null);
   }
@@ -48,6 +50,7 @@ const settled = () => new Promise((r) => setImmediate(r));
 
 const { countEvent, countVisit } = await import('../src/lib/count.ts');
 const { COUNTS_URL, GATHER_MS } = await import('../src/lib/countRelay.ts');
+const { COUNTER_ORIGIN } = await import('../src/lib/counter.ts');
 
 test('a load whose blocker keeps GoatCounter away sends its counts through the matchmaking server, and its visit says so', async () => {
   countVisit(() => null, 'reddit-oct', () => {});
@@ -57,6 +60,11 @@ test('a load whose blocker keeps GoatCounter away sends its counts through the m
     ['/'],
   );
   await settled();
+  // Asked once, at GoatCounter's count address with nothing in it: a count without a path is turned down, so it counts nothing.
+  assert.equal(heads.length, 1);
+  assert.deepEqual([...new URL(heads[0]).searchParams.keys()], ['p', 'rnd']);
+  assert.equal(new URL(heads[0]).searchParams.get('p'), '');
+  assert.ok(heads[0].startsWith(`${COUNTER_ORIGIN}/count?`));
   countEvent('play/race');
   // The mark and the game's start, through the queue (1.5 s, then 0.6 s apart), then the batch they gather in.
   mock.timers.tick(1_500);

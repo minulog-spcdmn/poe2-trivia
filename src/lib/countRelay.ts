@@ -12,6 +12,7 @@
 // from this page. Asked again as each batch goes: nothing goes once the
 // privacy page has been used to opt out.
 
+import { COUNTER_ORIGIN } from './counter.ts';
 import { OWN_SIGNAL_HOST } from './signalHost.ts';
 
 /** Where the counts go round a blocker: the matchmaking server's own host (vite.config.ts lets the page reach it). */
@@ -122,14 +123,16 @@ export async function postCounts(body: string): Promise<Posted> {
 }
 
 /**
- * Whether this page reaches GoatCounter's address, asked with a request
- * shaped like the count at `url` but that counts nothing: HEAD, which
- * GoatCounter's /count isn't routed for (only GET and POST are, in its
- * handlers/backend.go). Its answer is opaque
+ * Whether this page reaches GoatCounter's address, asked at its counts'
+ * own address (/count, as a blocker's rules see it) with nothing in it: a
+ * count with no path is turned down (its hit.go Validate), and HEAD isn't
+ * even routed there (only GET and POST are, its handlers/backend.go), so it
+ * counts nothing and carries nothing of the page's. Its answer is opaque
  * (no-cors); any answer at all is reaching it. A blocker turning it away
- * fails it, as it would the count, which a beacon never says.
+ * fails it, as it would a count, which a beacon never says.
  */
-export function reaches(url: string): Promise<boolean> {
+export function reaches(): Promise<boolean> {
+  const url = `${COUNTER_ORIGIN}/count?${new URLSearchParams({ p: '', rnd: Math.random().toString(36).slice(2) })}`;
   return fetch(url, { method: 'HEAD', mode: 'no-cors', credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer' }).then(
     () => true,
     () => false,

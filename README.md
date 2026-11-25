@@ -274,8 +274,9 @@ protocol, one Durable Object holding every peer's socket in memory.
   address from it (`POST /counts`; `lib/countRelay.ts`): EasyPrivacy, which
   uBlock Origin and Brave use, blocks all of `goatcounter.com` from another
   site, and every beacon to another site. A page finds out with its load's
-  first count (a HEAD to that count's address, which GoatCounter doesn't
-  route, so it counts nothing), sends straight as before if it gets there,
+  first count (a HEAD to GoatCounter's `/count` with an empty path, which
+  counts nothing: HEAD isn't routed there, and a count without a path is
+  turned down), sends straight as before if it gets there,
   and otherwise sends that load's counts here in batches, a few seconds'
   worth each and as it is hidden or left, and its visit sends
   `visit/blocked`. The Worker checks each count's shape and sends it on to

@@ -241,7 +241,7 @@
       </p>
       <p>
         <strong>Wenn GoatCounter gesperrt ist:</strong> Mit der ersten Zählung eines Seitenaufrufs prüft das Spiel, ob
-        Ihr Browser poe2quest.goatcounter.com erreicht, mit einer gleich aufgebauten Anfrage dorthin, die nichts zählt.
+        Ihr Browser poe2quest.goatcounter.com erreicht, mit einer Anfrage dorthin, die keine Angaben enthält und nichts zählt.
         Sperrt etwa ein Werbe- oder Trackingblocker die Adresse, sendet die Seite dieselben Angaben stattdessen an ihren
         eigenen Vermittlungsserver (den Cloudflare Worker aus Abschnitt 4), in Paketen gesammelt. Der gibt sie mit Ihrer
         IP-Adresse und der Kennung Ihres Browsers (User-Agent) an GoatCounter weiter, das daraus wie oben das Land, den
@@ -403,7 +403,7 @@
             stuttered most; for a computer whose browser draws without the graphics card (hardware acceleration off), only that instead. For a visit’s first game, whether it ran smoothly or stuttered, and if it stuttered at which part most, is sent once more (with the device’s kind). That is measured only during a game and only in your browser; no timings or other details of the device (nor the graphics card’s name) are sent. No names, answers, room codes or device tokens are sent to GoatCounter. It works out your country, browser and system
             from your IP address and browser and stores only those, never the IP address or the full browser string; it sets no cookies and stores nothing on your
             device. With a page load’s first count, the game checks whether your browser reaches poe2quest.goatcounter.com, with a request
-            there in the same shape that counts nothing. If a blocker (an ad or tracking blocker, say) keeps it away, the page sends the same
+            there that carries nothing and counts nothing. If a blocker (an ad or tracking blocker, say) keeps it away, the page sends the same
             counts to the game’s own matchmaking server instead (see Online play above), in batches. That passes them on to GoatCounter with
             your IP address and browser string, from which GoatCounter works out the same as above; it counts each address’s sends over the
             last minute to slow bulk use and stores nothing of them. That a visit went this way is counted too.

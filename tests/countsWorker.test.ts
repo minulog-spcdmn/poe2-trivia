@@ -98,28 +98,64 @@ test('nothing goes on without the key, from anywhere but the live page, or but a
   assert.equal(calls.length, 0);
 });
 
-test('a batch off in any way is refused whole, GoatCounter not asked', async () => {
+test('a batch off in its own shape is refused whole, GoatCounter not asked', async () => {
   const calls = goat();
-  const off = [
-    'not json',
-    JSON.stringify({ h: [] }),
-    JSON.stringify({ h: [visit], more: 1 }),
-    relayBody(Array(MAX_COUNTED + 1).fill(step)),
-    relayBody([{ ...step, x: '1' }]),
-    relayBody([{ ...step, ns: 'false' }]),
-    relayBody([{ t: 'no path' }]),
-    relayBody([{ ...step, p: 'https://elsewhere.example/page' }]),
-    relayBody([{ ...step, p: '/?room=ABCD' }]),
-    relayBody([{ ...visit, r: 'https://www.reddit.com/r/secret-thread' }]),
-    relayBody([{ ...visit, q: '?room=ABCD' }]),
-    relayBody([{ ...visit, t: 'line\nbreak' }]),
-  ];
+  const off = ['not json', '[]', JSON.stringify({ h: [] }), JSON.stringify({ h: [visit], more: 1 }), JSON.stringify({ h: step }), relayBody(Array(MAX_COUNTED + 1).fill(step))];
   for (const body of off) {
     assert.equal(counted(new TextEncoder().encode(body)), null, body);
     assert.equal((await at(env(), body)).status, 400, body);
   }
-  assert.deepEqual(counted(new TextEncoder().encode(relayBody([visit, event, step, app]))), [visit, event, step, app], 'every shape the page sends');
   assert.equal(calls.length, 0);
+});
+
+test('a count off in any way is left out alone, the rest of its batch sent on', async () => {
+  const off = [
+    null,
+    'play/race',
+    [step],
+    { ...step, x: '1' },
+    { ...step, ns: 'false' },
+    { ...step, e: true },
+    { t: 'no path' },
+    { ...step, p: 'https://elsewhere.example/page' },
+    { ...step, p: '/?room=ABCD' },
+    { ...step, p: 'reach//played' },
+    { ...visit, r: 'https://www.reddit.com/r/secret-thread' },
+    { ...visit, q: '?room=ABCD' },
+    { ...visit, t: 'line\nbreak' },
+  ];
+  for (const x of off) {
+    const calls = goat();
+    const r = await at(env(), JSON.stringify({ h: [x, step] }));
+    assert.equal(r.status, 204, JSON.stringify(x));
+    assert.deepEqual(
+      calls[0].body.hits.map((h) => h.path),
+      ['reach/played'],
+      JSON.stringify(x),
+    );
+  }
+  const calls = goat();
+  assert.equal((await at(env(), JSON.stringify({ h: [{ ...step, x: '1' }] }))).status, 204, 'none left: taken');
+  assert.equal(calls.length, 0, 'GoatCounter not asked');
+});
+
+test('every name the page counts under passes, error places from a package and a function with $ among them', () => {
+  const names = [
+    'play/race',
+    'size/delve-solo-3p',
+    'delve/depth-190-199',
+    'cohort/2026-W43',
+    'frames2/desktop-chrome/some/reveal',
+    'relay/no-login-unreached',
+    'room/back-10s',
+    'error/join-version-mismatch',
+    'error/script/lib/codex.ts:loadCodex',
+    'error/script/node_modules/@fontsource-variable/manuale',
+    'error/script/lib/session.svelte.ts:$$render',
+    'visit/blocked',
+  ];
+  const hits = names.map((p) => hitOf(url({ p, t: p, e: 'true', ns: 'true' })));
+  assert.deepEqual(counted(new TextEncoder().encode(relayBody([visit, app, ...hits]))), [visit, app, ...hits]);
 });
 
 test('an address past its share is told to wait, the counts’ own limit asked first', async () => {
