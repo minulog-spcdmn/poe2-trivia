@@ -4,8 +4,11 @@ run-name: "Live check: ${{ github.event_name == 'schedule' && 'daily' || 'run by
 # Once a day, is the live site up? poe2.quest and every file its index.html
 # names answer 200, its TLS certificate has at least 14 days left, and the
 # matchmaking server hands out a peer id (GET /peerjs/id: a random UUID,
-# nothing allocated, one count of its per-address limit). It reads no item
-# tally (/tally has a day's read budget) and asks GoatCounter nothing.
+# nothing allocated, one count of its per-address limit), and the counts
+# Worker (counts/worker.js) answers 400 to a batch that isn't JSON: up, with
+# its key, and nothing counted. A 404 there is the Worker without its
+# GOATCOUNTER_KEY; the error says how to redeploy it. It reads no item tally
+# (/tally has a day's read budget) and asks GoatCounter nothing.
 # scripts/live-check.mjs does it all; deploy.yml's live-check job runs the
 # same script after each deploy.
 #
@@ -13,7 +16,7 @@ run-name: "Live check: ${{ github.event_name == 'schedule' && 'daily' || 'run by
 # failed run is the alarm: GitHub mails the owner. It stays out of
 # daily-health.yml on purpose, since any failure there wakes the Claude
 # health responder (health-responder.yml), and no code fix brings a site
-# back up.
+# or a Worker back up.
 #
 # Scheduled runs here start 6 to 9.5 hours late, so an outage is mailed
 # within about a day.

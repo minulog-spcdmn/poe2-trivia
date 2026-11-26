@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BEFORE, CheckError, apiOf, checkDay, firedOf, hourStart, hourWindowsOf, lastHoursOf, main, windowsOf } from '../scripts/daily-health.mjs';
+import { BEFORE, CheckError, ROUND_FROM, apiOf, checkDay, firedOf, hourStart, hourWindowsOf, lastHoursOf, main, roundLine, roundOf, windowsOf } from '../scripts/daily-health.mjs';
 import { passing, pathCounts } from '../src/statsPage/hits.ts';
 import { addDays, dayIn } from '../src/statsPage/zone.ts';
 
@@ -15,7 +15,9 @@ const AT = Date.parse('2026-11-06T00:30:00Z');
 const YESTERDAY = '2026-11-05';
 
 /** A quiet day's counts by path; `on` changes a path's count on given days. */
-const QUIET: Record<string, number> = { '/': 100, 'play/turns': 40, 'join/code': 20, 'error/join-no-answer': 2, 'error/chunk': 1, 'error/script/lib/a.ts:f': 1 };
+const QUIET: Record<string, number> = { '/': 100, 'play/turns': 40, 'join/code': 20, 'error/join-no-answer': 2, 'error/chunk': 1, 'error/script/lib/a.ts:f': 1, 'visit/blocked': 0 };
+/** What every run before ROUND_FROM says of the counts round a blocker. */
+const NO_ROUND = (over: string) => `Counts round a blocker: none to report ${over} (they could go round from ${ROUND_FROM}).`;
 type Plan = { on?: Record<string, Record<string, number>>; from?: string; hourly?: boolean; pageSize?: number; status?: number[]; retryAfter?: string; garbled?: boolean };
 
 /**
@@ -88,7 +90,7 @@ test("yesterday is the account's day before today, read from the day before its 
 test('a quiet day passes with one line, from the zone and the paths read page by page with the key', async () => {
   const r = await run([], { pageSize: 4 });
   assert.equal(r.code, 0);
-  assert.deepEqual(r.lines, [`Daily health check: ${YESTERDAY} as usual against the 7 days before (${ZONE}).`]);
+  assert.deepEqual(r.lines, [`Daily health check: ${YESTERDAY} as usual against the 7 days before (${ZONE}).`, NO_ROUND(`on ${YESTERDAY} and the 7 days before`)]);
   assert.deepEqual(r.asked.map((a) => a.path), ['/api/v0/me', '/api/v0/stats/hits', '/api/v0/stats/hits']);
   assert.ok(r.asked.every((a) => a.auth === `Bearer ${KEY}`));
   const [first, second] = r.asked.slice(1).map((a) => a.query);
@@ -241,13 +243,17 @@ test('a backtest reads once and names each day that would have mailed', async ()
   const r = await run(['--backtest', '30'], { pageSize: 4, on: { 'error/chunk': { [spike]: 40 } } });
   assert.equal(r.code, 0);
   assert.equal(r.asked.length, 3);
-  assert.deepEqual(r.lines, [`${spike}: parts of the game that didn't load: 40, against 1.0 usual for as many visits`, `Backtest (${ZONE}): 1 of 30 days would have mailed; 3 requests.`]);
+  assert.deepEqual(r.lines, [
+    `${spike}: parts of the game that didn't load: 40, against 1.0 usual for as many visits`,
+    `Backtest (${ZONE}): 1 of 30 days would have mailed; 3 requests.`,
+    NO_ROUND('over the 30 days'),
+  ]);
   assert.equal((await run(['--backtest', 'x'])).code, 2);
 });
 
 test('the days before counting began are left out of a backtest, not taken for quiet ones', async () => {
   const r = await run(['--backtest', '10'], { from: addDays(YESTERDAY, -12) });
-  assert.match(r.lines.at(-1)!, /0 of 5 days would have mailed \(5 before counting allowed a check\)/);
+  assert.match(r.lines.at(-2)!, /0 of 5 days would have mailed \(5 before counting allowed a check\)/);
 });
 
 test('a checked day holds against the 7 whole days before it, and says nothing where nothing fired', async () => {
@@ -284,7 +290,10 @@ test('the midday check reads from the midnight before its first window to the st
 test('a quiet 24 hours passes, saying which', async () => {
   const r = await run(['--last-24h'], { hourly: true }, undefined, MIDDAY);
   assert.equal(r.code, 0);
-  assert.deepEqual(r.lines, [`Midday health check: the 24 hours to 13:00 on ${TODAY} as usual against the 7 days before at the same hours (${ZONE}).`]);
+  assert.deepEqual(r.lines, [
+    `Midday health check: the 24 hours to 13:00 on ${TODAY} as usual against the 7 days before at the same hours (${ZONE}).`,
+    NO_ROUND(`in the 24 hours to 13:00 on ${TODAY} and the 7 days before`),
+  ]);
 });
 
 test("a fault in this morning's hours fails the midday run, before the night's check could see it", async () => {
@@ -332,6 +341,7 @@ test('a backtest of the midday check names each 24 hours that would have mailed'
   assert.deepEqual(r.lines, [
     `the 24 hours to 13:00 on ${spike}: parts of the game that didn't load: 40, against 1.0 usual for as many visits`,
     `Backtest of the midday check (${ZONE}): 1 of 30 checks would have mailed; 2 requests.`,
+    NO_ROUND('over the 30 checks'),
   ]);
 });
 
@@ -347,4 +357,60 @@ test('a window across the night the clocks go back holds all of its 25 hours, ea
   assert.equal(cut.days['2026-10-24'], 1);
   assert.equal(cut.count, 26);
   assert.throws(() => lastHoursOf([{ ...path, hours: undefined }], ZONE, w.bounds, w.labels), /gave no hours/);
+});
+
+// The counts round a blocker (lib/count.ts goRound): a line every run
+// reports, never a check that fires.
+/** 01:30 in Berlin on Dec 6: yesterday is Dec 5, its 7 before all from ROUND_FROM on. */
+const LATER = Date.parse('2026-12-06T00:30:00Z');
+const DEC5 = '2026-12-05';
+
+test('the visits that went round a blocker are reported against all visits, on the checked day and the 7 before, and fire nothing', async () => {
+  const r = await run([], { on: { 'visit/blocked': Object.fromEntries(Array.from({ length: BEFORE + 1 }, (_, i) => [addDays(DEC5, -i), 3])) } }, undefined, LATER);
+  assert.equal(r.code, 0);
+  assert.deepEqual(r.lines, [`Daily health check: ${DEC5} as usual against the 7 days before (${ZONE}).`, `Counts round a blocker: 24 of 800 visits went round on ${DEC5} and the 7 days before.`]);
+  // Said on a run that fires too, never as an annotation.
+  const fired = await run([], { on: { 'error/chunk': { [DEC5]: 40 } } }, undefined, LATER);
+  assert.equal(fired.code, 1);
+  assert.ok(fired.lines.some((l) => l.startsWith('Counts round a blocker: 0 of 800')));
+  assert.ok(!fired.lines.some((l) => l.startsWith('::') && l.includes('round a blocker')));
+  // And where the day couldn't be checked.
+  const late = await run([], { from: addDays(DEC5, -3) }, undefined, LATER);
+  assert.match(late.lines[0], /not checked/);
+  assert.match(late.lines[1], /^Counts round a blocker: 0 of 400 visits went round on 2026-12-05 and the 7 days before\. None/);
+});
+
+test('none gone round for days of visits may be the way round dead; nearly all, the first count failing for everyone; too few visits say neither', async () => {
+  const none = (await run([], {}, undefined, LATER)).lines.at(-1)!;
+  assert.match(none, /0 of 800 visits went round .* None: if that lasts, the way round may be dead/);
+  const all = await run([], { on: { 'visit/blocked': Object.fromEntries(Array.from({ length: BEFORE + 1 }, (_, i) => [addDays(DEC5, -i), 90])) } }, undefined, LATER);
+  assert.equal(all.code, 0);
+  assert.match(all.lines.at(-1)!, /720 of 800 visits went round .* Nearly all: the page's first count may be failing for everyone/);
+  const over = 'on X and the 7 days before';
+  assert.equal(roundLine({ blocked: 0, visits: 9, days: 8, of: 8 }, over), 'Counts round a blocker: 0 of 9 visits went round on X and the 7 days before.');
+  assert.equal(roundLine({ blocked: 9, visits: 9, days: 8, of: 8 }, over), 'Counts round a blocker: 9 of 9 visits went round on X and the 7 days before.');
+  assert.equal(roundLine({ blocked: 7, visits: 10, days: 8, of: 8 }, over), 'Counts round a blocker: 7 of 10 visits went round on X and the 7 days before.');
+  assert.match(roundLine({ blocked: 8, visits: 10, days: 8, of: 8 }, over), /Nearly all/);
+  assert.equal(roundLine({ blocked: 0, visits: 0, days: 8, of: 8 }, over), 'Counts round a blocker: 0 of 0 visits went round on X and the 7 days before.');
+});
+
+test('the days before counts could go round are left out and said; a missing visit/blocked path counts none', () => {
+  const days = Array.from({ length: BEFORE + 1 }, (_, i) => addDays(ROUND_FROM, i - 3));
+  const per = (n: number) => Object.fromEntries(days.map((d) => [d, n]));
+  const paths = [
+    { path: '/', event: false, count: 40, days: per(5) },
+    { path: 'visit/blocked', event: true, count: 8, days: per(1) },
+    { path: 'visit/new', event: true, count: 40, days: per(5) },
+  ];
+  const r = roundOf(paths, days);
+  assert.deepEqual(r, { blocked: 5, visits: 25, days: 5, of: 8 });
+  assert.equal(roundLine(r, 'on Y and the 7 days before'), `Counts round a blocker: 5 of 25 visits went round on Y and the 7 days before (from ${ROUND_FROM}, when they could).`);
+  assert.deepEqual(roundOf(paths.filter((p) => p.path !== 'visit/blocked'), days), { blocked: 0, visits: 25, days: 5, of: 8 });
+});
+
+test('the midday check reports its 24 hours and the 7 days before, cut as its checks are', async () => {
+  const MID = Date.parse('2026-12-06T12:30:00Z');
+  const r = await run(['--last-24h'], { hourly: true, on: { 'visit/blocked': { '2026-12-06': 4 } } }, undefined, MID);
+  assert.equal(r.code, 0);
+  assert.equal(r.lines.at(-1), 'Counts round a blocker: 4 of 800 visits went round in the 24 hours to 13:00 on 2026-12-06 and the 7 days before.');
 });

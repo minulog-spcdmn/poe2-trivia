@@ -11,8 +11,11 @@
 //   file its index.html names answer 200, its TLS certificate has at least
 //   CERT_DAYS days left, and the matchmaking server hands out a peer id
 //   (GET /peerjs/id, signal/worker.js: a random UUID, nothing allocated, one
-//   PER_ADDRESS count). Never reads /tally (it has a day's read budget) or
-//   GoatCounter.
+//   PER_ADDRESS count), and the counts Worker that takes a blocked page's
+//   counts (counts/worker.js) is up with its key: a batch that isn't JSON,
+//   sent from the page's origin, answers 400, refused before anything goes
+//   on to GoatCounter, so nothing is counted. Never reads /tally (it has a
+//   day's read budget) or GoatCounter.
 //
 // Daily health (scripts/daily-health.mjs) can't see a site that's down: a day
 // nothing is counted fires nothing. This is the check that can.
@@ -34,6 +37,10 @@ export const SITE = 'https://poe2.quest/';
 export const ORIGIN = 'https://poe2.quest';
 /** src/lib/signalHost.ts OWN_SIGNAL_HOST, kept here so the deploy's live-check job needs only this file (tests/liveCheck.test.ts holds the two together). */
 export const SIGNAL_HOST = 'poe2-signal.poe2quest.workers.dev';
+/** src/lib/counter.ts COUNTS_ORIGIN's host, kept here for the same reason (tests/liveCheck.test.ts holds the two together). */
+export const COUNTS_HOST = 'poe2-counts.poe2quest.workers.dev';
+/** What to do when the counts Worker is down or has lost its key (README, "Counts round a blocker"). */
+const COUNTS_FIX = 'Redeploy it from the project root with `npx --yes wrangler@4.158.0 deploy --config counts/wrangler.toml`, and set its GOATCOUNTER_KEY again if it is gone (README, "Counts round a blocker"). Meanwhile blocked visitors count nothing; everyone else counts as before.';
 /** The fewest days a certificate may have left before the daily check fails. */
 export const CERT_DAYS = 14;
 /** After a deploy: tries and the wait between them, about six minutes in all. */
@@ -178,6 +185,35 @@ export async function checkSignal(get) {
 }
 
 /**
+ * Whether the counts Worker is up with its key: a batch that isn't JSON,
+ * from the page's origin, answers 400 (counts/worker.js: refused as it is
+ * read, before GoatCounter is asked, so nothing is counted). A 404 is the
+ * Worker without its GOATCOUNTER_KEY or the path gone; a 429 (this
+ * address's batches spent) passes, as the matchmaking server's does. A key
+ * GoatCounter refuses still answers 400 here: only a real batch reaches it.
+ * @param {typeof fetch} get
+ * @returns {Promise<{ problem: string | null, note?: string }>}
+ */
+export async function checkCounts(get) {
+  const url = `https://${COUNTS_HOST}/counts`;
+  try {
+    const r = await get(url, {
+      method: 'POST',
+      body: 'not json',
+      headers: { 'Content-Type': 'text/plain', Origin: ORIGIN, 'User-Agent': 'poe2-health-check' },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (r.status === 400) return { problem: null };
+    if (r.status === 429) return { problem: null, note: `${url} answered 429 (too many batches from this address): it's up.` };
+    if (r.status === 404) return { problem: `${url} answered 404: the counts Worker has no GOATCOUNTER_KEY, or its path is gone. ${COUNTS_FIX}` };
+    return { problem: `${url} answered ${r.status} to a batch that isn't JSON, not 400: the counts Worker is down or changed. ${COUNTS_FIX}` };
+  } catch (e) {
+    return { problem: `${url} didn't answer: ${why(e)}. ${COUNTS_FIX}` };
+  }
+}
+
+/**
  * Runs `check` until it finds nothing wrong or the tries run out.
  * @param {() => Promise<string[]>} check @param {number} tries @param {number} wait
  * @param {(ms: number) => Promise<unknown>} sleep @param {(line: string) => void} log
@@ -228,18 +264,19 @@ export async function main(argv, env, deps = {}) {
     const ownEnd = deps.certEnd ?? certEnd;
     result = await retrying(
       async () => {
-        // The three asked at once: none waits on another.
-        const [site, cert, signal] = await Promise.all([
+        // The four asked at once: none waits on another.
+        const [site, cert, signal, counts] = await Promise.all([
           checkSite(get),
           ownEnd(new URL(SITE).host).then(
             (end) => certProblem(end, now()),
             (e) => `Couldn't read the TLS certificate: ${why(e)}`,
           ),
           checkSignal(get),
+          checkCounts(get),
         ]);
         notes.length = 0;
-        if (signal.note) notes.push(signal.note);
-        return [...site, ...(cert ? [cert] : []), ...(signal.problem ? [signal.problem] : [])];
+        for (const n of [signal.note, counts.note]) if (n) notes.push(n);
+        return [...site, ...(cert ? [cert] : []), ...(signal.problem ? [signal.problem] : []), ...(counts.problem ? [counts.problem] : [])];
       },
       DAILY_TRIES,
       DAILY_WAIT,
@@ -248,7 +285,7 @@ export async function main(argv, env, deps = {}) {
     );
   }
 
-  const what = mode === 'deploy' ? 'The live site serves this deploy, and every file it names answers 200' : 'poe2.quest, its files, its certificate and the matchmaking server are fine';
+  const what = mode === 'deploy' ? 'The live site serves this deploy, and every file it names answers 200' : 'poe2.quest, its files, its certificate, the matchmaking server and the counts Worker are fine';
   for (const n of notes) log(`::warning::${n}`);
   const summary = result.problems.length
     ? [`### Live check failed`, '', ...result.problems.map((p) => `- ${p}`), '', `(after ${result.tries} tries)`]

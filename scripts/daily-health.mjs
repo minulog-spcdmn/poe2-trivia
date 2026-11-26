@@ -36,6 +36,16 @@
 // answer that isn't JSON or doesn't add up) is 0 with a ::warning:: that the
 // check couldn't run today; without GOATCOUNTER_KEY, 0 with a line saying
 // so.
+//
+// Every run also reports, and never fires on, the visits that went round a
+// blocker (`visit/blocked`, lib/count.ts goRound) against all visits (`/`)
+// on the checked day and the 7 before (roundLine): at a few visits a day a
+// beyond-chance test would never fire, or fire falsely. The line names both
+// ends: none for days can mean the way round is dead, nearly all that the
+// page's first count fails for everyone. With --backtest, one line of
+// totals over the days checked. Whether the counts Worker answers is
+// scripts/live-check.mjs's (the daily live check): no code fix mends a
+// Worker that's down, so it stays out of here and wakes no responder.
 
 import { fileURLToPath } from 'node:url';
 import { COUNTER_ORIGIN } from '../src/lib/counter.ts';
@@ -53,6 +63,12 @@ const TRIES = 4;
 const LONGEST_WAIT_MS = 5 * 60_000;
 /** The most days a backtest goes back (model.ts daysBetween stops at 1000). */
 const MOST_DAYS = 365;
+/** The first whole day counts could go round a blocker (counts/worker.js live 26 Nov 2026, 18:12 UTC): the days before it can't, so they're left out of roundLine. */
+export const ROUND_FROM = '2026-11-27';
+/** Fewer visits than this say nothing of either end. */
+const ROUND_TELLS = 10;
+/** At this share or more of visits gone round, the page's first count may be failing for everyone. */
+const ROUND_MOST = 0.8;
 
 /** Why it couldn't check: never with the key or an address in it. */
 export class CheckError extends Error {}
@@ -222,6 +238,27 @@ export function firedOf(c) {
   return out;
 }
 
+/**
+ * Visits that went round a blocker (`visit/blocked`) and all visits (`/`),
+ * each counted once a visitor, over those of `days` from ROUND_FROM on.
+ * `days`: how many of them were; `of`: of how many.
+ */
+export function roundOf(paths, days) {
+  const counted = days.filter((d) => d >= ROUND_FROM);
+  const sum = (path) => paths.filter((p) => p.path === path).reduce((n, p) => n + counted.reduce((m, d) => m + (p.days[d] ?? 0), 0), 0);
+  return { blocked: sum('visit/blocked'), visits: sum('/'), days: counted.length, of: days.length };
+}
+
+/** roundOf's line, `over` saying the days (it ends where they go): reported, never a check that fires. */
+export function roundLine({ blocked, visits, days, of }, over) {
+  if (!days) return `Counts round a blocker: none to report ${over} (they could go round from ${ROUND_FROM}).`;
+  const since = days < of ? ` (from ${ROUND_FROM}, when they could)` : '';
+  const line = `Counts round a blocker: ${blocked} of ${visits} visits went round ${over}${since}.`;
+  if (visits >= ROUND_TELLS && blocked === 0) return `${line} None: if that lasts, the way round may be dead (README, "Counts round a blocker").`;
+  if (visits >= ROUND_TELLS && blocked >= ROUND_MOST * visits) return `${line} Nearly all: the page's first count may be failing for everyone (lib/count.ts check).`;
+  return line;
+}
+
 /** Reads and checks; the exit code. `deps`: fetch, sleep, the clock and where lines go, for the tests. */
 export async function main(argv, env, deps = {}) {
   const log = deps.log ?? ((line) => console.log(line));
@@ -260,17 +297,21 @@ export async function main(argv, env, deps = {}) {
 
     if (backtest === null) {
       const { day, check } = results[0];
+      const roundReport = roundLine(roundOf(paths, daysBetween(addDays(day, -BEFORE), day)), `${hourly ? 'in ' : 'on '}${named(day)} and the ${BEFORE} days before`);
       if (!check) {
         log(`${name}: ${named(day)} not checked, counting began too late to hold it against the ${BEFORE} days before.`);
+        log(roundReport);
         return 0;
       }
       const fired = firedOf(check);
       if (!fired.length) {
         log(`${name}: ${named(day)} as usual against ${against} (${zone}).`);
+        log(roundReport);
         return 0;
       }
       log(`${name}: ${named(day)} went worse than ${against} (${zone}), beyond chance. See stats.html.`);
       for (const line of fired) log(`- ${line}`);
+      log(roundReport);
       for (const line of fired) log(annotation('error', `${named(day)}: ${line}`));
       return 1;
     }
@@ -289,6 +330,7 @@ export async function main(argv, env, deps = {}) {
     }
     const of = results.length - skipped;
     log(`Backtest${hourly ? ' of the midday check' : ''} (${zone}): ${mailed} of ${of} ${hourly ? 'checks' : 'days'} would have mailed${skipped ? ` (${skipped} before counting allowed a check)` : ''}; ${api.calls} requests.`);
+    log(roundLine(roundOf(paths, checked), `over the ${checked.length} ${hourly ? 'checks' : 'days'}`));
     return 0;
   } catch (e) {
     const why = e instanceof Error ? e.message : String(e);
