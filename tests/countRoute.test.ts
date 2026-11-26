@@ -4,7 +4,9 @@
 // for its answer. A load whose blocker keeps GoatCounter's address from it
 // sends its counts through the game's own server instead, the first among
 // them, and a visit that went that way says so ("visit/blocked"); a load that
-// reaches GoatCounter sends straight, as before. Nothing goes both ways. A
+// reaches GoatCounter sends straight, as before. Only the first can go both
+// ways (got there, its answer lost: README), and an event's id stays the same
+// however often its batch goes. A
 // load whose way round gives up goes straight again. What the relay does with
 // a batch: countRelay.test.ts; what the Worker does: countsWorker.test.ts.
 import { mock, test } from 'node:test';
@@ -85,10 +87,13 @@ test('a load whose blocker keeps GoatCounter away sends its counts through the g
   mock.timers.tick(GATHER_MS);
   assert.equal(posts.length, 1);
   assert.equal(posts[0].url, COUNTS_URL);
+  // The event with an id of its own (its session at GoatCounter, so its batch sent again counts it once); the visit and its mark with none.
+  const [, , played] = posts[0].h;
+  assert.match(played.i, /^[0-9a-f]{32}$/);
   assert.deepEqual(posts[0].h, [
     { p: '/', t: 'PoE2.Quest', r: 'https://www.reddit.com', q: '?utm_campaign=reddit-oct' },
     { p: 'visit/blocked', t: 'visit/blocked', e: 'true' },
-    { p: 'play/race', t: 'play/race', e: 'true', ns: 'true' },
+    { p: 'play/race', t: 'play/race', e: 'true', ns: 'true', i: played.i },
   ]);
   assert.equal(beacons.length, 0, 'nothing straight');
   assert.equal(checks.length, 1, 'checked once');
@@ -230,8 +235,33 @@ test('a load whose way round is gone (the server hasn’t the path) goes straigh
   assert.equal(posts.length, before + 1);
   count('end/race', true);
   assert.deepEqual(paths(beacons.slice(sent)), ['/', 'play/race', 'end/race']);
+  assert.ok(beacons.slice(sent).every((u) => !new URL(u).searchParams.has('i')), 'GoatCounter’s own parameters only, no id');
   assert.equal(posts.length, before + 1, 'nothing more round');
   server = 204;
+});
+
+test('a batch turned down goes again with its events’ ids as they were, so GoatCounter, counting a path once a session, counts each once however often it comes', async () => {
+  goat = 'blocked';
+  server = 503;
+  const before = posts.length;
+  const { countEvent: count, countVisit: visit } = await load('again');
+  visit(() => null, null, () => {});
+  await settled();
+  count('play/race', true);
+  mock.timers.tick(GATHER_MS);
+  await settled();
+  server = 204;
+  count('end/race', true);
+  mock.timers.tick(GATHER_MS);
+  await settled();
+  const [first, again, next] = posts.slice(before);
+  assert.deepEqual(again.h, first.h, 'the same counts, the same ids');
+  assert.deepEqual(
+    next.h.map((h) => h.p),
+    ['end/race'],
+  );
+  assert.match(next.h[0].i, /^[0-9a-f]{32}$/);
+  assert.notEqual(next.h[0].i, first.h.find((h) => h.p === 'play/race')?.i, 'each event an id of its own');
 });
 
 test('a load left before its first count had gone sends that one as the check and the rest straight, none held for an answer the page may not see', async () => {

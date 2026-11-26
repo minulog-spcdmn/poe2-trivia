@@ -18,10 +18,14 @@
 //   GoatCounter's own parameters, as the page would have sent it there, and
 //   only in the shapes the page gives them (`counted`): a count off in any
 //   way is left out alone, a batch off in its own shape refused whole. An
-//   event counted each time (`ns`) goes with a session of its own
-//   (GoatCounter's API has no `ns`: a session never seen before counts as a
-//   visitor's first, as `ns` does), the rest with none, so GoatCounter tells
-//   their visitor by address and browser, as from the page.
+//   event counted each time (`ns`) goes with a session of its own, the id
+//   the page gave it (`i`; GoatCounter's API has no `ns`: a session never
+//   seen before counts as a visitor's first, as `ns` does), the rest with
+//   none, so GoatCounter tells their visitor by address and browser, as from
+//   the page. Either way a count sent again (its batch's answer lost on the
+//   way, or GoatCounter's) counts nothing twice: GoatCounter counts a path
+//   once a session (memstore.go session, cron/hit_count.go: first visits
+//   only).
 //
 // Only from the live game's page (the only one that counts), within a limit
 // an address (COUNT_WRITES, wrangler.toml). GoatCounter takes them under the
@@ -75,11 +79,12 @@ const COUNT_SHAPES = {
   q: (v) => COUNT_CAMPAIGN.test(v),
   e: (v) => v === 'true',
   ns: (v) => v === 'true',
+  i: (v) => /^[0-9a-f]{32}$/.test(v),
 };
 
 /**
- * One count, in GoatCounter's own parameters (its /count's): `p` its path, `t` its title, `r` the referrer, `q` the campaign, `e` an event, `ns` counted each time.
- * @typedef {{ p: string, t?: string, r?: string, q?: string, e?: 'true', ns?: 'true' }} Counted
+ * One count, in GoatCounter's own parameters (its /count's): `p` its path, `t` its title, `r` the referrer, `q` the campaign, `e` an event, `ns` counted each time; and `i`, not GoatCounter's, an event's own id (src/lib/countRelay.ts countId), kept however often its batch is sent.
+ * @typedef {{ p: string, t?: string, r?: string, q?: string, e?: 'true', ns?: 'true', i?: string }} Counted
  */
 
 /**
@@ -192,8 +197,8 @@ export function goatHit(c, ip, userAgent, bot = 0) {
     ...(c.q ? { query: c.q } : {}),
     ip,
     user_agent: userAgent,
-    // (A session of its own, used once: counted each time, as `ns` is from the page.)
-    ...(c.ns === 'true' ? { session: crypto.randomUUID() } : {}),
+    // (A session of its own, the event's id: counted each time, as `ns` is from the page, yet once however often its batch comes, as GoatCounter counts a path once a session.)
+    ...(c.ns === 'true' ? { session: c.i ?? crypto.randomUUID() } : {}),
     ...(bot ? { bot } : {}),
   };
 }

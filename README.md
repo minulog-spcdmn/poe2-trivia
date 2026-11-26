@@ -420,13 +420,21 @@ players their counts, never their games:
 - If it didn't get there, it and the load's later counts go to the Worker in
   batches, a few seconds' worth each and at once as the page is hidden or
   left, and a visit that went this way sends `visit/blocked` with it. A count
-  goes round only if its own request failed, so it counts twice only where
-  that request got there after all, its answer lost.
+  goes round only if its own request failed.
 - The Worker checks each count's shape and sends it on to GoatCounter's
   counting API with the player's address and browser string (as GoatCounter
   has them from a page that reaches it), an event counted each time under a
-  session of its own, and keeps nothing. An address may send 60 batches a
-  minute.
+  session of its own, the id the page gave it (`countId`), and keeps
+  nothing. An address may send 60 batches a minute.
+- Nothing counts twice where it's sent twice in one session: GoatCounter
+  counts a path once a session (its `memstore.go` session and the `cron/`
+  stats, which count first visits only; read in its source, not tried live).
+  A visit's or a step's session is the address and browser string, an
+  event's its id, kept however often its batch goes again. What's left: a
+  first count that got to GoatCounter though its request failed goes round
+  as well, and counts twice if it's an event (a load from the site's own
+  pages, a reload say, counts no visit, so its first can be one) or its two
+  copies came from two addresses.
 - GoatCounter's API checks a count's browser string only, where its own
   `/count` also calls one from a cloud or hosting provider's address a bot.
   So the Worker marks those itself, from the same ranges

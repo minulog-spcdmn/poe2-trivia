@@ -3,7 +3,8 @@
 // GoatCounter's key, within its rate limit, each batch checked whole, then
 // sent on to GoatCounter's counting API with the address and browser string
 // the page came from (the address as the one asking too), an event counted
-// each time under a session of its own, and a count from a cloud or hosting
+// each time under a session of its own (its id from the page, the same
+// however often its batch comes), and a count from a cloud or hosting
 // provider's address marked as the bot GoatCounter's /count would call it
 // (botOf). What GoatCounter's
 // answer becomes for the page. What the page sends: countRelay.test.ts and
@@ -83,6 +84,27 @@ test("a page's counts go on to GoatCounter with the address and browser string t
   assert.notEqual(a.session, b.session, 'each event a session of its own');
   assert.deepEqual({ ...a, session: '' }, { path: event.p, title: event.t, event: true, ...from, session: '' });
   assert.deepEqual(Object.keys(calls[0].body), ['hits'], "GoatCounter's own filter (its ignored addresses) left as it is");
+});
+
+test('an event with its id goes under that id as its session, so its batch sent again (an answer lost) counts it once; the id GoatCounter’s alone to see', async () => {
+  const calls = goat();
+  const one = { ...event, i: '0123456789abcdef0123456789abcdef' };
+  const two = { ...event, i: 'fedcba9876543210fedcba9876543210' };
+  const batch = relayBody([visit, one, two]);
+  await at(env(), batch);
+  await at(env(), batch);
+  const sessions = calls.map((c) => c.body.hits.map((h) => h.session));
+  assert.deepEqual(sessions, [
+    [undefined, one.i, two.i],
+    [undefined, one.i, two.i],
+  ]);
+  assert.ok(calls.every((c) => c.body.hits.every((h) => !('i' in h))), 'only GoatCounter’s own fields');
+  // An id off in its shape leaves that count out, as any part off does.
+  await at(env(), relayBody([visit, { ...event, i: 'not-an-id' }]));
+  assert.deepEqual(
+    calls[2].body.hits.map((h) => h.path),
+    ['/'],
+  );
 });
 
 test("a count from a cloud or hosting provider's address goes as the bot GoatCounter's /count calls it; one from a home's as none", async () => {

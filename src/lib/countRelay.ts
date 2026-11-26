@@ -34,6 +34,15 @@ export function hitOf(url: string): Hit {
   return Object.fromEntries(q);
 }
 
+/**
+ * An event's own id as it goes round (`i`, a key GoatCounter's /count hasn't:
+ * its `s` is the screen's size), kept however often its batch is sent: the
+ * Worker makes it the event's session (counts/worker.js goatHit), and
+ * GoatCounter counts a path once a session, so a batch sent again, its
+ * answer lost, counts none of its events twice.
+ */
+export const countId = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+
 /** A batch as the Worker takes it. */
 export const relayBody = (h: Hit[]) => JSON.stringify({ h });
 

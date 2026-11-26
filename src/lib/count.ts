@@ -34,7 +34,7 @@ import type { GameState } from './game.ts';
 import { COUNTER_ORIGIN } from './counter.ts';
 import { isoWeek } from './isoWeek.ts';
 import { countOptedOut, notCounted, setCountOptedOut } from './countOptOut.ts';
-import { COUNTS_URL, Relay, arrives, hitOf, postCounts, type Hit } from './countRelay.ts';
+import { COUNTS_URL, Relay, arrives, countId, hitOf, postCounts, type Hit } from './countRelay.ts';
 import { SITE_URL } from './site.ts';
 import { fetchWhereTable, ownFrames, whereOf, type ErrorPlace, type WhereTable } from './errorWhere.ts';
 import { GameFrames, SOFTWARE, deviceOf, framesEvent, visitEvent, type BrowserSays, type StateMoment } from './stutter.ts';
@@ -109,7 +109,8 @@ function beacon(url: string) {
 }
 
 /** A count's address at GoatCounter, its cache-buster fresh. */
-const countUrl = (params: Record<string, string>) => `${COUNTER_ORIGIN}/count?${new URLSearchParams({ ...params, rnd: Math.random().toString(36).slice(2) })}`;
+/** A count's address at GoatCounter, without the id an event went round with (countRelay.ts countId): GoatCounter's own parameters only. */
+const countUrl = ({ i: _, ...params }: Record<string, string>) => `${COUNTER_ORIGIN}/count?${new URLSearchParams({ ...params, rnd: Math.random().toString(36).slice(2) })}`;
 
 /**
  * How this page load's counts reach GoatCounter: straight (a beacon), or,
@@ -120,8 +121,9 @@ const countUrl = (params: Record<string, string>) => `${COUNTER_ORIGIN}/count?${
  * wait for the answer (`held`, HOLD_MS at most, and not once the page is
  * put away: then they go straight). One that never got there goes round,
  * and the load's counts after it go round too, so one counted as the page
- * closes goes at once. A count goes round only if it never left: nothing
- * goes both ways. A load whose way round gives up (countRelay.ts `gone`)
+ * closes goes at once. A count goes round only if its request failed (one
+ * that got there though, its answer lost, goes both ways: README, "Counts
+ * round a blocker"). A load whose way round gives up (countRelay.ts `gone`)
  * goes straight again, with what never left. GoatCounter tells a visitor's
  * counts by the address and browser they came with, and the server may see
  * another address than GoatCounter would (one over IPv6, the other IPv4),
@@ -179,6 +181,7 @@ function letGo() {
 function goRound(url: string) {
   if (!relay) return beacon(url);
   const hit = hitOf(url);
+  if (hit.ns) hit.i = countId();
   relay.add(hit);
   if (hit.p === '/' && !hit.e && !reached.has('visit/blocked')) {
     reached.add('visit/blocked');
