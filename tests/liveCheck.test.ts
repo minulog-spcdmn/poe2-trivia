@@ -194,7 +194,6 @@ test('main daily: all well passes; a short certificate fails; a refused option f
   down.signal = { status: 500 };
   assert.equal(await main(['daily'], {}, { ...quiet, fetch: site(down).get, certEnd: fineCert }), 1);
   assert.equal(await main(['daily', '--built', 'x'], {}, quiet), 1);
-
   assert.equal(await main(['deploy'], {}, quiet), 1);
 });
 
