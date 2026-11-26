@@ -29,8 +29,8 @@
 
       <h2>2. Überblick</h2>
       <p>
-        PoE2.Quest ist ein Browserspiel ohne eigenen Spielserver (nur ein kleiner Dienst für Relay-Zugangsdaten,
-        Abschnitt 4), ohne Benutzerkonten und ohne Cookies. Die Nutzung wird
+        PoE2.Quest ist ein Browserspiel ohne eigenen Spielserver (nur kleine Dienste des Spiels bei Cloudflare,
+        Abschnitte 4 und 7), ohne Benutzerkonten und ohne Cookies. Die Nutzung wird
         mit dem cookielosen Dienst GoatCounter gezählt, der keine IP-Adressen speichert und Besuche keiner Person
         zuordnet; Antworten auf die Fragen zählt der eigene Vermittlungsserver des Spiels nur zu Summen je Gegenstand zusammen,
         ohne Bezug zu einer Person (Abschnitt 7). Schriftarten und Bilder werden von dieser Website selbst ausgeliefert, nicht von Drittanbietern.
@@ -240,6 +240,16 @@
         Zahlen; ein Bezug zu einzelnen Personen wird nicht hergestellt.
       </p>
       <p>
+        <strong>Wenn GoatCounter gesperrt ist:</strong> Die erste Zählung eines Seitenaufrufs sendet das Spiel so, dass es
+        erfährt, ob sie poe2quest.goatcounter.com erreicht hat. Sperrt etwa ein Werbe- oder Trackingblocker die Adresse,
+        sendet die Seite diese und die weiteren Zählungen des Seitenaufrufs stattdessen an einen eigenen kleinen Dienst
+        des Spiels, einen Cloudflare Worker (workers.dev; Cloudflare, Inc., USA), in Paketen gesammelt. Der gibt sie mit Ihrer
+        IP-Adresse und der Kennung Ihres Browsers (User-Agent) an GoatCounter weiter, das daraus wie oben das Land, den
+        Browser und das Betriebssystem ableitet und wiederholte Aufrufe erkennt. Er zählt dabei je Adresse die
+        Sendungen der letzten Minute, um massenhafte Sendungen zu bremsen, und speichert nichts davon. Gezählt wird dann
+        auch, dass ein Besuch diesen Weg nahm.
+      </p>
+      <p>
         <strong>Zählung der Antworten:</strong> Um zu erfahren, welche Gegenstände kaum jemand erkennt, sendet das Spiel
         zu jeder Frage, die Sie beantworten (in jedem Spielmodus, bei Übungsfragen und bei der täglichen Frage), an
         seinen eigenen Vermittlungsserver (den Cloudflare Worker aus Abschnitt 4): welcher Gegenstand gefragt war, ob
@@ -392,7 +402,11 @@
             browser, an iPhone or iPad, Android), whether the game ran smoothly or stuttered some or a lot, and at which part (its start, the deal, a question or the reveal) it
             stuttered most; for a computer whose browser draws without the graphics card (hardware acceleration off), only that instead. For a visit’s first game, whether it ran smoothly or stuttered, and if it stuttered at which part most, is sent once more (with the device’s kind). That is measured only during a game and only in your browser; no timings or other details of the device (nor the graphics card’s name) are sent. No names, answers, room codes or device tokens are sent to GoatCounter. It works out your country, browser and system
             from your IP address and browser and stores only those, never the IP address or the full browser string; it sets no cookies and stores nothing on your
-            device.
+            device. The game sends a page load’s first count so that it learns whether it reached poe2quest.goatcounter.com. If a blocker (an
+            ad or tracking blocker, say) keeps it away, the page sends that count and the load’s later ones to a small service of the game’s own
+            instead, a Cloudflare Worker (workers.dev; Cloudflare, Inc., USA), in batches. That passes them on to GoatCounter with
+            your IP address and browser string, from which GoatCounter works out the same as above; it counts each address’s sends over the
+            last minute to slow bulk use and stores nothing of them. That a visit went this way is counted too.
             <div class="count-toggle" data-count-toggle hidden>
               <p class="state"></p>
               <button type="button" class="btn small"></button>

@@ -7,7 +7,10 @@
 // game's own page at poe2.quest counts; the beta, the dev server and the dev
 // pages never do.
 // datenschutz.html says what is sent, and vite.config.ts's CSP lets it
-// through.
+// through. Where GoatCounter's address is blocked (an ad or tracking
+// blocker), the counts go to it through a server of the game's own instead
+// (countRelay.ts; `route` below), and a visit that went that way says so
+// ("visit/blocked").
 //
 // A game's frames are counted on each device that shows it (countGameFrames,
 // lib/stutter.ts): measured only while a game is under way and the page is
@@ -31,6 +34,7 @@ import type { GameState } from './game.ts';
 import { COUNTER_ORIGIN } from './counter.ts';
 import { isoWeek } from './isoWeek.ts';
 import { countOptedOut, notCounted, setCountOptedOut } from './countOptOut.ts';
+import { COUNTS_URL, Relay, arrives, countId, hitOf, postCounts, type Hit } from './countRelay.ts';
 import { SITE_URL } from './site.ts';
 import { fetchWhereTable, ownFrames, whereOf, type ErrorPlace, type WhereTable } from './errorWhere.ts';
 import { GameFrames, SOFTWARE, deviceOf, framesEvent, visitEvent, type BrowserSays, type StateMoment } from './stutter.ts';
@@ -104,6 +108,93 @@ function beacon(url: string) {
   new Image().src = url;
 }
 
+/** A count's address at GoatCounter, without the id an event went round with (countRelay.ts countId): GoatCounter's own parameters only. */
+const countUrl = ({ i: _, ...params }: Record<string, string>) => `${COUNTER_ORIGIN}/count?${new URLSearchParams({ ...params, rnd: Math.random().toString(36).slice(2) })}`;
+
+/**
+ * How this page load's counts reach GoatCounter: straight (a beacon), or,
+ * where its address is blocked (an ad or tracking blocker keeps it from the
+ * page), through a server of the game's own (countRelay.ts), which passes
+ * them on. The load's first count finds out: it goes as a request that says
+ * whether it got there (arrives), and those counted while it's on its way
+ * wait for the answer (`held`, HOLD_MS at most, and not once the page is
+ * put away: then they go straight). One that never got there goes round,
+ * and the load's counts after it go round too, so one counted as the page
+ * closes goes at once. A count goes round only if its request failed (one
+ * that got there though, its answer lost, goes both ways: README, "Counts
+ * round a blocker"). A load whose way round gives up (countRelay.ts `gone`)
+ * goes straight again, with what never left. GoatCounter tells a visitor's
+ * counts by the address and browser they came with, and the server may see
+ * another address than GoatCounter would (one over IPv6, the other IPv4),
+ * so a load keeps to one way where it can.
+ */
+let route: 'straight' | 'relay' | null = null;
+let relay: Relay | null = null;
+/** The first count's request has gone (route null: its answer not in). */
+let checking = false;
+const held: string[] = [];
+/** Set while counts wait for that answer (`held`): until it's in, HOLD_MS have passed, or the page is put away. */
+let holdTimer: ReturnType<typeof setTimeout> | null = null;
+/** How long counts wait for the first one's answer (ms): a blocker answers at once, GoatCounter within a round trip. */
+export const HOLD_MS = 3_000;
+/** The page was put away (leaving: hidden or left) and not seen since. */
+let away = false;
+
+/** A count's way out (the queue's): straight, round a blocker, or held while the first one's answer comes. */
+function out(url: string) {
+  if (route === 'relay') return goRound(url);
+  if (route === null && COUNTS_URL) {
+    if (!checking) return check(url);
+    if (holdTimer !== null) return void held.push(url);
+  }
+  beacon(url);
+}
+
+/** The load's first count, sent as the check: the way the load's counts go from its answer on. */
+function check(url: string) {
+  checking = true;
+  holdTimer = setTimeout(letGo, HOLD_MS);
+  void arrives(url).then((there) => {
+    route = there ? 'straight' : 'relay';
+    if (!there) {
+      relay = new Relay(() => counting && !notCounted(), postCounts, undefined, wentStraight);
+      goRound(url);
+    }
+    // (On a page already hidden or left, they go at once: goRound.)
+    letGo();
+  });
+}
+
+/** Those held for the first count's answer go: its way, or straight while it isn't in. */
+function letGo() {
+  if (holdTimer !== null) clearTimeout(holdTimer);
+  holdTimer = null;
+  const now = held.splice(0);
+  // (Not if the privacy page was used to opt out meanwhile.)
+  if (!notCounted()) for (const u of now) out(u);
+}
+
+/** A count round the blocker; the visit's mark with the visit (one that went this way), in the same batch. */
+function goRound(url: string) {
+  if (!relay) return beacon(url);
+  const hit = hitOf(url);
+  if (hit.ns) hit.i = countId();
+  relay.add(hit);
+  if (hit.p === '/' && !hit.e && !reached.has('visit/blocked')) {
+    reached.add('visit/blocked');
+    relay.add({ p: 'visit/blocked', t: 'visit/blocked', e: 'true' });
+  }
+  // (One counted with the page put away, after leaving sent what waited, goes now, as a beacon would: the page may not be back. Those counted in the same moment go together.)
+  if (away) queueMicrotask(() => relay?.send());
+}
+
+/** The way round gave up: the load's counts go straight from now on, those that never left first (not the visit's mark: the visit didn't go round). */
+function wentStraight(back: Hit[]) {
+  relay = null;
+  route = 'straight';
+  if (!notCounted()) for (const h of back) if (h.p !== 'visit/blocked') beacon(countUrl(h));
+}
+
 /**
  * GoatCounter takes at most four counts a second from one address, and turns
  * the rest away unseen (a beacon never hears). So counts go out one at a
@@ -125,11 +216,11 @@ function drain() {
   const url = queue.shift();
   if (atHead) atHead--;
   // Not if the privacy page was used to opt out meanwhile.
-  if (url && !notCounted()) beacon(url);
+  if (url && !notCounted()) out(url);
   if (queue.length) drainTimer = setTimeout(drain, GAP_MS);
 }
 function release(url: string, now: boolean, head = false) {
-  if (now && !queue.length && !drainTimer) return beacon(url);
+  if (now && !queue.length && !drainTimer) return out(url);
   if (now) {
     queue.unshift(url);
     atHead++;
@@ -139,21 +230,35 @@ function release(url: string, now: boolean, head = false) {
 }
 /** What's counted as the page is hidden (`hidden`) or left, ahead of the queue going (a game's frames, countGameFrames). */
 const onLeaving: ((hidden: boolean) => void)[] = [];
-/** Sends what's counted as the page goes and all that waits. */
-function leaving(hidden: boolean) {
-  for (const f of onLeaving) f(hidden);
+/** Sends all that waits at once. */
+function flush() {
   if (drainTimer) clearTimeout(drainTimer);
   drainTimer = null;
   atHead = 0;
   const left = queue.splice(0);
-  if (!notCounted()) for (const url of left) beacon(url);
+  if (!notCounted()) for (const url of left) out(url);
+  // (Those held for the first count's answer, straight: the page may not be back for it. After the queue, whose first may only now have gone as the check, holding the rest.)
+  if (holdTimer !== null) letGo();
+  // (Those going round a blocker too, held for others to go with them.)
+  relay?.send();
+}
+/** Sends what's counted as the page goes and all that waits. */
+function leaving(hidden: boolean) {
+  for (const f of onLeaving) f(hidden);
+  flush();
+  away = true;
 }
 // (Where it counts at all, not only where it counts on loading: #toggle-goatcounter can switch counting on later.)
 // Hidden too: a phone often drops a tab switched away from without a pagehide.
 if (countsHere && typeof addEventListener !== 'undefined') {
   addEventListener('pagehide', () => leaving(false));
+  // (Shown again: from the back-forward cache, which may come without a visibilitychange, as its pagehide may. Not the first load's own pageshow, which comes as it finishes loading, hidden still if it was put away first.)
+  addEventListener('pageshow', () => {
+    if (document.visibilityState !== 'hidden') away = false;
+  });
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') leaving(true);
+    else away = false;
   });
 }
 
@@ -165,9 +270,9 @@ if (countsHere && !seen) {
     if (document.visibilityState !== 'visible') return;
     document.removeEventListener('visibilitychange', look);
     seen = true;
-    const held = waiting.splice(0);
+    const unseen = waiting.splice(0);
     // Not if the privacy page was used to opt out while this page waited unseen.
-    if (!notCounted()) for (const w of held) release(w.url, w.now, w.head);
+    if (!notCounted()) for (const w of unseen) release(w.url, w.now, w.head);
   };
   document.addEventListener('visibilitychange', look);
 }
@@ -177,7 +282,7 @@ function send(params: Record<string, string>, now = false, head = false) {
   // Asked each time: the privacy page can set it while this page waits in the back-forward cache.
   // (Nor the load that switched counting: it counts nothing either way.)
   if (!counting || toggledOnLoad || notCounted()) return;
-  const url = `${COUNTER_ORIGIN}/count?${new URLSearchParams({ ...params, rnd: Math.random().toString(36).slice(2) })}`;
+  const url = countUrl(params);
   if (seen) release(url, now, head);
   else waiting.push({ url, now, head });
 }

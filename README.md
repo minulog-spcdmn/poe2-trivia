@@ -391,9 +391,77 @@ Unlike the matchmaking server, the relay stays deployed by hand. The session
 that changes it opens an issue with its PR (“Deploy the relay after #N”),
 deploys it once the PR merges, from `main` itself, fetched first (`git fetch
 origin main`, `git worktree add --detach <dir> origin/main`, and `git -C <dir>
-log -1` shows the merge; then `npx --yes wrangler@4.158.0 deploy` in
-`<dir>/relay`), checks it live as before, and closes the issue. A session
-that ends first leaves the issue for the next.
+log -1` shows the merge; then `npx --yes wrangler@4.158.0 deploy --config
+<dir>/relay/wrangler.toml`), checks that `npx --yes wrangler@4.158.0 versions
+secret list --config <dir>/relay/wrangler.toml` still lists `ANALYTICS_TOKEN`,
+`TURN_KEY_API_TOKEN` and `TURN_KEY_ID` (if not, `wrangler rollback` to the
+version before, which has them), checks it live as before, and closes the
+issue. A session that ends first leaves the issue for the next.
+
+Never run `wrangler deploy` in the project's root. With no config there,
+wrangler sets up the whole site as a Worker named after `package.json`,
+`poe2-trivia`, the relay's own name, and replaces the relay with it, its
+secrets gone. It happened once (25 Nov 2026); a rollback to the relay's
+version brought it back, then `wrangler triggers deploy` its schedule.
+
+### Counts round a blocker
+
+The visitor counts (`lib/count.ts`) go from the page to GoatCounter, and
+EasyPrivacy, which uBlock Origin and Brave use, blocks all of
+`goatcounter.com` from another site and every beacon to another site: a page
+with a blocker would count nothing. Its counts go round it, through a Worker
+of their own (`counts/worker.js`, at `poe2-counts.poe2quest.workers.dev`),
+apart from the matchmaking server, so a list that names its address costs
+players their counts, never their games:
+
+- A page load's first count goes as a request that says whether it got there
+  (`lib/countRelay.ts`, `arrives`; the rest go as beacons, which never say),
+  and those counted meanwhile wait for its answer, 3 s at most.
+- If it didn't get there, it and the load's later counts go to the Worker in
+  batches, a few seconds' worth each and at once as the page is hidden or
+  left, and a visit that went this way sends `visit/blocked` with it. A count
+  goes round only if its own request failed.
+- The Worker checks each count's shape and sends it on to GoatCounter's
+  counting API with the player's address and browser string (as GoatCounter
+  has them from a page that reaches it), an event counted each time under a
+  session of its own, the id the page gave it (`countId`), and keeps
+  nothing. An address may send 60 batches a minute.
+- Nothing counts twice where it's sent twice in one session: GoatCounter
+  counts a path once a session (its `memstore.go` session and the `cron/`
+  stats, which count first visits only; read in its source, not tried live).
+  A visit's or a step's session is the address and browser string, an
+  event's its id, kept however often its batch goes again. What's left: a
+  first count that got to GoatCounter though its request failed goes round
+  as well, and counts twice if it's an event (a load from the site's own
+  pages, a reload say, counts no visit, so its first can be one) or its two
+  copies came from two addresses.
+- GoatCounter's API checks a count's browser string only, where its own
+  `/count` also calls one from a cloud or hosting provider's address a bot.
+  So the Worker marks those itself, from the same ranges
+  (`counts/botRanges.js`, made by `node scripts/bot-ranges.mjs` from the
+  isbot version GoatCounter's `go.mod` names; run it again when that moves).
+- If the Worker answers 404 (no key) or can't be reached (a batch turned down
+  three times), the load sends its counts straight again, those that never
+  left first.
+
+To set it up:
+
+1. At poe2quest.goatcounter.com, under its API settings, make an API key
+   allowed only to record pageviews.
+2. From the project's root, naming the Worker's config (so the folder it's
+   run in can't matter): `npx --yes wrangler@4.158.0 deploy --config
+   counts/wrangler.toml`, then `npx --yes wrangler@4.158.0 secret put
+   GOATCOUNTER_KEY --config counts/wrangler.toml`, pasting the key when it
+   asks (the key is the secret's value; its name stays `GOATCOUNTER_KEY`).
+
+Without the key the Worker answers 404, and a page sends its counts straight
+again (a blocked page's are lost, as before). Put the Worker live before the
+pages that use it, key or none: with no Worker there, a page hears only that
+the network failed, and drops what it sent round, the visit among them. It
+isn't deployed by Workers Builds: the deploy in step 2 puts a change to it
+live. To turn it off: delete the secret (pages go straight
+again at once), or empty `COUNTS_ORIGIN` in `src/lib/counter.ts` (pages
+loaded after the deploy).
 
 ## Deploying
 

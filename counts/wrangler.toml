@@ -1,0 +1,29 @@
+# The visitor counts round a blocker (worker.js); README, "Counts round a
+# blocker". Its address, poe2-counts.poe2quest.workers.dev, is the page's
+# COUNTS_ORIGIN (src/lib/counter.ts).
+name = "poe2-counts"
+main = "worker.js"
+compatibility_date = "2026-10-01"
+workers_dev = true
+
+# No request logs kept: they'd store each player's IP address (datenschutz.html).
+[observability]
+enabled = false
+
+# Batches an address may send a minute: a page sends one a few seconds after
+# a count at most, and as it's hidden or left, so sixty a minute is a
+# household's or a school's few such pages.
+[[ratelimits]]
+name = "COUNT_WRITES"
+namespace_id = "1005"
+
+  [ratelimits.simple]
+  limit = 60
+  period = 60
+
+# The key GoatCounter takes the counts under: a secret, not here (the repo is
+# public), set on this Worker as GOATCOUNTER_KEY (Workers & Pages,
+# poe2-counts, Settings, Variables and Secrets; or `npx wrangler secret put
+# GOATCOUNTER_KEY` in counts/), an API key made at poe2quest.goatcounter.com,
+# under its API settings, allowed only to record pageviews. Without it,
+# /counts answers 404, and a page sends its counts straight again.
