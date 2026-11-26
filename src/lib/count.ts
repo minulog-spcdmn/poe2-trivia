@@ -108,7 +108,6 @@ function beacon(url: string) {
   new Image().src = url;
 }
 
-/** A count's address at GoatCounter, its cache-buster fresh. */
 /** A count's address at GoatCounter, without the id an event went round with (countRelay.ts countId): GoatCounter's own parameters only. */
 const countUrl = ({ i: _, ...params }: Record<string, string>) => `${COUNTER_ORIGIN}/count?${new URLSearchParams({ ...params, rnd: Math.random().toString(36).slice(2) })}`;
 
@@ -133,9 +132,8 @@ let route: 'straight' | 'relay' | null = null;
 let relay: Relay | null = null;
 /** The first count's request has gone (route null: its answer not in). */
 let checking = false;
-/** Counts wait for that answer (`held`): until it's in, HOLD_MS have passed, or the page is put away. */
-let holding = false;
 const held: string[] = [];
+/** Set while counts wait for that answer (`held`): until it's in, HOLD_MS have passed, or the page is put away. */
 let holdTimer: ReturnType<typeof setTimeout> | null = null;
 /** How long counts wait for the first one's answer (ms): a blocker answers at once, GoatCounter within a round trip. */
 export const HOLD_MS = 3_000;
@@ -147,14 +145,14 @@ function out(url: string) {
   if (route === 'relay') return goRound(url);
   if (route === null && COUNTS_URL) {
     if (!checking) return check(url);
-    if (holding) return void held.push(url);
+    if (holdTimer !== null) return void held.push(url);
   }
   beacon(url);
 }
 
 /** The load's first count, sent as the check: the way the load's counts go from its answer on. */
 function check(url: string) {
-  checking = holding = true;
+  checking = true;
   holdTimer = setTimeout(letGo, HOLD_MS);
   void arrives(url).then((there) => {
     route = there ? 'straight' : 'relay';
@@ -169,7 +167,6 @@ function check(url: string) {
 
 /** Those held for the first count's answer go: its way, or straight while it isn't in. */
 function letGo() {
-  holding = false;
   if (holdTimer !== null) clearTimeout(holdTimer);
   holdTimer = null;
   const now = held.splice(0);
@@ -241,7 +238,7 @@ function flush() {
   const left = queue.splice(0);
   if (!notCounted()) for (const url of left) out(url);
   // (Those held for the first count's answer, straight: the page may not be back for it. After the queue, whose first may only now have gone as the check, holding the rest.)
-  if (holding) letGo();
+  if (holdTimer !== null) letGo();
   // (Those going round a blocker too, held for others to go with them.)
   relay?.send();
 }

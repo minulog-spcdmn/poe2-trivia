@@ -148,6 +148,8 @@ export function words(ip) {
     if (right.length) right = [...right.slice(0, -1), ...g];
     else left = [...left.slice(0, -1), ...g];
   }
+  // (More than eight groups round a "::" is none: Array would throw on a length under 0.)
+  if (left.length + right.length > 8) return null;
   const all = groups.length === 2 ? [...left, ...Array(8 - left.length - right.length).fill('0'), ...right] : left;
   if (all.length !== 8 || !all.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return null;
   const n = all.map((g) => parseInt(g, 16));
@@ -249,7 +251,7 @@ export function addressKey(ip) {
   const [head, tail = ''] = ip.toLowerCase().split('::');
   const left = head ? head.split(':') : [];
   const right = tail ? tail.split(':') : [];
-  const full = ip.includes('::') ? [...left, ...Array(8 - left.length - right.length).fill('0'), ...right] : left;
+  const full = ip.includes('::') ? [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right] : left;
   const groups = full.slice(0, 4).map((g) => parseInt(g, 16) || 0);
   groups[3] &= 0xff00;
   return groups.map((g) => g.toString(16)).join(':') + '::/56';

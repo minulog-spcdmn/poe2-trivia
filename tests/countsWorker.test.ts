@@ -13,7 +13,7 @@
 // source (handlers/api.go count, memstore.go session), not tried.
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ASKER, COUNTER_API, MAX_COUNTED, MAX_COUNTS, answer, botOf, counted, words } from '../counts/worker.js';
+import { ASKER, COUNTER_API, MAX_COUNTED, MAX_COUNTS, addressKey, answer, botOf, counted, words } from '../counts/worker.js';
 import { ISBOT, V4_CODES, V6_CODES } from '../counts/botRanges.js';
 import { COUNTER_ORIGIN } from '../src/lib/counter.ts';
 import { MAX_RELAYED, hitOf, relayBody } from '../src/lib/countRelay.ts';
@@ -137,12 +137,18 @@ test("an address's provider, as isbot's ranges have it, its first and last addre
     ['not an address', 0],
     ['1.2.3', 0],
     ['1:2:3:4:5:6:7:8:9', 0],
+    // (Past eight groups round a "::": none, not a throw.)
+    ['1:2:3:4:5:6:7:8:9::', 0],
     ['', 0],
   ];
   for (const [ip, bot] of cases) assert.equal(botOf(ip), bot, ip);
   assert.deepEqual(words('::ffff:1.2.3.4'), [0, 0, 0xffff, 0x01020304]);
   assert.deepEqual(words('10.0.0.1'), [0x0a000001]);
   assert.equal(words('1.2.3.256'), null);
+  // The rate limit's key, as the matchmaking server's (an IPv6 address's /56), and one past eight groups taken without a throw.
+  assert.equal(addressKey('203.0.113.7'), '203.0.113.7');
+  assert.equal(addressKey('2001:db8:0:12ab::1'), '2001:db8:0:1200::/56');
+  assert.equal(addressKey('1:2:3:4:5:6:7:8:9::'), '1:2:3:0::/56');
   // isbot's codes for its providers (BotRangeAWS 8 to BotRangeOVH 17), at the version GoatCounter's go.mod names.
   const codes = new Set([...atob(V4_CODES), ...atob(V6_CODES)].map((c) => c.charCodeAt(0)));
   assert.ok([...codes].every((c) => c >= 8 && c <= 17), [...codes].join());

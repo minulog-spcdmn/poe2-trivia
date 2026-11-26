@@ -38,12 +38,17 @@ if (!names.size || [...names.values()].some((c) => !c)) throw new Error('isbot: 
 
 /** An address as a number (BigInt): IPv4 in 32 bits, IPv6 in 128. */
 function number(addr, v6) {
-  if (!v6) return addr.split('.').reduce((n, p) => (n << 8n) | BigInt(Number(p)), 0n);
+  if (!v6) {
+    const parts = addr.split('.');
+    if (parts.length !== 4 || !parts.every((p) => /^\d{1,3}$/.test(p) && Number(p) < 256)) throw new Error(`not an address: ${addr}`);
+    return parts.reduce((n, p) => (n << 8n) | BigInt(Number(p)), 0n);
+  }
   const [head, tail = ''] = addr.split('::');
   const left = head ? head.split(':') : [];
   const right = tail ? tail.split(':') : [];
-  const groups = addr.includes('::') ? [...left, ...Array(8 - left.length - right.length).fill('0'), ...right] : left;
-  if (groups.length !== 8) throw new Error(`not an address: ${addr}`);
+  const groups = addr.includes('::') ? [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right] : left;
+  // (Hex groups only: an IPv4 tail, 64:ff9b::1.2.3.4, would read as a wrong number, not stop the script.)
+  if (groups.length !== 8 || !groups.every((g) => /^[0-9a-f]{1,4}$/i.test(g))) throw new Error(`not an address: ${addr}`);
   return groups.reduce((n, g) => (n << 16n) | BigInt(parseInt(g, 16)), 0n);
 }
 
@@ -61,6 +66,8 @@ function family(name, bits) {
       const first = number(addr, bits === 128) & ~(size - 1n);
       const code = names.get(provider);
       if (!code) throw new Error(`unknown provider ${provider}`);
+      // (Each code goes as one byte: pack.)
+      if (code > 255) throw new Error(`${provider}'s code ${code} is past a byte`);
       return [first, first + size - 1n, code];
     })
     .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
