@@ -134,3 +134,15 @@ test('a relay given up on once the player has opted out hands back nothing', asy
   await settled();
   assert.deepEqual(back, [[]]);
 });
+
+test('a second batch on its way as the server is found without the path is handed back too', async () => {
+  // (One turned down before, sent again with a new one: both turned away.)
+  const { r, back } = relay([null, 404, 404]);
+  r.add(hit('play/race'));
+  r.send();
+  await settled();
+  r.add(hit('end/race'));
+  r.send();
+  await settled();
+  assert.deepEqual(back.flat(), [hit('play/race'), hit('end/race')]);
+});

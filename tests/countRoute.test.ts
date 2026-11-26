@@ -233,3 +233,20 @@ test('a load whose way round is gone (the server hasn’t the path) goes straigh
   assert.equal(posts.length, before + 1, 'nothing more round');
   server = 204;
 });
+
+test('a load left before its first count had gone sends that one as the check and the rest straight, none held for an answer the page may not see', async () => {
+  goat = 'slow';
+  const sent = beacons.length;
+  const checked = checks.length;
+  const { countEvent: count } = await load('left-queued');
+  // (Both in the queue, its first wait not over: nothing has gone yet.)
+  count('play/race');
+  count('end/race');
+  assert.equal(checks.length, checked);
+  fire('pagehide');
+  assert.deepEqual(paths(checks.slice(checked)), ['play/race']);
+  assert.deepEqual(paths(beacons.slice(sent)), ['end/race']);
+  later.shift()?.(true);
+  await settled();
+  fire('pageshow');
+});

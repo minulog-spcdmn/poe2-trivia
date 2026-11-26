@@ -232,13 +232,13 @@ function release(url: string, now: boolean, head = false) {
 const onLeaving: ((hidden: boolean) => void)[] = [];
 /** Sends all that waits at once. */
 function flush() {
-  // (Those held for the first count's answer, straight: the page may not be back for it.)
-  if (holding) letGo();
   if (drainTimer) clearTimeout(drainTimer);
   drainTimer = null;
   atHead = 0;
   const left = queue.splice(0);
   if (!notCounted()) for (const url of left) out(url);
+  // (Those held for the first count's answer, straight: the page may not be back for it. After the queue, whose first may only now have gone as the check, holding the rest.)
+  if (holding) letGo();
   // (Those going round a blocker too, held for others to go with them.)
   relay?.send();
 }
@@ -270,9 +270,9 @@ if (countsHere && !seen) {
     if (document.visibilityState !== 'visible') return;
     document.removeEventListener('visibilitychange', look);
     seen = true;
-    const held = waiting.splice(0);
+    const unseen = waiting.splice(0);
     // Not if the privacy page was used to opt out while this page waited unseen.
-    if (!notCounted()) for (const w of held) release(w.url, w.now, w.head);
+    if (!notCounted()) for (const w of unseen) release(w.url, w.now, w.head);
   };
   document.addEventListener('visibilitychange', look);
 }

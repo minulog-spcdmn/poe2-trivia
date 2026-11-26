@@ -56,7 +56,8 @@ type Batch = { hits: Hit[]; tries: number };
 /**
  * Counts held until they go round the blocker: `allowed` asked again as each
  * batch goes, `post` sending one, `gone` told when the relay gives up, with
- * the counts that never left (the page sends those straight).
+ * the counts that never left (the page sends those straight), and again for
+ * a batch on its way then that never got past the server.
  */
 export class Relay {
   private held: Hit[] = [];
@@ -98,7 +99,11 @@ export class Relay {
 
   private go(b: Batch) {
     void this.post(relayBody(b.hits)).then((status) => {
-      if (this.off) return;
+      if (this.off) {
+        // (Another batch on its way as the relay gave up: one the server hadn't the path for never got past it either.)
+        if (status === 404 && this.allowed()) this.gone(b.hits);
+        return;
+      }
       // No such path: this batch never got past the server, nor did what waits.
       if (status === 404) return this.giveUp([...b.hits, ...this.held]);
       // Taken, or turned down as it is (400, 413): going again changes nothing.
