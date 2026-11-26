@@ -20,4 +20,8 @@ export function hourWindowsOf(zone: string, at: Date, days?: number): { bounds: 
 export function lastHoursOf(paths: PathCount[], zone: string, bounds: number[], labels: string[]): PathCount[];
 export function checkDay(paths: PathCount[], day: string, zone?: string): Check | null;
 export function firedOf(c: Check | null): string[];
+export const ROUND_FROM: string;
+export type Round = { blocked: number; visits: number; days: number; of: number };
+export function roundOf(paths: PathCount[], days: string[]): Round;
+export function roundLine(round: Round, over: string): string;
 export function main(argv: string[], env: Record<string, string | undefined>, deps?: Deps & { log?: (line: string) => void }): Promise<number>;

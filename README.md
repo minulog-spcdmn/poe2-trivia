@@ -541,6 +541,14 @@ hours to then against the same hours of the 7 days before, cut from
 GoatCounter’s hours, so a fault in the morning shows half a day sooner. A
 check that fires fails the run, and GitHub emails the owner.
 
+Each run also reports how many visits went round a blocker (`visit/blocked`,
+“Counts round a blocker”) of all visits over its day and the 7 before, from
+27 Nov 2026, the first whole day they could. It’s a line, never a check that
+fails: at a few visits a day a test would never fire or fire falsely. It says
+so at both ends, with 10 visits or more: none gone round can mean the way
+round is dead, 80% or more that the page’s first count fails for everyone. A
+backtest ends with the same line over all its days.
+
 It needs the read-only GoatCounter key as the Actions secret
 `GOATCOUNTER_KEY`. Switch it on with `gh secret set GOATCOUNTER_KEY` (it asks
 for the value) and off by deleting it (`gh secret delete GOATCOUNTER_KEY`);
@@ -565,7 +573,10 @@ the alarm, and GitHub emails the owner.
   minutes while the CDN catches up, whichever try put the site up.
 - Once a day, `.github/workflows/live-check.yml` checks that poe2.quest and its
   files answer 200, that its TLS certificate has at least 14 days left, and
-  that the matchmaking server hands out a peer id (`/peerjs/id`). Scheduled
+  that the matchmaking server hands out a peer id (`/peerjs/id`), and that
+  the counts Worker answers 400 to a batch that isn’t JSON sent from the
+  page’s origin: up, with its key, and nothing counted. A 404 is the Worker
+  without its `GOATCOUNTER_KEY`; the error says how to redeploy it. Scheduled
   runs here start hours late, so an outage is mailed within about a day. It
   stays apart from Daily health, whose failures wake the Claude responder,
   and reads neither the tally nor GoatCounter.

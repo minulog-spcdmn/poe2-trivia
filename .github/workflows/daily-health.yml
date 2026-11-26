@@ -15,6 +15,12 @@ run-name: "Daily health: ${{ (github.event.schedule == '23 12 * * *' || inputs.l
 # GoatCounter can't be read (no answer, a 5xx, its hour's limit spent)
 # passes with a warning there that the check couldn't run.
 #
+# Each run also reports the visits that went round a blocker
+# (`visit/blocked`) against all visits over its day and the 7 before, a
+# line that never fails the run: too few visits for a test. Whether the
+# counts Worker answers is the live check's (live-check.yml), which wakes
+# no responder, since no code fix brings a Worker back.
+#
 # It needs the read-only GoatCounter key as the repository secret
 # GOATCOUNTER_KEY; without it the run passes, saying the check is off. Its
 # few requests a run count against GoatCounter's 500 an hour beside the
